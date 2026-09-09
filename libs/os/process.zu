@@ -115,7 +115,7 @@ def kill(pid: int, signal: ?int) {
  * being torn down immediately.
  *
  * `callback` takes no arguments. It runs on the main thread,
- * between bytecode instructions — never from a background thread —
+ * between bytecode instructions: never from a background thread:
  * so it's safe for it to do anything ordinary Zuri code can do,
  * including raising, which propagates the same way an uncaught
  * error from any other code would.
@@ -133,7 +133,7 @@ def kill(pid: int, signal: ?int) {
  * ```
  *
  * Returning anything falsy means it hasn't, and the signal then gets
- * the default action it would have had if nothing were registered —
+ * the default action it would have had if nothing were registered:
  * for `'INT'`, `'TERM'` and `'HUP'`, terminating the process with the
  * conventional `128 + signal number` status. A callback that just
  * cleans up and falls off the end returns `nil`, which is falsy, so
@@ -157,7 +157,7 @@ def kill(pid: int, signal: ?int) {
  * Supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
  * (Unix only), and `'BREAK'` (Windows only); names are matched
  * case-insensitively. Registering a new callback for a name that
- * already has one replaces it — there's no stacking of multiple
+ * already has one replaces it: there's no stacking of multiple
  * handlers for the same signal.
  *
  * @note only takes effect for the main thread's own execution;
@@ -181,7 +181,7 @@ def on_signal(name: string, callback: function) {
 /**
  * A running (or finished) child process created by `spawn()`.
  *
- * @note constructed only by `spawn()` itself — there's no
+ * @note constructed only by `spawn()` itself: there's no
  *    meaningful way to build one by hand since there's no
  *    "spawn it later" step to defer.
  */
@@ -207,7 +207,7 @@ class Process {
   /**
    * Closes the write half of this process's stdin, so the child
    * sees EOF on it. Needed for any child that reads its own stdin
-   * until EOF — the pipe only actually closes once this is called
+   * until EOF: the pipe only actually closes once this is called
    * (or the `Process` itself is garbage collected).
    *
    * @returns
@@ -297,13 +297,13 @@ class Process {
  *
  * `options` may include:
  *
- * - `cwd`: `?string` — the child's working directory. Defaults to
+ * - `cwd`: `?string`: the child's working directory. Defaults to
  *   this process's own current working directory.
- * - `env`: `?dict` — extra environment variables for the child,
+ * - `env`: `?dict`: extra environment variables for the child,
  *   merged into a copy of this process's own environment by
  *   default (set `env_replace: true` for the child to receive
  *   *only* what's in `env`, nothing inherited).
- * - `env_replace`: `?bool` — see `env` above. Default `false`.
+ * - `env_replace`: `?bool`: see `env` above. Default `false`.
  * - `stdin`, `stdout`, `stderr`: `?string`, one of `'pipe'`
  *   (readable/writable through the returned `Process`), `'inherit'`
  *   (shares this process's own stream), or `'null'` (discarded).
@@ -328,7 +328,7 @@ class Process {
  *
  * @param string cmd
  * @param ?list args: The command's own arguments (not shell-
- *    interpreted the way `exec()`'s combined string is — each
+ *    interpreted the way `exec()`'s combined string is: each
  *    element is passed to the child as one literal argument).
  * @param ?dict options
  * @returns Process

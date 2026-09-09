@@ -27,7 +27,7 @@ def temp_dir() {
  * Atomically creates a new, empty, uniquely named file inside
  * `temp_dir()` and returns its path. The file is created (and left
  * open-then-closed) purely to reserve the name without a race
- * between checking whether it exists and creating it — this
+ * between checking whether it exists and creating it: this
  * function only hands back the path; open it yourself with
  * `file()` to actually read or write it.
  *

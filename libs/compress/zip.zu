@@ -21,7 +21,7 @@ import date
  * @type number
  */
 # The classic (non-zip64) format's size fields are unsigned 32-bit, so
-# the real ceiling is 0xFFFFFFFF (4 GiB - 1), not 2^31 — that was a
+# the real ceiling is 0xFFFFFFFF (4 GiB - 1), not 2^31: that was a
 # signed-vs-unsigned mixup that rejected perfectly valid 2-4 GiB files
 # and forced zip64 on them unnecessarily. Strict "<" against this value
 # in _is_within_bound() naturally reserves 0xFFFFFFFF itself, which
@@ -97,15 +97,15 @@ var _central_file_head_unpack = 'v1:creator/v1:version/v1:general_purpose/v1:com
 
 var _local_file_head_unpack = 'v1:version/v1:general_purpose/v1:compress_method/v1:file_time/' +
     'v1:file_date/${_file_size_unpack}/v1:filename_length/v1:extra_field_length'
-    # Note: local file headers have NO comment_length field — that only exists in
+    # Note: local file headers have NO comment_length field: that only exists in
     # central directory headers. Including it here would read 2 garbage bytes.
 
-# CRC-32 stays a 4-byte field even in zip64 — only the two size fields
+# CRC-32 stays a 4-byte field even in zip64: only the two size fields
 # grow to 8 bytes. Using 'P' (8-byte) for crc here was reading 4 bytes
 # of the real crc plus the first 4 bytes of size_compressed as if they
 # were one 64-bit crc value, corrupting all three fields for any zip64
 # archive that hits this path (a streamed entry with a trailing data
-# descriptor — see the general_purpose bit 0x0008 handling in read()).
+# descriptor: see the general_purpose bit 0x0008 handling in read()).
 var _file_size_unpack64 = 'V1:crc/P1:size_compressed/P1:size_uncompressed'
 
 # Error messages...
@@ -236,7 +236,7 @@ class ZipItem {
 
     # An entry read() couldn't decode cleanly (encryption, an
     # unsupported compression method, or a CRC32 mismatch) has no data
-    # to write — fail loudly rather than silently reporting success
+    # to write: fail loudly rather than silently reporting success
     # for a file that was never actually extracted.
     if self.error
       return false
@@ -280,10 +280,10 @@ class ZipItem {
         # self.permission holds the full Unix mode word as stored in the ZIP
         # external_attribute high 16 bits (e.g. 0o100755 for a regular
         # executable). chmod() only accepts the lower 12 permission/sticky/setid
-        # bits — passing the file-type bits (S_IFMT, 0o170000) alongside them
+        # bits: passing the file-type bits (S_IFMT, 0o170000) alongside them
         # produces the wrong mode or an outright error on some platforms.
         # Mask with 0o7777 to strip the file-type nibble before the call.
-        fh.chmod(self.permission & 0xFFF)  # 0xFFF = 0o7777 — strips file-type bits, keeps rwx + setid + sticky
+        fh.chmod(self.permission & 0xFFF)  # 0xFFF = 0o7777: strips file-type bits, keeps rwx + setid + sticky
       }
     }
 
@@ -480,7 +480,7 @@ class ZipArchive {
       'v5', 
       self._is_64 ? _Z_64_VERSION : _Z_DEFAULT_VERSION,  # version needed to extract
       gpflag,                   # general purpose bit flag
-      ZIP_STORED,               # compression method — directories are always stored, never compressed
+      ZIP_STORED,               # compression method: directories are always stored, never compressed
       mod_date[0],              # last mod time
       mod_date[1]               # last mod date
     ))
@@ -567,7 +567,7 @@ class ZipArchive {
    */
   create_file(path: string, data: bytes|string, stat: ?dict) {
     # Only a string argument gets converted here, and only that
-    # conversion's result gets disposed further down — a bytes
+    # conversion's result gets disposed further down: a bytes
     # argument belongs to the caller, and this method must never
     # dispose an object it didn't allocate itself.
     var owns_data = is_string(data)
@@ -593,7 +593,7 @@ class ZipArchive {
 
 		var fr = _file_head_sig.to_bytes()
 
-    # Set the EFS (encoding follows specification) flag — bit 11 (0x0800) —
+    # Set the EFS (encoding follows specification) flag: bit 11 (0x0800):
     # whenever the filename contains characters outside plain ASCII. This tells
     # extractors the name is UTF-8 encoded, preventing mojibake on non-ASCII paths.
     var gpflag = 0
@@ -649,7 +649,7 @@ class ZipArchive {
       uzdata.dispose()
     }
     # Only dispose data if this method allocated it itself (a string
-    # argument converted to bytes above) — a bytes argument belongs
+    # argument converted to bytes above): a bytes argument belongs
     # to the caller and must never be disposed out from under them.
     if owns_data {
       data.dispose()
@@ -678,14 +678,14 @@ class ZipArchive {
     # may return only the permission bits (e.g. 0o755) without the S_IFREG
     # file-type sentinel (0o100000). Without those bits, Unix extractors (macOS
     # unzip, Info-ZIP, etc.) cannot identify the entry as a regular file and
-    # therefore skip restoring permissions altogether — the root cause of the
+    # therefore skip restoring permissions altogether: the root cause of the
     # bug where extracted files always revert to default permissions.
     #
     # Fix: if the file-type nibble (bits 12-15, masked by S_IFMT = 0o170000)
     # is absent, inject S_IFREG (0o100000) before shifting into position.
     var _mode = stat.mode
-    if (_mode & 0xF000) == 0 {   # S_IFMT mask — no file-type bits present
-      _mode |= 0x8000             # S_IFREG — mark as regular file
+    if (_mode & 0xF000) == 0 {   # S_IFMT mask: no file-type bits present
+      _mode |= 0x8000             # S_IFREG: mark as regular file
     }
     var permission = (_mode << 16) >>> 0
 
@@ -744,7 +744,7 @@ class ZipArchive {
     var content = f.read()
     var r = self.create_file(destination, content, f.stats())
     # content is ours (read from a file we opened here), so we dispose
-    # it ourselves — create_file() never disposes a bytes argument it
+    # it ourselves: create_file() never disposes a bytes argument it
     # was handed, only a string one it converted internally.
     content.dispose()
 
@@ -776,11 +776,11 @@ class ZipArchive {
               destination = destination[1,]
           }
 
-          # check file blacklist — skip this entry, do not abort the whole walk
+          # check file blacklist: skip this entry, do not abort the whole walk
           if file_blacklist.contains(destination)
             continue
 
-          # check ext blacklist — skip this entry, do not abort the whole walk
+          # check ext blacklist: skip this entry, do not abort the whole walk
           var skip = false
           for ext in ext_blacklist {
             if source.ends_with('.${ext}') {
@@ -912,7 +912,7 @@ class ZipArchive {
 			# Check for value block after compressed data.
 			# The data descriptor is either 12 bytes (no signature, crc+sizes
       # only) or 16 bytes (an optional PK\x07\x08 signature followed by
-      # the same values) — 20 bytes instead of 12 in zip64, since the
+      # the same values): 20 bytes instead of 12 in zip64, since the
       # two size fields grow from 4 to 8 bytes each. Either way, the
       # value block itself is always the LAST `value_size` bytes of
       # filedata regardless of whether the signature precedes it, so
@@ -951,7 +951,7 @@ class ZipArchive {
 
       # Bound filedata to exactly the compressed payload. It was sliced
       # out by searching for the NEXT entry's PK\x03\x04 signature (or,
-      # for the last entry in the archive, by nothing at all — the raw
+      # for the last entry in the archive, by nothing at all: the raw
       # bytes ran straight into the central directory that follows),
       # neither of which reliably lands on the true end of this entry's
       # data. size_compressed is already known at this point (from the
@@ -970,7 +970,7 @@ class ZipArchive {
 
 				using method {
 					when 0 {
-            # Stored — not compressed, continue as is
+            # Stored: not compressed, continue as is
             decoded = filedata.clone()
           }
 					when 8 { # Deflated
@@ -997,18 +997,18 @@ class ZipArchive {
 						entrya['error'] = 'Decompression failed.'
 					} else if checksum.crc32(decoded) != unpackeda['crc'] {
             # A CRC32 mismatch means the extracted bytes don't match what
-            # the archive claims they should be — corruption or tampering.
+            # the archive claims they should be: corruption or tampering.
             # Flagged per-entry (see ZipItem.error) rather than aborting
             # the whole read(), so the rest of a large archive can still
             # come through; a caller wanting stricter behavior can check
             # .error across zip_file.files and refuse to use any of it.
             #
-            # The declared uncompressed size isn't checked here — unlike
+            # The declared uncompressed size isn't checked here: unlike
             # CRC32 it's genuinely unreliable across different zip writers
-            # — but CRC32 is a real, standard integrity control and
+            #: but CRC32 is a real, standard integrity control and
             # skipping it entirely (as this used to) means a corrupted or
             # deliberately tampered entry would extract silently.
-						entrya['error'] = 'CRC32 checksum does not match the value given in the header — the entry may be corrupted or tampered with.'
+						entrya['error'] = 'CRC32 checksum does not match the value given in the header: the entry may be corrupted or tampered with.'
 					}
 				}
 			}
@@ -1019,8 +1019,8 @@ class ZipArchive {
       entrya['filemtime'] = date(
         ((file_date & 0xfe00) >>  9) + 1980, # year
         (file_date  & 0x01e0) >>  5,         # month
-        (file_date  & 0x001f),               # day — DOS stores 1-31 directly, no adjustment needed
-        (file_time  & 0xf800) >> 11,         # hour — 0-23 direct, no adjustment needed
+        (file_date  & 0x001f),               # day: DOS stores 1-31 directly, no adjustment needed
+        (file_time  & 0xf800) >> 11,         # hour: 0-23 direct, no adjustment needed
         (file_time  & 0x07e0) >>  5,         # minute
         (file_time  & 0x001f) <<  1          # second
       )

@@ -76,10 +76,10 @@ def _ec_coord_len(alg) {
  * RSA private key for PS256/384/512, a PEM-encoded EC private key
  * for ES256/384, or a PEM-encoded Ed25519 private key for EdDSA.
  *
- * @param dict header — must contain at minimum an 'alg' key
+ * @param dict header: must contain at minimum an 'alg' key
  * @param dict payload
  * @param string secret
- * @param ?dict options — see `sign()` for supported option keys
+ * @param ?dict options: see `sign()` for supported option keys
  * @return string
  * @throws AlgorithmError
  * @throws JwtError
@@ -211,14 +211,14 @@ def decode(token) {
  * | Key            | Type          | Default | Description                              |
  * |----------------|---------------|---------|------------------------------------------|
  * | algorithm      | string        | HS256   | Signing algorithm                        |
- * | expires_in     | number        | —       | Token lifetime in seconds                |
- * | not_before     | number        | —       | Seconds until token becomes valid        |
- * | issuer         | string        | —       | Value for the `iss` claim                |
- * | subject        | string        | —       | Value for the `sub` claim                |
- * | audience       | string\|list  | —       | Value for the `aud` claim                |
+ * | expires_in     | number        |:       | Token lifetime in seconds                |
+ * | not_before     | number        |:       | Seconds until token becomes valid        |
+ * | issuer         | string        |:       | Value for the `iss` claim                |
+ * | subject        | string        |:       | Value for the `sub` claim                |
+ * | audience       | string\|list  |:       | Value for the `aud` claim                |
  * | jwt_id         | string        | auto    | Value for the `jti` claim                |
  * | no_timestamp   | bool          | false   | Omit the `iat` claim when true           |
- * | header         | dict          | —       | Extra header parameters                  |
+ * | header         | dict          |:       | Extra header parameters                  |
  * | allow_none     | bool          | false   | Permit the `none` algorithm              |
  *
  * ### Example
@@ -324,17 +324,17 @@ def sign(payload, secret, options) {
  *
  * Verification performs the following steps in order:
  *
- * 1. Structural decode — ensures the token is well-formed.
- * 2. Algorithm check — rejects algorithms not in the
+ * 1. Structural decode: ensures the token is well-formed.
+ * 2. Algorithm check: rejects algorithms not in the
  *    options.algorithms list.
- * 3. Signature verification — recomputes and compares the
+ * 3. Signature verification: recomputes and compares the
  *    signature using a constant-time comparison for HMAC
  *    algorithms, or the underlying public-key verification for
  *    PS/ES/EdDSA algorithms.
- * 4. Temporal claim validation — checks exp, nbf, and iat
+ * 4. Temporal claim validation: checks exp, nbf, and iat
  *    against the current clock, applying clock_tolerance leeway
  *    where configured.
- * 5. Registered claim validation — checks iss, aud, and sub when
+ * 5. Registered claim validation: checks iss, aud, and sub when
  *    the corresponding options are set.
  *
  * An error is raised at the first failure; verification does not
@@ -345,9 +345,9 @@ def sign(payload, secret, options) {
  * | Key               | Type          | Default             | Description                                    |
  * |-------------------|---------------|---------------------|------------------------------------------------|
  * | algorithms        | list          | [HS256,HS384,HS512] | Accepted algorithm whitelist                   |
- * | issuer            | string        | —                   | Required `iss` claim value                     |
- * | subject           | string        | —                   | Required `sub` claim value                     |
- * | audience          | string\|list  | —                   | Required `aud` claim value                     |
+ * | issuer            | string        |:                   | Required `iss` claim value                     |
+ * | subject           | string        |:                   | Required `sub` claim value                     |
+ * | audience          | string\|list  |:                   | Required `aud` claim value                     |
  * | clock_tolerance   | number        | 0                   | Leeway in seconds for exp, nbf, and iat        |
  * | ignore_expiration | bool          | false               | Skip `exp` validation                          |
  * | ignore_not_before | bool          | false               | Skip `nbf` validation                          |
@@ -389,7 +389,7 @@ def verify(token, secret, options) {
     options = {}
   }
 
-  # Step 1 — decode structure
+  # Step 1: decode structure
   var tok = decode(token)
 
   var alg = tok.header.get('alg', '')
@@ -397,7 +397,7 @@ def verify(token, secret, options) {
     raise MalformedTokenError('malformed token: missing alg header parameter')
   }
 
-  # Step 2 — algorithm whitelist
+  # Step 2: algorithm whitelist
   var accepted = options.get('algorithms', [HS256, HS384, HS512])
   if !is_list(accepted) { accepted = [accepted] }
 
@@ -414,7 +414,7 @@ def verify(token, secret, options) {
     )
   }
 
-  # Step 3 — signature verification
+  # Step 3: signature verification
   var parts = token.split('.')
   var signing_input = parts[0] + '.' + parts[1]
   var provided_sig  = parts[2]
@@ -456,7 +456,7 @@ def _finish_verify(tok, options) {
 
   tok.set_leeway(tolerance)
 
-  # Step 4 — temporal claims
+  # Step 4: temporal claims
 
   if !options.get('ignore_expiration', false) and payload.contains('exp') {
     if !is_number(payload['exp']) {
@@ -497,7 +497,7 @@ def _finish_verify(tok, options) {
     }
   }
 
-  # Step 5 — registered claim validation
+  # Step 5: registered claim validation
 
   if options.contains('issuer') {
     if !payload.contains('iss') {

@@ -8,7 +8,7 @@
  * between instructions. The interpreter checks on every instruction;
  * compiled code only checks where the compiler put a safepoint, and a
  * loop whose body cannot allocate used to get none at all. So once a
- * loop like `while true { }` tiered up, a handler could never run —
+ * loop like `while true { }` tiered up, a handler could never run:
  * and since installing one replaces the default terminate behaviour,
  * Ctrl+C stopped working entirely.
  *
@@ -111,7 +111,7 @@ def signal_self_later(number) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  os.on_signal — test suite'
+echo '  os.on_signal: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------

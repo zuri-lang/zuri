@@ -23,7 +23,7 @@ class MimeFormat {
    * @param ?list header: A list of one or more candidate magic-byte
    *    signatures, each itself a list of numbers (`0`-`255`) or
    *    `nil` for a byte position to skip (a size field embedded in
-   *    the middle of a signature, say — see the `.webp` entry in
+   *    the middle of a signature, say: see the `.webp` entry in
    *    this module's own table for an example). `nil` when name-only
    *    detection is all that's available for this format.
    * @note only the first 16 bytes of a file's header will ever be
@@ -400,8 +400,8 @@ var _mimes = {
  * in it's path.
  *
  * When `name` has more than one dot-separated suffix (`archive.
- * tar.gz`), the longest registered extension wins — `.tar.gz` if
- * it's registered, falling back to `.gz` otherwise — rather than
+ * tar.gz`), the longest registered extension wins: `.tar.gz` if
+ * it's registered, falling back to `.gz` otherwise: rather than
  * whichever single-suffix entry happens to match first.
  *
  * Example,
@@ -591,7 +591,7 @@ def extend(extension: string, format: MimeFormat, overwrite: ?bool) {
 
 /**
  * Looks up the typical file extension (including the leading `.`)
- * registered for a given mime type — the reverse of
+ * registered for a given mime type: the reverse of
  * `detect_from_name()`.
  *
  * Example,

@@ -26,7 +26,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  log module — test suite'
+echo '  log module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # A capturing transport lets assertions inspect exactly what would
@@ -131,7 +131,7 @@ log.remove_transport(fc)
 ok('a trailing dict argument on a flat log call renders as structured fields')
 
 # ---------------------------------------------------------------------------
-# Logger — namespacing, identity caching, bind(), child()
+# Logger: namespacing, identity caching, bind(), child()
 # ---------------------------------------------------------------------------
 var fc2 = FormatCapture()
 log.add_transport(fc2)
@@ -231,7 +231,7 @@ assert raises(@() => t.set_formatter('not a function')), 'set_formatter() must r
 ok('Transport getters/setters all work and chain correctly')
 
 # ---------------------------------------------------------------------------
-# can_log() — level floor, level ceiling, enable/disable, None bypass
+# can_log(): level floor, level ceiling, enable/disable, None bypass
 # ---------------------------------------------------------------------------
 var cl = CapturingTransport()
 cl.set_level(log.Warning)
@@ -262,7 +262,7 @@ log.set_level(log.None)
 ok('can_log() enforces the level floor, ceiling, enable/disable, the global floor, and the None bypass')
 
 # ---------------------------------------------------------------------------
-# format() — every show_time/show_name/show_level combination
+# format(): every show_time/show_name/show_level combination
 # ---------------------------------------------------------------------------
 var ft3 = CapturingTransport()
 ft3.show_time(false)
@@ -320,7 +320,7 @@ assert throwaway.records.length() == 1, 'remove_transport() must actually deregi
 ok('module-level set_name()/default_transport()/remove_transport() all work correctly')
 
 # ---------------------------------------------------------------------------
-# ConsoleTransport — set_colors()
+# ConsoleTransport: set_colors()
 # ---------------------------------------------------------------------------
 var console_probe = ConsoleTransport()
 assert console_probe.set_colors(false) == console_probe, 'set_colors() must return self for chaining'

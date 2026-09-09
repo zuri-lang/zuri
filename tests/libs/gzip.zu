@@ -34,7 +34,7 @@ def fresh_dir(path) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.gzip module — test suite'
+echo '  compress.gzip module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 fresh_dir(_root)

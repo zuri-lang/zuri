@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.lz4 module — test suite'
+echo '  compress.lz4 module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ ok('binary content (all 256 byte values) survives compress/decompress unchanged'
 # (frame header/magic + blocks), while the one-shot compress()/
 # decompress() below speak a totally different, non-standard format
 # (a single raw block with the uncompressed size prepended). The two
-# are NOT interchangeable — see the module docs. Streaming output must
+# are NOT interchangeable: see the module docs. Streaming output must
 # be read back with Lz4Decoder, never the one-shot decompress().
 var enc = lz4.Lz4Encoder()
 enc.write('hello ')
@@ -78,7 +78,7 @@ assert lz4.Lz4Decoder(stream2).read_as_string() == 'all at once', 'write_all() m
 ok('Lz4Encoder.write_all()')
 
 assert raises(@() { lz4.decompress(stream_compressed) }),
-  'the one-shot decompress() must not be able to parse Lz4Encoder frame-format output — the two formats are genuinely incompatible, not just differently-tested'
+  'the one-shot decompress() must not be able to parse Lz4Encoder frame-format output: the two formats are genuinely incompatible, not just differently-tested'
 ok('one-shot decompress() and the streaming frame format are confirmed mutually incompatible')
 
 var dec = lz4.Lz4Decoder(stream_compressed)
@@ -102,7 +102,7 @@ assert raises(@() { lz4.Lz4Decoder('not an lz4 frame at all'.to_bytes()).read_as
 ok('Lz4Decoder rejects malformed input')
 
 # Note: unlike Gzip/Bzip2/Brotli/Deflate, Lz4Encoder/Lz4Decoder have no
-# reset()/finished()/total_in()/total_out()/available() — this class
+# reset()/finished()/total_in()/total_out()/available(): this class
 # wraps lz4_flex's frame types directly with no Zuri-side state
 # tracking. A known, pre-existing gap; not something this test suite
 # works around silently.

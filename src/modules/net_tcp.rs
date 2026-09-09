@@ -1,5 +1,5 @@
 use std::io::{Error, Read, Write};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use crate::builtins::enforce::{
@@ -20,6 +20,7 @@ pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
 fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
     ("tcp_new", native(vm, "@new", 0, false, tcp_new)),
+    ("tcp_resolve", native(vm, "resolve", 1, false, tcp_resolve)),
     ("tcp_connect", native(vm, "connect", 1, true, tcp_connect)),
     ("tcp_bind", native(vm, "bind", 2, false, tcp_bind)),
     ("tcp_accept", native(vm, "accept", 1, false, tcp_accept)),
@@ -355,6 +356,33 @@ impl ZuriTcp {
 fn tcp_new(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
   Ok(ctx.heap().alloc_ptr(TCP_STREAM, ZuriTcp::new()))
+}
+
+/// Resolves a `host:port` string to every socket address it names.
+///
+/// This is the only way Zuri code can turn a hostname into a concrete
+/// address, which `TcpStream.connect()` needs before it can accept a
+/// connect timeout (`TcpStream::connect_timeout` takes a parsed
+/// `SocketAddr`, not a name).
+fn tcp_resolve(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::String);
+
+  let address = ctx.args[0].as_str().to_string();
+  let resolved = address.to_socket_addrs().map_err(|e| e.to_string())?;
+
+  let strings: Vec<String> = resolved.map(|addr| addr.to_string()).collect();
+
+  if strings.is_empty() {
+    return Err(format!("could not resolve {address}"));
+  }
+
+  let values: Vec<Value> = strings
+    .into_iter()
+    .map(|s| ctx.heap().alloc_string(s))
+    .collect();
+
+  Ok(ctx.heap().alloc_list(values))
 }
 
 fn tcp_connect(ctx: &mut ZuriContext) -> Result<Value, String> {

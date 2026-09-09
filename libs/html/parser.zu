@@ -4314,7 +4314,7 @@ def _same_formatting_shape(a, b) {
  *
  * _options_ takes:
  *
- * - `scripting` (bool, default `false`) — parse as though scripting
+ * - `scripting` (bool, default `false`): parse as though scripting
  *   were enabled. With the default, `<noscript>` content is parsed as
  *   real markup, which is what you want when reading a page rather
  *   than rendering it. Nothing is ever executed either way.

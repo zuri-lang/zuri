@@ -80,7 +80,7 @@
  * ```
  *
  * `required_if()` (like the other conditional-requirement functions
- * below) must come before `.string()` in the chain — see "Sequential
+ * below) must come before `.string()` in the chain: see "Sequential
  * Validation" further down for why the order here matters.
  *
  * ---

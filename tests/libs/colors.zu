@@ -28,11 +28,11 @@ def close(a, b, tolerance) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  colors module — test suite'
+echo '  colors module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
-# rgb_to_hsl — saturation formula (2026-08-29 fix)
+# rgb_to_hsl: saturation formula (2026-08-29 fix)
 # ---------------------------------------------------------------------------
 var hsl_dark = colors.rgb_to_hsl(0, 128, 0)
 assert close(hsl_dark[1], 100, 0.5), 'rgb_to_hsl() saturation for l<=0.5 must use delta/(max+min), not the old always-2-2l formula'
@@ -41,7 +41,7 @@ assert hsl_light[1] > 0 and hsl_light[1] <= 100, 'rgb_to_hsl() saturation for l>
 ok('rgb_to_hsl() computes correct saturation on both sides of l=0.5')
 
 # ---------------------------------------------------------------------------
-# hwb_to_rgb — sector index (2026-08-29 fix)
+# hwb_to_rgb: sector index (2026-08-29 fix)
 # ---------------------------------------------------------------------------
 var hwb_rgb = colors.hwb_to_rgb(322, 5, 60)
 assert hwb_rgb[0] >= 0 and hwb_rgb[0] <= 255 and
@@ -50,7 +50,7 @@ assert hwb_rgb[0] >= 0 and hwb_rgb[0] <= 255 and
 ok('hwb_to_rgb() sector index no longer overflows the interpolation factor')
 
 # ---------------------------------------------------------------------------
-# ansi256_to_ansi — bit-packing (2026-08-29 fix)
+# ansi256_to_ansi: bit-packing (2026-08-29 fix)
 # ---------------------------------------------------------------------------
 iter var i = 0; i < 16; i++ {
   var expected = i < 8 ? 30 + i : 90 + (i - 8)
@@ -61,7 +61,7 @@ assert colors.ansi256_to_ansi(196) == 91, 'ansi256_to_ansi() must not double-cou
 ok('ansi256_to_ansi() bit-packing matches the canonical reference for direct and cube-mapped codes')
 
 # ---------------------------------------------------------------------------
-# rgb_to_hex / hex_to_rgb — nil bug, zero-padding, case, #, byte order
+# rgb_to_hex / hex_to_rgb: nil bug, zero-padding, case, #, byte order
 # ---------------------------------------------------------------------------
 assert colors.rgb_to_hex(255, 0, 0) == 'ff0000', 'rgb_to_hex() must never embed the literal text "nil"'
 assert colors.rgb_to_hex(0, 5, 255) == '0005ff', 'rgb_to_hex() must zero-pad every channel to two digits'
@@ -82,7 +82,7 @@ assert colors.hex_to_rgb(rt) == [103, 13, 69, 1], 'rgb_to_hex() and hex_to_rgb()
 ok('rgb_to_hex()/hex_to_rgb() round-trip')
 
 # ---------------------------------------------------------------------------
-# hsv_to_rgb / hsl_to_rgb — hue wraparound (2026-08-29 fix)
+# hsv_to_rgb / hsl_to_rgb: hue wraparound (2026-08-29 fix)
 # ---------------------------------------------------------------------------
 assert colors.hsv_to_rgb(-30, 100, 100) != nil, 'hsv_to_rgb() must wrap a negative hue instead of returning nil'
 assert colors.hsv_to_rgb(-30, 100, 100) == colors.hsv_to_rgb(330, 100, 100), 'hsv_to_rgb() negative hue must wrap to the same result as its positive equivalent'
@@ -94,7 +94,7 @@ assert raises(@() => colors.hsl_to_rgb(10, 150, 50)), 'hsl_to_rgb() must still r
 ok('hsl_to_rgb() wraps hue but still validates saturation/lightness')
 
 # ---------------------------------------------------------------------------
-# lab_to_rgb — new inverse conversion
+# lab_to_rgb: new inverse conversion
 # ---------------------------------------------------------------------------
 var lab = colors.rgb_to_lab(103, 13, 69)
 var lab_back = colors.lab_to_rgb(lab[0], lab[1], lab[2])
@@ -103,7 +103,7 @@ assert close(lab_back[0], 103, 1) and close(lab_back[1], 13, 1) and close(lab_ba
 ok('lab_to_rgb() round-trips with rgb_to_lab()')
 
 # ---------------------------------------------------------------------------
-# Color manipulation — new
+# Color manipulation: new
 # ---------------------------------------------------------------------------
 var base = '#336699'
 var lighter = colors.lighten(base, 20)
@@ -148,7 +148,7 @@ assert opaque.length() == 6, 'lighten() must not add an alpha suffix to an alrea
 ok('color manipulation functions preserve alpha only when the input actually has any')
 
 # ---------------------------------------------------------------------------
-# contrast_ratio — new
+# contrast_ratio: new
 # ---------------------------------------------------------------------------
 assert close(colors.contrast_ratio('#000000', '#ffffff'), 21, 0.01), 'contrast_ratio() black vs white must be 21'
 assert colors.contrast_ratio('#336699', '#336699') == 1, 'contrast_ratio() of a color against itself must be 1'
@@ -157,7 +157,7 @@ assert colors.contrast_ratio('#000000', '#ffffff') == colors.contrast_ratio('#ff
 ok('contrast_ratio() matches the WCAG formula at its known extremes')
 
 # ---------------------------------------------------------------------------
-# style / text_color / background — 2026-08-30: none of these three
+# style / text_color / background: 2026-08-30: none of these three
 # lookup tables, nor text() itself, had ever been touched by a test.
 # ---------------------------------------------------------------------------
 assert colors.style.reset == 0 and colors.style.bold == 1, 'style table must expose the standard ANSI SGR codes'
@@ -184,7 +184,7 @@ assert nested == '\x1b[32m\x1b[01mhi\x1b[00m\x1b[00m', 'text() must nest cleanly
 ok('text() nests correctly')
 
 # ---------------------------------------------------------------------------
-# rgb_to_ansi256 — direct assertions (previously only exercised
+# rgb_to_ansi256: direct assertions (previously only exercised
 # indirectly through other functions' own tests)
 # ---------------------------------------------------------------------------
 assert colors.rgb_to_ansi256(0, 0, 0) == 16, 'rgb_to_ansi256() of black must be the ANSI-256 black cube entry'
@@ -198,7 +198,7 @@ assert raises(@() { colors.ansi256_to_ansi('x') }), 'ansi256_to_ansi() must reje
 ok('ansi256_to_ansi() validates its argument')
 
 # ---------------------------------------------------------------------------
-# hex_to_ansi256 / hex_to_ansi / hex — the ANSI-256 -> ANSI-16 -> "pick
+# hex_to_ansi256 / hex_to_ansi / hex: the ANSI-256 -> ANSI-16 -> "pick
 # the best terminal-compatible representation" chain, previously
 # untested at every link
 # ---------------------------------------------------------------------------

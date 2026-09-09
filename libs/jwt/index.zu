@@ -8,8 +8,8 @@
  *
  * Supported algorithms:
  *
- * - HS256/HS384/HS512 — HMAC with SHA-256/384/512
- * - PS256/PS384/PS512 — RSASSA-PSS with SHA-256/384/512. This module
+ * - HS256/HS384/HS512: HMAC with SHA-256/384/512
+ * - PS256/PS384/PS512: RSASSA-PSS with SHA-256/384/512. This module
  *   deliberately supports PS-family, not RS-family (RSASSA-PKCS1-v1_5)
  *   algorithms, because they're older, deterministic standard that 
  *   lacks a formal security proof and because they're mostly 
@@ -19,10 +19,10 @@
  *   rigidity has led to historical implementation flaws in encryption 
  *   (like Bleichenbacher attacks), making PSS cleaner and safer against 
  *   misuse.
- * - ES256 — ECDSA P-256 with SHA-256
- * - ES384 — ECDSA P-384 with SHA-384
- * - EdDSA — Ed25519 (RFC 8037)
- * - none — Unsecured token (no signature, explicit opt-in required)
+ * - ES256: ECDSA P-256 with SHA-256
+ * - ES384: ECDSA P-384 with SHA-384
+ * - EdDSA: Ed25519 (RFC 8037)
+ * - none: Unsecured token (no signature, explicit opt-in required)
  *
  * Signature verification uses a constant-time comparison for the
  * HMAC algorithms (to prevent timing attacks against the shared

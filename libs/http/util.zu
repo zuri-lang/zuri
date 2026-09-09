@@ -1,0 +1,689 @@
+#!-- part of the http module
+
+import crypto
+
+var _DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+var _MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+var _HEX_DIGITS = '0123456789abcdef'
+
+/**
+ * Finds the first occurrence of the byte sequence `needle` in
+ * `haystack`, at or after `from`, or `-1` when it does not occur.
+ *
+ * The built-in `bytes.index_of()` searches for a single byte, which
+ * is not enough for the delimiters HTTP is full of - CRLF, the blank
+ * line ending a head, a multipart boundary. This finds candidate
+ * positions with that fast single-byte search and only then compares
+ * the rest.
+ *
+ * @param bytes haystack
+ * @param bytes needle
+ * @param ?number from
+ * @returns number
+ */
+def find_bytes(haystack, needle, from) {
+  if from == nil {
+    from = 0
+  }
+
+  var needle_length = needle.length()
+  if needle_length == 0 {
+    return from
+  }
+
+  var limit = haystack.length() - needle_length
+  if limit < from {
+    return -1
+  }
+
+  var first = needle[0]
+  var at = from
+
+  while at <= limit {
+    var candidate = haystack.index_of(first, at)
+
+    if candidate == -1 or candidate > limit {
+      return -1
+    }
+
+    if haystack[candidate, candidate + needle_length] == needle {
+      return candidate
+    }
+
+    at = candidate + 1
+  }
+
+  return -1
+}
+
+/**
+ * `n` as lowercase hexadecimal, with no `0x` prefix and no padding.
+ *
+ * @param number n
+ * @returns string
+ */
+def to_hex(n: number) {
+  if n == 0 {
+    return '0'
+  }
+
+  var out = ''
+  var value = n
+
+  while value > 0 {
+    out = _HEX_DIGITS[value % 16] + out
+    value = value // 16
+  }
+
+  return out
+}
+
+# Days from 1970-01-01 to the start of the given year, using the
+# civil-calendar algorithm rather than a lookup table so dates outside
+# any particular range still work.
+def _days_from_civil(year, month, day) {
+  var y = month <= 2 ? year - 1 : year
+  var era = (y >= 0 ? y : y - 399) // 400
+  var yoe = y - era * 400
+  var doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) // 5 + day - 1
+  var doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+
+  return era * 146097 + doe - 719468
+}
+
+def _civil_from_days(days) {
+  var z = days + 719468
+  var era = (z >= 0 ? z : z - 146096) // 146097
+  var doe = z - era * 146097
+  var yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+  var y = yoe + era * 400
+  var doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+  var mp = (5 * doy + 2) // 153
+  var d = doy - (153 * mp + 2) // 5 + 1
+  var m = mp + (mp < 10 ? 3 : -9)
+
+  return [m <= 2 ? y + 1 : y, m, d]
+}
+
+def _pad2(n) {
+  return n < 10 ? '0${n}' : '${n}'
+}
+
+/**
+ * Formats a Unix timestamp as an IMF-fixdate, the one date format RFC
+ * 9110 §5.6.7 requires every HTTP sender to produce:
+ * `Sun, 06 Nov 1994 08:49:37 GMT`.
+ *
+ * Always UTC, always fixed-width, never localised. The two obsolete
+ * formats are accepted by `parse_date()` but never emitted.
+ *
+ * @param ?number timestamp: seconds since the epoch; defaults to now
+ * @returns string
+ */
+def format_date(timestamp) {
+  if timestamp == nil {
+    timestamp = time()
+  }
+
+  var seconds = timestamp // 1
+  var days = seconds // 86400
+  var rest = seconds - days * 86400
+
+  var civil = _civil_from_days(days)
+  var weekday = (days + 4) % 7
+  if weekday < 0 {
+    weekday += 7
+  }
+
+  var hour = rest // 3600
+  var minute = (rest % 3600) // 60
+  var second = rest % 60
+
+  return '${_DAY_NAMES[weekday]}, ${_pad2(civil[2])} ${_MONTH_NAMES[civil[1] - 1]} ' +
+    '${civil[0]} ${_pad2(hour)}:${_pad2(minute)}:${_pad2(second)} GMT'
+}
+
+def _month_index(name) {
+  iter var i = 0; i < 12; i++ {
+    if _MONTH_NAMES[i].lower() == name.lower() {
+      return i + 1
+    }
+  }
+  return -1
+}
+
+def _all_digits(text) {
+  if text.is_empty() {
+    return false
+  }
+  iter var i = 0; i < text.length(); i++ {
+    var c = text[i].ord()
+    if c < 48 or c > 57 {
+      return false
+    }
+  }
+  return true
+}
+
+def _parse_clock(text) {
+  var parts = text.split(':')
+  if parts.length() != 3 {
+    return nil
+  }
+  for part in parts {
+    if part.length() != 2 or !_all_digits(part) {
+      return nil
+    }
+  }
+  return [parts[0].to_number(), parts[1].to_number(), parts[2].to_number()]
+}
+
+/**
+ * Parses any of the three date formats RFC 9110 §5.6.7 requires a
+ * recipient to accept, and returns the Unix timestamp.
+ *
+ * The two obsolete ones (RFC 850's `Sunday, 06-Nov-94 08:49:37 GMT`
+ * and asctime's `Sun Nov  6 08:49:37 1994`) still appear in the wild
+ * from old servers and caches, so a client that only understands
+ * IMF-fixdate will silently mishandle their `Expires` and
+ * `Last-Modified`.
+ *
+ * Two-digit years follow the usual rule: a year that would place the
+ * date more than fifty years in the future is read as the previous
+ * century.
+ *
+ * @param string text
+ * @returns ?number: the timestamp, or `nil` if the date is unparseable
+ */
+def parse_date(text: string) {
+  var value = text.trim()
+  if value.is_empty() {
+    return nil
+  }
+
+  # Collapse the run of spaces asctime uses to pad a single-digit day.
+  var fields = []
+  for field in value.replace('  ', ' ', false).replace(',', ' ', false).split(' ') {
+    if field {
+      fields.append(field)
+    }
+  }
+
+  var day, month, year, clock
+
+  if fields.length() >= 4 and fields[1].contains('-') {
+    # RFC 850: Sunday, 06-Nov-94 08:49:37 GMT
+    var date_parts = fields[1].split('-')
+    if date_parts.length() != 3 {
+      return nil
+    }
+
+    day = date_parts[0]
+    month = _month_index(date_parts[1])
+    year = date_parts[2]
+    clock = _parse_clock(fields[2])
+  } else if fields.length() >= 5 and _all_digits(fields[1]) {
+    # IMF-fixdate: Sun, 06 Nov 1994 08:49:37 GMT
+    day = fields[1]
+    month = _month_index(fields[2])
+    year = fields[3]
+    clock = _parse_clock(fields[4])
+  } else if fields.length() >= 5 {
+    # asctime: Sun Nov  6 08:49:37 1994
+    month = _month_index(fields[1])
+    day = fields[2]
+    clock = _parse_clock(fields[3])
+    year = fields[4]
+  } else {
+    return nil
+  }
+
+  if month < 1 or clock == nil or !_all_digits(day) or !_all_digits(year) {
+    return nil
+  }
+
+  var year_number = year.to_number()
+  if year.length() == 2 {
+    year_number += year_number < 70 ? 2000 : 1900
+  }
+
+  var day_number = day.to_number()
+  if day_number < 1 or day_number > 31 {
+    return nil
+  }
+
+  var days = _days_from_civil(year_number, month, day_number)
+
+  return days * 86400 + clock[0] * 3600 + clock[1] * 60 + clock[2]
+}
+
+/**
+ * Splits a header value that carries parameters - a media type, a
+ * `Content-Disposition`, a challenge - into its leading value and a
+ * dictionary of lowercased parameter names to values.
+ *
+ * Quoted strings are unquoted and their backslash escapes resolved.
+ * RFC 5987 extended parameters (`filename*=UTF-8''na%C3%AFve.txt`)
+ * are decoded and take precedence over the plain form of the same
+ * name, which is what lets a non-ASCII upload filename survive.
+ *
+ * ```zuri
+ * parse_parameters('text/html; charset=utf-8')
+ * # ['text/html', {charset: 'utf-8'}]
+ * ```
+ *
+ * @param string value
+ * @returns list: `[value, parameters]`
+ */
+def parse_parameters(value: string) {
+  var parts = _split_unquoted(value, ';')
+  var head = parts.length() > 0 ? parts[0].trim() : ''
+  var params = {}
+  var extended = {}
+
+  iter var i = 1; i < parts.length(); i++ {
+    var part = parts[i].trim()
+    if part.is_empty() {
+      continue
+    }
+
+    var equals = part.index_of('=')
+    if equals < 0 {
+      params[part.lower()] = ''
+      continue
+    }
+
+    var name = part[0, equals].trim().lower()
+    var raw = part[equals + 1,].trim()
+
+    if name.ends_with('*') {
+      extended[name[0, name.length() - 1]] = _decode_extended(raw)
+    } else {
+      params[name] = unquote(raw)
+    }
+  }
+
+  for name, decoded in extended {
+    if decoded != nil {
+      params[name] = decoded
+    }
+  }
+
+  return [head, params]
+}
+
+# Splits on `separator`, but not on separators that fall inside a
+# quoted string - `Content-Type: text/plain; name="a;b"` is one
+# parameter, not two.
+def _split_unquoted(value, separator) {
+  var parts = []
+  var current = ''
+  var in_quotes = false
+  var escaped = false
+
+  iter var i = 0; i < value.length(); i++ {
+    var c = value[i]
+
+    if escaped {
+      current += c
+      escaped = false
+      continue
+    }
+
+    if in_quotes and c == '\\' {
+      current += c
+      escaped = true
+      continue
+    }
+
+    if c == '"' {
+      in_quotes = !in_quotes
+      current += c
+      continue
+    }
+
+    if c == separator and !in_quotes {
+      parts.append(current)
+      current = ''
+      continue
+    }
+
+    current += c
+  }
+
+  parts.append(current)
+
+  return parts
+}
+
+/**
+ * Removes the surrounding double quotes from a header value and
+ * resolves its backslash escapes. A value that isn't quoted comes
+ * back unchanged.
+ *
+ * @param string value
+ * @returns string
+ */
+def unquote(value: string) {
+  if value.length() < 2 or !value.starts_with('"') or !value.ends_with('"') {
+    return value
+  }
+
+  var inner = value[1, value.length() - 1]
+  var out = ''
+  var escaped = false
+
+  iter var i = 0; i < inner.length(); i++ {
+    var c = inner[i]
+
+    if escaped {
+      out += c
+      escaped = false
+    } else if c == '\\' {
+      escaped = true
+    } else {
+      out += c
+    }
+  }
+
+  return out
+}
+
+/**
+ * Wraps `value` in double quotes, escaping any quote or backslash it
+ * contains, so it can be used as an RFC 9110 quoted-string.
+ *
+ * @param string value
+ * @returns string
+ */
+def quote(value: string) {
+  var out = '"'
+
+  iter var i = 0; i < value.length(); i++ {
+    var c = value[i]
+    if c == '"' or c == '\\' {
+      out += '\\'
+    }
+    out += c
+  }
+
+  return out + '"'
+}
+
+# Decodes an RFC 5987 ext-value: charset'language'percent-encoded-text.
+def _decode_extended(raw) {
+  var parts = raw.split("'")
+  if parts.length() < 3 {
+    return nil
+  }
+
+  var charset = parts[0].lower()
+  if charset != 'utf-8' and charset != 'iso-8859-1' and charset != '' {
+    return nil
+  }
+
+  var encoded = "'".join(parts[2,])
+  var out = bytes(0)
+
+  iter var i = 0; i < encoded.length(); i++ {
+    var c = encoded[i]
+
+    if c == '%' and i + 2 < encoded.length() {
+      var high = _hex_value(encoded[i + 1])
+      var low = _hex_value(encoded[i + 2])
+
+      if high < 0 or low < 0 {
+        return nil
+      }
+
+      out.append(high * 16 + low)
+      i += 2
+    } else {
+      out.append(c.ord())
+    }
+  }
+
+  var text = out.to_string()
+  out.dispose()
+
+  return text
+}
+
+def _hex_value(c) {
+  var code = c.ord()
+
+  if code >= 48 and code <= 57 {
+    return code - 48
+  }
+  if code >= 97 and code <= 102 {
+    return code - 87
+  }
+  if code >= 65 and code <= 70 {
+    return code - 55
+  }
+
+  return -1
+}
+
+/**
+ * Percent-decodes a URI component, turning `+` into a space only when
+ * `plus_as_space` is set - which is right for a query string or a form
+ * body, and wrong for a path, where `+` is a literal plus.
+ *
+ * Invalid escapes are left as-is rather than raising: a malformed `%`
+ * in a path is a 404 waiting to happen, not a reason to drop the
+ * connection.
+ *
+ * @param string text
+ * @param ?bool plus_as_space
+ * @returns string
+ */
+def percent_decode(text: string, plus_as_space: ?bool) {
+  if text.index_of('%') < 0 and (!plus_as_space or text.index_of('+') < 0) {
+    return text
+  }
+
+  var out = bytes(0)
+
+  iter var i = 0; i < text.length(); i++ {
+    var c = text[i]
+
+    if c == '%' and i + 2 < text.length() {
+      var high = _hex_value(text[i + 1])
+      var low = _hex_value(text[i + 2])
+
+      if high >= 0 and low >= 0 {
+        out.append(high * 16 + low)
+        i += 2
+        continue
+      }
+    }
+
+    if plus_as_space and c == '+' {
+      out.append(32)
+      continue
+    }
+
+    out.append(c.ord())
+  }
+
+  var decoded = out.to_string()
+  out.dispose()
+
+  return decoded
+}
+
+# Characters that never need escaping in a URI component
+# (RFC 3986 unreserved).
+var _UNRESERVED = {}
+
+def _init_unreserved() {
+  iter var c = 48; c <= 57; c++ {
+    _UNRESERVED[c] = true
+  }
+  iter var c = 65; c <= 90; c++ {
+    _UNRESERVED[c] = true
+  }
+  iter var c = 97; c <= 122; c++ {
+    _UNRESERVED[c] = true
+  }
+  for c in [45, 46, 95, 126] {  # - . _ ~
+    _UNRESERVED[c] = true
+  }
+}
+
+_init_unreserved()
+
+/**
+ * Percent-encodes every character of `text` that is not an RFC 3986
+ * unreserved character, over the UTF-8 encoding of the input.
+ *
+ * @param string text
+ * @returns string
+ */
+def percent_encode(text: string) {
+  var source = text.to_bytes()
+  var out = ''
+
+  iter var i = 0; i < source.length(); i++ {
+    var b = source[i]
+
+    if _UNRESERVED.contains(b) {
+      out += b.chr()
+    } else {
+      out += '%' + _HEX_DIGITS[b // 16].upper() + _HEX_DIGITS[b % 16].upper()
+    }
+  }
+
+  source.dispose()
+
+  return out
+}
+
+/**
+ * Resolves the `.` and `..` segments of a path and collapses repeated
+ * slashes, returning a path that cannot climb above `/`.
+ *
+ * This is the check that stands between a static file handler and
+ * `GET /static/../../etc/passwd`, and it has to happen *after*
+ * percent-decoding, since `%2e%2e%2f` is the same request written to
+ * survive a naive check.
+ *
+ * @param string path
+ * @returns string: always starting with `/`
+ */
+def normalize_path(path: string) {
+  var segments = []
+
+  for segment in path.split('/') {
+    if segment.is_empty() or segment == '.' {
+      continue
+    }
+
+    if segment == '..' {
+      if segments.length() > 0 {
+        segments.pop()
+      }
+      continue
+    }
+
+    segments.append(segment)
+  }
+
+  var normalized = '/' + '/'.join(segments)
+
+  # A trailing slash is meaningful - it is what tells a server the
+  # target is a collection - so it survives normalisation.
+  if path.ends_with('/') and !normalized.ends_with('/') {
+    normalized += '/'
+  }
+
+  return normalized
+}
+
+/**
+ * Compares two strings without leaking, through how long the
+ * comparison takes, where they first differ.
+ *
+ * Use this for anything an attacker can submit repeatedly and tune -
+ * a session token, an API key, an HMAC - where a byte-at-a-time
+ * comparison hands over the secret one guess at a time.
+ *
+ * @param string a
+ * @param string b
+ * @returns bool
+ */
+def secure_equals(a, b) {
+  if !is_string(a) or !is_string(b) {
+    return false
+  }
+
+  # The lengths themselves are not secret (they are visible in the
+  # message), but the loop below needs a fixed trip count.
+  var difference = a.length() ^ b.length()
+  var shortest = a.length() < b.length() ? a.length() : b.length()
+
+  iter var i = 0; i < shortest; i++ {
+    difference |= a[i].ord() ^ b[i].ord()
+  }
+
+  return difference == 0
+}
+
+/**
+ * A random lowercase-hex token of `length` characters, drawn from the
+ * platform's cryptographically secure generator.
+ *
+ * Used for multipart boundaries, WebSocket keys, and anywhere else
+ * this module needs a value an attacker must not be able to predict.
+ *
+ * @param ?number length: defaults to 32
+ * @returns string
+ */
+def random_token(length) {
+  if length == nil {
+    length = 32
+  }
+
+  var source = crypto.random_bytes((length + 1) // 2)
+  var out = ''
+
+  iter var i = 0; i < source.length(); i++ {
+    out += _HEX_DIGITS[source[i] // 16] + _HEX_DIGITS[source[i] % 16]
+  }
+
+  source.dispose()
+
+  return out[0, length]
+}
+
+/**
+ * Whether `value` is a valid HTTP method: a non-empty token, per RFC
+ * 9110 §9. Methods are case-sensitive, so no normalisation happens
+ * here.
+ *
+ * @param string value
+ * @returns bool
+ */
+def is_valid_method(value) {
+  if !is_string(value) or value.is_empty() {
+    return false
+  }
+
+  iter var i = 0; i < value.length(); i++ {
+    var c = value[i].ord()
+
+    var is_token = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
+        (c >= 97 and c <= 122) or "!#$%&'*+-.^_`|~".index_of(value[i]) > -1
+
+    if !is_token {
+      return false
+    }
+  }
+
+  return true
+}

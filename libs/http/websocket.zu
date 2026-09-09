@@ -1,0 +1,794 @@
+#!-- part of the http module
+
+import .errors { ConnectionError, HttpError, ProtocolError }
+import .headers { Headers }
+import .request { HttpRequest }
+import .status
+import .stream
+import .util
+
+import base64
+import crypto
+import hash
+import url
+
+# RFC 6455 §1.3: this constant is appended to the client's key before
+# hashing. It exists so that a server which merely echoes bytes back
+# cannot be mistaken for one that speaks WebSocket.
+var _GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+/** Continuation frame. @type int */
+var OPCODE_CONTINUATION = 0
+/** Text frame. @type int */
+var OPCODE_TEXT = 1
+/** Binary frame. @type int */
+var OPCODE_BINARY = 2
+/** Close frame. @type int */
+var OPCODE_CLOSE = 8
+/** Ping frame. @type int */
+var OPCODE_PING = 9
+/** Pong frame. @type int */
+var OPCODE_PONG = 10
+
+/** Normal closure. @type int */
+var CLOSE_NORMAL = 1000
+/** The endpoint is going away. @type int */
+var CLOSE_GOING_AWAY = 1001
+/** A protocol error was detected. @type int */
+var CLOSE_PROTOCOL_ERROR = 1002
+/** A message of a kind this endpoint cannot accept. @type int */
+var CLOSE_UNSUPPORTED = 1003
+/** A text message that was not valid UTF-8. @type int */
+var CLOSE_INVALID_PAYLOAD = 1007
+/** A message that violates a policy. @type int */
+var CLOSE_POLICY_VIOLATION = 1008
+/** A message too large to process. @type int */
+var CLOSE_TOO_LARGE = 1009
+/** An unexpected condition on the server. @type int */
+var CLOSE_INTERNAL_ERROR = 1011
+
+/**
+ * One complete WebSocket message, with any fragmentation already
+ * reassembled.
+ *
+ * @printable
+ */
+class Message {
+
+  /**
+   * The opcode of the message: `OPCODE_TEXT`, `OPCODE_BINARY`,
+   * `OPCODE_CLOSE`, `OPCODE_PING` or `OPCODE_PONG`.
+   * @type int
+   */
+  var opcode
+
+  /**
+   * The payload.
+   * @type bytes
+   */
+  var data
+
+  @new(opcode, data) {
+    self.opcode = opcode
+    self.data = data
+  }
+
+  /**
+   * Whether this is a text message.
+   *
+   * @returns bool
+   */
+  is_text() {
+    return self.opcode == OPCODE_TEXT
+  }
+
+  /**
+   * Whether this is a binary message.
+   *
+   * @returns bool
+   */
+  is_binary() {
+    return self.opcode == OPCODE_BINARY
+  }
+
+  /**
+   * Whether this is a close frame, meaning the peer has begun the
+   * closing handshake.
+   *
+   * @returns bool
+   */
+  is_close() {
+    return self.opcode == OPCODE_CLOSE
+  }
+
+  /**
+   * The payload decoded as UTF-8 text.
+   *
+   * @returns string
+   */
+  text() {
+    return self.data.to_string()
+  }
+
+  /**
+   * The close code carried by a close frame, or `nil` when the frame
+   * carried no code (which RFC 6455 §7.1.5 says to read as `1005`,
+   * "no status received").
+   *
+   * @returns ?number
+   */
+  close_code() {
+    if self.opcode != OPCODE_CLOSE or self.data.length() < 2 {
+      return nil
+    }
+
+    return self.data[0] * 256 + self.data[1]
+  }
+
+  /**
+   * The human-readable reason carried by a close frame.
+   *
+   * @returns string
+   */
+  close_reason() {
+    if self.opcode != OPCODE_CLOSE or self.data.length() <= 2 {
+      return ''
+    }
+
+    var rest = self.data[2,]
+    var text = rest.to_string()
+    rest.dispose()
+
+    return text
+  }
+
+  to_string() {
+    return '<Message opcode=${self.opcode} ${self.data.length()} bytes>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * An open WebSocket connection (RFC 6455).
+ *
+ * Created by `accept()` on the server side or `connect()` on the
+ * client side, never directly.
+ *
+ * ```zuri
+ * server.get('/ws', @(request, response) {
+ *   var socket = websocket.accept(request, response)
+ *
+ *   while socket.is_open() {
+ *     var message = socket.receive()
+ *     if message == nil {
+ *       break
+ *     }
+ *     socket.send('you said: ' + message.text())
+ *   }
+ * })
+ * ```
+ *
+ * Ping frames are answered automatically, and a close frame from the
+ * peer is answered and then reported to the caller, so the closing
+ * handshake completes without the application having to know the
+ * rules.
+ *
+ * @printable
+ */
+class WebSocket {
+
+  /**
+   * Whether this endpoint is the client, and so must mask every frame
+   * it sends. RFC 6455 §5.3 requires it, and a server is required to
+   * fail a connection whose client does not.
+   * @type bool
+   */
+  var is_client = false
+
+  /**
+   * The subprotocol negotiated during the handshake, or `nil`.
+   * @type ?string
+   */
+  var protocol
+
+  /**
+   * The largest message this endpoint will assemble, in bytes.
+   * @type number
+   */
+  var max_message_size = 8388608
+
+  var _conn
+  var _open = true
+  var _close_sent = false
+
+  @new(connection, is_client, protocol) {
+    self._conn = connection
+    self.is_client = is_client
+    self.protocol = protocol
+    self._open = true
+    self._close_sent = false
+  }
+
+  /**
+   * Whether the connection is still open.
+   *
+   * @returns bool
+   */
+  is_open() {
+    return self._open
+  }
+
+  /**
+   * The underlying transport, for anything this class does not
+   * expose - a read timeout, the peer's address, its certificate.
+   *
+   * @returns Connection
+   */
+  connection() {
+    return self._conn
+  }
+
+  /**
+   * Sends a text message.
+   *
+   * @param string text
+   */
+  send(text: string) {
+    self._write(OPCODE_TEXT, text.to_bytes())
+  }
+
+  /**
+   * Sends a binary message.
+   *
+   * @param bytes data
+   */
+  send_binary(data) {
+    self._write(OPCODE_BINARY, data)
+  }
+
+  /**
+   * Sends a ping. A conforming peer answers with a pong carrying the
+   * same payload, which is how an idle connection is kept alive
+   * through a NAT or a proxy that would otherwise time it out.
+   *
+   * @param ?bytes data: at most 125 bytes
+   */
+  ping(data) {
+    self._write(OPCODE_PING, data == nil ? bytes(0) : data)
+  }
+
+  /**
+   * Sends a pong. Only needed to answer a ping this class did not
+   * answer for you, or as an unsolicited heartbeat.
+   *
+   * @param ?bytes data
+   */
+  pong(data) {
+    self._write(OPCODE_PONG, data == nil ? bytes(0) : data)
+  }
+
+  /**
+   * Begins the closing handshake and closes the transport.
+   *
+   * @param ?number code: a close code; defaults to `CLOSE_NORMAL`
+   * @param ?string reason: at most 123 bytes once encoded
+   */
+  close(code: ?number, reason: ?string) {
+    if !self._open {
+      return
+    }
+
+    catch {
+      if !self._close_sent {
+        self._close_sent = true
+
+        var payload = bytes(0)
+        var value = code == nil ? CLOSE_NORMAL : code
+
+        payload.append((value // 256) % 256)
+        payload.append(value % 256)
+
+        if reason != nil {
+          var encoded = reason.to_bytes()
+          payload.extend(encoded.length() > 123 ? encoded[0, 123] : encoded)
+          encoded.dispose()
+        }
+
+        self._write(OPCODE_CLOSE, payload)
+        payload.dispose()
+      }
+    }
+
+    self._open = false
+
+    catch {
+      self._conn.close()
+    }
+  }
+
+  /**
+   * Reads the next message, reassembling fragments and answering
+   * pings along the way.
+   *
+   * Returns `nil` when the connection closes without a close frame.
+   * A close frame is returned as a message, and answered first, so
+   * the caller can see the code and reason the peer sent.
+   *
+   * @returns ?Message
+   * @throws ProtocolError if the peer violates the framing rules
+   */
+  receive() {
+    if !self._open {
+      return nil
+    }
+
+    var opcode = nil
+    var payload = bytes(0)
+
+    while true {
+      var frame
+
+      catch {
+        frame = self._read_frame()
+      } as error
+
+      if error {
+        self._open = false
+
+        if instance_of(error, ConnectionError) {
+          return nil
+        }
+
+        raise error
+      }
+
+      if frame == nil {
+        self._open = false
+        return nil
+      }
+
+      var frame_opcode = frame[0]
+      var final = frame[1]
+      var data = frame[2]
+
+      # A control frame may arrive in the middle of a fragmented
+      # message and is handled on its own, without disturbing the
+      # message being assembled (RFC 6455 §5.4).
+      if frame_opcode >= 8 {
+        if !final {
+          raise ProtocolError('a control frame may not be fragmented')
+        }
+
+        if frame_opcode == OPCODE_PING {
+          self.pong(data)
+          continue
+        }
+
+        if frame_opcode == OPCODE_PONG {
+          continue
+        }
+
+        if frame_opcode == OPCODE_CLOSE {
+          var message = Message(OPCODE_CLOSE, data)
+
+          # The handshake is only complete once both sides have sent
+          # a close frame, so this endpoint answers before closing.
+          if !self._close_sent {
+            self._close_sent = true
+            catch {
+              self._write(OPCODE_CLOSE, data)
+            }
+          }
+
+          self._open = false
+          catch {
+            self._conn.close()
+          }
+
+          return message
+        }
+
+        raise ProtocolError('unknown control frame opcode ${frame_opcode}')
+      }
+
+      if opcode == nil {
+        if frame_opcode == OPCODE_CONTINUATION {
+          raise ProtocolError('a continuation frame with nothing to continue')
+        }
+        opcode = frame_opcode
+      } else if frame_opcode != OPCODE_CONTINUATION {
+        raise ProtocolError('a new message began before the previous one finished')
+      }
+
+      payload.extend(data)
+      data.dispose()
+
+      if payload.length() > self.max_message_size {
+        self.close(CLOSE_TOO_LARGE, 'message too large')
+        raise ProtocolError('message exceeds ${self.max_message_size} bytes')
+      }
+
+      if final {
+        return Message(opcode, payload)
+      }
+    }
+  }
+
+  # Reads one frame. Returns [opcode, final, payload], or nil at a
+  # clean end of stream.
+  _read_frame() {
+    var header = self._conn.read_exactly(2)
+
+    var first = header[0]
+    var second = header[1]
+    header.dispose()
+
+    var final = (first & 128) != 0
+    var reserved = first & 112
+    var opcode = first & 15
+    var masked = (second & 128) != 0
+    var length = second & 127
+
+    # No extension was negotiated, so a reserved bit that is set means
+    # the peer is speaking something this endpoint did not agree to.
+    if reserved != 0 {
+      raise ProtocolError('a reserved frame bit is set without a negotiated extension')
+    }
+
+    if opcode >= 8 and length > 125 {
+      raise ProtocolError('a control frame may not carry more than 125 bytes')
+    }
+
+    if length == 126 {
+      var extended = self._conn.read_exactly(2)
+      length = extended[0] * 256 + extended[1]
+      extended.dispose()
+    } else if length == 127 {
+      var extended = self._conn.read_exactly(8)
+
+      # The top bit must be zero (RFC 6455 §5.2); the remaining 63
+      # bits are the length, and anything past 2^53 is beyond what a
+      # number can represent exactly anyway.
+      if extended[0] & 128 != 0 {
+        raise ProtocolError('a frame length with its high bit set')
+      }
+
+      length = 0
+      iter var i = 0; i < 8; i++ {
+        length = length * 256 + extended[i]
+      }
+      extended.dispose()
+    }
+
+    if length > self.max_message_size {
+      raise ProtocolError('frame of ${length} bytes exceeds the message limit')
+    }
+
+    # A server must reject an unmasked frame from a client, and a
+    # client must reject a masked frame from a server.
+    if self.is_client == masked {
+      raise ProtocolError(
+        masked ? 'a server may not mask a frame' : 'a client must mask every frame'
+      )
+    }
+
+    var key = nil
+    if masked {
+      key = self._conn.read_exactly(4)
+    }
+
+    var payload = length > 0 ? self._conn.read_exactly(length) : bytes(0)
+
+    if key != nil {
+      _unmask(payload, key)
+      key.dispose()
+    }
+
+    return [opcode, final, payload]
+  }
+
+  _write(opcode, payload) {
+    if !self._open and opcode != OPCODE_CLOSE {
+      raise ConnectionError('the WebSocket is closed')
+    }
+
+    var length = payload.length()
+
+    if opcode >= 8 and length > 125 {
+      raise ProtocolError('a control frame may not carry more than 125 bytes')
+    }
+
+    var frame = bytes(0)
+    frame.append(128 | opcode)
+
+    var mask_bit = self.is_client ? 128 : 0
+
+    if length < 126 {
+      frame.append(mask_bit | length)
+    } else if length < 65536 {
+      frame.append(mask_bit | 126)
+      frame.append((length // 256) % 256)
+      frame.append(length % 256)
+    } else {
+      frame.append(mask_bit | 127)
+
+      var remaining = length
+      var octets = []
+
+      iter var i = 0; i < 8; i++ {
+        octets.insert(remaining % 256, 0)
+        remaining = remaining // 256
+      }
+
+      for octet in octets {
+        frame.append(octet)
+      }
+    }
+
+    if self.is_client {
+      # The mask has to be unpredictable: it is what stops a hostile
+      # page from steering a proxy into caching a forged response
+      # (RFC 6455 §10.3).
+      var key = crypto.random_bytes(4)
+      frame.extend(key)
+
+      var masked = payload.clone()
+      _unmask(masked, key)
+      frame.extend(masked)
+
+      masked.dispose()
+      key.dispose()
+    } else {
+      frame.extend(payload)
+    }
+
+    self._conn.write(frame)
+    self._conn.flush()
+    frame.dispose()
+  }
+
+  to_string() {
+    return '<WebSocket ${self._open ? "open" : "closed"}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Masking is its own inverse, so one routine covers both directions.
+def _unmask(payload, key) {
+  iter var i = 0; i < payload.length(); i++ {
+    payload[i] = payload[i] ^ key[i % 4]
+  }
+}
+
+/**
+ * The value a server must return in `Sec-WebSocket-Accept` for a
+ * given client key.
+ *
+ * @param string key: the client's `Sec-WebSocket-Key`
+ * @returns string
+ */
+def accept_key(key: string) {
+  return base64.encode(hash.sha1(key + _GUID, true))
+}
+
+/**
+ * Whether `request` is a well-formed WebSocket handshake.
+ *
+ * @param HttpRequest request
+ * @returns bool
+ */
+def is_handshake(request) {
+  return request.method == 'GET' and
+    request.headers.contains_token('connection', 'upgrade') and
+    request.headers.contains_token('upgrade', 'websocket') and
+    request.headers.get('sec-websocket-version', '') == '13' and
+    request.headers.contains('sec-websocket-key')
+}
+
+/**
+ * Completes a WebSocket handshake and takes over the connection.
+ *
+ * Call this from an ordinary route handler. It writes the `101`
+ * response itself and hands back a `WebSocket`; the server will not
+ * write anything more on that connection afterwards.
+ *
+ * ```zuri
+ * server.get('/ws', @(request, response) {
+ *   var socket = websocket.accept(request, response)
+ *   ...
+ * })
+ * ```
+ *
+ * @param HttpRequest request
+ * @param HttpResponse response
+ * @param ?dict options: `protocols` (the subprotocols this server
+ *    supports, most preferred first), `max_message_size`
+ * @returns WebSocket
+ * @throws HttpError if the request is not a WebSocket handshake, or
+ *    arrived on a connection that cannot be taken over
+ */
+def accept(request, response, options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  if request.version != '1.1' {
+    # RFC 8441 defines a WebSocket over HTTP/2, through extended
+    # CONNECT, which is a different handshake entirely.
+    raise HttpError('a WebSocket handshake needs an HTTP/1.1 connection')
+  }
+
+  if !is_handshake(request) {
+    raise HttpError('this request is not a WebSocket handshake')
+  }
+
+  var connection = request.context.get('connection', nil)
+  if connection == nil {
+    raise HttpError('this request has no connection to take over')
+  }
+
+  var key = request.headers.get('sec-websocket-key', '')
+  var chosen = nil
+
+  var offered = settings.get('protocols', nil)
+  if offered != nil {
+    for candidate in request.headers.tokens('sec-websocket-protocol') {
+      for supported in offered {
+        if supported.lower() == candidate {
+          chosen = supported
+          break
+        }
+      }
+      if chosen != nil {
+        break
+      }
+    }
+  }
+
+  var head = 'HTTP/1.1 101 Switching Protocols\r\n' +
+    'Upgrade: websocket\r\n' +
+    'Connection: Upgrade\r\n' +
+    'Sec-WebSocket-Accept: ${accept_key(key)}\r\n'
+
+  if chosen != nil {
+    head += 'Sec-WebSocket-Protocol: ${chosen}\r\n'
+  }
+
+  connection.write(head + '\r\n')
+  connection.flush()
+
+  response.status = status.SWITCHING_PROTOCOLS
+  response.commit()
+  request.context['upgraded'] = true
+
+  # A WebSocket connection is idle for long stretches by design, so
+  # the server's request read timeout would close it out from under
+  # the application.
+  connection.set_read_timeout(0)
+
+  var socket = WebSocket(connection, false, chosen)
+
+  var limit = settings.get('max_message_size', nil)
+  if limit != nil {
+    socket.max_message_size = limit
+  }
+
+  return socket
+}
+
+/**
+ * Opens a WebSocket connection to `target`.
+ *
+ * @param string target: a `ws://` or `wss://` URL
+ * @param ?dict options: `headers` (extra request headers),
+ *    `protocols` (subprotocols to offer), `tls_config`,
+ *    `connect_timeout`, `max_message_size`
+ * @returns WebSocket
+ * @throws HttpError if the server does not complete the handshake
+ */
+def connect(target: string, options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var parsed = url.parse(target)
+  var scheme = parsed.scheme == nil ? '' : parsed.scheme.lower()
+
+  if scheme != 'ws' and scheme != 'wss' {
+    raise HttpError('a WebSocket URL must be ws: or wss:, got ${scheme}:')
+  }
+
+  var secure = scheme == 'wss'
+  var port = parsed.port
+  if port == nil or port == 0 {
+    port = secure ? 443 : 80
+  }
+
+  var connection = stream.connect(parsed.host, port, {
+    secure,
+    tls_config: settings.get('tls_config', nil),
+    server_name: parsed.host,
+    connect_timeout: settings.get('connect_timeout', 30000),
+    read_timeout: settings.get('read_timeout', 0),
+    write_timeout: settings.get('write_timeout', 30000),
+  })
+
+  var key = base64.encode(crypto.random_bytes(16))
+  var path = parsed.path or '/'
+
+  if parsed.query {
+    path += '?${parsed.query}'
+  }
+
+  var authority = (port == (secure ? 443 : 80)) ?
+    parsed.host :
+    '${parsed.host}:${port}'
+
+  var head = 'GET ${path} HTTP/1.1\r\n' +
+    'Host: ${authority}\r\n' +
+    'Upgrade: websocket\r\n' +
+    'Connection: Upgrade\r\n' +
+    'Sec-WebSocket-Key: ${key}\r\n' +
+    'Sec-WebSocket-Version: 13\r\n'
+
+  var protocols = settings.get('protocols', nil)
+  if protocols != nil and protocols.length() > 0 {
+    head += 'Sec-WebSocket-Protocol: ${", ".join(protocols)}\r\n'
+  }
+
+  var extra = settings.get('headers', nil)
+  if extra != nil {
+    var fields = Headers()
+    fields.extend(extra)
+    head += fields.to_wire()
+  }
+
+  connection.write(head + '\r\n')
+  connection.flush()
+
+  var status_line = connection.read_line(8192)
+
+  if status_line == nil or !status_line.starts_with('HTTP/1.1 101') {
+    connection.close()
+    raise HttpError('the server refused the WebSocket upgrade: ${status_line or "no response"}')
+  }
+
+  var fields = Headers()
+
+  while true {
+    var line = connection.read_line(8192)
+
+    if line == nil {
+      connection.close()
+      raise HttpError('the handshake response ended early')
+    }
+
+    if line.is_empty() {
+      break
+    }
+
+    var colon = line.index_of(':')
+    if colon > 0 {
+      fields.add(line[0, colon], line[colon + 1,].trim())
+    }
+  }
+
+  # Without this check any server that returns 101 could be steered
+  # into a WebSocket by a browser that was pointed at it.
+  var expected = accept_key(key)
+  if !util.secure_equals(fields.get('sec-websocket-accept', ''), expected) {
+    connection.close()
+    raise HttpError('the server returned the wrong Sec-WebSocket-Accept')
+  }
+
+  var socket = WebSocket(connection, true, fields.get('sec-websocket-protocol', nil))
+
+  var limit = settings.get('max_message_size', nil)
+  if limit != nil {
+    socket.max_message_size = limit
+  }
+
+  return socket
+}

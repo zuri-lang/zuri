@@ -749,7 +749,7 @@ def hmac_gost(key, str, as_bytes) {
  * > pure password storage where output size is not a concern,
  * > consider `bcrypt` (built into Zuri's `hash` module). PBKDF2
  * > is most appropriate when you need an arbitrarily long output
- * > — symmetric keys, key wrapping, or protocol key schedules. -
+ * >: symmetric keys, key wrapping, or protocol key schedules. -
  * > When comparing derived keys, use a constant-time equality
  * > function to prevent timing side-channel attacks.
  *
@@ -782,7 +782,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   # -------------------------------------------------------------------------
 
   # Encode the 1-based block index as a 4-byte big-endian bytes object.
-  # This is INT(i) from RFC 2898 §5.2 — appended to the salt for U_1.
+  # This is INT(i) from RFC 2898 §5.2: appended to the salt for U_1.
   def _block_counter(i) {
     return bytes([
       (i >> 24) & 0xff,
@@ -835,7 +835,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
     )
   }
 
-  # RFC 2898 §5.2 step 1 — enforce the maximum derived-key length.
+  # RFC 2898 §5.2 step 1: enforce the maximum derived-key length.
   var max_len = 4294967295 * h_len
   if dk_len > max_len {
     raise Error(
@@ -864,8 +864,8 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   # -------------------------------------------------------------------------
   # 3.  Derive block counts  (RFC 2898 §5.2 step 2)
   #
-  #     l = CEIL(dk_len / h_len)     — number of T_i blocks
-  #     r = dk_len - (l - 1) * h_len — bytes consumed from the last block
+  #     l = CEIL(dk_len / h_len)    : number of T_i blocks
+  #     r = dk_len - (l - 1) * h_len: bytes consumed from the last block
   # -------------------------------------------------------------------------
 
   var l = (dk_len / h_len).ceil()
@@ -880,7 +880,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   #       U_j = PRF(password,  U_{j-1})         for j = 2 … c
   #       T_i = U_1 XOR U_2 XOR … XOR U_c
   #
-  #     The password is always the HMAC key — it never changes.
+  #     The password is always the HMAC key: it never changes.
   #     The data argument is:
   #       - U_1: the salt bytes with the 4-byte counter appended (+).
   #       - U_j: the bytes object from the previous round directly.
@@ -902,7 +902,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
 
     # U_2 … U_c: chain the previous U as data; XOR each into T_i.
     iter var j = 1; j < iterations; j++ {
-      # u is already a bytes object — pass it directly as HMAC data.
+      # u is already a bytes object: pass it directly as HMAC data.
       u = h_fn(password, u)
 
       # XOR U_j into T_i one byte at a time using bytes index access.
@@ -926,7 +926,7 @@ def pbkdf2(algorithm, password, salt, iterations, dk_len, as_bytes) {
   var final = bytes(dk)
 
   if as_bytes {
-    return final         # bytes object — suitable for direct crypto use
+    return final         # bytes object: suitable for direct crypto use
   }
 
   return convert.bytes_to_hex(final)   # lowercase hex string (default)

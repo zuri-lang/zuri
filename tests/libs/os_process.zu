@@ -17,7 +17,7 @@ def ok(label) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  os module — process test suite'
+echo '  os module: process test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ assert failed.exit_code == 7, 'exec() must report a non-zero exit code accuratel
 ok('exec() reports a non-zero exit code for a failing command')
 
 # ---------------------------------------------------------------------------
-# spawn() — basic run to completion
+# spawn(): basic run to completion
 # ---------------------------------------------------------------------------
 var p1 = os.spawn('echo', ['spawned', 'output'])
 assert p1.read_stdout().to_string().trim('\n') == 'spawned output',
@@ -52,7 +52,7 @@ assert p1.wait() == 0, 'Process.wait() must return the child\'s exit code'
 ok('spawn() runs a command and read_stdout()/wait() report its output and exit code')
 
 # ---------------------------------------------------------------------------
-# spawn() — piped stdin
+# spawn(): piped stdin
 # ---------------------------------------------------------------------------
 var p2 = os.spawn('cat', [], { stdin: 'pipe' })
 p2.write_stdin('line one\nline two\n')
@@ -63,7 +63,7 @@ assert p2.wait() == 0
 ok('spawn() with stdin: \'pipe\' lets the caller write to the child and read its output')
 
 # ---------------------------------------------------------------------------
-# spawn() — separate stdout/stderr streams
+# spawn(): separate stdout/stderr streams
 # ---------------------------------------------------------------------------
 var p3 = os.spawn('sh', ['-c', 'echo to-stdout; echo to-stderr 1>&2'])
 var out3 = p3.read_stdout().to_string().trim('\n')
@@ -74,7 +74,7 @@ assert err3 == 'to-stderr', 'read_stderr() must not include anything written to 
 ok('spawn() keeps stdout and stderr as independent streams')
 
 # ---------------------------------------------------------------------------
-# spawn() — options: cwd and env
+# spawn(): options: cwd and env
 # ---------------------------------------------------------------------------
 var scratch = os.create_temp_dir('zuri-os-process-')
 var p4 = os.spawn('sh', ['-c', 'pwd'], { cwd: scratch })
@@ -92,7 +92,7 @@ ok('spawn() options.env sets an extra environment variable for the child')
 os.remove_dir(scratch, true)
 
 # ---------------------------------------------------------------------------
-# spawn() — try_wait() and exit code for a still-running vs finished child
+# spawn(): try_wait() and exit code for a still-running vs finished child
 # ---------------------------------------------------------------------------
 var p6 = os.spawn('sh', ['-c', 'sleep 0.2; exit 3'])
 assert p6.try_wait() == nil, 'try_wait() must return nil for a child that has not exited yet'
@@ -101,7 +101,7 @@ assert p6.try_wait() == 3, 'try_wait() after the child has exited must report th
 ok('try_wait() distinguishes a still-running child from a finished one')
 
 # ---------------------------------------------------------------------------
-# spawn() — kill()
+# spawn(): kill()
 # ---------------------------------------------------------------------------
 var p7 = os.spawn('sh', ['-c', 'sleep 30'])
 assert p7.try_wait() == nil, 'the sleep child must still be running right after spawn()'
@@ -111,7 +111,7 @@ assert killed_code != 0, 'a killed child must not report a clean (0) exit code'
 ok('Process.kill() terminates a still-running child')
 
 # ---------------------------------------------------------------------------
-# kill() — free function against this process's own pid, with a
+# kill(): free function against this process's own pid, with a
 # harmless signal
 # ---------------------------------------------------------------------------
 assert os.kill(os.pid(), 0) == true,

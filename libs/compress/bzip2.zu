@@ -12,7 +12,7 @@ import _compress
  * Compress data using the default options for Bzip2.
  *
  * @param {bytes|string} data
- * @param ?number level: Compression level (1..=9) — Default 9.
+ * @param ?number level: Compression level (1..=9): Default 9.
  * @returns bytes
  */
 def compress(data, level) {
@@ -54,10 +54,10 @@ class Bzip2Encoder {
   /**
    * Creates a new streaming Bzip2 encoder.
    *
-   * @param ?number level: Compression level (1..=9) — Default 9.
+   * @param ?number level: Compression level (1..=9): Default 9.
    * @param ?number work_factor: Controls when the compressor falls
    *    back from its standard sorting algorithm to a slower but
-   *    more robust one on highly repetitive input. 0..=250 — 0
+   *    more robust one on highly repetitive input. 0..=250: 0
    *    (the default) means "use bzip2's own default of 30".
    */
   @new(level, work_factor) {
@@ -176,7 +176,7 @@ class Bzip2Encoder {
  * hello world
  * ```
  *
- * @note only decodes a single bzip2 stream — see `decompress()`'s
+ * @note only decodes a single bzip2 stream: see `decompress()`'s
  *    note about "multistreams".
  */
 class Bzip2Decoder {
@@ -357,7 +357,7 @@ class BzFile {
     if self._is_encoder {
       # finish(), not close(): close() on the inner encoder is just
       # finish() again for file-API-compatibility, and the stream is
-      # already finished at this point — calling it a second time
+      # already finished at this point: calling it a second time
       # raises (Invalid stream state).
       self._file.write(self._inner.finish())
     } else {
@@ -633,7 +633,7 @@ class BzFile {
    * ahead without producing them. Seeking backward (or SEEK_END,
    * which has to fully decode the stream once to learn its length)
    * re-opens the underlying file and restarts decompression from
-   * the beginning, discarding up to the target position — an
+   * the beginning, discarding up to the target position: an
    * inherently expensive operation for a compressed stream, same
    * as with any other streaming (de)compressor.
    *

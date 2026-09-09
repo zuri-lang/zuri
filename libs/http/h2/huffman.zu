@@ -1,0 +1,261 @@
+#!-- part of the http module
+
+import ..errors { ProtocolError }
+
+/**
+ * @module http.h2.huffman
+ *
+ * The static Huffman code HPACK uses to compress header field names
+ * and values, from RFC 7541 Appendix B.
+ *
+ * Only the code *lengths* are written out below. The code itself is
+ * canonical - codes are assigned in increasing symbol order within
+ * each length - so every one of the 257 codes can be derived from its
+ * length alone, which is both far less to state and far less to get
+ * wrong. `_build()` does the derivation at load time and also checks
+ * the Kraft sum, which comes to exactly one for a complete prefix
+ * code and to something else the moment a single length is wrong.
+ */
+
+# Code length per symbol: 0-255 for the byte values, and 256 for EOS.
+var _LENGTHS = [
+  13, 23, 28, 28, 28, 28, 28, 28, 28, 24, 30, 28, 28, 30, 28, 28,
+  28, 28, 28, 28, 28, 28, 30, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+   6, 10, 10, 12, 13,  6,  8, 11, 10, 10,  8, 11,  8,  6,  6,  6,
+   5,  5,  5,  6,  6,  6,  6,  6,  6,  6,  7,  8, 15,  6, 12, 10,
+  13,  6,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
+   7,  7,  7,  7,  7,  7,  7,  7,  8,  7,  8, 13, 19, 13, 14,  6,
+  15,  5,  6,  5,  6,  5,  6,  6,  6,  5,  7,  7,  6,  6,  6,  5,
+   6,  7,  6,  5,  5,  6,  7,  7,  7,  7,  7, 15, 11, 14, 13, 28,
+  20, 22, 20, 20, 22, 22, 22, 23, 22, 23, 23, 23, 23, 23, 24, 23,
+  24, 24, 22, 23, 24, 23, 23, 23, 23, 21, 22, 23, 22, 23, 23, 24,
+  22, 21, 20, 22, 22, 23, 23, 21, 23, 22, 22, 24, 21, 22, 23, 23,
+  21, 21, 22, 21, 23, 22, 23, 23, 20, 22, 22, 22, 23, 22, 22, 23,
+  26, 26, 20, 19, 22, 23, 22, 25, 26, 26, 26, 27, 27, 26, 24, 25,
+  19, 21, 26, 27, 27, 26, 27, 24, 21, 21, 26, 26, 28, 27, 27, 27,
+  20, 24, 20, 21, 22, 21, 21, 23, 22, 22, 25, 25, 24, 24, 26, 23,
+  26, 27, 26, 26, 27, 27, 27, 27, 27, 28, 27, 27, 27, 27, 27, 26,
+  30,
+]
+
+# Filled in by _build(): the code for each symbol, and its length.
+var _CODES = []
+
+# The decoding tree, as three parallel lists indexed by node. `_left`
+# and `_right` hold child node indexes (or -1), `_symbol` holds the
+# decoded symbol at a leaf (or -1). A tree rather than a table because
+# a code may be up to 30 bits, and a 30-bit lookup table is not a
+# table anyone wants to allocate.
+var _left = []
+var _right = []
+var _symbol = []
+
+/**
+ * The number of the symbol HPACK uses to pad the final byte of a
+ * Huffman-encoded string, and which must never appear as a decoded
+ * value.
+ *
+ * @type int
+ */
+var EOS = 256
+
+def _build() {
+  # Canonical assignment: walk the lengths in increasing order, and
+  # within a length walk the symbols in increasing order, handing out
+  # consecutive codes and shifting left whenever the length grows.
+  var by_length = {}
+  var kraft = 0
+
+  iter var symbol = 0; symbol < _LENGTHS.length(); symbol++ {
+    var length = _LENGTHS[symbol]
+
+    if !by_length.contains(length) {
+      by_length[length] = []
+    }
+
+    by_length[length].append(symbol)
+    kraft += 2 ** (30 - length)
+  }
+
+  if kraft != 2 ** 30 {
+    raise ProtocolError('the Huffman code lengths do not form a complete code')
+  }
+
+  iter var symbol = 0; symbol < _LENGTHS.length(); symbol++ {
+    _CODES.append(0)
+  }
+
+  var code = 0
+  var previous = 0
+
+  iter var length = 1; length <= 30; length++ {
+    var symbols = by_length.get(length, nil)
+
+    if symbols == nil {
+      continue
+    }
+
+    code = code * (2 ** (length - previous))
+    previous = length
+
+    for symbol in symbols {
+      _CODES[symbol] = code
+      code++
+    }
+  }
+
+  # Node 0 is the root; every other node is appended as it is needed.
+  _left.append(-1)
+  _right.append(-1)
+  _symbol.append(-1)
+
+  iter var symbol = 0; symbol < _LENGTHS.length(); symbol++ {
+    var length = _LENGTHS[symbol]
+    var value = _CODES[symbol]
+    var node = 0
+
+    iter var bit = length - 1; bit >= 0; bit-- {
+      var one = (value // (2 ** bit)) % 2 == 1
+      var next = one ? _right[node] : _left[node]
+
+      if next == -1 {
+        next = _left.length()
+        _left.append(-1)
+        _right.append(-1)
+        _symbol.append(-1)
+
+        if one {
+          _right[node] = next
+        } else {
+          _left[node] = next
+        }
+      }
+
+      node = next
+    }
+
+    _symbol[node] = symbol
+  }
+}
+
+_build()
+
+/**
+ * The number of bytes `data` would occupy once Huffman-encoded.
+ *
+ * The encoder uses this to decide whether encoding is worth it at
+ * all: HPACK lets a string go out as-is, and for a string of mostly
+ * high-entropy bytes the encoded form is the longer one.
+ *
+ * @param bytes data
+ * @returns number
+ */
+def encoded_length(data) {
+  var bits = 0
+
+  iter var i = 0; i < data.length(); i++ {
+    bits += _LENGTHS[data[i]]
+  }
+
+  return (bits + 7) // 8
+}
+
+/**
+ * Huffman-encodes `data`, padding the final byte with the leading
+ * bits of the EOS code (which are all ones) as RFC 7541 §5.2
+ * requires.
+ *
+ * @param bytes data
+ * @returns bytes
+ */
+def encode(data) {
+  var out = bytes(0)
+  var accumulator = 0
+  var bits = 0
+
+  iter var i = 0; i < data.length(); i++ {
+    var symbol = data[i]
+    var length = _LENGTHS[symbol]
+
+    accumulator = accumulator * (2 ** length) + _CODES[symbol]
+    bits += length
+
+    while bits >= 8 {
+      bits -= 8
+      var divisor = 2 ** bits
+      out.append((accumulator // divisor) % 256)
+      accumulator = accumulator % divisor
+    }
+  }
+
+  if bits > 0 {
+    var padding = 8 - bits
+    out.append((accumulator * (2 ** padding) + (2 ** padding - 1)) % 256)
+  }
+
+  return out
+}
+
+/**
+ * Decodes a Huffman-encoded string.
+ *
+ * The padding at the end must be the leading bits of EOS and no
+ * longer than seven bits; anything else is a connection-level error
+ * per RFC 7541 §5.2, since it is the shape a smuggled second header
+ * takes.
+ *
+ * @param bytes data
+ * @param ?number start
+ * @param ?number end
+ * @returns bytes
+ * @throws ProtocolError on invalid padding or an encoded EOS
+ */
+def decode(data, start, end) {
+  if start == nil {
+    start = 0
+  }
+  if end == nil {
+    end = data.length()
+  }
+
+  var out = bytes(0)
+  var node = 0
+  var bits_since_leaf = 0
+  var all_ones = true
+
+  iter var i = start; i < end; i++ {
+    var byte = data[i]
+
+    iter var bit = 7; bit >= 0; bit-- {
+      var one = (byte // (2 ** bit)) % 2 == 1
+
+      node = one ? _right[node] : _left[node]
+
+      if node == -1 {
+        raise ProtocolError('invalid Huffman code in a header block')
+      }
+
+      bits_since_leaf++
+      all_ones = one ? all_ones : false
+
+      if _symbol[node] >= 0 {
+        if _symbol[node] == EOS {
+          raise ProtocolError('EOS appears in a Huffman-encoded header')
+        }
+
+        out.append(_symbol[node])
+        node = 0
+        bits_since_leaf = 0
+        all_ones = true
+      }
+    }
+  }
+
+  # What is left over must be a partial code of at most seven bits,
+  # made entirely of the ones that EOS starts with.
+  if bits_since_leaf > 7 or !all_ones {
+    raise ProtocolError('invalid Huffman padding in a header block')
+  }
+
+  return out
+}

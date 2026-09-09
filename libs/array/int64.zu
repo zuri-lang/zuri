@@ -6,7 +6,7 @@ import ._base { Array }
  * Int64Array. Written with the explicit `n` bigint suffix since
  * the bare literal `9223372036854775807` parses as a lossy
  * `number` (a known, pre-existing limitation of plain integer
- * literals at exactly `i64::MAX` — see
+ * literals at exactly `i64::MAX`: see
  * `tests/big-integer-literal-overflow.zu`), 193 away from the true
  * value.
  * @type bigint
@@ -37,7 +37,7 @@ var _INT64_MIN_NUM = INT64_MIN.to_number()
  *
  * Values at or beyond ±2^53 need Zuri's `bigint` type to be
  * represented exactly (a regular `number` is an IEEE-754 double,
- * and loses precision past that point) — `append()`/`set()` accept
+ * and loses precision past that point): `append()`/`set()` accept
  * either a plain integer or a bigint (`is_bigint()`) for that
  * reason.
  *

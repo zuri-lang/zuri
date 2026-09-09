@@ -1,0 +1,587 @@
+#!-- part of the http module
+
+import .errors { HttpError }
+import .negotiate
+import .status
+import .util
+
+import mime
+import os
+
+
+/**
+ * One byte range asked for by a `Range` header, already resolved
+ * against the size of the representation.
+ */
+class ByteRange {
+
+  /**
+   * The first byte of the range, inclusive.
+   * @type number
+   */
+  var start
+
+  /**
+   * The last byte of the range, inclusive - as `Content-Range` states
+   * it, not as a length.
+   * @type number
+   */
+  var last
+
+  @new(start, last) {
+    self.start = start
+    self.last = last
+  }
+
+  /**
+   * How many bytes the range covers.
+   *
+   * @returns number
+   */
+  length() {
+    return self.last - self.start + 1
+  }
+
+  /**
+   * The `Content-Range` field value for this range against a
+   * representation of `total` bytes.
+   *
+   * @param number total
+   * @returns string
+   */
+  to_content_range(total) {
+    return 'bytes ${self.start}-${self.last}/${total}'
+  }
+}
+
+/**
+ * Parses a `Range` header against a representation of `size` bytes.
+ *
+ * Returns a list of `ByteRange`, an empty list when the header names
+ * only ranges that fall outside the representation (a `416`), or
+ * `nil` when the header is not a byte range at all - which RFC 9110
+ * §14.2 says to ignore and answer with the whole thing.
+ *
+ * @param ?string header
+ * @param number size
+ * @returns ?list
+ */
+def parse_range(header, size: number) {
+  if header == nil or !is_string(header) {
+    return nil
+  }
+
+  var text = header.trim()
+
+  # `bytes` is the only range unit anyone implements, and an unknown
+  # unit must be ignored rather than refused.
+  if !text.lower().starts_with('bytes=') {
+    return nil
+  }
+
+  var ranges = []
+  var any_valid = false
+
+  for part in text[6,].split(',') {
+    var spec = part.trim()
+    if spec.is_empty() {
+      continue
+    }
+
+    var dash = spec.index_of('-')
+    if dash < 0 {
+      return nil
+    }
+
+    var first_text = spec[0, dash].trim()
+    var last_text = spec[dash + 1,].trim()
+
+    if first_text.is_empty() {
+      # A suffix range: `-500` means the final 500 bytes.
+      if last_text.is_empty() or !last_text.is_number() {
+        return nil
+      }
+
+      var suffix = last_text.to_number()
+      if suffix == 0 {
+        continue
+      }
+
+      any_valid = true
+
+      var start = size - suffix
+      if start < 0 {
+        start = 0
+      }
+
+      if size > 0 {
+        ranges.append(ByteRange(start, size - 1))
+      }
+      continue
+    }
+
+    if !first_text.is_number() {
+      return nil
+    }
+
+    var start = first_text.to_number()
+    var last
+
+    if last_text.is_empty() {
+      last = size - 1
+    } else if !last_text.is_number() {
+      return nil
+    } else {
+      last = last_text.to_number()
+      if last > size - 1 {
+        last = size - 1
+      }
+    }
+
+    any_valid = true
+
+    if start > last or start >= size {
+      continue
+    }
+
+    ranges.append(ByteRange(start, last))
+  }
+
+  if !any_valid {
+    return nil
+  }
+
+  return ranges
+}
+
+/**
+ * A weak validator derived from a file's size and modification time.
+ *
+ * Weak rather than strong because two writes within the same second
+ * are indistinguishable to it, which is exactly the condition RFC
+ * 9110 §8.8.1 reserves the `W/` prefix for. It costs one `stat`,
+ * where a strong one costs a full read of the file.
+ *
+ * @param dict stats: a file's `stats()` dictionary
+ * @returns string
+ */
+def weak_etag(stats) {
+  return 'W/"${util.to_hex(stats.mtime)}-${util.to_hex(stats.size)}"'
+}
+
+/**
+ * Whether an `If-None-Match` value matches `etag`.
+ *
+ * Comparison is weak, per RFC 9110 §13.1.2: `W/"x"` and `"x"` match
+ * each other, because a conditional GET only needs the two
+ * representations to be equivalent, not byte-identical.
+ *
+ * @param string header
+ * @param ?string etag
+ * @returns bool
+ */
+def etag_matches(header, etag) {
+  if etag == nil {
+    return false
+  }
+
+  var text = header.trim()
+  if text == '*' {
+    return true
+  }
+
+  var wanted = _strip_weak(etag)
+
+  for candidate in text.split(',') {
+    if _strip_weak(candidate.trim()) == wanted {
+      return true
+    }
+  }
+
+  return false
+}
+
+def _strip_weak(tag) {
+  var text = tag.trim()
+  if text.lower().starts_with('w/') {
+    text = text[2,]
+  }
+  return text
+}
+
+/**
+ * Serves files from a directory, with the conditional-request,
+ * range-request and caching behaviour a browser and a CDN both
+ * expect.
+ *
+ * Every request path is percent-decoded and normalised before it is
+ * joined to the root, and the result is checked to still be inside
+ * the root afterwards - the decode-then-normalise-then-verify
+ * sequence, because doing any two of the three is not enough.
+ *
+ * ```zuri
+ * var files = http.StaticFiles('./public', { cache_age: 3600 })
+ * server.handle('GET', '/static/' + '*path', @(request, response) {
+ *   files.serve(request, response, request.param('path'))
+ * })
+ * ```
+ *
+ * `HttpServer.serve_files()` wires all of that up for you; this class
+ * is what it uses, and is here for applications that want to serve
+ * files from somewhere the router does not reach.
+ */
+class StaticFiles {
+
+  /**
+   * The directory files are served from, as an absolute path.
+   * @type string
+   */
+  var root
+
+  /**
+   * Filenames tried when the request names a directory. Defaults to
+   * `['index.html', 'index.htm']`.
+   * @type list
+   */
+  var index_files
+
+  /**
+   * `max-age`, in seconds, for served files. `0` sends no
+   * `Cache-Control` at all.
+   * @type number
+   */
+  var cache_age = 0
+
+  /**
+   * Whether to send an `ETag`. On by default; it is what makes a
+   * conditional request possible, and it costs one `stat`.
+   * @type bool
+   */
+  var etag = true
+
+  /**
+   * Whether to answer a request for a file with a `.gz` or `.br`
+   * sibling by serving that instead, when the client accepts the
+   * coding. This is how a static site serves compressed assets
+   * without compressing them per request.
+   * @type bool
+   */
+  var precompressed = false
+
+  /**
+   * Whether to serve dotfiles. Off by default: `.env`, `.git` and
+   * `.htpasswd` all live in a web root at some point in a project's
+   * life, and none of them should ever be served.
+   * @type bool
+   */
+  var allow_dotfiles = false
+
+  /**
+   * A file served in place of a missing one, relative to the root.
+   * Setting it to `'index.html'` is what makes a single-page
+   * application's client-side routes work on reload.
+   * @type ?string
+   */
+  var fallback
+
+  /**
+   * @param string directory
+   * @param ?dict options: `index_files`, `cache_age`, `etag`,
+   *    `precompressed`, `allow_dotfiles`, `fallback`
+   * @throws HttpError if the directory does not exist
+   */
+  @new(directory: string, options: ?dict) {
+    if !os.is_dir(directory) {
+      raise HttpError('static root is not a directory: ${directory}')
+    }
+
+    self.root = os.abs_path(directory)
+    self.index_files = ['index.html', 'index.htm']
+
+    if options != nil {
+      self.index_files = options.get('index_files', self.index_files)
+      self.cache_age = options.get('cache_age', 0)
+      self.etag = options.get('etag', true)
+      self.precompressed = options.get('precompressed', false)
+      self.allow_dotfiles = options.get('allow_dotfiles', false)
+      self.fallback = options.get('fallback', nil)
+    }
+  }
+
+  /**
+   * Resolves `relative_path` inside the root, or returns `nil` when
+   * it escapes, names a dotfile that is not allowed, or does not
+   * exist.
+   *
+   * @param string relative_path
+   * @returns ?string: an absolute path
+   */
+  resolve(relative_path: string) {
+    var decoded = util.percent_decode(relative_path, false)
+
+    # A NUL is only ever an attempt to truncate a path check that a
+    # later C-level call will not honour.
+    if decoded.index_of('\0') > -1 {
+      return nil
+    }
+
+    var normalized = util.normalize_path(decoded).ltrim('/')
+
+    if !self.allow_dotfiles {
+      for segment in normalized.split('/') {
+        if segment.starts_with('.') {
+          return nil
+        }
+      }
+    }
+
+    var candidate = normalized.is_empty() ?
+      self.root :
+      os.join_paths(self.root, normalized)
+
+    # Normalisation above already removed every `..`, but the root
+    # itself may contain a symlink that points elsewhere, so the
+    # resolved path is checked against the root as well.
+    var resolved = candidate
+    catch {
+      resolved = os.real_path(candidate)
+    }
+
+    if resolved != self.root and !resolved.starts_with(self.root + '/') {
+      return nil
+    }
+
+    return resolved
+  }
+
+  /**
+   * Serves `relative_path` from the root into `response`.
+   *
+   * Returns `false` when there is nothing to serve, leaving the
+   * response untouched so the caller can fall through to its own
+   * not-found handling.
+   *
+   * @param HttpRequest request
+   * @param HttpResponse response
+   * @param string relative_path
+   * @returns bool: whether the response was filled in
+   */
+  serve(request, response, relative_path: string) {
+    var path = self.resolve(relative_path)
+
+    if path == nil {
+      return false
+    }
+
+    if os.is_dir(path) {
+      var found = nil
+
+      for name in self.index_files {
+        var candidate = os.join_paths(path, name)
+        if file(candidate, 'rb').exists() {
+          found = candidate
+          break
+        }
+      }
+
+      if found == nil {
+        return false
+      }
+
+      path = found
+    }
+
+    var handle = file(path, 'rb')
+    if !handle.exists() {
+      if self.fallback == nil {
+        return false
+      }
+
+      path = os.join_paths(self.root, self.fallback)
+      handle = file(path, 'rb')
+
+      if !handle.exists() {
+        return false
+      }
+    }
+
+    return self._send(request, response, path)
+  }
+
+  _send(request, response, path) {
+    var stats = file(path, 'rb').stats()
+    var served = path
+    var coding = nil
+
+    if self.precompressed {
+      var choice = self._precompressed_for(request, path)
+      if choice != nil {
+        served = choice[0]
+        coding = choice[1]
+        stats = file(served, 'rb').stats()
+      }
+    }
+
+    var tag = self.etag ? weak_etag(stats) : nil
+    var last_modified = util.format_date(stats.mtime)
+
+    response.headers.set('Last-Modified', last_modified)
+    response.headers.set('Accept-Ranges', 'bytes')
+    response.headers.set('Content-Type', mime.detect_from_name(path))
+
+    if tag != nil {
+      response.headers.set('ETag', tag)
+    }
+
+    if self.cache_age > 0 {
+      response.headers.set('Cache-Control', 'public, max-age=${self.cache_age // 1}')
+    }
+
+    if coding != nil {
+      response.headers.set('Content-Encoding', coding)
+      # The representation varies by what the client said it accepts,
+      # so a shared cache must key on that too.
+      response.headers.add('Vary', 'Accept-Encoding')
+    }
+
+    # A precondition failure has to be answered before anything is
+    # sent, and before a range is even considered.
+    var precondition = self._check_preconditions(request, tag, stats.mtime)
+
+    if precondition != nil {
+      response.status = precondition
+      response.body = bytes(0)
+      return true
+    }
+
+    var size = stats.size
+    var ranges = nil
+
+    # A range is only honoured when the client's If-Range validator
+    # still matches; otherwise the representation changed under it and
+    # it needs the whole thing.
+    if request.headers.contains('range') and self._if_range_holds(request, tag, stats.mtime) {
+      ranges = parse_range(request.headers.get('range', nil), size)
+    }
+
+    if ranges != nil and ranges.length() == 0 {
+      response.status = status.RANGE_NOT_SATISFIABLE
+      response.headers.set('Content-Range', 'bytes */${size}')
+      response.body = bytes(0)
+      return true
+    }
+
+    # A multi-range response is a multipart/byteranges body. One range
+    # is what clients actually send, so the rest are collapsed into
+    # the span that covers them - a correct, if generous, answer.
+    if ranges != nil and ranges.length() > 0 {
+      var span = ranges[0]
+
+      iter var i = 1; i < ranges.length(); i++ {
+        if ranges[i].start < span.start {
+          span = ByteRange(ranges[i].start, span.last)
+        }
+        if ranges[i].last > span.last {
+          span = ByteRange(span.start, ranges[i].last)
+        }
+      }
+
+      response.status = status.PARTIAL_CONTENT
+      response.headers.set('Content-Range', span.to_content_range(size))
+      response.file(served, span.start, span.length())
+
+      return true
+    }
+
+    response.file(served)
+
+    return true
+  }
+
+  _precompressed_for(request, path) {
+    var accept = request.headers.get('accept-encoding', nil)
+    if accept == nil {
+      return nil
+    }
+
+    var options = [['br', '.br'], ['gzip', '.gz']]
+
+    for option in options {
+      if negotiate.quality_of(accept, option[0]) > 0 {
+        var candidate = path + option[1]
+        if file(candidate, 'rb').exists() {
+          return [candidate, option[0]]
+        }
+      }
+    }
+
+    return nil
+  }
+
+  # Evaluates the conditional request headers in the order RFC 9110
+  # §13.2.2 lays down. Returns the status to answer with, or `nil` to
+  # carry on and send the representation.
+  _check_preconditions(request, tag, mtime) {
+    var if_match = request.headers.get('if-match', nil)
+
+    if if_match != nil {
+      if !etag_matches(if_match, tag) {
+        return status.PRECONDITION_FAILED
+      }
+    } else {
+      var if_unmodified = request.headers.get('if-unmodified-since', nil)
+
+      if if_unmodified != nil {
+        var since = util.parse_date(if_unmodified)
+        if since != nil and mtime > since {
+          return status.PRECONDITION_FAILED
+        }
+      }
+    }
+
+    var if_none_match = request.headers.get('if-none-match', nil)
+
+    if if_none_match != nil {
+      if etag_matches(if_none_match, tag) {
+        return request.is_safe() ?
+          status.NOT_MODIFIED :
+          status.PRECONDITION_FAILED
+      }
+
+      return nil
+    }
+
+    var if_modified = request.headers.get('if-modified-since', nil)
+
+    if if_modified != nil and request.is_safe() {
+      var since = util.parse_date(if_modified)
+
+      # A file changed within the same second as the client's copy is
+      # indistinguishable from one that did not, so `>` and not `>=`:
+      # sending it again is the safe side of that ambiguity.
+      if since != nil and mtime <= since {
+        return status.NOT_MODIFIED
+      }
+    }
+
+    return nil
+  }
+
+  _if_range_holds(request, tag, mtime) {
+    var if_range = request.headers.get('if-range', nil)
+
+    if if_range == nil {
+      return true
+    }
+
+    # An If-Range carrying an entity tag must match strongly - a weak
+    # tag cannot guarantee two byte ranges came from the same bytes.
+    if if_range.trim().starts_with('"') {
+      return tag != nil and !tag.starts_with('W/') and _strip_weak(if_range) == _strip_weak(tag)
+    }
+
+    var since = util.parse_date(if_range)
+
+    return since != nil and mtime <= since
+  }
+}

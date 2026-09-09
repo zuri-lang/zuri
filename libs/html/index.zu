@@ -118,7 +118,7 @@
  * %> html.encode('<b>Tom & Jerry</b>')
  * '&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;'
  * %> html.decode('caf&eacute; &#8212; &#x2603;')
- * 'café — ☃'
+ * 'café: ☃'
  * ```
  *
  * ---

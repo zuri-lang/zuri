@@ -1,0 +1,747 @@
+#!-- part of the http module
+
+import .errors { ProtocolError }
+
+# RFC 9110 §5.1: a field name is a token, and a token is made only of
+# these characters. Anything else in a name means the message is
+# malformed, not that the name is unusual.
+#
+# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+#         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+var _TOKEN_CHARS = {}
+
+def _init_token_chars() {
+  var specials = "!#$%&'*+-.^_`|~"
+  iter var i = 0; i < specials.length(); i++ {
+    _TOKEN_CHARS[specials[i].ord()] = true
+  }
+  iter var c = 48; c <= 57; c++ {   # 0-9
+    _TOKEN_CHARS[c] = true
+  }
+  iter var c = 65; c <= 90; c++ {   # A-Z
+    _TOKEN_CHARS[c] = true
+  }
+  iter var c = 97; c <= 122; c++ {  # a-z
+    _TOKEN_CHARS[c] = true
+  }
+}
+
+_init_token_chars()
+
+# Field names whose canonical spelling is not what simple
+# capitalize-each-dash-part would produce. Everything else canonicalizes
+# fine by that rule, so only the exceptions are listed.
+var _CANONICAL_NAMES = {
+  'etag': 'ETag',
+  'te': 'TE',
+  'dnt': 'DNT',
+  'www-authenticate': 'WWW-Authenticate',
+  'content-md5': 'Content-MD5',
+  'x-xss-protection': 'X-XSS-Protection',
+  'sec-websocket-key': 'Sec-WebSocket-Key',
+  'sec-websocket-accept': 'Sec-WebSocket-Accept',
+  'sec-websocket-version': 'Sec-WebSocket-Version',
+  'sec-websocket-protocol': 'Sec-WebSocket-Protocol',
+  'sec-websocket-extensions': 'Sec-WebSocket-Extensions',
+  'x-ua-compatible': 'X-UA-Compatible',
+}
+
+# Fields that may legally appear more than once but whose values must
+# never be folded together with commas, because a comma is legal inside
+# a single value. `Set-Cookie` is the classic case (RFC 6265 §3);
+# folding two of them produces one cookie nobody asked for.
+var _NEVER_FOLDED = ['set-cookie', 'www-authenticate', 'proxy-authenticate']
+
+# Fields defined as a single value, where a second occurrence is not
+# "another value" but a request-smuggling vector: two different
+# `Content-Length` values let a proxy and an origin disagree about
+# where the body ends. RFC 9110 §5.3 says reject.
+var _SINGLETON = [
+  'content-length',
+  'host',
+  'content-type',
+  'authorization',
+  'proxy-authorization',
+  'from',
+  'location',
+  'max-forwards',
+  'referer',
+  'user-agent',
+  'if-modified-since',
+  'if-unmodified-since',
+  'age',
+  'expires',
+  'date',
+  'retry-after',
+  'last-modified',
+  'server',
+]
+
+/**
+ * Whether `name` is a syntactically valid HTTP field name, i.e. a
+ * non-empty RFC 9110 token.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_valid_name(name) {
+  if !is_string(name) or name.is_empty() {
+    return false
+  }
+
+  iter var i = 0; i < name.length(); i++ {
+    if !_TOKEN_CHARS.contains(name[i].ord()) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * Whether `value` is a legal HTTP field value.
+ *
+ * The rule that actually matters here is that a value may not contain
+ * CR, LF, or NUL. Letting any of those through is response splitting:
+ * a value carrying `\r\n` ends the field early and lets whoever
+ * supplied it inject headers, or a whole second response, into the
+ * stream.
+ *
+ * Leading and trailing whitespace is not part of the value and is
+ * stripped before the check rather than rejected.
+ *
+ * @param string value
+ * @returns bool
+ */
+def is_valid_value(value) {
+  if !is_string(value) {
+    return false
+  }
+
+  iter var i = 0; i < value.length(); i++ {
+    var c = value[i].ord()
+    if c == 13 or c == 10 or c == 0 {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * The conventional spelling of a field name, e.g. `'content-type'`
+ * becomes `'Content-Type'` and `'etag'` becomes `'ETag'`.
+ *
+ * Field names are case-insensitive on the wire, so this is purely
+ * cosmetic - but it is the casing every other HTTP implementation
+ * emits, and some badly written clients do compare case-sensitively.
+ *
+ * @param string name
+ * @returns string
+ */
+def canonical_name(name: string) {
+  var lower = name.lower()
+
+  var special = _CANONICAL_NAMES.get(lower, nil)
+  if special {
+    return special
+  }
+
+  var parts = lower.split('-')
+  iter var i = 0; i < parts.length(); i++ {
+    if parts[i] {
+      parts[i] = parts[i][0].upper() + parts[i][1,]
+    }
+  }
+
+  return '-'.join(parts)
+}
+
+/**
+ * An ordered, case-insensitive, multi-value collection of HTTP header
+ * fields.
+ *
+ * Field names are matched without regard to case, so `headers.get('content-type')`
+ * and `headers.get('Content-Type')` are the same lookup, while the
+ * spelling a field was first added under is what gets written back
+ * out. Insertion order is preserved.
+ *
+ * A field may legally appear more than once. `set()` replaces every
+ * occurrence, `add()` appends another one, `get()` returns the first,
+ * and `get_all()` returns them all:
+ *
+ * ```zuri
+ * var h = http.Headers()
+ * h.set('Accept', 'text/html')
+ * h.add('Accept', 'application/json')
+ *
+ * h.get('accept')      # 'text/html'
+ * h.get_all('accept')  # ['text/html', 'application/json']
+ * ```
+ *
+ * Every name and value is validated on the way in. A name that isn't
+ * a token, or a value carrying CR, LF or NUL, raises rather than being
+ * quietly sanitised, because a value that can inject a newline is a
+ * response-splitting bug wherever it eventually lands.
+ *
+ * @printable
+ * @serializable
+ */
+class Headers {
+
+  # lowercased name -> [original name, [values...]]
+  var _fields = {}
+
+  # Running total of `name: value\r\n` sizes, so a server can enforce
+  # a header-block limit without walking the whole collection.
+  var _size = 0
+
+  /**
+   * Builds a `Headers` collection, optionally seeded from a dictionary
+   * of `name -> value` (or `name -> [value, ...]`) pairs.
+   *
+   * @param ?dict fields
+   */
+  @new(fields) {
+    self._fields = {}
+    self._size = 0
+
+    if fields != nil {
+      if !is_dict(fields) {
+        raise TypeError('fields must be a dictionary')
+      }
+      self.extend(fields)
+    }
+  }
+
+  /**
+   * The first value recorded for `name`, or `fallback` (default `nil`)
+   * when the field is absent.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  get(name: string, fallback) {
+    var entry = self._fields.get(name.lower(), nil)
+    if entry == nil {
+      return fallback
+    }
+    return entry[1][0]
+  }
+
+  /**
+   * Every value recorded for `name`, in the order they were added, or
+   * an empty list when the field is absent.
+   *
+   * @param string name
+   * @returns list
+   */
+  get_all(name: string) {
+    var entry = self._fields.get(name.lower(), nil)
+    if entry == nil {
+      return []
+    }
+    return entry[1].clone()
+  }
+
+  /**
+   * All values for `name` joined with `', '` - the form RFC 9110 §5.3
+   * defines as equivalent to repeating the field - or `fallback` when
+   * the field is absent.
+   *
+   * Never use this for `Set-Cookie`; commas are legal inside a cookie
+   * value and joining them corrupts the result. `get_all()` is the
+   * right call there.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  get_joined(name: string, fallback) {
+    var entry = self._fields.get(name.lower(), nil)
+    if entry == nil {
+      return fallback
+    }
+    return ', '.join(entry[1])
+  }
+
+  /**
+   * Replaces every value of `name` with `value`. The name keeps
+   * whatever spelling it is given here.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns Headers: this same instance, for chaining
+   * @throws ProtocolError if the name is not a token or the value
+   *    contains CR, LF, or NUL
+   */
+  set(name: string, value) {
+    var text = self._coerce(name, value)
+
+    if !is_valid_name(name) {
+      raise ProtocolError('invalid header field name: ${name}')
+    }
+
+    self.remove(name)
+    self._fields[name.lower()] = [name, [text]]
+    self._size += name.length() + text.length() + 4
+
+    return self
+  }
+
+  /**
+   * Records another value for `name`, keeping any already there.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns Headers: this same instance, for chaining
+   * @throws ProtocolError if the name is not a token or the value
+   *    contains CR, LF, or NUL
+   */
+  add(name: string, value) {
+    var text = self._coerce(name, value)
+
+    if !is_valid_name(name) {
+      raise ProtocolError('invalid header field name: ${name}')
+    }
+
+    var key = name.lower()
+    var entry = self._fields.get(key, nil)
+
+    if entry == nil {
+      self._fields[key] = [name, [text]]
+    } else {
+      entry[1].append(text)
+    }
+
+    self._size += name.length() + text.length() + 4
+
+    return self
+  }
+
+  /**
+   * Sets `name` to `value` only if the field is not already present.
+   * Used throughout this module for defaults a caller is free to
+   * override - `Date`, `Server`, `User-Agent` and friends.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns Headers: this same instance, for chaining
+   */
+  set_default(name: string, value) {
+    if !self.contains(name) {
+      self.set(name, value)
+    }
+    return self
+  }
+
+  /**
+   * Removes every value of `name`. Removing an absent field does
+   * nothing rather than failing.
+   *
+   * @param string name
+   * @returns Headers: this same instance, for chaining
+   */
+  remove(name: string) {
+    var key = name.lower()
+    var entry = self._fields.get(key, nil)
+
+    if entry != nil {
+      for value in entry[1] {
+        self._size -= entry[0].length() + value.length() + 4
+      }
+      self._fields.remove(key)
+    }
+
+    return self
+  }
+
+  /**
+   * Whether `name` is present at all.
+   *
+   * @param string name
+   * @returns bool
+   */
+  contains(name: string) {
+    return self._fields.contains(name.lower())
+  }
+
+  /**
+   * Whether `name` is present and one of its comma-separated tokens
+   * equals `token`, compared case-insensitively.
+   *
+   * This is the correct way to ask about the list-valued fields that
+   * drive protocol decisions - `Connection: keep-alive, Upgrade`,
+   * `Transfer-Encoding: gzip, chunked` - where a naive substring test
+   * would happily match `keep-alive-ish` and a naive equality test
+   * would miss the second token entirely.
+   *
+   * @param string name
+   * @param string token
+   * @returns bool
+   */
+  contains_token(name: string, token: string) {
+    var wanted = token.lower()
+
+    for value in self.get_all(name) {
+      for part in value.split(',') {
+        if part.trim().lower() == wanted {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * Every comma-separated token across every occurrence of `name`,
+   * lowercased and trimmed, in order. Empty elements are dropped, as
+   * RFC 9110 §5.6.1 permits.
+   *
+   * @param string name
+   * @returns list
+   */
+  tokens(name: string) {
+    var result = []
+
+    for value in self.get_all(name) {
+      for part in value.split(',') {
+        var token = part.trim().lower()
+        if token {
+          result.append(token)
+        }
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Copies every field from `other` into this collection, replacing
+   * fields of the same name. `other` may be another `Headers` or a
+   * plain dictionary whose values are strings or lists of strings.
+   *
+   * @param {Headers|dict} other
+   * @returns Headers: this same instance, for chaining
+   */
+  extend(other) {
+    if instance_of(other, Headers) {
+      other.each(@(name, value) {
+        self.add(name, value)
+      })
+      return self
+    }
+
+    if !is_dict(other) {
+      raise TypeError('expected Headers or dictionary, got ${typeof(other)}')
+    }
+
+    for name, value in other {
+      if is_list(value) {
+        self.remove(name)
+        for item in value {
+          self.add(name, item)
+        }
+      } else {
+        self.set(name, value)
+      }
+    }
+
+    return self
+  }
+
+  /**
+   * Calls `callback(name, value)` once per field occurrence, in
+   * insertion order - so a field present three times triggers three
+   * calls, which is exactly what writing the block back out needs.
+   *
+   * @param function(2) callback
+   */
+  each(callback) {
+    for _, entry in self._fields {
+      for value in entry[1] {
+        callback(entry[0], value)
+      }
+    }
+  }
+
+  /**
+   * The field names present, in insertion order and in the spelling
+   * they were added under.
+   *
+   * @returns list
+   */
+  names() {
+    var result = []
+    for _, entry in self._fields {
+      result.append(entry[0])
+    }
+    return result
+  }
+
+  /**
+   * The number of distinct field names present. A field repeated
+   * three times counts once.
+   *
+   * @returns number
+   */
+  length() {
+    return self._fields.length()
+  }
+
+  /**
+   * Whether there are no fields at all.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self._fields.is_empty()
+  }
+
+  /**
+   * The number of bytes this block would occupy once serialised,
+   * counting the `': '` and `CRLF` around every value. Servers use
+   * this to enforce a header-size limit as fields arrive.
+   *
+   * @returns number
+   */
+  size() {
+    return self._size
+  }
+
+  /**
+   * Drops every field. Cheaper than building a new instance when a
+   * connection is being reused for the next message.
+   *
+   * @returns Headers: this same instance, for chaining
+   */
+  clear() {
+    self._fields.clear()
+    self._size = 0
+    return self
+  }
+
+  /**
+   * An independent copy. Mutating the copy never affects the
+   * original.
+   *
+   * @returns Headers
+   */
+  clone() {
+    var copy = Headers()
+
+    self.each(@(name, value) {
+      copy.add(name, value)
+    })
+
+    return copy
+  }
+
+  /**
+   * Rewrites every field name to its conventional casing, e.g.
+   * `content-type` to `Content-Type`. Purely cosmetic; names remain
+   * case-insensitive either way.
+   *
+   * @returns Headers: this same instance, for chaining
+   */
+  canonicalize() {
+    for key, entry in self._fields {
+      entry[0] = canonical_name(key)
+    }
+    return self
+  }
+
+  /**
+   * Removes the hop-by-hop fields listed in RFC 9110 §7.6.1, which
+   * describe one connection rather than the message itself and must
+   * never be forwarded on to another connection. The set includes
+   * anything named by this message's own `Connection` field, which is
+   * how an endpoint declares an extra hop-by-hop field.
+   *
+   * A reverse proxy that forgets this is how a client-supplied
+   * `Transfer-Encoding` reaches an upstream that frames it
+   * differently - the classic smuggling setup.
+   *
+   * @returns Headers: this same instance, for chaining
+   */
+  strip_hop_by_hop() {
+    var doomed = [
+      'connection',
+      'keep-alive',
+      'proxy-connection',
+      'proxy-authenticate',
+      'proxy-authorization',
+      'te',
+      'trailer',
+      'transfer-encoding',
+      'upgrade',
+    ]
+
+    for token in self.tokens('connection') {
+      if !doomed.contains(token) {
+        doomed.append(token)
+      }
+    }
+
+    for name in doomed {
+      self.remove(name)
+    }
+
+    return self
+  }
+
+  /**
+   * Serialises the block in wire format: `Name: value\r\n` per
+   * occurrence, with no terminating blank line (the caller decides
+   * where the block ends, since a trailer section ends differently to
+   * a head).
+   *
+   * @returns string
+   */
+  to_wire() {
+    var parts = []
+
+    self.each(@(name, value) {
+      parts.append('${name}: ${value}\r\n')
+    })
+
+    return ''.join(parts)
+  }
+
+  /**
+   * The block as a plain dictionary of `name -> value`, folding
+   * repeated fields into a list. Handy for logging and for handing
+   * headers to code that has no reason to know about this class.
+   *
+   * @returns dict
+   */
+  to_dict() {
+    var result = {}
+
+    for _, entry in self._fields {
+      result[entry[0]] = entry[1].length() == 1 ? entry[1][0] : entry[1].clone()
+    }
+
+    return result
+  }
+
+  # Normalises a value to a string and validates it. Numbers and
+  # booleans are accepted because a great many header values are
+  # naturally one of those (`Content-Length`, `Age`, `Max-Forwards`)
+  # and forcing every caller to stringify them buys nothing.
+  _coerce(name, value) {
+    if value == nil {
+      raise TypeError('header ${name} cannot be nil')
+    }
+
+    var text = is_string(value) ? value : value.to_string()
+    text = text.trim(' ').trim('\t')
+
+    if !is_valid_value(text) {
+      raise ProtocolError(
+        'header ${name} contains a line break or NUL, which would split the response'
+      )
+    }
+
+    return text
+  }
+
+  to_string() {
+    return '<Headers ${self._fields.length()} fields>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @to_json() {
+    return self.to_dict()
+  }
+}
+
+/**
+ * Parses a raw header block - everything between a start line and the
+ * blank line that ends the head - into a `Headers`.
+ *
+ * Obsolete line folding (a continuation line starting with a space) is
+ * rejected outright rather than unfolded: RFC 9112 §5.2 deprecated it,
+ * and treating it as data is the safer reading given how differently
+ * intermediaries handle it.
+ *
+ * @param string block: the header lines, without the trailing blank line
+ * @param ?bool strict: when `true` (the default), a field appearing
+ *    more than once that is defined to appear at most once raises
+ *    instead of being folded
+ * @returns Headers
+ * @throws ProtocolError on a malformed field, a folded line, or a
+ *    duplicated singleton field
+ */
+def parse(block: string, strict: ?bool) {
+  if strict == nil {
+    strict = true
+  }
+
+  var headers = Headers()
+  if !block or block.trim().is_empty() {
+    return headers
+  }
+
+  for line in block.split('\r\n') {
+    if line.is_empty() {
+      continue
+    }
+
+    # An obs-fold continuation. Unfolding it would mean guessing what
+    # the sender meant, and intermediaries guess differently.
+    if line[0] == ' ' or line[0] == '\t' {
+      raise ProtocolError('obsolete header line folding is not accepted')
+    }
+
+    var colon = line.index_of(':')
+    if colon < 1 {
+      raise ProtocolError('malformed header line: ${line}')
+    }
+
+    var name = line[0, colon]
+
+    # RFC 9112 §5.1 is explicit: no whitespace is allowed between the
+    # field name and the colon, and a server MUST reject it. This is
+    # the "Content-Length : 5" smuggling trick.
+    if name != name.trim() {
+      raise ProtocolError('whitespace between header name and colon: ${name}')
+    }
+
+    if !is_valid_name(name) {
+      raise ProtocolError('invalid header field name: ${name}')
+    }
+
+    var value = line[colon + 1,].trim(' ').trim('\t')
+
+    if strict and _SINGLETON.contains(name.lower()) and headers.contains(name) {
+      # Two different Content-Lengths (or Hosts) is not a message with
+      # a repeated field; it is two parties being invited to disagree
+      # about where this message ends.
+      if headers.get(name, nil) != value {
+        raise ProtocolError('conflicting duplicate ${name} header')
+      }
+      continue
+    }
+
+    headers.add(name, value)
+  }
+
+  return headers
+}
+
+/**
+ * Whether a field with this name must be repeated rather than folded
+ * into one comma-separated value when written out.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_never_folded(name: string) {
+  return _NEVER_FOLDED.contains(name.lower())
+}

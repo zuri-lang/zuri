@@ -4,9 +4,9 @@
  * A complete, RFC 4180-compliant library for reading and writing
  * Comma-Separated Values (CSV) data.
  *
- * This module implements the format defined in RFC 4180 —
+ * This module implements the format defined in RFC 4180:
  * "Common Format and MIME Type for Comma-Separated Values (CSV)
- * Files" — and extends it with the practical accommodations
+ * Files": and extends it with the practical accommodations
  * required by real-world CSV data, including configurable
  * delimiters, optional quoting strategies, BOM detection, and
  * lenient parsing of files that deviate from the strict spec.
@@ -23,15 +23,15 @@
  *
  * ## Extensions beyond RFC 4180
  *
- * - **Configurable delimiter** — any single character (tab for
- * TSV, pipe, etc.) - **Configurable quote character** — defaults
- * to `"`. - **LF-only and CR-only line endings** — accepted on
- * input; CRLF on output. - **BOM stripping** — UTF-8 BOM
- * (`\xEF\xBB\xBF`) is silently removed. - **Empty last line** —
+ * - **Configurable delimiter**: any single character (tab for
+ * TSV, pipe, etc.) - **Configurable quote character**: defaults
+ * to `"`. - **LF-only and CR-only line endings**: accepted on
+ * input; CRLF on output. - **BOM stripping**: UTF-8 BOM
+ * (`\xEF\xBB\xBF`) is silently removed. - **Empty last line**:
  * a trailing newline after the last record is ignored. -
- * **Quoting strategies** — `QUOTE_MINIMAL` (default),
+ * **Quoting strategies**: `QUOTE_MINIMAL` (default),
  * `QUOTE_ALL`, `QUOTE_NONNUMERIC`, `QUOTE_NONE`. - **Lenient
- * mode** — tolerate unquoted fields containing the delimiter and
+ * mode**: tolerate unquoted fields containing the delimiter and
  * other minor deviations common in real-world CSV files.
  *
  * ## Quick start
@@ -82,7 +82,7 @@ import io
 
 
 # ---------------------------------------------------------------------------
-# Constants — quoting strategies
+# Constants: quoting strategies
 # ---------------------------------------------------------------------------
 
 /**
@@ -153,7 +153,7 @@ class CsvError < Error {
 
 
 # ---------------------------------------------------------------------------
-# Dialect — bundles all format options
+# Dialect: bundles all format options
 # ---------------------------------------------------------------------------
 
 /**
@@ -161,7 +161,7 @@ class CsvError < Error {
  * data is read or written. Pass a `Dialect` instance to `Reader`
  * or `Writer` to override the defaults.
  *
- * ### Example — tab-separated values (TSV)
+ * ### Example: tab-separated values (TSV)
  *
  * ```zuri
  * import csv
@@ -171,7 +171,7 @@ class CsvError < Error {
  * var reader = csv.Reader(file, tsv)
  * ```
  *
- * ### Example — pipe-delimited, quote-all
+ * ### Example: pipe-delimited, quote-all
  *
  * ```zuri
  * var d = csv.Dialect()
@@ -277,8 +277,8 @@ var _SNIFF_MAX_LINES = 10
 
 # Scores how consistently `counts` (one delimiter-occurrence count
 # per sampled line) agree with each other. Lines sharing the same
-# delimiter count are the actual signal — the more of them agree,
-# the more likely that's the real delimiter — with the shared count
+# delimiter count are the actual signal: the more of them agree,
+# the more likely that's the real delimiter: with the shared count
 # itself used only to break ties between two equally-consistent
 # candidates (more fields per line is a stronger signal than a
 # delimiter that barely shows up). Returns `-1` when the delimiter
@@ -318,14 +318,14 @@ def _consistency_score(counts) {
  * returns a `Dialect` configured with it.
  *
  * Each candidate delimiter is scored by how consistently it occurs
- * across the sample's lines — a real delimiter tends to appear the
+ * across the sample's lines: a real delimiter tends to appear the
  * same number of times on every line, while one that just happens
  * to show up in the data (a comma inside a sentence, say) doesn't.
  * The best-scoring candidate wins; if none of them appear
  * consistently anywhere in `sample`, the first candidate (`,` by
  * default) is used.
  *
- * This only detects the delimiter — not the quote character,
+ * This only detects the delimiter: not the quote character,
  * whether a header row is present, or any other `Dialect` field.
  * Set those on the returned `Dialect` yourself if they differ from
  * the defaults.
@@ -338,7 +338,7 @@ def _consistency_score(counts) {
  * ';'
  * ```
  *
- * @param string sample: Doesn't need to be the whole file — a few
+ * @param string sample: Doesn't need to be the whole file: a few
  *    representative lines are enough.
  * @param ?list candidate_delimiters: Default `[',', '\t', ';',
  *    '|']`.
@@ -395,8 +395,8 @@ def sniff_dialect(sample, candidate_delimiters) {
 var _ST_START        = 0   # beginning of a field
 var _ST_FIELD        = 1   # inside an unquoted field
 var _ST_QUOTED       = 2   # inside a quoted field
-var _ST_QUOTE_END    = 3   # just saw a closing quote — next must be delimiter/EOL/EOF
-var _ST_QUOTE_ESCAPE = 4   # just saw "" inside a quoted field — potential escape or close
+var _ST_QUOTE_END    = 3   # just saw a closing quote: next must be delimiter/EOL/EOF
+var _ST_QUOTE_ESCAPE = 4   # just saw "" inside a quoted field: potential escape or close
 
 /**
  * Parses a single CSV record (row) from a character buffer
@@ -445,7 +445,7 @@ def _parse_record(text, start, dialect, line_num) {
     if state == _ST_START {
       # Beginning of a new field.
       if ch == qchar {
-        # Opening quote — enter quoted mode.
+        # Opening quote: enter quoted mode.
         state     = _ST_QUOTED
         field_col = col
         i++; col++
@@ -529,7 +529,7 @@ def _parse_record(text, start, dialect, line_num) {
         state = _ST_QUOTE_ESCAPE
         i++; col++
       } else if ch == '\r' {
-        # CR inside a quoted field — literal part of field content.
+        # CR inside a quoted field: literal part of field content.
         field += ch
         i++
         if i < n and text[i] == '\n' {
@@ -538,7 +538,7 @@ def _parse_record(text, start, dialect, line_num) {
         }
         line_num++; col = 1
       } else if ch == '\n' {
-        # LF inside a quoted field — literal part of field content.
+        # LF inside a quoted field: literal part of field content.
         field += ch
         i++; line_num++; col = 1
       } else {
@@ -551,18 +551,18 @@ def _parse_record(text, start, dialect, line_num) {
       # If the next character is also a quote, it is an escaped quote ("").
       # Otherwise the first quote was the closing quote.
       if ch == qchar {
-        # Escaped double-quote — add a literal quote to the field.
+        # Escaped double-quote: add a literal quote to the field.
         field += qchar
         state  = _ST_QUOTED
         i++; col++
       } else if ch == delim {
-        # Closing quote followed by delimiter — end of field.
+        # Closing quote followed by delimiter: end of field.
         fields.append(field)
         field = ''
         state = _ST_START
         i++; col++
       } else if ch == '\r' {
-        # Closing quote followed by CR — end of record.
+        # Closing quote followed by CR: end of record.
         fields.append(field)
         i++; col = 1
         if i < n and text[i] == '\n' {
@@ -570,7 +570,7 @@ def _parse_record(text, start, dialect, line_num) {
         }
         return { fields: fields, next_pos: i, line: line_num }
       } else if ch == '\n' {
-        # Closing quote followed by LF — end of record.
+        # Closing quote followed by LF: end of record.
         fields.append(field)
         i++; col = 1
         return { fields: fields, next_pos: i, line: line_num }
@@ -597,13 +597,13 @@ def _parse_record(text, start, dialect, line_num) {
   # End of input reached.
   if state == _ST_QUOTED {
     if lenient {
-      # Unterminated quoted field — accept it as-is.
+      # Unterminated quoted field: accept it as-is.
       fields.append(field)
     } else {
       raise CsvError('unterminated quoted field at end of input', line_num, field_col)
     }
   } else if state == _ST_QUOTE_ESCAPE {
-    # Input ended immediately after a closing quote — valid.
+    # Input ended immediately after a closing quote: valid.
     fields.append(field)
   } else if state == _ST_FIELD {
     if dialect.trim {
@@ -611,10 +611,10 @@ def _parse_record(text, start, dialect, line_num) {
     }
     fields.append(field)
   } else if state == _ST_START and fields.length() == 0 {
-    # Truly empty input — return nil so the caller knows there is nothing.
+    # Truly empty input: return nil so the caller knows there is nothing.
     return nil
   } else if state == _ST_START {
-    # Trailing delimiter with no field after it — append empty field.
+    # Trailing delimiter with no field after it: append empty field.
     fields.append('')
   }
 
@@ -705,7 +705,7 @@ def _has_bom(text) {
  * `Reader` implements the iterator protocol so it can be used
  * directly in a `for` loop.
  *
- * ### Example — reading a file with a header row
+ * ### Example: reading a file with a header row
  *
  * ```zuri
  * import csv
@@ -721,7 +721,7 @@ def _has_bom(text) {
  * reader.close()
  * ```
  *
- * ### Example — tab-separated file, no header
+ * ### Example: tab-separated file, no header
  *
  * ```zuri
  * import csv
@@ -924,7 +924,7 @@ class Reader {
   }
 
   /**
-   * Iterator protocol — returns the next record, enabling `for
+   * Iterator protocol: returns the next record, enabling `for
    * row in reader`.
    *
    * @return list | dict | nil
@@ -934,7 +934,7 @@ class Reader {
   }
 
   /**
-   * Iterator termination — returns `false` when all records are
+   * Iterator termination: returns `false` when all records are
    * exhausted.
    */
   @key(n) {
@@ -962,7 +962,7 @@ class Reader {
  * `io.file` object (or any object implementing `.write()` and
  * `.close()`).
  *
- * ### Example — writing dicts (with header)
+ * ### Example: writing dicts (with header)
  *
  * ```zuri
  * import csv
@@ -975,7 +975,7 @@ class Reader {
  * writer.close()
  * ```
  *
- * ### Example — QUOTE_ALL with tab delimiter
+ * ### Example: QUOTE_ALL with tab delimiter
  *
  * ```zuri
  * import csv
@@ -1191,12 +1191,12 @@ class Writer {
  * ```zuri
  * import csv
  *
- * # No header — returns list of lists.
+ * # No header: returns list of lists.
  * var rows = csv.parse('a,b,c\r\n1,2,3\r\n4,5,6')
  * echo rows[0]   # ['a', 'b', 'c']
  * echo rows[1]   # ['1', '2', '3']
  *
- * # With header — returns list of dicts.
+ * # With header: returns list of dicts.
  * var d = csv.Dialect()
  * d.has_header = true
  * rows = csv.parse('name,age\r\nAlice,30\r\nBob,25', d)
@@ -1303,11 +1303,11 @@ def parse(text, dialect) {
  * ```zuri
  * import csv
  *
- * # From lists — no header.
+ * # From lists: no header.
  * echo csv.stringify([['Alice', 30], ['Bob', 25]])
  * # Alice,30\r\nBob,25\r\n
  *
- * # From dicts — header inferred.
+ * # From dicts: header inferred.
  * echo csv.stringify([
  *   { name: 'Alice', age: 30 },
  *   { name: 'Bob',   age: 25 },

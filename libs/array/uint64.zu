@@ -20,7 +20,7 @@ var _UINT64_MAX_NUM = UINT64_MAX.to_number()
  *
  * Values at or beyond 2^53 need Zuri's `bigint` type to be
  * represented exactly (a regular `number` is an IEEE-754 double,
- * and loses precision past that point) — `append()`/`set()` accept
+ * and loses precision past that point): `append()`/`set()` accept
  * either a plain integer or a bigint (`is_bigint()`) for that
  * reason.
  *

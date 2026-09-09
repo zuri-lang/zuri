@@ -30,7 +30,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  io.TTY — test suite'
+echo '  io.TTY: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 assert typeof(io.TTY) == 'class', 'io.TTY must be wired up as a real class on the io module'

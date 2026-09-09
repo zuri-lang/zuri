@@ -120,7 +120,7 @@ import io
 # Public type constants
 # ---------------------------------------------------------------------------
 
-/** value type none — the option is a boolean flag */
+/** value type none: the option is a boolean flag */
 var NONE = 0
 
 /** value type integer (accepts numbers, floors to integer) */
@@ -138,13 +138,13 @@ var BOOL = 3
 /** value type string */
 var STRING = 4
 
-/** value type list — the option may be supplied multiple times */
+/** value type list: the option may be supplied multiple times */
 var LIST = 5
 
-/** value type choice — value must be one of the `choices` list/dict */
+/** value type choice: value must be one of the `choices` list/dict */
 var CHOICE = 6
 
-/** value type optional — value is consumed if the next token is not a flag */
+/** value type optional: value is consumed if the next token is not a flag */
 var OPTIONAL = 7
 
 var _type_name = {
@@ -176,7 +176,7 @@ def _metavar(word, type) {
 # ---------------------------------------------------------------------------
 
 # We emit ANSI only when stdout is a real terminal and NO_COLOR isn't
-# set — the same convention most modern CLIs follow, so piping to a
+# set: the same convention most modern CLIs follow, so piping to a
 # file or another program (or running in CI) gets plain text instead
 # of raw escape codes.
 var _use_color = os.get_env('NO_COLOR') == nil and io.stdout.is_tty()
@@ -404,13 +404,13 @@ class _Optionable {
   /**
    * Adds an option (flag) to this parser or command.
    *
-   * `opts` keys: - `short_name` {string} — single-character
-   * alias (`-x`) - `type` {int} — one of the type constants;
-   * default `NONE` - `value` {any} — default value when the
-   * option is absent - `choices` {list|dict} — restrict allowed
-   * values - `required` {bool} — error if option is absent -
-   * `metavar` {string} — placeholder shown in help (default: the
-   * option's own name, lower-cased) - `deprecated` {bool} — print
+   * `opts` keys: - `short_name` {string}: single-character
+   * alias (`-x`) - `type` {int}: one of the type constants;
+   * default `NONE` - `value` {any}: default value when the
+   * option is absent - `choices` {list|dict}: restrict allowed
+   * values - `required` {bool}: error if option is absent -
+   * `metavar` {string}: placeholder shown in help (default: the
+   * option's own name, lower-cased) - `deprecated` {bool}: print
    * a warning when the option is used
    *
    * @param string name
@@ -508,11 +508,11 @@ class _Positional < _Optionable {
  *
  * ### Properties you can set after construction
  *
- * - `description` {string} — paragraph shown between USAGE and
- * OPTIONS. - `epilog` {string} — paragraph shown after all
- * sections. - `allow_abbrev` {bool} — allow unambiguous
+ * - `description` {string}: paragraph shown between USAGE and
+ * OPTIONS. - `epilog` {string}: paragraph shown after all
+ * sections. - `allow_abbrev` {bool}: allow unambiguous
  * long-option prefix matching (default `true`, like Python
- * argparse). - `allow_atfile` {bool} — expand `@filename` tokens
+ * argparse). - `allow_atfile` {bool}: expand `@filename` tokens
  * by reading arguments from that file (default `true`).
  */
 class Parser < _Optionable {
@@ -595,14 +595,14 @@ class Parser < _Optionable {
   /**
    * Adds an option (flag) to the top-level parser.
    *
-   * `opts` keys can include any of: - `short_name` {string} —
-   * single-character alias (`-x`) - `type` {int} — one of the
-   * type constants; default `NONE` - `value` {any} — default
-   * value when the option is absent - `choices` {list|dict} —
-   * restrict allowed values - `required` {bool} — error if
-   * option is absent - `metavar` {string} — placeholder shown in
+   * `opts` keys can include any of: - `short_name` {string}:
+   * single-character alias (`-x`) - `type` {int}: one of the
+   * type constants; default `NONE` - `value` {any}: default
+   * value when the option is absent - `choices` {list|dict}:
+   * restrict allowed values - `required` {bool}: error if
+   * option is absent - `metavar` {string}: placeholder shown in
    * help (default: the option's own name, lower-cased) -
-   * `deprecated` {bool} — print a warning when the option is used
+   * `deprecated` {bool}: print a warning when the option is used
    *
    * @param string name
    * @param ?string help
@@ -615,11 +615,11 @@ class Parser < _Optionable {
   /**
    * Adds a sub-command.
    *
-   * `opts` keys: - `type` {int} — expected type for the
-   * command's value argument - `action` {function} — called with
+   * `opts` keys: - `type` {int}: expected type for the
+   * command's value argument - `action` {function}: called with
    * `(options [, value])` after parsing - `choices` {list|dict}—
    * restrict allowed values when `type` is `CHOICE` - `metavar`
-   * {string} — placeholder shown in help for the command's value,
+   * {string}: placeholder shown in help for the command's value,
    * e.g. `'message'` for `git commit -m <message>` (default: the
    * value type's name, lower-cased)
    *
@@ -663,11 +663,11 @@ class Parser < _Optionable {
   /**
    * Adds a positional (index-based) argument.
    *
-   * `opts` keys: - `type` {int} — coercion type; default
-   * `STRING` - `value` {any} — default when argument is absent -
-   * `choices` {list|dict} — restrict allowed values - `required`
-   * {bool} — error if argument is absent (default `false`) -
-   * `metavar` {string} — display name in help
+   * `opts` keys: - `type` {int}: coercion type; default
+   * `STRING` - `value` {any}: default when argument is absent -
+   * `choices` {list|dict}: restrict allowed values - `required`
+   * {bool}: error if argument is absent (default `false`) -
+   * `metavar` {string}: display name in help
    *
    * @param string name
    * @param ?string help
@@ -801,7 +801,7 @@ class Parser < _Optionable {
               self._validate_choice(option, cli_args[i], '--${option.long_name}')
               parsed_args.options.set(option.long_name, v)
             } else {
-              # No value — treat as boolean true
+              # No value: treat as boolean true
               parsed_args.options.set(option.long_name, true)
             }
           } else if option.type == LIST {
@@ -830,7 +830,7 @@ class Parser < _Optionable {
               var msg = 'option --${option.long_name} expects ' + _metavar(word, option.type)
               if option.type == CHOICE and !option.choices.is_empty() {
                 var keys = is_dict(option.choices) ? option.choices.keys() : option.choices
-                msg += ' — one of {\'${"', '".join(keys)}\'}'
+                msg += ': one of {\'${"', '".join(keys)}\'}'
               }
               self._option_error(option.long_name, msg)
             }
@@ -1021,7 +1021,7 @@ class Parser < _Optionable {
   }
 
   # -------------------------------------------------------------------------
-  # Private helpers — option resolution
+  # Private helpers: option resolution
   # -------------------------------------------------------------------------
 
   _validate_choice(item, value, label) {
@@ -1095,7 +1095,7 @@ class Parser < _Optionable {
   }
 
   # -------------------------------------------------------------------------
-  # Private helpers — @file expansion
+  # Private helpers: @file expansion
   # -------------------------------------------------------------------------
 
   _expand_atfiles(args_list) {
@@ -1122,7 +1122,7 @@ class Parser < _Optionable {
   }
 
   # -------------------------------------------------------------------------
-  # Private helpers — error printing
+  # Private helpers: error printing
   # -------------------------------------------------------------------------
 
   _command_error(name, message) {
@@ -1145,7 +1145,7 @@ class Parser < _Optionable {
   }
 
   # -------------------------------------------------------------------------
-  # Private helpers — help formatting
+  # Private helpers: help formatting
   # -------------------------------------------------------------------------
 
   # How wide the left (flag) column should be for a given option list
@@ -1168,7 +1168,7 @@ class Parser < _Optionable {
     return w
   }
 
-  # Format a single option flag column (no ANSI yet — we decorate after padding)
+  # Format a single option flag column (no ANSI yet: we decorate after padding)
   _format_flag(opt) {
     var left = ''
     if opt.short_name {
@@ -1196,8 +1196,8 @@ class Parser < _Optionable {
   /**
    * Formats a single positional argument's own column, e.g.
    * `<source>` or `[dest]`. A coercion type is only spelled out
-   * when it adds information beyond the name itself — INT/NUMBER/
-   * BOOL — since STRING (the default) says nothing a reader
+   * when it adds information beyond the name itself: INT/NUMBER/
+   * BOOL: since STRING (the default) says nothing a reader
    * doesn't already know, and CHOICE's allowed values are already
    * listed separately as a suffix.
    */

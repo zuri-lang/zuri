@@ -1,0 +1,702 @@
+#!-- part of the http module
+
+import .errors { ConnectionError, ProtocolError, TimeoutError, TooLargeError }
+
+import net
+import net.tls
+
+# The default amount asked of the transport per underlying read. Large
+# enough that a whole small response usually arrives in one call, small
+# enough that a connection sitting idle in a pool isn't holding on to
+# much.
+var _READ_CHUNK = 65536
+
+# Once this many bytes at the front of the read buffer have been
+# consumed, the buffer is compacted. Doing it on every read would copy
+# constantly; never doing it would grow the buffer without bound on a
+# long-lived keep-alive connection.
+var _COMPACT_THRESHOLD = 32768
+
+# Writes are gathered here and handed to the transport in one call.
+# Every small `write()` reaching the socket on its own would be a
+# syscall per header line, and on TLS a record per header line.
+var _WRITE_HIGH_WATER = 65536
+
+# The messages the platform produces when a read or write hits its
+# configured timeout. Errors cross the native boundary as plain
+# strings, so this is the only way to tell "nothing arrived in time"
+# from "the connection broke".
+var _TIMEOUT_MARKERS = [
+  'timed out',
+  'temporarily unavailable',
+  'would block',
+  'operation timed out',
+]
+
+/**
+ * Whether a transport error message describes a timeout (or a
+ * would-block, which a socket with a receive timeout reports as the
+ * same condition) rather than a genuine failure.
+ *
+ * @param string message
+ * @returns bool
+ */
+def is_timeout_error(message) {
+  if !is_string(message) {
+    return false
+  }
+
+  var lower = message.lower()
+  for marker in _TIMEOUT_MARKERS {
+    if lower.contains(marker) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * A buffered, message-oriented view of a connected socket.
+ *
+ * HTTP/1.1 is parsed a line at a time and then a body at a time, and
+ * HTTP/2 a frame at a time; both want to read a few bytes without
+ * paying for a syscall each time, and to write a head made of many
+ * small pieces as one write. `Connection` sits between the protocol
+ * code and either a plain `net.TcpStream` or a `net.tls.TlsStream`
+ * and provides exactly that, plus the peer information the transports
+ * stop reporting once TLS has consumed the underlying socket.
+ *
+ * Instances are created by `connect()` and `accept()` below, or by
+ * `from_transport()` when the socket already exists.
+ *
+ * @printable
+ */
+class Connection {
+
+  /**
+   * The remote peer's address, captured before any TLS wrap consumed
+   * the underlying socket.
+   * @type ?SocketAddr
+   */
+  var peer_address
+
+  /**
+   * This side's address.
+   * @type ?SocketAddr
+   */
+  var local_address
+
+  /**
+   * Whether the connection is TLS-protected.
+   * @type bool
+   */
+  var secure = false
+
+  /**
+   * The ALPN protocol negotiated during the TLS handshake (`'h2'`,
+   * `'http/1.1'`), or `nil` on a plaintext connection or when no
+   * protocol was agreed.
+   * @type ?string
+   */
+  var alpn
+
+  var _transport
+  var _buf
+  var _pos = 0
+  var _out
+  var _closed = false
+  var _eof = false
+
+  /**
+   * Wraps an already-connected transport.
+   *
+   * @param {TcpStream|TlsStream} transport
+   * @param ?SocketAddr peer: the peer address, which a `TlsStream`
+   *    can no longer report on its own
+   * @param ?SocketAddr local
+   */
+  @new(transport, peer, local) {
+    self._transport = transport
+    self._buf = bytes(0)
+    self._out = bytes(0)
+    self._pos = 0
+    self._closed = false
+    self._eof = false
+
+    self.peer_address = peer
+    self.local_address = local
+    self.secure = instance_of(transport, tls.TlsStream)
+    self.alpn = self.secure ? transport.alpn_protocol() : nil
+  }
+
+  /**
+   * The underlying `TcpStream` or `TlsStream`. Needed by the
+   * protocol upgrade paths (WebSocket, HTTP/2) that take a connection
+   * over wholesale.
+   *
+   * @returns {TcpStream|TlsStream}
+   */
+  transport() {
+    return self._transport
+  }
+
+  /**
+   * The peer's certificate on a TLS connection, or `nil` on a
+   * plaintext one or when the peer presented none.
+   *
+   * @returns ?PeerCertificate
+   */
+  peer_certificate() {
+    if !self.secure {
+      return nil
+    }
+    return self._transport.peer_certificate()
+  }
+
+  /**
+   * How many bytes are already buffered and available without
+   * touching the socket.
+   *
+   * @returns number
+   */
+  buffered() {
+    return self._buf.length() - self._pos
+  }
+
+  /**
+   * Whether the peer has closed its side and the buffer is drained.
+   *
+   * @returns bool
+   */
+  is_eof() {
+    return self._eof and self.buffered() == 0
+  }
+
+  /**
+   * Whether `close()` has been called on this connection.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  # Pulls one chunk from the transport into the read buffer. Returns
+  # the number of bytes added; 0 means the peer closed its write half.
+  _fill() {
+    if self._eof {
+      return 0
+    }
+
+    # Drop what has already been consumed before growing the buffer,
+    # so a connection serving thousands of keep-alive requests doesn't
+    # accumulate every byte it ever read.
+    if self._pos >= _COMPACT_THRESHOLD or self._pos == self._buf.length() {
+      var rest = self._buf[self._pos,]
+      self._buf.dispose()
+      self._buf = rest
+      self._pos = 0
+    }
+
+    var chunk
+    catch {
+      chunk = self._transport.read(_READ_CHUNK)
+    } as error
+
+    if error {
+      if is_timeout_error(error.message) {
+        raise TimeoutError('read timed out')
+      }
+      raise ConnectionError(error.message)
+    }
+
+    if chunk.length() == 0 {
+      self._eof = true
+      return 0
+    }
+
+    self._buf.extend(chunk)
+    var count = chunk.length()
+    chunk.dispose()
+
+    return count
+  }
+
+  /**
+   * Reads one CRLF-terminated line and returns it as a string with
+   * the terminator removed.
+   *
+   * A bare LF is accepted as a line terminator as well. RFC 9112
+   * §2.2 permits a recipient to do so, and enough real clients send
+   * one that refusing would break them; a bare CR, on the other hand,
+   * is left in the data where it belongs.
+   *
+   * @param ?number limit: the longest line to tolerate, in bytes;
+   *    defaults to 8192
+   * @returns ?string: the line, or `nil` at a clean EOF before any
+   *    bytes of a line arrived
+   * @throws TooLargeError if the line exceeds `limit`
+   * @throws ProtocolError if EOF arrives mid-line
+   * @throws TimeoutError, ConnectionError
+   */
+  read_line(limit) {
+    if limit == nil {
+      limit = 8192
+    }
+
+    # Counted from the first unread byte rather than from an absolute
+    # buffer offset, because _fill() compacts the buffer and moves
+    # every absolute position out from under us.
+    var scanned = 0
+
+    while true {
+      var lf = self._buf.index_of(10, self._pos + scanned)
+
+      if lf > -1 {
+        var end = lf
+        if end > self._pos and self._buf[end - 1] == 13 {
+          end--
+        }
+
+        var line = self._buf[self._pos, end]
+        var text = line.to_string()
+        line.dispose()
+
+        self._pos = lf + 1
+        return text
+      }
+
+      scanned = self.buffered()
+
+      if scanned > limit {
+        raise TooLargeError('line exceeds the ${limit} byte limit')
+      }
+
+      if self._fill() == 0 {
+        if self.buffered() == 0 {
+          return nil
+        }
+        raise ProtocolError('connection closed in the middle of a line')
+      }
+    }
+  }
+
+  /**
+   * Reads exactly `length` bytes.
+   *
+   * @param number length
+   * @returns bytes
+   * @throws ProtocolError if EOF arrives first
+   * @throws TimeoutError, ConnectionError
+   */
+  read_exactly(length: number) {
+    if length <= 0 {
+      return bytes(0)
+    }
+
+    while self.buffered() < length {
+      if self._fill() == 0 {
+        raise ProtocolError(
+          'connection closed after ${self.buffered()} of ${length} expected bytes'
+        )
+      }
+    }
+
+    var result = self._buf[self._pos, self._pos + length]
+    self._pos += length
+
+    return result
+  }
+
+  /**
+   * Reads whatever is available, up to `length` bytes, blocking only
+   * until the first byte arrives.
+   *
+   * @param number length
+   * @returns bytes: empty at EOF
+   * @throws TimeoutError, ConnectionError
+   */
+  read_some(length: number) {
+    if self.buffered() == 0 {
+      if self._fill() == 0 {
+        return bytes(0)
+      }
+    }
+
+    var available = self.buffered()
+    var take = length < available ? length : available
+
+    var result = self._buf[self._pos, self._pos + take]
+    self._pos += take
+
+    return result
+  }
+
+  /**
+   * Reads until the peer closes its write half.
+   *
+   * This is the framing of last resort - a response with neither
+   * `Content-Length` nor chunked encoding is delimited by the close
+   * itself (RFC 9112 §6.3). `limit` bounds how much will be
+   * accumulated so a peer that never closes cannot exhaust memory.
+   *
+   * @param ?number limit: the most to accept, in bytes; `nil` for no
+   *    limit
+   * @returns bytes
+   * @throws TooLargeError if `limit` is exceeded
+   */
+  read_to_eof(limit) {
+    while true {
+      if limit != nil and self.buffered() > limit {
+        raise TooLargeError('body exceeds the ${limit} byte limit')
+      }
+
+      if self._fill() == 0 {
+        break
+      }
+    }
+
+    var result = self._buf[self._pos,]
+    self._pos = self._buf.length()
+
+    return result
+  }
+
+  /**
+   * Discards exactly `length` bytes without materialising them.
+   * Used to drain the body of a request whose response has already
+   * been decided, so the connection stays usable.
+   *
+   * @param number length
+   * @throws ProtocolError if EOF arrives first
+   */
+  discard(length: number) {
+    var remaining = length
+
+    while remaining > 0 {
+      if self.buffered() == 0 and self._fill() == 0 {
+        raise ProtocolError('connection closed while discarding ${length} bytes')
+      }
+
+      var available = self.buffered()
+      var take = remaining < available ? remaining : available
+      self._pos += take
+      remaining -= take
+    }
+  }
+
+  /**
+   * Pushes bytes back to the front of the read buffer so the next
+   * read sees them again. Used by protocol detection, which has to
+   * look at the first bytes of a connection before deciding which
+   * parser gets them.
+   *
+   * @param bytes data
+   */
+  unread(data) {
+    if data.length() == 0 {
+      return
+    }
+
+    var rest = self._buf[self._pos,]
+    var replacement = data.clone()
+    replacement.extend(rest)
+
+    self._buf.dispose()
+    rest.dispose()
+
+    self._buf = replacement
+    self._pos = 0
+  }
+
+  /**
+   * Queues `data` for sending. Nothing reaches the socket until the
+   * buffer fills or `flush()` is called.
+   *
+   * @param {bytes|string} data
+   */
+  write(data) {
+    if is_string(data) {
+      var encoded = data.to_bytes()
+      self._out.extend(encoded)
+      encoded.dispose()
+    } else {
+      self._out.extend(data)
+    }
+
+    if self._out.length() >= _WRITE_HIGH_WATER {
+      self.flush()
+    }
+  }
+
+  /**
+   * Sends everything queued and blocks until the transport has taken
+   * all of it.
+   *
+   * @throws TimeoutError, ConnectionError
+   */
+  flush() {
+    if self._out.length() == 0 {
+      return
+    }
+
+    catch {
+      self._transport.write_all(self._out)
+      self._transport.flush()
+    } as error
+
+    if error {
+      self._out.dispose()
+      self._out = bytes(0)
+
+      if is_timeout_error(error.message) {
+        raise TimeoutError('write timed out')
+      }
+      raise ConnectionError(error.message)
+    }
+
+    self._out.dispose()
+    self._out = bytes(0)
+  }
+
+  /**
+   * Sets how long a read may block before raising `TimeoutError`.
+   * Only effective on a plaintext connection; a `TlsStream` no longer
+   * owns a socket whose timeout can be changed, so a TLS connection's
+   * timeouts have to be set on the `TcpStream` before it is wrapped
+   * (which `connect()` and `accept()` below both do).
+   *
+   * @param number milliseconds: `0` or negative to block indefinitely
+   */
+  set_read_timeout(milliseconds) {
+    if !self.secure {
+      self._transport.set_read_timeout(milliseconds)
+    }
+  }
+
+  /**
+   * Sets how long a write may block before raising `TimeoutError`.
+   * Carries the same TLS caveat as `set_read_timeout()`.
+   *
+   * @param number milliseconds
+   */
+  set_write_timeout(milliseconds) {
+    if !self.secure {
+      self._transport.set_write_timeout(milliseconds)
+    }
+  }
+
+  /**
+   * Turns off Nagle's algorithm, so a response head goes out
+   * immediately rather than waiting for more data to coalesce with.
+   * Every HTTP server wants this; a request is answered by a burst
+   * that is then followed by silence, which is the exact case Nagle
+   * handles badly.
+   *
+   * @param bool enabled
+   */
+  set_nodelay(enabled) {
+    if !self.secure {
+      catch {
+        self._transport.set_nodelay(enabled)
+      }
+    }
+  }
+
+  /**
+   * Flushes anything still queued and closes the transport. Safe to
+   * call more than once. A failure while flushing is swallowed - the
+   * connection is going away regardless, and the caller has usually
+   * already handled whatever went wrong.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+    self._closed = true
+
+    catch {
+      self.flush()
+    }
+
+    catch {
+      self._transport.close()
+    }
+
+    self._buf.dispose()
+    self._buf = bytes(0)
+    self._out.dispose()
+    self._out = bytes(0)
+    self._pos = 0
+  }
+
+  to_string() {
+    var scheme = self.secure ? 'https' : 'http'
+    var peer = self.peer_address ? self.peer_address.to_string() : 'unknown'
+    return '<Connection ${scheme} ${peer}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Opens a connection to `host` on `port`, optionally wrapping it in
+ * TLS.
+ *
+ * Timeouts are applied to the raw socket before any TLS handshake
+ * runs, which is both the only place they can be applied and what
+ * keeps a stalled handshake from hanging forever.
+ *
+ * @param string host
+ * @param int port
+ * @param ?dict options: `secure` (bool), `tls_config` (a
+ *    `net.tls.TlsConfig`), `server_name` (the SNI/verification name,
+ *    defaulting to `host`), `connect_timeout`, `read_timeout` and
+ *    `write_timeout` (all milliseconds)
+ * @returns Connection
+ * @throws ConnectionError, TimeoutError
+ */
+def connect(host: string, port: int, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var secure = options.get('secure', false)
+  var connect_timeout = options.get('connect_timeout', 30000)
+  var read_timeout = options.get('read_timeout', 30000)
+  var write_timeout = options.get('write_timeout', 30000)
+
+  # A connect timeout can only be applied to a concrete address, so
+  # resolve the name here rather than letting connect() do it. A name
+  # commonly maps to several addresses - an IPv6 one first, on most
+  # systems - and only trying the first would strand anyone whose
+  # network carries no IPv6 route.
+  var candidates
+  catch {
+    candidates = net.resolve('${host}:${port}')
+  } as resolve_error
+
+  if resolve_error {
+    raise ConnectionError('could not resolve ${host}: ${resolve_error.message}')
+  }
+
+  var tcp, last_error
+
+  for candidate in candidates {
+    tcp = net.TcpStream()
+
+    catch {
+      tcp.connect(candidate, connect_timeout)
+      last_error = nil
+    } as error
+
+    if error {
+      last_error = error
+      catch {
+        tcp.close()
+      }
+      tcp = nil
+    } else {
+      break
+    }
+  }
+
+  if tcp == nil {
+    var detail = last_error ? last_error.message : 'no address available'
+    if last_error and is_timeout_error(last_error.message) {
+      raise TimeoutError('connecting to ${host}:${port} timed out')
+    }
+    raise ConnectionError('could not connect to ${host}:${port}: ${detail}')
+  }
+
+  var peer, local
+  catch {
+    peer = tcp.peer_address()
+    local = tcp.local_address()
+  }
+
+  catch {
+    tcp.set_nodelay(true)
+  }
+  tcp.set_read_timeout(read_timeout)
+  tcp.set_write_timeout(write_timeout)
+
+  if !secure {
+    return Connection(tcp, peer, local)
+  }
+
+  var config = options.get('tls_config', nil)
+  if config == nil {
+    config = tls.TlsConfig()
+  }
+
+  var server_name = options.get('server_name', nil) or host
+
+  var stream
+  catch {
+    stream = tls.TlsStream.connect(tcp, config, server_name)
+  } as tls_error
+
+  if tls_error {
+    catch {
+      tcp.close()
+    }
+    raise ConnectionError('TLS handshake with ${host} failed: ${tls_error.message}')
+  }
+
+  return Connection(stream, peer, local)
+}
+
+/**
+ * Turns a freshly accepted `TcpStream` into a `Connection`, running a
+ * server-side TLS handshake first when `tls_config` is given.
+ *
+ * @param TcpStream client: the stream `TcpStream.accept()` returned
+ * @param ?dict options: `tls_config` (a `net.tls.TlsConfig`; when
+ *    present the connection is wrapped in TLS), `read_timeout` and
+ *    `write_timeout` (milliseconds)
+ * @returns Connection
+ * @throws ConnectionError if the TLS handshake fails
+ */
+def accept(client, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var peer, local
+  catch {
+    peer = client.peer_address()
+    local = client.local_address()
+  }
+
+  catch {
+    client.set_nodelay(true)
+  }
+
+  var read_timeout = options.get('read_timeout', 30000)
+  var write_timeout = options.get('write_timeout', 30000)
+  client.set_read_timeout(read_timeout)
+  client.set_write_timeout(write_timeout)
+
+  var config = options.get('tls_config', nil)
+  if config == nil {
+    return Connection(client, peer, local)
+  }
+
+  var stream
+  catch {
+    stream = tls.TlsStream.accept(client, config)
+  } as error
+
+  if error {
+    catch {
+      client.close()
+    }
+    raise ConnectionError('TLS handshake failed: ${error.message}')
+  }
+
+  return Connection(stream, peer, local)
+}

@@ -25,7 +25,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  date module — timezone database test suite'
+echo '  date module: timezone database test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ for zone in zones {
 ok('list_timezones() and is_valid_timezone() agree on the full database')
 
 # ---------------------------------------------------------------------------
-# Date.to_timezone() — real, DST-aware offset lookup, unlike to_offset()
+# Date.to_timezone(): real, DST-aware offset lookup, unlike to_offset()
 # which requires the caller to already know the numeric offset
 # ---------------------------------------------------------------------------
 var summer_utc = date.parse('2024-07-01T00:00:00Z')
@@ -72,7 +72,7 @@ assert raises(@() { summer_utc.to_timezone('Neverland/Nowhere') }), 'to_timezone
 ok('Date.to_timezone() resolves the real DST-aware offset/zone/is_dst for a named zone')
 
 # ---------------------------------------------------------------------------
-# from_timezone() — the reverse: wall-clock fields understood as being
+# from_timezone(): the reverse: wall-clock fields understood as being
 # in a named zone, not UTC or the system's own local zone
 # ---------------------------------------------------------------------------
 var d1 = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)

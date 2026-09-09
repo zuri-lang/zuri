@@ -358,7 +358,7 @@ class GzFile {
     if self._is_encoder {
       # finish(), not close(): close() on the inner encoder is just
       # finish() again for file-API-compatibility, and the stream is
-      # already finished at this point — calling it a second time
+      # already finished at this point: calling it a second time
       # raises (Invalid stream state).
       self._file.write(self._inner.finish())
     } else {
@@ -429,7 +429,7 @@ class GzFile {
   gets(length: ?number) {
     # Checking is_open(), not finished(): finished() just means the
     # decoder has naturally run out of decompressed bytes to give
-    # (a normal, expected EOF — read() returns empty bytes for it,
+    # (a normal, expected EOF: read() returns empty bytes for it,
     # same as any other stream), not that this GzFile was closed.
     if self._is_encoder or !self._file.is_open() {
       raise Error('Invalid stream state')
@@ -635,7 +635,7 @@ class GzFile {
    * ahead without producing them. Seeking backward (or SEEK_END,
    * which has to fully decode the stream once to learn its length)
    * re-opens the underlying file and restarts decompression from
-   * the beginning, discarding up to the target position — an
+   * the beginning, discarding up to the target position: an
    * inherently expensive operation for a compressed stream, same
    * as with any other streaming (de)compressor.
    *

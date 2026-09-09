@@ -1,0 +1,342 @@
+#!-- part of the http module
+
+import .util
+
+/**
+ * One entry of an `Accept`-style header: the value, its quality
+ * weight, and any other parameters it carried.
+ */
+class AcceptEntry {
+
+  /**
+   * The value itself, lowercased - a media type, a coding, a
+   * language tag, a charset.
+   * @type string
+   */
+  var value
+
+  /**
+   * The quality weight from the `q` parameter, `0.0` to `1.0`.
+   * Defaults to `1.0` when absent.
+   * @type number
+   */
+  var quality = 1
+
+  /**
+   * Any parameters other than `q`, e.g. the `level` of an old
+   * `text/html;level=1`.
+   * @type dict
+   */
+  var params
+
+  @new(value, quality, params) {
+    self.value = value
+    self.quality = quality
+    self.params = params
+  }
+
+  /**
+   * How specific this entry is, used to break ties between entries of
+   * equal quality: an exact type outranks a subtype wildcard, which
+   * in turn outranks the bare wildcard.
+   *
+   * @returns number
+   */
+  specificity() {
+    if self.value == '*/*' or self.value == '*' {
+      return 0
+    }
+    if self.value.ends_with('/*') {
+      return 1
+    }
+    return 2
+  }
+
+  to_string() {
+    return '<AcceptEntry ${self.value};q=${self.quality}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Parses an `Accept`, `Accept-Encoding`, `Accept-Language` or
+ * `Accept-Charset` header into entries, most preferred first.
+ *
+ * Ordering follows RFC 9110 §12.5.1: by quality weight descending,
+ * then by specificity, then by the order they were written. An entry
+ * with `q=0` is kept rather than dropped, because `q=0` is an
+ * explicit refusal ("anything but this") and a caller needs to see it
+ * to honour it.
+ *
+ * @param ?string header
+ * @returns list: `AcceptEntry`, most preferred first
+ */
+def parse_accept(header) {
+  var entries = []
+
+  if header == nil or !is_string(header) or header.trim().is_empty() {
+    return entries
+  }
+
+  for part in header.split(',') {
+    var text = part.trim()
+    if text.is_empty() {
+      continue
+    }
+
+    var parsed = util.parse_parameters(text)
+    var value = parsed[0].lower()
+    if value.is_empty() {
+      continue
+    }
+
+    var quality = 1
+    var raw_quality = parsed[1].get('q', nil)
+
+    if raw_quality != nil {
+      var number = raw_quality.to_number()
+      # `to_number()` yields 0 for anything unparseable, which happens
+      # to be the right reading of a malformed q: refuse it.
+      quality = number < 0 ? 0 : (number > 1 ? 1 : number)
+    }
+
+    var params = parsed[1].clone()
+    params.remove('q')
+
+    entries.append(AcceptEntry(value, quality, params))
+  }
+
+  # A stable insertion sort: equal entries keep the order the client
+  # wrote them in, which is the documented tie-break of last resort.
+  var ordered = []
+
+  for entry in entries {
+    var placed = false
+
+    iter var i = 0; i < ordered.length(); i++ {
+      var other = ordered[i]
+      var better = entry.quality > other.quality or
+          (entry.quality == other.quality and entry.specificity() > other.specificity())
+
+      if better {
+        ordered.insert(entry, i)
+        placed = true
+        break
+      }
+    }
+
+    if !placed {
+      ordered.append(entry)
+    }
+  }
+
+  return ordered
+}
+
+/**
+ * The quality weight `header` assigns to `candidate`, honouring
+ * wildcards.
+ *
+ * Returns `-1` when the header names nothing that covers `candidate`
+ * at all, which is different from a weight of `0` (an explicit
+ * refusal) and lets a caller apply the different defaults the two
+ * cases call for.
+ *
+ * @param ?string header
+ * @param string candidate
+ * @returns number
+ */
+def quality_of(header, candidate: string) {
+  var entries = parse_accept(header)
+  if entries.length() == 0 {
+    return -1
+  }
+
+  var wanted = candidate.lower()
+  var wanted_type = wanted.index_of('/') > -1 ? wanted[0, wanted.index_of('/')] : wanted
+
+  var best = -1
+  var best_specificity = -1
+
+  for entry in entries {
+    var matches = false
+
+    if entry.value == wanted {
+      matches = true
+    } else if entry.value == '*/*' or entry.value == '*' {
+      matches = true
+    } else if entry.value.ends_with('/*') {
+      matches = entry.value[0, entry.value.length() - 2] == wanted_type
+    }
+
+    if matches and entry.specificity() > best_specificity {
+      best = entry.quality
+      best_specificity = entry.specificity()
+    }
+  }
+
+  return best
+}
+
+/**
+ * Picks the entry of `available` the client would most like, or `nil`
+ * when it would accept none of them.
+ *
+ * `available` is in server preference order, which decides ties - the
+ * usual and correct behaviour, since the server is the one that knows
+ * which representation is cheapest or best.
+ *
+ * ```zuri
+ * negotiate.best_match(request.header('accept'), ['application/json', 'text/html'])
+ * ```
+ *
+ * @param ?string header
+ * @param list available
+ * @returns ?string
+ */
+def best_match(header, available: list) {
+  if available.length() == 0 {
+    return nil
+  }
+
+  # No preference expressed means no preference to honour.
+  if header == nil or !is_string(header) or header.trim().is_empty() {
+    return available[0]
+  }
+
+  var best = nil
+  var best_quality = 0
+
+  for candidate in available {
+    var quality = quality_of(header, candidate)
+
+    if quality < 0 {
+      continue
+    }
+
+    if quality > best_quality {
+      best_quality = quality
+      best = candidate
+    }
+  }
+
+  return best
+}
+
+/**
+ * Picks a content coding for a response, given the request's
+ * `Accept-Encoding`.
+ *
+ * `identity` - sending the body uncompressed - is acceptable unless
+ * the client explicitly refused it, so this falls back to
+ * `'identity'` rather than to `nil` whenever it can, and only returns
+ * `nil` when the client has refused identity too and offered nothing
+ * else this server has.
+ *
+ * @param ?string header
+ * @param list available: the codings the server can produce, in
+ *    preference order
+ * @returns ?string
+ */
+def preferred_encoding(header, available: list) {
+  if header == nil or !is_string(header) or header.trim().is_empty() {
+    return 'identity'
+  }
+
+  var chosen = nil
+  var chosen_quality = 0
+
+  for coding in available {
+    var quality = quality_of(header, coding)
+
+    if quality > chosen_quality {
+      chosen_quality = quality
+      chosen = coding
+    }
+  }
+
+  if chosen != nil {
+    return chosen
+  }
+
+  var identity_quality = quality_of(header, 'identity')
+
+  # An absent identity with a wildcard present is covered by the
+  # wildcard; an explicit `identity;q=0` or `*;q=0` is a refusal.
+  if identity_quality == 0 {
+    return nil
+  }
+
+  return 'identity'
+}
+
+/**
+ * Picks a language from `available` using the request's
+ * `Accept-Language`.
+ *
+ * A tag matches a request for its prefix, so `en-GB` satisfies a
+ * request for `en` (RFC 4647's basic filtering). The reverse is not
+ * true: a request for `en-GB` is not satisfied by plain `en`, though
+ * `en` will still be picked if nothing better is on offer.
+ *
+ * @param ?string header
+ * @param list available
+ * @returns ?string
+ */
+def preferred_language(header, available: list) {
+  if available.length() == 0 {
+    return nil
+  }
+
+  if header == nil or !is_string(header) or header.trim().is_empty() {
+    return available[0]
+  }
+
+  var entries = parse_accept(header)
+  var best = nil
+  var best_quality = 0
+
+  for candidate in available {
+    var lower = candidate.lower()
+
+    for entry in entries {
+      var matches = entry.value == '*' or entry.value == lower or
+          lower.starts_with(entry.value + '-')
+
+      if matches and entry.quality > best_quality {
+        best_quality = entry.quality
+        best = candidate
+      }
+    }
+  }
+
+  return best
+}
+
+/**
+ * Whether `header` names `value` outright rather than covering it
+ * with a wildcard.
+ *
+ * This is the difference between a client that asked for JSON and one
+ * that sent `Accept: ` followed by a bare wildcard and would take
+ * anything - a distinction that matters when deciding what to give a
+ * client that expressed no real preference.
+ *
+ * @param ?string header
+ * @param string value
+ * @returns bool
+ */
+def names_explicitly(header, value: string) {
+  var wanted = value.lower()
+
+  for entry in parse_accept(header) {
+    if entry.value == wanted and entry.quality > 0 {
+      return true
+    }
+  }
+
+  return false
+}

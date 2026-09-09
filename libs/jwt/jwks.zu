@@ -1,7 +1,7 @@
 /**
  * @module jwt.jwks
  *
- * `Jwks`, plus `verify_with_jwks()` — resolving a token's signing key
+ * `Jwks`, plus `verify_with_jwks()`: resolving a token's signing key
  * from a JSON Web Key Set (RFC 7517) by its `kid` header, rather than
  * a single fixed secret/key.
  */
@@ -121,7 +121,7 @@ def _jwk_to_pem(jwk) {
  * @param Jwks jwks
  * @param ?dict options See `verify()` for the full reference; note
  *    that `algorithms` should still be set explicitly here, the same
- *    as with any other `verify()` call — resolving a key by `kid`
+ *    as with any other `verify()` call: resolving a key by `kid`
  *    says nothing about which algorithm is safe to trust it with.
  * @return dict|Token
  * @throws AlgorithmError When the token has no `kid`, or no key in

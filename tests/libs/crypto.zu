@@ -31,7 +31,7 @@ import crypto
 
 
 # ---------------------------------------------------------------------------
-# Tiny test runner — tracks pass/fail counts, prints per-group summaries.
+# Tiny test runner: tracks pass/fail counts, prints per-group summaries.
 # ---------------------------------------------------------------------------
 
 var _passed = 0
@@ -71,7 +71,7 @@ def bytes_equal(a, b) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  crypto module — test suite'
+echo '  crypto module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 
@@ -168,13 +168,13 @@ var gcm_ct_aad = crypto.aes_gcm.encrypt(gcm_key, gcm_iv, gcm_pt, gcm_aad)
 var gcm_rt_aad = crypto.aes_gcm.decrypt(gcm_key, gcm_iv, gcm_ct_aad, gcm_aad)
 assert bytes_equal(gcm_rt_aad, gcm_pt),
   'AES-GCM with AAD must recover plaintext when AAD matches'
-ok('AAD — correct AAD decrypts cleanly')
+ok('AAD: correct AAD decrypts cleanly')
 
 # AAD: wrong AAD must fail authentication
 assert raises(@() {
   crypto.aes_gcm.decrypt(gcm_key, gcm_iv, gcm_ct_aad, 'wrong-aad'.to_bytes())
 }), 'AES-GCM must reject mismatched AAD'
-ok('AAD — wrong AAD raises error')
+ok('AAD: wrong AAD raises error')
 
 # Tampered ciphertext must fail
 var gcm_tampered = gcm_ct.clone()
@@ -204,7 +204,7 @@ ok('empty plaintext round-trip')
 begin('AES-CBC')
 summary()
 
-var cbc_pt   = 'interoperability payload — AES CBC mode test'.to_bytes()
+var cbc_pt   = 'interoperability payload: AES CBC mode test'.to_bytes()
 var cbc_key  = crypto.random_bytes(32)
 var cbc_key2 = crypto.random_bytes(32)
 var cbc_iv   = crypto.random_bytes(16)
@@ -216,7 +216,7 @@ assert bytes_equal(cbc_rt, cbc_pt),
   'AES-CBC round-trip must recover plaintext'
 ok('round-trip (AES-256-CBC)')
 
-# PKCS#7 padding — ciphertext must be a multiple of 16 bytes
+# PKCS#7 padding: ciphertext must be a multiple of 16 bytes
 assert cbc_ct.length() % 16 == 0,
   'AES-CBC ciphertext must be a multiple of the block size (16)'
 ok('ciphertext length is a multiple of 16')
@@ -235,7 +235,7 @@ assert raises(@() {
 }), 'AES-CBC must reject wrong key'
 ok('wrong key raises error')
 
-# Plaintext exactly one block — tests boundary padding
+# Plaintext exactly one block: tests boundary padding
 var cbc_block_pt = '0123456789abcdef'.to_bytes()   # exactly 16 bytes
 var cbc_block_ct = crypto.aes_cbc.encrypt(cbc_key, cbc_iv, cbc_block_pt)
 var cbc_block_rt = crypto.aes_cbc.decrypt(cbc_key, cbc_iv, cbc_block_ct)
@@ -250,7 +250,7 @@ ok('plaintext == one block (PKCS#7 full-block padding)')
 begin('ChaCha20-Poly1305')
 summary()
 
-var cc_pt   = 'ChaCha20-Poly1305 test vector — software crypto path'.to_bytes()
+var cc_pt   = 'ChaCha20-Poly1305 test vector: software crypto path'.to_bytes()
 var cc_key  = crypto.random_bytes(32)
 var cc_key2 = crypto.random_bytes(32)
 var cc_iv   = crypto.random_bytes(12)
@@ -285,13 +285,13 @@ var cc_ct_aad = crypto.chacha20.encrypt(cc_key, cc_iv, cc_pt, cc_aad)
 var cc_rt_aad = crypto.chacha20.decrypt(cc_key, cc_iv, cc_ct_aad, cc_aad)
 assert bytes_equal(cc_rt_aad, cc_pt),
   'ChaCha20 with correct AAD must decrypt cleanly'
-ok('AAD — correct AAD decrypts cleanly')
+ok('AAD: correct AAD decrypts cleanly')
 
 # AAD wrong
 assert raises(@() {
   crypto.chacha20.decrypt(cc_key, cc_iv, cc_ct_aad, 'bad-aad'.to_bytes())
 }), 'ChaCha20 must reject mismatched AAD'
-ok('AAD — wrong AAD raises error')
+ok('AAD: wrong AAD raises error')
 
 # Tampered ciphertext
 var cc_tampered = cc_ct.clone()
@@ -351,7 +351,7 @@ assert rsa2k['private_pem'] != rsa2k['public_pem'],
 ok('private_pem != public_pem')
 
 # OAEP encrypt / decrypt
-var rsa_msg = 'RSA-OAEP test payload — 2048-bit'.to_bytes()
+var rsa_msg = 'RSA-OAEP test payload: 2048-bit'.to_bytes()
 var rsa_ct  = crypto.rsa.encrypt(rsa2k['public_pem'], rsa_msg)
 var rsa_rt  = crypto.rsa.decrypt(rsa2k['private_pem'], rsa_ct)
 
@@ -371,20 +371,20 @@ var rsa_valid   = crypto.rsa.verify(rsa2k['public_pem'], rsa_payload, rsa_sig)
 
 assert rsa_valid,
   'RSA-PSS signature must verify against matching public key'
-ok('PSS sign/verify — correct signature accepted')
+ok('PSS sign/verify: correct signature accepted')
 
 # Wrong message must not verify
 var rsa_wrong = crypto.rsa.verify(rsa2k['public_pem'], 'different message'.to_bytes(), rsa_sig)
 assert !rsa_wrong,
   'RSA-PSS must reject signature for a different message'
-ok('PSS verify — wrong message rejected')
+ok('PSS verify: wrong message rejected')
 
-# Cross-key pair — different key must not verify
+# Cross-key pair: different key must not verify
 var rsa2k_b   = crypto.rsa.generate(2048)
 var rsa_cross = crypto.rsa.verify(rsa2k_b['public_pem'], rsa_payload, rsa_sig)
 assert !rsa_cross,
   'RSA-PSS must reject signature verified against a different key pair'
-ok('PSS verify — cross-keypair rejected')
+ok('PSS verify: cross-keypair rejected')
 
 # Decrypt with wrong private key must fail
 assert raises(@() {
@@ -399,7 +399,7 @@ ok('OAEP decrypt with wrong key raises error')
 begin('RSA-4096')
 summary()
 
-echo '  (RSA-4096 key generation takes several seconds — please wait...)'
+echo '  (RSA-4096 key generation takes several seconds: please wait...)'
 
 var rsa4k = crypto.rsa.generate(4096)
 assert rsa4k['private_pem'].starts_with('-----BEGIN'),
@@ -516,11 +516,11 @@ assert ed_kp['public_pem'] != ed_kp2['public_pem'],
   'Two ed25519.generate() calls must produce distinct keys'
 ok('successive generate() calls produce distinct keys')
 
-var ed_msg  = 'Ed25519 EdDSA test message — deterministic signature'.to_bytes()
+var ed_msg  = 'Ed25519 EdDSA test message: deterministic signature'.to_bytes()
 var ed_sig  = crypto.ed25519.sign(ed_kp['private_pem'], ed_msg)
 var ed_sig2 = crypto.ed25519.sign(ed_kp['private_pem'], ed_msg)
 
-# Ed25519 is deterministic — identical inputs produce identical signatures
+# Ed25519 is deterministic: identical inputs produce identical signatures
 assert bytes_equal(ed_sig, ed_sig2),
   'Ed25519 must produce deterministic signatures'
 ok('sign() is deterministic')
@@ -647,7 +647,7 @@ var a2_hash_custom = crypto.argon2.hash(a2_password, a2_salt, {
 })
 assert is_string(a2_hash_custom),
   'argon2.hash() with custom options must return a string'
-ok('custom options (t=2, m=8192, p=1, len=64) — hash returned')
+ok('custom options (t=2, m=8192, p=1, len=64): hash returned')
 
 assert crypto.argon2.verify(a2_hash_custom, a2_password),
   'argon2.verify() must accept hash produced with custom options'
@@ -731,7 +731,7 @@ ok('output != raw IKM')
 begin('Integration: X25519 → HKDF → AES-GCM')
 summary()
 
-# Alice and Bob each generate an X25519 key pair (done above — reuse)
+# Alice and Bob each generate an X25519 key pair (done above: reuse)
 var int_salt       = crypto.random_bytes(32)
 var int_info_enc   = 'zuri-session-encryption-key'.to_bytes()
 var int_info_auth  = 'zuri-session-auth-key'.to_bytes()
@@ -763,14 +763,14 @@ assert bytes_equal(int_rt, int_plaintext),
   'Integration: Bob must recover Alice\'s plaintext'
 ok('end-to-end: Bob decrypts Alice\'s message')
 
-# Carol (third party) cannot decrypt — her secret with Alice differs
+# Carol (third party) cannot decrypt: her secret with Alice differs
 var int_carol_secret  = crypto.x25519.exchange(carol['private_pem'], alice['public_pem'])
 var int_carol_enc_key = crypto.hkdf(int_carol_secret, int_salt, int_info_enc, 32)
 
 assert raises(@() {
   crypto.aes_gcm.decrypt(int_carol_enc_key, int_iv, int_ct)
 }), 'Integration: third party must not be able to decrypt the session message'
-ok('third party (Carol) cannot decrypt — authentication fails')
+ok('third party (Carol) cannot decrypt: authentication fails')
 
 
 # ===========================================================================
@@ -795,7 +795,7 @@ assert raises(@() {
 }), 'aes_gcm.encrypt() must reject a key that is not 16/24/32 bytes'
 ok('aes_gcm.encrypt() rejects bad key size')
 
-# AES-GCM: IV too short (0 bytes — GCM minimum is 1, OpenSSL will reject)
+# AES-GCM: IV too short (0 bytes: GCM minimum is 1, OpenSSL will reject)
 assert raises(@() {
   crypto.aes_gcm.encrypt(crypto.random_bytes(32), bytes(''), 'x'.to_bytes())
 }), 'aes_gcm.encrypt() must reject a zero-length IV'

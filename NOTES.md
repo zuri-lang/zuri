@@ -12,3 +12,5 @@
 - The `zlib` module has been dropped in favor of the `compress` module which includes support for `deflate`, `gzip`, and `zlib` format that are currently supported and introduces support for `zstd`.
 - The `zip` module has been moved under the `compress` module.
 - The `ast` and the `reflect` module has been collapsed into a single module called `zuri`.
+- `template` module has been renamed and moved to `wire` module.
+- The `socket` module and `ssl` module has been dropped in favor of the `net` module.

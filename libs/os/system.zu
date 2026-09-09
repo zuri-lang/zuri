@@ -91,7 +91,7 @@ def info() {
 
 /**
  * The number of logical CPUs available to this process. Useful for
- * sizing a worker pool — `isolate.cpu_count()` is the exact same
+ * sizing a worker pool: `isolate.cpu_count()` is the exact same
  * underlying value, exposed here too so code that only needs this
  * one fact doesn't have to import the whole `isolate` module for
  * it.
@@ -124,7 +124,7 @@ def total_memory() {
 
 /**
  * An estimate of how much physical memory is available for new
- * allocations right now, in bytes — free memory plus easily
+ * allocations right now, in bytes: free memory plus easily
  * reclaimable caches/buffers, the same figure a tool like `free`
  * reports as "available" rather than the smaller, less useful
  * "free" figure alone.

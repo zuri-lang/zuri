@@ -1,7 +1,7 @@
 /**
  * @module log.file
  *
- * `FileTransport` — sends log streams to a file on disk, with
+ * `FileTransport`: sends log streams to a file on disk, with
  * optional size-based rotation.
  */
 

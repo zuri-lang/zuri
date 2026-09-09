@@ -3,7 +3,7 @@
  *
  * Test suite for the `compress.deflate` standard library module:
  * one-shot compress()/decompress() and the streaming DeflateEncoder/
- * DeflateDecoder pair — raw (headerless) DEFLATE, distinct from both
+ * DeflateDecoder pair: raw (headerless) DEFLATE, distinct from both
  * gzip's and zlib's wrapped formats.
  */
 
@@ -17,18 +17,18 @@ def ok(label) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.deflate module — test suite'
+echo '  compress.deflate module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
-# One-shot compress()/decompress() — headerless, unlike gzip/zlib
+# One-shot compress()/decompress(): headerless, unlike gzip/zlib
 # ---------------------------------------------------------------------------
 var text = 'The quick brown fox jumps over the lazy dog. ' * 30
 var compressed = deflate.compress(text)
 assert typeof(compressed) == 'bytes', 'compress() must return bytes'
 assert compressed.length() < text.length(), 'compressing 30x repeated text must actually shrink it'
 assert compressed[0] != 0x1f and (compressed[0] & 0x0f) != 8,
-  'raw deflate output must have neither a gzip magic byte nor a zlib CMF byte — it is headerless by design'
+  'raw deflate output must have neither a gzip magic byte nor a zlib CMF byte: it is headerless by design'
 ok('compress() produces headerless (raw) DEFLATE output, unlike gzip/zlib')
 
 assert deflate.decompress(compressed).to_string() == text, 'decompress() must recover the exact original text'

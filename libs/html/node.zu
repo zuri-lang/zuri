@@ -1938,7 +1938,7 @@ class Element < Node {
 
   /**
    * This element, or its nearest ancestor, matching the CSS selector
-   * _query_ — or `nil` when neither this element nor any ancestor
+   * _query_: or `nil` when neither this element nor any ancestor
    * does.
    *
    * The search starts at the element itself, which is what makes

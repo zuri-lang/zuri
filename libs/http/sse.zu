@@ -1,0 +1,255 @@
+#!-- part of the http module
+/**
+ * @module http.sse
+ *
+ * Server-sent events (the WHATWG `text/event-stream` format): a
+ * one-way stream of named, identified messages that a browser's
+ * `EventSource` reconnects to on its own.
+ *
+ * Where a WebSocket gives you a duplex connection and a framing
+ * protocol to go with it, this gives you a long-lived response body
+ * and nothing else - which is all a live feed of updates actually
+ * needs, and it survives proxies that would refuse an upgrade.
+ *
+ * ```zuri
+ * import http
+ * import http.sse
+ *
+ * server.get('/events', @(request, response) {
+ *   sse.stream(response, @(events) {
+ *     iter var i = 0; i < 10; i++ {
+ *       events.send({ tick: i }, 'tick')
+ *       os.sleep(1)
+ *     }
+ *   })
+ * })
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import json
+
+/**
+ * The writer a server-sent event stream hands to its producer.
+ *
+ * Every method flushes, because an event that sits in a buffer is an
+ * event that has not been sent.
+ */
+class EventStream {
+
+  var _writer
+  var _closed = false
+
+  @new(writer) {
+    self._writer = writer
+    self._closed = false
+  }
+
+  /**
+   * Sends one event.
+   *
+   * `data` may be a string, or any value, in which case it is
+   * JSON-encoded - which is what a browser's `EventSource` handler
+   * almost always parses it back out of anyway. A multi-line string
+   * is split across several `data:` lines, as the format requires.
+   *
+   * @param any data
+   * @param ?string event: the event name, which a browser dispatches
+   *    under; omitted means the default `message` event
+   * @param ?string id: the event id, which the browser sends back as
+   *    `Last-Event-ID` when it reconnects
+   * @returns EventStream: this same instance, for chaining
+   */
+  send(data, event: ?string, id: ?string) {
+    if self._closed {
+      raise Error('the event stream is closed')
+    }
+
+    var payload = is_string(data) ? data : json.encode(data)
+    var out = ''
+
+    if event != nil {
+      out += 'event: ${_one_line(event)}\n'
+    }
+
+    if id != nil {
+      out += 'id: ${_one_line(id)}\n'
+    }
+
+    for line in payload.split('\n') {
+      out += 'data: ${line.rtrim("\r")}\n'
+    }
+
+    self._writer.write(out + '\n')
+    self._writer.flush()
+
+    return self
+  }
+
+  /**
+   * Sends a comment line, which a client ignores.
+   *
+   * This is the standard way to keep an idle stream alive: a proxy
+   * that closes connections after a quiet minute cannot tell a
+   * comment from real traffic.
+   *
+   * @param ?string text
+   * @returns EventStream: this same instance, for chaining
+   */
+  comment(text: ?string) {
+    self._writer.write(': ${text == nil ? "" : _one_line(text)}\n\n')
+    self._writer.flush()
+
+    return self
+  }
+
+  /**
+   * Tells the client how long to wait before reconnecting, in
+   * milliseconds.
+   *
+   * @param number milliseconds
+   * @returns EventStream: this same instance, for chaining
+   */
+  set_retry(milliseconds: number) {
+    self._writer.write('retry: ${milliseconds // 1}\n\n')
+    self._writer.flush()
+
+    return self
+  }
+
+  /**
+   * Ends the stream. The connection closes, and a browser will
+   * reconnect unless the response said otherwise.
+   */
+  close() {
+    self._closed = true
+  }
+
+  /**
+   * Whether the stream has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+}
+
+# A field value may not contain a newline; one would end the field and
+# let a value forge an event of its own.
+def _one_line(text) {
+  return text.replace('\n', ' ', false).replace('\r', ' ', false)
+}
+
+/**
+ * Turns `response` into a server-sent event stream and runs
+ * `producer` against it.
+ *
+ * The headers that matter are set here: `text/event-stream`, no
+ * caching, and `X-Accel-Buffering: no` for the benefit of any proxy
+ * in front that would otherwise hold the stream in a buffer and
+ * defeat the whole exercise.
+ *
+ * @param HttpResponse response
+ * @param function(1) producer: called with an `EventStream`
+ */
+def stream(response, producer) {
+  response.headers.set('Content-Type', 'text/event-stream; charset=utf-8')
+  response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
+  response.headers.set('X-Accel-Buffering', 'no')
+  response.headers.set('Connection', 'keep-alive')
+
+  response.stream(@(writer) {
+    var events = EventStream(writer)
+    producer(events)
+  })
+}
+
+/**
+ * The `Last-Event-ID` a reconnecting client sent, or `nil`.
+ *
+ * A browser sends this automatically when `EventSource` reconnects,
+ * and it is how a stream resumes where it left off instead of
+ * replaying from the beginning.
+ *
+ * @param HttpRequest request
+ * @returns ?string
+ */
+def last_event_id(request) {
+  var header = request.header('last-event-id', nil)
+
+  if header != nil {
+    return header
+  }
+
+  # Some polyfills pass it as a query parameter instead.
+  return request.query_param('lastEventId', nil)
+}
+
+/**
+ * Parses a `text/event-stream` body into a list of events, each a
+ * dictionary with `event`, `data`, `id` and `retry`.
+ *
+ * Useful for a client consuming a stream, and for testing one.
+ *
+ * @param string text
+ * @returns list
+ */
+def parse(text: string) {
+  var events = []
+  var current = { event: nil, data: [], id: nil, retry: nil }
+
+  for raw in text.split('\n') {
+    var line = raw.rtrim('\r')
+
+    if line.is_empty() {
+      # A blank line dispatches whatever has been accumulated. An
+      # event with no data lines is not dispatched at all.
+      if current.data.length() > 0 {
+        events.append({
+          event: current.event,
+          data: '\n'.join(current.data),
+          id: current.id,
+          retry: current.retry,
+        })
+      }
+
+      current = { event: nil, data: [], id: nil, retry: nil }
+      continue
+    }
+
+    if line.starts_with(':') {
+      continue
+    }
+
+    var colon = line.index_of(':')
+    var field = colon > -1 ? line[0, colon] : line
+    var value = colon > -1 ? line[colon + 1,] : ''
+
+    # Exactly one leading space after the colon is part of the syntax
+    # rather than the value.
+    if value.starts_with(' ') {
+      value = value[1,]
+    }
+
+    using field {
+      when 'event' {
+        current.event = value
+      }
+      when 'data' {
+        current.data.append(value)
+      }
+      when 'id' {
+        current.id = value
+      }
+      when 'retry' {
+        if value.is_number() {
+          current.retry = value.to_number()
+        }
+      }
+    }
+  }
+
+  return events
+}

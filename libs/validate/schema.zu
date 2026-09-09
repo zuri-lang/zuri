@@ -6,17 +6,17 @@
  *
  * ### Features
  *
- * - **Dot-notation keys** — `"address.city"` resolves nested dictionaries.
- * - **Wildcard keys** — `"tags.*"` validates every item in a list against
+ * - **Dot-notation keys**: `"address.city"` resolves nested dictionaries.
+ * - **Wildcard keys**: `"tags.*"` validates every item in a list against
  *   a `Validator` chain.
  * - **Bail-on-first-error** per field (default) or collect-all-errors mode.
- * - **Sometimes** — skip rules when a field is absent.
- * - **Nullable** — treat nil as passing for all subsequent rules.
- * - **Label override** — substitute a human-readable name in error messages.
- * - **Required-field checking** — fields with `required()` that are entirely
+ * - **Sometimes**: skip rules when a field is absent.
+ * - **Nullable**: treat nil as passing for all subsequent rules.
+ * - **Label override**: substitute a human-readable name in error messages.
+ * - **Required-field checking**: fields with `required()` that are entirely
  *   absent from the data dict are caught and reported.
- * - **`check(data)`** — returns `{ valid: bool, errors: list }`.
- * - **`check_or_raise(data)`** — raises `ValidationError` on failure.
+ * - **`check(data)`**: returns `{ valid: bool, errors: list }`.
+ * - **`check_or_raise(data)`**: raises `ValidationError` on failure.
  *
  * @module validate.schema
  */
@@ -320,7 +320,7 @@ class Schema {
             }
           }
         } else {
-          # Base list absent — treat as absent field; required() catches it.
+          # Base list absent: treat as absent field; required() catches it.
           var label = validator.get_label() ?
             validator.get_label() :
             base_key

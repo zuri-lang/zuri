@@ -12,7 +12,7 @@
  *
  * This library supports the most popular extensions such as
  * `.tar.gz`, `.tar`, `.gz`, `.tgz`, `.tar.bz2`, `.bz2`, and
- * `.tbz` — the three archive shapes: uncompressed, gzip-compressed,
+ * `.tbz`: the three archive shapes: uncompressed, gzip-compressed,
  * and bzip2-compressed.
  *
  *
@@ -125,7 +125,7 @@ var _header_unpack = 'a100:filename/a8:perm/a8:uid/a8:gid/a12:size/a12:mtime/a8:
 #--------------------------------------------------------------------------------
 
 # Strips both the space padding and the NUL padding tar headers use
-# for string fields (filename, link, uname, gname, prefix) — .trim()
+# for string fields (filename, link, uname, gname, prefix): .trim()
 # alone only strips spaces, and a raw trailing NUL left in place
 # breaks any later exact-match comparison against the field.
 def _field(v) {
@@ -776,7 +776,7 @@ class Tar {
 
     # handle Long-link entries from GNU Tar: the typeflag check has to
     # happen against the RAW header field (a single character, 'L' for
-    # a longlink), before any numeric conversion — result.typeflag
+    # a longlink), before any numeric conversion: result.typeflag
     # below is a plain digit-turned-number for every other entry type,
     # so 'L' can never survive that conversion to be checked against.
     if header.typeflag == 'L' {

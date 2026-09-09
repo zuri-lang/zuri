@@ -1,0 +1,157 @@
+#!-- part of the http module
+
+/**
+ * Base class for every error the `http` module raises.
+ *
+ * Catching `HttpError` catches everything this module can throw on
+ * its own; the more specific subclasses below let a caller tell a
+ * connection failure apart from a malformed response without matching
+ * on message text.
+ *
+ * @printable
+ */
+class HttpError < Error {
+  to_string() {
+    return '<HttpError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when a peer sends something that isn't a well-formed HTTP
+ * message: a broken request line or status line, a header field that
+ * doesn't parse, an impossible framing combination, or a chunked body
+ * whose chunk sizes don't add up.
+ *
+ * A server answers these with `400 Bad Request` and closes the
+ * connection, since a stream whose framing is in doubt cannot safely
+ * be reused.
+ *
+ * @printable
+ */
+class ProtocolError < HttpError {
+  to_string() {
+    return '<ProtocolError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when a connection could not be established, or when an
+ * established connection failed or was closed before the message
+ * being read or written was complete.
+ *
+ * @printable
+ */
+class ConnectionError < HttpError {
+  to_string() {
+    return '<ConnectionError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when an operation exceeded its configured deadline: a
+ * connect, a read, a write, or the total time budget for a request.
+ *
+ * @printable
+ */
+class TimeoutError < HttpError {
+  to_string() {
+    return '<TimeoutError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when a message exceeds one of the configured size limits -
+ * request line, header block, or body. Servers turn this into a
+ * `431` or `413` response rather than reading an unbounded amount of
+ * attacker-controlled data into memory.
+ *
+ * @printable
+ */
+class TooLargeError < HttpError {
+  to_string() {
+    return '<TooLargeError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised by the client when a redirect chain exceeds
+ * `HttpClient.max_redirects`, which usually means the chain is a
+ * loop.
+ *
+ * @printable
+ */
+class TooManyRedirectsError < HttpError {
+  to_string() {
+    return '<TooManyRedirectsError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised by `HttpResponse.raise_for_status()` when the response
+ * carries a 4xx or 5xx status. The response itself stays reachable
+ * through `response`, so the body (which for an API is usually where
+ * the actual explanation lives) isn't lost.
+ *
+ * @printable
+ */
+class StatusError < HttpError {
+
+  /**
+   * The response that carried the failing status.
+   * @type HttpResponse
+   */
+  var response
+
+  @new(message, response) {
+    parent(message)
+    self.response = response
+  }
+
+  to_string() {
+    return '<StatusError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Raised when a URL names a scheme this module cannot speak, or when
+ * a peer insists on a protocol version that was not offered.
+ *
+ * @printable
+ */
+class UnsupportedProtocolError < HttpError {
+  to_string() {
+    return '<UnsupportedProtocolError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

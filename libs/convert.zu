@@ -16,7 +16,7 @@ var _base36_table = '0123456789abcdefghijklmnopqrstuvwxyz'
  * @param string str
  * @returns bytes
  * @raises TypeError if `str` isn't a string.
- * @raises ValueError if `str` has an odd number of characters — a
+ * @raises ValueError if `str` has an odd number of characters: a
  *    hex string always encodes whole bytes, so an odd length is
  *    ambiguous rather than something this function guesses at.
  */
@@ -188,7 +188,7 @@ def to_base(n, base, digits) {
   }
 
   # If n is a floating point number, floor it to a whole number
-  # first — there's no fractional-digit representation in an
+  # first: there's no fractional-digit representation in an
   # arbitrary base here.
   n = n.floor()
 
@@ -273,7 +273,7 @@ def from_base(str, base) {
  * bytes as an unsigned integer.
  *
  * @param bytes data
- * @param ?bool little_endian: Default `false` — the most
+ * @param ?bool little_endian: Default `false`: the most
  *    significant byte comes first. Set `true` to instead treat the
  *    least significant byte as first, as many binary file formats
  *    and network protocols do.
@@ -311,14 +311,14 @@ def bytes_to_decimal(data, little_endian) {
  * Converts a decimal number to bytes, the reverse of
  * `bytes_to_decimal()`.
  *
- * @param number n: Must be non-negative — there's no signedness
+ * @param number n: Must be non-negative: there's no signedness
  *    convention (two's complement vs. sign-magnitude) implied
  *    here, so a negative value is rejected rather than guessed at.
  * @param number length: The exact number of bytes to produce. If
  *    `n` doesn't fit in `length` bytes, the most significant
  *    (excess) bits are silently dropped, the same as fitting a
  *    number into a fixed-width integer type would.
- * @param ?bool little_endian: Default `false` — the most
+ * @param ?bool little_endian: Default `false`: the most
  *    significant byte is written first. Set `true` for the least
  *    significant byte first.
  * @returns bytes

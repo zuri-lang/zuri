@@ -3,7 +3,7 @@
  *
  * The flat, module-level logging functions (`log()`, `info()`,
  * `debug()`, `warn()`, `error()`, `critical()`, `exception()`), and
- * `Logger` — namespaced, structured-field-bound loggers built on top
+ * `Logger`: namespaced, structured-field-bound loggers built on top
  * of the exact same dispatch path.
  */
 
@@ -127,7 +127,7 @@ def exception(ex, message) {
 
 
 # ---------------------------------------------------------------------------
-# Logger — namespaced, structured-field-bound loggers
+# Logger: namespaced, structured-field-bound loggers
 # ---------------------------------------------------------------------------
 
 /**
@@ -229,7 +229,7 @@ var _loggers = {}
 /**
  * Returns a [[log.Logger]] namespaced under the given name.
  * Repeated calls with the same name return the same instance,
- * matching Python's `logging.getLogger()` — so binding fields on a
+ * matching Python's `logging.getLogger()`: so binding fields on a
  * logger obtained one place is visible everywhere else that same
  * name is requested.
  *

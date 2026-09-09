@@ -53,9 +53,9 @@
  *
  * RFC 9562 §Appendix C pre-defines four namespace UUIDs:
  *
- * - `uuid.NAMESPACE_DNS` — for fully-qualified domain names -
- * `uuid.NAMESPACE_URL` — for URLs - `uuid.NAMESPACE_OID` — for
- * ISO OIDs - `uuid.NAMESPACE_X500` — for X.500 distinguished
+ * - `uuid.NAMESPACE_DNS`: for fully-qualified domain names -
+ * `uuid.NAMESPACE_URL`: for URLs - `uuid.NAMESPACE_OID`: for
+ * ISO OIDs - `uuid.NAMESPACE_X500`: for X.500 distinguished
  * names
  *
  * @copyright 2026, Richard Ore and The Zuri Contributors
@@ -73,7 +73,7 @@ import crypto
 # ---------------------------------------------------------------------------
 
 # Returns a cryptographically-random hex string of exactly `n` hex
-# characters (n may be odd — the underlying byte count is rounded up
+# characters (n may be odd: the underlying byte count is rounded up
 # and the extra nibble, if any, is trimmed off the end).
 def _random_hex(n) {
   var byte_count = (n / 2.0).ceil()
@@ -220,7 +220,7 @@ var NAMESPACE_OID  = '6ba7b812-9dad-11d1-80b4-00c04fd430c8'
 var NAMESPACE_X500 = '6ba7b814-9dad-11d1-80b4-00c04fd430c8'
 
 /**
- * The Nil UUID — all 128 bits are zero. Defined in RFC 9562 §5.9
+ * The Nil UUID: all 128 bits are zero. Defined in RFC 9562 §5.9
  * as a special UUID that signifies "no value".
  *
  * Value: `00000000-0000-0000-0000-000000000000`
@@ -228,7 +228,7 @@ var NAMESPACE_X500 = '6ba7b814-9dad-11d1-80b4-00c04fd430c8'
 var NIL = '00000000-0000-0000-0000-000000000000'
 
 /**
- * The Max UUID — all 128 bits are one. Defined in RFC 9562 §5.10
+ * The Max UUID: all 128 bits are one. Defined in RFC 9562 §5.10
  * as a special UUID often used as a sentinel upper-bound in
  * range queries.
  *
@@ -389,7 +389,7 @@ class UUID {
 
   /**
    * Returns the UUID as an integer (the numeric value of its 128
-   * bits), as an exact `bigint` — a 128-bit value is always far
+   * bits), as an exact `bigint`: a 128-bit value is always far
    * beyond what a regular `number` can represent exactly, so this
    * never uses one. Pass the result straight to `from_int()` to
    * convert back.
@@ -637,7 +637,7 @@ def v3(namespace: string, name: string) {
   }
 
   # RFC 4122 §4.3: MD5 of the namespace UUID's raw 16 bytes followed
-  # by the name's raw UTF-8 bytes — NOT a hash of their hex-digit
+  # by the name's raw UTF-8 bytes: NOT a hash of their hex-digit
   # text representation, which is a different (and non-conformant)
   # input entirely.
   var payload = convert.hex_to_bytes(_strip_hyphens(namespace.lower()))
@@ -711,7 +711,7 @@ def v5(namespace: string, name: string) {
   }
 
   # RFC 4122 §4.3: SHA-1 of the namespace UUID's raw 16 bytes
-  # followed by the name's raw UTF-8 bytes — same requirement as
+  # followed by the name's raw UTF-8 bytes: same requirement as
   # v3()'s own MD5 input, see the note there.
   var payload = convert.hex_to_bytes(_strip_hyphens(namespace.lower()))
   payload.extend(name.to_bytes())
@@ -772,9 +772,9 @@ def v6(node: ?string, clock_seq: ?number) {
   var tu_lo = time_upper % 4294967296
 
   var th   = _int_to_hex(tu_hi, 8)            # time high (bits 28-59)
-  var tm   = _int_to_hex(tu_lo, 4)            # time mid  (bits 12-27) — only 4 hex
+  var tm   = _int_to_hex(tu_lo, 4)            # time mid  (bits 12-27): only 4 hex
 
-  # Wait — tu_lo holds 32 bits but we only want 4 hex (16 bits) here.
+  # Wait: tu_lo holds 32 bits but we only want 4 hex (16 bits) here.
   # Full split: time_upper is 48 bits = 12 hex total.
   var tu_str = _int_to_hex(tu_hi, 4) + _int_to_hex(tu_lo % 4294967296, 8)
   # tu_str is now 12 hex chars covering bits 12-59 of the Gregorian ts.
@@ -853,7 +853,7 @@ def v7() {
   # 12-bit random (rand_a, sub-millisecond counter).
   var rand_a = _random_hex(3)
 
-  # 62-bit random (rand_b) — we generate 16 hex chars (64 bits) and set the
+  # 62-bit random (rand_b): we generate 16 hex chars (64 bits) and set the
   # top 2 bits for the variant (10xx xxxx) in the first byte.
   var rand_b_raw = _random_hex(16)
   var rand_b_byte0 = rand_b_raw[0,2].to_number(16)

@@ -8,7 +8,7 @@
  * sets in the same order in which they were initialized or set
  * by {set.Set.add()}. Two Sets containing exactly the same
  * elements, irrespective of order, are considered equal by
- * {set.Set.equals()} — note that this is a method call, not `==`,
+ * {set.Set.equals()}: note that this is a method call, not `==`,
  * which still compares by reference identity the way any other
  * class instance does.
  *
@@ -360,8 +360,8 @@ class Set {
   /**
    * Returns a boolean indicating whether this Set and `other`
    * contain exactly the same elements, irrespective of order.
-   * `==` does not do this comparison — it still compares by
-   * reference identity, like any other class instance — so use
+   * `==` does not do this comparison: it still compares by
+   * reference identity, like any other class instance: so use
    * this method whenever you mean "same contents" rather than
    * "same object".
    *

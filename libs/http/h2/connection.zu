@@ -1,0 +1,1253 @@
+#!-- part of the http module
+
+import ..cookies
+import ..errors { ConnectionError, ProtocolError, TimeoutError }
+import ..headers { Headers }
+import ..request { HttpRequest }
+import ..response { HttpResponse }
+import ..status
+import ..util
+import .frames
+import .hpack
+
+# What this endpoint advertises. The receive window is deliberately
+# far larger than the 64 KiB default: with a synchronous reader,
+# a small window means a WINDOW_UPDATE round trip for every 64 KiB
+# uploaded, which caps throughput at one window per round-trip time.
+var _INITIAL_WINDOW = 1048576
+var _MAX_FRAME_SIZE = 16384
+var _MAX_CONCURRENT_STREAMS = 128
+var _HEADER_TABLE_SIZE = 4096
+
+# The window is topped up once this much of it has been consumed,
+# rather than after every frame - one WINDOW_UPDATE per DATA frame is
+# pure overhead.
+var _WINDOW_REFILL_AT = 524288
+
+# The largest header block that may be assembled out of a HEADERS
+# frame and its CONTINUATION frames. Without a ceiling, a peer can
+# send CONTINUATION frames forever without ever setting END_HEADERS
+# and grow the buffer until the process dies - which is exactly the
+# CONTINUATION flood that went around in 2024.
+var _MAX_HEADER_BLOCK = 262144
+
+# The largest request body assembled from DATA frames on one stream.
+# Overridable per connection through `max_body_size`.
+var _MAX_BODY = 10485760
+
+# Fields that describe a single hop of an HTTP/1.1 connection and have
+# no meaning in HTTP/2, where the connection is multiplexed. RFC 9113
+# §8.2.2 makes their presence a stream error, because an intermediary
+# translating between versions is exactly where a smuggled message
+# would slip through.
+var _FORBIDDEN = [
+  'connection',
+  'keep-alive',
+  'proxy-connection',
+  'transfer-encoding',
+  'upgrade',
+]
+
+/**
+ * One HTTP/2 stream: a request and its response, multiplexed with
+ * others over a single connection.
+ */
+class Http2Stream {
+
+  /**
+   * The stream identifier. Odd for a client-initiated stream, even
+   * for a server-initiated one.
+   * @type int
+   */
+  var id
+
+  /**
+   * The decoded header fields, in the order they arrived.
+   * @type list
+   */
+  var fields = []
+
+  /**
+   * The request or response body received so far.
+   * @type bytes
+   */
+  var data
+
+  /**
+   * Whether the peer has finished sending on this stream.
+   * @type bool
+   */
+  var ended = false
+
+  /**
+   * Whether the header block is complete - that is, whether an
+   * END_HEADERS flag has been seen.
+   * @type bool
+   */
+  var headers_done = false
+
+  /**
+   * Whether this endpoint has finished sending on this stream.
+   * @type bool
+   */
+  var closed = false
+
+  /**
+   * How many bytes may still be sent on this stream before the peer
+   * has to grant more.
+   * @type number
+   */
+  var send_window
+
+  /**
+   * How much of this stream's receive window has been consumed since
+   * the last WINDOW_UPDATE.
+   * @type number
+   */
+  var consumed = 0
+
+  /**
+   * The trailer fields, if any arrived after the body.
+   * @type list
+   */
+  var trailers = []
+
+  # The partial header block, while HEADERS and its CONTINUATION
+  # frames are still arriving.
+  var fragment
+
+  @new(id, send_window) {
+    self.id = id
+    self.fields = []
+    self.trailers = []
+    self.data = bytes(0)
+    self.send_window = send_window
+    self.consumed = 0
+  }
+}
+
+/**
+ * An HTTP/2 connection, in either role.
+ *
+ * On the server side, `serve()` reads the preface, exchanges
+ * settings, and then runs the frame loop, handing each completed
+ * request to the `HttpServer` it was given and writing the response
+ * back. On the client side, `start_client()` performs the same
+ * handshake and `send_request()`/`await_response()` carry one
+ * exchange.
+ *
+ * Streams are multiplexed on the wire but handled in the order they
+ * complete: this is one thread reading one socket, so a request that
+ * arrives while another is being handled is read, buffered, and
+ * answered next rather than in parallel. That is a throughput
+ * property, not a correctness one - the framing, flow control and
+ * header state are all maintained exactly as the protocol requires.
+ */
+class Http2Connection {
+
+  /**
+   * Whether this endpoint is the server.
+   * @type bool
+   */
+  var is_server = false
+
+  /**
+   * The largest request body accepted on one stream, in bytes. A
+   * stream that exceeds it is answered `413` and reset.
+   * @type number
+   */
+  var max_body_size = _MAX_BODY
+
+  var _conn
+  var _encoder
+  var _decoder
+  var _streams = {}
+  var _send_window = 65535
+  var _consumed = 0
+  var _peer_max_frame = 16384
+  var _peer_initial_window = 65535
+  var _peer_max_concurrent = 100
+  var _last_stream_id = 0
+  var _next_stream_id = 1
+  var _going_away = false
+  var _settings_acked = false
+  var _pending_headers = nil
+  var _ready = []
+
+  /**
+   * @param Connection connection: the transport, already connected
+   *    and (for `h2`) already through its TLS handshake
+   * @param bool is_server
+   */
+  @new(connection, is_server: bool) {
+    self._conn = connection
+    self.is_server = is_server
+    self._encoder = hpack.Encoder()
+    self._decoder = hpack.Decoder()
+    self._streams = {}
+    self._ready = []
+    self._send_window = 65535
+    self._consumed = 0
+    self._next_stream_id = is_server ? 2 : 1
+  }
+
+  # ----------------------------------------------------------------
+  # Handshake
+  # ----------------------------------------------------------------
+
+  /**
+   * Reads the client connection preface and sends this endpoint's
+   * SETTINGS. Server side.
+   *
+   * @param ?bytes already_read: preface bytes a caller consumed while
+   *    working out which protocol this was
+   * @throws ProtocolError if the preface is not what HTTP/2 requires
+   */
+  start_server(already_read) {
+    var expected = frames.PREFACE.to_bytes()
+    var have = already_read == nil ? bytes(0) : already_read
+
+    if have.length() < expected.length() {
+      var rest = self._conn.read_exactly(expected.length() - have.length())
+      have = have.clone()
+      have.extend(rest)
+      rest.dispose()
+    }
+
+    if have[0, expected.length()] != expected {
+      raise ProtocolError('the HTTP/2 connection preface is missing or wrong')
+    }
+
+    self._send_settings()
+  }
+
+  /**
+   * Sends the client connection preface and this endpoint's SETTINGS.
+   * Client side.
+   */
+  start_client() {
+    self._conn.write(frames.PREFACE)
+    self._send_settings()
+  }
+
+  _send_settings() {
+    var payload = frames.encode_settings({
+      1: _HEADER_TABLE_SIZE,
+      # This endpoint never accepts a pushed stream. Push is
+      # deprecated by RFC 9113 and no browser has acted on one for
+      # years; refusing it up front removes a whole class of state.
+      2: 0,
+      3: _MAX_CONCURRENT_STREAMS,
+      4: _INITIAL_WINDOW,
+      5: _MAX_FRAME_SIZE,
+      6: 262144,
+    })
+
+    frames.write_frame(self._conn, frames.SETTINGS, 0, 0, payload)
+    payload.dispose()
+
+    # Raise the connection-level receive window to match what each
+    # stream gets; the connection window is not covered by
+    # SETTINGS_INITIAL_WINDOW_SIZE and starts at 65535 regardless.
+    var bump = bytes(0)
+    frames.write_u32(bump, _INITIAL_WINDOW - 65535)
+    frames.write_frame(self._conn, frames.WINDOW_UPDATE, 0, 0, bump)
+    bump.dispose()
+
+    self._conn.flush()
+  }
+
+  # ----------------------------------------------------------------
+  # Server
+  # ----------------------------------------------------------------
+
+  /**
+   * Runs the connection until the peer goes away, handing every
+   * completed request to `server`.
+   *
+   * @param HttpServer server
+   */
+  serve(server) {
+    while true {
+      var frame
+
+      catch {
+        frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
+      } as error
+
+      if error {
+        # A peer that simply stops talking has closed the connection,
+        # which is the ordinary end of one.
+        if instance_of(error, ConnectionError) or instance_of(error, TimeoutError) {
+          return
+        }
+
+        self._go_away(frames.PROTOCOL_ERROR, error.message)
+        return
+      }
+
+      if self._going_away {
+        return
+      }
+
+      var stream = self._process(frame, server)
+      frame.payload.dispose()
+
+      if stream != nil {
+        self._ready.append(stream)
+      }
+
+      # A request may also have completed while a body write was
+      # blocked waiting on a window; those queue up here rather than
+      # being dropped on the floor.
+      while self._ready.length() > 0 {
+        self._answer(server, self._ready.shift())
+      }
+    }
+  }
+
+  # Handles one frame. Returns the stream that just became a complete
+  # request, or nil.
+  _process(frame, server) {
+    # A CONTINUATION must follow its HEADERS immediately; anything in
+    # between leaves the header state ambiguous, which RFC 9113 §6.10
+    # makes a connection error.
+    if self._pending_headers != nil and frame.type != frames.CONTINUATION {
+      self._go_away(frames.PROTOCOL_ERROR, 'a frame interrupted a header block')
+      return nil
+    }
+
+    using frame.type {
+      when frames.HEADERS {
+        return self._on_headers(frame)
+      }
+      when frames.CONTINUATION {
+        return self._on_continuation(frame)
+      }
+      when frames.DATA {
+        return self._on_data(frame)
+      }
+      when frames.SETTINGS {
+        self._on_settings(frame)
+      }
+      when frames.WINDOW_UPDATE {
+        self._on_window_update(frame)
+      }
+      when frames.PING {
+        self._on_ping(frame)
+      }
+      when frames.RST_STREAM {
+        self._streams.remove(frame.stream_id)
+      }
+      when frames.GOAWAY {
+        self._going_away = true
+      }
+      when frames.PUSH_PROMISE {
+        # A client may never push, and this endpoint disabled push in
+        # its own SETTINGS, so a server may not either.
+        self._go_away(frames.PROTOCOL_ERROR, 'PUSH_PROMISE is not allowed here')
+      }
+      when frames.PRIORITY {
+        # Deprecated by RFC 9113 §5.3.2 and safe to ignore, but the
+        # frame still has to be the right size.
+        if frame.payload.length() != 5 {
+          self._reset(frame.stream_id, frames.FRAME_SIZE_ERROR)
+        }
+      }
+    }
+
+    return nil
+  }
+
+  _on_headers(frame) {
+    if frame.stream_id == 0 {
+      self._go_away(frames.PROTOCOL_ERROR, 'HEADERS on stream 0')
+      return nil
+    }
+
+    var stream = self._streams.get(frame.stream_id, nil)
+    var payload = frame.payload
+
+    # A HEADERS frame may carry a five-octet priority prologue, which
+    # is deprecated but still legal to send.
+    if frame.has_flag(frames.FLAG_PRIORITY) {
+      if payload.length() < 5 {
+        self._go_away(frames.FRAME_SIZE_ERROR, 'HEADERS is too short for its priority field')
+        return nil
+      }
+      payload = payload[5,]
+    }
+
+    if stream == nil {
+      if self.is_server {
+        # Client-initiated streams are odd-numbered and must strictly
+        # increase; a lower one is a stream this connection already
+        # finished with.
+        if frame.stream_id % 2 == 0 or frame.stream_id <= self._last_stream_id {
+          self._go_away(frames.PROTOCOL_ERROR, 'invalid stream identifier')
+          return nil
+        }
+
+        self._last_stream_id = frame.stream_id
+
+        # This endpoint advertised a concurrency limit in SETTINGS; a
+        # client that opens more streams than that anyway is told so
+        # per stream rather than being allowed to accumulate state.
+        if self._streams.length() >= _MAX_CONCURRENT_STREAMS {
+          self._reset(frame.stream_id, frames.REFUSED_STREAM)
+          return nil
+        }
+      }
+
+      stream = Http2Stream(frame.stream_id, self._peer_initial_window)
+      self._streams[frame.stream_id] = stream
+    }
+
+    return self._collect_headers(stream, payload, frame)
+  }
+
+  _on_continuation(frame) {
+    if self._pending_headers == nil or self._pending_headers.id != frame.stream_id {
+      self._go_away(frames.PROTOCOL_ERROR, 'unexpected CONTINUATION')
+      return nil
+    }
+
+    return self._collect_headers(self._pending_headers, frame.payload, frame)
+  }
+
+  _collect_headers(stream, payload, frame) {
+    if self._pending_headers == nil {
+      stream.fragment = payload.clone()
+    } else {
+      stream.fragment.extend(payload)
+    }
+
+    if stream.fragment.length() > _MAX_HEADER_BLOCK {
+      self._go_away(frames.ENHANCE_YOUR_CALM, 'the header block is too large')
+      return nil
+    }
+
+    if !frame.has_flag(frames.FLAG_END_HEADERS) {
+      self._pending_headers = stream
+      return nil
+    }
+
+    self._pending_headers = nil
+
+    var decoded
+
+    catch {
+      decoded = self._decoder.decode(stream.fragment)
+    } as error
+
+    if error {
+      # A header block that will not decode has already corrupted the
+      # shared compression state; the connection cannot continue.
+      self._go_away(frames.COMPRESSION_ERROR, error.message)
+      return nil
+    }
+
+    stream.fragment.dispose()
+    stream.fragment = nil
+
+    if stream.headers_done {
+      stream.trailers = decoded
+    } else {
+      stream.fields = decoded
+      stream.headers_done = true
+    }
+
+    if frame.has_flag(frames.FLAG_END_STREAM) {
+      stream.ended = true
+      return stream
+    }
+
+    return nil
+  }
+
+  _on_data(frame) {
+    if frame.stream_id == 0 {
+      self._go_away(frames.PROTOCOL_ERROR, 'DATA on stream 0')
+      return nil
+    }
+
+    var stream = self._streams.get(frame.stream_id, nil)
+
+    # Flow control is accounted against the connection whether or not
+    # the stream still exists, or the peer's view of the window drifts
+    # from ours and everything stalls.
+    self._consume(frame.payload.length())
+
+    if stream == nil {
+      self._reset(frame.stream_id, frames.STREAM_CLOSED)
+      return nil
+    }
+
+    stream.data.extend(frame.payload)
+    stream.consumed += frame.payload.length()
+
+    if stream.data.length() > self.max_body_size {
+      self._refuse_body(stream)
+      return nil
+    }
+
+    if stream.consumed >= _WINDOW_REFILL_AT {
+      self._grant(stream.id, stream.consumed)
+      stream.consumed = 0
+    }
+
+    if frame.has_flag(frames.FLAG_END_STREAM) {
+      stream.ended = true
+      return stream
+    }
+
+    return nil
+  }
+
+  # Answers an over-large request body with a real 413 before
+  # resetting the stream. A bare RST_STREAM would be legal, but it
+  # leaves the client guessing at why its upload died.
+  _refuse_body(stream) {
+    catch {
+      var block = self._encoder.encode([
+        [':status', '413'],
+        ['content-length', '0'],
+      ])
+
+      self._write_headers(stream.id, block, true)
+      block.dispose()
+      self._conn.flush()
+    }
+
+    self._reset(stream.id, frames.NO_ERROR)
+  }
+
+  _on_settings(frame) {
+    if frame.has_flag(frames.FLAG_ACK) {
+      self._settings_acked = true
+      return
+    }
+
+    var values
+
+    catch {
+      values = frames.decode_settings(frame.payload)
+    } as error
+
+    if error {
+      self._go_away(frames.FRAME_SIZE_ERROR, error.message)
+      return
+    }
+
+    for identifier, value in values {
+      using identifier {
+        when frames.SETTINGS_MAX_FRAME_SIZE {
+          if value < 16384 or value > 16777215 {
+            self._go_away(frames.PROTOCOL_ERROR, 'SETTINGS_MAX_FRAME_SIZE is out of range')
+            return
+          }
+          self._peer_max_frame = value
+        }
+        when frames.SETTINGS_INITIAL_WINDOW_SIZE {
+          if value > 2147483647 {
+            self._go_away(frames.FLOW_CONTROL_ERROR, 'SETTINGS_INITIAL_WINDOW_SIZE is too large')
+            return
+          }
+
+          # A change applies to every open stream as a delta, not as a
+          # new absolute value (RFC 9113 §6.9.2).
+          var delta = value - self._peer_initial_window
+          self._peer_initial_window = value
+
+          for _, stream in self._streams {
+            stream.send_window += delta
+          }
+        }
+        when frames.SETTINGS_MAX_CONCURRENT_STREAMS {
+          self._peer_max_concurrent = value
+        }
+        when frames.SETTINGS_HEADER_TABLE_SIZE {
+          self._encoder.set_capacity(value)
+        }
+      }
+    }
+
+    frames.write_frame(self._conn, frames.SETTINGS, frames.FLAG_ACK, 0, nil)
+    self._conn.flush()
+  }
+
+  _on_window_update(frame) {
+    if frame.payload.length() != 4 {
+      self._go_away(frames.FRAME_SIZE_ERROR, 'WINDOW_UPDATE is not four octets')
+      return
+    }
+
+    var increment = frames.read_u32(frame.payload, 0) & 2147483647
+
+    if increment == 0 {
+      if frame.stream_id == 0 {
+        self._go_away(frames.PROTOCOL_ERROR, 'a zero connection window increment')
+      } else {
+        self._reset(frame.stream_id, frames.PROTOCOL_ERROR)
+      }
+      return
+    }
+
+    if frame.stream_id == 0 {
+      self._send_window += increment
+      return
+    }
+
+    var stream = self._streams.get(frame.stream_id, nil)
+    if stream != nil {
+      stream.send_window += increment
+    }
+  }
+
+  _on_ping(frame) {
+    if frame.payload.length() != 8 {
+      self._go_away(frames.FRAME_SIZE_ERROR, 'PING is not eight octets')
+      return
+    }
+
+    if frame.has_flag(frames.FLAG_ACK) {
+      return
+    }
+
+    frames.write_frame(self._conn, frames.PING, frames.FLAG_ACK, 0, frame.payload)
+    self._conn.flush()
+  }
+
+  # Accounts for received data against the connection window, topping
+  # it back up once enough has been consumed to be worth a frame.
+  _consume(length) {
+    self._consumed += length
+
+    if self._consumed >= _WINDOW_REFILL_AT {
+      self._grant(0, self._consumed)
+      self._consumed = 0
+    }
+  }
+
+  _grant(stream_id, increment) {
+    if increment <= 0 {
+      return
+    }
+
+    var payload = bytes(0)
+    frames.write_u32(payload, increment)
+    frames.write_frame(self._conn, frames.WINDOW_UPDATE, 0, stream_id, payload)
+    payload.dispose()
+
+    self._conn.flush()
+  }
+
+  _reset(stream_id, error_code) {
+    self._streams.remove(stream_id)
+
+    var payload = frames.encode_error(error_code)
+    frames.write_frame(self._conn, frames.RST_STREAM, 0, stream_id, payload)
+    payload.dispose()
+
+    self._conn.flush()
+  }
+
+  _go_away(error_code, message) {
+    if self._going_away {
+      return
+    }
+
+    self._going_away = true
+
+    catch {
+      var payload = frames.encode_goaway(self._last_stream_id, error_code, message)
+      frames.write_frame(self._conn, frames.GOAWAY, 0, 0, payload)
+      payload.dispose()
+      self._conn.flush()
+    }
+  }
+
+  # ----------------------------------------------------------------
+  # Requests and responses
+  # ----------------------------------------------------------------
+
+  _answer(server, stream) {
+    var request
+
+    catch {
+      request = self._to_request(stream)
+    } as error
+
+    if error {
+      self._reset(stream.id, frames.PROTOCOL_ERROR)
+      return
+    }
+
+    var response = server.handle_request(request)
+
+    catch {
+      self._write_response(stream, request, response)
+    } as write_error
+
+    self._streams.remove(stream.id)
+
+    if write_error {
+      raise write_error
+    }
+  }
+
+  _to_request(stream) {
+    var method = nil
+    var scheme = nil
+    var path = nil
+    var authority = nil
+    var fields = Headers()
+    var cookie_parts = []
+    var seen_regular = false
+
+    for field in stream.fields {
+      var name = field[0]
+      var value = field[1]
+
+      if name.starts_with(':') {
+        # Every pseudo-header must come before every ordinary one
+        # (RFC 9113 §8.3), and each may appear at most once.
+        if seen_regular {
+          raise ProtocolError('a pseudo-header followed an ordinary header field')
+        }
+
+        using name {
+          when ':method' {
+            if method != nil {
+              raise ProtocolError('duplicate :method')
+            }
+            method = value
+          }
+          when ':scheme' {
+            if scheme != nil {
+              raise ProtocolError('duplicate :scheme')
+            }
+            scheme = value
+          }
+          when ':path' {
+            if path != nil {
+              raise ProtocolError('duplicate :path')
+            }
+            path = value
+          }
+          when ':authority' {
+            if authority != nil {
+              raise ProtocolError('duplicate :authority')
+            }
+            authority = value
+          }
+          default {
+            raise ProtocolError('unknown pseudo-header ${name}')
+          }
+        }
+
+        continue
+      }
+
+      seen_regular = true
+
+      if _FORBIDDEN.contains(name) {
+        raise ProtocolError('${name} has no meaning in HTTP/2')
+      }
+
+      # TE is allowed, but only to ask for trailers.
+      if name == 'te' and value.trim().lower() != 'trailers' {
+        raise ProtocolError('TE may only be "trailers" in HTTP/2')
+      }
+
+      # Cookie is split across fields for compression's sake and has
+      # to be rejoined before anything can read it (RFC 9113 §8.2.3).
+      if name == 'cookie' {
+        cookie_parts.append(value)
+        continue
+      }
+
+      fields.add(name, value)
+    }
+
+    if method == nil or scheme == nil or path == nil {
+      raise ProtocolError('a request is missing a required pseudo-header')
+    }
+
+    if path.is_empty() {
+      raise ProtocolError('an empty :path')
+    }
+
+    if cookie_parts.length() > 0 {
+      fields.set('Cookie', '; '.join(cookie_parts))
+    }
+
+    # HTTP/1.1 code downstream reads the authority off Host, so it is
+    # reconstructed here rather than left for every reader to know
+    # about both spellings.
+    if authority != nil {
+      fields.set_default('Host', authority)
+    }
+
+    var request = HttpRequest(method, path, fields)
+    request.version = '2'
+    request.scheme = scheme
+    request.secure = scheme == 'https'
+    request.authority = authority
+    request.body = stream.data
+
+    if self._conn.peer_address != nil {
+      request.remote_address = self._conn.peer_address.to_string()
+    }
+
+    var cookie_header = fields.get('cookie', nil)
+    if cookie_header != nil {
+      request.cookies = cookies.parse_cookie_header(cookie_header)
+    }
+
+    return request
+  }
+
+  _write_response(stream, request, response) {
+    response.version = '2'
+    response.request_method = request.method
+
+    var fields = [[':status', response.status.to_string()]]
+
+    response.headers.set_default('Date', util.format_date())
+    response.headers.set_default('Server', 'Zuri')
+
+    response.headers.each(@(name, value) {
+      var lower = name.lower()
+
+      # These describe an HTTP/1.1 connection and must never be sent
+      # on an HTTP/2 one.
+      if !_FORBIDDEN.contains(lower) and lower != 'content-length' {
+        fields.append([lower, value])
+      }
+    })
+
+    var bodiless = status.is_bodiless(response.status) or request.method == 'HEAD'
+    var source = response.source()
+
+    # A Content-Length is still meaningful in HTTP/2 - it is not
+    # framing there, but it does tell the peer how much to expect -
+    # so it is re-added wherever the length is actually known.
+    if source == nil {
+      fields.append(['content-length', response.body.length().to_string()])
+    } else if source[0] == 'file' {
+      fields.append(['content-length', source[3].to_string()])
+    }
+
+    for cookie in response.cookie_headers() {
+      fields.append(['set-cookie', cookie])
+    }
+
+    var block = self._encoder.encode(fields)
+    var end_stream = bodiless or (source == nil and response.body.length() == 0)
+
+    self._write_headers(stream.id, block, end_stream)
+    block.dispose()
+    response.commit()
+
+    if end_stream {
+      self._conn.flush()
+      return
+    }
+
+    if source == nil {
+      self.send_data(stream, response.body, true)
+    } else if source[0] == 'file' {
+      self._send_file(stream, source[1], source[2], source[3])
+    } else {
+      var writer = Http2Writer(self, stream)
+
+      catch {
+        source[1](writer)
+      } as error
+
+      if error {
+        self._reset(stream.id, frames.INTERNAL_ERROR)
+        raise error
+      }
+
+      writer.finish()
+    }
+
+    self._conn.flush()
+  }
+
+  _write_headers(stream_id, block, end_stream) {
+    var limit = self._peer_max_frame
+    var flags = end_stream ? frames.FLAG_END_STREAM : 0
+
+    if block.length() <= limit {
+      frames.write_frame(
+        self._conn, frames.HEADERS, flags | frames.FLAG_END_HEADERS, stream_id, block
+      )
+      return
+    }
+
+    # A header block larger than one frame continues in CONTINUATION
+    # frames, which carry no flags of their own until the last.
+    var first = block[0, limit]
+    frames.write_frame(self._conn, frames.HEADERS, flags, stream_id, first)
+    first.dispose()
+
+    var at = limit
+
+    while at < block.length() {
+      var end = at + limit
+      if end > block.length() {
+        end = block.length()
+      }
+
+      var piece = block[at, end]
+      var last = end == block.length()
+
+      frames.write_frame(
+        self._conn,
+        frames.CONTINUATION,
+        last ? frames.FLAG_END_HEADERS : 0,
+        stream_id,
+        piece
+      )
+      piece.dispose()
+
+      at = end
+    }
+  }
+
+  /**
+   * Sends `data` on `stream` as DATA frames, respecting both the
+   * stream's and the connection's send windows and the peer's maximum
+   * frame size.
+   *
+   * When a window is exhausted this reads frames until the peer grants
+   * more, which is what makes flow control actually work rather than
+   * simply be accounted for.
+   *
+   * @param Http2Stream stream
+   * @param bytes data
+   * @param bool end_stream
+   */
+  send_data(stream, data, end_stream) {
+    var at = 0
+
+    while at < data.length() {
+      var available = self._writable(stream)
+
+      if available <= 0 {
+        self._await_window(stream)
+        continue
+      }
+
+      var remaining = data.length() - at
+      var take = remaining < available ? remaining : available
+
+      var piece = data[at, at + take]
+      at += take
+
+      var last = end_stream and at >= data.length()
+
+      frames.write_frame(
+        self._conn,
+        frames.DATA,
+        last ? frames.FLAG_END_STREAM : 0,
+        stream.id,
+        piece
+      )
+      piece.dispose()
+
+      stream.send_window -= take
+      self._send_window -= take
+
+      # Flushing per frame keeps a slow consumer from making us hold
+      # the whole body in the write buffer.
+      self._conn.flush()
+    }
+
+    if end_stream and data.length() == 0 {
+      frames.write_frame(self._conn, frames.DATA, frames.FLAG_END_STREAM, stream.id, nil)
+    }
+  }
+
+  _writable(stream) {
+    var limit = self._peer_max_frame
+
+    if stream.send_window < limit {
+      limit = stream.send_window
+    }
+    if self._send_window < limit {
+      limit = self._send_window
+    }
+
+    return limit
+  }
+
+  # Blocks reading frames until the peer opens a window. Only
+  # connection-level frames are acted on here; anything else is
+  # buffered into its stream as usual.
+  _await_window(stream) {
+    while self._writable(stream) <= 0 {
+      if self._going_away {
+        raise ConnectionError('the peer went away while the send window was closed')
+      }
+
+      var frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
+      var completed = self._process(frame, nil)
+      frame.payload.dispose()
+
+      if completed != nil {
+        self._ready.append(completed)
+      }
+    }
+  }
+
+  _send_file(stream, path, offset, length) {
+    var handle = file(path, 'rb')
+
+    # A file has to actually be open before it can be seeked; reads
+    # open it lazily, but a seek before the first read does not.
+    handle.open()
+
+    if offset > 0 {
+      handle.seek(offset, 0)
+    }
+
+    var remaining = length
+
+    while remaining > 0 {
+      var want = remaining < 65536 ? remaining : 65536
+      var chunk = handle.read(want)
+
+      if chunk == nil or chunk.length() == 0 {
+        break
+      }
+
+      remaining -= chunk.length()
+      self.send_data(stream, chunk, remaining <= 0)
+      chunk.dispose()
+    }
+
+    handle.close()
+  }
+
+
+  # ----------------------------------------------------------------
+  # Client
+  # ----------------------------------------------------------------
+
+  /**
+   * Opens a stream and sends `request` on it. Client side.
+   *
+   * @param HttpRequest request
+   * @param ?bytes payload: the request body
+   * @returns Http2Stream
+   */
+  send_request(request, payload) {
+    var stream = Http2Stream(self._next_stream_id, self._peer_initial_window)
+    self._streams[stream.id] = stream
+    self._next_stream_id += 2
+
+    var authority = request.authority or request.headers.get('host', nil)
+
+    # The pseudo-headers come first and in this order, and `Host` is
+    # replaced by `:authority` rather than sent alongside it.
+    var fields = [
+      [':method', request.method],
+      [':scheme', request.scheme],
+      [':authority', authority or ''],
+      [':path', request.target],
+    ]
+
+    request.headers.each(@(name, value) {
+      var lower = name.lower()
+
+      if lower == 'host' or _FORBIDDEN.contains(lower) {
+        return
+      }
+
+      fields.append([lower, value])
+    })
+
+    var has_body = payload != nil and payload.length() > 0
+    var block = self._encoder.encode(fields)
+
+    self._write_headers(stream.id, block, !has_body)
+    block.dispose()
+
+    if has_body {
+      self.send_data(stream, payload, true)
+    }
+
+    self._conn.flush()
+
+    return stream
+  }
+
+  /**
+   * Reads frames until `stream` is finished and returns the response
+   * it carried. Client side.
+   *
+   * @param Http2Stream stream
+   * @param HttpRequest request
+   * @returns HttpResponse
+   * @throws ProtocolError if the response is malformed
+   * @throws ConnectionError if the connection ends first
+   */
+  await_response(stream, request) {
+    while !stream.ended {
+      if self._going_away and !stream.ended {
+        raise ConnectionError('the connection went away before the response finished')
+      }
+
+      var frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
+      var completed = self._process(frame, nil)
+      frame.payload.dispose()
+
+      if completed != nil and completed.id != stream.id {
+        # A server that opens a stream of its own has pushed, which
+        # this endpoint disabled; ignoring it is the safe reading.
+        self._streams.remove(completed.id)
+      }
+    }
+
+    self._streams.remove(stream.id)
+
+    return self._to_response(stream, request)
+  }
+
+  _to_response(stream, request) {
+    var code = nil
+    var fields = Headers()
+    var seen_regular = false
+
+    for field in stream.fields {
+      var name = field[0]
+      var value = field[1]
+
+      if name.starts_with(':') {
+        if seen_regular {
+          raise ProtocolError('a pseudo-header followed an ordinary header field')
+        }
+
+        if name != ':status' {
+          raise ProtocolError('unknown response pseudo-header ${name}')
+        }
+
+        if code != nil {
+          raise ProtocolError('duplicate :status')
+        }
+
+        code = value
+        continue
+      }
+
+      seen_regular = true
+
+      if _FORBIDDEN.contains(name) {
+        raise ProtocolError('${name} has no meaning in HTTP/2')
+      }
+
+      fields.add(name, value)
+    }
+
+    if code == nil or code.length() != 3 or !code.is_number() {
+      raise ProtocolError('a response is missing a valid :status')
+    }
+
+    var response = HttpResponse(stream.data, code.to_number(), fields)
+    response.version = '2'
+    response.request_method = request.method
+
+    for value in fields.get_all('set-cookie') {
+      var cookie = cookies.parse_set_cookie(value)
+      if cookie != nil {
+        response.cookies.append(cookie)
+      }
+    }
+
+    for field in stream.trailers {
+      fields.add(field[0], field[1])
+    }
+
+    return response
+  }
+
+  /**
+   * Whether the connection is still usable for another request.
+   *
+   * @returns bool
+   */
+  is_usable() {
+    return !self._going_away and !self._conn.is_closed()
+  }
+
+  /**
+   * Sends GOAWAY and closes the transport.
+   *
+   * @param ?int error_code: defaults to `NO_ERROR`
+   */
+  close(error_code) {
+    self._go_away(error_code == nil ? frames.NO_ERROR : error_code, nil)
+    self._conn.close()
+  }
+}
+
+/**
+ * The writer a streaming response body gets on an HTTP/2 connection.
+ * Same shape as the HTTP/1.1 one, so a handler never has to know
+ * which version it is answering.
+ */
+class Http2Writer {
+
+  var _connection
+  var _stream
+  var _finished = false
+
+  @new(connection, stream) {
+    self._connection = connection
+    self._stream = stream
+    self._finished = false
+  }
+
+  /**
+   * Sends part of the body.
+   *
+   * @param {bytes|string} data
+   */
+  write(data) {
+    if self._finished {
+      raise ProtocolError('write after the response body was finished')
+    }
+
+    var payload = is_string(data) ? data.to_bytes() : data
+
+    if payload.length() == 0 {
+      return
+    }
+
+    self._connection.send_data(self._stream, payload, false)
+  }
+
+  /**
+   * Pushes what has been written out to the socket. DATA frames are
+   * already flushed as they go, so this is here for interface parity
+   * with the HTTP/1.1 writer.
+   */
+  flush() {
+  }
+
+  /**
+   * Ends the body with an empty END_STREAM frame.
+   */
+  finish() {
+    if self._finished {
+      return
+    }
+    self._finished = true
+
+    self._connection.send_data(self._stream, bytes(0), true)
+  }
+}

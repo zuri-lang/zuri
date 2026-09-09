@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  zuri.reflect — test suite'
+echo '  zuri.reflect: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 def add(a, b) {

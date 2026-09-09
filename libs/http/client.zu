@@ -1,0 +1,940 @@
+#!-- part of the http module
+
+import .body
+import .cookies { CookieJar }
+import .errors {
+  ConnectionError, HttpError, ProtocolError, TimeoutError, TooManyRedirectsError,
+  UnsupportedProtocolError
+}
+import .h1
+import .h2
+import .headers { Headers }
+import .multipart { MultipartBuilder }
+import .request { HttpRequest, build_query_string }
+import .response { HttpResponse }
+import .status
+import .stream
+
+import base64
+import json
+import net.tls
+import url
+
+# Connections idle in the pool longer than this are dropped rather
+# than reused, since the far end has usually closed them by now and
+# discovering that costs a whole failed request.
+var _IDLE_TIMEOUT = 30
+
+/**
+ * An HTTP client.
+ *
+ * ```zuri
+ * import http
+ *
+ * var client = http.HttpClient()
+ * var response = client.get('https://example.com')
+ *
+ * echo response.status
+ * echo response.as_text()
+ * ```
+ *
+ * One client is meant to be kept and reused: it holds the connection
+ * pool, the cookie jar, and the TLS configuration, all of which are
+ * wasted if a fresh client is built per request. Reusing it also
+ * means the second request to a host skips the TCP and TLS
+ * handshakes entirely.
+ *
+ * Redirects are followed, responses are decompressed, and cookies are
+ * carried between requests when a jar is attached - all of which can
+ * be turned off.
+ *
+ * @printable
+ */
+class HttpClient {
+
+  /**
+   * Prefixed to any request URL that is not already absolute, so a
+   * client can be pointed at one service and then addressed by path.
+   * @type ?string
+   */
+  var base_url
+
+  /**
+   * Headers sent with every request, unless a request overrides them.
+   * @type Headers
+   */
+  var headers
+
+  /**
+   * The `User-Agent` sent unless one is set in `headers`.
+   * @type string
+   */
+  var user_agent = 'Zuri/1.0'
+
+  /**
+   * Whether to follow 3xx responses.
+   * @type bool
+   */
+  var follow_redirects = true
+
+  /**
+   * The most redirects to follow before giving up. A chain longer
+   * than this is nearly always a loop.
+   * @type number
+   */
+  var max_redirects = 10
+
+  /**
+   * How long to wait for a connection to be established, in
+   * milliseconds.
+   * @type number
+   */
+  var connect_timeout = 30000
+
+  /**
+   * How long to wait for data once connected, in milliseconds.
+   * @type number
+   */
+  var read_timeout = 30000
+
+  /**
+   * How long a write may block, in milliseconds.
+   * @type number
+   */
+  var write_timeout = 30000
+
+  /**
+   * Whether to verify the server's certificate chain and hostname.
+   *
+   * @note Turning this off makes an HTTPS connection encrypted but
+   *    unauthenticated, which is to say trivially interceptable. It
+   *    exists for talking to a development server with a self-signed
+   *    certificate; `add_ca()` is the right answer everywhere else.
+   * @type bool
+   */
+  var verify = true
+
+  /**
+   * The largest response body accepted, in bytes. Defaults to 64 MiB.
+   * @type number
+   */
+  var max_body_size = 67108864
+
+  /**
+   * Whether to decode a compressed response body automatically.
+   * @type bool
+   */
+  var decode_content = true
+
+  /**
+   * How many times to retry a request that failed on a connection
+   * error before giving up. Only idempotent methods are ever retried,
+   * since replaying a POST can mean charging a card twice.
+   * @type number
+   */
+  var max_retries = 0
+
+  /**
+   * Whether to negotiate HTTP/2 over TLS. When the server agrees, the
+   * whole exchange runs over one multiplexed connection; when it does
+   * not, this falls back to HTTP/1.1 with no extra round trip, since
+   * the choice is made during the TLS handshake.
+   * @type bool
+   */
+  var http2 = true
+
+  /**
+   * The cookie jar, or `nil` to not track cookies at all. A client
+   * built by `http.client()` has one; a bare `HttpClient()` does not,
+   * so that an API client does not accumulate state it never asked
+   * for.
+   * @type ?CookieJar
+   */
+  var cookie_jar
+
+  var _tls_config
+  var _extra_cas = []
+  var _pool = {}
+
+  /**
+   * @param ?string base_url
+   * @param ?dict options: any of the fields above, plus `headers`
+   */
+  @new(base_url: ?string, options: ?dict) {
+    self.base_url = base_url
+    self.headers = Headers()
+    self._pool = {}
+    self._extra_cas = []
+
+    if options != nil {
+      for name, value in options {
+        if name == 'headers' {
+          self.headers.extend(value)
+        } else if hasprop(self, name) {
+          setprop(self, name, value)
+        } else {
+          raise HttpError('unknown client option: ${name}')
+        }
+      }
+    }
+  }
+
+  # ----------------------------------------------------------------
+  # Convenience methods
+  # ----------------------------------------------------------------
+
+  /**
+   * Sends a GET request.
+   *
+   * @param string target: an absolute URL, or a path when `base_url`
+   *    is set
+   * @param ?dict options: see `request()`
+   * @returns HttpResponse
+   */
+  get(target: string, options: ?dict) {
+    return self.request('GET', target, options)
+  }
+
+  /**
+   * Sends a POST request.
+   *
+   * `data` may be a string, bytes, a dictionary (sent as JSON), or a
+   * `MultipartBuilder`. Use the `form` option instead to send a
+   * dictionary as `application/x-www-form-urlencoded`.
+   *
+   * @param string target
+   * @param ?any data
+   * @param ?dict options: see `request()`
+   * @returns HttpResponse
+   */
+  post(target: string, data, options: ?dict) {
+    return self.request('POST', target, _with_body(options, data))
+  }
+
+  /**
+   * Sends a PUT request.
+   *
+   * @param string target
+   * @param ?any data
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  put(target: string, data, options: ?dict) {
+    return self.request('PUT', target, _with_body(options, data))
+  }
+
+  /**
+   * Sends a PATCH request.
+   *
+   * @param string target
+   * @param ?any data
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  patch(target: string, data, options: ?dict) {
+    return self.request('PATCH', target, _with_body(options, data))
+  }
+
+  /**
+   * Sends a DELETE request.
+   *
+   * @param string target
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  delete(target: string, options: ?dict) {
+    return self.request('DELETE', target, options)
+  }
+
+  /**
+   * Sends a HEAD request. Redirects are not followed by default here,
+   * since the point of a HEAD is usually to inspect the very response
+   * a redirect would hide.
+   *
+   * @param string target
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  head(target: string, options: ?dict) {
+    var settings = options == nil ? {} : options.clone()
+
+    if !settings.contains('follow_redirects') {
+      settings['follow_redirects'] = false
+    }
+
+    return self.request('HEAD', target, settings)
+  }
+
+  /**
+   * Sends an OPTIONS request.
+   *
+   * @param string target
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  options(target: string, options: ?dict) {
+    return self.request('OPTIONS', target, options)
+  }
+
+  /**
+   * Sends a TRACE request.
+   *
+   * @note A TRACE echoes the request back, headers included, which is
+   *    why servers that sit behind authenticating proxies usually
+   *    refuse it.
+   * @param string target
+   * @param ?dict options
+   * @returns HttpResponse
+   */
+  trace(target: string, options: ?dict) {
+    return self.request('TRACE', target, options)
+  }
+
+  # ----------------------------------------------------------------
+  # The request pipeline
+  # ----------------------------------------------------------------
+
+  /**
+   * Sends a request and returns the response.
+   *
+   * The `options` dictionary accepts:
+   *
+   * | Option | Meaning |
+   * | ------ | ------- |
+   * | `headers` | a dictionary or `Headers` merged over the client's |
+   * | `body` | a string or bytes, sent as-is |
+   * | `json` | any value, JSON-encoded, with the matching content type |
+   * | `form` | a dictionary, form-urlencoded |
+   * | `multipart` | a `MultipartBuilder` |
+   * | `query` | a dictionary merged into the URL's query string |
+   * | `auth` | `['basic', user, password]` or `['bearer', token]` |
+   * | `follow_redirects` | overrides the client setting |
+   * | `timeout` | read timeout for this request, in milliseconds |
+   * | `stream` | leave the body unread on `response.body_reader` |
+   * | `decode_content` | overrides the client setting |
+   *
+   * @param string method
+   * @param string target
+   * @param ?dict options
+   * @returns HttpResponse
+   * @throws ConnectionError, TimeoutError, ProtocolError,
+   *    TooManyRedirectsError, UnsupportedProtocolError
+   */
+  request(method: string, target: string, options: ?dict) {
+    if options == nil {
+      options = {}
+    }
+
+    var started = time()
+
+    var location = self._resolve_url(target)
+    var payload = self._build_body(options)
+
+    var request = HttpRequest(method.upper(), '/', nil)
+    var current = location
+    var redirects = 0
+
+    var follow = options.get('follow_redirects', self.follow_redirects)
+    var limit = options.get('max_redirects', self.max_redirects)
+
+    # The origin the caller addressed. Anything scoped to it -
+    # credentials above all - is dropped the moment a redirect leaves
+    # it, since a redirect to a host of someone else's choosing is
+    # otherwise a way to collect whatever Authorization was in flight.
+    var origin = _origin_of(url.parse(location))
+
+    while true {
+      var parsed = url.parse(current)
+      self._check_scheme(parsed)
+
+      request.method = request.method.upper()
+      request.set_target(_origin_form(parsed, options.get('query', nil)))
+      request.headers = self._request_headers(
+        parsed, options, payload, request.method, _origin_of(parsed) == origin
+      )
+
+      var attempt = 0
+      var response = nil
+
+      while true {
+        var carrier = self._connection_for(parsed, options)
+
+        catch {
+          response = self._exchange(carrier, request, payload, parsed, options)
+        } as error
+
+        if error == nil {
+          break
+        }
+
+        self._discard(carrier)
+
+        # A pooled connection the far end had already closed fails on
+        # the first write or read, and looks exactly like a genuine
+        # network failure. Retrying an idempotent request once absorbs
+        # that, which is why the retry budget starts at one for a safe
+        # method even when max_retries is zero.
+        var retriable = instance_of(error, ConnectionError) and
+            request.is_idempotent() and
+            attempt < (self.max_retries > 0 ? self.max_retries : 1)
+
+        if !retriable {
+          raise error
+        }
+
+        attempt++
+      }
+
+      response.responder = current
+      response.redirects = redirects
+      response.time_taken = (time() - started) * 1000
+
+      if self.cookie_jar != nil {
+        for cookie in response.cookies {
+          self.cookie_jar.store(cookie, parsed.host, parsed.path)
+        }
+      }
+
+      if !follow or !response.is_redirect() {
+        return response
+      }
+
+      var next = response.headers.get('location', nil)
+      if next == nil or next.trim().is_empty() {
+        return response
+      }
+
+      redirects++
+      if redirects > limit {
+        raise TooManyRedirectsError('more than ${limit} redirects from ${location}')
+      }
+
+      current = parsed.resolve(next.trim()).to_string()
+      payload = self._redirect_body(request, response, payload, options)
+    }
+  }
+
+  # Turns a 3xx into the request that follows it. 303 always becomes a
+  # GET, and so do 301 and 302 in practice - every browser and every
+  # other client rewrites them, and a server that meant otherwise
+  # should have sent 307 (RFC 9110 §15.4).
+  _redirect_body(request, response, payload, options) {
+    if status.preserves_method(response.status) {
+      return payload
+    }
+
+    if request.method != 'HEAD' {
+      request.method = 'GET'
+    }
+
+    # The body is gone, so the headers that described it have to go
+    # with it - and the option that would put the content type back on
+    # the next time round has to go too.
+    options.remove('content_type')
+
+    return nil
+  }
+
+  _exchange(carrier, request, payload, parsed, options) {
+    if carrier[0] == 'h2' {
+      return self._exchange_h2(carrier, request, payload, parsed, options)
+    }
+
+    var connection = carrier[1]
+
+    h1.write_request(connection, request, { body: payload })
+
+    var response = h1.read_response(connection, request, {
+      max_body_size: options.get('max_body_size', self.max_body_size),
+      decode_content: options.get('decode_content', self.decode_content),
+      stream: options.get('stream', false),
+    })
+
+    response.certificate = connection.peer_certificate()
+
+    # A streamed response leaves the body unread, so the connection
+    # cannot go back in the pool yet - the caller owns it until they
+    # have finished reading. `finish()` is how it comes back.
+    if options.get('stream', false) {
+      response.set_carrier([carrier, '${parsed.scheme}://${_authority_of(parsed)}'])
+      return response
+    }
+
+    if h1.should_keep_alive(request, response) and response.version != '1.0' {
+      self._release(parsed, carrier)
+    } else {
+      connection.close()
+    }
+
+    return response
+  }
+
+  _exchange_h2(carrier, request, payload, parsed, options) {
+    var session = carrier[1]
+
+    request.scheme = parsed.scheme
+    request.authority = _authority_of(parsed)
+
+    var stream = session.send_request(request, payload)
+    var response = session.await_response(stream, request)
+
+    response.certificate = carrier[2].peer_certificate()
+
+    if options.get('decode_content', self.decode_content) {
+      var encoding = response.headers.get('content-encoding', nil)
+
+      if encoding != nil and !encoding.trim().is_empty() {
+        response.body = body.decode_content(response.body, encoding)
+        response.headers.remove('Content-Encoding')
+        response.headers.set('Content-Length', response.body.length())
+      }
+    }
+
+    if session.is_usable() {
+      self._release(parsed, carrier)
+    } else {
+      session.close(nil)
+    }
+
+    return response
+  }
+
+  # ----------------------------------------------------------------
+  # Requests
+  # ----------------------------------------------------------------
+
+  _resolve_url(target) {
+    if target.contains('://') {
+      return target
+    }
+
+    if self.base_url == nil {
+      raise HttpError('relative URL ${target} needs a base_url')
+    }
+
+    return self.base_url.rtrim('/') + '/' + target.ltrim('/')
+  }
+
+  _check_scheme(parsed) {
+    var scheme = parsed.scheme == nil ? '' : parsed.scheme.lower()
+
+    if scheme != 'http' and scheme != 'https' {
+      raise UnsupportedProtocolError('cannot make an HTTP request to ${scheme}: URLs')
+    }
+
+    if parsed.host == nil or parsed.host.is_empty() {
+      raise HttpError('URL has no host')
+    }
+  }
+
+  _request_headers(parsed, options, payload, method, same_origin) {
+    var result = self.headers.clone()
+
+    var extra = options.get('headers', nil)
+    if extra != nil {
+      result.extend(extra)
+    }
+
+    if !same_origin {
+      result.remove('Authorization')
+      result.remove('Proxy-Authorization')
+      # A Cookie the caller wrote by hand was for the original host.
+      # The jar below still adds whatever is right for this one.
+      result.remove('Cookie')
+    }
+
+    # RFC 9112 §3.2: Host is mandatory, and it names the authority
+    # from the URL, port included when it is not the default.
+    result.set('Host', _authority_of(parsed))
+    result.set_default('User-Agent', self.user_agent)
+    result.set_default('Accept', '*/*')
+
+    # Only advertise codings this build can actually reverse, or a
+    # server will send something that arrives as noise.
+    result.set_default('Accept-Encoding', 'gzip, br, deflate, zstd')
+
+    var auth = options.get('auth', nil)
+    if auth != nil and same_origin {
+      result.set('Authorization', _authorization(auth))
+    }
+
+    if self.cookie_jar != nil {
+      var jar_cookies = self.cookie_jar.cookies_for(
+        parsed.host,
+        parsed.path or '/',
+        parsed.scheme == 'https'
+      )
+
+      if jar_cookies.length() > 0 {
+        var parts = []
+        for name, value in jar_cookies {
+          parts.append('${name}=${value}')
+        }
+        result.set('Cookie', '; '.join(parts))
+      }
+    }
+
+    var content_type = options.get('content_type', nil)
+    if content_type != nil {
+      result.set('Content-Type', content_type)
+    }
+
+    if payload != nil {
+      result.set('Content-Length', payload.length())
+    } else if _needs_length(method) {
+      result.set_default('Content-Length', 0)
+    }
+
+    return result
+  }
+
+  _build_body(options) {
+    var explicit = options.get('body', nil)
+    if explicit != nil {
+      return is_bytes(explicit) ? explicit : explicit.to_string().to_bytes()
+    }
+
+    var payload = options.get('json', nil)
+    if payload != nil {
+      options['content_type'] = 'application/json'
+      return json.encode(payload).to_bytes()
+    }
+
+    var form = options.get('form', nil)
+    if form != nil {
+      options['content_type'] = 'application/x-www-form-urlencoded'
+      return build_query_string(form).to_bytes()
+    }
+
+    var parts = options.get('multipart', nil)
+    if parts != nil {
+      options['content_type'] = parts.content_type()
+      return parts.build()
+    }
+
+    return nil
+  }
+
+  # ----------------------------------------------------------------
+  # Connection pooling
+  # ----------------------------------------------------------------
+
+  _connection_for(parsed, options) {
+    var key = '${parsed.scheme}://${_authority_of(parsed)}'
+    var idle = self._pool.get(key, nil)
+
+    while idle != nil and idle.length() > 0 {
+      var entry = idle.pop()
+      var carrier = entry[0]
+
+      var alive = time() - entry[1] < _IDLE_TIMEOUT and
+          (carrier[0] == 'h2' ? carrier[1].is_usable() : !carrier[1].is_closed())
+
+      if alive {
+        return carrier
+      }
+
+      self._discard(carrier)
+    }
+
+    var secure = parsed.scheme == 'https'
+
+    var connection = stream.connect(parsed.host, _port_of(parsed), {
+      secure,
+      tls_config: secure ? self._client_tls_config() : nil,
+      server_name: parsed.host,
+      connect_timeout: options.get('connect_timeout', self.connect_timeout),
+      read_timeout: options.get('timeout', self.read_timeout),
+      write_timeout: options.get('write_timeout', self.write_timeout),
+    })
+
+    # ALPN settled this during the handshake, so there is nothing to
+    # negotiate here and no extra round trip to pay for it.
+    if connection.alpn == 'h2' {
+      var session = h2.Http2Connection(connection, false)
+      session.start_client()
+
+      return ['h2', session, connection]
+    }
+
+    return ['h1', connection]
+  }
+
+  _release(parsed, carrier) {
+    var key = '${parsed.scheme}://${_authority_of(parsed)}'
+
+    if !self._pool.contains(key) {
+      self._pool[key] = []
+    }
+
+    self._pool[key].append([carrier, time()])
+  }
+
+  _discard(carrier) {
+    if carrier == nil {
+      return
+    }
+
+    catch {
+      if carrier[0] == 'h2' {
+        carrier[1].close(nil)
+      } else {
+        carrier[1].close()
+      }
+    }
+  }
+
+  _client_tls_config() {
+    if self._tls_config != nil {
+      return self._tls_config
+    }
+
+    var config = tls.TlsConfig()
+
+    for pem in self._extra_cas {
+      config.add_ca_pem(pem)
+    }
+
+    if !self.verify {
+      config.set_insecure(true)
+    }
+
+    config.set_alpn(self.http2 ? ['h2', 'http/1.1'] : ['http/1.1'])
+
+    self._tls_config = config
+
+    return config
+  }
+
+  /**
+   * Releases the connection behind a streamed response, once the
+   * caller has finished reading its body.
+   *
+   * Anything left unread is drained so the connection can be reused;
+   * when there is too much left for that to be worth it, the
+   * connection is closed instead. Calling this on an ordinary
+   * (non-streamed) response does nothing.
+   *
+   * @param HttpResponse response
+   */
+  finish(response) {
+    var held = response.carrier()
+
+    if held == nil {
+      return
+    }
+
+    response.set_carrier(nil)
+
+    var carrier = held[0]
+    var reader = response.body_reader
+
+    var reusable = carrier[0] == 'h1' and reader != nil and
+        reader.drain(self.max_body_size)
+
+    if !reusable {
+      self._discard(carrier)
+      return
+    }
+
+    if !self._pool.contains(held[1]) {
+      self._pool[held[1]] = []
+    }
+
+    self._pool[held[1]].append([carrier, time()])
+  }
+
+  /**
+   * Trusts an additional PEM-encoded certificate authority, on top of
+   * the platform's own roots.
+   *
+   * This is the right way to talk to a service with an internal or
+   * self-signed certificate; turning `verify` off instead trusts
+   * everyone, including whoever is between you and the server.
+   *
+   * @param string pem
+   * @returns HttpClient: this same instance, for chaining
+   */
+  add_ca(pem: string) {
+    self._extra_cas.append(pem)
+    self._tls_config = nil
+    return self
+  }
+
+  /**
+   * Uses a `net.tls.TlsConfig` built elsewhere for every HTTPS
+   * connection this client makes.
+   *
+   * @param TlsConfig config
+   * @returns HttpClient: this same instance, for chaining
+   */
+  set_tls_config(config) {
+    self._tls_config = config
+    return self
+  }
+
+  /**
+   * Sets a header sent with every request from this client.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns HttpClient: this same instance, for chaining
+   */
+  set_header(name: string, value) {
+    self.headers.set(name, value)
+    return self
+  }
+
+  /**
+   * Replaces the default headers wholesale.
+   *
+   * @param {dict|Headers} values
+   * @returns HttpClient: this same instance, for chaining
+   */
+  set_headers(values) {
+    self.headers = Headers()
+    self.headers.extend(values)
+    return self
+  }
+
+  /**
+   * Starts tracking cookies, so a session survives across requests
+   * from this client.
+   *
+   * @returns HttpClient: this same instance, for chaining
+   */
+  enable_cookies() {
+    if self.cookie_jar == nil {
+      self.cookie_jar = CookieJar()
+    }
+    return self
+  }
+
+  /**
+   * Closes every pooled connection. A client is usable afterwards -
+   * the next request simply opens a fresh connection - but the
+   * sockets are released, which matters at the end of a long-running
+   * process or before forking.
+   */
+  close() {
+    for _, idle in self._pool {
+      for entry in idle {
+        self._discard(entry[0])
+      }
+    }
+
+    self._pool.clear()
+  }
+
+  /**
+   * How many connections are currently idle in the pool.
+   *
+   * @returns number
+   */
+  pooled_connections() {
+    var total = 0
+    for _, idle in self._pool {
+      total += idle.length()
+    }
+    return total
+  }
+
+  to_string() {
+    return '<HttpClient ${self.base_url or "no base url"}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _with_body(options, data) {
+  var settings = options == nil ? {} : options.clone()
+
+  if data == nil {
+    return settings
+  }
+
+  if is_dict(data) or is_list(data) {
+    settings['json'] = data
+  } else if instance_of(data, MultipartBuilder) {
+    settings['multipart'] = data
+  } else {
+    settings['body'] = data
+  }
+
+  return settings
+}
+
+def _needs_length(method) {
+  return method == 'POST' or method == 'PUT' or method == 'PATCH'
+}
+
+# Scheme, host and effective port together - the tuple that decides
+# whether two URLs are the same origin.
+def _origin_of(parsed) {
+  return '${parsed.scheme}://${parsed.host}:${_port_of(parsed)}'
+}
+
+def _port_of(parsed) {
+  if parsed.port != nil and parsed.port != 0 {
+    return parsed.port
+  }
+  return parsed.scheme == 'https' ? 443 : 80
+}
+
+def _authority_of(parsed) {
+  var port = parsed.port
+  var default_port = parsed.scheme == 'https' ? 443 : 80
+
+  if port == nil or port == 0 or port == default_port {
+    return parsed.host
+  }
+
+  return '${parsed.host}:${port}'
+}
+
+# The origin-form target an ordinary request carries: the path and
+# query, never the scheme or authority (those go in Host).
+def _origin_form(parsed, extra_query) {
+  var path = parsed.path
+  if path == nil or path.is_empty() {
+    path = '/'
+  }
+
+  var query = parsed.query or ''
+
+  if extra_query != nil and extra_query.length() > 0 {
+    var encoded = build_query_string(extra_query)
+    query = query.is_empty() ? encoded : '${query}&${encoded}'
+  }
+
+  return query.is_empty() ? path : '${path}?${query}'
+}
+
+def _authorization(auth) {
+  if is_string(auth) {
+    return auth
+  }
+
+  if !is_list(auth) or auth.length() < 2 {
+    raise HttpError("auth must be ['basic', user, password] or ['bearer', token]")
+  }
+
+  var scheme = auth[0].lower()
+
+  if scheme == 'bearer' {
+    return 'Bearer ${auth[1]}'
+  }
+
+  if scheme == 'basic' {
+    if auth.length() < 3 {
+      raise HttpError("basic auth needs a user and a password")
+    }
+
+    var credentials = '${auth[1]}:${auth[2]}'
+    return 'Basic ' + base64.encode(credentials.to_bytes())
+  }
+
+  raise HttpError('unsupported authentication scheme: ${auth[0]}')
+}

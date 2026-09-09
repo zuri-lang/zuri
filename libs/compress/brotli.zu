@@ -13,9 +13,9 @@ import _compress
  *
  * @param {bytes|string} data
  * @param ?number quality: Compression quality (0..=11, higher is
- *    slower but smaller) — Default 11.
+ *    slower but smaller): Default 11.
  * @param ?number window: Base-2 logarithm of the sliding window
- *    size (10..=24) — Default 22.
+ *    size (10..=24): Default 22.
  * @returns bytes
  */
 def compress(data, quality, window) {
@@ -38,7 +38,7 @@ def decompress(data) {
  *
  * @note Unlike the other streaming encoders in this module (Gzip,
  *    Bzip2, Zstd, Lz4), this one does not compress incrementally as
- *    `write()` is called — it buffers everything you give it and
+ *    `write()` is called: it buffers everything you give it and
  *    does the real work once, in `finish()`. `available()` therefore
  *    always reads `0` before `finish()` is called: there's nothing
  *    waiting yet. This follows from the underlying encoder only
@@ -62,10 +62,10 @@ class BrotliEncoder {
   /**
    * Creates a new streaming Brotli encoder.
    *
-   * @param ?number quality: Compression quality (0..=11) —
+   * @param ?number quality: Compression quality (0..=11):
    *    Default 11.
    * @param ?number window: Base-2 logarithm of the sliding window
-   *    size (10..=24) — Default 22.
+   *    size (10..=24): Default 22.
    */
   @new(quality, window) {
     self._ptr = _compress.brotli_new_encoder(quality, window)
@@ -120,7 +120,7 @@ class BrotliEncoder {
 
   /**
    * Returns the number of compressed bytes currently waiting in
-   * the encoder's output buffer. Always `0` before `finish()` —
+   * the encoder's output buffer. Always `0` before `finish()`:
    * see the class-level note on why this encoder isn't
    * incremental.
    *
@@ -142,7 +142,7 @@ class BrotliEncoder {
   /**
    * Number of uncompressed bytes consumed by the encoder so far
    * (only updated once `finish()`/`reset()` actually compresses
-   * them — see the class-level note).
+   * them: see the class-level note).
    *
    * @returns number
    */
@@ -253,7 +253,7 @@ class BrotliDecoder {
 
   /**
    * Returns the number of compressed bytes currently waiting in
-   * the decoder's output buffer. Always `0` — this decoder
+   * the decoder's output buffer. Always `0`: this decoder
    * decodes on demand rather than buffering ahead.
    *
    * @returns number

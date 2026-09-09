@@ -1,7 +1,7 @@
 /**
  * @module log.console
  *
- * `ConsoleTransport` — the default transport, printing to stdout
+ * `ConsoleTransport`: the default transport, printing to stdout
  * (or stderr for Error/Critical) with optional ANSI coloring by
  * level.
  */

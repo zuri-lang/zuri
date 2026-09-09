@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.zstd module — test suite'
+echo '  compress.zstd module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ enc.write('zstd world')
 var stream_compressed = enc.finish()
 # Note: unlike every other encoder in this module (Gzip/Bzip2/Brotli/
 # Deflate), ZstdEncoder has no finished()/total_in()/total_out()/
-# available() — the class wraps zrip::FrameEncoder<Vec<u8>> directly
+# available(): the class wraps zrip::FrameEncoder<Vec<u8>> directly
 # with no Zuri-side state tracking, and zrip's own finish() consumes
 # the encoder by value (a real, and non-trivial, retrofit to add
 # those the way the others expose them). A known, pre-existing gap;

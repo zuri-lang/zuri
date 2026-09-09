@@ -1,0 +1,852 @@
+#!-- part of the http module
+
+import .errors { HttpError, ProtocolError }
+import .headers { Headers }
+import .multipart
+import .negotiate
+import .util
+
+import json
+import url
+
+/**
+ * An HTTP request, in both directions.
+ *
+ * On the server side an instance arrives fully parsed: `method`,
+ * `path`, `query`, `headers`, `cookies` and `body` are all populated,
+ * with `form()`, `json_body()` and `files()` decoding the body on
+ * first use according to its `Content-Type`.
+ *
+ * On the client side, `HttpClient` builds one of these for every
+ * request it sends, so anything you can inspect on the server you can
+ * also set before sending.
+ *
+ * @printable
+ * @serializable
+ */
+class HttpRequest {
+
+  /**
+   * The request method, uppercased: `'GET'`, `'POST'`, and so on.
+   * Methods are case-sensitive in HTTP, and every registered one is
+   * uppercase.
+   * @type string
+   */
+  var method = 'GET'
+
+  /**
+   * The request target exactly as it appeared on the request line,
+   * before any decoding - `'/search?q=a%20b'`.
+   *
+   * @note Route on `path`, not on this. This is the un-decoded,
+   *    un-normalised form and matching against it is how directory
+   *    traversal gets through.
+   * @type string
+   */
+  var target = '/'
+
+  /**
+   * The path, percent-decoded and with its `.` and `..` segments
+   * resolved. This is what the router matches and what a handler
+   * should use.
+   * @type string
+   */
+  var path = '/'
+
+  /**
+   * The query string, without the leading `?`, or `''`.
+   * @type string
+   */
+  var query_string = ''
+
+  /**
+   * The decoded query parameters, as `name -> [value, ...]`. Always a
+   * list, since `?a=1&a=2` is legal and collapsing it loses data;
+   * `query_param()` gets at the common single-value case.
+   * @type dict
+   */
+  var query = {}
+
+  /**
+   * The protocol version: `'1.0'`, `'1.1'`, `'2'` or `'3'`.
+   * @type string
+   */
+  var version = '1.1'
+
+  /**
+   * The request header fields.
+   * @type Headers
+   */
+  var headers
+
+  /**
+   * The cookies the client sent, as `name -> value`.
+   * @type dict
+   */
+  var cookies = {}
+
+  /**
+   * Path parameters captured by the route that matched, e.g. `id` for
+   * a route registered as `/users/:id`.
+   * @type dict
+   */
+  var params = {}
+
+  /**
+   * The request body. Empty until read; a server materialises it
+   * before dispatching unless the route opted into streaming.
+   * @type bytes
+   */
+  var body
+
+  /**
+   * The address of the peer at the other end of the socket.
+   *
+   * @note This is the immediate peer. Behind a proxy that is the
+   *    proxy, not the user - use `client_ip()`, which knows how to
+   *    consult the forwarding headers safely.
+   * @type ?string
+   */
+  var remote_address
+
+  /**
+   * Whether the request arrived over TLS.
+   * @type bool
+   */
+  var secure = false
+
+  /**
+   * The scheme the request was made with: `'http'` or `'https'`.
+   * @type string
+   */
+  var scheme = 'http'
+
+  /**
+   * The authority the request was addressed to, from HTTP/2's
+   * `:authority` or HTTP/1.1's `Host` header, port included when one
+   * was given.
+   * @type ?string
+   */
+  var authority
+
+  /**
+   * Free-form storage for whatever middleware wants to attach to a
+   * request - a resolved user, a request id, a database handle - so
+   * the handler can find it later.
+   * @type dict
+   */
+  var context = {}
+
+  /**
+   * The reader for the body, when the route asked to stream it rather
+   * than have it materialised. `nil` otherwise.
+   * @type ?BodyReader
+   */
+  var body_reader
+
+  # Lazily decoded views over the body, so a handler that reads
+  # `form()` twice parses once.
+  var _form
+  var _json
+  var _multipart
+
+  /**
+   * @param ?string method
+   * @param ?string target
+   * @param ?Headers headers
+   */
+  @new(method, target, headers) {
+    self.method = method == nil ? 'GET' : method.upper()
+    self.target = target == nil ? '/' : target
+    self.headers = headers == nil ? Headers() : headers
+
+    self.query = {}
+    self.cookies = {}
+    self.params = {}
+    self.context = {}
+    self.body = bytes(0)
+    self.version = '1.1'
+    self.scheme = 'http'
+    self.secure = false
+
+    self.set_target(self.target)
+  }
+
+  /**
+   * Sets the request target and re-derives `path`, `query_string` and
+   * `query` from it.
+   *
+   * The path is percent-decoded and then normalised, in that order.
+   * Doing it the other way round is the classic traversal hole:
+   * `%2e%2e%2f` looks like an ordinary segment until it is decoded.
+   *
+   * @param string target
+   */
+  set_target(target: string) {
+    self.target = target
+
+    var path_part = target
+    var query_part = ''
+
+    var question = target.index_of('?')
+    if question > -1 {
+      path_part = target[0, question]
+      query_part = target[question + 1,]
+    }
+
+    # A fragment never travels in a request, but a broken client can
+    # still send one; it is not part of the path either way.
+    var hash = path_part.index_of('#')
+    if hash > -1 {
+      path_part = path_part[0, hash]
+    }
+
+    # An absolute-form target ('GET http://host/path HTTP/1.1') is
+    # legal for a request to a proxy, and required for CONNECT-less
+    # forward proxying.
+    if path_part.contains('://') {
+      var parsed = url.parse(path_part)
+      self.authority = parsed.host
+      path_part = parsed.path or '/'
+    }
+
+    self.query_string = query_part
+    self.query = parse_query_string(query_part)
+
+    if path_part == '*' {
+      # The asterisk-form used by 'OPTIONS * HTTP/1.1' to ask about
+      # the server rather than any one resource.
+      self.path = '*'
+      return
+    }
+
+    self.path = util.normalize_path(util.percent_decode(path_part, false))
+  }
+
+  # ----------------------------------------------------------------
+  # Reading the request
+  # ----------------------------------------------------------------
+
+  /**
+   * A request header value, or `fallback` when absent.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  header(name: string, fallback) {
+    return self.headers.get(name, fallback)
+  }
+
+  /**
+   * The first value of the query parameter `name`, or `fallback`.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  query_param(name: string, fallback) {
+    var values = self.query.get(name, nil)
+    if values == nil or values.length() == 0 {
+      return fallback
+    }
+    return values[0]
+  }
+
+  /**
+   * A path parameter captured by the matched route, or `fallback`.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  param(name: string, fallback) {
+    return self.params.get(name, fallback)
+  }
+
+  /**
+   * A cookie value, or `fallback`.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  cookie(name: string, fallback) {
+    return self.cookies.get(name, fallback)
+  }
+
+  /**
+   * The media type of the body, without parameters, or `nil`.
+   *
+   * @returns ?string
+   */
+  content_type() {
+    var value = self.headers.get('content-type', nil)
+    if value == nil {
+      return nil
+    }
+    return util.parse_parameters(value)[0].lower()
+  }
+
+  /**
+   * The declared body length, or `-1` when the request carries no
+   * `Content-Length` (which for a chunked body it will not).
+   *
+   * @returns number
+   */
+  content_length() {
+    var value = self.headers.get('content-length', nil)
+    if value == nil {
+      return -1
+    }
+    return value.to_number()
+  }
+
+  /**
+   * The body decoded as UTF-8 text.
+   *
+   * @returns string
+   */
+  text() {
+    if self.body == nil or self.body.length() == 0 {
+      return ''
+    }
+    return self.body.to_string()
+  }
+
+  /**
+   * The body parsed as JSON.
+   *
+   * Parses once and caches, so calling this in both a middleware and
+   * a handler costs one parse.
+   *
+   * @returns any
+   * @throws HttpError if the body is not valid JSON
+   */
+  json_body() {
+    if self._json != nil {
+      return self._json
+    }
+
+    catch {
+      self._json = json.decode(self.text())
+    } as error
+
+    if error {
+      raise HttpError('request body is not valid JSON: ${error.message}')
+    }
+
+    return self._json
+  }
+
+  /**
+   * The submitted form fields, as `name -> value`, from either an
+   * `application/x-www-form-urlencoded` or a `multipart/form-data`
+   * body. A body of neither type gives an empty dictionary rather
+   * than raising.
+   *
+   * Repeated names keep their first value here; use `form_all()` when
+   * a field can legitimately repeat.
+   *
+   * @returns dict
+   */
+  form() {
+    self._parse_form()
+
+    var result = {}
+    for name, values in self._form {
+      result[name] = values[0]
+    }
+
+    return result
+  }
+
+  /**
+   * The submitted form fields as `name -> [value, ...]`, keeping
+   * every value of a repeated name.
+   *
+   * @returns dict
+   */
+  form_all() {
+    self._parse_form()
+    return self._form
+  }
+
+  /**
+   * A single form field's first value, or `fallback`.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  form_field(name: string, fallback) {
+    self._parse_form()
+
+    var values = self._form.get(name, nil)
+    if values == nil or values.length() == 0 {
+      return fallback
+    }
+
+    return values[0]
+  }
+
+  /**
+   * The files uploaded in a `multipart/form-data` body, as
+   * `name -> [UploadedFile, ...]`. Empty for any other body type.
+   *
+   * @returns dict
+   */
+  files() {
+    self._parse_form()
+
+    if self._multipart == nil {
+      return {}
+    }
+
+    return self._multipart.files
+  }
+
+  /**
+   * The first file uploaded under `name`, or `nil`.
+   *
+   * @param string name
+   * @returns ?UploadedFile
+   */
+  file(name: string) {
+    var all = self.files()
+    var found = all.get(name, nil)
+
+    if found == nil or found.length() == 0 {
+      return nil
+    }
+
+    return found[0]
+  }
+
+  _parse_form() {
+    if self._form != nil {
+      return
+    }
+
+    self._form = {}
+
+    var type = self.content_type()
+    if type == nil {
+      return
+    }
+
+    if type == 'application/x-www-form-urlencoded' {
+      self._form = parse_query_string(self.text())
+      return
+    }
+
+    if type == 'multipart/form-data' {
+      var parsed = util.parse_parameters(self.headers.get('content-type', ''))
+      var boundary = parsed[1].get('boundary', nil)
+
+      if boundary == nil {
+        raise ProtocolError('multipart/form-data request has no boundary')
+      }
+
+      self._multipart = multipart.parse(self.body, boundary)
+      self._form = self._multipart.fields
+    }
+  }
+
+  # ----------------------------------------------------------------
+  # About the request
+  # ----------------------------------------------------------------
+
+  /**
+   * The host the request was addressed to, without any port.
+   *
+   * @returns ?string
+   */
+  host() {
+    var authority = self.authority or self.headers.get('host', nil)
+    if authority == nil {
+      return nil
+    }
+
+    # An IPv6 literal is bracketed, and the colons inside it are not
+    # the port separator.
+    if authority.starts_with('[') {
+      var close = authority.index_of(']')
+      return close > -1 ? authority[0, close + 1] : authority
+    }
+
+    var colon = authority.index_of(':')
+    return colon > -1 ? authority[0, colon] : authority
+  }
+
+  /**
+   * The port the request was addressed to, from the authority, or the
+   * scheme's default when the authority named none.
+   *
+   * @returns number
+   */
+  port() {
+    var authority = self.authority or self.headers.get('host', '')
+
+    var search_from = 0
+    if authority.starts_with('[') {
+      var close = authority.index_of(']')
+      if close > -1 {
+        search_from = close
+      }
+    }
+
+    var colon = authority.index_of(':', search_from)
+    if colon > -1 {
+      var port = authority[colon + 1,]
+      if !port.is_empty() {
+        return port.to_number()
+      }
+    }
+
+    return self.secure ? 443 : 80
+  }
+
+  /**
+   * The full absolute URL this request names.
+   *
+   * @returns string
+   */
+  url() {
+    var authority = self.authority or self.headers.get('host', 'localhost')
+    var out = '${self.scheme}://${authority}${self.target}'
+
+    return out
+  }
+
+  /**
+   * The originating client's IP address.
+   *
+   * Directly served, that is simply the peer's address. Behind a
+   * reverse proxy the peer is the proxy, and the real client is in
+   * `X-Forwarded-For` or RFC 7239's `Forwarded` - but those are
+   * request headers, which is to say anyone can write anything in
+   * them.
+   *
+   * So they are only consulted when `trust_proxy` says to, and the
+   * value taken is the *rightmost* entry that is not itself one of
+   * `trusted`, walking in from the proxy end. Taking the leftmost
+   * entry - the common shortcut - hands an attacker whatever client
+   * IP they care to claim, which matters the moment an IP is used for
+   * rate limiting, allowlisting or audit.
+   *
+   * @param ?bool trust_proxy: whether to consult forwarding headers
+   *    at all; defaults to `false`
+   * @param ?list trusted: proxy addresses to skip over when walking
+   *    the chain
+   * @returns ?string
+   */
+  client_ip(trust_proxy: ?bool, trusted: ?list) {
+    if !trust_proxy {
+      return self._peer_ip()
+    }
+
+    var chain = []
+
+    # RFC 7239's Forwarded is the standardised form and takes
+    # precedence where both are present.
+    for value in self.headers.get_all('forwarded') {
+      for element in value.split(',') {
+        var parsed = util.parse_parameters('_;' + element.trim())
+        var forwarded_for = parsed[1].get('for', nil)
+
+        if forwarded_for {
+          chain.append(_strip_port(forwarded_for))
+        }
+      }
+    }
+
+    if chain.length() == 0 {
+      for value in self.headers.get_all('x-forwarded-for') {
+        for element in value.split(',') {
+          var address = element.trim()
+          if address {
+            chain.append(_strip_port(address))
+          }
+        }
+      }
+    }
+
+    if chain.length() == 0 {
+      return self._peer_ip()
+    }
+
+    var known = trusted == nil ? [] : trusted
+
+    iter var i = chain.length() - 1; i >= 0; i-- {
+      if !known.contains(chain[i]) {
+        return chain[i]
+      }
+    }
+
+    return chain[0]
+  }
+
+  _peer_ip() {
+    if self.remote_address == nil {
+      return nil
+    }
+
+    return _strip_port(self.remote_address)
+  }
+
+  /**
+   * Whether the client would accept a response of media type `type`,
+   * per its `Accept` header. A request with no `Accept` accepts
+   * anything.
+   *
+   * @param string type
+   * @returns bool
+   */
+  accepts(type: string) {
+    var accept = self.headers.get('accept', nil)
+    if accept == nil {
+      return true
+    }
+
+    return negotiate.quality_of(accept, type) > 0
+  }
+
+  /**
+   * Whether the client would rather have JSON than HTML - the usual
+   * way to decide whether an error should be rendered as a page or
+   * returned as an object.
+   *
+   * @returns bool
+   */
+  wants_json() {
+    var accept = self.headers.get('accept', nil)
+    if accept == nil {
+      return false
+    }
+
+    var json_quality = negotiate.quality_of(accept, 'application/json')
+    var html_quality = negotiate.quality_of(accept, 'text/html')
+
+    if json_quality <= 0 {
+      return false
+    }
+
+    if json_quality > html_quality {
+      return true
+    }
+
+    # Equal weights usually means both came from a bare wildcard, which
+    # is a client with no opinion rather than one asking for JSON. Only
+    # an Accept that names JSON outright breaks the tie its way.
+    return negotiate.names_explicitly(accept, 'application/json')
+  }
+
+  /**
+   * Whether the request was made by client-side script, as reported
+   * by the `X-Requested-With` header that the major JavaScript
+   * libraries set.
+   *
+   * @returns bool
+   */
+  is_ajax() {
+    var requested = self.headers.get('x-requested-with', nil)
+    return requested != nil and requested.lower() == 'xmlhttprequest'
+  }
+
+  /**
+   * Whether the request asks to switch to another protocol - a
+   * WebSocket handshake, or an HTTP/2 upgrade.
+   *
+   * @param ?string protocol: check for one specific protocol
+   * @returns bool
+   */
+  is_upgrade(protocol: ?string) {
+    if !self.headers.contains_token('connection', 'upgrade') {
+      return false
+    }
+
+    if protocol == nil {
+      return self.headers.contains('upgrade')
+    }
+
+    return self.headers.contains_token('upgrade', protocol)
+  }
+
+  /**
+   * Whether the client asked the server to acknowledge before it
+   * sends the body (`Expect: 100-continue`).
+   *
+   * @returns bool
+   */
+  expects_continue() {
+    return self.headers.contains_token('expect', '100-continue')
+  }
+
+  /**
+   * Whether this method is defined to be safe: read-only, with no
+   * side effects the client is responsible for (RFC 9110 §9.2.1).
+   *
+   * @returns bool
+   */
+  is_safe() {
+    return ['GET', 'HEAD', 'OPTIONS', 'TRACE'].contains(self.method)
+  }
+
+  /**
+   * Whether this method is idempotent - repeating it has the same
+   * effect as making it once (RFC 9110 §9.2.2). This is what decides
+   * whether a client may retry a request after a connection failure.
+   *
+   * @returns bool
+   */
+  is_idempotent() {
+    return self.is_safe() or self.method == 'PUT' or self.method == 'DELETE'
+  }
+
+  /**
+   * The full request head in wire format, as it would be sent on an
+   * HTTP/1.1 connection. Useful for logging and for debugging what
+   * actually went out.
+   *
+   * @returns string
+   */
+  to_wire() {
+    var out = '${self.method} ${self.target} HTTP/${self.version}\r\n'
+    out += self.headers.to_wire()
+
+    return out + '\r\n'
+  }
+
+  to_string() {
+    return '<HttpRequest ${self.method} ${self.path}>'
+  }
+
+  to_json() {
+    return {
+      method: self.method,
+      target: self.target,
+      path: self.path,
+      query: self.query,
+      version: self.version,
+      host: self.host(),
+      scheme: self.scheme,
+      secure: self.secure,
+      remote_address: self.remote_address,
+      headers: self.headers.to_dict(),
+      cookies: self.cookies,
+      params: self.params,
+      body: self.text(),
+    }
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @to_json() {
+    return self.to_json()
+  }
+}
+
+def _strip_port(address) {
+  var text = address.trim().trim('"')
+
+  # An IPv6 address in a Forwarded header is bracketed; the colons
+  # inside the brackets are part of the address.
+  if text.starts_with('[') {
+    var close = text.index_of(']')
+    return close > -1 ? text[1, close] : text
+  }
+
+  # A bare IPv6 address has more than one colon and no port.
+  if text.count(':') > 1 {
+    return text
+  }
+
+  var colon = text.index_of(':')
+  return colon > -1 ? text[0, colon] : text
+}
+
+/**
+ * Decodes an `application/x-www-form-urlencoded` string - a query
+ * string, or a form body - into `name -> [value, ...]`.
+ *
+ * `+` decodes to a space and `%xx` to the byte it names, both of
+ * which apply to names as well as values. A parameter with no `=`
+ * maps to an empty string rather than to `nil`, matching what every
+ * server-side form API does with `?debug`.
+ *
+ * @param ?string text
+ * @returns dict
+ */
+def parse_query_string(text) {
+  var result = {}
+
+  if text == nil or !is_string(text) or text.is_empty() {
+    return result
+  }
+
+  # A `;` separator is legacy HTML and no longer recommended, so only
+  # `&` separates.
+  for pair in text.split('&') {
+    if pair.is_empty() {
+      continue
+    }
+
+    var equals = pair.index_of('=')
+    var name, value
+
+    if equals > -1 {
+      name = util.percent_decode(pair[0, equals], true)
+      value = util.percent_decode(pair[equals + 1,], true)
+    } else {
+      name = util.percent_decode(pair, true)
+      value = ''
+    }
+
+    if name.is_empty() {
+      continue
+    }
+
+    if !result.contains(name) {
+      result[name] = []
+    }
+
+    result[name].append(value)
+  }
+
+  return result
+}
+
+/**
+ * Encodes `parameters` as an `application/x-www-form-urlencoded`
+ * string. Values may be lists, in which case the name repeats.
+ *
+ * @param dict parameters
+ * @returns string
+ */
+def build_query_string(parameters: dict) {
+  var parts = []
+
+  for name, value in parameters {
+    var encoded_name = util.percent_encode(name)
+
+    if is_list(value) {
+      for item in value {
+        parts.append('${encoded_name}=${util.percent_encode(_stringify(item))}')
+      }
+    } else {
+      parts.append('${encoded_name}=${util.percent_encode(_stringify(value))}')
+    }
+  }
+
+  return '&'.join(parts)
+}
+
+def _stringify(value) {
+  if value == nil {
+    return ''
+  }
+  return is_string(value) ? value : value.to_string()
+}

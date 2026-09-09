@@ -8,8 +8,8 @@ import struct
  * ...) only needs to declare three things: `_item_size` (bytes per
  * element), `_data_type` (the `struct` format code for one element),
  * and `_validate_value()` (what values are acceptable, and their
- * range). Everything else — construction from a number/list/bytes,
- * indexing, growth, insertion, removal, iteration, and conversion —
+ * range). Everything else: construction from a number/list/bytes,
+ * indexing, growth, insertion, removal, iteration, and conversion:
  * lives here once.
  */
 class Array {
@@ -42,7 +42,7 @@ class Array {
    * elements, all initialized to 0.
    * - If n is a list, creates a new array with its elements set
    * to the values in the list.
-   * - If n is a `bytes` object, wraps a clone of it directly —
+   * - If n is a `bytes` object, wraps a clone of it directly:
    * its length must be a whole multiple of the element size.
    *
    * @param {number|list|bytes} n

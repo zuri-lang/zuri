@@ -99,7 +99,7 @@ def _is_ipv4(value) {
 # Returns true when value is a valid IPv6 address (simplified check).
 def _is_ipv6(value) {
   if !is_string(value) return false
-  # Allow compressed forms — split on ':' and count groups
+  # Allow compressed forms: split on ':' and count groups
   var s = value
   if s.starts_with('[') and s.ends_with(']') {
     s = s[1, s.length() - 1]

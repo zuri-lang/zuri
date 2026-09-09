@@ -1,0 +1,650 @@
+#!-- part of the http module
+
+import .errors { ProtocolError }
+import .util
+
+# cookie-octet, per RFC 6265 §4.1.1: US-ASCII except CTLs, whitespace,
+# double quote, comma, semicolon and backslash. A value containing any
+# of those has to be quoted or encoded before it can be sent.
+def _is_cookie_octet(code) {
+  if code < 33 or code > 126 {
+    return false
+  }
+  return code != 34 and code != 44 and code != 59 and code != 92
+}
+
+/**
+ * Whether `value` can be sent as a cookie value without quoting.
+ *
+ * @param string value
+ * @returns bool
+ */
+def is_valid_value(value) {
+  if !is_string(value) {
+    return false
+  }
+
+  iter var i = 0; i < value.length(); i++ {
+    if !_is_cookie_octet(value[i].ord()) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * A single cookie, in either direction: the name/value pair a client
+ * sends back in a `Cookie` header, or the full attribute set a server
+ * sends in `Set-Cookie`.
+ *
+ * The attributes follow RFC 6265bis, including `SameSite` and the
+ * `__Host-`/`__Secure-` name prefixes, whose rules are enforced by
+ * `to_header()` rather than left to the caller to remember.
+ *
+ * @printable
+ */
+class Cookie {
+
+  /**
+   * The cookie's name. Must be a valid token.
+   * @type string
+   */
+  var name
+
+  /**
+   * The cookie's value.
+   * @type string
+   */
+  var value
+
+  /**
+   * The domain the cookie is sent to, or `nil` to scope it to exactly
+   * the host that set it. Note that a `Domain` attribute *widens*
+   * scope to subdomains; leaving it off is the narrower choice.
+   * @type ?string
+   */
+  var domain
+
+  /**
+   * The path prefix the cookie is sent for. Defaults to `'/'`.
+   * @type ?string
+   */
+  var path
+
+  /**
+   * Absolute expiry, as seconds since the epoch. `nil` makes it a
+   * session cookie.
+   * @type ?number
+   */
+  var expires
+
+  /**
+   * Lifetime in seconds from now. Takes precedence over `expires` in
+   * every browser that supports it; `0` expires the cookie
+   * immediately.
+   * @type ?number
+   */
+  var max_age
+
+  /**
+   * Whether the cookie is only ever sent over HTTPS.
+   * @type bool
+   */
+  var secure = false
+
+  /**
+   * Whether the cookie is hidden from client-side scripts. On by
+   * default for anything this module creates, since a session cookie
+   * readable from JavaScript is one XSS away from being stolen.
+   * @type bool
+   */
+  var http_only = false
+
+  /**
+   * `'Strict'`, `'Lax'` or `'None'`. `'None'` requires `secure`.
+   * @type ?string
+   */
+  var same_site
+
+  /**
+   * Whether the cookie is partitioned by top-level site (CHIPS).
+   * @type bool
+   */
+  var partitioned = false
+
+  /**
+   * @param string name
+   * @param string value
+   * @param ?dict attributes: any of `domain`, `path`, `expires`,
+   *    `max_age`, `secure`, `http_only`, `same_site`, `partitioned`
+   * @throws ProtocolError if the name is not a token, or the value
+   *    contains a character that cannot appear in a cookie
+   */
+  @new(name: string, value: string, attributes: ?dict) {
+    if !_is_token(name) {
+      raise ProtocolError('invalid cookie name: ${name}')
+    }
+
+    if !is_valid_value(value) {
+      raise ProtocolError(
+        'cookie ${name} has a value containing a character cookies cannot carry'
+      )
+    }
+
+    self.name = name
+    self.value = value
+    self.path = '/'
+
+    if attributes != nil {
+      self.domain = attributes.get('domain', nil)
+      self.path = attributes.get('path', '/')
+      self.expires = attributes.get('expires', nil)
+      self.max_age = attributes.get('max_age', nil)
+      self.secure = attributes.get('secure', false)
+      self.http_only = attributes.get('http_only', false)
+      self.same_site = attributes.get('same_site', nil)
+      self.partitioned = attributes.get('partitioned', false)
+    }
+  }
+
+  /**
+   * Renders the cookie as a `Set-Cookie` field value.
+   *
+   * The name prefixes defined in RFC 6265bis §4.1.3 are honoured
+   * here: a `__Secure-` cookie is forced `Secure`, and a `__Host-`
+   * cookie is forced `Secure`, pinned to `Path=/`, and stripped of
+   * any `Domain`. Browsers reject cookies that carry a prefix without
+   * meeting its conditions, so fixing them up beats silently
+   * emitting a cookie that never gets stored.
+   *
+   * `SameSite=None` likewise implies `Secure`, without which the
+   * cookie is dropped.
+   *
+   * @returns string
+   */
+  to_header() {
+    var domain = self.domain
+    var path = self.path
+    var secure = self.secure
+
+    if self.name.starts_with('__Secure-') {
+      secure = true
+    }
+
+    if self.name.starts_with('__Host-') {
+      secure = true
+      path = '/'
+      domain = nil
+    }
+
+    if self.same_site != nil and self.same_site.lower() == 'none' {
+      secure = true
+    }
+
+    var out = '${self.name}=${self.value}'
+
+    if domain {
+      out += '; Domain=${domain}'
+    }
+    if path {
+      out += '; Path=${path}'
+    }
+    if self.expires != nil {
+      out += '; Expires=${util.format_date(self.expires)}'
+    }
+    if self.max_age != nil {
+      out += '; Max-Age=${self.max_age // 1}'
+    }
+    if secure {
+      out += '; Secure'
+    }
+    if self.http_only {
+      out += '; HttpOnly'
+    }
+    if self.same_site {
+      out += '; SameSite=${self.same_site}'
+    }
+    if self.partitioned {
+      out += '; Partitioned'
+    }
+
+    return out
+  }
+
+  /**
+   * Whether the cookie's own attributes say it has already expired,
+   * as of `now` (default: the current time). A session cookie - one
+   * with neither `expires` nor `max_age` - is never expired by this
+   * test.
+   *
+   * @param ?number now
+   * @returns bool
+   */
+  is_expired(now) {
+    if now == nil {
+      now = time()
+    }
+
+    if self.max_age != nil {
+      return self.max_age <= 0
+    }
+
+    if self.expires != nil {
+      return self.expires <= now
+    }
+
+    return false
+  }
+
+  to_string() {
+    return '<Cookie ${self.name}=${self.value}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _is_token(name) {
+  if !is_string(name) or name.is_empty() {
+    return false
+  }
+
+  iter var i = 0; i < name.length(); i++ {
+    var c = name[i].ord()
+    var ok = (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
+        (c >= 97 and c <= 122) or "!#$%&'*+-.^_`|~".index_of(name[i]) > -1
+
+    if !ok {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * Parses a request's `Cookie` header into a dictionary of name to
+ * value.
+ *
+ * A cookie header is a flat `a=1; b=2` list with no attributes -
+ * everything the server set is gone by the time it comes back, which
+ * is why a server that needs to know a cookie's path or expiry has to
+ * have stored that itself.
+ *
+ * Malformed pairs are skipped rather than raising: a browser will
+ * cheerfully send whatever junk any script on the page stored, and
+ * refusing the whole request over one bad pair loses the good ones
+ * too.
+ *
+ * @param string header
+ * @returns dict
+ */
+def parse_cookie_header(header) {
+  var result = {}
+
+  if !is_string(header) or header.is_empty() {
+    return result
+  }
+
+  for pair in header.split(';') {
+    var text = pair.trim()
+    if text.is_empty() {
+      continue
+    }
+
+    var equals = text.index_of('=')
+    if equals < 1 {
+      continue
+    }
+
+    var name = text[0, equals].trim()
+    var value = text[equals + 1,].trim()
+
+    if !_is_token(name) {
+      continue
+    }
+
+    # A double-quoted value is legal (RFC 6265 §4.1.1) and the quotes
+    # are not part of the value.
+    if value.length() >= 2 and value.starts_with('"') and value.ends_with('"') {
+      value = value[1, value.length() - 1]
+    }
+
+    # First occurrence wins, matching how browsers resolve the
+    # duplicate names that a domain/path overlap produces.
+    if !result.contains(name) {
+      result[name] = value
+    }
+  }
+
+  return result
+}
+
+/**
+ * Parses one `Set-Cookie` field value into a `Cookie`.
+ *
+ * @param string header
+ * @returns ?Cookie: `nil` when the field carries no usable name/value
+ *    pair
+ */
+def parse_set_cookie(header) {
+  if !is_string(header) or header.is_empty() {
+    return nil
+  }
+
+  var parts = header.split(';')
+  var pair = parts[0].trim()
+
+  var equals = pair.index_of('=')
+  if equals < 1 {
+    return nil
+  }
+
+  var name = pair[0, equals].trim()
+  var value = pair[equals + 1,].trim()
+
+  if value.length() >= 2 and value.starts_with('"') and value.ends_with('"') {
+    value = value[1, value.length() - 1]
+  }
+
+  if !_is_token(name) or !is_valid_value(value) {
+    return nil
+  }
+
+  var cookie = Cookie(name, value)
+  cookie.path = nil
+
+  iter var i = 1; i < parts.length(); i++ {
+    var attribute = parts[i].trim()
+    if attribute.is_empty() {
+      continue
+    }
+
+    var split = attribute.index_of('=')
+    var key = split > -1 ? attribute[0, split].trim().lower() : attribute.lower()
+    var attribute_value = split > -1 ? attribute[split + 1,].trim() : ''
+
+    using key {
+      when 'domain' {
+        # A leading dot is legacy syntax; RFC 6265 §5.2.3 says ignore it.
+        cookie.domain = attribute_value.ltrim('.').lower()
+      }
+      when 'path' {
+        cookie.path = attribute_value
+      }
+      when 'expires' {
+        cookie.expires = util.parse_date(attribute_value)
+      }
+      when 'max-age' {
+        var seconds = attribute_value.trim()
+        var negative = seconds.starts_with('-')
+        if negative {
+          seconds = seconds[1,]
+        }
+
+        var digits = true
+        iter var j = 0; j < seconds.length(); j++ {
+          var c = seconds[j].ord()
+          if c < 48 or c > 57 {
+            digits = false
+          }
+        }
+
+        if digits and !seconds.is_empty() {
+          cookie.max_age = negative ? -seconds.to_number() : seconds.to_number()
+        }
+      }
+      when 'secure' {
+        cookie.secure = true
+      }
+      when 'httponly' {
+        cookie.http_only = true
+      }
+      when 'samesite' {
+        var mode = attribute_value.lower()
+        if mode == 'strict' or mode == 'lax' or mode == 'none' {
+          cookie.same_site = mode[0].upper() + mode[1,]
+        }
+      }
+      when 'partitioned' {
+        cookie.partitioned = true
+      }
+    }
+  }
+
+  return cookie
+}
+
+/**
+ * Renders a dictionary of name to value as a request `Cookie` header
+ * value.
+ *
+ * @param dict cookies
+ * @returns string
+ */
+def format_cookie_header(cookies: dict) {
+  var parts = []
+
+  for name, value in cookies {
+    parts.append('${name}=${is_string(value) ? value : value.to_string()}')
+  }
+
+  return '; '.join(parts)
+}
+
+/**
+ * A client-side cookie store: keeps the cookies a server set, decides
+ * which of them a later request is entitled to see, and forgets the
+ * ones that have expired.
+ *
+ * The matching rules are RFC 6265 §5.4's: domain-match (an exact host
+ * match, or a suffix match when the cookie carried a `Domain`),
+ * path-match, and the `Secure` flag against the request's scheme.
+ * Getting this wrong in either direction is a real problem - too
+ * strict and sessions break, too loose and a cookie leaks to a host
+ * that never should have seen it.
+ */
+class CookieJar {
+
+  var _cookies = {}
+
+  @new() {
+    self._cookies = {}
+  }
+
+  /**
+   * Records a cookie as having been set by `host`.
+   *
+   * A cookie whose `Domain` is not a suffix of `host` is rejected
+   * outright - that is a server trying to set a cookie for a domain
+   * it does not control.
+   *
+   * @param Cookie cookie
+   * @param string host: the host of the response that set it
+   * @param ?string request_path: used to derive a default path
+   * @returns bool: whether the cookie was accepted
+   */
+  store(cookie, host: string, request_path: ?string) {
+    var domain = cookie.domain
+    var normalized_host = host.lower()
+
+    if domain {
+      domain = domain.lower()
+      if domain != normalized_host and !normalized_host.ends_with('.' + domain) {
+        return false
+      }
+    } else {
+      domain = normalized_host
+    }
+
+    var path = cookie.path
+    if !path or !path.starts_with('/') {
+      path = _default_path(request_path)
+    }
+
+    var key = '${domain}\t${path}\t${cookie.name}'
+
+    if cookie.is_expired() {
+      self._cookies.remove(key)
+      return true
+    }
+
+    cookie.path = path
+    self._cookies[key] = [cookie, domain, cookie.domain != nil]
+
+    return true
+  }
+
+  /**
+   * The cookies that should be sent with a request to `host` and
+   * `path`, as a dictionary of name to value.
+   *
+   * @param string host
+   * @param string path
+   * @param ?bool secure: whether the request is over HTTPS
+   * @returns dict
+   */
+  cookies_for(host: string, path: string, secure: ?bool) {
+    var result = {}
+    var normalized_host = host.lower()
+    var now = time()
+    var expired = []
+
+    # More specific paths take precedence, so the longest match is
+    # applied last and wins (RFC 6265 §5.4).
+    var matched = []
+
+    for key, entry in self._cookies {
+      var cookie = entry[0]
+
+      if cookie.is_expired(now) {
+        expired.append(key)
+        continue
+      }
+
+      if !_domain_matches(normalized_host, entry[1], entry[2]) {
+        continue
+      }
+
+      if !_path_matches(path, cookie.path) {
+        continue
+      }
+
+      if cookie.secure and !secure {
+        continue
+      }
+
+      matched.append(cookie)
+    }
+
+    for key in expired {
+      self._cookies.remove(key)
+    }
+
+    # Shortest path first, so that when two cookies share a name the
+    # more specific one is written last and wins.
+    var ordered = []
+    for cookie in matched {
+      var placed = false
+
+      iter var i = 0; i < ordered.length(); i++ {
+        if cookie.path.length() < ordered[i].path.length() {
+          ordered.insert(cookie, i)
+          placed = true
+          break
+        }
+      }
+
+      if !placed {
+        ordered.append(cookie)
+      }
+    }
+
+    for cookie in ordered {
+      result[cookie.name] = cookie.value
+    }
+
+    return result
+  }
+
+  /**
+   * Every cookie currently held, expired ones included.
+   *
+   * @returns list
+   */
+  all() {
+    var result = []
+    for _, entry in self._cookies {
+      result.append(entry[0])
+    }
+    return result
+  }
+
+  /**
+   * Drops every stored cookie.
+   */
+  clear() {
+    self._cookies.clear()
+  }
+
+  /**
+   * How many cookies are held.
+   *
+   * @returns number
+   */
+  length() {
+    return self._cookies.length()
+  }
+}
+
+def _default_path(request_path) {
+  if !request_path or !request_path.starts_with('/') {
+    return '/'
+  }
+
+  var last = -1
+  iter var i = 0; i < request_path.length(); i++ {
+    if request_path[i] == '/' {
+      last = i
+    }
+  }
+
+  if last <= 0 {
+    return '/'
+  }
+
+  return request_path[0, last]
+}
+
+def _domain_matches(host, cookie_domain, is_wildcard) {
+  if host == cookie_domain {
+    return true
+  }
+
+  # Only a cookie that explicitly carried a Domain attribute reaches
+  # subdomains. One that did not is host-only.
+  if !is_wildcard {
+    return false
+  }
+
+  return host.ends_with('.' + cookie_domain)
+}
+
+def _path_matches(request_path, cookie_path) {
+  if cookie_path == '/' or request_path == cookie_path {
+    return true
+  }
+
+  if !request_path.starts_with(cookie_path) {
+    return false
+  }
+
+  # A cookie path of `/foo` covers `/foo/bar` but not `/foobar`.
+  if cookie_path.ends_with('/') {
+    return true
+  }
+
+  return request_path[cookie_path.length()] == '/'
+}

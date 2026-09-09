@@ -54,11 +54,11 @@ def pem_der(pem) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  jwt module — test suite'
+echo '  jwt module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
-# HMAC (HS256/384/512) — 2026-08-29 fix: signatures were base64url(hex
+# HMAC (HS256/384/512): 2026-08-29 fix: signatures were base64url(hex
 # text) instead of base64url(raw bytes), making every token this
 # module ever produced unverifiable
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ assert raises_type(@() => jwt.verify(hs_tok, 'wrong-secret'), 'SignatureError'),
 ok('HMAC verification rejects a wrong secret')
 
 # ---------------------------------------------------------------------------
-# PS256/384/512 (RSA-PSS) — new algorithm support
+# PS256/384/512 (RSA-PSS): new algorithm support
 # ---------------------------------------------------------------------------
 var rsa_kp = crypto.rsa.generate(2048)
 for alg in [jwt.PS256, jwt.PS384, jwt.PS512] {
@@ -86,7 +86,7 @@ for alg in [jwt.PS256, jwt.PS384, jwt.PS512] {
 ok('PS256/PS384/PS512 sign() and verify() round-trip correctly')
 
 # ---------------------------------------------------------------------------
-# ES256/ES384 (ECDSA) — new algorithm support, exercises the DER<->raw
+# ES256/ES384 (ECDSA): new algorithm support, exercises the DER<->raw
 # R‖S conversion at two different coordinate lengths
 # ---------------------------------------------------------------------------
 var p256_kp = crypto.ecdsa.generate('P-256')
@@ -101,7 +101,7 @@ assert es384_payload['c'] == 3, 'ES384 sign/verify must round-trip the payload'
 ok('ES256 and ES384 sign() and verify() round-trip correctly (both DER<->raw coordinate lengths)')
 
 # ---------------------------------------------------------------------------
-# EdDSA (Ed25519) — new algorithm support
+# EdDSA (Ed25519): new algorithm support
 # ---------------------------------------------------------------------------
 var ed_kp = crypto.ed25519.generate()
 var ed_tok = jwt.sign({ d: 4 }, ed_kp.private_pem, { algorithm: jwt.EDDSA })
@@ -122,7 +122,7 @@ assert raises_type(@() => jwt.verify(none_tok, ''), 'AlgorithmError'),
 ok('the none algorithm requires explicit opt-in on both sign() and verify()')
 
 # ---------------------------------------------------------------------------
-# Verifier / Signer — 2026-08-29 fix: both called back through the
+# Verifier / Signer: 2026-08-29 fix: both called back through the
 # module's own import name (`jwt.verify(...)`), which crashed every
 # call with "undefined global 'jwt'"
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ assert !raises(@() => jwt.Signer('secret', nil)), 'Signer() must not crash when 
 ok('Verifier()/Signer() constructors tolerate omitted options')
 
 # ---------------------------------------------------------------------------
-# iat is an integer NumericDate — new fix
+# iat is an integer NumericDate: new fix
 # ---------------------------------------------------------------------------
 var iat_tok = jwt.sign({ a: 1 }, 'secret', { algorithm: jwt.HS256 })
 var iat_payload = jwt.decode(iat_tok).payload

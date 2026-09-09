@@ -6,7 +6,7 @@
  * searching `PATH` for an executable, and glob-style pattern
  * matching. Per-file operations (reading, writing, deleting, or
  * copying a single file, or getting its size/mtime/etc.) live on
- * the `file` class instead — see `file.stats()`, `file.delete()`,
+ * the `file` class instead: see `file.stats()`, `file.delete()`,
  * `file.copy()`, and friends.
  *
  * @copyright 2021, Richard Ore and Zuri contributors
@@ -259,7 +259,7 @@ def is_symlink(path: string) {
 /**
  * Returns the target `path` points to, if `path` is a symbolic
  * link. Unlike `os.real_path()`, this reads exactly one link level
- * and doesn't recursively resolve further — if the target is
+ * and doesn't recursively resolve further: if the target is
  * itself a symlink, its own target is what gets returned, not the
  * final destination.
  *

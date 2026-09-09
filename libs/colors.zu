@@ -218,7 +218,7 @@ def ansi256_to_ansi(code) {
  * accepts the 3/4/6/8-digit forms (`#f0c`, `#f0c8`, `#ff00cc`,
  * `#ff00ccbb`). Following the CSS Color 4 convention, alpha is the
  * *last* component when present (`RRGGBBAA`/`RGBA`, not
- * `AARRGGBB`/`ARGB`) — an omitted alpha means fully opaque (`1`).
+ * `AARRGGBB`/`ARGB`): an omitted alpha means fully opaque (`1`).
  *
  * @param string h
  * @returns list `[r, g, b, a]`

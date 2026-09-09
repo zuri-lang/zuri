@@ -38,7 +38,7 @@ def fresh_dir(path) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.tar module — test suite'
+echo '  compress.tar module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 fresh_dir(_root)
@@ -83,7 +83,7 @@ ok('extract() writes correct content for both a top-level and a nested entry, un
 # Checksum validation actually runs (was previously disabled entirely)
 # ---------------------------------------------------------------------------
 var corrupt = archive.clone()
-# Flip a byte inside the first header's filename field — well within the
+# Flip a byte inside the first header's filename field: well within the
 # checksummed region, and far from the two all-NUL footer blocks.
 corrupt[5] = corrupt[5] ^ 0xFF
 var corrupt_path = os.join_paths(_root, 'corrupt.tar')

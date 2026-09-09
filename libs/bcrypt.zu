@@ -32,7 +32,7 @@ import _crypto
 
 /**
  * Default cost factor used by `hash()` when `rounds` isn't given.
- * Higher means slower to compute (and slower to brute-force) —
+ * Higher means slower to compute (and slower to brute-force):
  * each increment roughly doubles the work. `10` is a reasonable
  * default for an interactive login flow; raise it over time as
  * hardware gets faster (see `needs_rehash()`).
@@ -43,7 +43,7 @@ var DEFAULT_LOG2_ROUNDS = 10
 
 /**
  * Hashes `str` with bcrypt, generating a fresh random salt
- * internally on every call — hashing the same string twice always
+ * internally on every call: hashing the same string twice always
  * produces two different (but equally valid) hashes.
  *
  * @param string str
@@ -86,7 +86,7 @@ def get_rounds(hash: string) {
 }
 
 /**
- * Reads the salt portion out of a hash — the first 29 characters,
+ * Reads the salt portion out of a hash: the first 29 characters,
  * covering the `$2x$rounds$salt` prefix.
  *
  * @note this does not validate that `hash` is actually a

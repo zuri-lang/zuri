@@ -1,0 +1,1275 @@
+#!-- part of the http module
+
+import .body
+import .errors { ConnectionError, HttpError, TimeoutError, TooLargeError }
+import .h1
+import .negotiate
+import .request { HttpRequest }
+import .response { HttpResponse }
+import .router { Router }
+import .files { StaticFiles }
+import .h2
+import .status
+import .stream
+import .util
+
+import net
+import net.tls
+
+# Media types worth compressing on the way out. Anything already
+# compressed - an image, a video, an archive - only gets bigger and
+# costs CPU for the privilege, so the list is an allowlist rather
+# than a denylist.
+var _COMPRESSIBLE = [
+  'text/',
+  'application/json',
+  'application/javascript',
+  'application/xml',
+  'application/xhtml+xml',
+  'application/rss+xml',
+  'application/atom+xml',
+  'application/ld+json',
+  'application/manifest+json',
+  'application/wasm',
+  'image/svg+xml',
+]
+
+def _is_compressible(content_type) {
+  if content_type == nil {
+    return false
+  }
+
+  var type = content_type.lower()
+
+  for prefix in _COMPRESSIBLE {
+    if type.starts_with(prefix) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * An HTTP/1.1 server.
+ *
+ * ```zuri
+ * import http
+ *
+ * var server = http.server(3000)
+ *
+ * server.get('/', @(request, response) {
+ *   response.html('<h1>Hello</h1>')
+ * })
+ *
+ * server.get('/users/:id', @(request, response) {
+ *   response.json({ id: request.param('id') })
+ * })
+ *
+ * server.listen()
+ * ```
+ *
+ * The pieces a server put in front of an application usually provides
+ * are here rather than assumed: TLS with `use_tls()`, static files
+ * with `serve_files()`, response compression, byte ranges,
+ * conditional requests, keep-alive with bounded reuse, and limits on
+ * every part of a request that a peer controls the size of.
+ *
+ * @printable
+ */
+class HttpServer {
+
+  /**
+   * The address to bind to. Defaults to `'127.0.0.1'`, which accepts
+   * only local connections; bind `'0.0.0.0'` to accept from anywhere.
+   * @type string
+   */
+  var host = '127.0.0.1'
+
+  /**
+   * The port to bind to. `0` asks the operating system for a free
+   * one, which `address()` reports once listening.
+   * @type number
+   */
+  var port = 0
+
+  /**
+   * How long to wait for a request to arrive, in milliseconds. Also
+   * bounds how long a keep-alive connection may sit idle before it is
+   * closed.
+   * @type number
+   */
+  var read_timeout = 30000
+
+  /**
+   * How long a write may block before the client is treated as gone.
+   * @type number
+   */
+  var write_timeout = 30000
+
+  /**
+   * How long an idle keep-alive connection is held open, in
+   * milliseconds.
+   * @type number
+   */
+  var keep_alive_timeout = 5000
+
+  /**
+   * The most requests one connection may serve before it is closed.
+   * A ceiling here bounds the work a single client can pin to one
+   * worker.
+   * @type number
+   */
+  var max_keep_alive_requests = 1000
+
+  /**
+   * The longest request line, in bytes.
+   * @type number
+   */
+  var max_line_size = 8192
+
+  /**
+   * The largest header section, in bytes.
+   * @type number
+   */
+  var max_header_size = 65536
+
+  /**
+   * The most header fields one request may carry.
+   * @type number
+   */
+  var max_header_count = 100
+
+  /**
+   * How long the whole request head may take to arrive, in seconds,
+   * once its first byte has. This is what bounds a client that sends
+   * a header a second forever while never tripping the per-read
+   * timeout.
+   * @type number
+   */
+  var header_timeout = 10
+
+  /**
+   * The largest request body accepted, in bytes. Defaults to 10 MiB;
+   * raise it deliberately for a service that takes uploads.
+   * @type number
+   */
+  var max_body_size = 10485760
+
+  /**
+   * The value sent in the `Server` header.
+   * @type string
+   */
+  var server_name = 'Zuri'
+
+  /**
+   * Whether to compress responses whose media type benefits from it
+   * and whose client asked for it.
+   * @type bool
+   */
+  var compression = true
+
+  /**
+   * The smallest response worth compressing, in bytes. Below roughly
+   * a packet's worth, compression costs more than it saves.
+   * @type number
+   */
+  var compression_min_size = 1024
+
+  /**
+   * Whether `HttpRequest.client_ip()` should consult forwarding
+   * headers. Leave this off unless the server really is behind a
+   * proxy you control - see `client_ip()` for why.
+   * @type bool
+   */
+  var trust_proxy = false
+
+  /**
+   * The proxy addresses to skip when walking a forwarding chain.
+   * @type list
+   */
+  var trusted_proxies = []
+
+  /**
+   * The listening socket, once `listen()` has bound it.
+   * @type ?TcpStream
+   */
+  var socket
+
+  /**
+   * Whether to speak HTTP/2 when a client asks for it - through ALPN
+   * on a TLS connection, or through the connection preface on a
+   * cleartext one.
+   * @type bool
+   */
+  var http2 = true
+
+  var _router
+  var _middleware = []
+  var _listening = false
+  var _tls_config
+  var _not_found
+  var _error_handler
+  var _connect_listeners = []
+  var _disconnect_listeners = []
+  var _receive_listeners = []
+  var _reply_listeners = []
+  var _error_listeners = []
+  var _static_mounts = []
+
+  /**
+   * @param ?number port: defaults to `8000`
+   * @param ?string host: defaults to `'127.0.0.1'`
+   */
+  @new(port: ?number, host: ?string) {
+    if port != nil {
+      if !is_int(port) or port < 0 or port > 65535 {
+        raise ValueError('invalid port number: ${port}')
+      }
+      self.port = port
+    } else {
+      self.port = 8000
+    }
+
+    if host != nil {
+      self.host = host
+    }
+
+    self._router = Router()
+    self._middleware = []
+    self._connect_listeners = []
+    self._disconnect_listeners = []
+    self._receive_listeners = []
+    self._reply_listeners = []
+    self._error_listeners = []
+    self._static_mounts = []
+    self.trusted_proxies = []
+  }
+
+  # ----------------------------------------------------------------
+  # Routing
+  # ----------------------------------------------------------------
+
+  /**
+   * Registers `handler` for `method` requests matching `pattern`.
+   *
+   * See `Router` for what a pattern may contain: literal segments,
+   * `:name` parameters, and a trailing catch-all.
+   *
+   * @param string method
+   * @param string pattern
+   * @param function(2) handler: called with the request and response
+   * @param ?string name: a route name, for `url_for()`
+   * @returns HttpServer: this same instance, for chaining
+   */
+  handle(method: string, pattern: string, handler, name: ?string) {
+    self._router.add(method, pattern, handler, name)
+    return self
+  }
+
+  /**
+   * Registers a GET handler. A HEAD request for the same path is
+   * answered by it too, with the body dropped.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  get(pattern: string, handler, name: ?string) {
+    return self.handle('GET', pattern, handler, name)
+  }
+
+  /**
+   * Registers a POST handler.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  post(pattern: string, handler, name: ?string) {
+    return self.handle('POST', pattern, handler, name)
+  }
+
+  /**
+   * Registers a PUT handler.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  put(pattern: string, handler, name: ?string) {
+    return self.handle('PUT', pattern, handler, name)
+  }
+
+  /**
+   * Registers a PATCH handler.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  patch(pattern: string, handler, name: ?string) {
+    return self.handle('PATCH', pattern, handler, name)
+  }
+
+  /**
+   * Registers a DELETE handler.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  delete(pattern: string, handler, name: ?string) {
+    return self.handle('DELETE', pattern, handler, name)
+  }
+
+  /**
+   * Registers an OPTIONS handler, replacing the automatic one for
+   * this path.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  options(pattern: string, handler, name: ?string) {
+    return self.handle('OPTIONS', pattern, handler, name)
+  }
+
+  /**
+   * Registers a HEAD handler, replacing the automatic GET fallback
+   * for this path.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @param ?string name
+   * @returns HttpServer: this same instance, for chaining
+   */
+  head(pattern: string, handler, name: ?string) {
+    return self.handle('HEAD', pattern, handler, name)
+  }
+
+  /**
+   * Registers one handler for every method a route can carry.
+   *
+   * @param string pattern
+   * @param function(2) handler
+   * @returns HttpServer: this same instance, for chaining
+   */
+  any(pattern: string, handler) {
+    for method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] {
+      self.handle(method, pattern, handler)
+    }
+    return self
+  }
+
+  /**
+   * Adds a middleware, called for every request before the route
+   * handler.
+   *
+   * A middleware takes `(request, response, next)` and must call
+   * `next()` to let the rest of the chain run; not calling it is how
+   * a middleware short-circuits, which is exactly what an
+   * authentication or rate-limiting layer wants to do.
+   *
+   * ```zuri
+   * server.use(@(request, response, next) {
+   *   var started = time()
+   *   next()
+   *   echo '${request.method} ${request.path} ${response.status} ' +
+   *     '${(time() - started) * 1000}ms'
+   * })
+   * ```
+   *
+   * Middleware run in the order they were added, outermost first.
+   *
+   * @param function(3) middleware
+   * @returns HttpServer: this same instance, for chaining
+   */
+  use(middleware) {
+    if !is_function(middleware) and !is_callable(middleware) {
+      raise TypeError('middleware must be callable')
+    }
+
+    self._middleware.append(middleware)
+
+    return self
+  }
+
+  /**
+   * Sets the handler called when no route matches. The default sends
+   * a plain `404`, or a JSON one when the client asked for JSON.
+   *
+   * @param function(2) handler
+   * @returns HttpServer: this same instance, for chaining
+   */
+  not_found(handler) {
+    self._not_found = handler
+    return self
+  }
+
+  /**
+   * Sets the handler called when a route handler raises.
+   *
+   * It takes `(request, response, error)` and is responsible for
+   * producing the response. Without one, the server sends a bare
+   * `500` and reports the error through `on_error()` listeners - it
+   * never puts an exception message in a response body, since that is
+   * how internal paths and query fragments end up on a user's screen.
+   *
+   * @param function(3) handler
+   * @returns HttpServer: this same instance, for chaining
+   */
+  error_handler(handler) {
+    self._error_handler = handler
+    return self
+  }
+
+  /**
+   * Serves the files under `directory` at URLs beginning with
+   * `prefix`.
+   *
+   * ```zuri
+   * server.serve_files('/static', './public', { cache_age: 86400 })
+   * ```
+   *
+   * @param string prefix
+   * @param string directory
+   * @param ?dict options: passed through to `StaticFiles` -
+   *    `index_files`, `cache_age`, `etag`, `precompressed`,
+   *    `allow_dotfiles`, `fallback`
+   * @returns HttpServer: this same instance, for chaining
+   */
+  serve_files(prefix: string, directory: string, options: ?dict) {
+    var files = StaticFiles(directory, options)
+    var base = '/' + prefix.trim('/')
+
+    self._static_mounts.append([base, files])
+
+    return self
+  }
+
+  /**
+   * The router, for anything the convenience methods above do not
+   * cover - listing routes, or building a URL from a route name.
+   *
+   * @returns Router
+   */
+  routes() {
+    return self._router
+  }
+
+  # ----------------------------------------------------------------
+  # Events
+  # ----------------------------------------------------------------
+
+  /**
+   * Adds a listener called with the `Connection` each time a client
+   * connects.
+   *
+   * @param function(1) listener
+   * @returns HttpServer: this same instance, for chaining
+   */
+  on_connect(listener) {
+    self._connect_listeners.append(listener)
+    return self
+  }
+
+  /**
+   * Adds a listener called with the `Connection` when a client
+   * disconnects.
+   *
+   * @param function(1) listener
+   * @returns HttpServer: this same instance, for chaining
+   */
+  on_disconnect(listener) {
+    self._disconnect_listeners.append(listener)
+    return self
+  }
+
+  /**
+   * Adds a listener called with `(request, response)` after a request
+   * has been parsed and before it is routed.
+   *
+   * @param function(2) listener
+   * @returns HttpServer: this same instance, for chaining
+   */
+  on_receive(listener) {
+    self._receive_listeners.append(listener)
+    return self
+  }
+
+  /**
+   * Adds a listener called with `(request, response)` after a
+   * response has been sent. This is where an access log belongs.
+   *
+   * @param function(2) listener
+   * @returns HttpServer: this same instance, for chaining
+   */
+  on_reply(listener) {
+    self._reply_listeners.append(listener)
+    return self
+  }
+
+  /**
+   * Adds a listener called with `(error, connection)` whenever
+   * serving a connection fails.
+   *
+   * Without at least one such listener, connection-level errors are
+   * swallowed: one client sending a malformed request must not take
+   * the server down with it.
+   *
+   * @param function(2) listener
+   * @returns HttpServer: this same instance, for chaining
+   */
+  on_error(listener) {
+    self._error_listeners.append(listener)
+    return self
+  }
+
+  # ----------------------------------------------------------------
+  # TLS
+  # ----------------------------------------------------------------
+
+  /**
+   * Turns on TLS, using the given PEM-encoded certificate chain and
+   * private key.
+   *
+   * `cert_chain` must be the server certificate followed by any
+   * intermediates - leaving the intermediates out is the single most
+   * common TLS misconfiguration, and it fails only for the clients
+   * that do not happen to have them cached.
+   *
+   * @note The certificate and key are parsed when the first handshake
+   *    runs, not here, so a malformed or mismatched pair surfaces as a
+   *    failed connection rather than as a failed call to this method.
+   *
+   * @param string cert_chain: PEM, leaf first
+   * @param string private_key: PEM
+   * @param ?dict options: `alpn` (a list of protocol names),
+   *    `client_ca` (PEM roots for mutual TLS), `require_client_cert`,
+   *    `min_version` and `max_version`
+   * @returns HttpServer: this same instance, for chaining
+   */
+  use_tls(cert_chain: string, private_key: string, options: ?dict) {
+    var config = tls.TlsConfig()
+    config.set_cert_chain(cert_chain, private_key)
+
+    # Offer HTTP/2 first and HTTP/1.1 as the fallback, which is what
+    # every browser expects to find. A caller that passes its own
+    # `alpn` list is taken at its word.
+    var protocols = self.http2 ? ['h2', 'http/1.1'] : ['http/1.1']
+
+    if options != nil {
+      var alpn = options.get('alpn', nil)
+      if alpn != nil {
+        protocols = alpn
+      }
+
+      var client_ca = options.get('client_ca', nil)
+      if client_ca != nil {
+        config.add_ca_pem(client_ca)
+      }
+
+      if options.get('require_client_cert', false) {
+        config.require_client_cert(true)
+      }
+
+      var min_version = options.get('min_version', nil)
+      var max_version = options.get('max_version', nil)
+      if min_version != nil or max_version != nil {
+        config.set_versions(min_version, max_version)
+      }
+    }
+
+    config.set_alpn(protocols)
+
+    self._tls_config = config
+
+    return self
+  }
+
+  /**
+   * Loads the certificate and key from files rather than strings.
+   *
+   * @param string cert_path
+   * @param ?string key_path: defaults to `cert_path`, for a combined
+   *    PEM file
+   * @param ?dict options: as `use_tls()`
+   * @returns HttpServer: this same instance, for chaining
+   */
+  load_certs(cert_path: string, key_path: ?string, options: ?dict) {
+    var key = key_path == nil ? cert_path : key_path
+
+    return self.use_tls(
+      file(cert_path).read(),
+      file(key).read(),
+      options
+    )
+  }
+
+  /**
+   * Uses a `net.tls.TlsConfig` built elsewhere, for anything
+   * `use_tls()` does not expose.
+   *
+   * @param TlsConfig config
+   * @returns HttpServer: this same instance, for chaining
+   */
+  set_tls_config(config) {
+    self._tls_config = config
+    return self
+  }
+
+  /**
+   * Whether this server is configured to serve over TLS.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._tls_config != nil
+  }
+
+  # ----------------------------------------------------------------
+  # Lifecycle
+  # ----------------------------------------------------------------
+
+  /**
+   * Binds the socket and serves connections until `close()` is
+   * called.
+   *
+   * Connections are served one at a time on the calling thread. For a
+   * server that uses more than one core, see `http.serve()`, which
+   * runs this same request pipeline across a pool of isolates.
+   *
+   * @throws HttpError if the socket cannot be bound
+   */
+  listen() {
+    self.bind()
+
+    while self._listening {
+      var client
+
+      catch {
+        client = self.socket.accept()
+      } as accept_error
+
+      if accept_error {
+        # A closed listener is how close() breaks this loop, and is
+        # not an error worth reporting.
+        if !self._listening {
+          break
+        }
+
+        self._report(accept_error, nil)
+        continue
+      }
+
+      self.serve_connection(client)
+    }
+  }
+
+  /**
+   * Binds and starts listening without accepting anything, so a
+   * caller can drive the accept loop itself.
+   *
+   * @throws HttpError if the socket cannot be bound
+   */
+  bind() {
+    if self._listening {
+      return
+    }
+
+    self.socket = net.TcpStream()
+
+    catch {
+      self.socket.bind('${self.host}:${self.port}')
+    } as error
+
+    if error {
+      raise HttpError('could not bind ${self.host}:${self.port}: ${error.message}')
+    }
+
+    self._listening = true
+  }
+
+  /**
+   * Accepts one connection, blocking until one arrives. Only valid
+   * after `bind()`.
+   *
+   * @returns TcpStream
+   */
+  accept() {
+    return self.socket.accept()
+  }
+
+  /**
+   * The address the server is listening on. After binding to port
+   * `0`, this is how to discover the port that was actually chosen.
+   *
+   * @returns ?SocketAddr
+   */
+  address() {
+    if self.socket == nil {
+      return nil
+    }
+    return self.socket.local_address()
+  }
+
+  /**
+   * Whether the server is currently listening.
+   *
+   * @returns bool
+   */
+  is_listening() {
+    return self._listening
+  }
+
+  /**
+   * Stops the server and closes the listening socket. A blocked
+   * `accept()` in `listen()` fails as a result, which is what ends
+   * the loop.
+   */
+  close() {
+    self._listening = false
+
+    if self.socket != nil {
+      catch {
+        self.socket.close()
+      }
+    }
+  }
+
+  /**
+   * Serves every request on one already-accepted client socket, then
+   * closes it.
+   *
+   * This is the whole per-connection pipeline - TLS handshake,
+   * keep-alive loop, parsing, dispatch, response - and is public so
+   * that a caller running its own accept loop (or handing sockets to
+   * worker isolates) can reuse it exactly as `listen()` does.
+   *
+   * @param TcpStream client
+   */
+  serve_connection(client) {
+    var connection
+
+    catch {
+      connection = stream.accept(client, {
+        tls_config: self._tls_config,
+        read_timeout: self.read_timeout,
+        write_timeout: self.write_timeout,
+      })
+    } as handshake_error
+
+    if handshake_error {
+      catch {
+        client.close()
+      }
+      self._report(handshake_error, nil)
+      return
+    }
+
+    for listener in self._connect_listeners {
+      catch {
+        listener(connection)
+      }
+    }
+
+    catch {
+      if self.http2 and self._is_http2(connection) {
+        var session = h2.Http2Connection(connection, true)
+        session.max_body_size = self.max_body_size
+        session.start_server(nil)
+        session.serve(self)
+      } else {
+        self._serve_requests(connection)
+      }
+    } as error
+
+    if error {
+      self._report(error, connection)
+    }
+
+    for listener in self._disconnect_listeners {
+      catch {
+        listener(connection)
+      }
+    }
+
+    connection.close()
+  }
+
+  _serve_requests(connection) {
+    var served = 0
+
+    while true {
+      # The first request may take the full read timeout to arrive;
+      # a subsequent one on an idle connection gets the shorter
+      # keep-alive budget, so a parked connection is not held for the
+      # whole read timeout.
+      if served > 0 {
+        connection.set_read_timeout(self.keep_alive_timeout)
+      }
+
+      var request
+
+      catch {
+        request = h1.read_request(connection, {
+          max_line_size: self.max_line_size,
+          max_header_size: self.max_header_size,
+          max_header_count: self.max_header_count,
+          header_timeout: self.header_timeout,
+        })
+      } as read_error
+
+      if read_error {
+        # An idle keep-alive connection timing out, or a peer closing
+        # between requests, is the normal end of a connection.
+        if instance_of(read_error, TimeoutError) or
+            instance_of(read_error, ConnectionError) {
+          return
+        }
+
+        self._send_early_error(connection, read_error)
+        return
+      }
+
+      if request == nil {
+        return
+      }
+
+      served++
+
+      connection.set_read_timeout(self.read_timeout)
+
+      var keep_alive = self._serve_one(connection, request)
+
+      if !keep_alive or served >= self.max_keep_alive_requests {
+        return
+      }
+    }
+  }
+
+  /**
+   * Runs one already-parsed request through the middleware chain, the
+   * router and the error handling, and returns the response.
+   *
+   * This is the whole application-facing half of the server, with no
+   * reference to how the request arrived. That is what lets the same
+   * routes and middleware serve an HTTP/1.1 connection and an HTTP/2
+   * stream without either protocol knowing about the other.
+   *
+   * @param HttpRequest request
+   * @param ?HttpResponse response: an existing response to fill in
+   * @returns HttpResponse
+   */
+  handle_request(request, response) {
+    var result = response == nil ? HttpResponse() : response
+    result.version = request.version
+
+    catch {
+      self._dispatch(request, result, 0)
+    } as error
+
+    if error {
+      self._handle_failure(request, result, error)
+    }
+
+    self._finish(request, result)
+
+    return result
+  }
+
+  _serve_one(connection, request) {
+    var response = HttpResponse()
+    response.version = request.version
+
+    # A handler that upgrades the connection - to a WebSocket, say -
+    # needs to reach the socket itself, and this is the only place
+    # that still has it.
+    request.context['connection'] = connection
+
+    var prepared = self._prepare_body(connection, request, response)
+
+    if prepared {
+      self.handle_request(request, response)
+    }
+
+    # An upgraded connection is no longer carrying HTTP messages, so
+    # there is nothing more for this loop to write or read on it.
+    if request.context.get('upgraded', false) {
+      return false
+    }
+
+    var keep_alive
+
+    catch {
+      keep_alive = h1.write_response(connection, request, response, {
+        server_name: self.server_name,
+      })
+    } as write_error
+
+    if write_error {
+      self._report(write_error, connection)
+      return false
+    }
+
+    for listener in self._reply_listeners {
+      catch {
+        listener(request, response)
+      }
+    }
+
+    # Whatever the handler left unread has to go before the next
+    # request can be parsed off the same connection.
+    if keep_alive and request.body_reader != nil {
+      if !request.body_reader.drain(self.max_body_size) {
+        return false
+      }
+    }
+
+    return keep_alive
+  }
+
+  # Reads the request body into memory, subject to the size limit, and
+  # answers the Expect header if there is one. Returns false when the
+  # request was already answered and must not be dispatched.
+  _prepare_body(connection, request, response) {
+    var reader = request.body_reader
+
+    if reader == nil {
+      return true
+    }
+
+    var declared = request.content_length()
+
+    if declared > self.max_body_size {
+      response.status = status.CONTENT_TOO_LARGE
+      response.headers.set('Connection', 'close')
+      response.text('413 Content Too Large')
+      return false
+    }
+
+    if request.expects_continue() {
+      # Any expectation other than 100-continue is one we do not know
+      # how to meet, and RFC 9110 §10.1.1 says to say so rather than
+      # ignore it.
+      var expectation = request.headers.get('expect', '')
+
+      if expectation.trim().lower() != '100-continue' {
+        response.status = status.EXPECTATION_FAILED
+        response.text('417 Expectation Failed')
+        return false
+      }
+
+      catch {
+        h1.send_continue(connection)
+      } as error
+
+      if error {
+        return false
+      }
+    }
+
+    catch {
+      request.body = reader.read_all(self.max_body_size)
+    } as error
+
+    if error {
+      if instance_of(error, TooLargeError) {
+        response.status = status.CONTENT_TOO_LARGE
+        response.headers.set('Connection', 'close')
+        response.text('413 Content Too Large')
+        return false
+      }
+
+      response.status = status.BAD_REQUEST
+      response.headers.set('Connection', 'close')
+      response.text('400 Bad Request')
+      return false
+    }
+
+    return true
+  }
+
+  _dispatch(request, response, index) {
+    if index < self._middleware.length() {
+      var middleware = self._middleware[index]
+
+      middleware(request, response, @() {
+        self._dispatch(request, response, index + 1)
+      })
+
+      return
+    }
+
+    for listener in self._receive_listeners {
+      listener(request, response)
+    }
+
+    self._route(request, response)
+  }
+
+  _route(request, response) {
+    # 'OPTIONS *' asks about the server as a whole rather than about
+    # any one resource (RFC 9110 §9.3.7).
+    if request.method == 'OPTIONS' and request.path == '*' {
+      response.status = status.NO_CONTENT
+      response.headers.set('Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS')
+      return
+    }
+
+    var match = self._router.match(request.method, request.path)
+
+    if match.is_match() {
+      request.params = match.params
+      match.route.handler(request, response)
+      return
+    }
+
+    if match.is_method_mismatch() {
+      var allow = ', '.join(match.allowed)
+
+      if request.method == 'OPTIONS' {
+        response.status = status.NO_CONTENT
+        response.headers.set('Allow', allow)
+        return
+      }
+
+      response.status = status.METHOD_NOT_ALLOWED
+      response.headers.set('Allow', allow)
+      response.text('405 Method Not Allowed')
+      return
+    }
+
+    if self._serve_static(request, response) {
+      return
+    }
+
+    if self._not_found != nil {
+      self._not_found(request, response)
+      return
+    }
+
+    self._default_not_found(request, response)
+  }
+
+  _serve_static(request, response) {
+    if request.method != 'GET' and request.method != 'HEAD' {
+      return false
+    }
+
+    for mount in self._static_mounts {
+      var base = mount[0]
+      var relative = nil
+
+      if base == '/' {
+        relative = request.path.ltrim('/')
+      } else if request.path == base {
+        relative = ''
+      } else if request.path.starts_with(base + '/') {
+        relative = request.path[base.length() + 1,]
+      }
+
+      if relative == nil {
+        continue
+      }
+
+      if mount[1].serve(request, response, relative) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  _default_not_found(request, response) {
+    response.status = status.NOT_FOUND
+
+    if request.wants_json() {
+      response.json({ error: 'Not Found', status: 404 })
+    } else {
+      response.text('404 Not Found')
+    }
+  }
+
+  _handle_failure(request, response, error) {
+    self._report(error, nil)
+
+    # A response that already started going out cannot be replaced by
+    # an error page; the head is on the wire.
+    if response.is_committed() {
+      raise error
+    }
+
+    response.headers.remove('Content-Type')
+    response.body = bytes(0)
+
+    if self._error_handler != nil {
+      catch {
+        self._error_handler(request, response, error)
+        return
+      } as handler_error
+
+      if handler_error {
+        self._report(handler_error, nil)
+        response.body = bytes(0)
+      }
+    }
+
+    response.status = status.INTERNAL_SERVER_ERROR
+
+    # Deliberately says nothing about what failed. An exception
+    # message routinely carries a file path, a query, or a fragment of
+    # the data being processed, and none of that belongs in a reply to
+    # whoever triggered it.
+    if request.wants_json() {
+      response.json({ error: 'Internal Server Error', status: 500 })
+    } else {
+      response.text('500 Internal Server Error')
+    }
+  }
+
+  # Last pass over a finished response: negotiate compression, and add
+  # the headers that depend on the final body.
+  _finish(request, response) {
+    if !self.compression {
+      return
+    }
+
+    if response.source() != nil or response.is_bodiless() {
+      return
+    }
+
+    if response.headers.contains('content-encoding') {
+      return
+    }
+
+    if response.body.length() < self.compression_min_size {
+      return
+    }
+
+    if !_is_compressible(response.media_type()) {
+      return
+    }
+
+    var accept = request.headers.get('accept-encoding', nil)
+    if accept == nil {
+      return
+    }
+
+    var coding = nil
+    for candidate in ['br', 'gzip'] {
+      if negotiate.quality_of(accept, candidate) > 0 {
+        coding = candidate
+        break
+      }
+    }
+
+    if coding == nil {
+      return
+    }
+
+    catch {
+      var compressed = body.encode_content(response.body, coding)
+
+      # Compression that makes a body bigger is worse than none.
+      if compressed.length() < response.body.length() {
+        response.body = compressed
+        response.headers.set('Content-Encoding', coding)
+      }
+    }
+
+    # The response now depends on what the client said it accepts,
+    # whether or not we ended up compressing, so any shared cache must
+    # vary on it.
+    if !response.headers.contains_token('vary', 'accept-encoding') {
+      response.headers.add('Vary', 'Accept-Encoding')
+    }
+  }
+
+  # Answers a request that could not even be parsed. There is no
+  # HttpRequest to hand to a handler at this point, and the connection
+  # always closes afterwards: once framing is in doubt, anything still
+  # buffered might be the tail of the broken message or the head of
+  # the next one, and there is no way to tell.
+  _send_early_error(connection, error) {
+    var code = status.BAD_REQUEST
+
+    if instance_of(error, TooLargeError) {
+      var message = error.message.lower()
+      code = message.contains('header') or message.contains('line') ?
+        status.REQUEST_HEADER_FIELDS_TOO_LARGE :
+        status.CONTENT_TOO_LARGE
+    }
+
+    self._report(error, connection)
+
+    catch {
+      var reason = status.reason(code)
+      var head = 'HTTP/1.1 ${code} ${reason}\r\n' +
+        'Date: ${util.format_date()}\r\n' +
+        'Server: ${self.server_name}\r\n' +
+        'Content-Type: text/plain; charset=utf-8\r\n' +
+        'Content-Length: ${(code.to_string() + " " + reason).length()}\r\n' +
+        'Connection: close\r\n\r\n' +
+        '${code} ${reason}'
+
+      connection.write(head)
+      connection.flush()
+    }
+  }
+
+  # Works out whether a connection is going to speak HTTP/2.
+  #
+  # Over TLS the answer is whatever ALPN settled on during the
+  # handshake. Over cleartext there is no negotiation, so the only
+  # signal is the connection preface a client sends when it already
+  # knows the server speaks HTTP/2 - and since `PRI` is not a method
+  # any HTTP/1.1 client sends, peeking for it is unambiguous.
+  _is_http2(connection) {
+    if connection.secure {
+      return connection.alpn == 'h2'
+    }
+
+    var probe
+
+    catch {
+      probe = connection.read_some(24)
+    } as error
+
+    if error or probe == nil or probe.length() == 0 {
+      return false
+    }
+
+    connection.unread(probe)
+
+    if probe.length() < 4 {
+      return false
+    }
+
+    return probe[0, 4] == 'PRI '.to_bytes()
+  }
+
+  _report(error, connection) {
+    for listener in self._error_listeners {
+      catch {
+        listener(error, connection)
+      }
+    }
+  }
+
+  to_string() {
+    var scheme = self.is_secure() ? 'https' : 'http'
+    return '<HttpServer ${scheme}://${self.host}:${self.port}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

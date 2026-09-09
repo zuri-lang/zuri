@@ -274,13 +274,13 @@ def _end_tag(start) {
  *
  * Returns a dictionary of:
  *
- * - `root` — the `Document` for a document parse, or the
+ * - `root`: the `Document` for a document parse, or the
  *   `DocumentFragment` holding the parsed nodes for a fragment parse.
- * - `document` — true when the parse was a document parse.
- * - `saw_doctype`, `saw_html`, `saw_head`, `saw_body` — whether the
+ * - `document`: true when the parse was a document parse.
+ * - `saw_doctype`, `saw_html`, `saw_head`, `saw_body`: whether the
  *   source really contained each, as opposed to the parser having
  *   supplied it.
- * - `errors` — the parse errors the tokenizer and tree builder found.
+ * - `errors`: the parse errors the tokenizer and tree builder found.
  *
  * ```zuri
  * import wire

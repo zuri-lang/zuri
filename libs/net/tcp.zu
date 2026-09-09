@@ -64,6 +64,38 @@ def _addr_string(address) {
 }
 
 /**
+ * Resolves `address` - a `host:port` string whose host may be a name
+ * or an IP literal - into every socket address it names, in the order
+ * the resolver returned them.
+ *
+ * A hostname routinely maps to several addresses (an IPv6 and an IPv4
+ * one at the very least), which is why this returns a list rather
+ * than a single address. `connect()` does its own resolution when
+ * handed a name, so this is mainly useful when you need the concrete
+ * address first: to connect with a timeout (which requires a literal),
+ * to prefer one address family, or simply to look up what a name
+ * points at.
+ *
+ * ```zuri
+ * import net
+ *
+ * echo net.resolve('example.com:443')
+ * # [93.184.215.14:443]
+ * ```
+ *
+ * @param {string|SocketAddr} address: The `host:port` to resolve
+ * @returns list: one or more `SocketAddr`
+ * @throws Error if the name cannot be resolved, or resolves to nothing
+ */
+def resolve(address) {
+  var resolved = _net_tcp.tcp_resolve(_addr_string(address))
+
+  return resolved.map(@(entry) {
+    return SocketAddr.parse(entry)
+  })
+}
+
+/**
  * Used with `TcpStream.shutdown()` to select which half (or both
  * halves) of a full-duplex TCP connection to shut down. Shutting
  * down a stream only affects the local socket as it is a local

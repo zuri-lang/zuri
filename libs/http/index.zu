@@ -1,0 +1,340 @@
+/**
+ * @module http
+ *
+ * A complete HTTP stack: a client, a server, and the pieces both are
+ * built from.
+ *
+ * The server is meant to face the internet directly. Everything that
+ * is normally the reverse proxy's job - TLS, static files with byte
+ * ranges and conditional requests, response compression, keep-alive,
+ * request size limits, timeouts, forwarding-header handling - is here
+ * rather than assumed to be somewhere in front.
+ *
+ * ### Making a request
+ *
+ * ```zuri
+ * import http
+ *
+ * echo http.get('https://example.com').as_text()
+ * ```
+ *
+ * The module-level `get()`, `post()`, `put()`, `patch()`, `delete()`,
+ * `head()`, `options()` and `trace()` all go through one shared
+ * client, which keeps its connections open between calls. For
+ * anything that needs its own settings - a base URL, an
+ * authorization header, a cookie jar, a custom certificate authority
+ * - build a client of your own:
+ *
+ * ```zuri
+ * var api = http.client('https://api.example.com', {
+ *   headers: { 'Authorization': 'Bearer ' + token },
+ * })
+ *
+ * var user = api.get('/users/me').raise_for_status().as_dict()
+ * api.post('/posts', { title: 'Hello', body: 'World' })
+ * ```
+ *
+ * ### Serving requests
+ *
+ * ```zuri
+ * import http
+ *
+ * var server = http.server(3000)
+ *
+ * server.get('/', @(request, response) {
+ *   response.html('<h1>Hello</h1>')
+ * })
+ *
+ * server.get('/users/:id', @(request, response) {
+ *   response.json({ id: request.param('id') })
+ * })
+ *
+ * server.serve_files('/static', './public', { cache_age: 86400 })
+ *
+ * server.listen()
+ * ```
+ *
+ * Routes match literal segments, `:name` parameters, and a trailing
+ * catch-all, with the most specific pattern winning regardless of
+ * registration order. `use()` adds middleware, which runs outermost
+ * first and controls whether the rest of the chain runs at all:
+ *
+ * ```zuri
+ * server.use(@(request, response, next) {
+ *   if request.header('x-api-key') != key {
+ *     response.json({ error: 'unauthorized' }, 401)
+ *     return
+ *   }
+ *   next()
+ * })
+ * ```
+ *
+ * ### Serving over TLS
+ *
+ * ```zuri
+ * var server = http.server(443, '0.0.0.0')
+ * server.load_certs('/etc/certs/site.crt', '/etc/certs/site.key')
+ * server.listen()
+ * ```
+ *
+ * ### Using more than one core
+ *
+ * `listen()` serves connections on the calling thread. `serve()` runs
+ * the same pipeline across a pool of isolates instead, one accept
+ * loop handing connections to workers:
+ *
+ * ```zuri
+ * # app.zu
+ * import http
+ *
+ * def setup(server) {
+ *   server.get('/', @(request, response) {
+ *     response.text('hello from a worker')
+ *   })
+ * }
+ * ```
+ *
+ * ```zuri
+ * # main.zu
+ * import http
+ * import .app
+ *
+ * http.serve(app.setup, { port: 3000, workers: 8 })
+ * ```
+ *
+ * The setup function has to live in a module rather than in the main
+ * script, because that is what an isolate can resolve on the other
+ * side of the boundary.
+ *
+ * ### What the module handles for you
+ *
+ * Requests are parsed strictly: a header name with whitespace before
+ * its colon, two disagreeing `Content-Length` values, a
+ * `Transfer-Encoding` alongside a `Content-Length`, an obsolete
+ * folded header line - each of these is a way to make a proxy and an
+ * origin server disagree about where one message ends and the next
+ * begins, and each is refused rather than guessed at.
+ *
+ * Bodies are decompressed on the way in and compressed on the way
+ * out, cookies are parsed and rendered per RFC 6265, dates are read
+ * in all three formats HTTP allows and written in the one it
+ * requires, and content negotiation follows the quality weights the
+ * client actually sent.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.errors { * }
+import @.status
+import @.headers { Headers }
+import @.cookies { Cookie, CookieJar }
+import @.util
+import @.negotiate
+import @.multipart { MultipartBuilder, MultipartData, UploadedFile }
+import @.request { HttpRequest, parse_query_string, build_query_string }
+import @.response { HttpResponse }
+import @.router { Route, Router }
+import @.files { ByteRange, StaticFiles }
+import @.stream { Connection }
+import @.body { BodyReader }
+import @.h1
+import @.server { HttpServer }
+import @.client { HttpClient }
+import @.middleware
+import @.proxy { LoadBalancer, ReverseProxy }
+import @.sse
+import @.websocket { WebSocket }
+import @.h2
+import @.worker
+
+# The client behind the module-level request functions. It keeps its
+# connections alive between calls, which is the whole reason for it to
+# exist rather than building one per request.
+var _shared = HttpClient()
+_shared.enable_cookies()
+
+/**
+ * The shared client the module-level request functions use.
+ *
+ * Reach for this to change a setting that should apply to every
+ * casual `http.get()` in a program - a proxy-wide certificate
+ * authority, a longer timeout - and build your own `client()` for
+ * anything more specific than that.
+ *
+ * @returns HttpClient
+ */
+def shared_client() {
+  return _shared
+}
+
+/**
+ * Builds a new `HttpClient`.
+ *
+ * @param ?string base_url: prefixed to any relative request target
+ * @param ?dict options: any `HttpClient` field, plus `headers`
+ * @returns HttpClient
+ */
+def client(base_url: ?string, options: ?dict) {
+  return HttpClient(base_url, options)
+}
+
+/**
+ * Sets the default headers on the shared client and returns it, so a
+ * call can be chained straight onto it.
+ *
+ * ```zuri
+ * echo http.set_headers({ 'Authorization': 'Bearer ' + token })
+ *   .get('https://example.com/me')
+ *   .as_dict()
+ * ```
+ *
+ * @param dict values
+ * @returns HttpClient
+ */
+def set_headers(values: dict) {
+  return _shared.set_headers(values)
+}
+
+/**
+ * Sends a GET request through the shared client.
+ *
+ * @param string url
+ * @param ?dict options: see `HttpClient.request()`
+ * @returns HttpResponse
+ */
+def get(url: string, options: ?dict) {
+  return _shared.get(url, options)
+}
+
+/**
+ * Sends a POST request through the shared client.
+ *
+ * @param string url
+ * @param ?any data: a string or bytes sent as-is, a dictionary or
+ *    list sent as JSON, or a `MultipartBuilder`
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def post(url: string, data, options: ?dict) {
+  return _shared.post(url, data, options)
+}
+
+/**
+ * Sends a PUT request through the shared client.
+ *
+ * @param string url
+ * @param ?any data
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def put(url: string, data, options: ?dict) {
+  return _shared.put(url, data, options)
+}
+
+/**
+ * Sends a PATCH request through the shared client.
+ *
+ * @param string url
+ * @param ?any data
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def patch(url: string, data, options: ?dict) {
+  return _shared.patch(url, data, options)
+}
+
+/**
+ * Sends a DELETE request through the shared client.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def delete(url: string, options: ?dict) {
+  return _shared.delete(url, options)
+}
+
+/**
+ * Sends a HEAD request through the shared client. Redirects are not
+ * followed unless `options` says to.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def head(url: string, options: ?dict) {
+  return _shared.head(url, options)
+}
+
+/**
+ * Sends an OPTIONS request through the shared client.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def options(url: string, options: ?dict) {
+  return _shared.options(url, options)
+}
+
+/**
+ * Sends a TRACE request through the shared client.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns HttpResponse
+ */
+def trace(url: string, options: ?dict) {
+  return _shared.trace(url, options)
+}
+
+/**
+ * Builds an `HttpServer`.
+ *
+ * @param ?number port: defaults to `8000`
+ * @param ?string host: defaults to `'127.0.0.1'`
+ * @returns HttpServer
+ */
+def server(port: ?number, host: ?string) {
+  return HttpServer(port, host)
+}
+
+/**
+ * Builds an `HttpServer` already configured for TLS.
+ *
+ * @param number port
+ * @param string cert_chain: the PEM certificate chain, leaf first
+ * @param string private_key: the PEM private key
+ * @param ?string host
+ * @returns HttpServer
+ */
+def tls_server(port: number, cert_chain: string, private_key: string, host: ?string) {
+  var instance = HttpServer(port, host)
+  instance.use_tls(cert_chain, private_key)
+
+  return instance
+}
+
+/**
+ * Runs a server across a pool of isolates, one per core by default.
+ *
+ * `setup` is called once inside each worker with that worker's own
+ * `HttpServer`, and registers the routes, middleware and settings the
+ * worker should serve with. It must be a function defined in a module
+ * - an isolate resolves a function by module binding, and a closure
+ * that captured an imported module cannot cross the boundary at all.
+ *
+ * The calling isolate binds the socket and accepts connections,
+ * handing each one to a worker. It does not return until the server
+ * is stopped.
+ *
+ * @param function(1) setup: receives the worker's `HttpServer`
+ * @param ?dict options: `port` (default `8000`), `host` (default
+ *    `'127.0.0.1'`), `workers` (default: the number of CPUs),
+ *    `backlog` (how many accepted connections may wait for a free
+ *    worker), plus `cert_chain`/`private_key` for TLS
+ * @throws HttpError if the socket cannot be bound
+ */
+def serve(setup, options: ?dict) {
+  worker.serve(setup, options)
+}

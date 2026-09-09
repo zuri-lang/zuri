@@ -8,7 +8,7 @@
  * (rather than off in `dispatch.zu` alongside `default_transport()`)
  * specifically so `Transport.close()` can remove itself from the
  * registry without a cross-file call back into a file that in turn
- * depends on this one — `console.zu`/`file.zu` need `Transport` from
+ * depends on this one: `console.zu`/`file.zu` need `Transport` from
  * here, and `dispatch.zu` needs `ConsoleTransport` from `console.zu`,
  * so a `Transport` depending on `dispatch.zu` for `remove_transport()`
  * would be a genuine import cycle. Keeping the registry here instead
@@ -246,7 +246,7 @@ class Transport {
    *
    * [[log.LogLevel.None]] is a documented escape hatch that
    * bypasses level filtering entirely (only `enable()`/`disable()`
-   * still applies to it) — see the module doc's "quick logging"
+   * still applies to it): see the module doc's "quick logging"
    * section.
    *
    * @param {log.LogLevel} level
@@ -298,7 +298,7 @@ class Transport {
    *
    * When the last element of `records` is a dict, it's treated as
    * structured fields rather than a plain message argument and
-   * rendered as trailing `key=value` pairs — `log.info('processing',
+   * rendered as trailing `key=value` pairs: `log.info('processing',
    * { user_id: 5 })` renders as `... processing user_id=5`. Fields
    * bound via a [[log.Logger]] (through `context`) are merged in the
    * same way.

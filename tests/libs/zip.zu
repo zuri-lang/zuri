@@ -43,7 +43,7 @@ def a_stat() {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.zip module — test suite'
+echo '  compress.zip module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 fresh_dir(_root)
@@ -117,7 +117,7 @@ zc.save()
 var raw = file(crc_path, 'rb').read()
 # Flip a byte inside the file's stored content region specifically: the
 # local file header is a fixed 30 bytes, followed by the filename
-# ('data.txt', 8 bytes), so content starts at byte 38 — well clear of
+# ('data.txt', 8 bytes), so content starts at byte 38: well clear of
 # any header/signature bytes, and clear of the central directory /
 # EOCD that follow the (short) content too.
 var flip_offset = 40
@@ -148,7 +148,7 @@ mixed_raw[mixed_flip] = mixed_raw[mixed_flip] ^ 0xFF
 file(mixed_path, 'wb').write(mixed_raw)
 
 assert !raises(@() { zip.ZipArchive(mixed_path).read() }),
-  'read() must not raise just because one entry fails to decode cleanly — errors surface per-entry'
+  'read() must not raise just because one entry fails to decode cleanly: errors surface per-entry'
 ok('a single bad entry is reported via .error, not an exception that aborts reading the whole archive')
 
 # ---------------------------------------------------------------------------
@@ -195,7 +195,7 @@ zb.create_file('binary.dat', binary_data, a_stat())
 zb.save()
 
 # create_file() must never dispose a bytes argument the caller passed
-# in — only a string argument it converted internally — so binary_data
+# in: only a string argument it converted internally: so binary_data
 # must still be perfectly usable here.
 assert binary_data.length() == 256, 'create_file() must not dispose a bytes argument the caller owns'
 

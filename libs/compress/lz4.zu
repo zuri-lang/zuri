@@ -29,7 +29,7 @@ import _compress
  * Compress data using the Lz4 block format. The uncompressed
  * size will be prepended as a little endian unsigned integer 32.
  *
- * @note This is the block format, not the frame format —
+ * @note This is the block format, not the frame format:
  *    `Lz4Encoder`/`Lz4Decoder` use a genuinely different, mutually
  *    incompatible binary layout. Data compressed here can only be
  *    decompressed with `decompress()`, never with `Lz4Decoder`, and
@@ -47,7 +47,7 @@ def compress(data) {
  * expected to be the uncompressed size in little endian.
  *
  * @note This expects the block format `compress()` produces, not
- *    the frame format `Lz4Encoder` produces — passing `Lz4Encoder`
+ *    the frame format `Lz4Encoder` produces: passing `Lz4Encoder`
  *    output here will fail (and vice versa for `Lz4Decoder` given
  *    `compress()` output). See the module docs.
  * @param {bytes|string} data
@@ -66,7 +66,7 @@ def decompress(data) {
  * To ensure a well formed stream the encoder must be finalized
  * by calling the `finish()` method.
  *
- * @note This produces the LZ4 frame format — decode it with
+ * @note This produces the LZ4 frame format: decode it with
  *    `Lz4Decoder`, not the one-shot `decompress()` (which expects a
  *    different, incompatible block format). See the module docs.
  *
@@ -149,7 +149,7 @@ class Lz4Encoder {
  * Streaming reader for decompressing the LZ4 frame format. Bytes
  * read will be decompressed according to the LZ4 frame format.
  *
- * @note This reads the LZ4 frame format produced by `Lz4Encoder` —
+ * @note This reads the LZ4 frame format produced by `Lz4Encoder`:
  *    it cannot decode the one-shot `compress()`'s block format (use
  *    `decompress()` for that instead). See the module docs.
  *

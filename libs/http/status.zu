@@ -1,0 +1,666 @@
+/**
+ * @module http.status
+ *
+ * The HTTP status codes registered with IANA, their canonical reason
+ * phrases, and a handful of predicates for asking what class a code
+ * belongs to.
+ *
+ * The names are the constants; `reason()` turns a code into the
+ * phrase a response line carries.
+ *
+ * ```zuri
+ * import http
+ *
+ * echo http.status.NOT_FOUND          # 404
+ * echo http.status.reason(404)        # Not Found
+ * echo http.status.is_redirect(308)   # true
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+# ---------------------------------------------------------------------------
+# 1xx - Informational
+# ---------------------------------------------------------------------------
+
+/**
+ * 100 Continue. The client may proceed to send the request body it
+ * announced with an `Expect: 100-continue` header.
+ *
+ * @type int
+ */
+var CONTINUE = 100
+
+/**
+ * 101 Switching Protocols. The server has accepted an `Upgrade`
+ * request; everything after the response head speaks the new
+ * protocol. This is how a WebSocket handshake completes.
+ *
+ * @type int
+ */
+var SWITCHING_PROTOCOLS = 101
+
+/**
+ * 102 Processing (WebDAV, RFC 2518). An interim response telling a
+ * client the request is still being worked on.
+ *
+ * @type int
+ */
+var PROCESSING = 102
+
+/**
+ * 103 Early Hints (RFC 8297). Carries `Link` headers the client can
+ * act on (preload, preconnect) before the final response arrives.
+ *
+ * @type int
+ */
+var EARLY_HINTS = 103
+
+# ---------------------------------------------------------------------------
+# 2xx - Successful
+# ---------------------------------------------------------------------------
+
+/**
+ * 200 OK.
+ * @type int
+ */
+var OK = 200
+
+/**
+ * 201 Created. A new resource exists; `Location` names it.
+ * @type int
+ */
+var CREATED = 201
+
+/**
+ * 202 Accepted. The request was valid and queued, but not acted on
+ * yet, and may still ultimately fail.
+ * @type int
+ */
+var ACCEPTED = 202
+
+/**
+ * 203 Non-Authoritative Information. A transforming proxy modified
+ * the origin server's response.
+ * @type int
+ */
+var NON_AUTHORITATIVE_INFORMATION = 203
+
+/**
+ * 204 No Content. Success, and deliberately no body. A response with
+ * this status must never carry `Content-Length` or a body.
+ * @type int
+ */
+var NO_CONTENT = 204
+
+/**
+ * 205 Reset Content. Success; the client should reset the document
+ * view that sent the request.
+ * @type int
+ */
+var RESET_CONTENT = 205
+
+/**
+ * 206 Partial Content. The body is the byte range(s) the request's
+ * `Range` header asked for.
+ * @type int
+ */
+var PARTIAL_CONTENT = 206
+
+/**
+ * 207 Multi-Status (WebDAV, RFC 4918). The body is an XML document
+ * carrying a separate status per sub-request.
+ * @type int
+ */
+var MULTI_STATUS = 207
+
+/**
+ * 208 Already Reported (WebDAV, RFC 5842).
+ * @type int
+ */
+var ALREADY_REPORTED = 208
+
+/**
+ * 226 IM Used (RFC 3229). The response is the result of applying one
+ * or more instance manipulations to the current resource.
+ * @type int
+ */
+var IM_USED = 226
+
+# ---------------------------------------------------------------------------
+# 3xx - Redirection
+# ---------------------------------------------------------------------------
+
+/**
+ * 300 Multiple Choices.
+ * @type int
+ */
+var MULTIPLE_CHOICES = 300
+
+/**
+ * 301 Moved Permanently. Clients and caches may rewrite the request
+ * method to GET when following this, which is why `308` exists.
+ * @type int
+ */
+var MOVED_PERMANENTLY = 301
+
+/**
+ * 302 Found. Historically (and still, in practice) followed by
+ * rewriting the method to GET.
+ * @type int
+ */
+var FOUND = 302
+
+/**
+ * 303 See Other. Follow with GET, always. This is the correct answer
+ * to a POST that should not be re-submitted on refresh.
+ * @type int
+ */
+var SEE_OTHER = 303
+
+/**
+ * 304 Not Modified. The cached representation the client already
+ * holds is still fresh. Carries no body.
+ * @type int
+ */
+var NOT_MODIFIED = 304
+
+/**
+ * 305 Use Proxy. Deprecated; clients are required to ignore it.
+ * @type int
+ */
+var USE_PROXY = 305
+
+/**
+ * 307 Temporary Redirect. Like `302`, but the method and body must be
+ * preserved when following.
+ * @type int
+ */
+var TEMPORARY_REDIRECT = 307
+
+/**
+ * 308 Permanent Redirect. Like `301`, but the method and body must be
+ * preserved when following.
+ * @type int
+ */
+var PERMANENT_REDIRECT = 308
+
+# ---------------------------------------------------------------------------
+# 4xx - Client error
+# ---------------------------------------------------------------------------
+
+/**
+ * 400 Bad Request. The message could not be understood - malformed
+ * syntax, invalid framing, a header the server refuses to guess at.
+ * @type int
+ */
+var BAD_REQUEST = 400
+
+/**
+ * 401 Unauthorized. Authentication is required or was rejected. A
+ * response with this status must carry `WWW-Authenticate`.
+ * @type int
+ */
+var UNAUTHORIZED = 401
+
+/**
+ * 402 Payment Required.
+ * @type int
+ */
+var PAYMENT_REQUIRED = 402
+
+/**
+ * 403 Forbidden. Understood and refused; re-authenticating won't
+ * help. Use `401` when it would.
+ * @type int
+ */
+var FORBIDDEN = 403
+
+/**
+ * 404 Not Found.
+ * @type int
+ */
+var NOT_FOUND = 404
+
+/**
+ * 405 Method Not Allowed. The path exists but not for this method. A
+ * response with this status must carry `Allow`.
+ * @type int
+ */
+var METHOD_NOT_ALLOWED = 405
+
+/**
+ * 406 Not Acceptable. Nothing the server can produce matches the
+ * request's `Accept` headers.
+ * @type int
+ */
+var NOT_ACCEPTABLE = 406
+
+/**
+ * 407 Proxy Authentication Required.
+ * @type int
+ */
+var PROXY_AUTHENTICATION_REQUIRED = 407
+
+/**
+ * 408 Request Timeout. The client took too long to send a complete
+ * request.
+ * @type int
+ */
+var REQUEST_TIMEOUT = 408
+
+/**
+ * 409 Conflict. The request conflicts with the current state of the
+ * resource.
+ * @type int
+ */
+var CONFLICT = 409
+
+/**
+ * 410 Gone. Like `404`, but deliberately permanent.
+ * @type int
+ */
+var GONE = 410
+
+/**
+ * 411 Length Required.
+ * @type int
+ */
+var LENGTH_REQUIRED = 411
+
+/**
+ * 412 Precondition Failed. A conditional header (`If-Match`,
+ * `If-Unmodified-Since`, ...) did not hold.
+ * @type int
+ */
+var PRECONDITION_FAILED = 412
+
+/**
+ * 413 Content Too Large. The body exceeds what the server will
+ * accept.
+ * @type int
+ */
+var CONTENT_TOO_LARGE = 413
+
+/**
+ * 414 URI Too Long.
+ * @type int
+ */
+var URI_TOO_LONG = 414
+
+/**
+ * 415 Unsupported Media Type. The body's `Content-Type` isn't one
+ * this resource handles.
+ * @type int
+ */
+var UNSUPPORTED_MEDIA_TYPE = 415
+
+/**
+ * 416 Range Not Satisfiable. None of the ranges asked for overlap the
+ * resource.
+ * @type int
+ */
+var RANGE_NOT_SATISFIABLE = 416
+
+/**
+ * 417 Expectation Failed. The request's `Expect` header names
+ * something the server cannot do.
+ * @type int
+ */
+var EXPECTATION_FAILED = 417
+
+/**
+ * 418 I'm a teapot (RFC 2324). Reserved, and not to be taken
+ * seriously, but registered often enough to be worth naming.
+ * @type int
+ */
+var IM_A_TEAPOT = 418
+
+/**
+ * 421 Misdirected Request. The connection this request arrived on
+ * cannot serve the authority it names. Relevant to HTTP/2 connection
+ * coalescing.
+ * @type int
+ */
+var MISDIRECTED_REQUEST = 421
+
+/**
+ * 422 Unprocessable Content. Syntactically fine, semantically
+ * impossible - the usual answer to a validation failure.
+ * @type int
+ */
+var UNPROCESSABLE_CONTENT = 422
+
+/**
+ * 423 Locked (WebDAV, RFC 4918).
+ * @type int
+ */
+var LOCKED = 423
+
+/**
+ * 424 Failed Dependency (WebDAV, RFC 4918).
+ * @type int
+ */
+var FAILED_DEPENDENCY = 424
+
+/**
+ * 425 Too Early (RFC 8470). The server won't risk processing a
+ * request that arrived in TLS early data.
+ * @type int
+ */
+var TOO_EARLY = 425
+
+/**
+ * 426 Upgrade Required. Carries an `Upgrade` header naming what the
+ * client must switch to.
+ * @type int
+ */
+var UPGRADE_REQUIRED = 426
+
+/**
+ * 428 Precondition Required (RFC 6585). The server insists the
+ * request be conditional, to avoid a lost update.
+ * @type int
+ */
+var PRECONDITION_REQUIRED = 428
+
+/**
+ * 429 Too Many Requests (RFC 6585). Rate limited; `Retry-After` says
+ * for how long.
+ * @type int
+ */
+var TOO_MANY_REQUESTS = 429
+
+/**
+ * 431 Request Header Fields Too Large (RFC 6585).
+ * @type int
+ */
+var REQUEST_HEADER_FIELDS_TOO_LARGE = 431
+
+/**
+ * 451 Unavailable For Legal Reasons (RFC 7725).
+ * @type int
+ */
+var UNAVAILABLE_FOR_LEGAL_REASONS = 451
+
+# ---------------------------------------------------------------------------
+# 5xx - Server error
+# ---------------------------------------------------------------------------
+
+/**
+ * 500 Internal Server Error.
+ * @type int
+ */
+var INTERNAL_SERVER_ERROR = 500
+
+/**
+ * 501 Not Implemented. The server does not recognise the method at
+ * all - not to be confused with `405`, which is per-resource.
+ * @type int
+ */
+var NOT_IMPLEMENTED = 501
+
+/**
+ * 502 Bad Gateway. An upstream this server proxies to returned
+ * something invalid.
+ * @type int
+ */
+var BAD_GATEWAY = 502
+
+/**
+ * 503 Service Unavailable. Temporary, by definition; pair it with
+ * `Retry-After`.
+ * @type int
+ */
+var SERVICE_UNAVAILABLE = 503
+
+/**
+ * 504 Gateway Timeout. An upstream did not answer in time.
+ * @type int
+ */
+var GATEWAY_TIMEOUT = 504
+
+/**
+ * 505 HTTP Version Not Supported.
+ * @type int
+ */
+var HTTP_VERSION_NOT_SUPPORTED = 505
+
+/**
+ * 506 Variant Also Negotiates (RFC 2295).
+ * @type int
+ */
+var VARIANT_ALSO_NEGOTIATES = 506
+
+/**
+ * 507 Insufficient Storage (WebDAV, RFC 4918).
+ * @type int
+ */
+var INSUFFICIENT_STORAGE = 507
+
+/**
+ * 508 Loop Detected (WebDAV, RFC 5842).
+ * @type int
+ */
+var LOOP_DETECTED = 508
+
+/**
+ * 510 Not Extended (RFC 2774).
+ * @type int
+ */
+var NOT_EXTENDED = 510
+
+/**
+ * 511 Network Authentication Required (RFC 6585). The captive-portal
+ * status.
+ * @type int
+ */
+var NETWORK_AUTHENTICATION_REQUIRED = 511
+
+# The canonical reason phrases, exactly as registered with IANA.
+# A reason phrase carries no meaning on the wire - clients act on the
+# code - but getting the casing right matters for logs, for proxies
+# that echo it, and for anyone reading a raw capture.
+var _reasons = {
+  100: 'Continue',
+  101: 'Switching Protocols',
+  102: 'Processing',
+  103: 'Early Hints',
+
+  200: 'OK',
+  201: 'Created',
+  202: 'Accepted',
+  203: 'Non-Authoritative Information',
+  204: 'No Content',
+  205: 'Reset Content',
+  206: 'Partial Content',
+  207: 'Multi-Status',
+  208: 'Already Reported',
+  226: 'IM Used',
+
+  300: 'Multiple Choices',
+  301: 'Moved Permanently',
+  302: 'Found',
+  303: 'See Other',
+  304: 'Not Modified',
+  305: 'Use Proxy',
+  307: 'Temporary Redirect',
+  308: 'Permanent Redirect',
+
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  402: 'Payment Required',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  406: 'Not Acceptable',
+  407: 'Proxy Authentication Required',
+  408: 'Request Timeout',
+  409: 'Conflict',
+  410: 'Gone',
+  411: 'Length Required',
+  412: 'Precondition Failed',
+  413: 'Content Too Large',
+  414: 'URI Too Long',
+  415: 'Unsupported Media Type',
+  416: 'Range Not Satisfiable',
+  417: 'Expectation Failed',
+  418: "I'm a teapot",
+  421: 'Misdirected Request',
+  422: 'Unprocessable Content',
+  423: 'Locked',
+  424: 'Failed Dependency',
+  425: 'Too Early',
+  426: 'Upgrade Required',
+  428: 'Precondition Required',
+  429: 'Too Many Requests',
+  431: 'Request Header Fields Too Large',
+  451: 'Unavailable For Legal Reasons',
+
+  500: 'Internal Server Error',
+  501: 'Not Implemented',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+  505: 'HTTP Version Not Supported',
+  506: 'Variant Also Negotiates',
+  507: 'Insufficient Storage',
+  508: 'Loop Detected',
+  510: 'Not Extended',
+  511: 'Network Authentication Required',
+}
+
+/**
+ * The canonical reason phrase for `code`, e.g. `'Not Found'` for
+ * `404`.
+ *
+ * An unregistered code is still perfectly legal on the wire - a
+ * client is required to treat it as the generic `x00` of its class -
+ * so rather than failing, this falls back to the class name
+ * (`'Informational'`, `'Success'`, `'Redirection'`, `'Client Error'`,
+ * `'Server Error'`), or `'Unknown'` for a code outside 100-599.
+ *
+ * @param int code
+ * @returns string
+ */
+def reason(code: int) {
+  var known = _reasons.get(code, nil)
+  if known {
+    return known
+  }
+
+  if code >= 100 and code < 200 {
+    return 'Informational'
+  }
+  if code >= 200 and code < 300 {
+    return 'Success'
+  }
+  if code >= 300 and code < 400 {
+    return 'Redirection'
+  }
+  if code >= 400 and code < 500 {
+    return 'Client Error'
+  }
+  if code >= 500 and code < 600 {
+    return 'Server Error'
+  }
+
+  return 'Unknown'
+}
+
+/**
+ * Whether `code` is a registered status code with a canonical reason
+ * phrase of its own.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_registered(code: int) {
+  return _reasons.contains(code)
+}
+
+/**
+ * Whether `code` is a 1xx interim status. These are consumed by the
+ * protocol layer and never surface as the final response.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_informational(code: int) {
+  return code >= 100 and code < 200
+}
+
+/**
+ * Whether `code` is a 2xx success status.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_success(code: int) {
+  return code >= 200 and code < 300
+}
+
+/**
+ * Whether `code` is a 3xx redirection status.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_redirect(code: int) {
+  return code >= 300 and code < 400
+}
+
+/**
+ * Whether `code` is a 4xx client error.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_client_error(code: int) {
+  return code >= 400 and code < 500
+}
+
+/**
+ * Whether `code` is a 5xx server error.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_server_error(code: int) {
+  return code >= 500 and code < 600
+}
+
+/**
+ * Whether `code` is any kind of error, client or server.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_error(code: int) {
+  return code >= 400 and code < 600
+}
+
+/**
+ * Whether a response carrying `code` is defined to have no body at
+ * all, regardless of what headers say. RFC 9110 puts `1xx`, `204`
+ * and `304` in this category, and framing a body onto any of them is
+ * a protocol violation rather than a stylistic choice.
+ *
+ * @param int code
+ * @returns bool
+ */
+def is_bodiless(code: int) {
+  return is_informational(code) or code == NO_CONTENT or code == NOT_MODIFIED
+}
+
+/**
+ * Whether a redirect with `code` must keep the original method and
+ * body when followed. True for `307` and `308`; `301`, `302` and
+ * `303` are all conventionally rewritten to GET.
+ *
+ * @param int code
+ * @returns bool
+ */
+def preserves_method(code: int) {
+  return code == TEMPORARY_REDIRECT or code == PERMANENT_REDIRECT
+}

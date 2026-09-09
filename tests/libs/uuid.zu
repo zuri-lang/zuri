@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  uuid module — test suite'
+echo '  uuid module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ assert uuid.version(uuid.NIL) == nil, 'version() must be nil for the Nil UUID'
 ok('the module-level version() function reads the version nibble correctly')
 
 # ---------------------------------------------------------------------------
-# v4() — random
+# v4(): random
 # ---------------------------------------------------------------------------
 var v4a = uuid.v4()
 var v4b = uuid.v4()
@@ -56,7 +56,7 @@ assert uuid.UUID(v4a).variant() == 'RFC 9562', 'v4() must set the RFC 9562 varia
 ok('v4() produces distinct, correctly-versioned random UUIDs')
 
 # ---------------------------------------------------------------------------
-# v7() — Unix-time ordered; this exercises both the odd-length
+# v7(): Unix-time ordered; this exercises both the odd-length
 # _random_hex() bug and the '0x'-prefix .to_number() bug, since both
 # corrupted v7's variant bits before being fixed.
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ assert v7a_ts.compare(v7b_ts) <= 0,
 ok('v7() timestamps are non-decreasing across calls')
 
 # ---------------------------------------------------------------------------
-# v3() / v5() — name-based, deterministic; cross-checked against
+# v3() / v5(): name-based, deterministic; cross-checked against
 # Python's independent uuid module for the exact same inputs.
 # ---------------------------------------------------------------------------
 assert uuid.v3(uuid.NAMESPACE_DNS, 'www.example.com') == '5df41881-3aed-3515-88a7-2f4a814cf09e',
@@ -112,7 +112,7 @@ assert raises(@() { uuid.v5('not-a-uuid', 'x') }), 'v5() must raise for an inval
 ok('v3()/v5() reject an invalid namespace UUID')
 
 # ---------------------------------------------------------------------------
-# v1() / v6() — time-based
+# v1() / v6(): time-based
 # ---------------------------------------------------------------------------
 var v1a = uuid.v1()
 assert uuid.is_valid(v1a), 'v1() must produce a valid UUID'
@@ -131,7 +131,7 @@ assert uuid.v6(fixed_node).ends_with(fixed_node), 'v6() must honor an explicit n
 ok('v1()/v6() honor an explicit node argument')
 
 # ---------------------------------------------------------------------------
-# v8() — custom/application-defined
+# v8(): custom/application-defined
 # ---------------------------------------------------------------------------
 var v8a = uuid.v8(0x0123456789ab, 0x0cd, 0x0123456789abcdef)
 assert uuid.is_valid(v8a), 'v8() must produce a valid UUID'
@@ -140,7 +140,7 @@ assert uuid.UUID(v8a).variant() == 'RFC 9562', 'v8() must set the RFC 9562 varia
 ok('v8() produces a valid, correctly-versioned and -varianted UUID from custom fields')
 
 # ---------------------------------------------------------------------------
-# UUID class — parsing multiple accepted forms
+# UUID class: parsing multiple accepted forms
 # ---------------------------------------------------------------------------
 var canonical = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 assert uuid.UUID(canonical).to_string() == canonical, 'the constructor must accept canonical form'
@@ -155,7 +155,7 @@ assert raises(@() { uuid.UUID('garbage') }), 'the constructor must raise for a m
 ok('UUID() rejects a malformed string')
 
 # ---------------------------------------------------------------------------
-# UUID class — accessors
+# UUID class: accessors
 # ---------------------------------------------------------------------------
 var id = uuid.UUID(canonical)
 assert id.version() == 4, 'version() must read the correct nibble'
@@ -174,7 +174,7 @@ assert uuid.from_bytes(id_bytes) == canonical, 'bytes() must round-trip through 
 ok('bytes() returns the correct 16-byte representation and round-trips through from_bytes()')
 
 # ---------------------------------------------------------------------------
-# equals() — must accept both a UUID and a string, per its own doc
+# equals(): must accept both a UUID and a string, per its own doc
 # ---------------------------------------------------------------------------
 assert id.equals(uuid.UUID(canonical)) == true, 'equals() must accept another UUID instance'
 assert id.equals(canonical) == true, 'equals() must accept a plain canonical string'
@@ -184,7 +184,7 @@ assert raises(@() { id.equals(123) }), 'equals() must raise for something that i
 ok('equals() accepts both a UUID and a string, exactly as documented')
 
 # ---------------------------------------------------------------------------
-# compare() — ordering
+# compare(): ordering
 # ---------------------------------------------------------------------------
 var nil_id = uuid.UUID(uuid.NIL)
 var max_id = uuid.UUID(uuid.MAX)

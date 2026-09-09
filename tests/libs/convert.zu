@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  convert module — test suite'
+echo '  convert module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ assert convert.octal_to_decimal('100') == 64, 'octal_to_decimal() must match fro
 ok('decimal_to_binary()/binary_to_decimal()/decimal_to_octal()/octal_to_decimal() are correct base-2/8 shortcuts')
 
 # ---------------------------------------------------------------------------
-# bytes_to_decimal() / decimal_to_bytes() — endianness
+# bytes_to_decimal() / decimal_to_bytes(): endianness
 # ---------------------------------------------------------------------------
 var value = 0x01020304
 var big = convert.decimal_to_bytes(value, 4)

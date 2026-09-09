@@ -1,0 +1,405 @@
+#!-- part of the http module
+
+import .errors { HttpError }
+
+/**
+ * One registered route.
+ *
+ * @printable
+ */
+class Route {
+
+  /**
+   * The method this route answers, uppercased.
+   * @type string
+   */
+  var method
+
+  /**
+   * The pattern it was registered with, e.g. `'/users/:id'`.
+   * @type string
+   */
+  var pattern
+
+  /**
+   * The function called when the route matches, taking the request
+   * and the response.
+   * @type function
+   */
+  var handler
+
+  /**
+   * An optional name, so a URL can be built from the route rather
+   * than written out again at every call site.
+   * @type ?string
+   */
+  var name
+
+  @new(method, pattern, handler, name) {
+    self.method = method
+    self.pattern = pattern
+    self.handler = handler
+    self.name = name
+  }
+
+  to_string() {
+    return '<Route ${self.method} ${self.pattern}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The result of asking a router about a request.
+ */
+class RouteMatch {
+
+  /**
+   * The matched route, or `nil` when nothing matched.
+   * @type ?Route
+   */
+  var route
+
+  /**
+   * Path parameters captured from the pattern.
+   * @type dict
+   */
+  var params
+
+  /**
+   * When a path matched but the method did not, the methods that
+   * path *does* answer - which is exactly what a `405` response's
+   * `Allow` header must carry. Empty otherwise.
+   * @type list
+   */
+  var allowed
+
+  @new(route, params, allowed) {
+    self.route = route
+    self.params = params == nil ? {} : params
+    self.allowed = allowed == nil ? [] : allowed
+  }
+
+  /**
+   * Whether a route was found.
+   *
+   * @returns bool
+   */
+  is_match() {
+    return self.route != nil
+  }
+
+  /**
+   * Whether the path exists but not for the requested method, which
+   * calls for a `405` rather than a `404`.
+   *
+   * @returns bool
+   */
+  is_method_mismatch() {
+    return self.route == nil and self.allowed.length() > 0
+  }
+}
+
+/**
+ * Matches request paths to handlers.
+ *
+ * Patterns are made of literal segments, named parameters, and an
+ * optional trailing catch-all:
+ *
+ * | Pattern             | Matches                  | Captures            |
+ * | ------------------- | ------------------------ | ------------------- |
+ * | `/users`            | `/users`                 |                     |
+ * | `/users/:id`        | `/users/42`              | `id` = `'42'`       |
+ * | `/users/:id/posts`  | `/users/42/posts`        | `id` = `'42'`       |
+ * | `/static/` + `*path` | `/static/css/site.css`  | `path` = `'css/site.css'` |
+ *
+ * A literal segment always beats a parameter, and a parameter always
+ * beats a catch-all, so `/users/new` and `/users/:id` can coexist and
+ * the specific one wins - regardless of which was registered first,
+ * which is a property a list-of-patterns router cannot offer.
+ *
+ * Matching happens over a trie, so a router with a thousand routes
+ * costs the same per request as one with ten.
+ */
+class Router {
+
+  var _root
+  var _routes = []
+  var _named = {}
+
+  @new() {
+    self._root = _new_node()
+    self._routes = []
+    self._named = {}
+  }
+
+  /**
+   * Registers `handler` for `method` requests to `pattern`.
+   *
+   * @param string method
+   * @param string pattern
+   * @param function(2) handler: called with the request and response
+   * @param ?string name: a name to look the route up by later
+   * @returns Route
+   * @throws HttpError if the pattern is malformed, or if the same
+   *    method and pattern were already registered
+   */
+  add(method: string, pattern: string, handler, name: ?string) {
+    if !is_function(handler) and !is_callable(handler) {
+      raise TypeError('handler must be callable')
+    }
+
+    if !pattern.starts_with('/') {
+      raise HttpError('route pattern must start with "/": ${pattern}')
+    }
+
+    var upper = method.upper()
+    var route = Route(upper, pattern, handler, name)
+
+    var node = self._root
+    var segments = _split(pattern)
+
+    iter var i = 0; i < segments.length(); i++ {
+      var segment = segments[i]
+
+      if segment.starts_with('*') {
+        if i != segments.length() - 1 {
+          raise HttpError('a catch-all may only be the last segment: ${pattern}')
+        }
+
+        var wildcard_name = segment[1,]
+        if wildcard_name.is_empty() {
+          wildcard_name = 'path'
+        }
+
+        if node.wildcard == nil {
+          node.wildcard = _new_node()
+        }
+        node.wildcard_name = wildcard_name
+        node = node.wildcard
+      } else if segment.starts_with(':') {
+        var param_name = segment[1,]
+        if param_name.is_empty() {
+          raise HttpError('a route parameter must be named: ${pattern}')
+        }
+
+        if node.param == nil {
+          node.param = _new_node()
+          node.param_name = param_name
+        }
+        node = node.param
+      } else {
+        var child = node.children.get(segment, nil)
+        if child == nil {
+          child = _new_node()
+          node.children[segment] = child
+        }
+        node = child
+      }
+    }
+
+    if node.handlers.contains(upper) {
+      raise HttpError('${upper} ${pattern} is already registered')
+    }
+
+    node.handlers[upper] = route
+    self._routes.append(route)
+
+    if name != nil {
+      self._named[name] = route
+    }
+
+    return route
+  }
+
+  /**
+   * Finds the route for `method` and `path`.
+   *
+   * When the path matches but the method does not, the returned match
+   * carries the methods that path does answer, so the caller can send
+   * a `405` with a correct `Allow` header instead of a misleading
+   * `404`.
+   *
+   * `HEAD` falls back to the `GET` route when no `HEAD` route was
+   * registered, since RFC 9110 §9.3.2 defines HEAD as GET without the
+   * body, and the response writer drops the body anyway.
+   *
+   * @param string method
+   * @param string path
+   * @returns RouteMatch
+   */
+  match(method: string, path: string) {
+    var params = {}
+    var upper = method.upper()
+
+    var node = self._find(self._root, _split(path), 0, params)
+
+    if node == nil {
+      return RouteMatch(nil, nil, [])
+    }
+
+    var route = node.handlers.get(upper, nil)
+
+    if route == nil and upper == 'HEAD' {
+      route = node.handlers.get('GET', nil)
+    }
+
+    if route == nil {
+      var allowed = node.handlers.keys()
+
+      if allowed.contains('GET') and !allowed.contains('HEAD') {
+        allowed.append('HEAD')
+      }
+
+      # A resource that answers anything must also answer OPTIONS,
+      # and the server generates that answer itself.
+      if allowed.length() > 0 and !allowed.contains('OPTIONS') {
+        allowed.append('OPTIONS')
+      }
+
+      return RouteMatch(nil, params, allowed)
+    }
+
+    return RouteMatch(route, params, [])
+  }
+
+  # Walks the trie, preferring a literal segment, then a parameter,
+  # then a catch-all. Backtracks, so `/a/:x/c` still matches `/a/b/c`
+  # even when `/a/b/d` also exists and the literal branch dead-ends.
+  _find(node, segments, index, params) {
+    if index == segments.length() {
+      if !node.handlers.is_empty() {
+        return node
+      }
+
+      # A catch-all route should still answer its own prefix, with an
+      # empty capture, rather than falling through to a 404.
+      if node.wildcard != nil and !node.wildcard.handlers.is_empty() {
+        params[node.wildcard_name] = ''
+        return node.wildcard
+      }
+
+      return nil
+    }
+
+    var segment = segments[index]
+
+    var child = node.children.get(segment, nil)
+    if child != nil {
+      var found = self._find(child, segments, index + 1, params)
+      if found != nil {
+        return found
+      }
+    }
+
+    if node.param != nil {
+      var found = self._find(node.param, segments, index + 1, params)
+      if found != nil {
+        params[node.param_name] = segment
+        return found
+      }
+    }
+
+    if node.wildcard != nil and !node.wildcard.handlers.is_empty() {
+      var rest = []
+      iter var i = index; i < segments.length(); i++ {
+        rest.append(segments[i])
+      }
+
+      params[node.wildcard_name] = '/'.join(rest)
+
+      return node.wildcard
+    }
+
+    return nil
+  }
+
+  /**
+   * Builds the path for a named route, substituting `params` into its
+   * pattern.
+   *
+   * ```zuri
+   * router.add('GET', '/users/:id', show, 'user.show')
+   * router.url_for('user.show', { id: 42 })   # '/users/42'
+   * ```
+   *
+   * @param string name
+   * @param ?dict params
+   * @returns string
+   * @throws HttpError if no route has that name, or a parameter the
+   *    pattern needs was not supplied
+   */
+  url_for(name: string, params: ?dict) {
+    var route = self._named.get(name, nil)
+
+    if route == nil {
+      raise HttpError('no route named ${name}')
+    }
+
+    var given = params == nil ? {} : params
+    var out = []
+
+    for segment in _split(route.pattern) {
+      if segment.starts_with(':') or segment.starts_with('*') {
+        var key = segment[1,]
+        if key.is_empty() {
+          key = 'path'
+        }
+
+        var value = given.get(key, nil)
+        if value == nil {
+          raise HttpError('route ${name} needs a value for ${key}')
+        }
+
+        out.append(is_string(value) ? value : value.to_string())
+      } else {
+        out.append(segment)
+      }
+    }
+
+    return '/' + '/'.join(out)
+  }
+
+  /**
+   * Every registered route.
+   *
+   * @returns list
+   */
+  routes() {
+    return self._routes.clone()
+  }
+
+  /**
+   * How many routes are registered.
+   *
+   * @returns number
+   */
+  length() {
+    return self._routes.length()
+  }
+}
+
+def _new_node() {
+  return {
+    children: {},
+    param: nil,
+    param_name: nil,
+    wildcard: nil,
+    wildcard_name: nil,
+    handlers: {},
+  }
+}
+
+def _split(path) {
+  var segments = []
+
+  for segment in path.split('/') {
+    if !segment.is_empty() {
+      segments.append(segment)
+    }
+  }
+
+  return segments
+}

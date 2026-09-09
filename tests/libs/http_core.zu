@@ -1,0 +1,481 @@
+/**
+ * test_http_core.zu
+ *
+ * The parts of the `http` module that do not need a socket: header
+ * fields, cookies, dates, content negotiation, URL-encoded and
+ * multipart bodies, the router, message framing, and the request and
+ * response objects themselves.
+ *
+ * The socket-facing half is covered by `http_server.zu`, and HTTP/2's
+ * own machinery by `http_h2.zu`.
+ */
+
+import http
+import http.body
+import http.cookies
+import http.headers
+import http.multipart
+import http.negotiate
+import http.request
+import http.middleware
+import http.router
+import http.sse
+import http.status
+import http.util
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  http module: core test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Headers
+# ---------------------------------------------------------------------------
+
+var h = headers.Headers()
+h.set('Content-Type', 'text/html')
+h.add('Accept', 'text/html')
+h.add('accept', 'application/json')
+
+assert h.get('content-type') == 'text/html', 'lookup must ignore case'
+assert h.get('CONTENT-TYPE') == 'text/html', 'lookup must ignore case either way'
+assert h.get_all('Accept').length() == 2, 'a repeated field keeps every value'
+assert h.get_joined('accept') == 'text/html, application/json', 'values fold with commas'
+assert h.names().contains('Content-Type'), 'the original spelling is kept'
+ok('header fields are case-insensitive and multi-valued')
+
+h.set('Accept', 'text/plain')
+assert h.get_all('accept').length() == 1, 'set() replaces every value'
+ok('set() replaces where add() appends')
+
+assert raises(@() { h.set('Bad Name', 'x') }), 'a name with a space must be refused'
+assert raises(@() { h.set('X', "a\r\nInjected: yes") }),
+  'a value carrying CRLF would split the response and must be refused'
+assert raises(@() { h.set('X', "a\0b") }), 'a value carrying NUL must be refused'
+ok('response splitting is refused at the point of setting a field')
+
+var connection_header = headers.Headers()
+connection_header.set('Connection', 'keep-alive, Upgrade')
+assert connection_header.contains_token('connection', 'upgrade'),
+  'token matching must find a token that is not first'
+assert connection_header.contains_token('connection', 'KEEP-ALIVE'),
+  'token matching must ignore case'
+assert !connection_header.contains_token('connection', 'grade'),
+  'token matching must not match a substring'
+ok('list-valued fields are matched by token, not by substring')
+
+assert headers.canonical_name('content-type') == 'Content-Type', 'canonical casing'
+assert headers.canonical_name('etag') == 'ETag', 'ETag is spelled specially'
+assert headers.canonical_name('www-authenticate') == 'WWW-Authenticate', 'so is WWW-Authenticate'
+ok('field names canonicalize to their conventional spelling')
+
+var parsed = headers.parse(
+  'Host: example.com\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nX-Empty:'
+)
+assert parsed.get('host') == 'example.com', 'a parsed field is readable'
+assert parsed.get_all('set-cookie').length() == 2, 'Set-Cookie is never folded'
+assert parsed.get('x-empty') == '', 'an empty value is an empty string, not nil'
+ok('a header block parses into fields')
+
+assert raises(@() { headers.parse('Content-Length : 5') }),
+  'whitespace before the colon is a smuggling vector and must be refused'
+assert raises(@() { headers.parse('Host: a\r\n  continued') }),
+  'obsolete line folding must be refused'
+assert raises(@() { headers.parse('Content-Length: 5\r\nContent-Length: 6') }),
+  'two disagreeing Content-Lengths must be refused'
+ok('the header parser refuses the classic request-smuggling shapes')
+
+var hop = headers.Headers()
+hop.set('Connection', 'keep-alive, X-Custom')
+hop.set('X-Custom', 'secret')
+hop.set('Transfer-Encoding', 'chunked')
+hop.set('Content-Type', 'text/plain')
+hop.strip_hop_by_hop()
+assert !hop.contains('connection'), 'Connection is hop-by-hop'
+assert !hop.contains('transfer-encoding'), 'Transfer-Encoding is hop-by-hop'
+assert !hop.contains('x-custom'), 'a field named by Connection is hop-by-hop too'
+assert hop.contains('content-type'), 'an end-to-end field survives'
+ok('hop-by-hop fields, including ones Connection names, are stripped')
+
+# ---------------------------------------------------------------------------
+# Dates
+# ---------------------------------------------------------------------------
+
+assert util.format_date(784111777) == 'Sun, 06 Nov 1994 08:49:37 GMT', 'IMF-fixdate output'
+assert util.format_date(0) == 'Thu, 01 Jan 1970 00:00:00 GMT', 'the epoch itself'
+ok('dates are written as IMF-fixdate')
+
+assert util.parse_date('Sun, 06 Nov 1994 08:49:37 GMT') == 784111777, 'IMF-fixdate'
+assert util.parse_date('Sunday, 06-Nov-94 08:49:37 GMT') == 784111777, 'RFC 850'
+assert util.parse_date('Sun Nov  6 08:49:37 1994') == 784111777, 'asctime'
+assert util.parse_date('not a date') == nil, 'an unparseable date is nil, not a guess'
+ok('all three date formats a recipient must accept are read')
+
+# ---------------------------------------------------------------------------
+# Parameters, quoting and paths
+# ---------------------------------------------------------------------------
+
+var media = util.parse_parameters('text/html; charset=utf-8')
+assert media[0] == 'text/html' and media[1].charset == 'utf-8', 'media type and parameter'
+
+var disposition = util.parse_parameters('form-data; name="file"; filename="a;b.txt"')
+assert disposition[1].filename == 'a;b.txt', 'a semicolon inside quotes is not a separator'
+
+var extended = util.parse_parameters("attachment; filename*=UTF-8''na%C3%AFve.txt")
+assert extended[1].filename == 'naïve.txt', 'RFC 5987 filenames decode'
+ok('header parameters, quoting and RFC 5987 values')
+
+assert util.normalize_path('/a/b/../../../etc/passwd') == '/etc/passwd',
+  'dot segments resolve and cannot climb above the root'
+assert util.normalize_path('/static//x/./y/') == '/static/x/y/',
+  'empty and dot segments collapse, a trailing slash survives'
+assert util.percent_decode('%2e%2e%2f') == '../',
+  'percent-decoding happens before normalisation, which is the whole point'
+ok('paths normalise safely')
+
+assert util.secure_equals('abc', 'abc') and !util.secure_equals('abc', 'abd'),
+  'constant-time comparison still has to be a correct comparison'
+assert util.random_token(16).length() == 16, 'a token is the length asked for'
+ok('secure comparison and token generation')
+
+# ---------------------------------------------------------------------------
+# Status codes
+# ---------------------------------------------------------------------------
+
+assert status.reason(404) == 'Not Found', 'canonical reason phrases'
+assert status.reason(200) == 'OK', 'not "Ok"'
+assert status.reason(499) == 'Client Error', 'an unregistered code falls back to its class'
+assert status.is_redirect(308) and status.preserves_method(308), '308 keeps the method'
+assert status.is_redirect(302) and !status.preserves_method(302), '302 does not'
+assert status.is_bodiless(204) and status.is_bodiless(304) and status.is_bodiless(100),
+  'these three statuses never carry a body'
+ok('status codes, reasons and their categories')
+
+# ---------------------------------------------------------------------------
+# Content negotiation
+# ---------------------------------------------------------------------------
+
+var accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+assert negotiate.quality_of(accept, 'text/html') == 1, 'an exact match wins'
+assert negotiate.quality_of(accept, 'application/xml') == 0.9, 'a weighted match'
+assert negotiate.quality_of(accept, 'image/png') == 0.8, 'the wildcard covers the rest'
+assert negotiate.best_match(accept, ['application/json', 'text/html']) == 'text/html',
+  'the client prefers HTML here'
+ok('Accept is parsed with its quality weights')
+
+assert negotiate.preferred_encoding('gzip, br;q=0.9', ['br', 'gzip']) == 'gzip',
+  'the client weighted gzip higher'
+assert negotiate.preferred_encoding('identity;q=0', ['gzip']) == nil,
+  'a client refusing identity and offering nothing else leaves no option'
+assert negotiate.preferred_encoding(nil, ['gzip']) == 'identity',
+  'no Accept-Encoding means an uncompressed body is fine'
+ok('content codings are negotiated')
+
+assert negotiate.preferred_language('en-GB,en;q=0.8', ['en-US', 'fr']) == 'en-US',
+  'a prefix match satisfies a language request'
+ok('languages are negotiated by prefix')
+
+# ---------------------------------------------------------------------------
+# Cookies
+# ---------------------------------------------------------------------------
+
+var jar_cookie = cookies.Cookie('session', 'abc123', {
+  path: '/app',
+  http_only: true,
+  same_site: 'Lax',
+  max_age: 3600,
+})
+var rendered = jar_cookie.to_header()
+assert rendered.contains('session=abc123'), 'name and value'
+assert rendered.contains('Path=/app') and rendered.contains('HttpOnly'), 'attributes'
+assert rendered.contains('Max-Age=3600'), 'max-age is an integer'
+ok('a cookie renders as a Set-Cookie value')
+
+var host_cookie = cookies.Cookie('__Host-id', 'x', { path: '/deep', domain: 'example.com' })
+var host_rendered = host_cookie.to_header()
+assert host_rendered.contains('Secure'), '__Host- forces Secure'
+assert host_rendered.contains('Path=/'), '__Host- forces the root path'
+assert !host_rendered.contains('Domain'), '__Host- forbids a Domain'
+ok('the __Host- prefix rules are enforced rather than left to the caller')
+
+assert raises(@() { cookies.Cookie('bad name', 'v') }), 'a cookie name must be a token'
+assert raises(@() { cookies.Cookie('ok', 'a;b') }), 'a semicolon cannot appear in a value'
+ok('invalid cookies are refused')
+
+var sent = cookies.parse_cookie_header('a=1; b=2; c="quoted"; junk')
+assert sent.a == '1' and sent.b == '2', 'pairs parse'
+assert sent.c == 'quoted', 'a quoted value is unquoted'
+assert !sent.contains('junk'), 'a malformed pair is skipped, not fatal'
+ok('a request Cookie header parses')
+
+var set = cookies.parse_set_cookie(
+  'sid=xyz; Domain=.Example.com; Path=/; Max-Age=60; Secure; HttpOnly; SameSite=Strict'
+)
+assert set.name == 'sid' and set.value == 'xyz', 'name and value'
+assert set.domain == 'example.com', 'a leading dot is ignored and the domain lowercased'
+assert set.secure and set.http_only and set.same_site == 'Strict', 'flags'
+ok('a Set-Cookie header parses')
+
+var jar = cookies.CookieJar()
+jar.store(cookies.parse_set_cookie('a=1; Path=/'), 'example.com', '/')
+jar.store(cookies.parse_set_cookie('b=2; Path=/admin'), 'example.com', '/')
+jar.store(cookies.parse_set_cookie('c=3; Domain=example.com'), 'example.com', '/')
+jar.store(cookies.parse_set_cookie('d=4; Secure'), 'example.com', '/')
+
+var for_root = jar.cookies_for('example.com', '/', false)
+assert for_root.contains('a'), 'a root-path cookie is sent everywhere'
+assert !for_root.contains('b'), 'a deeper path is not sent to a shallower one'
+assert !for_root.contains('d'), 'a Secure cookie is not sent over cleartext'
+
+var for_admin = jar.cookies_for('example.com', '/admin/users', true)
+assert for_admin.contains('b'), 'a path prefix matches below itself'
+assert for_admin.contains('d'), 'a Secure cookie is sent over TLS'
+
+var for_sub = jar.cookies_for('api.example.com', '/', false)
+assert for_sub.contains('c'), 'a cookie with a Domain reaches subdomains'
+assert !for_sub.contains('a'), 'a host-only cookie does not'
+
+assert !jar.store(cookies.parse_set_cookie('e=5; Domain=evil.com'), 'example.com', '/'),
+  'a server may not set a cookie for a domain it does not control'
+ok('the cookie jar applies domain, path and secure matching')
+
+# ---------------------------------------------------------------------------
+# Query strings and forms
+# ---------------------------------------------------------------------------
+
+var query = request.parse_query_string('a=1&a=2&b=hello+world&c=%2Ffoo&d')
+assert query.a == ['1', '2'], 'a repeated name keeps every value'
+assert query.b == ['hello world'], 'plus decodes to a space in a query'
+assert query.c == ['/foo'], 'percent escapes decode'
+assert query.d == [''], 'a name with no value is an empty string'
+ok('query strings decode')
+
+var rebuilt = request.build_query_string({ a: ['1', '2'], b: 'x y' })
+assert rebuilt == 'a=1&a=2&b=x%20y', 'lists repeat the name, spaces are escaped'
+ok('query strings encode')
+
+# ---------------------------------------------------------------------------
+# Multipart
+# ---------------------------------------------------------------------------
+
+var builder = multipart.MultipartBuilder('testboundary')
+builder.add_field('title', 'Holiday')
+builder.add_field('tag', 'beach')
+builder.add_file('photo', 'shot.jpg', 'JPEGDATA'.to_bytes(), 'image/jpeg')
+
+assert builder.content_type() == 'multipart/form-data; boundary=testboundary',
+  'the content type carries the boundary'
+
+var form = multipart.parse(builder.build(), 'testboundary')
+assert form.field('title') == 'Holiday', 'a plain field round-trips'
+assert form.field('tag') == 'beach', 'and so does a second one'
+
+var upload = form.file('photo')
+assert upload != nil, 'the file part is found'
+assert upload.filename == 'shot.jpg', 'the client filename is kept'
+assert upload.content_type == 'image/jpeg', 'so is the declared type'
+assert upload.content.to_string() == 'JPEGDATA', 'and the content'
+ok('a multipart body round-trips through the builder and the parser')
+
+var traversal = multipart.UploadedFile('f', '../../etc/passwd', 'text/plain', nil, bytes(0))
+assert traversal.safe_name() == 'passwd', 'a traversal filename reduces to one safe segment'
+
+var windows_path = multipart.UploadedFile('f', 'C:\\Users\\me\\a b.txt', nil, nil, bytes(0))
+assert windows_path.safe_name() == 'a_b.txt', 'a Windows path is stripped too'
+ok('an uploaded filename is never usable as a path directly')
+
+var multi = multipart.MultipartBuilder('b2')
+multi.add_field('tag', 'one')
+multi.add_field('tag', 'two')
+var repeated = multipart.parse(multi.build(), 'b2')
+assert repeated.fields.tag == ['one', 'two'], 'a repeated field keeps both values'
+ok('repeated multipart fields are not collapsed')
+
+# ---------------------------------------------------------------------------
+# Message framing
+# ---------------------------------------------------------------------------
+
+assert body.parse_content_length('12') == 12, 'a plain length'
+assert body.parse_content_length('12, 12') == 12, 'a repeated identical length is legal'
+assert raises(@() { body.parse_content_length('12, 13') }), 'two different lengths are not'
+assert raises(@() { body.parse_content_length('12abc') }), 'a length must be all digits'
+assert raises(@() { body.parse_content_length(' +12') }), 'and carry no sign'
+ok('Content-Length is parsed strictly')
+
+assert body.parse_chunk_size('1f') == 31, 'hexadecimal chunk sizes'
+assert body.parse_chunk_size('1F;name=value') == 31, 'chunk extensions are ignored'
+assert raises(@() { body.parse_chunk_size('zz') }), 'a non-hex chunk size is fatal'
+ok('chunk sizes are parsed')
+
+var chunk = body.encode_chunk('hello'.to_bytes())
+assert chunk.to_string() == '5\r\nhello\r\n', 'a chunk carries its size in hex'
+assert body.encode_last_chunk(nil).to_string() == '0\r\n\r\n', 'and the body ends with a zero chunk'
+ok('chunked encoding is produced correctly')
+
+var compressed = body.encode_content('hello world'.to_bytes(), 'gzip')
+assert body.decode_content(compressed, 'gzip').to_string() == 'hello world',
+  'gzip round-trips'
+assert body.decode_content(
+  body.encode_content('hello world'.to_bytes(), 'br'), 'br'
+).to_string() == 'hello world', 'so does brotli'
+assert body.decode_content('plain'.to_bytes(), 'identity').to_string() == 'plain',
+  'identity is a no-op'
+assert raises(@() { body.decode_content(bytes(0), 'made-up') }),
+  'an unknown coding raises rather than handing back undecoded bytes'
+ok('content codings round-trip')
+
+# ---------------------------------------------------------------------------
+# The router
+# ---------------------------------------------------------------------------
+
+var routes = router.Router()
+var seen = ''
+
+routes.add('GET', '/', @(req, res) { seen = 'root' })
+routes.add('GET', '/users', @(req, res) { seen = 'list' })
+routes.add('GET', '/users/:id', @(req, res) { seen = 'show' }, 'user.show')
+routes.add('GET', '/users/new', @(req, res) { seen = 'new' })
+routes.add('GET', '/users/:id/posts/:post', @(req, res) { seen = 'post' })
+routes.add('POST', '/users', @(req, res) { seen = 'create' })
+routes.add('GET', '/files/' + '*path', @(req, res) { seen = 'files' })
+
+assert routes.match('GET', '/').is_match(), 'the root route matches'
+
+var show = routes.match('GET', '/users/42')
+assert show.is_match() and show.params.id == '42', 'a parameter is captured'
+
+var specific = routes.match('GET', '/users/new')
+assert specific.is_match(), 'a literal beats a parameter'
+
+var nested = routes.match('GET', '/users/7/posts/9')
+assert nested.params.id == '7' and nested.params.post == '9', 'nested parameters'
+
+var wild = routes.match('GET', '/files/css/site.css')
+assert wild.is_match() and wild.params.path == 'css/site.css', 'a catch-all captures the rest'
+
+var missing = routes.match('GET', '/nope')
+assert !missing.is_match() and !missing.is_method_mismatch(), 'an unknown path is a 404'
+
+var wrong_method = routes.match('DELETE', '/users')
+assert wrong_method.is_method_mismatch(), 'a known path with an unknown method is a 405'
+assert wrong_method.allowed.contains('GET') and wrong_method.allowed.contains('POST'),
+  'and it reports what the path does allow'
+assert wrong_method.allowed.contains('HEAD') and wrong_method.allowed.contains('OPTIONS'),
+  'including the two the server answers itself'
+
+assert routes.match('HEAD', '/users').is_match(), 'HEAD falls back to the GET route'
+assert routes.url_for('user.show', { id: 7 }) == '/users/7', 'a named route builds its URL'
+assert raises(@() { routes.url_for('user.show', {}) }), 'a missing parameter is an error'
+assert raises(@() { routes.add('GET', '/users', @(a, b) {}) }), 'a duplicate route is an error'
+assert raises(@() { routes.add('GET', 'users', @(a, b) {}) }), 'a pattern must start with a slash'
+ok('routing, including specificity, parameters, catch-alls and 405s')
+
+# ---------------------------------------------------------------------------
+# Request and response objects
+# ---------------------------------------------------------------------------
+
+var incoming = request.HttpRequest('get', '/search?q=a%20b&page=2')
+assert incoming.method == 'GET', 'the method is uppercased'
+assert incoming.path == '/search', 'the path is split off'
+assert incoming.query_param('q') == 'a b', 'the query decodes'
+assert incoming.query_param('missing', 'fallback') == 'fallback', 'and has a fallback'
+
+incoming.set_target('/a/b/%2e%2e/%2e%2e/etc/passwd')
+assert incoming.path == '/etc/passwd', 'the path is decoded and then normalised'
+ok('a request derives its path and query from the target')
+
+var forwarded = request.HttpRequest('GET', '/')
+forwarded.remote_address = '10.0.0.9:5555'
+forwarded.headers.set('X-Forwarded-For', '203.0.113.7, 10.0.0.9')
+
+assert forwarded.client_ip() == '10.0.0.9',
+  'without trust_proxy the peer is the client, forwarding headers or not'
+assert forwarded.client_ip(true, ['10.0.0.9']) == '203.0.113.7',
+  'with a trusted proxy the chain is walked in from the right'
+ok('client_ip does not take a forwarding header at face value')
+
+var reply = http.HttpResponse()
+reply.json({ hello: 'world' }, 201)
+assert reply.status == 201, 'the status is set'
+assert reply.headers.get('content-type') == 'application/json', 'and the content type'
+assert reply.as_dict().hello == 'world', 'and the body round-trips'
+ok('a response writes JSON')
+
+reply = http.HttpResponse()
+reply.redirect('/elsewhere', 303)
+assert reply.status == 303 and reply.headers.get('location') == '/elsewhere', 'a redirect'
+assert raises(@() { http.HttpResponse().redirect('/x', 200) }),
+  'a redirect status has to be a 3xx'
+ok('a response redirects')
+
+reply = http.HttpResponse()
+reply.set_cookie('session', 'abc')
+var cookie_line = reply.cookie_headers()[0]
+assert cookie_line.contains('HttpOnly'), 'a cookie is HttpOnly unless asked otherwise'
+assert cookie_line.contains('SameSite=Lax'), 'and SameSite=Lax'
+ok('response cookies default to the safe settings')
+
+reply = http.HttpResponse()
+reply.status = 503
+assert reply.is_error() and !reply.is_ok(), 'a 5xx is an error'
+assert raises(@() { reply.raise_for_status() }), 'and raise_for_status says so'
+assert http.HttpResponse().raise_for_status().status == 200, 'a 2xx passes through'
+ok('response status predicates')
+
+# ---------------------------------------------------------------------------
+# Authentication headers
+# ---------------------------------------------------------------------------
+
+var basic = middleware.parse_basic('Basic YWRhOmxvdmVsYWNl')
+assert basic[0] == 'ada' and basic[1] == 'lovelace', 'a Basic credential decodes'
+assert middleware.parse_basic('basic YWRhOmxvdmVsYWNl') != nil, 'the scheme is case-insensitive'
+assert middleware.parse_basic('Basic not-base64') == nil, 'garbage decodes to nothing'
+assert middleware.parse_basic('Bearer abc') == nil, 'a bearer token is not a basic credential'
+
+assert middleware.parse_bearer('Bearer abc.def') == 'abc.def', 'a bearer token is extracted'
+assert middleware.parse_bearer('Bearer   ') == nil, 'an empty token is not a token'
+ok('Authorization headers parse')
+
+# ---------------------------------------------------------------------------
+# Server-sent events
+# ---------------------------------------------------------------------------
+
+var stream = sse.parse(
+  ': a comment\n' +
+  'event: tick\n' +
+  'id: 7\n' +
+  'data: line one\n' +
+  'data: line two\n' +
+  '\n' +
+  'data: second\n' +
+  'retry: 5000\n' +
+  '\n' +
+  'event: dispatched-never\n' +
+  '\n'
+)
+
+assert stream.length() == 2, 'an event with no data lines is not dispatched'
+assert stream[0].event == 'tick' and stream[0].id == '7', 'the name and id'
+assert stream[0].data == 'line one\nline two', 'multiple data lines join with newlines'
+assert stream[1].retry == 5000, 'the reconnection time'
+ok('the event-stream format parses')
+
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} checks passed.'
+echo '═══════════════════════════════════════════════════════'

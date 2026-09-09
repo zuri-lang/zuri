@@ -4,7 +4,7 @@
  * Path string manipulation: joining, resolving, and comparing
  * paths. Nothing in this file touches the filesystem except where
  * explicitly documented (`real_path()`, and `abs_path()`'s optional
- * `strict` mode) — everything else here is pure string handling, so
+ * `strict` mode): everything else here is pure string handling, so
  * it works the same whether or not the path in question actually
  * exists.
  *
@@ -72,7 +72,7 @@ def real_path(path: string) {
 /**
  * Returns the absolute form of `path`: relative paths are resolved
  * against the current working directory, and "." / ".." segments
- * are collapsed — purely as string manipulation, with no filesystem
+ * are collapsed: purely as string manipulation, with no filesystem
  * access at all by default. Unlike `real_path()`, this works even
  * when `path` (or any part of it) doesn't exist on disk, and it
  * never resolves symbolic links; use `real_path()` when you need the

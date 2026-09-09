@@ -1,0 +1,585 @@
+#!-- part of the http module
+
+import .errors { ProtocolError, TooLargeError }
+import .headers { Headers }
+
+import compress.gzip
+import compress.zlib
+import compress.deflate
+import compress.brotli
+import compress.zstd
+
+# The largest chunk size we will honour in a chunked body. A chunk
+# header is hexadecimal and unbounded on the wire, so without a ceiling
+# a single line of `ffffffffffffffff` would ask us to allocate more
+# memory than the machine has.
+var _MAX_CHUNK_SIZE = 1073741824  # 1 GiB
+
+# How much of a chunk is pulled from the connection at a time when
+# streaming rather than materialising.
+var _STREAM_CHUNK = 65536
+
+/**
+ * Parses a `Content-Length` field value.
+ *
+ * RFC 9112 §6.3 is strict here for good reason: a value that isn't a
+ * plain run of digits, or a field carrying two different lengths, is
+ * the raw material of request smuggling, where a proxy and an origin
+ * read the same bytes as different numbers of messages.
+ *
+ * @param string value
+ * @returns number
+ * @throws ProtocolError if the value is not a bare decimal number
+ */
+def parse_content_length(value) {
+  var text = value.trim()
+
+  if text.is_empty() {
+    raise ProtocolError('empty Content-Length')
+  }
+
+  # A single field may legally carry a repeated identical value as a
+  # comma-separated list. Anything that disagrees is a smuggling
+  # attempt, not a formatting quirk.
+  if text.contains(',') {
+    var seen = nil
+    for part in text.split(',') {
+      var one = part.trim()
+      if seen == nil {
+        seen = one
+      } else if one != seen {
+        raise ProtocolError('conflicting Content-Length values: ${text}')
+      }
+    }
+    text = seen
+  }
+
+  iter var i = 0; i < text.length(); i++ {
+    var c = text[i].ord()
+    if c < 48 or c > 57 {
+      raise ProtocolError('malformed Content-Length: ${value}')
+    }
+  }
+
+  return text.to_number()
+}
+
+/**
+ * Parses a chunk-size line, ignoring any chunk extensions after the
+ * `;`.
+ *
+ * @param string line
+ * @returns number
+ * @throws ProtocolError on anything that isn't hexadecimal
+ */
+def parse_chunk_size(line) {
+  var text = line
+
+  var semicolon = text.index_of(';')
+  if semicolon > -1 {
+    text = text[0, semicolon]
+  }
+
+  text = text.trim()
+
+  if text.is_empty() {
+    raise ProtocolError('empty chunk size')
+  }
+
+  var size = 0
+  iter var i = 0; i < text.length(); i++ {
+    var c = text[i].ord()
+    var digit
+
+    if c >= 48 and c <= 57 {
+      digit = c - 48
+    } else if c >= 97 and c <= 102 {
+      digit = c - 87
+    } else if c >= 65 and c <= 70 {
+      digit = c - 55
+    } else {
+      raise ProtocolError('malformed chunk size: ${line}')
+    }
+
+    size = size * 16 + digit
+
+    if size > _MAX_CHUNK_SIZE {
+      raise TooLargeError('chunk size exceeds the ${_MAX_CHUNK_SIZE} byte limit')
+    }
+  }
+
+  return size
+}
+
+/**
+ * Reads a message body off a connection according to whichever of
+ * HTTP/1.1's framings applies.
+ *
+ * The framing is decided once, by `for_message()`, and never
+ * re-derived: `Transfer-Encoding: chunked` wins over
+ * `Content-Length`, a fixed length is next, and a response with
+ * neither is delimited by the connection closing. A request with
+ * neither has no body at all - a server may not wait for a close that
+ * a client has no reason to perform.
+ *
+ * Read it incrementally with `read()`, or in one go with `read_all()`.
+ * Either way, call `drain()` before reusing the connection, or the
+ * next message will start parsing in the middle of this one's body.
+ */
+class BodyReader {
+
+  /**
+   * One of `'empty'`, `'length'`, `'chunked'` or `'eof'`.
+   * @type string
+   */
+  var mode = 'empty'
+
+  /**
+   * The declared body length for a `'length'` body, or `-1` when the
+   * length is not known in advance.
+   * @type number
+   */
+  var length = 0
+
+  /**
+   * Trailer fields, populated once a chunked body has been read to
+   * completion. Empty for every other framing.
+   * @type Headers
+   */
+  var trailers
+
+  var _conn
+  var _remaining = 0
+  var _finished = false
+  var _chunk_remaining = 0
+
+  /**
+   * @param Connection connection
+   * @param string mode
+   * @param ?number length
+   */
+  @new(connection, mode: string, length) {
+    self._conn = connection
+    self.mode = mode
+    self.length = length == nil ? -1 : length
+    self.trailers = Headers()
+
+    self._remaining = self.length
+    self._chunk_remaining = 0
+    self._finished = mode == 'empty'
+  }
+
+  /**
+   * Whether the body has been read to its end.
+   *
+   * @returns bool
+   */
+  is_finished() {
+    return self._finished
+  }
+
+  /**
+   * Reads up to `length` more bytes of the body, or all of what
+   * remains when `length` is omitted and the body is short.
+   *
+   * @param ?number length: defaults to 64 KiB
+   * @returns bytes: empty once the body is exhausted
+   * @throws ProtocolError on a malformed chunked body or a truncated
+   *    fixed-length one
+   */
+  read(length) {
+    if length == nil {
+      length = _STREAM_CHUNK
+    }
+
+    if self._finished {
+      return bytes(0)
+    }
+
+    using self.mode {
+      when 'length' {
+        var want = length < self._remaining ? length : self._remaining
+        var chunk = self._conn.read_exactly(want)
+        self._remaining -= chunk.length()
+
+        if self._remaining <= 0 {
+          self._finished = true
+        }
+
+        return chunk
+      }
+      when 'chunked' {
+        return self._read_chunked(length)
+      }
+      when 'eof' {
+        var chunk = self._conn.read_some(length)
+        if chunk.length() == 0 {
+          self._finished = true
+        }
+        return chunk
+      }
+    }
+
+    self._finished = true
+    return bytes(0)
+  }
+
+  _read_chunked(length) {
+    while self._chunk_remaining == 0 {
+      var size_line = self._conn.read_line(4096)
+
+      if size_line == nil {
+        raise ProtocolError('connection closed before the final chunk')
+      }
+
+      var size = parse_chunk_size(size_line)
+
+      if size == 0 {
+        self._read_trailers()
+        self._finished = true
+        return bytes(0)
+      }
+
+      self._chunk_remaining = size
+    }
+
+    var want = length < self._chunk_remaining ? length : self._chunk_remaining
+    var chunk = self._conn.read_exactly(want)
+    self._chunk_remaining -= chunk.length()
+
+    if self._chunk_remaining == 0 {
+      # Every chunk's data is followed by its own CRLF. Anything else
+      # there means the sender's chunk size was a lie.
+      var terminator = self._conn.read_line(2)
+      if terminator != '' {
+        raise ProtocolError('chunk data is not followed by CRLF')
+      }
+    }
+
+    return chunk
+  }
+
+  _read_trailers() {
+    while true {
+      var line = self._conn.read_line(8192)
+
+      if line == nil {
+        raise ProtocolError('connection closed inside the trailer section')
+      }
+
+      if line.is_empty() {
+        return
+      }
+
+      var colon = line.index_of(':')
+      if colon < 1 {
+        raise ProtocolError('malformed trailer field: ${line}')
+      }
+
+      self.trailers.add(line[0, colon], line[colon + 1,].trim())
+    }
+  }
+
+  /**
+   * Reads the whole body into memory.
+   *
+   * @param ?number limit: the most to accept, in bytes; `nil` for no
+   *    limit
+   * @returns bytes
+   * @throws TooLargeError if the body exceeds `limit`
+   */
+  read_all(limit) {
+    # A declared length over the limit can be refused before a single
+    # byte of it is read, which is the whole point of the header.
+    if limit != nil and self.mode == 'length' and self.length > limit {
+      raise TooLargeError('body of ${self.length} bytes exceeds the ${limit} byte limit')
+    }
+
+    var result = bytes(0)
+
+    while true {
+      var chunk = self.read(_STREAM_CHUNK)
+      if chunk.length() == 0 {
+        break
+      }
+
+      result.extend(chunk)
+      chunk.dispose()
+
+      if limit != nil and result.length() > limit {
+        raise TooLargeError('body exceeds the ${limit} byte limit')
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Reads and throws away whatever is left, so the connection is
+   * positioned at the start of the next message and can be reused.
+   *
+   * Returns `false` when the leftover exceeds `limit` - at which
+   * point draining costs more than a new connection would, and the
+   * caller should close instead.
+   *
+   * @param ?number limit: the most worth draining; defaults to 1 MiB
+   * @returns bool: whether the connection is now reusable
+   */
+  drain(limit) {
+    if limit == nil {
+      limit = 1048576
+    }
+
+    if self._finished {
+      return true
+    }
+
+    # A body delimited by the close of the connection cannot be
+    # drained into anything reusable; the close is the delimiter.
+    if self.mode == 'eof' {
+      return false
+    }
+
+    var dropped = 0
+
+    catch {
+      while !self._finished {
+        var chunk = self.read(_STREAM_CHUNK)
+        if chunk.length() == 0 {
+          break
+        }
+
+        dropped += chunk.length()
+        chunk.dispose()
+
+        if dropped > limit {
+          return false
+        }
+      }
+    } as error
+
+    if error {
+      return false
+    }
+
+    return true
+  }
+}
+
+/**
+ * Works out how a message's body is framed and returns a reader for
+ * it.
+ *
+ * `is_request` matters because the two directions disagree about what
+ * "no framing headers" means: a request without them has no body,
+ * while a response without them runs until the connection closes.
+ *
+ * @param Connection connection
+ * @param Headers headers
+ * @param bool is_request
+ * @param ?bool bodiless: force an empty body regardless of the
+ *    headers - true for a response to HEAD, and for `1xx`, `204` and
+ *    `304`, all of which carry framing headers that describe a body
+ *    they do not actually send
+ * @returns BodyReader
+ * @throws ProtocolError if the framing headers contradict each other
+ */
+def reader_for(connection, headers, is_request: bool, bodiless: ?bool) {
+  if bodiless {
+    return BodyReader(connection, 'empty', 0)
+  }
+
+  var has_chunked = false
+  var encodings = headers.tokens('transfer-encoding')
+
+  if encodings.length() > 0 {
+    # Only the final coding may be `chunked`, and every other coding
+    # would need decoding we do not do, so anything else is a message
+    # we must not guess at.
+    if encodings[encodings.length() - 1] != 'chunked' {
+      raise ProtocolError(
+        'Transfer-Encoding must end with chunked, got: ${", ".join(encodings)}'
+      )
+    }
+
+    if encodings.length() > 1 {
+      raise ProtocolError('unsupported Transfer-Encoding: ${", ".join(encodings)}')
+    }
+
+    has_chunked = true
+  }
+
+  var has_length = headers.contains('content-length')
+
+  # RFC 9112 §6.3: when both are present the message is suspect - the
+  # two headers are exactly how a smuggled request hides inside a
+  # legitimate one - so the length is discarded and, for a server, the
+  # connection must not be reused afterwards.
+  if has_chunked and has_length {
+    raise ProtocolError('both Transfer-Encoding and Content-Length are present')
+  }
+
+  if has_chunked {
+    return BodyReader(connection, 'chunked', -1)
+  }
+
+  if has_length {
+    var length = parse_content_length(headers.get('content-length', '0'))
+    return BodyReader(connection, 'length', length)
+  }
+
+  if is_request {
+    return BodyReader(connection, 'empty', 0)
+  }
+
+  return BodyReader(connection, 'eof', -1)
+}
+
+/**
+ * Wraps `data` as a single HTTP/1.1 chunk: the size in hexadecimal, a
+ * CRLF, the data, and a CRLF.
+ *
+ * @param bytes data
+ * @returns bytes
+ */
+def encode_chunk(data) {
+  var size = data.length()
+  var header = '${_to_hex(size)}\r\n'.to_bytes()
+
+  header.extend(data)
+  header.extend('\r\n'.to_bytes())
+
+  return header
+}
+
+/**
+ * The terminating `0\r\n` chunk plus a trailer section.
+ *
+ * @param ?Headers trailers
+ * @returns bytes
+ */
+def encode_last_chunk(trailers) {
+  var text = '0\r\n'
+
+  if trailers != nil and !trailers.is_empty() {
+    text += trailers.to_wire()
+  }
+
+  return (text + '\r\n').to_bytes()
+}
+
+def _to_hex(n) {
+  if n == 0 {
+    return '0'
+  }
+
+  var digits = '0123456789abcdef'
+  var out = ''
+  var value = n
+
+  while value > 0 {
+    out = digits[value % 16] + out
+    value = value // 16
+  }
+
+  return out
+}
+
+/**
+ * Reverses the content codings named in a `Content-Encoding` field,
+ * innermost last, as RFC 9110 §8.4 requires.
+ *
+ * `identity` is accepted and does nothing. Anything else raises,
+ * because silently handing back still-encoded bytes would look like
+ * corrupt data at the call site.
+ *
+ * @param bytes data
+ * @param string encoding: the raw field value, e.g. `'gzip'`
+ * @returns bytes
+ * @throws ProtocolError on an unknown coding or undecodable data
+ */
+def decode_content(data, encoding) {
+  var codings = []
+  for part in encoding.split(',') {
+    var name = part.trim().lower()
+    if name and name != 'identity' {
+      codings.append(name)
+    }
+  }
+
+  var result = data
+
+  # Applied last-to-first: `Content-Encoding: gzip, br` means brotli
+  # was applied to the gzip output, so brotli comes off first.
+  iter var i = codings.length() - 1; i >= 0; i-- {
+    var coding = codings[i]
+
+    catch {
+      using coding {
+        when 'gzip', 'x-gzip' {
+          result = gzip.decompress(result)
+        }
+        when 'deflate' {
+          # Nominally zlib-wrapped (RFC 9110 §8.4.1.2), but enough
+          # servers send a raw deflate stream that falling back is the
+          # only way to interoperate.
+          catch {
+            result = zlib.decompress(result)
+          } as zlib_error
+
+          if zlib_error {
+            result = deflate.decompress(result)
+          }
+        }
+        when 'br' {
+          result = brotli.decompress(result)
+        }
+        when 'zstd' {
+          result = zstd.decompress(result)
+        }
+        default {
+          raise ProtocolError('unsupported Content-Encoding: ${coding}')
+        }
+      }
+    } as error
+
+    if error {
+      if instance_of(error, ProtocolError) {
+        raise error
+      }
+      raise ProtocolError('could not decode ${coding} content: ${error.message}')
+    }
+  }
+
+  return is_bytes(result) ? result : result.to_bytes()
+}
+
+/**
+ * Applies a content coding to `data`.
+ *
+ * @param bytes data
+ * @param string coding: `'gzip'`, `'deflate'`, `'br'` or `'zstd'`
+ * @returns bytes
+ * @throws ProtocolError on an unknown coding
+ */
+def encode_content(data, coding: string) {
+  using coding.lower() {
+    when 'gzip' {
+      return gzip.compress(data)
+    }
+    when 'deflate' {
+      return zlib.compress(data)
+    }
+    when 'br' {
+      return brotli.compress(data)
+    }
+    when 'zstd' {
+      return zstd.compress(data)
+    }
+    when 'identity' {
+      return data
+    }
+  }
+
+  raise ProtocolError('unsupported content coding: ${coding}')
+}

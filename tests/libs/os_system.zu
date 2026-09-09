@@ -17,7 +17,7 @@ def ok(label) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  os module — system introspection test suite'
+echo '  os module: system introspection test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------

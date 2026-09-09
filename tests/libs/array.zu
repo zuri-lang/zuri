@@ -25,7 +25,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  array module — test suite'
+echo '  array module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # Every class, run through the exact same battery below: [1,2,3,4,5]
@@ -42,7 +42,7 @@ var all_ctors = [
 ]
 
 # ---------------------------------------------------------------------------
-# Construction — number (zero-filled), list, bytes
+# Construction: number (zero-filled), list, bytes
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var from_n = Ctor(4)
@@ -89,7 +89,7 @@ for Ctor in all_ctors {
 ok('first()/last() are correct, including on an empty array')
 
 # ---------------------------------------------------------------------------
-# get() — positive/negative, in range and out of range, bad index type
+# get(): positive/negative, in range and out of range, bad index type
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var a = Ctor([1, 2, 3, 4, 5])
@@ -109,7 +109,7 @@ for Ctor in all_ctors {
 ok('get() handles in-range, out-of-range, and negative indices correctly, and rejects a bad index type')
 
 # ---------------------------------------------------------------------------
-# set() — overwrite, auto-extend growth, negative index, bad index type
+# set(): overwrite, auto-extend growth, negative index, bad index type
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var a = Ctor([1, 2, 3])
@@ -131,7 +131,7 @@ for Ctor in all_ctors {
 ok('set() overwrites, grows the array when needed, and supports negative indices')
 
 # ---------------------------------------------------------------------------
-# append() — growth
+# append(): growth
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var a = Ctor([1, 2])
@@ -141,7 +141,7 @@ for Ctor in all_ctors {
 ok('append() grows the array correctly across every class')
 
 # ---------------------------------------------------------------------------
-# insert() / remove_at() — including negative indices and bad input
+# insert() / remove_at(): including negative indices and bad input
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var ins = Ctor([1, 2, 4, 5])
@@ -180,7 +180,7 @@ for Ctor in all_ctors {
 ok('pop() removes and returns the last element, and is safe on an empty array')
 
 # ---------------------------------------------------------------------------
-# fill() — explicit range, defaults, negative bounds, return value
+# fill(): explicit range, defaults, negative bounds, return value
 # ---------------------------------------------------------------------------
 for Ctor in all_ctors {
   var a = Ctor([1, 2, 3, 4, 5])

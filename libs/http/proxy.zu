@@ -1,0 +1,477 @@
+#!-- part of the http module
+
+import .client { HttpClient }
+import .errors { HttpError, TimeoutError }
+import .headers { Headers }
+import .request { HttpRequest }
+import .status
+import .util
+
+# Fields that describe one hop and must not be forwarded to the next
+# (RFC 9110 §7.6.1). Forwarding a client-supplied `Transfer-Encoding`
+# to an upstream that frames it differently is the classic request
+# smuggling setup, which is why this is not optional.
+var _HOP_BY_HOP = [
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'proxy-connection',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]
+
+/**
+ * A reverse proxy: takes a request this server received and passes it
+ * to an upstream, then passes the upstream's response back.
+ *
+ * ```zuri
+ * var api = http.ReverseProxy('http://127.0.0.1:9000')
+ *
+ * server.any('/api/' + '*path', @(request, response) {
+ *   api.handle(request, response)
+ * })
+ * ```
+ *
+ * Hop-by-hop headers are stripped in both directions, the forwarding
+ * headers an upstream needs to know who the real client is are added,
+ * and the response body is streamed rather than buffered - a proxy
+ * that holds a whole response in memory is a proxy that falls over on
+ * the first large download.
+ *
+ * @printable
+ */
+class ReverseProxy {
+
+  /**
+   * The upstream base URL, e.g. `'http://127.0.0.1:9000'`.
+   * @type string
+   */
+  var upstream
+
+  /**
+   * A path prefix stripped from the incoming request before it is
+   * passed upstream, so `/api/users` can reach an upstream that
+   * serves `/users`.
+   * @type ?string
+   */
+  var strip_prefix
+
+  /**
+   * What to send upstream as `Host`. `nil` (the default) sends the
+   * upstream's own host, which is what a virtual-hosted upstream
+   * expects; set it to `'preserve'` to forward the client's `Host`
+   * instead, or to any literal value to force one.
+   * @type ?string
+   */
+  var host_header
+
+  /**
+   * Whether to add `X-Forwarded-For`, `X-Forwarded-Proto`,
+   * `X-Forwarded-Host` and RFC 7239's `Forwarded`.
+   * @type bool
+   */
+  var forward_headers = true
+
+  /**
+   * Whether this proxy itself sits behind another one, and so should
+   * extend the forwarding chain it was given rather than start a new
+   * one.
+   * @type bool
+   */
+  var trust_proxy = false
+
+  /**
+   * How long to wait for the upstream, in milliseconds.
+   * @type number
+   */
+  var timeout = 30000
+
+  /**
+   * Called with `(request, upstream_request)` before the request goes
+   * out, to adjust it.
+   * @type ?function
+   */
+  var on_request
+
+  /**
+   * Called with `(request, upstream_response)` once the upstream's
+   * head has arrived and before it is passed on.
+   * @type ?function
+   */
+  var on_response
+
+  var _client
+
+  /**
+   * @param string upstream: the base URL to forward to
+   * @param ?dict options: any of the fields above, plus `client` to
+   *    supply an `HttpClient` of your own
+   */
+  @new(upstream: string, options: ?dict) {
+    self.upstream = upstream.rtrim('/')
+    self._client = HttpClient()
+
+    # A proxy passes redirects back to the client rather than
+    # following them itself: the client's own URL bar, cookies and
+    # origin checks all depend on it seeing the 3xx.
+    self._client.follow_redirects = false
+
+    if options != nil {
+      for name, value in options {
+        if name == 'client' {
+          self._client = value
+        } else if hasprop(self, name) {
+          setprop(self, name, value)
+        } else {
+          raise HttpError('unknown proxy option: ${name}')
+        }
+      }
+    }
+
+    self._client.read_timeout = self.timeout
+  }
+
+  /**
+   * Forwards `request` upstream and writes the upstream's response
+   * into `response`.
+   *
+   * A connection failure becomes `502 Bad Gateway` and a timeout
+   * `504 Gateway Timeout`, which is what those statuses are for -
+   * they tell the client the failure was between this server and the
+   * next, not in the request.
+   *
+   * @param HttpRequest request
+   * @param HttpResponse response
+   */
+  handle(request, response) {
+    var target = self._target_for(request)
+    var upstream_request = self._build(request)
+
+    if self.on_request != nil {
+      self.on_request(request, upstream_request)
+    }
+
+    var upstream_response
+
+    catch {
+      upstream_response = self._client.request(request.method, target, {
+        headers: upstream_request.headers,
+        body: request.body,
+        stream: true,
+        timeout: self.timeout,
+        decode_content: false,
+      })
+    } as error
+
+    if error {
+      if instance_of(error, TimeoutError) {
+        response.status = status.GATEWAY_TIMEOUT
+        response.text('504 Gateway Timeout')
+      } else {
+        response.status = status.BAD_GATEWAY
+        response.text('502 Bad Gateway')
+      }
+      return
+    }
+
+    if self.on_response != nil {
+      self.on_response(request, upstream_response)
+    }
+
+    response.status = upstream_response.status
+    response.reason = upstream_response.reason
+
+    upstream_response.headers.each(@(name, value) {
+      if !_HOP_BY_HOP.contains(name.lower()) {
+        response.headers.add(name, value)
+      }
+    })
+
+    # The upstream's own framing headers are the upstream connection's
+    # business; this response gets whichever framing it needs.
+    response.headers.remove('Content-Length')
+
+    var reader = upstream_response.body_reader
+    var client = self._client
+
+    if reader == nil {
+      client.finish(upstream_response)
+      return
+    }
+
+    var length = upstream_response.headers.get('content-length', nil)
+    if length != nil {
+      response.headers.set('Content-Length', length)
+    }
+
+    response.stream(@(writer) {
+      catch {
+        while true {
+          var chunk = reader.read(65536)
+
+          if chunk.length() == 0 {
+            break
+          }
+
+          writer.write(chunk)
+          chunk.dispose()
+        }
+      } as error
+
+      client.finish(upstream_response)
+
+      if error {
+        raise error
+      }
+    })
+  }
+
+  _target_for(request) {
+    var path = request.path
+
+    if self.strip_prefix != nil {
+      var prefix = '/' + self.strip_prefix.trim('/')
+
+      if path == prefix {
+        path = '/'
+      } else if path.starts_with(prefix + '/') {
+        path = path[prefix.length(),]
+      }
+    }
+
+    var target = self.upstream + path
+
+    if request.query_string {
+      target += '?${request.query_string}'
+    }
+
+    return target
+  }
+
+  _build(request) {
+    var forwarded = Headers()
+
+    request.headers.each(@(name, value) {
+      var lower = name.lower()
+
+      if !_HOP_BY_HOP.contains(lower) and lower != 'host' and lower != 'content-length' {
+        forwarded.add(name, value)
+      }
+    })
+
+    # Anything the Connection header named is hop-by-hop too - that is
+    # how an endpoint declares an extra one.
+    for token in request.headers.tokens('connection') {
+      forwarded.remove(token)
+    }
+
+    if self.host_header != nil {
+      if self.host_header == 'preserve' {
+        var host = request.headers.get('host', nil)
+        if host != nil {
+          forwarded.set('Host', host)
+        }
+      } else {
+        forwarded.set('Host', self.host_header)
+      }
+    }
+
+    if self.forward_headers {
+      var client_ip = request.client_ip(self.trust_proxy) or 'unknown'
+
+      var existing = request.headers.get_joined('x-forwarded-for', nil)
+      forwarded.set(
+        'X-Forwarded-For',
+        existing == nil ? client_ip : '${existing}, ${client_ip}'
+      )
+
+      forwarded.set('X-Forwarded-Proto', request.scheme)
+      forwarded.set_default('X-Forwarded-Host', request.headers.get('host', ''))
+
+      var by = request.headers.get('host', 'unknown')
+      forwarded.add('Forwarded', 'for=${_forwarded_node(client_ip)};proto=${request.scheme};host=${util.quote(by)}')
+    }
+
+    return HttpRequest(request.method, request.target, forwarded)
+  }
+
+  to_string() {
+    return '<ReverseProxy -> ${self.upstream}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# An IPv6 address has to be bracketed and quoted inside a Forwarded
+# node identifier, since its colons would otherwise end the value.
+def _forwarded_node(address) {
+  if address.contains(':') {
+    return util.quote('[${address}]')
+  }
+
+  return address
+}
+
+/**
+ * Balances requests across several upstreams.
+ *
+ * Selection is round-robin, and an upstream that fails is taken out
+ * of rotation for `recovery_time` seconds rather than retried on
+ * every request - which is what stops one dead backend from adding
+ * its full connect timeout to a share of all traffic.
+ *
+ * ```zuri
+ * var pool = http.LoadBalancer([
+ *   'http://10.0.0.1:9000',
+ *   'http://10.0.0.2:9000',
+ * ])
+ *
+ * server.any('/' + '*path', @(request, response) {
+ *   pool.handle(request, response)
+ * })
+ * ```
+ *
+ * @printable
+ */
+class LoadBalancer {
+
+  /**
+   * How long a failed upstream stays out of rotation, in seconds.
+   * @type number
+   */
+  var recovery_time = 30
+
+  /**
+   * How many upstreams to try before giving up on a request.
+   * @type number
+   */
+  var max_attempts = 2
+
+  var _proxies = []
+  var _failed_until = []
+  var _next = 0
+
+  /**
+   * @param list upstreams: base URLs
+   * @param ?dict options: passed to every `ReverseProxy`, plus
+   *    `recovery_time` and `max_attempts`
+   */
+  @new(upstreams: list, options: ?dict) {
+    if upstreams.length() == 0 {
+      raise HttpError('a load balancer needs at least one upstream')
+    }
+
+    var settings = options == nil ? {} : options.clone()
+
+    self.recovery_time = settings.get('recovery_time', 30)
+    self.max_attempts = settings.get('max_attempts', 2)
+
+    settings.remove('recovery_time')
+    settings.remove('max_attempts')
+
+    self._proxies = []
+    self._failed_until = []
+    self._next = 0
+
+    for upstream in upstreams {
+      self._proxies.append(ReverseProxy(upstream, settings.clone()))
+      self._failed_until.append(0)
+    }
+  }
+
+  /**
+   * Forwards `request` to the next healthy upstream.
+   *
+   * @param HttpRequest request
+   * @param HttpResponse response
+   */
+  handle(request, response) {
+    var now = time()
+    var attempts = self.max_attempts
+
+    if attempts > self._proxies.length() {
+      attempts = self._proxies.length()
+    }
+
+    iter var tried = 0; tried < attempts; tried++ {
+      var index = self._pick(now)
+
+      if index < 0 {
+        break
+      }
+
+      self._proxies[index].handle(request, response)
+
+      if response.status != status.BAD_GATEWAY and response.status != status.GATEWAY_TIMEOUT {
+        self._failed_until[index] = 0
+        return
+      }
+
+      self._failed_until[index] = now + self.recovery_time
+
+      # Reset for the next attempt: a partly-written response would
+      # otherwise be sent alongside the retry's.
+      response.body = bytes(0)
+      response.headers.clear()
+    }
+
+    response.status = status.SERVICE_UNAVAILABLE
+    response.headers.set('Retry-After', self.recovery_time // 1)
+    response.text('503 Service Unavailable')
+  }
+
+  _pick(now) {
+    var count = self._proxies.length()
+
+    iter var offset = 0; offset < count; offset++ {
+      var index = (self._next + offset) % count
+
+      if self._failed_until[index] <= now {
+        self._next = (index + 1) % count
+        return index
+      }
+    }
+
+    # Everything is marked failed; the least recently failed upstream
+    # is the best remaining guess, and trying it is how it recovers.
+    var best = 0
+    iter var i = 1; i < count; i++ {
+      if self._failed_until[i] < self._failed_until[best] {
+        best = i
+      }
+    }
+
+    return best
+  }
+
+  /**
+   * How many upstreams are currently in rotation.
+   *
+   * @returns number
+   */
+  healthy_count() {
+    var now = time()
+    var count = 0
+
+    for until in self._failed_until {
+      if until <= now {
+        count++
+      }
+    }
+
+    return count
+  }
+
+  to_string() {
+    return '<LoadBalancer ${self._proxies.length()} upstreams>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

@@ -24,7 +24,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.brotli module — test suite'
+echo '  compress.brotli module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -65,13 +65,13 @@ assert brotli.decompress(brotli.compress(binary_data)) == binary_data,
 ok('binary content (all 256 byte values) survives compress/decompress unchanged')
 
 # ---------------------------------------------------------------------------
-# Streaming encoder — buffers until finish(), documented behavior
+# Streaming encoder: buffers until finish(), documented behavior
 # ---------------------------------------------------------------------------
 var enc = brotli.BrotliEncoder()
 enc.write('hello ')
 enc.write('streaming ')
 enc.write('brotli world')
-assert enc.available() == 0, 'available() must read 0 before finish() — this encoder compresses on finish(), not incrementally'
+assert enc.available() == 0, 'available() must read 0 before finish(): this encoder compresses on finish(), not incrementally'
 var stream_compressed = enc.finish()
 assert enc.finished(), 'finished() must be true once finish() has completed'
 assert enc.total_in() == 'hello streaming brotli world'.length(), 'total_in() must count every byte written across all write() calls'

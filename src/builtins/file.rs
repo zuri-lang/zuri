@@ -135,13 +135,20 @@ fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   let binary = ctx.args[0].as_file_cell().borrow().binary;
 
   let mut is_stream = false;
+  let mut opened_here = false;
   let bytes_read: Vec<u8> = {
     let cell = ctx.args[0].as_file_cell();
     let mut fh = cell.borrow_mut();
     is_stream = fh.is_stream;
 
-    if auto_close && !is_stream {
+    // Auto-open, but only when the file is not already open.
+    // Reopening unconditionally would discard whatever position the
+    // handle is at, so an explicit `open()`/`seek()` would be undone
+    // by the very `read()` it was performed for, and reading a large
+    // file a chunk at a time would return the first chunk forever.
+    if auto_close && !is_stream && fh.handle.is_none() {
       fh.handle = Some(open_with_mode(&fh.path, &fh.mode)?);
+      opened_here = true;
     }
 
     let file = fh
@@ -164,7 +171,10 @@ fn do_read(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     }
   };
 
-  if length.is_none() && auto_close && !is_stream {
+  // A read-everything call closes again, but only if it was the one
+  // that opened the handle; closing a file the caller opened would
+  // pull it out from under them.
+  if length.is_none() && auto_close && !is_stream && opened_here {
     with_file_mut(ctx.args[0], |fh| fh.handle = None);
   }
 
@@ -209,13 +219,18 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
   };
 
   let mut is_stream = false;
+  let mut opened_here = false;
   {
     let cell = ctx.args[0].as_file_cell();
     let mut fh = cell.borrow_mut();
     is_stream = fh.is_stream;
 
-    if auto_close && !is_stream {
+    // Same rule as `do_read`: an already-open handle is written to
+    // where it stands, since reopening it would rewind (and, in `w`
+    // mode, truncate away) everything written so far.
+    if auto_close && !is_stream && fh.handle.is_none() {
       fh.handle = Some(open_with_mode(&fh.path, &fh.mode)?);
+      opened_here = true;
     }
 
     let file = fh
@@ -226,7 +241,7 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     file.flush().map_err(|e| e.to_string())?;
   }
 
-  if auto_close && !is_stream {
+  if auto_close && !is_stream && opened_here {
     with_file_mut(ctx.args[0], |fh| fh.handle = None);
   }
 

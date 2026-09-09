@@ -21,33 +21,33 @@
  * | Key exchange | X25519 (Diffie-Hellman)                  |
  * | Password KDF | Argon2id                                 |
  * | Key stretch  | HKDF-SHA256                              |
- * | Key import   | `jwk.to_pem()` — RSA/EC/OKP JWK → PEM     |
+ * | Key import   | `jwk.to_pem()`: RSA/EC/OKP JWK → PEM     |
  * | Randomness   | OS CSPRNG                                |
  *
  * ---
  *
  * ### Choosing the right primitive
  *
- * **Encrypting data at rest or in transit** — prefer `aes_gcm`
+ * **Encrypting data at rest or in transit**: prefer `aes_gcm`
  * (authenticated encryption with associated data). Use
  * `chacha20` on platforms where AES hardware acceleration is
  * absent. Avoid `aes_cbc` in new designs; it is included for
  * interoperability with legacy systems.
  *
- * **Signing and verifying messages** — use `ed25519` for modern
+ * **Signing and verifying messages**: use `ed25519` for modern
  * systems (fastest, no hash to choose, deterministic). Use
  * `ecdsa` when interoperating with systems that require NIST
  * curves. Use `rsa` only when constrained by a protocol that
  * demands it.
  *
- * **Asymmetric encryption** — use `rsa` with OAEP. For larger
+ * **Asymmetric encryption**: use `rsa` with OAEP. For larger
  * payloads, use a hybrid scheme: exchange a symmetric key with
  * RSA-OAEP, then encrypt the payload with `aes_gcm`.
  *
- * **Key agreement** — use `x25519_exchange` followed by `hkdf`
+ * **Key agreement**: use `x25519_exchange` followed by `hkdf`
  * to derive a symmetric key from the shared secret.
  *
- * **Password storage** — always use `argon2_hash`. Never use raw
+ * **Password storage**: always use `argon2_hash`. Never use raw
  * hashes (SHA-*, MD5) to store passwords.
  *
  * ---
@@ -131,7 +131,7 @@ def random_bytes(n) {
 
 
 # ---------------------------------------------------------------------------
-# aes_gcm — AES-GCM authenticated encryption
+# aes_gcm: AES-GCM authenticated encryption
 # ---------------------------------------------------------------------------
 
 /**
@@ -149,7 +149,7 @@ def random_bytes(n) {
  * **IV/nonce:** 12 bytes is the standard GCM nonce size and
  * strongly recommended. Generate a fresh random nonce for every
  * encryption operation and transmit it alongside the ciphertext
- * — it does not need to be secret.
+ *: it does not need to be secret.
  *
  * **AAD:** Additional authenticated data (AAD) is optional
  * metadata that is authenticated but not encrypted. Useful for
@@ -225,7 +225,7 @@ var aes_gcm = _AesGcm()
 
 
 # ---------------------------------------------------------------------------
-# aes_cbc — AES-CBC encryption (interoperability)
+# aes_cbc: AES-CBC encryption (interoperability)
 # ---------------------------------------------------------------------------
 
 /**
@@ -301,7 +301,7 @@ var aes_cbc = _AesCbc()
 
 
 # ---------------------------------------------------------------------------
-# chacha20 — ChaCha20-Poly1305 AEAD
+# chacha20: ChaCha20-Poly1305 AEAD
 # ---------------------------------------------------------------------------
 
 /**
@@ -320,7 +320,7 @@ var aes_cbc = _AesCbc()
  * `random_bytes(12)` for every encryption. Like GCM, nonce reuse
  * is catastrophic.
  *
- * **AAD:** same semantics as `aes_gcm` — authenticated but not
+ * **AAD:** same semantics as `aes_gcm`: authenticated but not
  * encrypted.
  *
  * ### Example
@@ -377,7 +377,7 @@ var chacha20 = _ChaCha20()
 
 
 # ---------------------------------------------------------------------------
-# rsa — RSA-OAEP encryption and RSA-PSS signing
+# rsa: RSA-OAEP encryption and RSA-PSS signing
 # ---------------------------------------------------------------------------
 
 /**
@@ -387,7 +387,7 @@ var chacha20 = _ChaCha20()
  * module always uses strong modern padding:
  *
  * - **Encryption:** RSA-OAEP with SHA-256 digest and
- * MGF1-SHA-256 mask. PKCS#1 v1.5 padding is not available — it
+ * MGF1-SHA-256 mask. PKCS#1 v1.5 padding is not available: it
  * is vulnerable to padding oracle attacks and must not be used
  * in new code. - **Signing:** RSA-PSS with SHA-256 digest,
  * MGF1-SHA-256 mask, and salt length equal to digest size.
@@ -497,7 +497,7 @@ class _Rsa {
    *
    * Returns `true` on a valid signature and `false` on any
    * mismatch. Unlike `decrypt`, this never raises for a bad
-   * signature — only for malformed arguments or an unparseable
+   * signature: only for malformed arguments or an unparseable
    * key.
    *
    * @param string public_pem PEM-encoded public key.
@@ -523,7 +523,7 @@ var rsa = _Rsa()
 
 
 # ---------------------------------------------------------------------------
-# ecdsa — ECDSA signatures (P-256 / P-384)
+# ecdsa: ECDSA signatures (P-256 / P-384)
 # ---------------------------------------------------------------------------
 
 /**
@@ -606,7 +606,7 @@ var ecdsa = _Ecdsa()
 
 
 # ---------------------------------------------------------------------------
-# ed25519 — Ed25519 (EdDSA) signatures
+# ed25519: Ed25519 (EdDSA) signatures
 # ---------------------------------------------------------------------------
 
 /**
@@ -615,7 +615,7 @@ var ecdsa = _Ecdsa()
  * Ed25519 is the recommended algorithm for new digital signature
  * use cases. It is fast, produces small 64-byte signatures, has
  * no hash-choice parameter, and generates deterministic
- * signatures — the same message always produces the same
+ * signatures: the same message always produces the same
  * signature for a given key, which eliminates the class of
  * vulnerabilities caused by weak random number generators in
  * ECDSA signing.
@@ -681,7 +681,7 @@ var ed25519 = _Ed25519()
 
 
 # ---------------------------------------------------------------------------
-# x25519 — X25519 Diffie-Hellman key exchange
+# x25519: X25519 Diffie-Hellman key exchange
 # ---------------------------------------------------------------------------
 
 /**
@@ -690,7 +690,7 @@ var ed25519 = _Ed25519()
  * X25519 allows two parties to establish a shared secret over an
  * untrusted channel without transmitting the secret itself. The
  * resulting 32-byte raw shared secret must be passed through
- * `hkdf` before use as a symmetric key — the raw output has a
+ * `hkdf` before use as a symmetric key: the raw output has a
  * non-uniform distribution that makes it unsuitable for direct
  * use as key material.
  *
@@ -721,7 +721,7 @@ var ed25519 = _Ed25519()
  * var alice_secret = crypto.x25519.exchange(alice.private_pem, bob.public_pem)
  * var bob_secret   = crypto.x25519.exchange(bob.private_pem, alice.public_pem)
  *
- * # Both secrets are identical — derive a symmetric key:
+ * # Both secrets are identical: derive a symmetric key:
  * var salt = crypto.random_bytes(32)
  * var key  = crypto.hkdf(alice_secret, salt, bytes('app-context'), 32)
  * ```
@@ -764,7 +764,7 @@ var x25519 = _X25519()
 
 
 # ---------------------------------------------------------------------------
-# jwk — build a usable public key PEM from raw JWK key material
+# jwk: build a usable public key PEM from raw JWK key material
 # ---------------------------------------------------------------------------
 
 /**
@@ -773,7 +773,7 @@ var x25519 = _X25519()
  * namespaces can verify signatures with.
  *
  * This class deliberately works in raw `bytes`, not JWK's own
- * base64url-text field encoding — callers parsing a real JWKS
+ * base64url-text field encoding: callers parsing a real JWKS
  * document (e.g. `jwt.Jwks`) are responsible for base64url-decoding
  * `n`/`e`/`x`/`y` themselves before calling `to_pem()`, the same way
  * every other signature/verification function in this module takes
@@ -834,7 +834,7 @@ var jwk = _Jwk()
 
 
 # ---------------------------------------------------------------------------
-# argon2 — Argon2id password hashing
+# argon2: Argon2id password hashing
 # ---------------------------------------------------------------------------
 
 /**
@@ -952,14 +952,14 @@ var argon2 = _Argon2()
 
 
 # ---------------------------------------------------------------------------
-# hkdf — HKDF-SHA256 key derivation
+# hkdf: HKDF-SHA256 key derivation
 # ---------------------------------------------------------------------------
 
 /**
  * Derives cryptographic key material from a high-entropy input
  * using HKDF-SHA256 (RFC 5869).
  *
- * HKDF is not a password hashing function — it does not
+ * HKDF is not a password hashing function: it does not
  * strengthen low-entropy inputs. Use `argon2` for passwords.
  * HKDF is appropriate for:
  *

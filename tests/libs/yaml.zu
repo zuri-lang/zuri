@@ -106,7 +106,7 @@ def _summary() {
 # 1. SCALAR TYPE RESOLUTION  (Core Schema)
 # ===========================================================================
 
-_begin('Scalar type resolution — null')
+_begin('Scalar type resolution: null')
 
 _ok_nil('bare null keyword',           yaml.parse('null'))
 _ok_nil('Null (title case)',           yaml.parse('Null'))
@@ -116,7 +116,7 @@ _ok_nil('empty document',             yaml.parse(''))
 _ok_nil('empty quoted key value nil', yaml.parse('key:')['key'])
 
 
-_begin('Scalar type resolution — boolean')
+_begin('Scalar type resolution: boolean')
 
 _ok('true keyword',       yaml.parse('true'),  true)
 _ok('True keyword',       yaml.parse('True'),  true)
@@ -132,7 +132,7 @@ _ok('on is a string',     yaml.parse('on'),    'on')
 _ok('off is a string',    yaml.parse('off'),   'off')
 
 
-_begin('Scalar type resolution — integers')
+_begin('Scalar type resolution: integers')
 
 _ok('decimal zero',       yaml.parse('0'),    0)
 _ok('positive decimal',   yaml.parse('42'),   42)
@@ -145,7 +145,7 @@ _ok('hex 0x1A2B = 6699',  yaml.parse('0x1A2B'), 6699)
 _ok('hex lowercase',      yaml.parse('0xdeadbeef'), 3735928559)
 
 
-_begin('Scalar type resolution — floats')
+_begin('Scalar type resolution: floats')
 
 _ok('simple float',         yaml.parse('3.14'),    3.14)
 _ok('negative float',       yaml.parse('-1.5'),    -1.5)
@@ -161,7 +161,7 @@ _ok_true('.nan is NaN',     yaml.parse('.nan') != yaml.parse('.nan'))
 _ok_true('.NaN is NaN',     yaml.parse('.NaN') != yaml.parse('.NaN'))
 
 
-_begin('Scalar type resolution — strings')
+_begin('Scalar type resolution: strings')
 
 _ok('plain string',          yaml.parse('hello'),           'hello')
 _ok('string with spaces',    yaml.parse('hello world'),     'hello world')
@@ -540,10 +540,10 @@ _ok('%TAG directive ignored gracefully',
 
 
 # ===========================================================================
-# 13. EDGE CASES — INPUT
+# 13. EDGE CASES: INPUT
 # ===========================================================================
 
-_begin('Edge cases — input')
+_begin('Edge cases: input')
 
 _ok('all-whitespace input is nil',
     yaml.parse('   \n   \n'),
@@ -615,10 +615,10 @@ _ok('blank line in multiline plain breaks',
 
 
 # ===========================================================================
-# 14. EMITTER — dump()
+# 14. EMITTER: dump()
 # ===========================================================================
 
-_begin('Emitter — scalars')
+_begin('Emitter: scalars')
 
 _ok('null emits null',          yaml.dump(nil),   'null\n')
 _ok('true emits true',          yaml.dump(true),  'true\n')
@@ -629,21 +629,21 @@ _ok('float',                    yaml.dump(3.14),  '3.14\n')
 _ok('.inf',                     yaml.dump(math.Infinity),  '.inf\n')
 _ok('-.inf',                    yaml.dump(-math.Infinity), '-.inf\n')
 _ok('plain string',             yaml.dump('hello'),        'hello\n')
-_ok('string needing quoting — null',  yaml.dump('null'),  "'null'\n")
-_ok('string needing quoting — true',  yaml.dump('true'),  "'true'\n")
-_ok('string needing quoting — false', yaml.dump('false'), "'false'\n")
-_ok('string needing quoting — int',   yaml.dump('42'),    "'42'\n")
+_ok('string needing quoting: null',  yaml.dump('null'),  "'null'\n")
+_ok('string needing quoting: true',  yaml.dump('true'),  "'true'\n")
+_ok('string needing quoting: false', yaml.dump('false'), "'false'\n")
+_ok('string needing quoting: int',   yaml.dump('42'),    "'42'\n")
 _ok('empty string',             yaml.dump(''),    "''\n")
 
 
-_begin('Emitter — sequences')
+_begin('Emitter: sequences')
 
 _ok('empty sequence',
     yaml.dump([]),
     '[]\n')
 
-# Short, all-scalar sequences now emit in flow style — see the
-# "Emitter — flow style" section below for the block-style fallback
+# Short, all-scalar sequences now emit in flow style: see the
+# "Emitter: flow style" section below for the block-style fallback
 # once a sequence stops being short/flat enough for that.
 _ok('simple sequence',
     yaml.dump(['a', 'b', 'c']),
@@ -658,7 +658,7 @@ _ok('mixed type sequence',
     "[1, true, null, x]\n")
 
 
-_begin('Emitter — mappings')
+_begin('Emitter: mappings')
 
 _ok('empty mapping',
     yaml.dump({}),
@@ -679,7 +679,7 @@ _ok('mapping with bool value',
     "{ok: true, err: false}\n")
 
 
-_begin('Emitter — nested structures')
+_begin('Emitter: nested structures')
 
 _ok('mapping with sequence value',
     yaml.dump({list: [1, 2, 3]}),
@@ -693,7 +693,7 @@ _ok('sequence of mappings',
     yaml.dump([{a: 1}, {b: 2}]),
     "- {a: 1}\n- {b: 2}\n")
 
-# A list of dicts isn't all-scalar, so it still forces block style —
+# A list of dicts isn't all-scalar, so it still forces block style:
 # this is what actually exercises the custom indent option now that
 # a short all-scalar list collapses to flow style regardless of it.
 _ok('custom indent of 4',
@@ -701,7 +701,7 @@ _ok('custom indent of 4',
     "x:\n    - {a: 1}\n    - {b: 2}\n")
 
 
-_begin('Emitter — dump_all')
+_begin('Emitter: dump_all')
 
 _ok('two documents',
     yaml.dump_all([{a: 1}, {b: 2}]),
@@ -764,7 +764,7 @@ _ok('quoted bool string round-trips', bool_str, 'true')
 # 16. ERROR CASES
 # ===========================================================================
 
-_begin('Error cases — YamlError raised')
+_begin('Error cases: YamlError raised')
 
 _ok_raises('unterminated double-quoted scalar',
     @() { yaml.parse('"unterminated') })
@@ -889,7 +889,7 @@ _ok('env list merged into api',
 # Regression coverage for the 2026-08-29 bug-fix pass
 # ===========================================================================
 
-_begin('Bug fix — block scalar indent auto-detection')
+_begin('Bug fix: block scalar indent auto-detection')
 
 _ok('empty block scalar does not swallow the next sibling key',
     yaml.parse("a:\n  b: |\n  c: 3\n")['a']['c'],
@@ -900,7 +900,7 @@ _ok('non-empty block scalar under a nested key still works',
     { a: { b: "hello\nworld\n", c: 3 } })
 
 
-_begin('Bug fix — multi-line scalar round-trip chomping')
+_begin('Bug fix: multi-line scalar round-trip chomping')
 
 _ok_true('a multi-line string with no trailing newline round-trips exactly',
     yaml.parse(yaml.dump({ msg: "line1\nline2\nline3" }))['msg'] == "line1\nline2\nline3")
@@ -909,14 +909,14 @@ _ok_true('a multi-line string with exactly one trailing newline round-trips exac
     yaml.parse(yaml.dump({ msg: "line1\nline2\nline3\n" }))['msg'] == "line1\nline2\nline3\n")
 
 
-_begin('Bug fix — comment containing a colon')
+_begin('Bug fix: comment containing a colon')
 
 _ok('a colon inside a trailing comment is not mistaken for a mapping separator',
     yaml.parse("note: this is a value # see: docs\n"),
     { note: 'this is a value' })
 
 
-_begin('Bug fix — !!int / !!float tag validation')
+_begin('Bug fix: !!int / !!float tag validation')
 
 _ok('!!int accepts a hex literal',
     yaml.parse('v: !!int 0x1A')['v'],
@@ -937,7 +937,7 @@ _ok('!!float still accepts .inf',
     math.Infinity)
 
 
-_begin('Bug fix — flow-style emission')
+_begin('Bug fix: flow-style emission')
 
 _ok('a short all-scalar list emits in flow style',
     yaml.dump([1, 2, 3]),
@@ -959,7 +959,7 @@ _ok_true('flow-style output round-trips correctly',
     yaml.parse(yaml.dump([1, 2, 3])) == [1, 2, 3])
 
 
-_begin('Bug fix — alias as a mapping key')
+_begin('Bug fix: alias as a mapping key')
 
 _ok('an alias used as a mapping key dereferences to its anchored value',
     yaml.parse("x: &a hello\n*a: value\n"),
@@ -969,7 +969,7 @@ _ok_raises('an undefined alias used as a mapping key still raises',
     @() { yaml.parse("*undefined: value\n") })
 
 
-_begin('Bug fix — %YAML directive validation')
+_begin('Bug fix: %YAML directive validation')
 
 _ok('a %YAML 1.x directive is accepted regardless of minor version',
     yaml.parse("%YAML 1.1\n---\na: 1\n"),
@@ -982,7 +982,7 @@ _ok_raises('a malformed %YAML version string raises',
     @() { yaml.parse("%YAML garbage\n---\na: 1\n") })
 
 
-_begin('New feature — anchor/alias re-emission for shared references')
+_begin('New feature: anchor/alias re-emission for shared references')
 
 _ok_true('a value referenced from two places is emitted once and aliased the second time', @() {
   var shared = [1, 2, 3]

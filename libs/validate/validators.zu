@@ -23,7 +23,7 @@ import .validator { Validator }
 
 
 # ---------------------------------------------------------------------------
-# Bare constructor — no pre-applied rule
+# Bare constructor: no pre-applied rule
 # ---------------------------------------------------------------------------
 
 /**
@@ -128,7 +128,7 @@ def dict() {
 }
 
 /**
- * The value must be numeric — either a number type or a string that
+ * The value must be numeric: either a number type or a string that
  * converts cleanly to a number.
  *
  * @returns Validator
@@ -777,7 +777,7 @@ def prohibits(fields) {
 }
 
 /**
- * This field must be absent or nil — it is never permitted.
+ * This field must be absent or nil: it is never permitted.
  *
  * @returns Validator
  */

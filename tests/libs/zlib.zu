@@ -26,7 +26,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.zlib module — test suite'
+echo '  compress.zlib module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ ok('ZlibDecoder decodes a stream produced by ZlibEncoder')
 
 # Regression: the shared GzipDecoder.reset() this class inherits had two
 # real bugs (see project memory) that specifically broke resuming a
-# decoder after it had already produced output — exercise that directly
+# decoder after it had already produced output: exercise that directly
 # here, at zlib's own (non-gzip) window/header configuration, not just
 # gzip's.
 var dec2 = zlib.ZlibDecoder(stream_compressed)

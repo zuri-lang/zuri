@@ -26,7 +26,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  os module — filesystem test suite'
+echo '  os module: filesystem test suite'
 echo '═══════════════════════════════════════════════════════'
 
 var root = os.create_temp_dir('zuri-os-fs-')
@@ -116,7 +116,7 @@ assert q_matches.contains('link.txt'), 'glob() "?" must match exactly one charac
 ok('glob() "?" matches a single character')
 
 # ---------------------------------------------------------------------------
-# umask() — query-only mode must round-trip without side effects
+# umask(): query-only mode must round-trip without side effects
 # ---------------------------------------------------------------------------
 var before = os.umask()
 var after = os.umask()

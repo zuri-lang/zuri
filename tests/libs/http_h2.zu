@@ -1,0 +1,255 @@
+/**
+ * test_http_h2.zu
+ *
+ * HTTP/2's own machinery: the HPACK Huffman code, the HPACK
+ * encoder/decoder and its dynamic table, and the frame codec.
+ *
+ * The header-block vectors below are the worked examples from RFC
+ * 7541 Appendix C, byte for byte, which is what makes them worth
+ * asserting on - they exercise the dynamic table's indexing and
+ * eviction rather than only the round-trip through our own encoder.
+ *
+ * End-to-end HTTP/2 over a socket is covered by `http_server.zu`.
+ */
+
+import http.h2.frames
+import http.h2.hpack
+import http.h2.huffman
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+def hex_of(data) {
+  var digits = '0123456789abcdef'
+  var out = ''
+
+  iter var i = 0; i < data.length(); i++ {
+    out += digits[data[i] // 16] + digits[data[i] % 16]
+  }
+
+  return out
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  http.h2 module: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Huffman (RFC 7541 Appendix B and C.4)
+# ---------------------------------------------------------------------------
+
+assert hex_of(huffman.encode('www.example.com'.to_bytes())) == 'f1e3c2e5f23a6ba0ab90f4ff',
+  'the RFC 7541 C.4.1 encoding of www.example.com'
+assert hex_of(huffman.encode('no-cache'.to_bytes())) == 'a8eb10649cbf',
+  'the RFC 7541 C.4.2 encoding of no-cache'
+assert hex_of(huffman.encode('custom-key'.to_bytes())) == '25a849e95ba97d7f',
+  'the RFC 7541 C.4.3 encoding of custom-key'
+assert hex_of(huffman.encode('custom-value'.to_bytes())) == '25a849e95bb8e8b4bf',
+  'the RFC 7541 C.4.3 encoding of custom-value'
+ok('Huffman encoding matches the RFC 7541 vectors')
+
+for sample in [
+  'www.example.com',
+  'Mon, 21 Oct 2013 20:13:21 GMT',
+  'https://www.example.com',
+  'a',
+  '',
+  'the quick brown fox jumps over the lazy dog 0123456789',
+] {
+  var encoded = huffman.encode(sample.to_bytes())
+  assert huffman.decode(encoded).to_string() == sample, 'round-trip of ${sample}'
+}
+ok('Huffman round-trips, padding and all')
+
+# Padding must be the leading bits of EOS. A byte of zero bits at the
+# end is not.
+assert raises(@() { huffman.decode(bytes([0xf1, 0x00])) }),
+  'invalid Huffman padding must be rejected'
+ok('invalid Huffman padding is refused')
+
+# ---------------------------------------------------------------------------
+# HPACK integers and strings (RFC 7541 §5.1, §5.2)
+# ---------------------------------------------------------------------------
+
+var buffer = bytes(0)
+hpack.encode_integer(buffer, 10, 5, 0)
+assert buffer[0] == 10, '10 fits in a five-bit prefix'
+
+buffer = bytes(0)
+hpack.encode_integer(buffer, 1337, 5, 0)
+assert hex_of(buffer) == '1f9a0a', 'the RFC 7541 C.1.2 encoding of 1337'
+assert hpack.decode_integer(buffer, 0, 5)[0] == 1337, 'and it decodes back'
+
+buffer = bytes(0)
+hpack.encode_integer(buffer, 42, 8, 0)
+assert buffer[0] == 42, 'an eight-bit prefix holds 42 directly'
+ok('HPACK integers encode and decode, prefix and all')
+
+buffer = bytes(0)
+hpack.encode_string(buffer, 'custom-key')
+assert hpack.decode_string(buffer, 0, 4096)[0] == 'custom-key', 'a string literal round-trips'
+ok('HPACK string literals round-trip')
+
+# ---------------------------------------------------------------------------
+# HPACK decoding (RFC 7541 Appendix C.3 and C.4)
+# ---------------------------------------------------------------------------
+
+var decoder = hpack.Decoder()
+
+var first = decoder.decode(bytes([
+  0x82, 0x86, 0x84, 0x41, 0x0f, 0x77, 0x77, 0x77, 0x2e, 0x65, 0x78,
+  0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d,
+]))
+
+assert first.length() == 4, 'four fields'
+assert first[0][0] == ':method' and first[0][1] == 'GET', 'an indexed field'
+assert first[3][0] == ':authority' and first[3][1] == 'www.example.com', 'a literal field'
+assert decoder.table.length() == 1 and decoder.table.size() == 57,
+  'the literal was added to the dynamic table, at the size the RFC states'
+
+var second = decoder.decode(bytes([
+  0x82, 0x86, 0x84, 0xbe, 0x58, 0x08, 0x6e, 0x6f, 0x2d, 0x63, 0x61,
+  0x63, 0x68, 0x65,
+]))
+
+assert second.length() == 5, 'five fields'
+assert second[3][1] == 'www.example.com', 'index 62 read back the dynamic entry'
+assert second[4][0] == 'cache-control' and second[4][1] == 'no-cache', 'a new literal'
+assert decoder.table.length() == 2, 'which was itself indexed'
+ok('the RFC 7541 C.3 request sequence decodes, dynamic table and all')
+
+var huffman_decoder = hpack.Decoder()
+var huffman_block = huffman_decoder.decode(bytes([
+  0x82, 0x86, 0x84, 0x41, 0x8c, 0xf1, 0xe3, 0xc2, 0xe5, 0xf2, 0x3a,
+  0x6b, 0xa0, 0xab, 0x90, 0xf4, 0xff,
+]))
+assert huffman_block[3][1] == 'www.example.com', 'a Huffman-coded literal decodes'
+ok('the RFC 7541 C.4 Huffman-coded request decodes')
+
+# ---------------------------------------------------------------------------
+# HPACK encoding
+# ---------------------------------------------------------------------------
+
+var encoder = hpack.Encoder()
+var round_trip = hpack.Decoder()
+
+var fields = [
+  [':method', 'POST'],
+  [':scheme', 'https'],
+  [':path', '/api/items?id=7'],
+  [':authority', 'example.com'],
+  ['content-type', 'application/json'],
+  ['accept', 'application/json'],
+  ['x-custom-header', 'a value with spaces'],
+  ['cookie', 'session=secret'],
+]
+
+var block = encoder.encode(fields)
+var decoded = round_trip.decode(block)
+
+assert decoded.length() == fields.length(), 'every field survives'
+iter var i = 0; i < fields.length(); i++ {
+  assert decoded[i][0] == fields[i][0], 'field ${i} name'
+  assert decoded[i][1] == fields[i][1], 'field ${i} value'
+}
+assert round_trip.table.length() == 0,
+  'nothing was indexed, so a secret in one block cannot leak into the next'
+ok('a header block round-trips through the encoder and the decoder')
+
+assert block[0] == 0x83, ':method POST is the static index 3'
+ok('the static table is used where it can be')
+
+# ---------------------------------------------------------------------------
+# HPACK rejects what it must
+# ---------------------------------------------------------------------------
+
+# An uppercase name, written as a literal without indexing.
+var uppercase = bytes([0x00, 0x04])
+uppercase.extend('Host'.to_bytes())
+uppercase.append(0x01)
+uppercase.extend('x'.to_bytes())
+
+assert raises(@() { hpack.Decoder().decode(uppercase) }),
+  'an uppercase field name is a protocol error in HTTP/2'
+
+assert raises(@() { hpack.Decoder().decode(bytes([0xbe])) }),
+  'an index past the end of the table is an error'
+assert raises(@() { hpack.Decoder().decode(bytes([0x80])) }),
+  'index 0 is not a valid index'
+ok('the decoder refuses invalid header blocks')
+
+# ---------------------------------------------------------------------------
+# The dynamic table
+# ---------------------------------------------------------------------------
+
+var table = hpack.DynamicTable(100)
+table.add('a', '1')
+table.add('b', '2')
+assert table.length() == 2, 'two entries fit in 100 bytes'
+
+table.add('c', '3')
+assert table.length() == 2, 'adding a third evicted the oldest'
+assert table.get(62)[0] == 'c', 'index 62 is always the newest'
+assert table.get(63)[0] == 'b', 'and the numbering counts backwards from there'
+assert table.get(1)[0] == ':authority', 'the static table sits below it'
+
+table.set_capacity(0)
+assert table.length() == 0, 'a capacity of zero empties the table'
+
+var tiny = hpack.DynamicTable(10)
+tiny.add('name', 'value')
+assert tiny.length() == 0, 'an entry larger than the table is dropped, not an error'
+ok('the dynamic table evicts and re-indexes correctly')
+
+# ---------------------------------------------------------------------------
+# Frames
+# ---------------------------------------------------------------------------
+
+var settings = frames.encode_settings({
+  1: 4096,
+  4: 65535,
+})
+assert settings.length() == 12, 'two settings are twelve octets'
+
+var read_back = frames.decode_settings(settings)
+assert read_back[1] == 4096 and read_back[4] == 65535, 'and they read back'
+assert raises(@() { frames.decode_settings(bytes([0, 1, 2])) }),
+  'a SETTINGS payload that is not a multiple of six is an error'
+ok('SETTINGS frames encode and decode')
+
+var word = bytes(0)
+frames.write_u32(word, 2147483647)
+assert frames.read_u32(word, 0) == 2147483647, 'a 31-bit value survives a round trip'
+
+word = bytes(0)
+frames.write_u32(word, 0)
+assert frames.read_u32(word, 0) == 0, 'and so does zero'
+ok('32-bit frame fields round-trip')
+
+var goaway = frames.encode_goaway(9, frames.PROTOCOL_ERROR, 'nope')
+assert frames.read_u32(goaway, 0) == 9, 'the last stream id'
+assert frames.read_u32(goaway, 4) == frames.PROTOCOL_ERROR, 'the error code'
+assert goaway[8,].to_string() == 'nope', 'and the debug message'
+ok('GOAWAY payloads are built correctly')
+
+assert frames.PREFACE.starts_with('PRI * HTTP/2.0'),
+  'the connection preface is the one the RFC specifies'
+ok('the connection preface is correct')
+
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} checks passed.'
+echo '═══════════════════════════════════════════════════════'

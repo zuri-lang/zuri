@@ -1,0 +1,568 @@
+#!-- part of the http module
+/**
+ * @module http.middleware
+ *
+ * The middleware every public HTTP service ends up needing: CORS,
+ * access logging, the security headers a browser acts on,
+ * authentication, and a request rate limit.
+ *
+ * Each function here returns a middleware - a function of
+ * `(request, response, next)` - ready to hand to `HttpServer.use()`:
+ *
+ * ```zuri
+ * import http
+ * import http.middleware
+ *
+ * var server = http.server(3000)
+ *
+ * server.use(middleware.logger())
+ * server.use(middleware.security_headers())
+ * server.use(middleware.cors({ origins: ['https://app.example.com'] }))
+ * ```
+ *
+ * Order matters: middleware run outermost first, so a logger added
+ * first sees the final status of everything added after it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .status
+import .util
+
+import base64
+import hash
+
+/**
+ * Answers CORS preflights and adds the cross-origin headers a browser
+ * needs before it will let script read a response from another
+ * origin.
+ *
+ * `origins` is the list of origins allowed, matched exactly. The
+ * literal `'*'` allows any origin, but only for requests that carry
+ * no credentials: a wildcard together with
+ * `Access-Control-Allow-Credentials` is rejected by every browser, so
+ * setting `credentials` reflects the request's own origin instead -
+ * which means the `origins` list becomes the only thing standing
+ * between an attacker's page and an authenticated response, and it
+ * needs to be an explicit list rather than a wildcard.
+ *
+ * @param ?dict options: `origins` (default `['*']`), `methods`,
+ *    `headers` (allowed request headers; defaults to reflecting what
+ *    was asked for), `expose` (response headers script may read),
+ *    `credentials` (default `false`), `max_age` (seconds a preflight
+ *    may be cached, default 86400)
+ * @returns function(3)
+ */
+def cors(options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var origins = settings.get('origins', ['*'])
+  var methods = settings.get('methods', ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+  var allowed_headers = settings.get('headers', nil)
+  var expose = settings.get('expose', nil)
+  var credentials = settings.get('credentials', false)
+  var max_age = settings.get('max_age', 86400)
+
+  return @(request, response, next) {
+    var origin = request.header('origin', nil)
+
+    if origin == nil {
+      # Not a cross-origin request at all; there is nothing to decide.
+      next()
+      return
+    }
+
+    var permitted = origins.contains(origin)
+    var wildcard = origins.contains('*')
+
+    if !permitted and !wildcard {
+      # An origin that is not allowed simply gets no CORS headers, and
+      # the browser refuses to hand the response to script. Answering
+      # with an error instead would leak whether the resource exists.
+      next()
+      return
+    }
+
+    if credentials or !wildcard {
+      response.headers.set('Access-Control-Allow-Origin', origin)
+      # The answer depends on the request's Origin, so a shared cache
+      # must not serve one origin's response to another.
+      response.headers.add('Vary', 'Origin')
+    } else {
+      response.headers.set('Access-Control-Allow-Origin', '*')
+    }
+
+    if credentials {
+      response.headers.set('Access-Control-Allow-Credentials', 'true')
+    }
+
+    if expose != nil {
+      response.headers.set('Access-Control-Expose-Headers', ', '.join(expose))
+    }
+
+    if request.method == 'OPTIONS' and request.headers.contains('access-control-request-method') {
+      response.headers.set('Access-Control-Allow-Methods', ', '.join(methods))
+
+      if allowed_headers != nil {
+        response.headers.set('Access-Control-Allow-Headers', ', '.join(allowed_headers))
+      } else {
+        var asked = request.header('access-control-request-headers', nil)
+        if asked != nil {
+          response.headers.set('Access-Control-Allow-Headers', asked)
+          response.headers.add('Vary', 'Access-Control-Request-Headers')
+        }
+      }
+
+      response.headers.set('Access-Control-Max-Age', max_age // 1)
+      response.status = status.NO_CONTENT
+
+      return
+    }
+
+    next()
+  }
+}
+
+/**
+ * Writes one line per request once the response is finished.
+ *
+ * The default format is the Common Log Format extended with the
+ * response time, which every log analyser already understands. Pass
+ * `format` to build the line yourself, or `sink` to send it somewhere
+ * other than standard output.
+ *
+ * @param ?dict options: `sink` (a function taking the line),
+ *    `format` (a function taking `(request, response, milliseconds)`
+ *    and returning the line), `trust_proxy` (whether to log the
+ *    forwarded client address rather than the peer)
+ * @returns function(3)
+ */
+def logger(options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var sink = settings.get('sink', nil)
+  var format = settings.get('format', nil)
+  var trust_proxy = settings.get('trust_proxy', false)
+
+  return @(request, response, next) {
+    var started = time()
+
+    catch {
+      next()
+    } as error
+
+    var elapsed = (time() - started) * 1000
+    var line
+
+    if format != nil {
+      line = format(request, response, elapsed)
+    } else {
+      var who = request.client_ip(trust_proxy) or '-'
+      var length = response.body == nil ? 0 : response.body.length()
+
+      line = '${who} - [${util.format_date()}] ' +
+        '"${request.method} ${request.target} HTTP/${request.version}" ' +
+        '${response.status} ${length} ${_round(elapsed, 2)}ms'
+    }
+
+    if sink != nil {
+      sink(line)
+    } else {
+      echo line
+    }
+
+    # The log line is written either way, and then the failure carries
+    # on to whoever handles it - swallowing it here would turn every
+    # error into a silent 200.
+    if error {
+      raise error
+    }
+  }
+}
+
+def _round(value, places) {
+  var scale = 10 ** places
+  return ((value * scale) // 1) / scale
+}
+
+/**
+ * Adds the response headers a browser acts on to harden a page.
+ *
+ * Every one of them is opt-out, because the right value depends on
+ * the application:
+ *
+ * | Header | Default | What it does |
+ * | ------ | ------- | ------------ |
+ * | `X-Content-Type-Options` | `nosniff` | stops the browser second-guessing a declared content type |
+ * | `X-Frame-Options` | `DENY` | refuses to be framed, which is what clickjacking needs |
+ * | `Referrer-Policy` | `strict-origin-when-cross-origin` | keeps paths and queries out of outbound referrers |
+ * | `Strict-Transport-Security` | one year | only sent over HTTPS, where it is meaningful |
+ * | `Content-Security-Policy` | not set | too application-specific to guess at |
+ *
+ * @param ?dict options: any of the header values above by lowercase
+ *    name (`content_security_policy`, `frame_options`,
+ *    `referrer_policy`, `hsts_max_age`, `hsts_subdomains`,
+ *    `content_type_options`), each `nil` to omit
+ * @returns function(3)
+ */
+def security_headers(options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var csp = settings.get('content_security_policy', nil)
+  var frame_options = settings.get('frame_options', 'DENY')
+  var referrer = settings.get('referrer_policy', 'strict-origin-when-cross-origin')
+  var hsts_max_age = settings.get('hsts_max_age', 31536000)
+  var hsts_subdomains = settings.get('hsts_subdomains', false)
+  var nosniff = settings.get('content_type_options', 'nosniff')
+
+  return @(request, response, next) {
+    next()
+
+    if nosniff != nil {
+      response.headers.set_default('X-Content-Type-Options', nosniff)
+    }
+    if frame_options != nil {
+      response.headers.set_default('X-Frame-Options', frame_options)
+    }
+    if referrer != nil {
+      response.headers.set_default('Referrer-Policy', referrer)
+    }
+    if csp != nil {
+      response.headers.set_default('Content-Security-Policy', csp)
+    }
+
+    # HSTS over cleartext is at best ignored and at worst a way to
+    # lock a client out of a host that has no certificate.
+    if hsts_max_age != nil and request.secure {
+      var value = 'max-age=${hsts_max_age // 1}'
+      if hsts_subdomains {
+        value += '; includeSubDomains'
+      }
+      response.headers.set_default('Strict-Transport-Security', value)
+    }
+  }
+}
+
+/**
+ * Requires HTTP Basic authentication.
+ *
+ * `verify` is called with the username and password and returns
+ * whether they are acceptable; it should compare secrets with
+ * `http.util.secure_equals()` rather than `==`, so that a wrong
+ * guess and a nearly-right one take the same time.
+ *
+ * @param function(2) verify
+ * @param ?string realm: the realm named in the challenge; defaults to
+ *    `'Restricted'`
+ * @returns function(3)
+ */
+def basic_auth(verify, realm: ?string) {
+  var name = realm == nil ? 'Restricted' : realm
+
+  return @(request, response, next) {
+    var header = request.header('authorization', nil)
+    var credentials = header == nil ? nil : parse_basic(header)
+
+    if credentials == nil or !verify(credentials[0], credentials[1]) {
+      response.status = status.UNAUTHORIZED
+      response.headers.set('WWW-Authenticate', 'Basic realm=${util.quote(name)}, charset="UTF-8"')
+      response.text('401 Unauthorized')
+      return
+    }
+
+    request.context['user'] = credentials[0]
+
+    next()
+  }
+}
+
+/**
+ * Requires a bearer token.
+ *
+ * @param function(1) verify: called with the token; returns whether
+ *    it is acceptable, or a value to attach to `request.context` as
+ *    `'user'`
+ * @param ?string realm
+ * @returns function(3)
+ */
+def bearer_auth(verify, realm: ?string) {
+  var name = realm == nil ? 'api' : realm
+
+  return @(request, response, next) {
+    var header = request.header('authorization', nil)
+    var token = header == nil ? nil : parse_bearer(header)
+
+    var subject = token == nil ? false : verify(token)
+
+    if !subject {
+      response.status = status.UNAUTHORIZED
+      response.headers.set('WWW-Authenticate', 'Bearer realm=${util.quote(name)}')
+      response.json({ error: 'unauthorized', status: 401 })
+      return
+    }
+
+    request.context['user'] = subject
+
+    next()
+  }
+}
+
+/**
+ * Parses an HTTP Basic `Authorization` header into a username and
+ * password.
+ *
+ * @param string header
+ * @returns ?list: `[username, password]`, or `nil` if the header is
+ *    not a well-formed Basic credential
+ */
+def parse_basic(header: string) {
+  var text = header.trim()
+
+  if !text.lower().starts_with('basic ') {
+    return nil
+  }
+
+  var decoded
+
+  catch {
+    decoded = base64.decode(text[6,].trim())
+  } as error
+
+  if error or decoded == nil {
+    return nil
+  }
+
+  var pair = decoded.to_string()
+  var colon = pair.index_of(':')
+
+  if colon < 0 {
+    return nil
+  }
+
+  return [pair[0, colon], pair[colon + 1,]]
+}
+
+/**
+ * Parses a `Bearer` `Authorization` header into its token.
+ *
+ * @param string header
+ * @returns ?string
+ */
+def parse_bearer(header: string) {
+  var text = header.trim()
+
+  if !text.lower().starts_with('bearer ') {
+    return nil
+  }
+
+  var token = text[7,].trim()
+
+  return token.is_empty() ? nil : token
+}
+
+/**
+ * Limits how many requests one client may make in a window of time.
+ *
+ * The counter lives in memory, so it is per worker: with `workers`
+ * isolates the effective limit is `limit` times `workers`. That is a
+ * deliberate trade - a shared counter would need shared state, and
+ * this is meant to blunt a runaway client rather than to meter
+ * billing.
+ *
+ * @param ?dict options: `limit` (requests per window, default 60),
+ *    `window` (seconds, default 60), `key` (a function of the request
+ *    returning the bucket key; defaults to the client address),
+ *    `trust_proxy`
+ * @returns function(3)
+ */
+def rate_limit(options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var limit = settings.get('limit', 60)
+  var window = settings.get('window', 60)
+  var key_of = settings.get('key', nil)
+  var trust_proxy = settings.get('trust_proxy', false)
+
+  var counters = {}
+
+  return @(request, response, next) {
+    var key = key_of != nil ?
+      key_of(request) :
+      (request.client_ip(trust_proxy) or 'unknown')
+
+    var now = time()
+    var entry = counters.get(key, nil)
+
+    if entry == nil or now - entry[1] >= window {
+      entry = [0, now]
+      counters[key] = entry
+    }
+
+    entry[0]++
+
+    var remaining = limit - entry[0]
+    if remaining < 0 {
+      remaining = 0
+    }
+
+    response.headers.set('RateLimit-Limit', limit)
+    response.headers.set('RateLimit-Remaining', remaining)
+    response.headers.set('RateLimit-Reset', ((entry[1] + window - now) // 1))
+
+    if entry[0] > limit {
+      response.status = status.TOO_MANY_REQUESTS
+      response.headers.set('Retry-After', ((entry[1] + window - now) // 1) + 1)
+      response.json({ error: 'too many requests', status: 429 })
+      return
+    }
+
+    # Buckets for clients that have gone quiet are only cleared when
+    # the table has grown enough to be worth a sweep; doing it on
+    # every request would make the common case pay for the rare one.
+    if counters.length() > 4096 {
+      var stale = []
+      for candidate, value in counters {
+        if now - value[1] >= window {
+          stale.append(candidate)
+        }
+      }
+      for candidate in stale {
+        counters.remove(candidate)
+      }
+    }
+
+    next()
+  }
+}
+
+/**
+ * Attaches a unique identifier to every request, echoing back one the
+ * client supplied so a trace can be followed across services.
+ *
+ * The identifier lands on `request.context['request_id']` and in the
+ * response's `X-Request-Id`.
+ *
+ * @param ?string header: the header to read and write; defaults to
+ *    `'X-Request-Id'`
+ * @returns function(3)
+ */
+def request_id(header: ?string) {
+  var name = header == nil ? 'X-Request-Id' : header
+
+  return @(request, response, next) {
+    var given = request.header(name, nil)
+
+    # An identifier from outside is echoed rather than trusted: it is
+    # written into logs, so it is length-capped and stripped of
+    # anything that is not plainly printable.
+    var id = given == nil ? util.random_token(32) : _clean_id(given)
+
+    request.context['request_id'] = id
+    response.headers.set(name, id)
+
+    next()
+  }
+}
+
+def _clean_id(value) {
+  var out = ''
+
+  iter var i = 0; i < value.length() and out.length() < 64; i++ {
+    var c = value[i]
+    var code = c.ord()
+
+    if code > 32 and code < 127 {
+      out += c
+    }
+  }
+
+  return out.is_empty() ? util.random_token(32) : out
+}
+
+/**
+ * Sends every request that arrived over cleartext to the same URL
+ * over HTTPS.
+ *
+ * @param ?dict options: `status` (default `308`, which preserves the
+ *    method), `port` (the HTTPS port, when it is not 443)
+ * @returns function(3)
+ */
+def force_https(options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var code = settings.get('status', status.PERMANENT_REDIRECT)
+  var port = settings.get('port', nil)
+
+  return @(request, response, next) {
+    if request.secure {
+      next()
+      return
+    }
+
+    var host = request.host() or 'localhost'
+    var authority = port == nil ? host : '${host}:${port}'
+
+    response.redirect('https://${authority}${request.target}', code)
+  }
+}
+
+/**
+ * Computes a weak `ETag` over a finished response body and answers
+ * `304 Not Modified` when the client already has that version.
+ *
+ * A handler that already set its own `ETag` is left alone - it knows
+ * something about the resource that hashing the bytes does not.
+ *
+ * @param ?number min_size: bodies smaller than this are not tagged;
+ *    defaults to 128 bytes
+ * @returns function(3)
+ */
+def etag(min_size: ?number) {
+  var floor = min_size == nil ? 128 : min_size
+
+  return @(request, response, next) {
+    next()
+
+    if response.headers.contains('etag') or response.source() != nil {
+      return
+    }
+
+    if !status.is_success(response.status) or response.body.length() < floor {
+      return
+    }
+
+    var tag = 'W/"${hash.md5(response.body)}"'
+    response.headers.set('ETag', tag)
+
+    var condition = request.header('if-none-match', nil)
+
+    if condition != nil and _matches(condition, tag) {
+      response.status = status.NOT_MODIFIED
+      response.body = bytes(0)
+      response.headers.remove('Content-Type')
+    }
+  }
+}
+
+def _matches(header, tag) {
+  var text = header.trim()
+
+  if text == '*' {
+    return true
+  }
+
+  var wanted = _strip_weak(tag)
+
+  for candidate in text.split(',') {
+    if _strip_weak(candidate.trim()) == wanted {
+      return true
+    }
+  }
+
+  return false
+}
+
+def _strip_weak(tag) {
+  var text = tag.trim()
+  return text.lower().starts_with('w/') ? text[2,] : text
+}

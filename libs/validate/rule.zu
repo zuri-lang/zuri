@@ -36,7 +36,7 @@
  *
  * Only `validate` and `error` need to be overridden.  Rules that require
  * constructor parameters should define their own constructor and call
- * `parent(name)` — or accept parameters before `name` and forward it.
+ * `parent(name)`: or accept parameters before `name` and forward it.
  *
  * The `_data` property is injected by the `Schema` before each field is
  * validated when `needs_data` returns `true`.  Rules that must compare
@@ -59,7 +59,7 @@ class Rule {
   var _data = {}
 
   /**
-   * @param string name  Field name — injected automatically by Schema.
+   * @param string name  Field name: injected automatically by Schema.
    */
   @new(name) {
     self.name = name
@@ -68,7 +68,7 @@ class Rule {
   /**
    * Sets the full data dictionary this rule can read from `validate()`.
    * Called by `Schema` right after construction, only for rules whose
-   * `needs_data()` returns `true` — a real public setter so `Schema`
+   * `needs_data()` returns `true`: a real public setter so `Schema`
    * never needs private-field access into a `Rule` it doesn't own.
    *
    * @param dict data
@@ -124,8 +124,8 @@ class Rule {
 
 
 /**
- * Builds one `Rule` instance from a `[rule_class, ...args]` entry — the
- * shape `Validator._rules` stores each chained rule as — with
+ * Builds one `Rule` instance from a `[rule_class, ...args]` entry: the
+ * shape `Validator._rules` stores each chained rule as: with
  * `field_name` prepended as the rule's first constructor argument.
  *
  * Shared by `Schema` (running a field's whole chain) and `Each` (running
@@ -133,7 +133,7 @@ class Rule {
  * rather than as a private helper duplicated in both: `schema.zu` and
  * `rules.zu` both already depend on this file, and neither depends on
  * the other, so this is the one shared place both can reach without a
- * circular import. Not re-exported from `index.zu` — this is internal
+ * circular import. Not re-exported from `index.zu`: this is internal
  * machinery for the module itself, not part of its public API.
  *
  * @param list entry `[rule_class, ...constructor_args]`.

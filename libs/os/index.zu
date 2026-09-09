@@ -3,9 +3,9 @@
  *
  * The `os` module is Zuri's interface to the underlying operating
  * system: environment variables, the filesystem, other processes,
- * and the machine itself. Per-file operations — reading, writing,
+ * and the machine itself. Per-file operations: reading, writing,
  * deleting, or copying one particular file, or inspecting its
- * size/permissions/timestamps — live on the `file` class instead;
+ * size/permissions/timestamps: live on the `file` class instead;
  * see `file.stats()`, `file.delete()`, and `file.copy()`. Everything
  * that isn't about one specific already-open file lives here.
  *

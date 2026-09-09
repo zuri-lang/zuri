@@ -1,0 +1,180 @@
+#!-- part of the http module
+
+import .errors { HttpError }
+import .server { HttpServer }
+
+import isolate
+import net
+
+/**
+ * The loop each worker isolate runs: build a server of its own from
+ * `setup`, then serve whatever connections the acceptor hands it.
+ *
+ * This lives in a module rather than in a closure because that is
+ * what can cross an isolate boundary - a spawned isolate resolves a
+ * function by module binding, and a closure that captured an imported
+ * module namespace cannot be transferred at all.
+ *
+ * @param Channel connections: accepted sockets arrive here
+ * @param function(1) setup: called once with this worker's server
+ * @param dict options
+ */
+def worker_main(connections, setup, options) {
+  var instance = HttpServer(
+    options.get('port', 8000),
+    options.get('host', '127.0.0.1')
+  )
+
+  for name, value in options {
+    if hasprop(instance, name) {
+      setprop(instance, name, value)
+    }
+  }
+
+  var cert_chain = options.get('cert_chain', nil)
+  var private_key = options.get('private_key', nil)
+
+  if cert_chain != nil {
+    instance.use_tls(cert_chain, private_key or cert_chain, options.get('tls', nil))
+  }
+
+  setup(instance)
+
+  while true {
+    var client = connections.recv()
+
+    if client == nil {
+      break
+    }
+
+    instance.serve_connection(client)
+  }
+}
+
+/**
+ * Binds a listening socket and serves it across a pool of worker
+ * isolates.
+ *
+ * The calling isolate does nothing but accept, which is cheap; every
+ * accepted socket is moved across a channel to whichever worker takes
+ * it next. Because isolates share no memory, each worker builds its
+ * own routes by calling `setup` - which is why `setup` has to be a
+ * module-level function rather than a closure.
+ *
+ * `backlog` is how many accepted-but-unclaimed connections may queue
+ * before the acceptor blocks. Bounding it is deliberate: an unbounded
+ * queue under load means accepting connections faster than they can
+ * be served and answering all of them late, rather than letting the
+ * kernel's own listen backlog apply back-pressure.
+ *
+ * `on_ready` is called once in this isolate with the bound address
+ * and a function that stops the server, which is what a signal
+ * handler needs in order to shut down cleanly:
+ *
+ * ```zuri
+ * http.serve(app.setup, {
+ *   port: 3000,
+ *   on_ready: @(address, stop) {
+ *     echo 'listening on ${address}'
+ *     os.on_signal('SIGINT', @(signal) { stop() })
+ *   },
+ * })
+ * ```
+ *
+ * @param function(1) setup
+ * @param ?dict options: `port`, `host`, `workers`, `backlog`,
+ *    `on_ready`, `max_connections` (stop after serving that many),
+ *    `cert_chain`, `private_key`, plus any `HttpServer` field to
+ *    apply to every worker
+ * @throws HttpError if the socket cannot be bound
+ */
+def serve(setup, options: ?dict) {
+  if !is_function(setup) and !is_callable(setup) {
+    raise TypeError('setup must be a function defined in a module')
+  }
+
+  var settings = options == nil ? {} : options.clone()
+
+  var host = settings.get('host', '127.0.0.1')
+  var port = settings.get('port', 8000)
+  var workers = settings.get('workers', isolate.cpu_count())
+  var backlog = settings.get('backlog', workers * 4)
+
+  if workers < 1 {
+    workers = 1
+  }
+
+  settings['host'] = host
+  settings['port'] = port
+
+  var listener = net.TcpStream()
+
+  catch {
+    listener.bind('${host}:${port}')
+  } as error
+
+  if error {
+    raise HttpError('could not bind ${host}:${port}: ${error.message}')
+  }
+
+  # Held back rather than passed along: it is a callback for this
+  # isolate, and a closure that captured an imported module cannot
+  # cross the boundary at all.
+  var on_ready = settings.get('on_ready', nil)
+  var max_connections = settings.get('max_connections', nil)
+
+  settings.remove('on_ready')
+  settings.remove('max_connections')
+
+  var connections = isolate.channel(backlog)
+  var pool = []
+
+  iter var i = 0; i < workers; i++ {
+    pool.append(isolate.spawn(worker_main, connections, setup, settings))
+  }
+
+  var running = [true]
+
+  if on_ready != nil {
+    # Closing the listener is what breaks the blocking accept below;
+    # there is no other way to interrupt it.
+    on_ready(listener.local_address(), @() {
+      running[0] = false
+      catch {
+        listener.close()
+      }
+    })
+  }
+
+  var served = 0
+
+  catch {
+    while running[0] {
+      var client = listener.accept()
+      connections.send(client)
+
+      served++
+      if max_connections != nil and served >= max_connections {
+        running[0] = false
+      }
+    }
+  } as accept_error
+
+  connections.close()
+
+  for task in pool {
+    catch {
+      task.join()
+    }
+  }
+
+  catch {
+    listener.close()
+  }
+
+  # A listener closed by `stop()` makes the pending accept fail; that
+  # is the shutdown path working, not an error to report.
+  if accept_error != nil and running[0] {
+    raise accept_error
+  }
+}

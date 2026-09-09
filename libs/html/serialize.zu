@@ -107,13 +107,13 @@ def _to_tree(source, fragment: bool) {
  *
  * _options_:
  *
- * - `fragment` (bool, default `false`) — parse a string source as a
+ * - `fragment` (bool, default `false`): parse a string source as a
  *   fragment rather than a whole document. Ignored when _source_ is
  *   already a node.
- * - `comments` (bool, default `false`) — keep comments. Turn this on
+ * - `comments` (bool, default `false`): keep comments. Turn this on
  *   when the markup carries conditional comments or a licence header
  *   that has to survive.
- * - `collapse_whitespace` (bool, default `true`) — do the whitespace
+ * - `collapse_whitespace` (bool, default `true`): do the whitespace
  *   work at all. With `false` the only thing minifying does is drop
  *   comments.
  *
@@ -348,12 +348,12 @@ def _is_whitespace(c: string) {
  *
  * _options_:
  *
- * - `indent` (number or string, default `2`) — a number is that many
+ * - `indent` (number or string, default `2`): a number is that many
  *   spaces per level; a string is used as the unit verbatim, so
  *   `'\t'` gives tab indentation.
- * - `fragment` (bool, default `false`) — parse a string source as a
+ * - `fragment` (bool, default `false`): parse a string source as a
  *   fragment rather than a whole document.
- * - `comments` (bool, default `true`) — keep comments.
+ * - `comments` (bool, default `true`): keep comments.
  *
  * ```zuri-repl
  * %> import html

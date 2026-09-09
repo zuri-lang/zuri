@@ -12,12 +12,12 @@
  * All ten classes share the same interface (indexing, `append()`/
  * `insert()`/`remove_at()`/`set()`/`pop()`, `slice()`, `fill()`,
  * `equals()`, iteration via `for x in arr`, and conversion via
- * `to_list()`/`to_bytes()`) — see [[array.Int16Array]] for the
+ * `to_list()`/`to_bytes()`): see [[array.Int16Array]] for the
  * fully documented shape every other class in this module follows.
  *
  * `Int64Array`/`UInt64Array` accept and return `bigint` values (in
  * addition to plain integers) for anything past what a regular
- * `number` can hold exactly — see `is_bigint()`.
+ * `number` can hold exactly: see `is_bigint()`.
  *
  * ### Example
  *

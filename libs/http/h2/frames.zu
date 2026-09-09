@@ -1,0 +1,354 @@
+#!-- part of the http module
+
+/**
+ * @module http.h2.frames
+ *
+ * The HTTP/2 frame layer (RFC 9113 §4 and §6): a nine-octet header -
+ * a 24-bit length, a type, a flags byte, and a 31-bit stream
+ * identifier - followed by a payload.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ProtocolError }
+
+/**
+ * The connection preface every HTTP/2 client sends before anything
+ * else. A server that reads these exact bytes knows it is speaking
+ * HTTP/2 and not an HTTP/1.1 request that happens to start with
+ * `PRI`.
+ *
+ * @type string
+ */
+var PREFACE = 'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'
+
+/** DATA frame. @type int */
+var DATA = 0
+/** HEADERS frame. @type int */
+var HEADERS = 1
+/** PRIORITY frame; deprecated by RFC 9113 and ignored here. @type int */
+var PRIORITY = 2
+/** RST_STREAM frame. @type int */
+var RST_STREAM = 3
+/** SETTINGS frame. @type int */
+var SETTINGS = 4
+/** PUSH_PROMISE frame. @type int */
+var PUSH_PROMISE = 5
+/** PING frame. @type int */
+var PING = 6
+/** GOAWAY frame. @type int */
+var GOAWAY = 7
+/** WINDOW_UPDATE frame. @type int */
+var WINDOW_UPDATE = 8
+/** CONTINUATION frame. @type int */
+var CONTINUATION = 9
+
+/** END_STREAM flag, on DATA and HEADERS. @type int */
+var FLAG_END_STREAM = 1
+/** ACK flag, on SETTINGS and PING. @type int */
+var FLAG_ACK = 1
+/** END_HEADERS flag, on HEADERS, PUSH_PROMISE and CONTINUATION. @type int */
+var FLAG_END_HEADERS = 4
+/** PADDED flag, on DATA, HEADERS and PUSH_PROMISE. @type int */
+var FLAG_PADDED = 8
+/** PRIORITY flag, on HEADERS. @type int */
+var FLAG_PRIORITY = 32
+
+/** SETTINGS_HEADER_TABLE_SIZE. @type int */
+var SETTINGS_HEADER_TABLE_SIZE = 1
+/** SETTINGS_ENABLE_PUSH. @type int */
+var SETTINGS_ENABLE_PUSH = 2
+/** SETTINGS_MAX_CONCURRENT_STREAMS. @type int */
+var SETTINGS_MAX_CONCURRENT_STREAMS = 3
+/** SETTINGS_INITIAL_WINDOW_SIZE. @type int */
+var SETTINGS_INITIAL_WINDOW_SIZE = 4
+/** SETTINGS_MAX_FRAME_SIZE. @type int */
+var SETTINGS_MAX_FRAME_SIZE = 5
+/** SETTINGS_MAX_HEADER_LIST_SIZE. @type int */
+var SETTINGS_MAX_HEADER_LIST_SIZE = 6
+
+/** NO_ERROR. @type int */
+var NO_ERROR = 0
+/** PROTOCOL_ERROR. @type int */
+var PROTOCOL_ERROR = 1
+/** INTERNAL_ERROR. @type int */
+var INTERNAL_ERROR = 2
+/** FLOW_CONTROL_ERROR. @type int */
+var FLOW_CONTROL_ERROR = 3
+/** SETTINGS_TIMEOUT. @type int */
+var SETTINGS_TIMEOUT = 4
+/** STREAM_CLOSED. @type int */
+var STREAM_CLOSED = 5
+/** FRAME_SIZE_ERROR. @type int */
+var FRAME_SIZE_ERROR = 6
+/** REFUSED_STREAM. @type int */
+var REFUSED_STREAM = 7
+/** CANCEL. @type int */
+var CANCEL = 8
+/** COMPRESSION_ERROR. @type int */
+var COMPRESSION_ERROR = 9
+/** CONNECT_ERROR. @type int */
+var CONNECT_ERROR = 10
+/** ENHANCE_YOUR_CALM. @type int */
+var ENHANCE_YOUR_CALM = 11
+/** INADEQUATE_SECURITY. @type int */
+var INADEQUATE_SECURITY = 12
+/** HTTP_1_1_REQUIRED. @type int */
+var HTTP_1_1_REQUIRED = 13
+
+/**
+ * One frame, as read off the wire.
+ *
+ * @printable
+ */
+class Frame {
+
+  /**
+   * The frame type - one of the constants above. An unrecognised type
+   * is kept as-is; RFC 9113 §4.1 requires an endpoint to ignore
+   * frames it does not know rather than fail on them.
+   * @type int
+   */
+  var type
+
+  /**
+   * The flags byte.
+   * @type int
+   */
+  var flags
+
+  /**
+   * The stream this frame belongs to; `0` for connection-level
+   * frames.
+   * @type int
+   */
+  var stream_id
+
+  /**
+   * The payload, with any padding already removed.
+   * @type bytes
+   */
+  var payload
+
+  @new(type, flags, stream_id, payload) {
+    self.type = type
+    self.flags = flags
+    self.stream_id = stream_id
+    self.payload = payload
+  }
+
+  /**
+   * Whether `flag` is set.
+   *
+   * @param int flag
+   * @returns bool
+   */
+  has_flag(flag: int) {
+    return (self.flags & flag) != 0
+  }
+
+  to_string() {
+    return '<Frame type=${self.type} flags=${self.flags} stream=${self.stream_id} ' +
+      'length=${self.payload.length()}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Reads a 32-bit big-endian integer from `data` at `offset`.
+ *
+ * @param bytes data
+ * @param number offset
+ * @returns number
+ */
+def read_u32(data, offset: number) {
+  return data[offset] * 16777216 + data[offset + 1] * 65536 +
+    data[offset + 2] * 256 + data[offset + 3]
+}
+
+/**
+ * Appends a 32-bit big-endian integer to `out`.
+ *
+ * @param bytes out
+ * @param number value
+ */
+def write_u32(out, value: number) {
+  out.append((value // 16777216) % 256)
+  out.append((value // 65536) % 256)
+  out.append((value // 256) % 256)
+  out.append(value % 256)
+}
+
+/**
+ * Reads a 24-bit big-endian integer from `data` at `offset`.
+ *
+ * @param bytes data
+ * @param number offset
+ * @returns number
+ */
+def read_u24(data, offset: number) {
+  return data[offset] * 65536 + data[offset + 1] * 256 + data[offset + 2]
+}
+
+/**
+ * Reads one frame off a connection.
+ *
+ * Padding is stripped here, so a caller never has to think about it,
+ * and a pad length that does not fit inside the frame is rejected -
+ * that mismatch is a connection error, not a frame to salvage.
+ *
+ * @param Connection connection
+ * @param number max_frame_size: refuse anything larger
+ * @returns Frame
+ * @throws ProtocolError on a malformed or over-large frame
+ */
+def read_frame(connection, max_frame_size: number) {
+  var header = connection.read_exactly(9)
+
+  var length = read_u24(header, 0)
+  var type = header[3]
+  var flags = header[4]
+
+  # The top bit of the stream identifier is reserved and must be
+  # ignored on receipt rather than treated as part of the number.
+  var stream_id = read_u32(header, 5) & 2147483647
+
+  header.dispose()
+
+  if length > max_frame_size {
+    raise ProtocolError('frame of ${length} bytes exceeds the ${max_frame_size} byte limit')
+  }
+
+  var payload = length > 0 ? connection.read_exactly(length) : bytes(0)
+
+  var padded = (flags & FLAG_PADDED) != 0 and (type == DATA or type == HEADERS)
+
+  if padded {
+    if payload.length() < 1 {
+      raise ProtocolError('padded frame is too short to carry a pad length')
+    }
+
+    var pad_length = payload[0]
+
+    if pad_length >= payload.length() {
+      raise ProtocolError('frame padding is longer than the frame')
+    }
+
+    var stripped = payload[1, payload.length() - pad_length]
+    payload.dispose()
+    payload = stripped
+  }
+
+  return Frame(type, flags, stream_id, payload)
+}
+
+/**
+ * Writes one frame to a connection.
+ *
+ * @param Connection connection
+ * @param int type
+ * @param int flags
+ * @param int stream_id
+ * @param ?bytes payload
+ */
+def write_frame(connection, type: int, flags: int, stream_id: int, payload) {
+  var length = payload == nil ? 0 : payload.length()
+
+  var header = bytes(0)
+  header.append((length // 65536) % 256)
+  header.append((length // 256) % 256)
+  header.append(length % 256)
+  header.append(type)
+  header.append(flags)
+  write_u32(header, stream_id)
+
+  connection.write(header)
+  header.dispose()
+
+  if length > 0 {
+    connection.write(payload)
+  }
+}
+
+/**
+ * Builds a SETTINGS payload from a dictionary of identifier to value.
+ *
+ * @param dict values
+ * @returns bytes
+ */
+def encode_settings(values: dict) {
+  var out = bytes(0)
+
+  for identifier, value in values {
+    out.append((identifier // 256) % 256)
+    out.append(identifier % 256)
+    write_u32(out, value)
+  }
+
+  return out
+}
+
+/**
+ * Parses a SETTINGS payload into a dictionary.
+ *
+ * Unknown identifiers are kept rather than dropped - an endpoint must
+ * ignore settings it does not understand, and keeping them makes that
+ * the caller's decision rather than a silent one here.
+ *
+ * @param bytes payload
+ * @returns dict
+ * @throws ProtocolError if the payload is not a whole number of
+ *    six-octet entries
+ */
+def decode_settings(payload) {
+  if payload.length() % 6 != 0 {
+    raise ProtocolError('SETTINGS payload is not a multiple of six octets')
+  }
+
+  var values = {}
+
+  iter var at = 0; at < payload.length(); at += 6 {
+    var identifier = payload[at] * 256 + payload[at + 1]
+    values[identifier] = read_u32(payload, at + 2)
+  }
+
+  return values
+}
+
+/**
+ * Builds a GOAWAY payload.
+ *
+ * @param int last_stream_id: the highest stream this endpoint acted on
+ * @param int error_code
+ * @param ?string debug_message: for humans reading a packet capture;
+ *    never interpreted by the peer
+ * @returns bytes
+ */
+def encode_goaway(last_stream_id: int, error_code: int, debug_message: ?string) {
+  var out = bytes(0)
+
+  write_u32(out, last_stream_id)
+  write_u32(out, error_code)
+
+  if debug_message != nil {
+    out.extend(debug_message.to_bytes())
+  }
+
+  return out
+}
+
+/**
+ * Builds an RST_STREAM payload.
+ *
+ * @param int error_code
+ * @returns bytes
+ */
+def encode_error(error_code: int) {
+  var out = bytes(0)
+  write_u32(out, error_code)
+
+  return out
+}

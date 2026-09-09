@@ -16,11 +16,11 @@ def ok(label) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  compress.checksum module — test suite'
+echo '  compress.checksum module: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
-# CRC-32 — known-answer tests against well-known reference values
+# CRC-32: known-answer tests against well-known reference values
 # ---------------------------------------------------------------------------
 assert checksum.crc32('') == 0, 'CRC-32 of an empty input must be 0'
 assert checksum.crc32('123456789') == 0xcbf43926,
@@ -34,7 +34,7 @@ assert checksum.crc32('hello') != checksum.crc32('hellp'), 'a single differing b
 ok('crc32() is deterministic and sensitive to single-byte changes')
 
 # ---------------------------------------------------------------------------
-# CRC-32 — running/incremental checksums
+# CRC-32: running/incremental checksums
 # ---------------------------------------------------------------------------
 var whole = checksum.crc32('hello world')
 var running = checksum.crc32('hello ')
@@ -43,7 +43,7 @@ assert running == whole, 'feeding "hello " then "world" with the running checksu
 ok('crc32() supports incremental computation via the initial parameter')
 
 # ---------------------------------------------------------------------------
-# CRC-32 — binary content
+# CRC-32: binary content
 # ---------------------------------------------------------------------------
 var binary_data = bytes(256)
 iter var i = 0; i < 256; i++ {
@@ -53,7 +53,7 @@ assert checksum.crc32(binary_data) == checksum.crc32(binary_data), 'crc32() on b
 ok('crc32() works on binary (non-UTF-8) data')
 
 # ---------------------------------------------------------------------------
-# Adler-32 — known-answer tests
+# Adler-32: known-answer tests
 # ---------------------------------------------------------------------------
 assert checksum.adler32('') == 1, 'Adler-32 of an empty input must be 1 (the algorithm\'s defined identity value)'
 assert checksum.adler32('Wikipedia') == 0x11e60398,
@@ -65,7 +65,7 @@ assert checksum.adler32('hello') != checksum.adler32('hellp'), 'a single differi
 ok('adler32() is deterministic and sensitive to single-byte changes')
 
 # ---------------------------------------------------------------------------
-# Adler-32 — running/incremental checksums
+# Adler-32: running/incremental checksums
 # ---------------------------------------------------------------------------
 var a_whole = checksum.adler32('hello world')
 var a_running = checksum.adler32('hello ')

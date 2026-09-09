@@ -1,0 +1,391 @@
+/**
+ * Helper module for `tests/libs/http_server.zu` - the server side of
+ * every scenario, in its own file for the same reason
+ * `net_tls_server.zu` is: a spawned isolate resolves a function by
+ * module binding, and a closure that captured an imported module
+ * namespace cannot cross the boundary at all.
+ *
+ * Each server binds to port `0`, reports the port it was given back
+ * through a channel, and serves until a request for `/quit` arrives.
+ */
+
+import http
+import http.middleware
+import http.sse
+import http.websocket as ws
+
+import os
+
+# Serves the accept loop by hand rather than through `listen()`, so
+# the port can be reported before the first connection and so the
+# loop can be stopped from inside a handler.
+def _run(server, port_channel) {
+  # Each of these servers handles one connection at a time, so an idle
+  # keep-alive connection would hold up the next client for the whole
+  # default window. A short one keeps the suite quick without changing
+  # anything it is testing.
+  server.keep_alive_timeout = 1000
+
+  server.bind()
+  port_channel.send(server.address().to_string())
+
+  while server.is_listening() {
+    var client
+
+    catch {
+      client = server.accept()
+    } as error
+
+    if error {
+      break
+    }
+
+    server.serve_connection(client)
+  }
+}
+
+/**
+ * The general-purpose server: routing, bodies, cookies, compression,
+ * redirects, streaming, limits and static files.
+ *
+ * @param Channel port_channel
+ * @param string static_root: a directory to serve at `/static`
+ */
+def api_server(port_channel, static_root) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.max_body_size = 4096
+  server.compression_min_size = 64
+
+  server.get('/', @(request, response) {
+    response.text('hello world')
+  })
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.get('/users/:id', @(request, response) {
+    response.json({
+      id: request.param('id'),
+      q: request.query_param('q', nil),
+      version: request.version,
+    })
+  })
+
+  server.get('/files/' + '*path', @(request, response) {
+    response.text(request.param('path'))
+  })
+
+  server.post('/echo', @(request, response) {
+    response.json({
+      type: request.content_type(),
+      length: request.body.length(),
+      text: request.text(),
+    })
+  })
+
+  server.post('/form', @(request, response) {
+    response.json(request.form())
+  })
+
+  server.post('/upload', @(request, response) {
+    var uploaded = request.file('document')
+
+    response.json({
+      field: request.form_field('title', nil),
+      filename: uploaded == nil ? nil : uploaded.filename,
+      size: uploaded == nil ? 0 : uploaded.size(),
+      content: uploaded == nil ? nil : uploaded.to_text(),
+    })
+  })
+
+  server.put('/put', @(request, response) {
+    response.text('put:' + request.text())
+  })
+
+  server.delete('/thing', @(request, response) {
+    response.status = 204
+  })
+
+  server.get('/redirect', @(request, response) {
+    response.redirect('/redirected', 302)
+  })
+
+  server.get('/redirected', @(request, response) {
+    response.text('arrived')
+  })
+
+  # Redirects to the same server under a different name, which is a
+  # different origin as far as credential scoping is concerned.
+  server.get('/cross-origin', @(request, response) {
+    response.redirect('http://localhost:${server.address().port()}/saw-auth', 302)
+  })
+
+  server.get('/saw-auth', @(request, response) {
+    response.json({ authorization: request.header('authorization', nil) })
+  })
+
+  server.get('/loop', @(request, response) {
+    response.redirect('/loop', 302)
+  })
+
+  server.get('/set-cookie', @(request, response) {
+    response.set_cookie('session', 'abc123', { path: '/' })
+    response.text('set')
+  })
+
+  server.get('/read-cookie', @(request, response) {
+    response.text(request.cookie('session', 'none'))
+  })
+
+  server.get('/large', @(request, response) {
+    response.content_type('text/plain')
+    response.write('compress me. ' * 200)
+  })
+
+  server.get('/stream', @(request, response) {
+    response.content_type('text/plain')
+    response.stream(@(writer) {
+      iter var i = 1; i <= 3; i++ {
+        writer.write('chunk${i}\n')
+        writer.flush()
+      }
+    })
+  })
+
+  server.get('/events', @(request, response) {
+    sse.stream(response, @(events) {
+      events.send({ n: 1 }, 'tick', '1')
+      events.send('plain text')
+      events.comment('keep alive')
+    })
+  })
+
+  server.get('/boom', @(request, response) {
+    raise Error('deliberate failure')
+  })
+
+  server.get('/headers', @(request, response) {
+    response.json({
+      host: request.header('host', nil),
+      agent: request.header('user-agent', nil),
+      custom: request.header('x-custom', nil),
+    })
+  })
+
+  server.serve_files('/static', static_root, { cache_age: 60 })
+
+  _run(server, port_channel)
+}
+
+/**
+ * A server whose whole purpose is to exercise the middleware.
+ *
+ * @param Channel port_channel
+ */
+def middleware_server(port_channel) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.use(middleware.request_id())
+  server.use(middleware.security_headers())
+  server.use(middleware.cors({
+    origins: ['https://app.example.com'],
+    credentials: true,
+  }))
+  server.use(middleware.etag(1))
+
+  server.use(@(request, response, next) {
+    if request.path.starts_with('/private') {
+      var guard = middleware.basic_auth(@(user, password) {
+        return user == 'admin' and password == 'secret'
+      }, 'Test')
+
+      guard(request, response, next)
+      return
+    }
+
+    next()
+  })
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.get('/open', @(request, response) {
+    response.text('open sesame')
+  })
+
+  server.get('/private/data', @(request, response) {
+    response.json({ user: request.context.get('user', nil) })
+  })
+
+  _run(server, port_channel)
+}
+
+/**
+ * The upstream a reverse proxy forwards to.
+ *
+ * @param Channel port_channel
+ */
+def upstream_server(port_channel) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.any('/echo/' + '*path', @(request, response) {
+    response.json({
+      path: request.path,
+      method: request.method,
+      forwarded_for: request.header('x-forwarded-for', nil),
+      forwarded_proto: request.header('x-forwarded-proto', nil),
+      body: request.text(),
+    })
+  })
+
+  server.get('/big', @(request, response) {
+    response.content_type('text/plain')
+    response.write('u' * 40000)
+  })
+
+  _run(server, port_channel)
+}
+
+/**
+ * The proxy sitting in front of `upstream_server`.
+ *
+ * @param Channel port_channel
+ * @param string upstream: the upstream's base URL
+ */
+def proxy_server(port_channel, upstream) {
+  var server = http.HttpServer(0, '127.0.0.1')
+  var forwarder = http.ReverseProxy(upstream, { strip_prefix: '/api' })
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.any('/api/' + '*path', @(request, response) {
+    forwarder.handle(request, response)
+  })
+
+  _run(server, port_channel)
+}
+
+/**
+ * A WebSocket echo server.
+ *
+ * @param Channel port_channel
+ */
+def websocket_server(port_channel) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.get('/ws', @(request, response) {
+    var socket = ws.accept(request, response, { protocols: ['chat', 'echo'] })
+
+    while socket.is_open() {
+      var message = socket.receive()
+
+      if message == nil or message.is_close() {
+        break
+      }
+
+      if message.is_text() {
+        socket.send('echo:' + message.text())
+      } else {
+        socket.send_binary(message.data)
+      }
+    }
+  })
+
+  _run(server, port_channel)
+}
+
+/**
+ * A TLS server, which also exercises ALPN negotiating HTTP/2.
+ *
+ * @param Channel port_channel
+ * @param string cert_chain
+ * @param string private_key
+ */
+def tls_server(port_channel, cert_chain, private_key) {
+  var server = http.HttpServer(0, '127.0.0.1')
+  server.use_tls(cert_chain, private_key)
+  server.max_body_size = 4096
+
+  server.get('/quit', @(request, response) {
+    response.headers.set('Connection', 'close')
+    response.text('bye')
+    server.close()
+  })
+
+  server.get('/', @(request, response) {
+    response.json({
+      secure: request.secure,
+      version: request.version,
+      scheme: request.scheme,
+    })
+  })
+
+  server.post('/echo', @(request, response) {
+    response.json({ text: request.text(), version: request.version })
+  })
+
+  server.get('/large', @(request, response) {
+    response.content_type('text/plain')
+    response.write('h2 body. ' * 20000)
+  })
+
+  _run(server, port_channel)
+}
+
+/**
+ * The routes the worker pool serves. Separate from the pool starter
+ * below because `http.serve()` calls it once inside each worker
+ * isolate, where it has to be resolvable by module binding.
+ *
+ * @param HttpServer server
+ */
+def pool_routes(server) {
+  server.keep_alive_timeout = 500
+
+  server.get('/', @(request, response) {
+    response.json({ worker: true, path: request.path })
+  })
+}
+
+/**
+ * Runs the multi-isolate server, stopping itself after
+ * `max_connections` have been accepted so the test has a
+ * deterministic end.
+ *
+ * @param Channel port_channel
+ * @param int max_connections
+ */
+def pool_server(port_channel, max_connections) {
+  http.serve(pool_routes, {
+    host: '127.0.0.1',
+    port: 0,
+    workers: 2,
+    max_connections,
+    on_ready: @(address, stop) {
+      port_channel.send(address.to_string())
+    },
+  })
+}

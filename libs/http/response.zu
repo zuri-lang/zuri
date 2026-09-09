@@ -1,0 +1,757 @@
+#!-- part of the http module
+
+import .cookies { Cookie }
+import .errors { HttpError, StatusError }
+import .headers { Headers }
+import .status
+import .util
+
+import json
+import mime
+import wire
+
+/**
+ * An HTTP response, in both directions: the thing a server builds and
+ * sends, and the thing a client receives and reads.
+ *
+ * On the server side the useful surface is the writers - `text()`,
+ * `json()`, `html()`, `file()`, `redirect()`, `render()` - each of
+ * which sets a sensible `Content-Type` alongside the body, plus
+ * `set_cookie()` and the caching helpers.
+ *
+ * On the client side it is `as_text()`, `as_dict()`, `is_ok()` and
+ * `raise_for_status()`.
+ *
+ * A body can be bytes held in memory, a file streamed from disk, or a
+ * callback that produces bytes as it goes. The last two matter for a
+ * server that has to serve something larger than it would like to
+ * hold in memory; see `file()` and `stream()`.
+ *
+ * @printable
+ * @serializable
+ */
+class HttpResponse {
+
+  /**
+   * The status code.
+   * @type number
+   */
+  var status = 200
+
+  /**
+   * The reason phrase. Left `nil` to use the canonical phrase for
+   * `status`, which is nearly always what you want; HTTP/2 and HTTP/3
+   * drop the phrase entirely.
+   * @type ?string
+   */
+  var reason
+
+  /**
+   * The protocol version this response was received over, or will be
+   * sent with: `'1.0'`, `'1.1'`, `'2'` or `'3'`.
+   * @type string
+   */
+  var version = '1.1'
+
+  /**
+   * The response header fields.
+   * @type Headers
+   */
+  var headers
+
+  /**
+   * The body, as bytes. For a streamed or file-backed response this
+   * stays empty and the content is produced at write time.
+   * @type bytes
+   */
+  var body
+
+  /**
+   * Cookies to be sent with this response. Add to it through
+   * `set_cookie()` rather than directly.
+   * @type list
+   */
+  var cookies = []
+
+  /**
+   * How long the request that produced this response took, in
+   * milliseconds. Client side only.
+   * @type number
+   */
+  var time_taken = 0
+
+  /**
+   * How many redirects were followed to reach it. Client side only.
+   * @type number
+   */
+  var redirects = 0
+
+  /**
+   * The URL that finally answered, which differs from the requested
+   * one whenever a redirect was followed. Client side only.
+   * @type ?string
+   */
+  var responder
+
+  /**
+   * The peer's TLS certificate, on a response received over HTTPS.
+   * Client side only.
+   * @type ?PeerCertificate
+   */
+  var certificate
+
+  /**
+   * The reader for the body, when the client was asked to stream the
+   * response rather than materialise it. `nil` otherwise.
+   * @type ?BodyReader
+   */
+  var body_reader
+
+  /**
+   * The method of the request this answers. The protocol needs it -
+   * a response to HEAD is framed as though it had a body and then
+   * sends none.
+   * @type ?string
+   */
+  var request_method
+
+  # For a streamed response, the pooled connection it is still being
+  # read from. The client needs it back once the caller is done.
+  var _carrier
+
+  # Set when the body comes from somewhere other than `body`:
+  # `['file', path, offset, length]` or `['stream', handler]`.
+  var _source
+
+  # Lazily built the first time render() is called, so an application
+  # that never renders a template never pays for the engine.
+  var _wire
+
+  # Flipped once the head has gone out, after which header changes are
+  # meaningless and should be caught rather than silently ignored.
+  var _committed = false
+
+  /**
+   * @param ?any body: `bytes` or a `string` to start the body with
+   * @param ?number status: defaults to `200`
+   * @param ?Headers headers
+   */
+  @new(body, status, headers) {
+    self.status = status == nil ? 200 : status
+    self.headers = headers == nil ? Headers() : headers
+    self.cookies = []
+    self.version = '1.1'
+    self.time_taken = 0
+    self.redirects = 0
+    self._committed = false
+
+    if body == nil {
+      self.body = bytes(0)
+    } else if is_bytes(body) {
+      self.body = body
+    } else if is_string(body) {
+      self.body = body.to_bytes()
+    } else {
+      raise TypeError('body must be bytes or a string, got ${typeof(body)}')
+    }
+  }
+
+  # ----------------------------------------------------------------
+  # Writing a response
+  # ----------------------------------------------------------------
+
+  /**
+   * Appends to the response body.
+   *
+   * @param {string|bytes} data
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  write(data) {
+    if is_string(data) {
+      var encoded = data.to_bytes()
+      self.body.extend(encoded)
+      encoded.dispose()
+    } else if is_bytes(data) {
+      self.body.extend(data)
+    } else {
+      raise TypeError('data must be bytes or a string, got ${typeof(data)}')
+    }
+
+    return self
+  }
+
+  /**
+   * Replaces the body with `content` and sets `Content-Type` to
+   * `text/plain; charset=utf-8`.
+   *
+   * @param string content
+   * @param ?number status
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  text(content: string, status: ?number) {
+    return self._send(content, 'text/plain; charset=utf-8', status)
+  }
+
+  /**
+   * Replaces the body with `content` and sets `Content-Type` to
+   * `text/html; charset=utf-8`.
+   *
+   * @param string content
+   * @param ?number status
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  html(content: string, status: ?number) {
+    return self._send(content, 'text/html; charset=utf-8', status)
+  }
+
+  /**
+   * Replaces the body with the JSON encoding of `data` and sets
+   * `Content-Type` to `application/json`.
+   *
+   * @param any data
+   * @param ?number status
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  json(data, status: ?number) {
+    return self._send(json.encode(data), 'application/json', status)
+  }
+
+  /**
+   * Replaces the body with `content` and sets `Content-Type` to
+   * `application/xml; charset=utf-8`.
+   *
+   * @param string content
+   * @param ?number status
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  xml(content: string, status: ?number) {
+    return self._send(content, 'application/xml; charset=utf-8', status)
+  }
+
+  _send(content, content_type, status_code) {
+    if status_code != nil {
+      self.status = status_code
+    }
+
+    self.headers.set('Content-Type', content_type)
+
+    self.body.dispose()
+    self.body = is_bytes(content) ? content : content.to_string().to_bytes()
+
+    return self
+  }
+
+  /**
+   * Serves the file at `path`, streamed from disk rather than read
+   * into memory, with `Content-Type` guessed from the extension.
+   *
+   * `offset` and `length` serve part of the file, which is what a
+   * `Range` request needs; the caller is responsible for setting the
+   * `206` status and `Content-Range` header that go with it.
+   *
+   * @param string path
+   * @param ?number offset: byte offset to start from; defaults to `0`
+   * @param ?number length: how many bytes to send; defaults to the
+   *    rest of the file
+   * @returns HttpResponse: this same instance, for chaining
+   * @throws HttpError if the file does not exist or cannot be read
+   */
+  file(path: string, offset: ?number, length: ?number) {
+    var handle = file(path, 'rb')
+
+    if !handle.exists() {
+      raise HttpError('no such file: ${path}')
+    }
+
+    var stats = handle.stats()
+    var total = stats.size
+
+    var start = offset == nil ? 0 : offset
+    var count = length == nil ? total - start : length
+
+    if start < 0 or start > total {
+      raise HttpError('offset ${start} is outside ${path}')
+    }
+    if count < 0 or start + count > total {
+      count = total - start
+    }
+
+    self.headers.set_default('Content-Type', mime.detect_from_name(path))
+    self.headers.set('Content-Length', count)
+
+    self._source = ['file', path, start, count]
+
+    return self
+  }
+
+  /**
+   * Serves the file at `path` as an attachment, so a browser saves it
+   * rather than displaying it.
+   *
+   * @param string path
+   * @param ?string name: the filename to offer; defaults to the
+   *    file's own base name
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  download(path: string, name: ?string) {
+    self.file(path)
+
+    var offered = name
+    if offered == nil {
+      var parts = path.split('/')
+      offered = parts[parts.length() - 1]
+    }
+
+    self.headers.set(
+      'Content-Disposition',
+      'attachment; filename=${util.quote(offered)}'
+    )
+    self.headers.set('Content-Type', 'application/octet-stream')
+
+    return self
+  }
+
+  /**
+   * Produces the body from a callback instead of holding it in
+   * memory.
+   *
+   * `handler` is called with a writer that has `write(data)` and
+   * `flush()`. Anything it writes goes out as it is written, which is
+   * what makes server-sent events, a progress feed, or a large
+   * generated export possible without buffering the whole thing
+   * first.
+   *
+   * Unless a `Content-Length` is set beforehand, the body is framed
+   * with chunked transfer encoding on HTTP/1.1 and as an ordinary
+   * DATA stream on HTTP/2.
+   *
+   * ```zuri
+   * server.handle('GET', '/export', @(request, response) {
+   *   response.content_type('text/csv')
+   *   response.stream(@(writer) {
+   *     for row in rows {
+   *       writer.write(row.join(',') + '\n')
+   *     }
+   *   })
+   * })
+   * ```
+   *
+   * @param function(1) handler
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  stream(handler) {
+    if !is_function(handler) and !is_callable(handler) {
+      raise TypeError('handler must be callable')
+    }
+
+    self._source = ['stream', handler]
+
+    return self
+  }
+
+  /**
+   * Renders a Wire template and appends the result to the body,
+   * setting `Content-Type` to HTML if it is not already set.
+   *
+   * Templates are resolved against Wire's shared instance, whose root
+   * defaults to a `templates` directory beside the working directory.
+   * Use `wire.shared().set_root()` to point it elsewhere.
+   *
+   * @param string path: the template path, without the `.html`
+   *    extension
+   * @param ?dict variables
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  render(path: string, variables: ?dict) {
+    if !self._wire {
+      self._wire = wire.shared()
+    }
+
+    self.headers.set_default('Content-Type', 'text/html; charset=utf-8')
+    self.write(self._wire.render(path, variables))
+
+    return self
+  }
+
+  /**
+   * Sends the client to `location`, setting both the `Location`
+   * header and a 3xx status.
+   *
+   * The default is `302 Found`, which browsers follow with a GET
+   * regardless of the original method. Use `307` or `308` when the
+   * method and body must be preserved, and `303` after a form
+   * submission that should not be replayed on refresh.
+   *
+   * @param string location
+   * @param ?number status: must be a 3xx; defaults to `302`
+   * @returns HttpResponse: this same instance, for chaining
+   * @throws ValueError if `status` is not a redirect status
+   */
+  redirect(location: string, status: ?number) {
+    var code = status == nil ? 302 : status
+
+    if code < 300 or code > 399 {
+      raise ValueError('redirect status must be a 3xx, got ${code}')
+    }
+
+    self.headers.set('Location', location)
+    self.status = code
+
+    self.body.dispose()
+    self.body = bytes(0)
+    self._source = nil
+
+    return self
+  }
+
+  # ----------------------------------------------------------------
+  # Headers, cookies, caching
+  # ----------------------------------------------------------------
+
+  /**
+   * Sets the `Content-Type`.
+   *
+   * @param string mimetype
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  content_type(mimetype: string) {
+    self.headers.set('Content-Type', mimetype)
+    return self
+  }
+
+  /**
+   * Sets a response header.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  header(name: string, value) {
+    self.headers.set(name, value)
+    return self
+  }
+
+  /**
+   * Adds a cookie to the response.
+   *
+   * `http_only` defaults to `true` and `same_site` to `'Lax'`, which
+   * are the settings a session cookie should have; pass them
+   * explicitly to opt out. `secure` defaults to `true` for any cookie
+   * whose name carries the `__Secure-` or `__Host-` prefix.
+   *
+   * @param string name
+   * @param string value
+   * @param ?dict attributes: `domain`, `path`, `expires`, `max_age`,
+   *    `secure`, `http_only`, `same_site`, `partitioned`
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  set_cookie(name: string, value: string, attributes: ?dict) {
+    var options = attributes == nil ? {} : attributes.clone()
+
+    if !options.contains('http_only') {
+      options['http_only'] = true
+    }
+    if !options.contains('same_site') {
+      options['same_site'] = 'Lax'
+    }
+
+    self.cookies.append(Cookie(name, value, options))
+
+    return self
+  }
+
+  /**
+   * Expires a cookie on the client by re-sending it empty with a
+   * past expiry.
+   *
+   * The `domain` and `path` must match the ones the cookie was set
+   * with, or the client will keep the original and simply store a
+   * second, differently-scoped, empty one.
+   *
+   * @param string name
+   * @param ?dict attributes: `domain` and `path`
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  clear_cookie(name: string, attributes: ?dict) {
+    var options = attributes == nil ? {} : attributes.clone()
+    options['max_age'] = 0
+    options['expires'] = 0
+
+    self.cookies.append(Cookie(name, '', options))
+
+    return self
+  }
+
+  /**
+   * Marks the response as cacheable for `seconds`, for both private
+   * and shared caches.
+   *
+   * @param number seconds
+   * @param ?bool public_cache: whether shared caches (a CDN, a proxy)
+   *    may store it too; defaults to `true`
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  cache_for(seconds: number, public_cache: ?bool) {
+    var visibility = public_cache == false ? 'private' : 'public'
+
+    self.headers.set('Cache-Control', '${visibility}, max-age=${seconds // 1}')
+    self.headers.set('Expires', util.format_date(time() + seconds))
+
+    return self
+  }
+
+  /**
+   * Tells every cache, including the browser's, not to store this
+   * response. The three headers below are the combination that
+   * actually works across the caches still in service.
+   *
+   * @returns HttpResponse: this same instance, for chaining
+   */
+  no_cache() {
+    self.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    self.headers.set('Pragma', 'no-cache')
+    self.headers.set('Expires', '0')
+
+    return self
+  }
+
+  # ----------------------------------------------------------------
+  # Reading a response
+  # ----------------------------------------------------------------
+
+  /**
+   * The body decoded as UTF-8 text, or `''` for an empty body.
+   *
+   * @returns string
+   */
+  as_text() {
+    if self.body == nil or self.body.length() == 0 {
+      return ''
+    }
+    return self.body.to_string()
+  }
+
+  /**
+   * The body parsed as JSON.
+   *
+   * @returns any
+   * @throws HttpError if the body is empty or is not valid JSON
+   */
+  as_dict() {
+    if self.body == nil or self.body.length() == 0 {
+      raise HttpError('response body is empty')
+    }
+
+    var decoded
+    catch {
+      decoded = json.decode(self.body.to_string())
+    } as error
+
+    if error {
+      raise HttpError('response body is not valid JSON: ${error.message}')
+    }
+
+    return decoded
+  }
+
+  /**
+   * The raw body bytes.
+   *
+   * @returns bytes
+   */
+  as_bytes() {
+    return self.body
+  }
+
+  /**
+   * The media type from `Content-Type`, without its parameters, e.g.
+   * `'application/json'` for `'application/json; charset=utf-8'`.
+   *
+   * @returns ?string
+   */
+  media_type() {
+    var value = self.headers.get('content-type', nil)
+    if value == nil {
+      return nil
+    }
+    return util.parse_parameters(value)[0].lower()
+  }
+
+  /**
+   * The charset named by `Content-Type`, or `nil`.
+   *
+   * @returns ?string
+   */
+  charset() {
+    var value = self.headers.get('content-type', nil)
+    if value == nil {
+      return nil
+    }
+    return util.parse_parameters(value)[1].get('charset', nil)
+  }
+
+  /**
+   * Whether the status is a 2xx.
+   *
+   * @returns bool
+   */
+  is_ok() {
+    return status.is_success(self.status)
+  }
+
+  /**
+   * Whether the status is a 3xx.
+   *
+   * @returns bool
+   */
+  is_redirect() {
+    return status.is_redirect(self.status)
+  }
+
+  /**
+   * Whether the status is a 4xx or 5xx.
+   *
+   * @returns bool
+   */
+  is_error() {
+    return status.is_error(self.status)
+  }
+
+  /**
+   * Raises `StatusError` when the status is a 4xx or 5xx, and returns
+   * the response otherwise, so it can be used inline:
+   *
+   * ```zuri
+   * var data = http.get(url).raise_for_status().as_dict()
+   * ```
+   *
+   * The response stays reachable on the raised error, so the body -
+   * where an API usually explains what went wrong - is not lost.
+   *
+   * @returns HttpResponse
+   * @throws StatusError
+   */
+  raise_for_status() {
+    if self.is_error() {
+      raise StatusError(
+        '${self.status} ${self.reason_phrase()} for ${self.responder or "request"}',
+        self
+      )
+    }
+
+    return self
+  }
+
+  /**
+   * The reason phrase, either the one received or the canonical one
+   * for the status code.
+   *
+   * @returns string
+   */
+  reason_phrase() {
+    return self.reason or status.reason(self.status)
+  }
+
+  /**
+   * Whether the response is defined to carry no body: a `1xx`, `204`
+   * or `304` status, or any response to a HEAD request.
+   *
+   * @returns bool
+   */
+  is_bodiless() {
+    if self.request_method != nil and self.request_method.upper() == 'HEAD' {
+      return true
+    }
+    return status.is_bodiless(self.status)
+  }
+
+  /**
+   * The body source, when the body is not held in `body`: `['file',
+   * path, offset, length]` or `['stream', handler]`. `nil` for an
+   * ordinary in-memory body.
+   *
+   * @returns ?list
+   */
+  source() {
+    return self._source
+  }
+
+  /**
+   * Records the connection a streamed response is still being read
+   * from. Set by `HttpClient`; hand the response to
+   * `HttpClient.finish()` when you are done reading it.
+   *
+   * @param ?list carrier
+   */
+  set_carrier(carrier) {
+    self._carrier = carrier
+  }
+
+  /**
+   * The connection a streamed response is still being read from, or
+   * `nil`.
+   *
+   * @returns ?list
+   */
+  carrier() {
+    return self._carrier
+  }
+
+  /**
+   * Whether the head has already been written to the wire, after
+   * which changing a header or the status has no effect.
+   *
+   * @returns bool
+   */
+  is_committed() {
+    return self._committed
+  }
+
+  /**
+   * Marks the response as committed. Called by the protocol writer;
+   * applications have no reason to.
+   */
+  commit() {
+    self._committed = true
+  }
+
+  /**
+   * Every `Set-Cookie` field value this response will send.
+   *
+   * @returns list
+   */
+  cookie_headers() {
+    var result = []
+    for cookie in self.cookies {
+      result.append(cookie.to_header())
+    }
+    return result
+  }
+
+  to_string() {
+    return '<HttpResponse ${self.status} ${self.reason_phrase()}, ' +
+      '${self.body.length()} bytes>'
+  }
+
+  to_json() {
+    return {
+      status: self.status,
+      reason: self.reason_phrase(),
+      version: self.version,
+      headers: self.headers.to_dict(),
+      cookies: self.cookie_headers(),
+      time_taken: self.time_taken,
+      redirects: self.redirects,
+      responder: self.responder,
+      body: self.as_text(),
+    }
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @to_json() {
+    return self.to_json()
+  }
+}

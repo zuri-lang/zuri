@@ -1,0 +1,604 @@
+#!-- part of the http module
+/**
+ * @module http.h2.hpack
+ *
+ * HPACK, the header compression HTTP/2 uses (RFC 7541).
+ *
+ * A header block is a sequence of representations, each of which
+ * either names an entry of a table both endpoints maintain, or spells
+ * a field out. The static table below is fixed by the RFC; the
+ * dynamic table is built as a connection runs, which is what makes
+ * the *decoder* stateful - a block cannot be decoded without every
+ * block that came before it on the same connection.
+ *
+ * The encoder here uses the static table where it can and literals
+ * everywhere else, and never adds to its own dynamic table. That
+ * gives up some compression and buys a great deal: an encoder with no
+ * dynamic table cannot desynchronise from a peer's decoder, and it
+ * cannot leak one request's secrets into another's compression ratio,
+ * which is the whole of the CRIME family of attacks.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ProtocolError }
+import .huffman
+
+
+# RFC 7541 Appendix A. Index 0 is unused - HPACK indexes from 1 - so
+# the list starts with a placeholder to keep the arithmetic honest.
+var _STATIC = [
+  ['', ''],
+  [':authority', ''],
+  [':method', 'GET'],
+  [':method', 'POST'],
+  [':path', '/'],
+  [':path', '/index.html'],
+  [':scheme', 'http'],
+  [':scheme', 'https'],
+  [':status', '200'],
+  [':status', '204'],
+  [':status', '206'],
+  [':status', '304'],
+  [':status', '400'],
+  [':status', '404'],
+  [':status', '500'],
+  ['accept-charset', ''],
+  ['accept-encoding', 'gzip, deflate'],
+  ['accept-language', ''],
+  ['accept-ranges', ''],
+  ['accept', ''],
+  ['access-control-allow-origin', ''],
+  ['age', ''],
+  ['allow', ''],
+  ['authorization', ''],
+  ['cache-control', ''],
+  ['content-disposition', ''],
+  ['content-encoding', ''],
+  ['content-language', ''],
+  ['content-length', ''],
+  ['content-location', ''],
+  ['content-range', ''],
+  ['content-type', ''],
+  ['cookie', ''],
+  ['date', ''],
+  ['etag', ''],
+  ['expect', ''],
+  ['expires', ''],
+  ['from', ''],
+  ['host', ''],
+  ['if-match', ''],
+  ['if-modified-since', ''],
+  ['if-none-match', ''],
+  ['if-range', ''],
+  ['if-unmodified-since', ''],
+  ['last-modified', ''],
+  ['link', ''],
+  ['location', ''],
+  ['max-forwards', ''],
+  ['proxy-authenticate', ''],
+  ['proxy-authorization', ''],
+  ['range', ''],
+  ['referer', ''],
+  ['refresh', ''],
+  ['retry-after', ''],
+  ['server', ''],
+  ['set-cookie', ''],
+  ['strict-transport-security', ''],
+  ['transfer-encoding', ''],
+  ['user-agent', ''],
+  ['vary', ''],
+  ['via', ''],
+  ['www-authenticate', ''],
+]
+
+var _STATIC_LENGTH = 61
+
+# name -> the lowest static index carrying that name, and
+# 'name\tvalue' -> the static index of that exact pair.
+var _BY_NAME = {}
+var _BY_PAIR = {}
+
+def _index_static() {
+  iter var i = 1; i <= _STATIC_LENGTH; i++ {
+    var entry = _STATIC[i]
+
+    if !_BY_NAME.contains(entry[0]) {
+      _BY_NAME[entry[0]] = i
+    }
+
+    if entry[1] {
+      _BY_PAIR['${entry[0]}\t${entry[1]}'] = i
+    }
+  }
+}
+
+_index_static()
+
+# Header fields whose values are secret often enough that they are
+# never worth entering into a compression table. A value that shares a
+# table with attacker-chosen text leaks through the compressed size,
+# which is the mechanism behind CRIME and BREACH.
+var _NEVER_INDEXED = [
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+]
+
+/**
+ * Encodes an integer with an `prefix_bits`-wide prefix, per RFC 7541
+ * §5.1. `first` is whatever flag bits share that first byte.
+ *
+ * @param bytes out
+ * @param number value
+ * @param number prefix_bits
+ * @param number first: the flag bits, already shifted into place
+ */
+def encode_integer(out, value: number, prefix_bits: number, first: number) {
+  var limit = (2 ** prefix_bits) - 1
+
+  if value < limit {
+    out.append(first | value)
+    return
+  }
+
+  out.append(first | limit)
+
+  var remainder = value - limit
+
+  while remainder >= 128 {
+    out.append((remainder % 128) + 128)
+    remainder = remainder // 128
+  }
+
+  out.append(remainder)
+}
+
+/**
+ * Decodes an integer with an `prefix_bits`-wide prefix, starting at
+ * `offset`.
+ *
+ * @param bytes data
+ * @param number offset
+ * @param number prefix_bits
+ * @returns list: `[value, next offset]`
+ * @throws ProtocolError if the encoding runs off the end or is
+ *    absurdly long
+ */
+def decode_integer(data, offset: number, prefix_bits: number) {
+  if offset >= data.length() {
+    raise ProtocolError('truncated HPACK integer')
+  }
+
+  var limit = (2 ** prefix_bits) - 1
+  var value = data[offset] & limit
+  var at = offset + 1
+
+  if value < limit {
+    return [value, at]
+  }
+
+  var shift = 0
+
+  while true {
+    if at >= data.length() {
+      raise ProtocolError('truncated HPACK integer')
+    }
+
+    var byte = data[at]
+    at++
+
+    value += (byte & 127) * (2 ** shift)
+    shift += 7
+
+    if byte < 128 {
+      break
+    }
+
+    # A continuation this long is not a large number, it is a peer
+    # trying to make us allocate one.
+    if shift > 28 {
+      raise ProtocolError('HPACK integer is too large')
+    }
+  }
+
+  return [value, at]
+}
+
+/**
+ * Encodes a string literal, Huffman-coding it when that comes out
+ * shorter.
+ *
+ * @param bytes out
+ * @param string text
+ */
+def encode_string(out, text: string) {
+  var raw = text.to_bytes()
+
+  if huffman.encoded_length(raw) < raw.length() {
+    var encoded = huffman.encode(raw)
+    encode_integer(out, encoded.length(), 7, 128)
+    out.extend(encoded)
+    encoded.dispose()
+  } else {
+    encode_integer(out, raw.length(), 7, 0)
+    out.extend(raw)
+  }
+
+  raw.dispose()
+}
+
+/**
+ * Decodes a string literal starting at `offset`.
+ *
+ * @param bytes data
+ * @param number offset
+ * @param number max_length: refuse a literal longer than this
+ * @returns list: `[text, next offset]`
+ * @throws ProtocolError on a truncated or over-long literal
+ */
+def decode_string(data, offset: number, max_length: number) {
+  if offset >= data.length() {
+    raise ProtocolError('truncated HPACK string')
+  }
+
+  var is_huffman = (data[offset] & 128) != 0
+  var header = decode_integer(data, offset, 7)
+  var length = header[0]
+  var start = header[1]
+
+  if length > max_length {
+    raise ProtocolError('HPACK string of ${length} bytes exceeds the limit')
+  }
+
+  if start + length > data.length() {
+    raise ProtocolError('truncated HPACK string')
+  }
+
+  var text
+
+  if is_huffman {
+    var decoded = huffman.decode(data, start, start + length)
+    text = decoded.to_string()
+    decoded.dispose()
+  } else {
+    var slice = data[start, start + length]
+    text = slice.to_string()
+    slice.dispose()
+  }
+
+  return [text, start + length]
+}
+
+/**
+ * The dynamic table half of an HPACK context: the most recently
+ * inserted fields, evicted from the far end when the table would
+ * exceed the size its owner has been told to keep.
+ *
+ * Entries are indexed from the newest, and continue the numbering
+ * where the static table stops, so index 62 is always the most
+ * recently added entry.
+ */
+class DynamicTable {
+
+  var _entries = []
+  var _size = 0
+  var _capacity = 4096
+
+  /**
+   * @param ?number capacity: the maximum table size in bytes;
+   *    defaults to HPACK's own default of 4096
+   */
+  @new(capacity) {
+    self._entries = []
+    self._size = 0
+    self._capacity = capacity == nil ? 4096 : capacity
+  }
+
+  /**
+   * Adds a field, evicting from the oldest end until it fits.
+   *
+   * An entry larger than the whole table is not an error: RFC 7541
+   * §4.4 says to empty the table and add nothing, which is what
+   * happens here.
+   *
+   * @param string name
+   * @param string value
+   */
+  add(name: string, value: string) {
+    var cost = _entry_size(name, value)
+
+    while self._size + cost > self._capacity and self._entries.length() > 0 {
+      var evicted = self._entries.pop()
+      self._size -= _entry_size(evicted[0], evicted[1])
+    }
+
+    if cost > self._capacity {
+      return
+    }
+
+    self._entries.insert([name, value], 0)
+    self._size += cost
+  }
+
+  /**
+   * The entry at HPACK index `index`, which counts the static table
+   * first.
+   *
+   * @param number index
+   * @returns list: `[name, value]`
+   * @throws ProtocolError if the index names nothing
+   */
+  get(index: number) {
+    if index < 1 {
+      raise ProtocolError('HPACK index 0 is not valid')
+    }
+
+    if index <= _STATIC_LENGTH {
+      return _STATIC[index]
+    }
+
+    var at = index - _STATIC_LENGTH - 1
+
+    if at >= self._entries.length() {
+      raise ProtocolError('HPACK index ${index} is past the end of the table')
+    }
+
+    return self._entries[at]
+  }
+
+  /**
+   * Changes the table's maximum size, evicting whatever no longer
+   * fits.
+   *
+   * @param number capacity
+   */
+  set_capacity(capacity: number) {
+    self._capacity = capacity
+
+    while self._size > self._capacity and self._entries.length() > 0 {
+      var evicted = self._entries.pop()
+      self._size -= _entry_size(evicted[0], evicted[1])
+    }
+  }
+
+  /**
+   * The table's current maximum size in bytes.
+   *
+   * @returns number
+   */
+  capacity() {
+    return self._capacity
+  }
+
+  /**
+   * How many bytes the entries currently occupy, by HPACK's
+   * accounting (name plus value plus 32 per entry).
+   *
+   * @returns number
+   */
+  size() {
+    return self._size
+  }
+
+  /**
+   * How many entries the table holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self._entries.length()
+  }
+}
+
+def _entry_size(name, value) {
+  return name.length() + value.length() + 32
+}
+
+/**
+ * Decodes header blocks for one direction of one connection.
+ *
+ * A decoder is stateful and order-dependent: it must see every header
+ * block on its connection, in order, or its dynamic table drifts out
+ * of step with the peer's encoder and every block after that decodes
+ * to nonsense.
+ */
+class Decoder {
+
+  var table
+
+  /**
+   * The largest single string literal accepted. A peer can otherwise
+   * declare a header value of any length it likes.
+   * @type number
+   */
+  var max_string_length = 32768
+
+  /**
+   * The largest decoded header list accepted, by HPACK's own size
+   * accounting.
+   * @type number
+   */
+  var max_header_list_size = 262144
+
+  /**
+   * @param ?number capacity: the initial dynamic table size
+   */
+  @new(capacity) {
+    self.table = DynamicTable(capacity)
+  }
+
+  /**
+   * Decodes a complete header block into a list of `[name, value]`
+   * pairs, in the order they appeared - which HTTP/2 depends on, as
+   * repeated fields keep their order and `Set-Cookie` may appear many
+   * times.
+   *
+   * @param bytes block
+   * @returns list
+   * @throws ProtocolError on a malformed block or one that exceeds a
+   *    limit
+   */
+  decode(block) {
+    var fields = []
+    var at = 0
+    var total = 0
+
+    while at < block.length() {
+      var byte = block[at]
+
+      if (byte & 128) != 0 {
+        # Indexed header field: the whole field is in a table.
+        var parsed = decode_integer(block, at, 7)
+        var entry = self.table.get(parsed[0])
+
+        fields.append([entry[0], entry[1]])
+        total += _entry_size(entry[0], entry[1])
+        at = parsed[1]
+        continue
+      }
+
+      if (byte & 32) != 0 and (byte & 64) == 0 {
+        # Dynamic table size update. RFC 7541 §4.2 caps it at whatever
+        # the decoder advertised through SETTINGS.
+        var parsed = decode_integer(block, at, 5)
+
+        if parsed[0] > self.table.capacity() and parsed[0] > 4096 {
+          raise ProtocolError('HPACK table size update exceeds the agreed maximum')
+        }
+
+        self.table.set_capacity(parsed[0])
+        at = parsed[1]
+        continue
+      }
+
+      var indexed = (byte & 64) != 0
+      var prefix = indexed ? 6 : 4
+
+      var parsed = decode_integer(block, at, prefix)
+      var name_index = parsed[0]
+      at = parsed[1]
+
+      var name
+
+      if name_index == 0 {
+        var read = decode_string(block, at, self.max_string_length)
+        name = read[0]
+        at = read[1]
+      } else {
+        name = self.table.get(name_index)[0]
+      }
+
+      var read_value = decode_string(block, at, self.max_string_length)
+      var value = read_value[0]
+      at = read_value[1]
+
+      _check_name(name)
+
+      fields.append([name, value])
+      total += _entry_size(name, value)
+
+      if indexed {
+        self.table.add(name, value)
+      }
+
+      if total > self.max_header_list_size {
+        raise ProtocolError('decoded header list exceeds ${self.max_header_list_size} bytes')
+      }
+    }
+
+    return fields
+  }
+}
+
+# RFC 9113 §8.2.1: a field name in HTTP/2 must be lowercase, and must
+# be a valid token besides. An uppercase name is not a stylistic slip
+# to normalise away - it is how a request is made to mean one thing to
+# a proxy and another to an origin.
+def _check_name(name) {
+  if name.is_empty() {
+    raise ProtocolError('empty header field name')
+  }
+
+  iter var i = 0; i < name.length(); i++ {
+    var c = name[i].ord()
+
+    if c >= 65 and c <= 90 {
+      raise ProtocolError('header field name ${name} is not lowercase')
+    }
+
+    if c <= 32 or c == 58 and i > 0 or c == 127 {
+      # A colon is only legal as the first character, where it marks a
+      # pseudo-header.
+      raise ProtocolError('invalid character in header field name: ${name}')
+    }
+  }
+}
+
+/**
+ * Encodes header blocks for one direction of one connection.
+ *
+ * Fields are matched against the static table, and anything not found
+ * there is written out as a literal without indexing - see the module
+ * note above for why the dynamic table is left empty.
+ */
+class Encoder {
+
+  # Tracked only so that a size update from the peer can be honoured
+  # and acknowledged; nothing is ever inserted.
+  var _capacity = 4096
+
+  @new(capacity) {
+    self._capacity = capacity == nil ? 4096 : capacity
+  }
+
+  /**
+   * Notes the maximum dynamic table size the peer will accept.
+   *
+   * @param number capacity
+   */
+  set_capacity(capacity: number) {
+    self._capacity = capacity
+  }
+
+  /**
+   * Encodes a list of `[name, value]` pairs into a header block.
+   *
+   * Names must already be lowercase; HTTP/2 has no other kind.
+   *
+   * @param list fields
+   * @returns bytes
+   */
+  encode(fields: list) {
+    var out = bytes(0)
+
+    for field in fields {
+      var name = field[0]
+      var value = is_string(field[1]) ? field[1] : field[1].to_string()
+
+      var pair = _BY_PAIR.get('${name}\t${value}', nil)
+
+      if pair != nil {
+        encode_integer(out, pair, 7, 128)
+        continue
+      }
+
+      var sensitive = _NEVER_INDEXED.contains(name)
+      var flag = sensitive ? 16 : 0
+      var name_index = _BY_NAME.get(name, 0)
+
+      # Both the never-indexed and the without-indexing forms use a
+      # 4-bit prefix; they differ only in that flag bit.
+      encode_integer(out, name_index, 4, flag)
+
+      if name_index == 0 {
+        encode_string(out, name)
+      }
+
+      encode_string(out, value)
+    }
+
+    return out
+  }
+}

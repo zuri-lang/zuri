@@ -50,8 +50,8 @@ class SignatureError < JwtError {
 /**
  * Raised when a token's temporal claims fail validation:
  *
- * - `exp` (expiry) — token has expired - `nbf` (not before) —
- * token is not yet valid - `iat` (issued at) — token was issued
+ * - `exp` (expiry): token has expired - `nbf` (not before):
+ * token is not yet valid - `iat` (issued at): token was issued
  * in the future
  */
 class TokenExpiredError < JwtError {

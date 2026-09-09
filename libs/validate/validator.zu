@@ -3,7 +3,7 @@
  *
  * Provides the `Validator` fluent builder.  Each method appends one rule
  * class (and its constructor arguments) to an internal chain.  The chain
- * is later resolved by `Schema` — it instantiates each rule with the
+ * is later resolved by `Schema`: it instantiates each rule with the
  * field name injected, then calls `validate(value)` in order.
  *
  * Rules stop executing for a field the moment one fails, unless
@@ -212,7 +212,7 @@ class Validator {
   }
 
   /**
-   * The field value must be numeric — either a number type, or a string
+   * The field value must be numeric: either a number type, or a string
    * that converts cleanly to a number.
    *
    * @returns Validator
@@ -923,7 +923,7 @@ class Validator {
   }
 
   /**
-   * This field must be absent or nil — it is never allowed.
+   * This field must be absent or nil: it is never allowed.
    *
    * @returns Validator
    */
@@ -1108,7 +1108,7 @@ class Validator {
 
 
   # -------------------------------------------------------------------------
-  # Read-only accessors — consumed by Schema, which doesn't own this
+  # Read-only accessors: consumed by Schema, which doesn't own this
   # Validator and so can't reach its private fields directly.
   # -------------------------------------------------------------------------
 
@@ -1144,7 +1144,7 @@ class Validator {
 
 
   # -------------------------------------------------------------------------
-  # Iteration protocol — consumed by Schema
+  # Iteration protocol: consumed by Schema
   # -------------------------------------------------------------------------
 
   @value(n) {

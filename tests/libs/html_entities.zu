@@ -19,7 +19,7 @@ def ok(label) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  html.entities — test suite'
+echo '  html.entities: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
@@ -160,7 +160,7 @@ ok('encode() honours non_ascii and named')
 assert html.decode(html.encode('<a href="x">Tom & Jerry\'s</a>')) ==
   '<a href="x">Tom & Jerry\'s</a>',
   'encode() then decode() must round-trip exactly'
-assert html.decode(html.encode('café — ☃', { non_ascii: true })) == 'café — ☃',
+assert html.decode(html.encode('café: ☃', { non_ascii: true })) == 'café: ☃',
   'the round trip must hold for non-ASCII text too'
 ok('encode() and decode() round-trip')
 

@@ -15,7 +15,7 @@
  * | Zstandard | `compress.zstd`      | yes    | yes    | yes       | Pure-Rust implementation (`zrip`). |
  * | LZ4       | `compress.lz4`       | yes    | yes    | yes       | Frame format, via `lz4_flex`. |
  * | Bzip2     | `compress.bzip2`     | yes    | yes    | yes       | Pure-Rust implementation (`libbz2-rs-sys`). `BzFile` treats a `.bz2` file like a regular file. Only decodes the first stream in a bzip2 "multistream" (see the submodule's own docs). |
- * | Brotli    | `compress.brotli`    | yes    | yes    | decode only | Pure-Rust implementation. The streaming encoder buffers all input and compresses once in `finish()` rather than incrementally — see `BrotliEncoder`'s own docs. |
+ * | Brotli    | `compress.brotli`    | yes    | yes    | decode only | Pure-Rust implementation. The streaming encoder buffers all input and compresses once in `finish()` rather than incrementally: see `BrotliEncoder`'s own docs. |
  *
  * Every streaming submodule follows the same shape: a `compress()`/
  * `decompress()` one-shot pair for when the whole buffer is already
@@ -28,7 +28,7 @@
  * sides of every streaming class for introspection.
  *
  * `compress.checksum` provides CRC-32 and Adler-32, independent of
- * any particular compression method — used internally by `zip` to
+ * any particular compression method: used internally by `zip` to
  * validate extracted entries, but also usable standalone.
  *
  * ## Archive formats
@@ -53,7 +53,7 @@
  * `.tar.xz` archives use, nor Brotli (no established TAR convention
  * exists for it). ZIP does not currently support LZMA (method 14),
  * PPMd (method 98), or any of the ZIP encryption schemes (traditional
- * PKWARE or AES) — an encrypted entry is reported via `ZipItem.error`
+ * PKWARE or AES): an encrypted entry is reported via `ZipItem.error`
  * rather than attempted.
  *
  * @copyright 1995-2017 Jean-loup Gailly and Mark Adler

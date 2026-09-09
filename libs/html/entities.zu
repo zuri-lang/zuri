@@ -16,7 +16,7 @@
  * ```zuri-repl
  * %> import html
  * %> html.decode('caf&eacute; &#8212; &#x2603;')
- * 'café — ☃'
+ * 'café: ☃'
  * %> html.encode('<a href="x">Tom & Jerry</a>')
  * '&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;'
  * ```
@@ -292,9 +292,9 @@ def _longest_match(chars: list, start: number) {
  *
  * The returned dictionary has:
  *
- * - `text` — the decoded text (never `nil`, never empty)
- * - `next` — index of the first character not consumed
- * - `error` — `nil`, or a short description of the parse error the
+ * - `text`: the decoded text (never `nil`, never empty)
+ * - `next`: index of the first character not consumed
+ * - `error`: `nil`, or a short description of the parse error the
  *   standard raises for this input; the text is still produced
  *
  * @param list chars
@@ -511,13 +511,13 @@ def _reverse_table() {
  *
  * _options_ is an optional dictionary:
  *
- * - `quotes` (bool, default `true`) — escape `"` and `'`. Turn this
+ * - `quotes` (bool, default `true`): escape `"` and `'`. Turn this
  *   off only when the result is going into element content, never
  *   into an attribute.
- * - `non_ascii` (bool, default `false`) — also escape every character
+ * - `non_ascii` (bool, default `false`): also escape every character
  *   above U+007F. Useful when the output has to survive a transport
  *   that is not UTF-8 clean.
- * - `named` (bool, default `true`) — when a character being escaped
+ * - `named` (bool, default `true`): when a character being escaped
  *   has a named reference, use it. With `false`, non-syntactic
  *   characters use hexadecimal numeric references instead. The five
  *   syntax characters above always use their fixed forms.

@@ -1,0 +1,502 @@
+#!-- part of the http module
+
+import .errors { ProtocolError, TooLargeError }
+import .headers
+import .util
+
+# A body with an implausible number of parts is a denial-of-service
+# attempt rather than a form submission; every part costs a dictionary
+# entry and a byte buffer.
+var _MAX_PARTS = 1000
+
+/**
+ * One file received in a `multipart/form-data` body.
+ *
+ * The content is held in memory. `HttpServer`'s `max_body_size` is
+ * what bounds how much that can be, so a service accepting large
+ * uploads should raise that limit deliberately rather than by
+ * accident.
+ *
+ * @printable
+ */
+class UploadedFile {
+
+  /**
+   * The form field name the file arrived under.
+   * @type string
+   */
+  var name
+
+  /**
+   * The filename the client claimed, exactly as sent.
+   *
+   * @note Never build a path out of this directly. It is
+   *    attacker-controlled and may contain `..`, absolute path
+   *    prefixes, or NUL bytes; `safe_name()` gives a version that has
+   *    been stripped of all of that.
+   * @type ?string
+   */
+  var filename
+
+  /**
+   * The `Content-Type` the client declared for the file, or
+   * `'application/octet-stream'` when it declared none.
+   *
+   * @note This too is client-supplied and says nothing about what the
+   *    bytes actually are.
+   * @type string
+   */
+  var content_type
+
+  /**
+   * Every header that came with this part.
+   * @type Headers
+   */
+  var headers
+
+  /**
+   * The file's contents.
+   * @type bytes
+   */
+  var content
+
+  @new(name, filename, content_type, headers, content) {
+    self.name = name
+    self.filename = filename
+    self.content_type = content_type or 'application/octet-stream'
+    self.headers = headers
+    self.content = content
+  }
+
+  /**
+   * The size of the uploaded content in bytes.
+   *
+   * @returns number
+   */
+  size() {
+    return self.content.length()
+  }
+
+  /**
+   * The client's filename reduced to a single path-safe segment: any
+   * directory component is dropped, and anything outside letters,
+   * digits, `.`, `-` and `_` becomes an underscore. A name that
+   * reduces to nothing, or to a leading run of dots, comes back as
+   * `'unnamed'`.
+   *
+   * @returns string
+   */
+  safe_name() {
+    if !self.filename {
+      return 'unnamed'
+    }
+
+    # Both separators, since a Windows client sends backslashes and
+    # will happily include the whole local path.
+    var base = self.filename
+    for separator in ['/', '\\'] {
+      var parts = base.split(separator)
+      base = parts[parts.length() - 1]
+    }
+
+    var out = ''
+    iter var i = 0; i < base.length(); i++ {
+      var c = base[i]
+      var code = c.ord()
+      var allowed = (code >= 48 and code <= 57) or (code >= 65 and code <= 90) or
+          (code >= 97 and code <= 122) or c == '.' or c == '-' or c == '_'
+
+      out += allowed ? c : '_'
+    }
+
+    out = out.ltrim('.')
+
+    return out.is_empty() ? 'unnamed' : out
+  }
+
+  /**
+   * Writes the content to `path`.
+   *
+   * @param string path
+   * @returns number: the number of bytes written
+   */
+  save_to(path: string) {
+    var handle = file(path, 'wb')
+    handle.write(self.content)
+    handle.close()
+
+    return self.content.length()
+  }
+
+  /**
+   * The content decoded as UTF-8 text.
+   *
+   * @returns string
+   */
+  to_text() {
+    return self.content.to_string()
+  }
+
+  to_string() {
+    return '<UploadedFile ${self.name} ${self.filename} ${self.content.length()} bytes>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The result of parsing a `multipart/form-data` body.
+ */
+class MultipartData {
+
+  /**
+   * Plain form values, as `name -> [value, ...]`. A name is always
+   * mapped to a list, because a form may repeat one (a set of
+   * checkboxes) and collapsing that silently loses data.
+   * @type dict
+   */
+  var fields = {}
+
+  /**
+   * Uploaded files, as `name -> [UploadedFile, ...]`.
+   * @type dict
+   */
+  var files = {}
+
+  @new() {
+    self.fields = {}
+    self.files = {}
+  }
+
+  /**
+   * The first value submitted for the field `name`, or `fallback`.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  field(name: string, fallback) {
+    var values = self.fields.get(name, nil)
+    if values == nil {
+      return fallback
+    }
+    return values[0]
+  }
+
+  /**
+   * The first file submitted under `name`, or `nil`.
+   *
+   * @param string name
+   * @returns ?UploadedFile
+   */
+  file(name: string) {
+    var values = self.files.get(name, nil)
+    if values == nil {
+      return nil
+    }
+    return values[0]
+  }
+
+  /**
+   * The plain fields as a flat `name -> value` dictionary, keeping
+   * the first value of any repeated name. Convenient when a form is
+   * known not to repeat names.
+   *
+   * @returns dict
+   */
+  to_dict() {
+    var result = {}
+    for name, values in self.fields {
+      result[name] = values[0]
+    }
+    return result
+  }
+}
+
+/**
+ * Parses a `multipart/form-data` body (RFC 7578).
+ *
+ * The boundary comes from the `Content-Type` header's `boundary`
+ * parameter and must be given; a body cannot be parsed without it.
+ *
+ * @param bytes body
+ * @param string boundary
+ * @param ?dict options: `max_parts` (default 1000) and
+ *    `max_file_size` (default: unlimited)
+ * @returns MultipartData
+ * @throws ProtocolError if the body is not a well-formed multipart
+ *    message
+ * @throws TooLargeError if a limit is exceeded
+ */
+def parse(body, boundary: string, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var max_parts = options.get('max_parts', _MAX_PARTS)
+  var max_file_size = options.get('max_file_size', nil)
+
+  if boundary.is_empty() {
+    raise ProtocolError('multipart body has no boundary')
+  }
+
+  var result = MultipartData()
+
+  var delimiter = '--${boundary}'.to_bytes()
+  var separator = '\r\n--${boundary}'.to_bytes()
+
+  # The first delimiter may sit at the very start of the body, or be
+  # preceded by a preamble that RFC 2046 §5.1.1 says to ignore.
+  var cursor
+  if body.length() >= delimiter.length() and body[0, delimiter.length()] == delimiter {
+    cursor = delimiter.length()
+  } else {
+    var first = util.find_bytes(body, separator, 0)
+    if first == -1 {
+      raise ProtocolError('multipart body contains no boundary delimiter')
+    }
+    cursor = first + separator.length()
+  }
+
+  var count = 0
+
+  while true {
+    # After a delimiter comes either `--` (the close delimiter) or the
+    # transport padding and CRLF that begin the next part.
+    if cursor + 2 <= body.length() and body[cursor] == 45 and body[cursor + 1] == 45 {
+      break
+    }
+
+    var line_end = body.index_of(10, cursor)
+    if line_end == -1 {
+      raise ProtocolError('multipart body ends inside a boundary line')
+    }
+
+    var part_start = line_end + 1
+    var part_end = util.find_bytes(body, separator, part_start)
+
+    if part_end == -1 {
+      raise ProtocolError('multipart body ends without a closing boundary')
+    }
+
+    count++
+    if count > max_parts {
+      raise TooLargeError('multipart body has more than ${max_parts} parts')
+    }
+
+    _read_part(result, body, part_start, part_end, max_file_size)
+
+    cursor = part_end + separator.length()
+  }
+
+  delimiter.dispose()
+  separator.dispose()
+
+  return result
+}
+
+def _read_part(result, body, start, end, max_file_size) {
+  var blank_line = util.find_bytes(body, '\r\n\r\n'.to_bytes(), start)
+
+  if blank_line == -1 or blank_line > end {
+    raise ProtocolError('multipart part has no header section')
+  }
+
+  var header_block = body[start, blank_line]
+  var part_headers = headers.parse(header_block.to_string(), false)
+  header_block.dispose()
+
+  var disposition = part_headers.get('content-disposition', nil)
+  if disposition == nil {
+    raise ProtocolError('multipart part has no Content-Disposition header')
+  }
+
+  var parsed = util.parse_parameters(disposition)
+  if parsed[0].lower() != 'form-data' {
+    raise ProtocolError('multipart part is not form-data: ${parsed[0]}')
+  }
+
+  var name = parsed[1].get('name', nil)
+  if name == nil {
+    raise ProtocolError('multipart part has no field name')
+  }
+
+  var content = body[blank_line + 4, end]
+  var filename = parsed[1].get('filename', nil)
+
+  # A part is a file when it carries a filename, even an empty one:
+  # that is what an <input type="file"> with nothing chosen sends, and
+  # treating it as a text field would put an empty string where the
+  # application expects a file or nothing at all.
+  if filename != nil {
+    if max_file_size != nil and content.length() > max_file_size {
+      content.dispose()
+      raise TooLargeError('uploaded file ${name} exceeds ${max_file_size} bytes')
+    }
+
+    var uploaded = UploadedFile(
+      name,
+      filename,
+      part_headers.get('content-type', nil),
+      part_headers,
+      content
+    )
+
+    if !result.files.contains(name) {
+      result.files[name] = []
+    }
+    result.files[name].append(uploaded)
+  } else {
+    var text = content.to_string()
+    content.dispose()
+
+    if !result.fields.contains(name) {
+      result.fields[name] = []
+    }
+    result.fields[name].append(text)
+  }
+}
+
+/**
+ * Builds a `multipart/form-data` request body.
+ *
+ * The boundary is generated from the platform's secure random source
+ * rather than a counter or a timestamp, since a boundary a peer can
+ * predict is a boundary a peer can inject into a field value and
+ * thereby forge extra parts.
+ *
+ * ```zuri
+ * var form = http.MultipartBuilder()
+ * form.add_field('title', 'Holiday')
+ * form.add_file('photo', 'beach.jpg', photo_bytes, 'image/jpeg')
+ *
+ * client.post(url, form.build(), { 'Content-Type': form.content_type() })
+ * ```
+ */
+class MultipartBuilder {
+
+  var _boundary
+  var _parts = []
+
+  @new(boundary) {
+    self._boundary = boundary or ('ZuriBoundary' + util.random_token(32))
+    self._parts = []
+  }
+
+  /**
+   * The `Content-Type` header value this body must be sent with,
+   * boundary parameter included.
+   *
+   * @returns string
+   */
+  content_type() {
+    return 'multipart/form-data; boundary=${self._boundary}'
+  }
+
+  /**
+   * The boundary string in use.
+   *
+   * @returns string
+   */
+  boundary() {
+    return self._boundary
+  }
+
+  /**
+   * Adds a plain form field.
+   *
+   * @param string name
+   * @param {string|number|bool} value
+   * @returns MultipartBuilder: this same instance, for chaining
+   */
+  add_field(name: string, value) {
+    var text = is_string(value) ? value : value.to_string()
+
+    self._parts.append([
+      'Content-Disposition: form-data; name=${util.quote(name)}\r\n\r\n',
+      text.to_bytes(),
+    ])
+
+    return self
+  }
+
+  /**
+   * Adds a file part.
+   *
+   * A filename that is not plain ASCII is additionally sent as an RFC
+   * 5987 `filename*` parameter, which is how a non-ASCII name
+   * survives the trip; the plain `filename` is kept alongside it for
+   * recipients that only understand that one.
+   *
+   * @param string name: the form field name
+   * @param string filename
+   * @param {bytes|string} content
+   * @param ?string content_type: defaults to `'application/octet-stream'`
+   * @returns MultipartBuilder: this same instance, for chaining
+   */
+  add_file(name: string, filename: string, content, content_type: ?string) {
+    var head = 'Content-Disposition: form-data; name=${util.quote(name)}'
+    head += '; filename=${util.quote(_ascii_fallback(filename))}'
+
+    if !_is_ascii(filename) {
+      head += "; filename*=UTF-8''" + util.percent_encode(filename)
+    }
+
+    head += '\r\nContent-Type: ${content_type or "application/octet-stream"}\r\n\r\n'
+
+    self._parts.append([head, is_string(content) ? content.to_bytes() : content])
+
+    return self
+  }
+
+  /**
+   * Serialises every part added so far into a complete body.
+   *
+   * @returns bytes
+   */
+  build() {
+    var out = bytes(0)
+
+    for part in self._parts {
+      out.extend('--${self._boundary}\r\n'.to_bytes())
+      out.extend(part[0].to_bytes())
+      out.extend(part[1])
+      out.extend('\r\n'.to_bytes())
+    }
+
+    out.extend('--${self._boundary}--\r\n'.to_bytes())
+
+    return out
+  }
+
+  /**
+   * How many parts have been added.
+   *
+   * @returns number
+   */
+  length() {
+    return self._parts.length()
+  }
+}
+
+def _is_ascii(text) {
+  iter var i = 0; i < text.length(); i++ {
+    if text[i].ord() > 126 {
+      return false
+    }
+  }
+  return true
+}
+
+def _ascii_fallback(text) {
+  var out = ''
+
+  iter var i = 0; i < text.length(); i++ {
+    var c = text[i]
+    out += c.ord() > 126 ? '_' : c
+  }
+
+  return out
+}

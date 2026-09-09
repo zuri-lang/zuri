@@ -16,7 +16,7 @@
  * the Julian calendar).
  *
  * `Date` instances support ordering (`<`, `<=`, `>`, `>=`) and
- * `equals()` by comparing the underlying instant in time — see
+ * `equals()` by comparing the underlying instant in time: see
  * [[date.Date.equals]] for how that interacts with `gmt_offset`.
  * Arithmetic is done through named methods rather than `+`/`-`
  * (`add_seconds`, `add_days`, `add_months`, ...; see
@@ -295,9 +295,9 @@ def mktime(year, month, day, hour, minute, seconds, is_dst) {
  * Returns `true` when `name` is a real IANA timezone identifier (e.g.
  * `'Africa/Lagos'`, `'America/New_York'`, `'UTC'`), backed by the
  * timezone database embedded in this build. This is a real, complete
- * IANA database — unlike `parse()`'s own timezone handling, which only
+ * IANA database: unlike `parse()`'s own timezone handling, which only
  * recognizes `UTC`/`GMT`/`Z`/numeric offsets and treats every other
- * name as an unvalidated label — so this is the function to reach for
+ * name as an unvalidated label: so this is the function to reach for
  * whenever a timezone name actually needs checking.
  *
  * ```zuri-repl
@@ -909,7 +909,7 @@ class Date {
    * Returns true when `other` is a `Date` representing the exact
    * same instant in time as this one. Two dates with different
    * `gmt_offset`/`zone` labels but the same underlying UTC instant
-   * are considered equal — the same convention Python's
+   * are considered equal: the same convention Python's
    * timezone-aware `datetime` equality uses.
    *
    * @param any other
@@ -1005,7 +1005,7 @@ class Date {
    * When the resulting month doesn't have this date's own day
    * number (e.g. Jan 31 plus one month), the result is **clamped**
    * to the last valid day of that month (Jan 31 + 1 month → Feb 28
-   * or 29, never an overflow into March) — the convention to know
+   * or 29, never an overflow into March): the convention to know
    * about, since date libraries genuinely differ on this.
    *
    * @param number n
@@ -1049,7 +1049,7 @@ class Date {
    * Returns a new `Date` representing the exact same instant as
    * this one, re-expressed under a different `gmt_offset`. This is
    * the way to convert a date from one timezone's wall-clock
-   * reading to another's — unlike `add_seconds()` and friends,
+   * reading to another's: unlike `add_seconds()` and friends,
    * which shift the underlying instant, this keeps the instant
    * fixed and only changes how it's displayed.
    *
@@ -1076,8 +1076,8 @@ class Date {
    * one, re-expressed under the real IANA timezone `name` (e.g.
    * `'America/New_York'`, `'Africa/Lagos'`). Unlike `to_offset()`,
    * which takes the numeric offset to shift to and leaves it to the
-   * caller to already know it, this looks up `name`'s actual offset —
-   * correctly accounting for daylight saving — at this date's own
+   * caller to already know it, this looks up `name`'s actual offset:
+   * correctly accounting for daylight saving: at this date's own
    * instant, so `gmt_offset`, `zone`, and `is_dst` all come out right
    * without the caller needing to work any of that out first.
    *
@@ -1322,7 +1322,7 @@ def from_time(time) {
   # the pattern is remarkably stable:
   # 
   #         March (31), April (30), May (31), June (30), July (31) 
-  #                       — repeats as -
+  #                      : repeats as -
   # August (31), September (30), October (31), November (30), December 
   # (31).
   # 
@@ -1373,9 +1373,9 @@ def from_time(time) {
  * (`mktime()`). The offset, zone abbreviation, and DST state are all
  * worked out from `name`'s real rules at that wall-clock moment.
  *
- * A wall-clock reading can be ambiguous once a year — the hour a
+ * A wall-clock reading can be ambiguous once a year: the hour a
  * clock falls back repeats, e.g. 1:30am happens twice on the day
- * `America/New_York` leaves daylight saving — `is_dst` picks which
+ * `America/New_York` leaves daylight saving: `is_dst` picks which
  * occurrence is meant, the same way it does for `mktime()`. A reading
  * a clock skips entirely (the hour a clock springs forward) has no
  * valid answer at all and raises, rather than silently returning a
@@ -1482,7 +1482,7 @@ def from_jd(jdate) {
 }
 
 # ===========================================================================
-# Date parsing — internal infrastructure
+# Date parsing: internal infrastructure
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -1523,7 +1523,7 @@ var _month_name_map = {
   'december': 12,'dec': 12,
 }
 
-# Weekday names — used to skip over them during auto-detection parsing.
+# Weekday names: used to skip over them during auto-detection parsing.
 var _weekday_name_set = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
   'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun',
@@ -1586,7 +1586,7 @@ def _parse_tz(s, pos) {
 
   var ch = s[pos]
 
-  # 'Z' — UTC shorthand (ISO 8601)
+  # 'Z': UTC shorthand (ISO 8601)
   if ch == 'Z' or ch == 'z' return [0, pos + 1, 'UTC']
 
   # Named offsets: UTC, GMT (and variants like UTC+5)
@@ -1599,7 +1599,7 @@ def _parse_tz(s, pos) {
       var inner = _parse_tz(s, pos)
       return [inner[0], inner[1], token.upper()]
     }
-    # Unknown named timezone — treat as UTC, leave position advanced
+    # Unknown named timezone: treat as UTC, leave position advanced
     return [0, pos, token.upper()]
   }
 
@@ -1647,7 +1647,7 @@ def _apply_ampm(hour, am_pm) {
 }
 
 # ---------------------------------------------------------------------------
-# Result accumulator — default field values for a parse result
+# Result accumulator: default field values for a parse result
 # ---------------------------------------------------------------------------
 
 def _default_fields() {
@@ -1676,7 +1676,7 @@ def _fields_to_date(f) {
 # Strategy: tokenise the string into (integer | alpha-word | punctuation)
 # tokens, then pattern-match the token stream against known date grammars.
 #
-# Grammars recognised (non-exhaustive — ordered from most-specific):
+# Grammars recognised (non-exhaustive: ordered from most-specific):
 #
 #   ISO 8601 / RFC 3339
 #     YYYY-MM-DD[T ]HH:MM:SS[.ffffff][Z|(+|-)HH:MM]
@@ -1690,7 +1690,7 @@ def _fields_to_date(f) {
 #
 #   Common locale formats
 #     MM/DD/YYYY [HH:MM[:SS][AM|PM]]
-#     DD/MM/YYYY [HH:MM[:SS][AM|PM]]   (ambiguous — see below)
+#     DD/MM/YYYY [HH:MM[:SS][AM|PM]]   (ambiguous: see below)
 #     DD.MM.YYYY [HH:MM[:SS]]
 #     DD-MM-YYYY
 #     YYYY/MM/DD
@@ -1993,7 +1993,7 @@ def _auto_parse(s) {
     }
     # MM/DD/YYYY where month <= 12, day > 12
     else if c > 31 {
-      # Last field is year — determine order of first two
+      # Last field is year: determine order of first two
       year = c
       if b > 12 { day = b; month = a }
       else       { month = a; day = b }   # MM/DD ambiguity → US convention
@@ -2111,7 +2111,7 @@ def _auto_parse(s) {
       return r
   }
 
-  # Numeric — starts with digit
+  # Numeric: starts with digit
   if _is_digit(s[0]) {
     r = _try_rfc2822(s)
     if r != nil 
@@ -2138,33 +2138,33 @@ def _auto_parse(s) {
 #
 # Supported format directives (same symbols as `format()`):
 #
-#   Y  — 4-digit year
-#   y  — 2-digit year (00-99; 00-69 → 2000-2069, 70-99 → 1970-1999)
-#   m  — month with leading zero (01-12)
-#   n  — month without leading zero (1-12)
-#   M  — abbreviated month name (Jan-Dec)
-#   F  — full month name (January-December)
-#   d  — day with leading zero (01-31)
-#   j  — day without leading zero (1-31)
-#   D  — abbreviated weekday name (ignored — not stored)
-#   l  — full weekday name (ignored — not stored)
-#   H  — 24-hour hour with leading zero (00-23)
-#   G  — 24-hour hour without leading zero (0-23)
-#   h  — 12-hour hour with leading zero (01-12)
-#   g  — 12-hour hour without leading zero (1-12)
-#   i  — minutes with leading zero (00-59)
-#   s  — seconds with leading zero (00-59)
-#   u  — microseconds (up to 6 digits)
-#   v  — milliseconds (up to 3 digits; stored as microseconds × 1000)
-#   A  — uppercase AM/PM
-#   a  — lowercase am/pm
-#   e  — timezone name/identifier
-#   O  — timezone offset without colon (+0200)
-#   P  — timezone offset with colon (+02:00)
-#   Z  — timezone offset in seconds
-#   c  — ISO 8601 full datetime (YYYY-MM-DDTHH:MM:SS+HH:MM) — calls _auto_parse
-#   r  — RFC 2822 datetime — calls _auto_parse
-#   N, w, z, W, S, t, L, I  — output-only fields (skipped in input)
+#   Y : 4-digit year
+#   y : 2-digit year (00-99; 00-69 → 2000-2069, 70-99 → 1970-1999)
+#   m : month with leading zero (01-12)
+#   n : month without leading zero (1-12)
+#   M : abbreviated month name (Jan-Dec)
+#   F : full month name (January-December)
+#   d : day with leading zero (01-31)
+#   j : day without leading zero (1-31)
+#   D : abbreviated weekday name (ignored: not stored)
+#   l : full weekday name (ignored: not stored)
+#   H : 24-hour hour with leading zero (00-23)
+#   G : 24-hour hour without leading zero (0-23)
+#   h : 12-hour hour with leading zero (01-12)
+#   g : 12-hour hour without leading zero (1-12)
+#   i : minutes with leading zero (00-59)
+#   s : seconds with leading zero (00-59)
+#   u : microseconds (up to 6 digits)
+#   v : milliseconds (up to 3 digits; stored as microseconds × 1000)
+#   A : uppercase AM/PM
+#   a : lowercase am/pm
+#   e : timezone name/identifier
+#   O : timezone offset without colon (+0200)
+#   P : timezone offset with colon (+02:00)
+#   Z : timezone offset in seconds
+#   c : ISO 8601 full datetime (YYYY-MM-DDTHH:MM:SS+HH:MM): calls _auto_parse
+#   r : RFC 2822 datetime: calls _auto_parse
+#   N, w, z, W, S, t, L, I : output-only fields (skipped in input)
 
 def _format_parse(s, fmt) {
   if !is_string(s)   raise TypeError('input must be a string')
@@ -2183,7 +2183,7 @@ def _format_parse(s, fmt) {
   iter var fi = 0; fi < flen; fi++ {
     var fc = fmt[fi]
 
-    # Backslash escape — literal match
+    # Backslash escape: literal match
     if fc == '\\' {
       fi++
       if fi >= flen break
@@ -2399,7 +2399,7 @@ def _format_parse(s, fmt) {
         spos         = tz[1]
       }
       when 'Z' {
-        # Offset in seconds — may be signed integer
+        # Offset in seconds: may be signed integer
         var sign = 1
         if spos < slen and (s[spos] == '+' or s[spos] == '-') {
           if s[spos] == '-' sign = -1
@@ -2410,7 +2410,7 @@ def _format_parse(s, fmt) {
       }
 
       # ---- Output-only fields (skipped without consuming input) ----
-      # S (ordinal suffix), t, L, N, w, z, W, I — these appear in format()
+      # S (ordinal suffix), t, L, N, w, z, W, I: these appear in format()
       # output but carry no parseable information. We skip them silently so
       # that a format string produced by format() round-trips through
       # parse_format() without error.
@@ -2431,7 +2431,7 @@ def _format_parse(s, fmt) {
 
       # ---- Composite directives ----
       when 'c' {
-        # ISO 8601 full — delegate to auto-parser for the rest of the string
+        # ISO 8601 full: delegate to auto-parser for the rest of the string
         var d2 = _auto_parse(s[spos,])
         f.year = d2.year; f.month = d2.month; f.day = d2.day
         f.hour = d2.hour; f.minute = d2.minute; f.seconds = d2.seconds
@@ -2456,7 +2456,7 @@ def _format_parse(s, fmt) {
         if spos < slen and s[spos] == fc {
           spos++
         }
-        # If the literal doesn't match, advance anyway — lenient matching
+        # If the literal doesn't match, advance anyway: lenient matching
         # allows formats like 'D, d M Y h:i:s O' where ', ' is literal.
       }
     }
@@ -2582,7 +2582,7 @@ def parse(date_string) {
  * `c`       | ISO 8601 full datetime (delegated to `parse`)           | `2024-06-15T14:30:00+02:00`
  * `r`       | RFC 2822 full datetime (delegated to `parse`)           | `Thu, 21 Dec 2000 16:01:07 +0200`
  * `S`       | Ordinal suffix (consumed and ignored)                   | `th`
- * `t`,`L`,`N`,`w`,`z`,`W`,`I` | Output-only fields (skipped)     | —
+ * `t`,`L`,`N`,`w`,`z`,`W`,`I` | Output-only fields (skipped)     |:
  *
  * ### Example
  *
@@ -2606,7 +2606,7 @@ def parse(date_string) {
  * echo reparsed.day    # 15
  * echo reparsed.month  # 6
  *
- * # European DD/MM/YYYY (ambiguous with auto-detect — use parse_format)
+ * # European DD/MM/YYYY (ambiguous with auto-detect: use parse_format)
  * var eu = date.parse_format('05/06/2024', 'd/m/Y')
  * echo eu.month  # 6
  * echo eu.day    # 5

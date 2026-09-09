@@ -1,0 +1,20 @@
+/**
+ * @module http.h2
+ *
+ * HTTP/2 (RFC 9113) and the header compression it uses (RFC 7541).
+ *
+ * `HttpServer` speaks this automatically: over TLS when ALPN
+ * negotiates `h2`, and over cleartext when a client opens with the
+ * HTTP/2 connection preface. `HttpClient` uses it when a server
+ * negotiates `h2` for an HTTPS connection.
+ *
+ * The pieces are here for anything that needs them directly - a
+ * gateway, a test harness, or a protocol that borrows HPACK.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.huffman
+import @.hpack
+import @.frames
+import @.connection { Http2Connection, Http2Stream, Http2Writer }

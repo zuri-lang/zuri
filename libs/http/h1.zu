@@ -1,0 +1,693 @@
+#!-- part of the http module
+
+import .body
+import .cookies
+import .errors { ConnectionError, ProtocolError, TimeoutError, TooLargeError }
+import .headers
+import .request { HttpRequest }
+import .response { HttpResponse }
+import .status
+import .util
+
+# Defaults for the limits that stand between a server and a peer that
+# sends an unbounded head. Every one of them is overridable through
+# the options dictionary these functions take.
+var DEFAULT_LIMITS = {
+  max_line_size: 8192,
+  max_header_size: 65536,
+  max_header_count: 100,
+  max_body_size: 10485760,   # 10 MiB
+  header_timeout: 10,        # seconds for the whole request head
+}
+
+# Written into a response's `Server` header unless the application
+# sets its own.
+var SERVER_NAME = 'Zuri'
+
+# Sent as `User-Agent` by the client unless overridden.
+var USER_AGENT = 'Zuri/1.0'
+
+def _limit(options, name) {
+  if options != nil {
+    var given = options.get(name, nil)
+    if given != nil {
+      return given
+    }
+  }
+
+  return DEFAULT_LIMITS[name]
+}
+
+/**
+ * Parses `HTTP/1.1` into `'1.1'`, rejecting anything that is not a
+ * version this module understands the framing of.
+ *
+ * @param string text
+ * @returns string
+ * @throws ProtocolError
+ */
+def parse_version(text: string) {
+  if !text.starts_with('HTTP/') or text.length() != 8 {
+    raise ProtocolError('malformed HTTP version: ${text}')
+  }
+
+  var major = text[5]
+  var minor = text[7]
+
+  if text[6] != '.' or !major.is_number() or !minor.is_number() {
+    raise ProtocolError('malformed HTTP version: ${text}')
+  }
+
+  if major != '1' {
+    raise ProtocolError('unsupported HTTP version: ${text}')
+  }
+
+  return '1.${minor}'
+}
+
+/**
+ * Reads one request off a connection: the request line, the header
+ * section, and enough framing information to read the body.
+ *
+ * The body is *not* read. `request.body_reader` is left positioned at
+ * its first byte, so the caller decides whether to materialise it,
+ * stream it, or refuse it - which is the only way to answer a
+ * 10 GiB upload with a `413` instead of accepting it first.
+ *
+ * @param Connection connection
+ * @param ?dict options: any of `max_line_size`, `max_header_size`,
+ *    `max_header_count`
+ * @returns ?HttpRequest: `nil` when the peer closed the connection
+ *    cleanly between messages
+ * @throws ProtocolError on a malformed message
+ * @throws TooLargeError if a limit is exceeded
+ */
+def read_request(connection, options: ?dict) {
+  var max_line = _limit(options, 'max_line_size')
+
+  var line = connection.read_line(max_line)
+
+  # The clock on the head starts once its first byte has arrived, not
+  # while the connection sits idle waiting for one - an idle
+  # keep-alive connection is legitimate, a head that takes ten seconds
+  # to dribble in is not.
+  var deadline = time() + _limit(options, 'header_timeout')
+
+  if line == nil {
+    return nil
+  }
+
+  # RFC 9112 §2.2: a server should tolerate at least one empty line
+  # before a request line, since some old clients send a spurious CRLF
+  # after a body. One is generous enough; a stream of them is a peer
+  # keeping the connection busy for free.
+  var skipped = 0
+  while line != nil and line.is_empty() {
+    skipped++
+    if skipped > 2 {
+      raise ProtocolError('too many empty lines before the request line')
+    }
+    line = connection.read_line(max_line)
+  }
+
+  if line == nil {
+    return nil
+  }
+
+  var parts = line.split(' ')
+  if parts.length() != 3 {
+    raise ProtocolError('malformed request line: ${line}')
+  }
+
+  var method = parts[0]
+  var target = parts[1]
+
+  if !util.is_valid_method(method) {
+    raise ProtocolError('invalid request method: ${method}')
+  }
+
+  if target.is_empty() {
+    raise ProtocolError('empty request target')
+  }
+
+  var version = parse_version(parts[2])
+
+  var request = HttpRequest(method, target, nil)
+  request.version = version
+  request.secure = connection.secure
+  request.scheme = connection.secure ? 'https' : 'http'
+
+  if connection.peer_address != nil {
+    request.remote_address = connection.peer_address.to_string()
+  }
+
+  request.headers = _read_headers(connection, options, deadline)
+
+  # RFC 9112 §3.2: an HTTP/1.1 request must carry exactly one Host,
+  # and a server must reject one that does not. Without it a request
+  # is ambiguous on any host serving more than one name, and that
+  # ambiguity is what host-header attacks live on.
+  var host_count = request.headers.get_all('host').length()
+
+  if version == '1.1' and host_count == 0 {
+    raise ProtocolError('HTTP/1.1 request has no Host header')
+  }
+  if host_count > 1 {
+    raise ProtocolError('request has more than one Host header')
+  }
+
+  if request.authority == nil {
+    request.authority = request.headers.get('host', nil)
+  }
+
+  var cookie_header = request.headers.get('cookie', nil)
+  if cookie_header != nil {
+    request.cookies = cookies.parse_cookie_header(cookie_header)
+  }
+
+  request.body_reader = body.reader_for(connection, request.headers, true, false)
+
+  return request
+}
+
+def _read_headers(connection, options, deadline) {
+  var max_line = _limit(options, 'max_line_size')
+  var max_size = _limit(options, 'max_header_size')
+  var max_count = _limit(options, 'max_header_count')
+
+  var block = []
+  var total = 0
+  var count = 0
+
+  while true {
+    var line = connection.read_line(max_line)
+
+    if line == nil {
+      raise ProtocolError('connection closed inside the header section')
+    }
+
+    if line.is_empty() {
+      break
+    }
+
+    count++
+    if count > max_count {
+      raise TooLargeError('more than ${max_count} header fields')
+    }
+
+    # Without this, a client sending one byte every few seconds holds
+    # a connection open indefinitely while never exceeding any single
+    # read's timeout. That is what slowloris is.
+    if deadline != nil and time() > deadline {
+      raise TimeoutError('the request head took too long to arrive')
+    }
+
+    total += line.length() + 2
+    if total > max_size {
+      raise TooLargeError('header section exceeds ${max_size} bytes')
+    }
+
+    block.append(line)
+  }
+
+  return headers.parse('\r\n'.join(block), true)
+}
+
+/**
+ * Sends a `100 Continue` interim response, telling a client that
+ * asked with `Expect: 100-continue` to go ahead and send its body.
+ *
+ * @param Connection connection
+ */
+def send_continue(connection) {
+  connection.write('HTTP/1.1 100 Continue\r\n\r\n')
+  connection.flush()
+}
+
+/**
+ * Whether the connection should be kept open after this exchange.
+ *
+ * HTTP/1.1 keeps connections open unless told otherwise; HTTP/1.0
+ * closes them unless told otherwise. Either side can ask to close,
+ * and either side asking is enough.
+ *
+ * @param HttpRequest request
+ * @param HttpResponse response
+ * @returns bool
+ */
+def should_keep_alive(request, response) {
+  if request.headers.contains_token('connection', 'close') {
+    return false
+  }
+
+  if response.headers.contains_token('connection', 'close') {
+    return false
+  }
+
+  if request.version == '1.0' {
+    return request.headers.contains_token('connection', 'keep-alive')
+  }
+
+  return true
+}
+
+/**
+ * Writes a response to a connection and returns whether the
+ * connection is still usable afterwards.
+ *
+ * Framing is decided here rather than by the caller, because it has
+ * to agree with the status, the method, and the kind of body:
+ *
+ * - a `1xx`, `204` or `304`, and any response to `HEAD`, sends no
+ *   body at all no matter what the body holds;
+ * - a body of known size gets a `Content-Length`;
+ * - a streamed body gets chunked encoding on HTTP/1.1, and on
+ *   HTTP/1.0 - which has no chunked encoding - is delimited by
+ *   closing the connection.
+ *
+ * @param Connection connection
+ * @param HttpRequest request
+ * @param HttpResponse response
+ * @param ?dict options: `server_name` for the `Server` header, and
+ *    `keep_alive` to force the connection decision
+ * @returns bool: whether the connection may be reused
+ * @throws ConnectionError, TimeoutError
+ */
+def write_response(connection, request, response, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var version = request == nil ? '1.1' : request.version
+  var method = request == nil ? 'GET' : request.method
+
+  response.request_method = method
+
+  var keep_alive = options.get('keep_alive', nil)
+  if keep_alive == nil {
+    keep_alive = request == nil ? false : should_keep_alive(request, response)
+  }
+
+  var bodiless = status.is_bodiless(response.status) or method == 'HEAD'
+  var source = response.source()
+
+  # RFC 9110 §6.6.1 makes Date mandatory for an origin server that has
+  # a clock, and caches need it to compute freshness at all.
+  response.headers.set_default('Date', util.format_date())
+  response.headers.set_default('Server', options.get('server_name', SERVER_NAME))
+
+  var streaming = false
+
+  if bodiless {
+    # A HEAD response carries exactly the header fields the
+    # equivalent GET would have sent, Content-Length among them, and
+    # then sends no body (RFC 9110 §9.3.2). So does a 304, which
+    # describes a cached representation the client already holds.
+    var known_length = nil
+
+    if source == nil {
+      known_length = response.body.length()
+    } else if source[0] == 'file' {
+      known_length = source[3]
+    }
+
+    if method == 'HEAD' and known_length != nil and !response.headers.contains('content-length') {
+      response.headers.set('Content-Length', known_length)
+    }
+
+    # A 304 may carry the length of the representation the client
+    # already holds, but only the application knows what that is -
+    # filling in `0` here would claim the representation is empty. So
+    # whatever it set is kept, and nothing is invented.
+    #
+    # A 1xx, 204 or 205 has no body to describe at all, and framing
+    # one onto it is a protocol violation rather than a nicety.
+    if method != 'HEAD' and response.status != status.NOT_MODIFIED {
+      response.headers.remove('Content-Length')
+    }
+
+    response.headers.remove('Transfer-Encoding')
+  } else if source != nil and source[0] == 'stream' {
+    if response.headers.contains('content-length') {
+      # An application that knows its own length gets to keep it, and
+      # with it the ability to be cached and resumed.
+      streaming = false
+    } else if version == '1.1' {
+      response.headers.set('Transfer-Encoding', 'chunked')
+      response.headers.remove('Content-Length')
+      streaming = true
+    } else {
+      # HTTP/1.0 has no chunked encoding, so the close is the framing
+      # and the connection cannot survive the response.
+      response.headers.remove('Content-Length')
+      keep_alive = false
+      streaming = true
+    }
+  } else if source != nil and source[0] == 'file' {
+    response.headers.set('Content-Length', source[3])
+  } else {
+    response.headers.set('Content-Length', response.body.length())
+  }
+
+  if !keep_alive {
+    response.headers.set('Connection', 'close')
+  } else if version == '1.0' {
+    # An HTTP/1.0 client only keeps the connection if told to, in the
+    # words it understands.
+    response.headers.set('Connection', 'keep-alive')
+    response.headers.set_default('Keep-Alive', 'timeout=5')
+  }
+
+  var wire_version = version == '1.0' ? '1.0' : '1.1'
+  var head = 'HTTP/${wire_version} ${response.status} ${response.reason_phrase()}\r\n'
+  head += response.headers.to_wire()
+
+  for cookie in response.cookie_headers() {
+    head += 'Set-Cookie: ${cookie}\r\n'
+  }
+
+  connection.write(head + '\r\n')
+  response.commit()
+
+  if bodiless {
+    connection.flush()
+    return keep_alive
+  }
+
+  if source == nil {
+    connection.write(response.body)
+    connection.flush()
+    return keep_alive
+  }
+
+  if source[0] == 'file' {
+    _write_file(connection, source[1], source[2], source[3])
+    connection.flush()
+    return keep_alive
+  }
+
+  var writer = ChunkWriter(connection, streaming)
+
+  catch {
+    source[1](writer)
+  } as error
+
+  if error {
+    # The head is already on the wire, so there is no way to turn this
+    # into a status code any more. All that is left is to stop
+    # cleanly - dropping the connection is how the client learns the
+    # body is incomplete.
+    writer.abort()
+    connection.flush()
+    raise error
+  }
+
+  writer.finish()
+  connection.flush()
+
+  return keep_alive
+}
+
+# How much of a file is moved per read when streaming it out. Large
+# enough to keep the socket busy, small enough that serving a large
+# file does not spike memory.
+var _FILE_CHUNK = 262144
+
+def _write_file(connection, path, offset, length) {
+  var handle = file(path, 'rb')
+
+  # A file has to actually be open before it can be seeked; reads
+  # open it lazily, but a seek before the first read does not.
+  handle.open()
+
+  if offset > 0 {
+    handle.seek(offset, 0)
+  }
+
+  var remaining = length
+
+  while remaining > 0 {
+    var want = remaining < _FILE_CHUNK ? remaining : _FILE_CHUNK
+    var chunk = handle.read(want)
+
+    if chunk == nil or chunk.length() == 0 {
+      break
+    }
+
+    connection.write(chunk)
+    remaining -= chunk.length()
+    chunk.dispose()
+  }
+
+  handle.close()
+}
+
+/**
+ * The writer handed to a streaming response body.
+ *
+ * `write()` sends data as it is produced, framed as chunked transfer
+ * encoding when that is how the response was framed, and raw
+ * otherwise. `flush()` pushes what has been written all the way to
+ * the socket, which is what makes a progress feed or a
+ * server-sent-event stream actually arrive rather than sit in a
+ * buffer.
+ */
+class ChunkWriter {
+
+  var _connection
+  var _chunked = false
+  var _finished = false
+
+  /**
+   * @param Connection connection
+   * @param bool chunked
+   */
+  @new(connection, chunked) {
+    self._connection = connection
+    self._chunked = chunked
+    self._finished = false
+  }
+
+  /**
+   * Writes part of the body.
+   *
+   * A zero-length write is dropped rather than sent, since a
+   * zero-length chunk is the end-of-body marker and sending one early
+   * would truncate the response.
+   *
+   * @param {bytes|string} data
+   */
+  write(data) {
+    if self._finished {
+      raise ProtocolError('write after the response body was finished')
+    }
+
+    var payload = is_string(data) ? data.to_bytes() : data
+
+    if payload.length() == 0 {
+      return
+    }
+
+    if self._chunked {
+      var framed = body.encode_chunk(payload)
+      self._connection.write(framed)
+      framed.dispose()
+    } else {
+      self._connection.write(payload)
+    }
+  }
+
+  /**
+   * Pushes everything written so far out to the socket.
+   */
+  flush() {
+    self._connection.flush()
+  }
+
+  /**
+   * Ends the body, writing the terminating chunk when the response is
+   * chunked. Called for you when the streaming handler returns.
+   *
+   * @param ?Headers trailers: trailer fields to send after the last
+   *    chunk; only meaningful for a chunked body, and only ever read
+   *    by a client that announced `TE: trailers`
+   */
+  finish(trailers) {
+    if self._finished {
+      return
+    }
+    self._finished = true
+
+    if self._chunked {
+      var last = body.encode_last_chunk(trailers)
+      self._connection.write(last)
+      last.dispose()
+    }
+  }
+
+  # Ends the body without the terminating chunk, so the peer sees a
+  # truncated message rather than a complete one. The only honest
+  # thing to do when the handler failed partway through.
+  abort() {
+    self._finished = true
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Client side
+# ---------------------------------------------------------------------------
+
+/**
+ * Writes a request to a connection.
+ *
+ * @param Connection connection
+ * @param HttpRequest request
+ * @param ?dict options: `body` (`bytes`), and `origin_form` (default
+ *    `true`) to control whether the target is written as a path or as
+ *    an absolute URL, which is what a request to a forward proxy
+ *    needs
+ * @throws ConnectionError, TimeoutError
+ */
+def write_request(connection, request, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var payload = options.get('body', nil)
+
+  var head = '${request.method} ${request.target} HTTP/1.1\r\n'
+  head += request.headers.to_wire()
+
+  connection.write(head + '\r\n')
+
+  if payload != nil and payload.length() > 0 {
+    connection.write(payload)
+  }
+
+  connection.flush()
+}
+
+/**
+ * Reads a response off a connection.
+ *
+ * Interim `1xx` responses are consumed and skipped, since they are
+ * part of the exchange rather than its result. A `101` is returned as
+ * it is: that one *is* the result, and the caller is switching
+ * protocols on the strength of it.
+ *
+ * @param Connection connection
+ * @param HttpRequest request: the request being answered; its method
+ *    decides the response's framing
+ * @param ?dict options: `max_line_size`, `max_header_size`,
+ *    `max_header_count`, `max_body_size`, `decode_content` (default
+ *    `true`), and `stream` (default `false`) to leave the body unread
+ * @returns HttpResponse
+ * @throws ProtocolError, TooLargeError, ConnectionError
+ */
+def read_response(connection, request, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var max_line = _limit(options, 'max_line_size')
+  var method = request == nil ? 'GET' : request.method
+
+  var response
+
+  while true {
+    response = _read_response_head(connection, max_line, options)
+
+    if !status.is_informational(response.status) or response.status == 101 {
+      break
+    }
+
+    # A 1xx has no body of its own; the next thing on the wire is
+    # another response head.
+  }
+
+  response.request_method = method
+
+  var bodiless = method == 'HEAD' or status.is_bodiless(response.status) or
+      response.status == 101
+
+  # A 2xx answer to CONNECT establishes a tunnel; everything after the
+  # head is tunnelled bytes, not a body.
+  if method == 'CONNECT' and status.is_success(response.status) {
+    bodiless = true
+  }
+
+  var reader = body.reader_for(connection, response.headers, false, bodiless)
+
+  if options.get('stream', false) {
+    response.body = bytes(0)
+    response.body_reader = reader
+    return response
+  }
+
+  response.body = reader.read_all(_limit(options, 'max_body_size'))
+
+  if options.get('decode_content', true) {
+    var encoding = response.headers.get('content-encoding', nil)
+
+    if encoding != nil and !encoding.trim().is_empty() {
+      response.body = body.decode_content(response.body, encoding)
+
+      # The body no longer matches these, and leaving them in place
+      # would have every downstream reader decode it a second time.
+      response.headers.remove('Content-Encoding')
+      response.headers.set('Content-Length', response.body.length())
+    }
+  }
+
+  return response
+}
+
+def _read_response_head(connection, max_line, options) {
+  var line = connection.read_line(max_line)
+
+  if line == nil {
+    raise ConnectionError('connection closed before a response arrived')
+  }
+
+  # Some servers still emit a stray CRLF before a response on a reused
+  # connection; skipping it costs nothing and avoids a spurious error.
+  while line != nil and line.is_empty() {
+    line = connection.read_line(max_line)
+  }
+
+  if line == nil {
+    raise ConnectionError('connection closed before a response arrived')
+  }
+
+  # 'HTTP/1.1 200 OK' - the reason phrase is optional and may itself
+  # contain spaces, so only the first two fields are split off.
+  var first = line.index_of(' ')
+  if first < 0 {
+    raise ProtocolError('malformed status line: ${line}')
+  }
+
+  var version = parse_version(line[0, first])
+  var rest = line[first + 1,]
+
+  var second = rest.index_of(' ')
+  var code_text = second > -1 ? rest[0, second] : rest
+  var reason = second > -1 ? rest[second + 1,] : ''
+
+  if code_text.length() != 3 or !code_text.is_number() {
+    raise ProtocolError('malformed status code: ${code_text}')
+  }
+
+  var response = HttpResponse(nil, code_text.to_number(), nil)
+  response.version = version
+  response.reason = reason.is_empty() ? nil : reason
+  response.headers = _read_headers(connection, options, nil)
+
+  for value in response.headers.get_all('set-cookie') {
+    var cookie = cookies.parse_set_cookie(value)
+    if cookie != nil {
+      response.cookies.append(cookie)
+    }
+  }
+
+  return response
+}

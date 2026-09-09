@@ -2,8 +2,8 @@
  * test_io_bytesio.zu
  *
  * Test suite for `io.BytesIO`: an in-memory, bytearray-backed stream that
- * exposes the same API surface as a real file. Fully deterministic — no
- * real filesystem or terminal involved — so unlike `io_tty.zu` this
+ * exposes the same API surface as a real file. Fully deterministic: no
+ * real filesystem or terminal involved: so unlike `io_tty.zu` this
  * covers the whole class, not just failure behavior.
  */
 
@@ -25,7 +25,7 @@ def raises(fn) {
 }
 
 echo '═══════════════════════════════════════════════════════'
-echo '  io.BytesIO — test suite'
+echo '  io.BytesIO: test suite'
 echo '═══════════════════════════════════════════════════════'
 
 # ---------------------------------------------------------------------------
