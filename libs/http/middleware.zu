@@ -29,7 +29,6 @@
 import .status
 import .util
 
-import base64
 import hash
 
 /**
@@ -250,6 +249,21 @@ def security_headers(options: ?dict) {
   }
 }
 
+# The middleware an authentication factory hands back when it was
+# given no verifier: it does nothing but continue the chain.
+#
+# A factory that raised instead would push every caller into wrapping
+# its own registration in a catch block, for a condition that is not
+# an error. Passing through also makes `nil` a usable switch: blanking
+# a verifier turns its middleware off without disturbing anything
+# around it, which is exactly what you want when bisecting a request
+# that is failing somewhere in the chain.
+def _disabled() {
+  return @(request, response, next) {
+    next()
+  }
+}
+
 /**
  * Requires HTTP Basic authentication.
  *
@@ -258,12 +272,21 @@ def security_headers(options: ?dict) {
  * `http.util.secure_equals()` rather than `==`, so that a wrong
  * guess and a nearly-right one take the same time.
  *
- * @param function(2) verify
+ * A `nil` verifier disables the middleware: it passes every request
+ * straight through rather than refusing one. That makes blanking the
+ * verifier a way to switch authentication off without unpicking the
+ * chain around it.
+ *
+ * @param ?function(2) verify: `nil` to disable
  * @param ?string realm: the realm named in the challenge; defaults to
  *    `'Restricted'`
  * @returns function(3)
  */
 def basic_auth(verify, realm: ?string) {
+  if verify == nil {
+    return _disabled()
+  }
+
   var name = realm == nil ? 'Restricted' : realm
 
   return @(request, response, next) {
@@ -286,13 +309,19 @@ def basic_auth(verify, realm: ?string) {
 /**
  * Requires a bearer token.
  *
- * @param function(1) verify: called with the token; returns whether
+ * A `nil` verifier disables the middleware, as with `basic_auth()`.
+ *
+ * @param ?function(1) verify: called with the token; returns whether
  *    it is acceptable, or a value to attach to `request.context` as
- *    `'user'`
+ *    `'user'`. `nil` to disable
  * @param ?string realm
  * @returns function(3)
  */
 def bearer_auth(verify, realm: ?string) {
+  if verify == nil {
+    return _disabled()
+  }
+
   var name = realm == nil ? 'api' : realm
 
   return @(request, response, next) {
@@ -323,30 +352,7 @@ def bearer_auth(verify, realm: ?string) {
  *    not a well-formed Basic credential
  */
 def parse_basic(header: string) {
-  var text = header.trim()
-
-  if !text.lower().starts_with('basic ') {
-    return nil
-  }
-
-  var decoded
-
-  catch {
-    decoded = base64.decode(text[6,].trim())
-  } as error
-
-  if error or decoded == nil {
-    return nil
-  }
-
-  var pair = decoded.to_string()
-  var colon = pair.index_of(':')
-
-  if colon < 0 {
-    return nil
-  }
-
-  return [pair[0, colon], pair[colon + 1,]]
+  return util.parse_basic(header)
 }
 
 /**
@@ -356,15 +362,171 @@ def parse_basic(header: string) {
  * @returns ?string
  */
 def parse_bearer(header: string) {
-  var text = header.trim()
+  return util.parse_bearer(header)
+}
 
-  if !text.lower().starts_with('bearer ') {
-    return nil
+/**
+ * Requires a valid JSON Web Token, verified by the `jwt` module.
+ *
+ * `verifier` is either a `jwt.Verifier`, or any function taking the
+ * token and returning its claims:
+ *
+ * ```zuri
+ * import http.middleware
+ * import jwt
+ *
+ * server.use(middleware.jwt_auth(
+ *   jwt.Verifier(secret, { algorithms: ['HS256'], audience: 'api' })
+ * ))
+ * ```
+ *
+ * The function form is what covers a key set resolved by `kid`, or
+ * anything else the `jwt` module can do that a fixed verifier cannot:
+ *
+ * ```zuri
+ * server.use(middleware.jwt_auth(@(token) {
+ *   return jwt.verify_with_jwks(token, keys, { audience: 'api' })
+ * }))
+ * ```
+ *
+ * On success the claims land on `request.context['claims']`, and the
+ * `sub` claim - the usual place an issuer puts the account the token
+ * speaks for - on `request.context['user']`.
+ *
+ * Failures follow RFC 6750 §3: a request with no token is answered
+ * `401` with a bare `Bearer` challenge, one whose token does not
+ * verify is answered `401` with `error="invalid_token"`, and one
+ * whose token is valid but lacks a required scope is answered `403`
+ * with `error="insufficient_scope"`.
+ *
+ * @note Like `HttpRequest.validate()`, this deliberately does not
+ *    import the `jwt` module. The verifier is built by the caller,
+ *    which keeps the token format entirely the application's business
+ *    and means a server that authenticates nothing never pays to load
+ *    it.
+ *
+ * A `nil` verifier disables the middleware: every request passes
+ * straight through, unauthenticated. Nothing here raises, so
+ * registering it never needs a catch block around it.
+ *
+ * @param {Verifier|function(1)|nil} verifier: `nil` to disable
+ * @param ?dict options: `realm` (default `'api'`), `optional` (attach
+ *    the claims when a valid token is present but do not refuse a
+ *    request without one), and `scopes` (a list every token must
+ *    carry)
+ * @returns function(3)
+ */
+def jwt_auth(verifier, options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var realm = settings.get('realm', 'api')
+  var optional = settings.get('optional', false)
+  var required_scopes = settings.get('scopes', nil)
+
+  if verifier == nil {
+    return _disabled()
   }
 
-  var token = text[7,].trim()
+  return @(request, response, next) {
+    var token = request.bearer_token()
 
-  return token.is_empty() ? nil : token
+    if token == nil {
+      if optional {
+        next()
+        return
+      }
+
+      _bearer_challenge(response, realm, nil, nil, 401)
+      response.json({ error: 'unauthorized', status: 401 })
+
+      return
+    }
+
+    var claims
+
+    catch {
+      claims = is_instance(verifier) ? verifier.verify(token) : verifier(token)
+    } as error
+
+    # The reason a token failed - a bad signature, an expired one, the
+    # wrong audience - is for this server's logs, not for whoever
+    # presented it. The challenge says only that it was not accepted.
+    if error != nil or !is_dict(claims) {
+      _bearer_challenge(
+        response, realm, 'invalid_token',
+        'the access token is invalid or has expired', 401
+      )
+      response.json({ error: 'invalid_token', status: 401 })
+
+      return
+    }
+
+    if required_scopes != nil {
+      var granted = _token_scopes(claims)
+
+      for wanted in required_scopes {
+        if !granted.contains(wanted) {
+          _bearer_challenge(
+            response, realm, 'insufficient_scope',
+            'the access token does not carry the required scope', 403
+          )
+          response.headers.set(
+            'WWW-Authenticate',
+            response.headers.get('www-authenticate') +
+              ', scope=${util.quote(" ".join(required_scopes))}'
+          )
+          response.json({ error: 'insufficient_scope', status: 403 })
+
+          return
+        }
+      }
+    }
+
+    request.context['claims'] = claims
+    request.context['user'] = claims.get('sub', nil)
+
+    next()
+  }
+}
+
+def _bearer_challenge(response, realm, code, description, status_code) {
+  var challenge = 'Bearer realm=${util.quote(realm)}'
+
+  if code != nil {
+    challenge += ', error=${util.quote(code)}'
+    challenge += ', error_description=${util.quote(description)}'
+  }
+
+  response.status = status_code
+  response.headers.set('WWW-Authenticate', challenge)
+}
+
+# The scopes a token grants. `scope` is a space-delimited string by
+# RFC 8693, but enough issuers send `scp`, and enough send a list
+# rather than a string, that reading only one spelling would refuse
+# perfectly good tokens.
+def _token_scopes(claims) {
+  var granted = []
+
+  for name in ['scope', 'scp'] {
+    var value = claims.get(name, nil)
+
+    if is_string(value) {
+      for part in value.split(' ') {
+        if part {
+          granted.append(part)
+        }
+      }
+    } else if is_list(value) {
+      for part in value {
+        if is_string(part) {
+          granted.append(part)
+        }
+      }
+    }
+  }
+
+  return granted
 }
 
 /**

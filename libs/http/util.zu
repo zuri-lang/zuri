@@ -1,5 +1,6 @@
 #!-- part of the http module
 
+import base64
 import crypto
 
 var _DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -659,6 +660,73 @@ def random_token(length) {
   source.dispose()
 
   return out[0, length]
+}
+
+/**
+ * Parses an HTTP Basic `Authorization` field value into a username
+ * and password.
+ *
+ * The scheme name is matched case-insensitively, as RFC 9110 §11.1
+ * requires. A header that is not a well-formed Basic credential -
+ * wrong scheme, undecodable base64, no colon in the decoded pair -
+ * comes back as `nil` rather than raising, since a malformed
+ * credential is a `401`, not a crash.
+ *
+ * @param ?string header
+ * @returns ?list: `[username, password]`, or `nil`
+ */
+def parse_basic(header) {
+  if !is_string(header) {
+    return nil
+  }
+
+  var text = header.trim()
+
+  if !text.lower().starts_with('basic ') {
+    return nil
+  }
+
+  var decoded
+
+  catch {
+    decoded = base64.decode(text[6,].trim())
+  } as error
+
+  if error or decoded == nil {
+    return nil
+  }
+
+  var pair = decoded.to_string()
+  var colon = pair.index_of(':')
+
+  if colon < 0 {
+    return nil
+  }
+
+  return [pair[0, colon], pair[colon + 1,]]
+}
+
+/**
+ * Parses a `Bearer` `Authorization` field value into its token.
+ *
+ * @param ?string header
+ * @returns ?string: the token, or `nil` when the header is absent or
+ *    is not a bearer credential
+ */
+def parse_bearer(header) {
+  if !is_string(header) {
+    return nil
+  }
+
+  var text = header.trim()
+
+  if !text.lower().starts_with('bearer ') {
+    return nil
+  }
+
+  var token = text[7,].trim()
+
+  return token.is_empty() ? nil : token
 }
 
 /**

@@ -14,7 +14,9 @@ import http.middleware
 import http.sse
 import http.websocket as ws
 
+import jwt
 import os
+import validate
 
 # Serves the accept loop by hand rather than through `listen()`, so
 # the port can be reported before the first connection and so the
@@ -120,6 +122,48 @@ def api_server(port_channel, static_root) {
     }
 
     response.json({ saved, tags: request.form_all().get('tags', []) })
+  })
+
+  var account_schema = validate.schema({
+    name:  validate.required().string().max_length(20),
+    email: validate.required().string().email(),
+    age:   validate.required().integer().gte(18).lte(120),
+  })
+
+  server.post('/accounts', @(request, response) {
+    catch {
+      var data = request.validate(account_schema)
+      response.json({ created: data }, 201)
+    } as error {
+      response.json({ errors: account_schema.group_errors(error.errors) }, 422)
+    }
+  })
+
+  # The same schema, reached over the query string, to show that one
+  # schema serves both when it is written with value rules.
+  server.get('/accounts/check', @(request, response) {
+    catch {
+      response.json({ ok: request.validate(account_schema, 'query') })
+    } as error {
+      response.json({ errors: account_schema.group_errors(error.errors) }, 422)
+    }
+  })
+
+  # Route parameters are part of the merged input too.
+  var lookup_schema = validate.schema({
+    id: validate.required().integer().gte(1),
+  })
+
+  server.get('/accounts/:id', @(request, response) {
+    response.json({ id: request.validate(lookup_schema).id })
+  })
+
+  server.any('/input', @(request, response) {
+    response.json({
+      all: request.input(),
+      query: request.input('query'),
+      params: request.input('params'),
+    })
   })
 
   server.put('/put', @(request, response) {
@@ -249,12 +293,47 @@ def middleware_server(port_channel) {
     next()
   })
 
+  var jwt_guard = middleware.jwt_auth(
+    jwt.Verifier('test-jwt-secret', { algorithms: ['HS256'], audience: 'zuri-test' })
+  )
+
+  var scoped_guard = middleware.jwt_auth(
+    jwt.Verifier('test-jwt-secret', { algorithms: ['HS256'], audience: 'zuri-test' }),
+    { scopes: ['items:write'], realm: 'items' }
+  )
+
+  # No verifier at all: this must behave as though the middleware were
+  # not registered, rather than refusing or raising.
+  var disabled_guard = middleware.jwt_auth(nil)
+
+  server.use(@(request, response, next) {
+    if request.path.starts_with('/jwt/open') {
+      disabled_guard(request, response, next)
+      return
+    }
+
+    if request.path.starts_with('/jwt/scoped') {
+      scoped_guard(request, response, next)
+      return
+    }
+
+    if request.path.starts_with('/jwt') {
+      jwt_guard(request, response, next)
+      return
+    }
+
+    next()
+  })
+
   var api_guard = middleware.bearer_auth(@(token) {
     return token == 'good-token' ? { subject: 'svc-1' } : false
   })
 
+  # The trailing slash matters: a bare '/token' prefix would also
+  # capture '/tokens' below, which is the sort of collision a prefix
+  # guard invites.
   server.use(@(request, response, next) {
-    if request.path.starts_with('/token') {
+    if request.path.starts_with('/token/') {
       api_guard(request, response, next)
       return
     }
@@ -274,6 +353,40 @@ def middleware_server(port_channel) {
 
   server.get('/private/data', @(request, response) {
     response.json({ user: request.context.get('user', nil) })
+  })
+
+  server.get('/jwt/me', @(request, response) {
+    response.json({
+      user: request.context.get('user', nil),
+      audience: request.context.get('claims', {}).get('aud', nil),
+    })
+  })
+
+  server.get('/jwt/scoped/items', @(request, response) {
+    response.json({ ok: true })
+  })
+
+  server.get('/jwt/open/anything', @(request, response) {
+    response.json({ reached: true, user: request.context.get('user', nil) })
+  })
+
+  server.get('/tokens', @(request, response) {
+    response.json({
+      good: jwt.sign({ sub: 'ada', aud: 'zuri-test' }, 'test-jwt-secret'),
+      scoped: jwt.sign(
+        { sub: 'ada', aud: 'zuri-test', scope: 'items:read items:write' },
+        'test-jwt-secret'
+      ),
+      narrow: jwt.sign(
+        { sub: 'ada', aud: 'zuri-test', scope: 'items:read' },
+        'test-jwt-secret'
+      ),
+      expired: jwt.sign(
+        { sub: 'ada', aud: 'zuri-test', exp: time() - 60 },
+        'test-jwt-secret'
+      ),
+      forged: jwt.sign({ sub: 'root', aud: 'zuri-test' }, 'not-the-secret'),
+    })
   })
 
   server.get('/limited', @(request, response) {

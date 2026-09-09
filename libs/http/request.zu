@@ -454,6 +454,155 @@ class HttpRequest {
   }
 
   # ----------------------------------------------------------------
+  # Input and validation
+  # ----------------------------------------------------------------
+
+  /**
+   * The request's input as one dictionary, ready to hand to a
+   * validator.
+   *
+   * With no argument, three sources are merged, each overriding the
+   * one before it:
+   *
+   * 1. route parameters, from the pattern that matched
+   * 2. query string parameters
+   * 3. the body - a JSON object's keys, or the submitted form fields
+   *
+   * Pass `source` to take exactly one of them instead: `'params'`,
+   * `'query'` or `'body'`.
+   *
+   * A query or form field is a list on the wire, since a name may
+   * legally repeat. A name carrying exactly one value is flattened to
+   * that value here, so a rule expecting a string sees a string; a
+   * name carrying several stays a list. A field that must *always* be
+   * a list, however many values arrived, is better read through
+   * `form_all()` or `query` directly.
+   *
+   * Uploaded files are not included - nothing a schema can say about
+   * a file is expressible as a rule over its bytes. Reach them with
+   * `file()` and check them by hand.
+   *
+   * A JSON body that is not an object (an array, a bare string)
+   * contributes nothing, since there are no names to merge; read it
+   * with `json_body()` instead.
+   *
+   * @param ?string source: `'params'`, `'query'`, `'body'`, or `'all'`
+   *    (the default)
+   * @returns dict
+   * @throws ValueError if `source` names something else
+   */
+  input(source: ?string) {
+    var wanted = source == nil ? 'all' : source.lower()
+
+    using wanted {
+      when 'params' {
+        return self.params.clone()
+      }
+      when 'query' {
+        return _flatten(self.query)
+      }
+      when 'body' {
+        return self._body_input()
+      }
+      when 'all' {
+        var merged = self.params.clone()
+        merged.extend(_flatten(self.query))
+        merged.extend(self._body_input())
+
+        return merged
+      }
+    }
+
+    raise ValueError(
+      'input source must be params, query, body or all, got ${source}'
+    )
+  }
+
+  _body_input() {
+    var type = self.content_type()
+
+    if type == 'application/json' or (type != nil and type.ends_with('+json')) {
+      var decoded
+
+      catch {
+        decoded = self.json_body()
+      } as error
+
+      # A body that will not parse has no names to contribute. The
+      # schema's own required rules then report what is missing, which
+      # is a better answer to the client than a parser message.
+      if error or !is_dict(decoded) {
+        return {}
+      }
+
+      return decoded.clone()
+    }
+
+    return _flatten(self.form_all())
+  }
+
+  /**
+   * Validates the request's input against `schema` and returns the
+   * data that was validated.
+   *
+   * `schema` is anything with a `check_or_raise()` method - a
+   * `validate.Schema` in practice:
+   *
+   * ```zuri
+   * import validate
+   *
+   * var create_user = validate.schema({
+   *   name:  validate.required().string().max_length(100),
+   *   email: validate.required().string().email(),
+   * })
+   *
+   * server.post('/users', @(request, response) {
+   *   var data = request.validate(create_user)
+   *   response.json(create_account(data), 201)
+   * })
+   * ```
+   *
+   * Failure raises the schema's own error - `validate.ValidationError`
+   * - carrying an `errors` list of `{ field, message }`. Catch it to
+   * turn it into whatever your API answers with:
+   *
+   * ```zuri
+   * catch {
+   *   var data = request.validate(create_user)
+   *   response.json(create_account(data), 201)
+   * } as error {
+   *   response.json({ errors: create_user.group_errors(error.errors) }, 422)
+   * }
+   * ```
+   *
+   * @note This deliberately does not import the `validate` module. Any
+   *    object exposing `check_or_raise(data)` works, and a server that
+   *    never validates anything never pays to load it.
+   *
+   * @param Schema schema
+   * @param ?string source: as `input()`; defaults to `'all'`
+   * @returns dict: the input that was validated
+   * @throws ValidationError when the input does not satisfy the schema
+   * @throws TypeError if `schema` is not an object that can validate
+   */
+  validate(schema, source: ?string) {
+    # A cheap guard against the common slip of handing over the data
+    # instead of the schema. An instance that turns out not to have
+    # `check_or_raise` reports that itself, by name, when it is called.
+    if !is_instance(schema) {
+      raise TypeError(
+        'validate() expects a schema built by validate.schema(), ' +
+        'got ${typeof(schema)}'
+      )
+    }
+
+    var data = self.input(source)
+    schema.check_or_raise(data)
+
+    return data
+  }
+
+  # ----------------------------------------------------------------
   # About the request
   # ----------------------------------------------------------------
 
@@ -643,6 +792,16 @@ class HttpRequest {
   }
 
   /**
+   * The token from an `Authorization: Bearer ...` header, or `nil`
+   * when there is no such header or it carries a different scheme.
+   *
+   * @returns ?string
+   */
+  bearer_token() {
+    return util.parse_bearer(self.headers.get('authorization', nil))
+  }
+
+  /**
    * Whether the request was made by client-side script, as reported
    * by the `X-Requested-With` header that the major JavaScript
    * libraries set.
@@ -747,6 +906,24 @@ class HttpRequest {
   @to_json() {
     return self.to_json()
   }
+}
+
+# Query and form fields arrive as `name -> [values]`, because a name
+# may legally repeat. A single value is unwrapped so that a rule
+# expecting a scalar sees one; several stay a list.
+def _flatten(fields) {
+  var result = {}
+
+  for name, values in fields {
+    if !is_list(values) {
+      result[name] = values
+      continue
+    }
+
+    result[name] = values.length() == 1 ? values[0] : values.clone()
+  }
+
+  return result
 }
 
 def _strip_port(address) {

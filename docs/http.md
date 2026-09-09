@@ -34,6 +34,7 @@ a server.
   - [Routing](#routing)
   - [The Request Object](#the-request-object)
   - [Forms and File Uploads](#forms-and-file-uploads)
+  - [Request Validation](#request-validation)
   - [The Response Object](#the-response-object)
   - [Middleware](#middleware)
   - [Errors](#errors)
@@ -49,6 +50,7 @@ a server.
   - [`cors()`](#cors)
   - [`basic_auth()`](#basic_auth)
   - [`bearer_auth()`](#bearer_auth)
+  - [`jwt_auth()`](#jwt_auth)
   - [`rate_limit()`](#rate_limit)
   - [`etag()`](#etag)
   - [`force_https()`](#force_https)
@@ -587,6 +589,7 @@ server.post('/items', @(request, response) {
   request.query_param('page', '1')    # a query parameter, with a default
   request.header('accept')            # a header field
   request.cookie('session')           # a cookie
+  request.bearer_token()              # the token from an Authorization header
 
   request.text()          # the body as text
   request.json_body()     # the body parsed as JSON
@@ -799,6 +802,148 @@ whole transfer.
 For an upload too large to want in memory at all, take it as a raw
 body and stream it rather than as a form field. `multipart/form-data`
 earns its overhead only when there are fields alongside the file.
+
+### Request Validation
+
+A request validates itself against a `validate` schema:
+
+```zuri
+import http
+import validate
+
+var create_user = validate.schema({
+  name:  validate.required().string().max_length(100),
+  email: validate.required().string().email(),
+  age:   validate.required().integer().gte(18).lte(120),
+})
+
+server.post('/users', @(request, response) {
+  catch {
+    var data = request.validate(create_user)
+    response.json(create_account(data), 201)
+  } as error {
+    response.json({ errors: create_user.group_errors(error.errors) }, 422)
+  }
+})
+```
+
+`validate()` returns the input it checked, so the happy path is one
+line and the data you go on to use is the data that was validated.
+Failure raises the schema's own `validate.ValidationError`, carrying
+an `errors` list of `{ field, message }`; `group_errors()` turns that
+into a dictionary keyed by field, which is the shape most front ends
+want:
+
+```json
+{
+  "errors": {
+    "email": ["The email field must be a valid email address."],
+    "age": ["The age field must be greater than or equal to 18."]
+  }
+}
+```
+
+To branch rather than catch, validate the input yourself — there is
+no separate API for it:
+
+```zuri
+var result = create_user.check(request.input())
+
+if !result.valid {
+  response.json({ errors: result.errors }, 422)
+  return
+}
+```
+
+The rules themselves — and there are around eighty of them, including
+cross-field ones like `confirmed()` and `required_if()` — belong to
+the `validate` module rather than to this one.
+
+#### What gets validated
+
+`request.input()` is the dictionary `validate()` checks. Three sources
+are merged, each overriding the one before it:
+
+1. route parameters, from the pattern that matched
+2. query string parameters
+3. the body — a JSON object's keys, or the submitted form fields
+
+So one schema covers `POST /users` with a JSON body, `GET /users?…`
+with a query string, and `/users/:id` with a route parameter, without
+the handler caring which arrived.
+
+Take one source on its own by naming it:
+
+```zuri
+request.validate(schema, 'body')     # only the body
+request.validate(schema, 'query')    # only the query string
+request.validate(schema, 'params')   # only the route parameters
+```
+
+Two things are deliberately left out of the merge:
+
+- **Uploaded files.** Nothing a schema can say about a file is
+  expressible as a rule over its bytes; reach them with
+  `request.file()` and check them as [Forms and File
+  Uploads](#forms-and-file-uploads) describes.
+- **A JSON body that is not an object.** An array or a bare string has
+  no names to merge, so it contributes nothing; read it with
+  `request.json_body()`.
+
+A body that fails to parse as JSON also contributes nothing rather
+than raising, which leaves the schema's own `required` rules to report
+what is missing. That is a better answer to a client than a parser
+message.
+
+#### Values from the wire are strings
+
+A query string and a urlencoded form carry text and nothing else.
+`?age=36` is the string `'36'`, not the number `36`, and that changes
+which rules hold:
+
+| Rule | On `'36'` | Because |
+| --- | --- | --- |
+| `integer()`, `numeric()`, `gt()`, `gte()`, `lt()`, `lte()` | reads it as 36 | these coerce |
+| `size()`, `min()`, `max()`, `between()` | reads it as 2 | these measure *size*, which for a string is its character count |
+
+That is `validate`'s documented behaviour, not an accident of this
+module: `min(8)` on a password means eight characters. It only
+surprises when a schema written against a JSON body is later pointed
+at a query string.
+
+Write a schema that has to serve both with the value rules:
+
+```zuri
+age: validate.required().integer().gte(18).lte(120)   # both
+age: validate.required().integer().between(18, 120)   # JSON bodies only
+```
+
+`input()` does not coerce anything on your behalf. It would have to
+guess, and a postcode of `'01234'` or a version of `'1.0'` silently
+becoming a number is worse than the rule you have to pick deliberately.
+
+#### Repeated fields
+
+A name may legally repeat in a query string or a form, so those
+sources arrive as `name -> [values]`. `input()` flattens a name
+carrying exactly one value to that value, and leaves a name carrying
+several as a list:
+
+```
+?tag=a           ->  { tag: 'a' }
+?tag=a&tag=b     ->  { tag: ['a', 'b'] }
+```
+
+That is what lets a scalar rule see a scalar. A field that must
+*always* be a list, however many values arrived, is better read
+through `form_all()` or `request.query` directly and validated with
+`validate`'s `.*` wildcard.
+
+> **Note**
+> The `http` module does not import `validate`. `validate()` takes any
+> object with a `check_or_raise()` method and calls it, so a server
+> that validates nothing never pays to load a schema engine — and a
+> schema of your own, or from somewhere else, works just as well.
 
 ### The Response Object
 
@@ -1075,6 +1220,26 @@ server.use(middleware.security_headers())
 They are ordinary middleware with no special standing — read any of
 them as a worked example of writing your own.
 
+None of them raises when it is built. That matters for the three that
+take a verifier — [`basic_auth()`](#basic_auth),
+[`bearer_auth()`](#bearer_auth) and [`jwt_auth()`](#jwt_auth) — where
+**no verifier means the middleware is disabled**: it passes every
+request straight through rather than refusing one, and rather than
+failing at registration.
+
+```zuri
+# Authentication, off. Everything else in the chain is untouched.
+server.use(middleware.jwt_auth(nil))
+```
+
+That is the right shape for a middleware, and it is deliberately
+useful: blanking a verifier switches its middleware off without
+unpicking the chain around it, which is what you want when bisecting a
+request that is failing somewhere in a stack of them.
+
+Disabling is opt-in and never a fallback: a verifier that is *present*
+and refuses a request still refuses it.
+
 ### `logger()`
 
 Writes one line per request, after the response is finished.
@@ -1243,6 +1408,9 @@ On success the username is put on `request.context['user']`. On
 failure the response is `401` with a `WWW-Authenticate` header, which
 is what makes a browser show its credentials prompt.
 
+Passing `nil` in place of the verifier disables the middleware
+entirely — see [the note above](#built-in-middleware).
+
 Compare secrets with `http.util.secure_equals()` rather than `==`: it
 compares in constant time, so a wrong guess and a nearly-right one
 take the same time and the comparison does not hand over the secret
@@ -1286,11 +1454,115 @@ whole user record all work.
 
 Failure is `401` with a `WWW-Authenticate: Bearer` challenge and a
 JSON body. The realm is the optional second argument and defaults to
-`'api'`.
+`'api'`. A `nil` verifier disables the middleware, as with
+`basic_auth()`.
 
 `middleware.parse_bearer(header)` and `middleware.parse_basic(header)`
 are exported separately for code that needs to read an `Authorization`
-header without installing a middleware at all.
+header without installing a middleware at all, and
+`request.bearer_token()` reads the token straight off a request.
+
+For a JSON Web Token specifically, [`jwt_auth()`](#jwt_auth) does the
+verification, the claim handling and the RFC 6750 challenges rather
+than leaving them to the verifier you write here.
+
+### `jwt_auth()`
+
+Requires a valid JSON Web Token, verified by the `jwt` module.
+
+```zuri
+import http.middleware
+import jwt
+
+server.use(middleware.jwt_auth(
+  jwt.Verifier(secret, { algorithms: ['HS256'], audience: 'api' })
+))
+```
+
+The first argument is either a `jwt.Verifier` or any function taking
+the token and returning its claims. The function form is what covers a
+key set resolved by `kid`, or anything else the `jwt` module can do
+that a fixed verifier cannot:
+
+```zuri
+server.use(middleware.jwt_auth(@(token) {
+  return jwt.verify_with_jwks(token, keys, { audience: 'api' })
+}))
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `realm` | `'api'` | the realm named in the challenge |
+| `optional` | `false` | attach the claims when a valid token is present, but do not refuse a request without one |
+| `scopes` | none | a list of scopes every token must carry |
+
+On success the claims land on `request.context['claims']`, and the
+`sub` claim — the usual place an issuer puts the account a token
+speaks for — on `request.context['user']`:
+
+```zuri
+server.get('/me', @(request, response) {
+  response.json({
+    account: request.context.get('user', nil),
+    issued_at: request.context.get('claims', {}).get('iat', nil),
+  })
+})
+```
+
+Failures follow RFC 6750 §3:
+
+| Situation | Answer |
+| --- | --- |
+| no token at all | `401`, `WWW-Authenticate: Bearer realm="api"` |
+| the token does not verify | `401`, with `error="invalid_token"` |
+| valid, but missing a required scope | `403`, with `error="insufficient_scope"` and the scope that was needed |
+
+The distinction in that last row is the point of `scopes`: a token
+that failed to authenticate and a token that authenticated but is not
+allowed to do this are different problems, and answering both with
+`401` tells a client to go and get a new token when a new token will
+not help.
+
+> **Note**
+> A challenge never says *which* check a token failed. An expired
+> token and a forged one get exactly the same
+> `error_description`, because which one it was is useful to your
+> logs and useful to an attacker, and to nobody else. If you need the
+> reason, log it from the verifier you passed in.
+
+`optional` is for a route that behaves differently when it knows who
+is asking without requiring it — a public page that shows an edit
+button to its author:
+
+```zuri
+server.use(middleware.jwt_auth(verifier, { optional: true }))
+
+server.get('/posts/:id', @(request, response) {
+  var viewer = request.context.get('user', nil)
+  response.json(render_post(request.param('id'), viewer))
+})
+```
+
+A token that is *present* but invalid is still refused under
+`optional`. Ignoring a bad token would let a client tamper with one
+and get the anonymous view rather than an error, which hides exactly
+the problem worth surfacing.
+
+A `nil` verifier disables the middleware: every request passes
+through unauthenticated, and `request.context['claims']` is simply
+never set. Nothing here raises when it is built, so registering it
+never needs a `catch` around it.
+
+```zuri
+var verifier = production ? jwt.Verifier(secret, options) : nil
+
+server.use(middleware.jwt_auth(verifier))
+```
+
+Like `HttpRequest.validate()`, this does not import the `jwt` module —
+the verifier is built by the caller, which keeps the token format the
+application's business and means a server that authenticates nothing
+never pays to load it.
 
 ### `rate_limit()`
 
@@ -1398,7 +1670,7 @@ server.use(middleware.force_https())       # before any work is done
 server.use(middleware.security_headers())
 server.use(middleware.cors({ origins: allowed }))
 server.use(middleware.rate_limit({ limit: 100 }))
-server.use(middleware.bearer_auth(verify))  # after the cheap refusals
+server.use(middleware.jwt_auth(verifier))   # after the cheap refusals
 server.use(middleware.etag())              # innermost: it needs the finished body
 ```
 
@@ -1732,6 +2004,12 @@ implementation would have accepted:
 | `http.stream` | the buffered connection both protocols read and write through |
 | `http.util` | dates, header parameters, percent coding, path normalisation |
 | `http.errors` | the error hierarchy |
+
+Two other standard library modules meet this one without it depending
+on either: `HttpRequest.validate()` takes a schema from `validate`,
+and `middleware.jwt_auth()` takes a verifier from `jwt`. Both are
+duck-typed, so neither module is loaded by a server that does not use
+it.
 
 Every error this module raises descends from `HttpError`:
 `ProtocolError` for a malformed message, `ConnectionError` for a

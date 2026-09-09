@@ -232,6 +232,54 @@ assert client.put(base + '/put', 'data').as_text() == 'put:data', 'PUT carries a
 assert client.delete(base + '/thing').status == 204, 'DELETE answers 204'
 ok('the other methods')
 
+# ---------------------------------------------------------------------------
+# Request validation
+# ---------------------------------------------------------------------------
+
+var created = client.post(base + '/accounts', {
+  name: 'Ada', email: 'ada@example.com', age: 36,
+})
+assert created.status == 201, 'input satisfying the schema is accepted'
+assert created.as_dict().created.name == 'Ada', 'and validate() hands back the data'
+assert created.as_dict().created.age == 36, 'with JSON types intact'
+
+var rejected = client.post(base + '/accounts', {
+  name: 'a name that is very much longer than twenty characters',
+  email: 'not-an-email',
+  age: 9,
+})
+assert rejected.status == 422, 'input failing the schema is refused'
+
+var reported = rejected.as_dict().errors
+assert reported.contains('name'), 'the over-long name is reported'
+assert reported.contains('email'), 'so is the malformed address'
+assert reported.contains('age'), 'and the out-of-range age'
+assert reported.email.length() > 0, 'each field carries at least one message'
+ok('request.validate() checks the body and reports every failing field')
+
+var by_query = client.get(base + '/accounts/check?name=Ada&email=ada@example.com&age=36')
+assert by_query.status == 200, 'the same schema is satisfied over the query string'
+assert by_query.as_dict().ok.age == '36',
+  'where a value stays the string the wire carried'
+
+var bad_query = client.get(base + '/accounts/check?name=Ada&email=ada@example.com&age=9')
+assert bad_query.status == 422, 'and is refused when a value rule does not hold'
+ok('a value-rule schema validates query input as well as a JSON body')
+
+assert client.get(base + '/accounts/12').as_dict().id == '12',
+  'a route parameter is part of the merged input'
+ok('route parameters are validated alongside the rest of the input')
+
+var merged = client.post(base + '/input?q=1&tag=a&tag=b', nil, {
+  form: { field: 'value' },
+}).as_dict()
+assert merged.all.q == '1', 'a single query value is flattened to a scalar'
+assert merged.all.tag == ['a', 'b'], 'a repeated one stays a list'
+assert merged.all.field == 'value', 'the body is merged over the query'
+assert merged.query.q == '1' and !merged.query.contains('field'),
+  'and a single source can be taken on its own'
+ok('input() merges the request sources by the documented precedence')
+
 var missing = client.get(base + '/nowhere')
 assert missing.status == 404, 'an unknown path is a 404'
 
@@ -566,6 +614,71 @@ assert over.as_dict().status == 429, 'and a JSON body saying so'
 var other_bucket = mw_client.get(mw_base + '/limited', { headers: { 'X-Bucket': 'elsewhere' } })
 assert other_bucket.status == 200, 'a different key is a different bucket'
 ok('rate limiting, per key')
+
+var tokens = mw_client.get(mw_base + '/tokens').as_dict()
+
+var unauthenticated = mw_client.get(mw_base + '/jwt/me')
+assert unauthenticated.status == 401, 'a JWT-guarded route refuses a request with no token'
+assert unauthenticated.headers.get('www-authenticate') == 'Bearer realm="api"',
+  'with a bare challenge, since there was no credential to fault'
+
+var authenticated = mw_client.get(mw_base + '/jwt/me', {
+  auth: ['bearer', tokens.good],
+})
+assert authenticated.status == 200, 'a valid token gets through'
+assert authenticated.as_dict().user == 'ada', 'and its sub claim reaches the handler'
+assert authenticated.as_dict().audience == 'zuri-test', 'along with the rest of the claims'
+
+var challenges = []
+
+for bad in ['expired', 'forged'] {
+  var refused = mw_client.get(mw_base + '/jwt/me', { auth: ['bearer', tokens.get(bad)] })
+
+  assert refused.status == 401, 'a ${bad} token is refused'
+  assert refused.headers.get('www-authenticate').contains('error="invalid_token"'),
+    'as an invalid token'
+
+  challenges.append(refused.headers.get('www-authenticate'))
+}
+
+# An expired token and a forged one are two very different problems,
+# and the presenter is told exactly the same thing about both. Which
+# check a token failed is for this server's logs.
+assert challenges[0] == challenges[1],
+  'the challenge does not say which check the token failed'
+
+assert mw_client.get(mw_base + '/jwt/me', {
+  headers: { 'Authorization': 'Bearer wholly.invalid.token' },
+}).status == 401, 'an unparseable token is a 401 rather than a 500'
+ok('JWT authentication')
+
+# A middleware built with no verifier is a middleware that is off. It
+# must not refuse the request, and it must not have raised when it was
+# built either - a factory that raised would force every caller to
+# register it inside a catch block.
+var unguarded = mw_client.get(mw_base + '/jwt/open/anything')
+assert unguarded.status == 200, 'jwt_auth(nil) passes a request straight through'
+assert unguarded.as_dict().reached, 'reaching the handler'
+assert unguarded.as_dict().user == nil, 'with nothing attached to it'
+
+assert mw_client.get(mw_base + '/jwt/open/anything', {
+  headers: { 'Authorization': 'Bearer wholly.invalid.token' },
+}).status == 200, 'and ignores a token rather than checking it'
+ok('a jwt_auth with no verifier is disabled, not failing')
+
+assert mw_client.get(mw_base + '/jwt/scoped/items', {
+  auth: ['bearer', tokens.scoped],
+}).status == 200, 'a token carrying the required scope gets through'
+
+var under_scoped = mw_client.get(mw_base + '/jwt/scoped/items', {
+  auth: ['bearer', tokens.narrow],
+})
+assert under_scoped.status == 403, 'a token without it is refused, but as a 403'
+assert under_scoped.headers.get('www-authenticate').contains('error="insufficient_scope"'),
+  'saying which of the two problems it was'
+assert under_scoped.headers.get('www-authenticate').contains('scope="items:write"'),
+  'and what would have been enough'
+ok('JWT scopes are enforced separately from authentication')
 
 var cors_preflight = mw_client.request('OPTIONS', mw_base + '/open', {
   headers: {

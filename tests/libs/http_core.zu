@@ -23,6 +23,8 @@ import http.sse
 import http.status
 import http.util
 
+import validate
+
 var _passed = 0
 
 def ok(label) {
@@ -437,8 +439,97 @@ assert http.HttpResponse().raise_for_status().status == 200, 'a 2xx passes throu
 ok('response status predicates')
 
 # ---------------------------------------------------------------------------
+# Request input and validation
+# ---------------------------------------------------------------------------
+
+var merged = request.HttpRequest('POST', '/users/7?page=2&tag=a&tag=b')
+merged.params = { id: '7' }
+merged.headers.set('Content-Type', 'application/json')
+merged.body = '{"name":"Ada","age":36}'.to_bytes()
+
+var all_input = merged.input()
+assert all_input.id == '7', 'a route parameter is in the merged input'
+assert all_input.page == '2', 'a single query value is flattened to a scalar'
+assert all_input.tag == ['a', 'b'], 'a repeated one stays a list'
+assert all_input.name == 'Ada' and all_input.age == 36,
+  'the JSON body is merged with its own types'
+
+assert merged.input('query').contains('page'), 'a single source can be taken alone'
+assert !merged.input('query').contains('name'), 'and carries nothing from the others'
+assert merged.input('params') == { id: '7' }, 'the route parameters on their own'
+assert merged.input('body').name == 'Ada', 'and the body on its own'
+assert raises(@() { merged.input('nonsense') }), 'an unknown source is an error'
+ok('input() merges the request sources by the documented precedence')
+
+var form_request = request.HttpRequest('POST', '/x')
+form_request.headers.set('Content-Type', 'application/x-www-form-urlencoded')
+form_request.body = 'name=Grace&tag=a&tag=b'.to_bytes()
+assert form_request.input().name == 'Grace', 'a urlencoded body is input too'
+assert form_request.input().tag == ['a', 'b'], 'with the same flattening'
+
+var array_body = request.HttpRequest('POST', '/x?q=1')
+array_body.headers.set('Content-Type', 'application/json')
+array_body.body = '[1,2,3]'.to_bytes()
+assert array_body.input() == { q: '1' },
+  'a JSON body that is not an object has no names to contribute'
+
+var broken = request.HttpRequest('POST', '/x?q=1')
+broken.headers.set('Content-Type', 'application/json')
+broken.body = '{not json'.to_bytes()
+assert broken.input() == { q: '1' },
+  'and neither does one that will not parse, rather than raising'
+ok('input() handles form, non-object and unparseable bodies')
+
+var account = validate.schema({
+  name: validate.required().string().max_length(20),
+  age:  validate.required().integer().gte(18).lte(120),
+})
+
+assert merged.validate(account).name == 'Ada', 'validate() hands back the input it checked'
+
+var underage = request.HttpRequest('POST', '/x')
+underage.headers.set('Content-Type', 'application/json')
+underage.body = '{"name":"Ada","age":9}'.to_bytes()
+
+var failure = nil
+catch {
+  underage.validate(account)
+} as error {
+  failure = error
+}
+
+assert failure != nil, 'input that fails the schema raises'
+assert failure.errors.length() == 1, 'carrying one error per failing rule'
+assert failure.errors[0].field == 'age', 'naming the field'
+assert account.group_errors(failure.errors).contains('age'), 'and grouping by it'
+ok('request.validate() checks the input and raises the schema error')
+
+# The same schema over a query string: `gte`/`lte` coerce, so it holds.
+var from_query = request.HttpRequest('GET', '/x?name=Ada&age=36')
+assert from_query.validate(account).age == '36',
+  'a value rule accepts the string the wire carried, and the value stays a string'
+
+assert raises(@() { request.HttpRequest('GET', '/x').validate({ name: 'not a schema' }) }),
+  'handing validate() something that is not a schema is an error'
+ok('a value-rule schema validates query input as well as a JSON body')
+
+# ---------------------------------------------------------------------------
 # Authentication headers
 # ---------------------------------------------------------------------------
+
+# All three auth factories treat a missing verifier as "disabled", and
+# none of them raises while being built.
+for factory in [middleware.basic_auth, middleware.bearer_auth, middleware.jwt_auth] {
+  var guard = factory(nil)
+  var passed_through = false
+
+  guard(request.HttpRequest('GET', '/'), http.HttpResponse(), @() {
+    passed_through = true
+  })
+
+  assert passed_through, 'a verifier-less auth middleware passes the request through'
+}
+ok('an auth middleware with no verifier is disabled rather than failing')
 
 var basic = middleware.parse_basic('Basic YWRhOmxvdmVsYWNl')
 assert basic[0] == 'ada' and basic[1] == 'lovelace', 'a Basic credential decodes'
@@ -448,6 +539,15 @@ assert middleware.parse_basic('Bearer abc') == nil, 'a bearer token is not a bas
 
 assert middleware.parse_bearer('Bearer abc.def') == 'abc.def', 'a bearer token is extracted'
 assert middleware.parse_bearer('Bearer   ') == nil, 'an empty token is not a token'
+
+var carrying = request.HttpRequest('GET', '/')
+carrying.headers.set('Authorization', 'Bearer abc.def.ghi')
+assert carrying.bearer_token() == 'abc.def.ghi', 'a request reads its own bearer token'
+
+var basic_only = request.HttpRequest('GET', '/')
+basic_only.headers.set('Authorization', 'Basic YWRhOng=')
+assert basic_only.bearer_token() == nil, 'and does not mistake another scheme for one'
+assert request.HttpRequest('GET', '/').bearer_token() == nil, 'nor invent one'
 ok('Authorization headers parse')
 
 # ---------------------------------------------------------------------------
