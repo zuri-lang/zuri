@@ -125,7 +125,7 @@ fn pool() -> &'static IsolatePool {
 struct IsolateCompiler {
   job_tx: std::sync::mpsc::Sender<crate::jit::background::CompileJob>,
   shutdown: Arc<AtomicBool>,
-  thread: Option<std::thread::JoinHandle<()>>,
+  threads: Vec<std::thread::JoinHandle<()>>,
 }
 
 struct IsolatePool {
@@ -187,12 +187,12 @@ impl IsolatePool {
     if let Some(c) = comp.as_ref() {
       return c.job_tx.clone();
     }
-    let (job_tx, shutdown, thread) =
+    let (job_tx, shutdown, threads) =
       crate::jit::background::spawn_named("zuri-jit-compiler-isolate".to_string());
     *comp = Some(IsolateCompiler {
       job_tx: job_tx.clone(),
       shutdown,
-      thread: Some(thread),
+      threads,
     });
     job_tx
   }
@@ -204,13 +204,16 @@ impl IsolatePool {
 
       // Every isolate VM that used this compiler kept a clone of the
       // sender, so dropping ours does not disconnect the channel and
-      // would leave the worker parked in `recv()` forever. The wake-up
-      // is what actually gets it to look at the flag we just set.
-      let _ = c
-        .job_tx
-        .send(crate::jit::background::CompileJob::shutdown_signal());
+      // would leave the workers parked in `recv()` forever. The wake-ups
+      // are what actually get them to look at the flag we just set, one
+      // per worker since each consumes the message that woke it.
+      for _ in 0..c.threads.len() {
+        let _ = c
+          .job_tx
+          .send(crate::jit::background::CompileJob::shutdown_signal());
+      }
       drop(c.job_tx);
-      if let Some(thread) = c.thread.take() {
+      for thread in c.threads.drain(..) {
         let _ = thread.join();
       }
     }

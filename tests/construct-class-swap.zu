@@ -1,0 +1,63 @@
+/* A construction site is compiled against whichever class the global it
+ * resolves through happened to hold at compile time. Reassign that
+ * global to a different class and the compiled site's guard misses, so
+ * the call falls through to the dynamic construct path.
+ *
+ * That path is where the constructor's arguments get shifted up one
+ * slot to make room for `self`, and it has to read them back at their
+ * new homes: reading them where the call site originally wrote them
+ * hands the constructor its own instance as the first argument.
+ */
+
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+}
+
+class Tag {
+  @new(name) {
+    self.name = name
+  }
+}
+
+var Shape = Point
+
+def build(a, b) {
+  return Shape(a, b)
+}
+
+/* Warm the site well past its compile threshold with the class it was
+ * first seen holding. The replacement class's own constructor is warmed
+ * alongside it: the compiled call only reaches its fast path when the
+ * constructor it lands on has compiled code of its own.
+ */
+iter var i = 0; i < 30000; i++ {
+  build(i, i + 1)
+  Tag(i)
+}
+
+var p = build(7, 9)
+echo p.x
+echo p.y
+
+/* Same site, different class, different arity: the extra argument is
+ * dropped, but the first one still has to arrive intact.
+ *
+ * Every call is checked rather than just one, since which of them lands
+ * on the compiled fast path depends on when the replacement class's own
+ * constructor finished compiling. One wrong answer anywhere is the bug.
+ */
+Shape = Tag
+
+var wrong = 0
+
+iter var i = 0; i < 30000; i++ {
+  var t = build('kept', 'extra')
+  if t.name != 'kept' {
+    wrong += 1
+  }
+}
+
+echo wrong == 0

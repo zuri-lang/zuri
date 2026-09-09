@@ -1,54 +1,64 @@
-//! A single dedicated background thread that does the expensive half
-//! of JIT compilation (`cranelift_codegen::Context::compile` --
-//! register allocation, instruction selection, machine-code encoding)
-//! off the VM's own thread, so a function crossing its warmup
-//! threshold never stalls the interpreter waiting for Cranelift's
-//! optimizing backend to finish.
+//! A pool of background threads that does JIT compilation
+//! (`JitEngine::compile_function`: the bytecode -> IR walk, then
+//! Cranelift's register allocation, instruction selection and
+//! machine-code encoding) off the VM's own thread, so a function
+//! crossing its warmup threshold never stalls the interpreter waiting
+//! for the optimizing backend to finish.
 //!
-//! # Why this is safe with no locking between the two threads
+//! # Why a pool and not one thread
 //!
-//! Compiling a function splits cleanly into two stages (see
-//! `jit::engine::JitEngine::build_ir`/`install_compiled`):
+//! One worker is enough for a benchmark with a handful of hot
+//! functions, and wrong for a real program with thousands: every
+//! function that warms up after the first waits behind whatever is
+//! already on the queue, and keeps running interpreted for the whole
+//! wait. That queue is deepest exactly at startup, when a program is
+//! warming its whole working set at once and staying interpreted costs
+//! the most.
 //!
-//! 1. **Build IR** (`JitEngine::build_ir`, always on the VM's own
-//!    thread): walks `proto`'s bytecode and produces an owned
-//!    `cranelift_codegen::Context` holding pure IR; every constant
-//!    `Value` the bytecode referenced is already baked into that IR as
-//!    a raw immediate (see `jit::codegen`'s own docs), so once this
-//!    step returns, the resulting `Context` has no remaining
-//!    dependency on `proto`, the heap, or the GC. This is the only
-//!    stage that touches `proto`, which is why it must stay
-//!    synchronous: see `VM::sample_param_types`/`enqueue_or_ready`'s
-//!    docs on how `proto`'s liveness is guaranteed for exactly this
-//!    stage's duration.
-//! 2. **Backend-compile** (`Context::compile`, done here): needs only
-//!    the `Context` from step 1 (moved in, exclusively owned by this
-//!    thread for the duration) and a `TargetIsa` handle. Cranelift's
-//!    own `TargetIsa` trait is `Send + Sync` and `JitEngine` hands out
-//!    an independent `Arc` clone of it (see `JitEngine::isa_handle`)
-//!    that never touches `JITModule`; so this stage needs no lock,
-//!    no shared mutable state, nothing from the VM beyond the `Context`
-//!    it was given.
+//! # What the workers share
 //!
-//! The VM's own thread later installs the finished machine code
-//! (`JitEngine::install_compiled`, plain memcpy + relocation fixups,
-//! no register allocation) once it drains this thread's result channel
-//!: see `VM::drain_jit_results`.
+//! One `Receiver`, behind a `Mutex`. `std::sync::mpsc` has a single
+//! consumer by construction, so a worker takes the lock, dequeues one
+//! job, and drops the lock again before compiling anything: exactly one
+//! worker is ever parked in `recv` at a time, and the rest take the
+//! queue as jobs arrive. Nothing else is shared. Each worker owns its
+//! own `JitEngine`, and with it its own `JITModule` and its own
+//! executable memory.
+//!
+//! A prototype is only ever queued once at a time (`JitInfo::compiling`
+//! is set before the job is sent and cleared only when its result is
+//! drained), so no two workers ever compile the same function.
+//!
+//! # Why this needs no locking against the VM
+//!
+//! Everything the VM could be mutating underneath a worker is
+//! snapshotted into the job before it is sent: `CompileFacts` is built
+//! on the VM's own thread in `VM::enqueue_compile`, by value, and every
+//! constant `Value` the bytecode referenced is baked into the IR as a
+//! raw immediate (see `jit::codegen`'s own docs). What a worker reads
+//! through `proto` is the bytecode and the constant pool, both written
+//! once when the function was compiled from source and never touched
+//! again.
+//!
+//! The VM's own thread installs the finished machine code once it
+//! drains the result channel: see `VM::drain_jit_results`.
 //!
 //! # Why `*const ObjFunction` is safe to carry across this boundary
 //!
-//! `CompileJob`/`CompileResult` carry a raw `*const ObjFunction`
-//! purely as an opaque identifier; this thread never dereferences
-//! it, only Cranelift's `Context`/`TargetIsa` data. The VM's own
-//! thread is what eventually dereferences it back (in
-//! `VM::drain_jit_results`), and it keeps the function pinned as a GC
-//! root (`VM::pending_jit_compiles`) for the entire round trip, from
+//! `CompileJob`/`CompileResult` carry a raw `*const ObjFunction`, and a
+//! worker really does dereference it -- that is the function it
+//! compiles. Two things make that sound. The VM pins the function as a
+//! GC root (`VM::pending_jit_compiles`) for the entire round trip, from
 //! the moment a job is sent here to the moment its result is drained,
-//! so the pointer is always valid whenever anyone actually uses it.
+//! so it cannot be collected while a worker holds it. And a function
+//! never moves even when a collection does run: `Heap::alloc_function`
+//! allocates straight into old-generation storage precisely so its
+//! address is fixed for life, the same fact `codegen::func_ptr_const`
+//! relies on to bake it in as an immediate.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rustc_hash::FxHashMap;
 
@@ -80,9 +90,10 @@ pub struct CompileJob {
 }
 
 impl CompileJob {
-  /// A job that carries no work, sent purely to wake the compiler
-  /// thread out of a blocking `recv()` so it can notice that the
-  /// shutdown flag is set.
+  /// A job that carries no work, sent purely to wake a compiler thread
+  /// out of a blocking `recv()` so it can notice that the shutdown flag
+  /// is set. One per worker, since each consumes exactly the message
+  /// that woke it.
   ///
   /// Dropping the sender would do the same job if the pool held the
   /// only one, but it does not: every VM sharing this compiler keeps a
@@ -118,75 +129,132 @@ pub struct JitCompilerHandle {
   pub result_rx: Receiver<CompileResult>,
   pub results_pending: Arc<AtomicBool>,
   pub shutdown: Arc<AtomicBool>,
-  pub thread: Option<std::thread::JoinHandle<()>>,
+  pub threads: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for JitCompilerHandle {
   fn drop(&mut self) {
     self.shutdown.store(true, Ordering::Release);
 
-    // The flag alone cannot interrupt a blocking `recv()`, so the
+    // The flag alone cannot interrupt a blocking `recv()`, so every
     // worker has to be sent something before it will look at it.
     if let Some(job_tx) = self.job_tx.as_ref() {
-      let _ = job_tx.send(CompileJob::shutdown_signal());
+      for _ in 0..self.threads.len() {
+        let _ = job_tx.send(CompileJob::shutdown_signal());
+      }
     }
 
     drop(self.job_tx.take());
-    if let Some(thread) = self.thread.take() {
+    for thread in self.threads.drain(..) {
       let _ = thread.join();
     }
   }
 }
 
-/// Spawns the single background compiler thread and returns the
-/// job/result channel handles the VM uses to talk to it. The thread
-/// runs until VM shutdown, at which point `JitCompilerHandle::drop`
-/// signals shutdown and joins the worker cleanly before heap deallocation.
+/// How many compiler workers to run: one per core the VM itself is not
+/// running on, floored at one. Handing the pool every core would put
+/// compilation straight back into competition with the interpreter,
+/// which is the thing moving it off-thread was for. Read once and
+/// cached; `ZURI_JIT_THREADS` overrides it, purely for measurement (the
+/// same treatment `jit::warmup`'s thresholds get).
+pub fn worker_count() -> usize {
+  static COUNT: OnceLock<usize> = OnceLock::new();
+  *COUNT.get_or_init(|| {
+    if let Some(n) = std::env::var("ZURI_JIT_THREADS")
+      .ok()
+      .and_then(|s| s.parse::<usize>().ok())
+    {
+      return n.max(1);
+    }
+    std::thread::available_parallelism()
+      .map(|n| n.get().saturating_sub(1))
+      .unwrap_or(1)
+      .max(1)
+      .clamp(1, 4)
+  })
+}
+
+/// Spawns the background compiler pool and returns the job/result
+/// channel handles the VM uses to talk to it. The workers run until VM
+/// shutdown, at which point `JitCompilerHandle::drop` signals shutdown
+/// and joins them cleanly before heap deallocation.
 pub fn spawn() -> JitCompilerHandle {
   let (job_tx, job_rx) = channel::<CompileJob>();
   let (result_tx, result_rx) = channel::<CompileResult>();
   let results_pending = Arc::new(AtomicBool::new(false));
-  let worker_pending = Arc::clone(&results_pending);
   let shutdown = Arc::new(AtomicBool::new(false));
-  let worker_shutdown = Arc::clone(&shutdown);
-
-  let thread = std::thread::Builder::new()
-    .name("zuri-jit-compiler".to_string())
-    .spawn(move || compiler_loop(job_rx, result_tx, worker_pending, worker_shutdown))
-    .expect("zuri: failed to spawn the background JIT compiler thread");
+  let threads = spawn_workers(
+    "zuri-jit-compiler",
+    job_rx,
+    result_tx,
+    Arc::clone(&results_pending),
+    Arc::clone(&shutdown),
+  );
 
   JitCompilerHandle {
     job_tx: Some(job_tx),
     result_rx,
     results_pending,
     shutdown,
-    thread: Some(thread),
+    threads,
   }
 }
 
+/// The isolate pool's own compiler, shared by every isolate worker VM:
+/// results go back through each job's own `reply_to` channel rather
+/// than a shared one, since those VMs live on different threads (see
+/// `VM::set_shared_jit_compiler`).
 pub fn spawn_named(
   name: String,
 ) -> (
   Sender<CompileJob>,
   Arc<AtomicBool>,
-  std::thread::JoinHandle<()>,
+  Vec<std::thread::JoinHandle<()>>,
 ) {
   let (job_tx, job_rx) = channel::<CompileJob>();
   let (result_tx, _result_rx) = channel::<CompileResult>();
   let results_pending = Arc::new(AtomicBool::new(false));
   let shutdown = Arc::new(AtomicBool::new(false));
-  let worker_shutdown = Arc::clone(&shutdown);
+  let threads = spawn_workers(
+    &name,
+    job_rx,
+    result_tx,
+    results_pending,
+    Arc::clone(&shutdown),
+  );
 
-  let thread = std::thread::Builder::new()
-    .name(name)
-    .spawn(move || compiler_loop(job_rx, result_tx, results_pending, worker_shutdown))
-    .expect("zuri: failed to spawn background JIT compiler thread");
+  (job_tx, shutdown, threads)
+}
 
-  (job_tx, shutdown, thread)
+/// Spawns `worker_count()` threads over one shared job queue; see this
+/// module's own docs on why a `Mutex` around the `Receiver` is all the
+/// coordination the pool needs.
+fn spawn_workers(
+  name: &str,
+  job_rx: Receiver<CompileJob>,
+  result_tx: Sender<CompileResult>,
+  results_pending: Arc<AtomicBool>,
+  shutdown: Arc<AtomicBool>,
+) -> Vec<std::thread::JoinHandle<()>> {
+  let jobs = Arc::new(Mutex::new(job_rx));
+  let count = worker_count();
+  let mut threads = Vec::with_capacity(count);
+  for i in 0..count {
+    let jobs = Arc::clone(&jobs);
+    let result_tx = result_tx.clone();
+    let results_pending = Arc::clone(&results_pending);
+    let shutdown = Arc::clone(&shutdown);
+    let thread = std::thread::Builder::new()
+      .name(format!("{name}-{i}"))
+      .spawn(move || compiler_loop(jobs, result_tx, results_pending, shutdown))
+      .expect("zuri: failed to spawn a background JIT compiler thread");
+    threads.push(thread);
+  }
+  threads
 }
 
 fn compiler_loop(
-  job_rx: Receiver<CompileJob>,
+  jobs: Arc<Mutex<Receiver<CompileJob>>>,
   result_tx: Sender<CompileResult>,
   results_pending: Arc<AtomicBool>,
   shutdown: Arc<AtomicBool>,
@@ -196,15 +264,25 @@ fn compiler_loop(
     if shutdown.load(Ordering::Relaxed) {
       return;
     }
-    let job = match job_rx.recv() {
-      Ok(job) => job,
-      Err(_) => return,
+    // Scoped so the queue lock is released before this worker starts
+    // compiling; holding it across `compile_function` would collapse
+    // the pool back down to one worker. A poisoned lock means another
+    // worker panicked mid-dequeue, which says nothing about this job,
+    // so take the queue anyway.
+    let job = {
+      let job_rx = jobs
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+      match job_rx.recv() {
+        Ok(job) => job,
+        Err(_) => return,
+      }
     };
 
-    // Re-checked here, not just at the top of the loop: this thread
-    // parks in `recv()` for as long as there is no work, so the flag
-    // can only have been noticed after something arrived; and the
-    // thing that arrived may well be the wake-up
+    // Re-checked here, not just at the top of the loop: a worker parks
+    // in `recv()` for as long as there is no work, so the flag can only
+    // have been noticed after something arrived; and the thing that
+    // arrived may well be the wake-up
     // `CompileJob::shutdown_signal()` sent, which holds a null `proto`
     // and must not be dereferenced.
     if shutdown.load(Ordering::Relaxed) {

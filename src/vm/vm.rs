@@ -686,9 +686,8 @@ pub struct VM {
   jit_scalar_roots_len: Cell<usize>,
   /// Active `catch` handlers, innermost last.
   catch_stack: Vec<CatchHandler>,
-  /// Handle to the single background compiler thread, lazily spawned
-  /// alongside `jit_engine`. `None` until the first function crosses its
-  /// warmup threshold.
+  /// Handle to the background compiler pool, lazily spawned on first
+  /// use. `None` until the first function crosses its warmup threshold.
   jit_compiler: Option<background::JitCompilerHandle>,
   /// For isolate VMs: a shared background compiler job sender and reply channel.
   shared_compiler: Option<(

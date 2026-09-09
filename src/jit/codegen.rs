@@ -2706,6 +2706,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     args
   }
 
+  /// Argument marshalling for a construct site whose `prepare` leaves
+  /// the arguments exactly where the call site wrote them: the KNOWN
+  /// path, whose callee window starts at the callee register itself, so
+  /// `VM::prepare_known_construction` drops the instance onto that
+  /// register and shifts nothing. The dynamic path does move them, and
+  /// has its own loader; see `load_shifted_construct_arg_values`.
   fn load_construct_arg_values(
     &mut self,
     instance: IrValue,
@@ -2717,6 +2723,38 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     for k in 0..3u8 {
       if k < num_args {
         args[(k + 1) as usize] = self.load_reg(first_arg_reg + k);
+      }
+    }
+    args
+  }
+
+  /// Argument marshalling for the DYNAMIC construct path, where the
+  /// arguments are no longer where the call site put them.
+  ///
+  /// `Instr::Call` on a class leaves `[class, arg0, ..]`, but a
+  /// constructor's window has to read `[self, arg0, ..]`, so
+  /// `VM::prepare_compiled_construction` shifts every argument up one
+  /// slot and drops the instance into the gap. Reading them back at
+  /// their pre-shift registers hands the constructor its own `self` as
+  /// the first argument and drops the last one: `Tag('kept')` through a
+  /// warmed-up site whose class was swapped comes back with `name`
+  /// holding the instance (see `tests/construct-class-swap.zu`).
+  ///
+  /// Out of memory rather than the caller's Variables, because the
+  /// topmost argument's new home sits above the caller's own live set;
+  /// nothing tracks a Variable for it, so `reload_live` never refreshed
+  /// one.
+  fn load_shifted_construct_arg_values(
+    &mut self,
+    instance: IrValue,
+    new_base: IrValue,
+    num_args: u8,
+  ) -> [IrValue; 4] {
+    let nil_c = self.u64c(crate::vm::value::Value::nil().to_bits());
+    let mut args = [instance, nil_c, nil_c, nil_c];
+    for k in 0..3u8 {
+      if k < num_args {
+        args[(k + 1) as usize] = self.load_reg_mem_at_base(new_base, k + 1);
       }
     }
     args
@@ -3860,7 +3898,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // Identical bracketing requirement to `emit_fast_call`'s own
     // `call_indirect`: see the note there.
     let instance_val = self.load_reg_mem_at_base(new_base, 0);
-    let [a0, a1, a2, a3] = self.load_construct_arg_values(instance_val, func + 1, num_args);
+    let [a0, a1, a2, a3] = self.load_shifted_construct_arg_values(instance_val, new_base, num_args);
     self.flush_live(self.current_ip);
     self.fb.ins().call_indirect(
       sig,
