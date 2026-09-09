@@ -6130,10 +6130,90 @@ impl VM {
     }
   }
 
+  /// Prints one line per live function prototype describing whether it
+  /// is running as compiled code, and if not, why not. Behind
+  /// `ZURI_JIT_COVERAGE`; walks the whole heap, so it runs once at
+  /// exit and never anywhere near a hot path.
+  ///
+  /// The `status` column is the interesting one:
+  ///
+  /// - `compiled`; has machine code and is running it.
+  /// - `catch`; contains a catch handler, so it can never be compiled
+  ///   (`jit::codegen::compile` rejects it up front). This is the only
+  ///   permanent, source-level reason a real function is refused.
+  /// - `ineligible`; refused for some other reason, which in practice
+  ///   means a backend failure or a repeated-deopt retirement.
+  /// - `cold`; eligible and simply never called enough to reach its own
+  ///   warm-up threshold. Not a problem by itself: most functions in
+  ///   any program are cold, and compiling them would cost more than it
+  ///   saved.
+  /// - `warm`; past its threshold with a compile in flight or awaiting
+  ///   one.
+  pub fn dump_jit_coverage(&self) {
+    let mut rows: Vec<(String, usize, u32, u32, u32, &'static str)> = Vec::new();
+
+    self.heap.for_each_function(|proto| {
+      let calls = proto.jit.call_count.get();
+      let ops = proto.chunk.code.len();
+
+      let osr_hits = proto
+        .jit
+        .osr_counts
+        .borrow()
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(0);
+
+      let has_catch = proto
+        .chunk
+        .code
+        .iter()
+        .any(|i| matches!(i, Instr::PushCatch { .. } | Instr::PopCatch));
+
+      let status = if proto.jit.entry.get().is_some() {
+        "compiled"
+      } else if has_catch {
+        "catch"
+      } else if proto.jit.ineligible.get() {
+        "ineligible"
+      } else if calls >= proto.jit.call_threshold || osr_hits >= proto.jit.osr_threshold {
+        "warm"
+      } else {
+        "cold"
+      };
+
+      rows.push((
+        proto.name.clone(),
+        ops,
+        calls,
+        proto.jit.call_threshold,
+        osr_hits,
+        status,
+      ));
+    });
+
+    // Most-called first: the top of this list is where compiled code
+    // is worth the most, so it is where an uncompiled row matters.
+    rows.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
+
+    eprintln!("=== jit coverage ===");
+    eprintln!("status\tcalls\tthreshold\tops\tosr\tname");
+    for (name, ops, calls, threshold, osr, status) in &rows {
+      eprintln!("{status}\t{calls}\t{threshold}\t{ops}\t{osr}\t{name}");
+    }
+    eprintln!("=== end jit coverage ===");
+  }
+
   #[cfg(feature = "opcode-profile")]
   pub fn dump_opcode_profile(&self) {
     let mut counts: Vec<_> = self.opcode_counts.iter().collect();
     counts.sort_by(|a, b| b.1.cmp(a.1));
+    // The total is what makes two runs comparable: compiled code
+    // dispatches nothing, so this counts exactly the work still left
+    // in the interpreter.
+    let total: u64 = counts.iter().map(|(_, c)| **c).sum();
+    eprintln!("=== interpreted opcodes: {total} ===");
     eprintln!("=== opcode counts (top 20) ===");
     for (name, count) in counts.iter().take(20) {
       eprintln!("{:>14}  {}", count, name);

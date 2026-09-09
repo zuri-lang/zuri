@@ -177,6 +177,24 @@ class HttpServer {
   var compression_min_size = 1024
 
   /**
+   * How hard to compress, on the scale of whichever coding content
+   * negotiation lands on - brotli `0`-`11`, deflate `0`-`9`, zstd
+   * `1`-`22`. `nil`, the default, uses the per-coding defaults in
+   * `http.body`, which are chosen for compressing a response per
+   * request rather than for compressing a file once.
+   *
+   * @note Raising this is rarely the win it looks like. Brotli at its
+   *    maximum costs on the order of a hundred times the CPU of `5`
+   *    and often produces a larger result; see
+   *    `http.body.DEFAULT_BROTLI_QUALITY`. Somewhere a response is
+   *    served enough times to be worth compressing hard, it is worth
+   *    compressing ahead of time instead - `serve_files()` can serve a
+   *    pre-compressed sibling with `precompressed`.
+   * @type ?number
+   */
+  var compression_quality
+
+  /**
    * Whether `HttpRequest.client_ip()` should consult forwarding
    * headers. Leave this off unless the server really is behind a
    * proxy you control - see `client_ip()` for why.
@@ -1176,7 +1194,7 @@ class HttpServer {
     }
 
     catch {
-      var compressed = body.encode_content(response.body, coding)
+      var compressed = body.encode_content(response.body, coding, self.compression_quality)
 
       # Compression that makes a body bigger is worse than none.
       if compressed.length() < response.body.length() {

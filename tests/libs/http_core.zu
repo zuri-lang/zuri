@@ -340,6 +340,32 @@ assert raises(@() { body.decode_content(bytes(0), 'made-up') }),
   'an unknown coding raises rather than handing back undecoded bytes'
 ok('content codings round-trip')
 
+# Compressing a response per request is a different job to compressing
+# a file once, and brotli's own default is set for the second one. The
+# default here has to stay well below maximum; see
+# `body.DEFAULT_BROTLI_QUALITY` for the measurements behind it.
+assert body.DEFAULT_BROTLI_QUALITY > 0 and body.DEFAULT_BROTLI_QUALITY <= 6,
+  'the default brotli quality is a dynamic-response setting, not an archival one'
+
+var page = ('<p>a paragraph of perfectly ordinary page content</p>' * 200).to_bytes()
+
+var at_default = body.encode_content(page, 'br')
+var at_max = body.encode_content(page, 'br', 11)
+var at_min = body.encode_content(page, 'br', 0)
+
+assert body.decode_content(at_default, 'br') == page, 'the default round-trips'
+assert body.decode_content(at_max, 'br') == page, 'so does an explicit quality'
+assert at_min.length() > at_default.length(),
+  'a quality the caller asked for is actually applied'
+
+assert body.decode_content(body.encode_content(page, 'br', 99), 'br') == page,
+  'a quality outside the range is clamped rather than rejected'
+assert body.decode_content(body.encode_content(page, 'deflate', 99), 'deflate') == page,
+  'and clamped to each coding own range'
+assert body.decode_content(body.encode_content(page, 'zstd', 0), 'zstd') == page,
+  'including at the bottom of the range'
+ok('compression quality is defaulted for dynamic responses, and honoured when given')
+
 # ---------------------------------------------------------------------------
 # The router
 # ---------------------------------------------------------------------------

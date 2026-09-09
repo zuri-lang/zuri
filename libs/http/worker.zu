@@ -6,6 +6,10 @@ import .server { HttpServer }
 import isolate
 import net
 
+# Pool threads asked for on top of the workers themselves, so a server
+# is not the only thing that can ever run in its own process.
+var _POOL_HEADROOM = 2
+
 /**
  * The loop each worker isolate runs: build a server of its own from
  * `setup`, then serve whatever connections the acceptor hands it.
@@ -60,6 +64,14 @@ def worker_main(connections, setup, options) {
  * it next. Because isolates share no memory, each worker builds its
  * own routes by calling `setup` - which is why `setup` has to be a
  * module-level function rather than a closure.
+ *
+ * @note Each worker holds an isolate pool thread for as long as the
+ *    server runs. `serve()` sizes the pool for that when it is the
+ *    first thing in the process to use an isolate; when it is not -
+ *    because something already spawned one, fixing the pool's size -
+ *    it raises rather than deadlocking behind workers that never
+ *    finish. Call `isolate.configure()` yourself, first thing, if the
+ *    process needs isolates for anything besides serving.
  *
  * `backlog` is how many accepted-but-unclaimed connections may queue
  * before the acceptor blocks. Bounding it is deliberate: an unbounded
@@ -125,6 +137,31 @@ def serve(setup, options: ?dict) {
 
   settings.remove('on_ready')
   settings.remove('max_connections')
+
+  # Each worker occupies an isolate pool thread for the whole life of
+  # the server: `worker_main` blocks on the channel and never returns.
+  # The pool is a fixed number of threads, so a server sized to the
+  # machine's cores claims every one of them, and anything else the
+  # application later spawns is queued behind tasks that never finish.
+  # That is a deadlock, and it is a silent one.
+  #
+  # `configure()` is a no-op once the pool exists, so this only takes
+  # effect when `serve()` is the first thing to touch it - the usual
+  # case for a server process. When it is not, the check below turns
+  # what would have been a hang into something that says so.
+  catch {
+    isolate.configure(workers + _POOL_HEADROOM)
+  }
+
+  var available = isolate.pool_size()
+
+  if available < workers {
+    raise HttpError(
+      'cannot run ${workers} workers: the isolate pool has only ${available} ' +
+      'thread(s). Call isolate.configure(${workers + _POOL_HEADROOM}) before ' +
+      'anything else uses an isolate, or ask for fewer workers.'
+    )
+  }
 
   var connections = isolate.channel(backlog)
   var pool = []

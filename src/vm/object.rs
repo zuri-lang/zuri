@@ -2358,6 +2358,36 @@ impl Heap {
   }
 
   #[inline]
+  /// Calls `visit` once for every live function prototype on the heap,
+  /// in both generations.
+  ///
+  /// Only ever used by the JIT coverage dump (`ZURI_JIT_COVERAGE`),
+  /// which runs once at exit; nothing on any hot path walks the heap
+  /// like this.
+  pub fn for_each_function(&self, mut visit: impl FnMut(&ObjFunction)) {
+    for chunk in self.chunks.iter().flatten() {
+      for gcbox in chunk.slots.iter() {
+        if !gcbox.live.get() {
+          continue;
+        }
+        if let Obj::Func(proto) = &gcbox.obj {
+          visit(proto);
+        }
+      }
+    }
+
+    for chunk in self.nursery_chunks.iter() {
+      for gcbox in chunk.slots.iter() {
+        if !gcbox.live.get() {
+          continue;
+        }
+        if let Obj::Func(proto) = &gcbox.obj {
+          visit(proto);
+        }
+      }
+    }
+  }
+
   pub fn bytes_allocated(&self) -> usize {
     self.bytes_allocated
   }

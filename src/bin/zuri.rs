@@ -198,6 +198,10 @@ fn run_file(vm: &mut VM, file: &str) {
           vm.dump_opcode_profile();
         }
 
+        if std::env::var_os("ZURI_JIT_COVERAGE").is_some() {
+          vm.dump_jit_coverage();
+        }
+
         if let Err(e) = result {
           eprintln!("{}", vm.format_uncaught(e, &display_path, &content));
           process::exit(1);

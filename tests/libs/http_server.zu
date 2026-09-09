@@ -795,6 +795,28 @@ catch {
 }
 ok('a pool of worker isolates serves requests across connections')
 
+# Every worker holds a pool thread for as long as the server runs, so
+# asking for more workers than the pool can ever provide used to queue
+# them behind tasks that never finish - a silent deadlock. The pool is
+# already created and sized by this point in the suite, so this is the
+# case serve() cannot fix by resizing, and it has to say so instead.
+var oversubscribed = nil
+
+catch {
+  http.serve(http_server_app.pool_routes, {
+    port: 0,
+    workers: isolate.pool_size() + 8,
+  })
+} as error {
+  oversubscribed = error
+}
+
+assert oversubscribed != nil,
+  'asking for more workers than the pool can provide must raise, not hang'
+assert oversubscribed.message.contains('isolate pool'),
+  'and the message must say what the actual problem was'
+ok('an over-subscribed worker pool fails loudly instead of deadlocking')
+
 # ---------------------------------------------------------------------------
 # TLS, and HTTP/2 over it
 # ---------------------------------------------------------------------------
