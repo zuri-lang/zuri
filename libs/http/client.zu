@@ -358,6 +358,8 @@ class HttpClient {
 
       while true {
         var carrier = self._connection_for(parsed, options)
+        var transport = carrier[0] == 'h2' ? carrier[2] : carrier[1]
+        var read_before = transport.bytes_read()
 
         catch {
           response = self._exchange(carrier, request, payload, parsed, options)
@@ -370,12 +372,20 @@ class HttpClient {
         self._discard(carrier)
 
         # A pooled connection the far end had already closed fails on
-        # the first write or read, and looks exactly like a genuine
-        # network failure. Retrying an idempotent request once absorbs
-        # that, which is why the retry budget starts at one for a safe
-        # method even when max_retries is zero.
+        # the first write or read and looks exactly like a genuine
+        # network failure, so the retry budget starts at one even when
+        # max_retries is zero.
+        #
+        # An idempotent request can always be sent again. A request
+        # that is not - a POST - can only be sent again when we can
+        # show the server never saw the first one: the connection came
+        # out of the pool, and not one byte of a response arrived on
+        # it. Anything else risks acting on the same request twice,
+        # which for a POST can mean charging a card twice.
+        var unheard = carrier[3] and transport.bytes_read() == read_before
+
         var retriable = instance_of(error, ConnectionError) and
-            request.is_idempotent() and
+            (request.is_idempotent() or unheard) and
             attempt < (self.max_retries > 0 ? self.max_retries : 1)
 
         if !retriable {
@@ -589,6 +599,11 @@ class HttpClient {
   }
 
   _build_body(options) {
+    # A content type the caller named outright always wins; the media
+    # types below are what each shorthand would be sent as in the
+    # absence of one, not an override of it.
+    var stated = options.contains('content_type')
+
     var explicit = options.get('body', nil)
     if explicit != nil {
       return is_bytes(explicit) ? explicit : explicit.to_string().to_bytes()
@@ -596,19 +611,27 @@ class HttpClient {
 
     var payload = options.get('json', nil)
     if payload != nil {
-      options['content_type'] = 'application/json'
+      if !stated {
+        options['content_type'] = 'application/json'
+      }
       return json.encode(payload).to_bytes()
     }
 
     var form = options.get('form', nil)
     if form != nil {
-      options['content_type'] = 'application/x-www-form-urlencoded'
+      if !stated {
+        options['content_type'] = 'application/x-www-form-urlencoded'
+      }
       return build_query_string(form).to_bytes()
     }
 
     var parts = options.get('multipart', nil)
     if parts != nil {
-      options['content_type'] = parts.content_type()
+      if !stated {
+        # Only the builder knows the boundary, and a multipart body
+        # without its boundary parameter cannot be parsed at all.
+        options['content_type'] = parts.content_type()
+      }
       return parts.build()
     }
 
@@ -631,6 +654,7 @@ class HttpClient {
           (carrier[0] == 'h2' ? carrier[1].is_usable() : !carrier[1].is_closed())
 
       if alive {
+        carrier[3] = true
         return carrier
       }
 
@@ -654,10 +678,12 @@ class HttpClient {
       var session = h2.Http2Connection(connection, false)
       session.start_client()
 
-      return ['h2', session, connection]
+      return ['h2', session, connection, false]
     }
 
-    return ['h1', connection]
+    # The fourth slot says whether this connection came out of the
+    # pool, which decides whether a failure on it can be retried.
+    return ['h1', connection, nil, false]
   }
 
   _release(parsed, carrier) {

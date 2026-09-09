@@ -102,6 +102,26 @@ def api_server(port_channel, static_root) {
     })
   })
 
+  server.post('/attachments', @(request, response) {
+    var saved = []
+
+    for uploaded in request.files().get('attachments', []) {
+      var target = os.join_paths(os.temp_dir(), uploaded.safe_name())
+      var written = uploaded.save_to(target)
+
+      saved.append({
+        name: uploaded.safe_name(),
+        claimed: uploaded.filename,
+        written,
+        field: uploaded.name,
+      })
+
+      file(target).delete()
+    }
+
+    response.json({ saved, tags: request.form_all().get('tags', []) })
+  })
+
   server.put('/put', @(request, response) {
     response.text('put:' + request.text())
   })
@@ -197,6 +217,25 @@ def middleware_server(port_channel) {
   }))
   server.use(middleware.etag(1))
 
+  # Scoped to one prefix so the rest of this server's routes are not
+  # counted against the same allowance.
+  var limiter = middleware.rate_limit({
+    limit: 3,
+    window: 60,
+    key: @(request) {
+      return request.header('x-bucket', 'shared')
+    },
+  })
+
+  server.use(@(request, response, next) {
+    if request.path.starts_with('/limited') {
+      limiter(request, response, next)
+      return
+    }
+
+    next()
+  })
+
   server.use(@(request, response, next) {
     if request.path.starts_with('/private') {
       var guard = middleware.basic_auth(@(user, password) {
@@ -204,6 +243,19 @@ def middleware_server(port_channel) {
       }, 'Test')
 
       guard(request, response, next)
+      return
+    }
+
+    next()
+  })
+
+  var api_guard = middleware.bearer_auth(@(token) {
+    return token == 'good-token' ? { subject: 'svc-1' } : false
+  })
+
+  server.use(@(request, response, next) {
+    if request.path.starts_with('/token') {
+      api_guard(request, response, next)
       return
     }
 
@@ -222,6 +274,14 @@ def middleware_server(port_channel) {
 
   server.get('/private/data', @(request, response) {
     response.json({ user: request.context.get('user', nil) })
+  })
+
+  server.get('/limited', @(request, response) {
+    response.text('within the limit')
+  })
+
+  server.get('/token/data', @(request, response) {
+    response.json({ subject: request.context.get('user', {}).get('subject', nil) })
   })
 
   _run(server, port_channel)

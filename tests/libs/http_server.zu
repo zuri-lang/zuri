@@ -210,6 +210,24 @@ assert uploaded.filename == 'report.txt', 'so does the filename'
 assert uploaded.content == 'file body', 'and the file itself'
 ok('a multipart upload')
 
+var attachments = http.MultipartBuilder()
+attachments.add_field('tags', 'red')
+attachments.add_field('tags', 'green')
+attachments.add_file('attachments', 'one.txt', 'a'.to_bytes())
+attachments.add_file('attachments', 'C:\\Users\\ada\\..\\two file.txt', 'bb'.to_bytes())
+
+var received = client.post(base + '/attachments', attachments).as_dict()
+assert received.tags == ['red', 'green'], 'form_all keeps every value of a repeated field'
+assert received.saved.length() == 2, 'both files under one field name arrive'
+assert received.saved[0].name == 'one.txt', 'the first file'
+assert received.saved[0].written == 1, 'save_to writes it and reports the byte count'
+assert received.saved[1].claimed == 'C:\\Users\\ada\\..\\two file.txt',
+  'the claimed filename is preserved exactly as the client sent it'
+assert received.saved[1].name == 'two_file.txt',
+  'and safe_name() reduces it to one segment that cannot escape a directory'
+assert received.saved[1].field == 'attachments', 'the field name is on the upload'
+ok('several uploads under one field name, and a repeated form field')
+
 assert client.put(base + '/put', 'data').as_text() == 'put:data', 'PUT carries a body'
 assert client.delete(base + '/thing').status == 204, 'DELETE answers 204'
 ok('the other methods')
@@ -358,6 +376,18 @@ ok('byte ranges, including suffix and unsatisfiable ones')
 assert client.pooled_connections() > 0, 'the connection was kept alive and pooled'
 ok('keep-alive connections are reused')
 
+# The server closes an idle connection after its keep-alive window.
+# The client still holds it, so the next request goes out over a
+# socket the far end has already dropped - which must not surface as
+# an error, not even for a POST, because the server demonstrably never
+# saw it.
+os.sleep(1.5)
+
+var after_idle = client.post(base + '/echo', 'sent over a stale connection')
+assert after_idle.status == 200, 'a POST over a reaped pooled connection still succeeds'
+assert after_idle.as_dict().text == 'sent over a stale connection', 'and arrives intact'
+ok('a request on a connection the server already closed is sent again')
+
 # ---------------------------------------------------------------------------
 # The wire protocol itself, over a bare socket
 # ---------------------------------------------------------------------------
@@ -503,6 +533,39 @@ var refused = mw_client.get(mw_base + '/private/data', {
 })
 assert refused.status == 401, 'wrong credentials do not'
 ok('basic authentication')
+
+var no_token = mw_client.get(mw_base + '/token/data')
+assert no_token.status == 401, 'a bearer-guarded route refuses a request with no token'
+assert no_token.headers.get('www-authenticate').starts_with('Bearer '),
+  'and challenges with the Bearer scheme'
+
+var with_token = mw_client.get(mw_base + '/token/data', {
+  auth: ['bearer', 'good-token'],
+})
+assert with_token.status == 200, 'a valid token gets through'
+assert with_token.as_dict().subject == 'svc-1',
+  'and whatever the verifier returned reaches the handler'
+ok('bearer authentication')
+
+# A bucket of its own, so the requests above and below do not count
+# against each other.
+var limited = { 'X-Bucket': 'rate-test' }
+
+iter var i = 0; i < 3; i++ {
+  var within = mw_client.get(mw_base + '/limited', { headers: limited })
+  assert within.status == 200, 'request ${i} is within the limit'
+  assert within.headers.get('ratelimit-limit') == '3', 'and reports the limit'
+  assert within.headers.get('ratelimit-remaining') == '${2 - i}', 'and what is left'
+}
+
+var over = mw_client.get(mw_base + '/limited', { headers: limited })
+assert over.status == 429, 'the fourth request is refused'
+assert over.headers.contains('retry-after'), 'with a Retry-After'
+assert over.as_dict().status == 429, 'and a JSON body saying so'
+
+var other_bucket = mw_client.get(mw_base + '/limited', { headers: { 'X-Bucket': 'elsewhere' } })
+assert other_bucket.status == 200, 'a different key is a different bucket'
+ok('rate limiting, per key')
 
 var cors_preflight = mw_client.request('OPTIONS', mw_base + '/open', {
   headers: {

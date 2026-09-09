@@ -158,7 +158,14 @@ def logger(options: ?dict) {
       line = format(request, response, elapsed)
     } else {
       var who = request.client_ip(trust_proxy) or '-'
-      var length = response.body == nil ? 0 : response.body.length()
+
+      # A file-backed or streamed response has nothing in `body`, so
+      # the size has to come from the header the protocol layer set;
+      # reading `body` alone would log every static file as 0 bytes.
+      var declared = response.headers.get('content-length', nil)
+      var length = declared != nil ?
+        declared :
+        (response.body == nil ? 0 : response.body.length())
 
       line = '${who} - [${util.format_date()}] ' +
         '"${request.method} ${request.target} HTTP/${request.version}" ' +

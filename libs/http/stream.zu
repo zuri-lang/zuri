@@ -108,6 +108,12 @@ class Connection {
   var _closed = false
   var _eof = false
 
+  # Every byte ever pulled off the transport. A caller that needs to
+  # know whether a peer said anything at all - a client deciding
+  # whether a failed request could safely be sent again - can compare
+  # this before and after.
+  var _total_read = 0
+
   /**
    * Wraps an already-connected transport.
    *
@@ -123,6 +129,7 @@ class Connection {
     self._pos = 0
     self._closed = false
     self._eof = false
+    self._total_read = 0
 
     self.peer_address = peer
     self.local_address = local
@@ -162,6 +169,16 @@ class Connection {
    */
   buffered() {
     return self._buf.length() - self._pos
+  }
+
+  /**
+   * How many bytes have been read off the transport over this
+   * connection's whole life.
+   *
+   * @returns number
+   */
+  bytes_read() {
+    return self._total_read
   }
 
   /**
@@ -219,6 +236,8 @@ class Connection {
     self._buf.extend(chunk)
     var count = chunk.length()
     chunk.dispose()
+
+    self._total_read += count
 
     return count
   }
