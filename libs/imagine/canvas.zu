@@ -2196,11 +2196,3 @@ def _paint_radial(
     }
   }
 }
-
-
-def _copy_pixel(pixels: bytes, at: number, source: bytes, from: number) {
-  pixels[at] = source[from]
-  pixels[at + 1] = source[from + 1]
-  pixels[at + 2] = source[from + 2]
-  pixels[at + 3] = source[from + 3]
-}
