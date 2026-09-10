@@ -93,11 +93,7 @@ class Image < Canvas {
    * @param ?Color|string|number fill: A colour to fill with - Default: transparent.
    * @throws BoundsError When either dimension is below 1.
    */
-  @new(width, height, fill) {
-    if !is_number(width) or !is_number(height) {
-      raise BoundsError('image dimensions must be numbers, got ${typeof(width)} and ${typeof(height)}')
-    }
-
+  @new(width: number, height: number, fill) {
     var w = width.floor()
     var h = height.floor()
 
@@ -188,11 +184,7 @@ class Image < Canvas {
    * @returns Image
    * @throws DecodeError When the data is not a readable image.
    */
-  static decode(data, options) {
-    if !is_bytes(data) {
-      raise ImageError('image data must be bytes, ${typeof(data)} given')
-    }
-
+  static decode(data: bytes, options) {
     if data.length() == 0 {
       raise DecodeError('cannot decode an empty buffer')
     }
@@ -419,8 +411,8 @@ class Image < Canvas {
    * @param ?string filter: A resampling filter - Default: `LANCZOS`.
    * @returns Image
    */
-  scale(factor, filter) {
-    if !is_number(factor) or factor <= 0 {
+  scale(factor: number, filter) {
+    if factor <= 0 {
       raise BoundsError('scale factor must be greater than zero, got ${factor}')
     }
 
@@ -653,11 +645,7 @@ class Image < Canvas {
    *    corners - Default: transparent.
    * @returns Image
    */
-  rotate(degrees, background) {
-    if !is_number(degrees) {
-      raise ImageError('rotation must be a number of degrees, ${typeof(degrees)} given')
-    }
-
+  rotate(degrees: number, background) {
     var fill = background == nil ? TRANSPARENT : Color.parse(background)
 
     var rotated = _imagine.rotate(
@@ -747,11 +735,7 @@ class Image < Canvas {
   /**
    * Validates one dimension argument.
    */
-  _dimension(value, what) {
-    if !is_number(value) {
-      raise BoundsError('${what} must be a number, ${typeof(value)} given')
-    }
-
+  _dimension(value: number, what) {
     var rounded = value.floor()
 
     if rounded < 1 {
@@ -1247,11 +1231,7 @@ class Image < Canvas {
    *    (default `BLEND_NORMAL`).
    * @returns self
    */
-  draw_image(source, x, y, options) {
-    if !is_instance(source) or !instance_of(source, Image) {
-      raise ImageError('draw_image() needs an Image, ${typeof(source)} given')
-    }
-
+  draw_image(source: Image, x, y, options) {
     var opacity = is_dict(options) ? options.get('opacity', 1) : 1
     var blend = is_dict(options) ? options.get('blend', BLEND_NORMAL) : BLEND_NORMAL
 
@@ -1287,11 +1267,7 @@ class Image < Canvas {
    *    plus everything `draw_image()` takes.
    * @returns self
    */
-  place(source, anchor, options) {
-    if !is_instance(source) or !instance_of(source, Image) {
-      raise ImageError('place() needs an Image, ${typeof(source)} given')
-    }
-
+  place(source: Image, anchor, options) {
     var margin = is_dict(options) ? options.get('margin', 0) : 0
 
     var offset = _anchor_offset(
@@ -1322,11 +1298,7 @@ class Image < Canvas {
    * @returns self
    * @throws BoundsError When the mask is a different size.
    */
-  mask(mask) {
-    if !is_instance(mask) or !instance_of(mask, Image) {
-      raise ImageError('mask() needs an Image, ${typeof(mask)} given')
-    }
-
+  mask(mask: Image) {
     if mask.width() != self._width or mask.height() != self._height {
       raise BoundsError(
         'the mask is ${mask.width()}x${mask.height()} but the image is ${self._width}x${self._height}'
@@ -1538,11 +1510,7 @@ class Image < Canvas {
    * @param Image other
    * @returns number
    */
-  difference(other) {
-    if !is_instance(other) or !instance_of(other, Image) {
-      raise ImageError('difference() needs an Image, ${typeof(other)} given')
-    }
-
+  difference(other: Image) {
     if other.width() != self._width or other.height() != self._height {
       return 1
     }
@@ -1735,11 +1703,7 @@ class Image < Canvas {
    * @throws FormatError When the extension names no format this
    *    module knows and no `format` option is given.
    */
-  save(path, options) {
-    if !is_string(path) {
-      raise ImageError('save() needs a path, ${typeof(path)} given')
-    }
-
+  save(path: string, options) {
     var target = is_dict(options) ? options.get('format') : nil
 
     if target == nil {

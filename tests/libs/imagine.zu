@@ -87,6 +87,55 @@ assert Color(1, 2, 3, 200).fade(0.5).a == 100, 'fade() must scale alpha rather t
 ok('Color mixing, compositing and adjustment behave as documented')
 
 # ---------------------------------------------------------------------------
+# Argument types are declared, so the runtime rejects them
+# ---------------------------------------------------------------------------
+var _guarded = [
+  @() { Image('wide', 10) },
+  @() { Image.decode('not bytes') },
+  @() { Image(8, 8).scale('2') },
+  @() { Image(8, 8).rotate('sideways') },
+  @() { Image(8, 8).save(42) },
+  @() { Image(8, 8).draw_image('not an image', 0, 0) },
+  @() { Image(8, 8).mask('nope') },
+  @() { Image(8, 8).difference(7) },
+  @() { Canvas('not bytes', 2, 2) },
+  @() { Image(8, 8).set_pixels('nope') },
+  @() { Image(8, 8).thickness('thick') },
+  @() { Image(8, 8).fill_polygon('not a list', 'red') },
+  @() { Image(8, 8).draw_mask('nope', 2, 2, 0, 0, 'red') },
+  @() { Color.packed('ff') },
+  @() { Color('r', 0, 0) },
+  @() { Color.hex(42) },
+  @() { Color.named(42) },
+  @() { filters.build_lut('not a fn') },
+  @() { filters.gamma_lut('x') },
+  @() { filters.combine_matrices('a', 'b') },
+  @() { StrokeFont('big') },
+  @() { StrokeFont(12).size('big') },
+  @() { StrokeFont(12).wrap('hi', 'wide') },
+  @() { Font.load(42) },
+  @() { Font.from_bytes('not bytes') },
+  @() { Animation('not a list') },
+  @() { Animation.decode('nope') },
+  @() { Animation([Image(4, 4)]).map('not a fn') },
+  @() { Animation([Image(4, 4)]).frame('first') },
+  @() { Animation([Image(4, 4)]).repeat('twice') },
+]
+
+for guarded in _guarded {
+  assert raises(guarded), 'every declared parameter type must be enforced'
+}
+ok('an argument of the wrong type is rejected at every entry point that declares one')
+
+# A value of the right type but the wrong range is the module's own
+# judgement, so it stays an ImageError subclass rather than a TypeError.
+assert raises(@() { Image(0, 10) }), 'a zero dimension must still raise'
+assert raises(@() { filters.gamma_lut(-1) }), 'a negative gamma must still raise'
+assert raises(@() { Image(8, 8).thickness(0) }), 'a zero thickness must still raise'
+assert raises(@() { Animation([Image(4, 4)]).frame(9) }), 'an out-of-range frame must still raise'
+ok('a wrong-range value stays the module own error rather than becoming a type error')
+
+# ---------------------------------------------------------------------------
 # Image: construction
 # ---------------------------------------------------------------------------
 var blank = Image(10, 8)

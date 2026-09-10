@@ -91,12 +91,8 @@ class Canvas {
    * @param number width
    * @param number height
    */
-  @new(pixels, width, height) {
-    if !is_bytes(pixels) {
-      raise ImageError('pixels must be bytes, ${typeof(pixels)} given')
-    }
-
-    if !is_number(width) or !is_number(height) or width < 1 or height < 1 {
+  @new(pixels: bytes, width: number, height: number) {
+    if width < 1 or height < 1 {
       raise BoundsError('a canvas must be at least 1x1, got ${width}x${height}')
     }
 
@@ -173,11 +169,7 @@ class Canvas {
    * @returns self
    * @throws ImageError When the buffer is the wrong size.
    */
-  set_pixels(pixels) {
-    if !is_bytes(pixels) {
-      raise ImageError('pixels must be bytes, ${typeof(pixels)} given')
-    }
-
+  set_pixels(pixels: bytes) {
     var expected = self._width * self._height * 4
 
     if pixels.length() != expected {
@@ -272,8 +264,8 @@ class Canvas {
    * @param number thickness
    * @returns self
    */
-  thickness(thickness) {
-    if !is_number(thickness) or thickness <= 0 {
+  thickness(thickness: number) {
+    if thickness <= 0 {
       raise ImageError('stroke thickness must be greater than zero')
     }
 
@@ -519,11 +511,7 @@ class Canvas {
    * Accepts either `[x1, y1, x2, y2, ...]` or `[[x1, y1], [x2, y2], ...]`
    * and returns the flat form the rasterizer works in.
    */
-  _flatten_points(points) {
-    if !is_list(points) {
-      raise ImageError('points must be a list, ${typeof(points)} given')
-    }
-
+  _flatten_points(points: list) {
     if points.length() == 0 {
       return []
     }
@@ -1669,11 +1657,7 @@ class Canvas {
    * @param Color|string|number color
    * @returns self
    */
-  draw_mask(mask, mask_width, mask_height, x, y, color) {
-    if !is_bytes(mask) {
-      raise ImageError('a mask must be bytes, ${typeof(mask)} given')
-    }
-
+  draw_mask(mask: bytes, mask_width, mask_height, x, y, color) {
     if mask.length() != mask_width * mask_height {
       raise ImageError(
         'mask holds ${mask.length()} bytes, but ${mask_width}x${mask_height} needs ${mask_width * mask_height}'
@@ -1724,8 +1708,8 @@ class Canvas {
  * Precomputing the ramp is what keeps a gradient's inner loop to an
  * index and four byte writes rather than an interpolation per pixel.
  */
-def _build_ramp(stops) {
-  if !is_list(stops) or stops.length() == 0 {
+def _build_ramp(stops: list) {
+  if stops.length() == 0 {
     raise ImageError('a gradient needs at least one colour stop')
   }
 

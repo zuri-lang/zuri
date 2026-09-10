@@ -99,11 +99,7 @@ def sepia_matrix() {
  * @param number amount
  * @returns list
  */
-def saturation_matrix(amount) {
-  if !is_number(amount) {
-    raise ImageError('saturation amount must be a number, ${typeof(amount)} given')
-  }
-
+def saturation_matrix(amount: number) {
   var r = MATRIX_LUMA[0]
   var g = MATRIX_LUMA[1]
   var b = MATRIX_LUMA[2]
@@ -129,11 +125,7 @@ def saturation_matrix(amount) {
  * @param number degrees: Positive rotates toward red, negative away from it.
  * @returns list
  */
-def hue_rotate_matrix(degrees) {
-  if !is_number(degrees) {
-    raise ImageError('hue rotation must be a number of degrees, ${typeof(degrees)} given')
-  }
-
+def hue_rotate_matrix(degrees: number) {
   var radians = degrees * math.PI / 180
   var c = radians.cos()
   var s = radians.sin()
@@ -205,9 +197,8 @@ def duotone_matrix(shadow, highlight) {
  * @param list second
  * @returns list
  */
-def combine_matrices(first, second) {
-  if !is_list(first) or !is_list(second) or
-     first.length() != 20 or second.length() != 20 {
+def combine_matrices(first: list, second: list) {
+  if first.length() != 20 or second.length() != 20 {
     raise ImageError('a colour matrix must be a list of 20 numbers')
   }
 
@@ -255,11 +246,7 @@ def combine_matrices(first, second) {
  * @param function(1) fn: Called with an input value, returns the output.
  * @returns bytes
  */
-def build_lut(fn) {
-  if !is_function(fn) {
-    raise ImageError('a lookup table needs a function, ${typeof(fn)} given')
-  }
-
+def build_lut(fn: function) {
   var table = bytes(256)
 
   iter var i = 0; i < 256; i++ {
@@ -294,11 +281,7 @@ def identity_lut() {
  * @param number delta: -255 to 255. Positive brightens.
  * @returns bytes
  */
-def brightness_lut(delta) {
-  if !is_number(delta) {
-    raise ImageError('brightness must be a number, ${typeof(delta)} given')
-  }
-
+def brightness_lut(delta: number) {
   return build_lut(@(value) {
     return value + delta
   })
@@ -315,11 +298,7 @@ def brightness_lut(delta) {
  * @param number amount: -100 to 100.
  * @returns bytes
  */
-def contrast_lut(amount) {
-  if !is_number(amount) {
-    raise ImageError('contrast must be a number, ${typeof(amount)} given')
-  }
-
+def contrast_lut(amount: number) {
   var clamped = (-100).max((100).min(amount))
   var factor = (259 * (clamped + 255)) / (255 * (259 - clamped))
 
@@ -339,8 +318,8 @@ def contrast_lut(amount) {
  * @param number gamma: Greater than zero.
  * @returns bytes
  */
-def gamma_lut(gamma) {
-  if !is_number(gamma) or gamma <= 0 {
+def gamma_lut(gamma: number) {
+  if gamma <= 0 {
     raise ImageError('gamma must be greater than zero, got ${gamma}')
   }
 
@@ -370,11 +349,7 @@ def invert_lut() {
  * @param number level: Values below this become 0, the rest become 255.
  * @returns bytes
  */
-def threshold_lut(level) {
-  if !is_number(level) {
-    raise ImageError('threshold level must be a number, ${typeof(level)} given')
-  }
-
+def threshold_lut(level: number) {
   return build_lut(@(value) {
     return value < level ? 0 : 255
   })
@@ -388,8 +363,8 @@ def threshold_lut(level) {
  * @param number levels: 2 or more. Two gives a hard black and white split.
  * @returns bytes
  */
-def posterize_lut(levels) {
-  if !is_number(levels) or levels < 2 {
+def posterize_lut(levels: number) {
+  if levels < 2 {
     raise ImageError('posterize needs at least 2 levels, got ${levels}')
   }
 
@@ -410,8 +385,8 @@ def posterize_lut(levels) {
  * @param number factor: 0 to 1, though larger values are allowed and clamp.
  * @returns bytes
  */
-def scale_lut(factor) {
-  if !is_number(factor) or factor < 0 {
+def scale_lut(factor: number) {
+  if factor < 0 {
     raise ImageError('scale factor must not be negative, got ${factor}')
   }
 
@@ -434,11 +409,7 @@ def scale_lut(factor) {
  * @param ?number gamma: The midtone curve - Default: 1 (linear).
  * @returns bytes
  */
-def levels_lut(black, white, gamma) {
-  if !is_number(black) or !is_number(white) {
-    raise ImageError('levels endpoints must be numbers')
-  }
-
+def levels_lut(black: number, white: number, gamma: ?number) {
   if white <= black {
     raise ImageError('the white point (${white}) must be above the black point (${black})')
   }
@@ -446,7 +417,7 @@ def levels_lut(black, white, gamma) {
   var span = white - black
   var exponent = gamma == nil ? 1 : 1 / gamma
 
-  if gamma != nil and (!is_number(gamma) or gamma <= 0) {
+  if gamma != nil and gamma <= 0 {
     raise ImageError('levels gamma must be greater than zero, got ${gamma}')
   }
 
@@ -578,8 +549,8 @@ def smooth_kernel(weight) {
  * @param number sigma: Greater than zero.
  * @returns list
  */
-def gaussian_kernel(sigma) {
-  if !is_number(sigma) or sigma <= 0 {
+def gaussian_kernel(sigma: number) {
+  if sigma <= 0 {
     raise ImageError('gaussian sigma must be greater than zero, got ${sigma}')
   }
 

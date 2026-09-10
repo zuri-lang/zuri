@@ -588,14 +588,14 @@ class StrokeFont {
    * @param ?number weight: The stroke width, as a fraction of the size
    *    - Default: 0.085, a regular weight. Around 0.13 reads as bold.
    */
-  @new(size, weight) {
+  @new(size: ?number, weight: ?number) {
     var pixels = size == nil ? 16 : size
 
-    if !is_number(pixels) or pixels <= 0 or pixels > 4096 {
+    if pixels <= 0 or pixels > 4096 {
       raise FontError('font size must be between 1 and 4096 pixels, got ${size}')
     }
 
-    if weight != nil and (!is_number(weight) or weight <= 0) {
+    if weight != nil and weight <= 0 {
       raise FontError('font weight must be greater than zero, got ${weight}')
     }
 
@@ -693,8 +693,8 @@ class StrokeFont {
    * @param ?dict options: `tracking`.
    * @returns string
    */
-  wrap(text, width, options) {
-    if !is_number(width) or width <= 0 {
+  wrap(text, width: number, options) {
+    if width <= 0 {
       raise FontError('wrap width must be greater than zero, got ${width}')
     }
 

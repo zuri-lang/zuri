@@ -12,11 +12,7 @@ import .errors { ImageError }
  * colour computed from a ratio never has to be pre-clamped by the
  * caller.
  */
-def _channel(value) {
-  if !is_number(value) {
-    raise ImageError('colour channel must be a number, ${typeof(value)} given')
-  }
-
+def _channel(value: number) {
   # NaN compares unequal to itself, and would otherwise survive the
   # clamp and reach the pixel buffer.
   if value != value {
@@ -61,7 +57,8 @@ def _channel(value) {
  *   accepted everywhere either is.
  * - A malformed hexadecimal colour or an unknown colour name raises
  *   `ValueError`, which is what `colors` reports for them, rather than
- *   this module's own `ImageError`.
+ *   this module's own `ImageError`. An argument of the wrong type
+ *   raises `TypeError` from the declaration it failed.
  *
  * @printable
  * @serializable
@@ -169,11 +166,7 @@ class Color {
    * @param number value
    * @returns Color
    */
-  static packed(value) {
-    if !is_number(value) {
-      raise ImageError('packed colour must be a number, ${typeof(value)} given')
-    }
-
+  static packed(value: number) {
     var bits = value.round()
 
     return Color(
@@ -196,10 +189,6 @@ class Color {
    * @throws ValueError When _spec_ is not a hexadecimal colour.
    */
   static hex(spec) {
-    if !is_string(spec) {
-      raise ValueError('hex colour must be a string, ${typeof(spec)} given')
-    }
-
     # colors reports alpha as a 0-1 ratio; every channel here is a byte.
     var parsed = colors.hex_to_rgb(spec)
 
@@ -219,10 +208,6 @@ class Color {
    * @throws ValueError When _name_ is not a CSS colour name.
    */
   static named(name) {
-    if !is_string(name) {
-      raise ValueError('colour name must be a string, ${typeof(name)} given')
-    }
-
     return Color.hex(colors.named(name))
   }
 

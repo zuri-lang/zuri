@@ -1317,8 +1317,9 @@ somewhere else entirely.
 
 ## Errors
 
-Almost everything this module raises descends from `ImageError`, so one
-catch covers it:
+Failures fall into two groups. An argument of the wrong *type* raises
+`TypeError`, from the parameter's own type declaration. Everything else
+descends from `ImageError`, so one catch covers it:
 
 ```zuri
 import imagine { Image, ImageError, DecodeError }
@@ -1343,14 +1344,35 @@ catch {
 | `BoundsError` | A rectangle, crop or resize falls outside the image, or a dimension is below 1. |
 | `FontError` | A font cannot be parsed, found, or laid out with. |
 
-The exception is colour parsing. `Color.hex()` and `Color.named()`
-raise `ValueError`, because a malformed hexadecimal colour or an
-unknown colour name is what [[colors]] itself reports and relabelling
-it would lose that:
+Two kinds of failure sit outside that hierarchy on purpose.
+
+**Wrong argument type raises `TypeError`.** Parameters declare their
+types, so the check happens at the boundary and the message names the
+parameter:
 
 ```zuri
-Color.hex('nonsense')        # ValueError
-Color.named('chartroose')    # ValueError
+image.rotate('sideways')
+# TypeError: rotate() expects parameter 'degrees' (argument 1)
+#            to be a number, got string
+```
+
+**A malformed colour raises `ValueError`**, because that is what
+[[colors]] reports for it and relabelling would lose the distinction
+between "not a colour" and "not a string":
+
+```zuri
+Color.hex('nonsense')        # ValueError, from colors
+Color.named('chartroose')    # ValueError, from colors
+Color.hex(42)                # TypeError, from the type declaration
+```
+
+A value of the right type but the wrong *range* is still an
+`ImageError` subclass, since that is a judgement this module makes
+rather than a type the runtime can check:
+
+```zuri
+Image(0, 100)                # BoundsError, not TypeError
+filters.gamma_lut(-1)        # ImageError
 ```
 
 `DecodeError` is the one to always be ready for, since anything arriving

@@ -69,8 +69,8 @@ class Animation {
    *    recorded as metadata - Default: nil.
    * @throws ImageError When the frames are not all images of one size.
    */
-  @new(frames, delay, repeat, format) {
-    if !is_list(frames) or frames.length() == 0 {
+  @new(frames: list, delay, repeat, format) {
+    if frames.length() == 0 {
       raise ImageError('an animation needs at least one frame')
     }
 
@@ -134,11 +134,7 @@ class Animation {
    * @returns Animation
    * @throws DecodeError When the data is not a readable image.
    */
-  static decode(data) {
-    if !is_bytes(data) {
-      raise ImageError('image data must be bytes, ${typeof(data)} given')
-    }
-
+  static decode(data: bytes) {
     var kind = formats.detect(data)
 
     if kind == nil {
@@ -200,8 +196,8 @@ class Animation {
    * @returns Image
    * @throws ImageError When there is no such frame.
    */
-  frame(index) {
-    if !is_number(index) or index < 0 or index >= self._frames.length() {
+  frame(index: number) {
+    if index < 0 or index >= self._frames.length() {
       raise ImageError('no frame ${index}; the animation has ${self._frames.length()}')
     }
 
@@ -265,8 +261,8 @@ class Animation {
    * @param number times: 0 loops forever.
    * @returns self
    */
-  repeat(times) {
-    if !is_number(times) or times < 0 {
+  repeat(times: number) {
+    if times < 0 {
       raise ImageError('repeat count must not be negative, got ${times}')
     }
 
@@ -305,11 +301,7 @@ class Animation {
    * @returns Animation
    * @throws ImageError When the function returns anything but an image.
    */
-  map(fn) {
-    if !is_function(fn) {
-      raise ImageError('map() needs a function, ${typeof(fn)} given')
-    }
-
+  map(fn: function) {
     var mapped = []
 
     for frame in self._frames {
@@ -394,11 +386,7 @@ class Animation {
    * @param ?dict options: `format`, plus everything `encode()` takes.
    * @returns self
    */
-  save(path, options) {
-    if !is_string(path) {
-      raise ImageError('save() needs a path, ${typeof(path)} given')
-    }
-
+  save(path: string, options) {
     var target = is_dict(options) ? options.get('format') : nil
 
     if target == nil {

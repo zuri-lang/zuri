@@ -6,6 +6,8 @@
   [PASS] bad colours raise rather than being silently accepted
   [PASS] Color conversions, luminance and contrast agree with the colors module
   [PASS] Color mixing, compositing and adjustment behave as documented
+  [PASS] an argument of the wrong type is rejected at every entry point that declares one
+  [PASS] a wrong-range value stays the module own error rather than becoming a type error
   [PASS] Image construction validates its dimensions and starts transparent
   [PASS] pixel reads and writes blend, replace and ignore out-of-range coordinates
   [PASS] a clipping rectangle confines drawing and can be cleared
@@ -43,5 +45,5 @@
   [PASS] the built-in stroke font measures, scales, wraps and draws without any font file
 
 ═══════════════════════════════════════════════════════
-  All 40 assertions passed.
+  All 42 assertions passed.
 ═══════════════════════════════════════════════════════

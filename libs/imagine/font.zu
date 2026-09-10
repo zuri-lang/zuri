@@ -122,11 +122,7 @@ class Font {
    * @param ?number size: The size in pixels - Default: 16.
    * @returns Font
    */
-  static load(path, size) {
-    if !is_string(path) {
-      raise FontError('font path must be a string, ${typeof(path)} given')
-    }
-
+  static load(path: string, size) {
     var resolved = path
 
     catch {
@@ -164,11 +160,7 @@ class Font {
    * @param ?number size: The size in pixels - Default: 16.
    * @returns Font
    */
-  static from_bytes(data, size) {
-    if !is_bytes(data) {
-      raise FontError('font data must be bytes, ${typeof(data)} given')
-    }
-
+  static from_bytes(data: bytes, size) {
     var handle = nil
 
     catch {
@@ -285,8 +277,8 @@ class Font {
    * @param number pixels: The size in pixels.
    * @returns Font
    */
-  size(pixels) {
-    if !is_number(pixels) or pixels <= 0 {
+  size(pixels: number) {
+    if pixels <= 0 {
       raise FontError('font size must be greater than zero, got ${pixels}')
     }
 
@@ -381,8 +373,8 @@ class Font {
    * @param ?dict options: `tracking`, as `measure()` takes.
    * @returns string
    */
-  wrap(text, width, options) {
-    if !is_number(width) or width <= 0 {
+  wrap(text, width: number, options) {
+    if width <= 0 {
       raise FontError('wrap width must be greater than zero, got ${width}')
     }
 
@@ -551,11 +543,7 @@ def _normalize_family(name) {
  * `'DejaVuSans'` does not land on `DejaVuSansMono` when the plain face
  * is present.
  */
-def _find_system_font(family) {
-  if !is_string(family) {
-    raise FontError('font family must be a string, ${typeof(family)} given')
-  }
-
+def _find_system_font(family: string) {
   var wanted = _normalize_family(family)
   var prefix_match = nil
 
