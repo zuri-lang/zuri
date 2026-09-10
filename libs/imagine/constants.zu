@@ -267,8 +267,13 @@ var TIFF = 'tiff'
 var TGA = 'tga'
 
 /**
- * WebP. Smaller than PNG and JPEG at comparable quality, with alpha.
- * This build reads both still and animated WebP, and writes stills.
+ * WebP. Lossless with alpha, and smaller than PNG for the same pixels.
+ *
+ * Reading handles lossy and lossless WebP, still and animated. Writing
+ * produces a lossless still, so the `quality` option does not apply and
+ * a photograph written here will be larger than one a lossy WebP
+ * encoder would produce. Reach for `JPEG` or `AVIF` when size matters
+ * more than exactness.
  *
  * @type string
  */

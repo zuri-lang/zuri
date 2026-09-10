@@ -1681,8 +1681,9 @@ class Image < Canvas {
    *
    * Options understood, by format:
    *
-   * - `quality` (1-100) for JPEG, WebP and AVIF. Defaults to 85 for
-   *   JPEG and 80 for AVIF.
+   * - `quality` (1-100) for JPEG and AVIF. Defaults to 85 for JPEG and
+   *   80 for AVIF. It does not apply to WebP, which is written
+   *   losslessly.
    * - `compression` for PNG: `'fast'`, `'default'` or `'best'`. All
    *   three are lossless; they trade encoding time for file size.
    * - `speed` (1-10) for AVIF. Lower is slower and smaller.

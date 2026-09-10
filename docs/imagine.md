@@ -296,7 +296,7 @@ The format comes from the extension unless `format` says otherwise. To
 get the bytes instead of a file:
 
 ```zuri
-var data = photo.encode('webp', { quality: 82 })
+var data = photo.encode('webp')
 var data = photo.to_png()
 var data = photo.to_jpeg(90)
 ```
@@ -310,7 +310,7 @@ falling back to PNG for an image built in memory.
 |---|---|---|---|---|
 | PNG | yes | yes | yes | Lossless. The safe default. |
 | JPEG | yes | yes | no | Lossy. Photographs only. |
-| WebP | yes | yes | yes | Smaller than both at similar quality. |
+| WebP | yes | yes | yes | **Written lossless**, so smaller than PNG but larger than a lossy WebP. |
 | AVIF | no | yes | yes | Smallest files, slowest to encode. |
 | GIF | yes | yes | 1-bit | 256 colours. The only animated format that can be written. |
 | BMP | yes | yes | yes | Uncompressed and enormous. |
@@ -321,9 +321,19 @@ falling back to PNG for an image built in memory.
 | PNM | yes | yes | no | Trivially simple, trivially large. |
 | WBMP | yes | yes | no | One bit per pixel. |
 
-Two entries need explaining. **AVIF is write-only**: opening one raises
-`DecodeError`. **TGA has no magic number**, so it can only be
-identified by its file extension or by naming the format outright.
+Three entries need explaining.
+
+**AVIF is write-only**: opening one raises `DecodeError`.
+
+**TGA has no magic number**, so it can only be identified by its file
+extension or by naming the format outright.
+
+**WebP is written losslessly.** Reading handles both lossy and lossless
+WebP, but the encoder here only writes lossless, so `quality` has no
+effect on it and a photograph saved as WebP will be larger than one
+saved by a tool that can write lossy WebP. For a photograph where size
+matters, JPEG or AVIF is the better target; WebP here is a
+smaller-than-PNG lossless format with alpha.
 
 Never assume; ask:
 
@@ -339,7 +349,7 @@ echo can.animated    # every format it can read as an animation
 
 | Option | Formats | Meaning |
 |---|---|---|
-| `quality` | JPEG, WebP, AVIF | 1 to 100. Defaults to 85 for JPEG, 80 for AVIF. |
+| `quality` | JPEG, AVIF | 1 to 100. Defaults to 85 for JPEG, 80 for AVIF. |
 | `compression` | PNG | `'fast'`, `'default'` or `'best'`. All lossless. |
 | `speed` | AVIF | 1 to 10. Lower is slower and smaller. |
 | `background` | JPEG | What transparent pixels are flattened against. Defaults to white. |
@@ -1306,7 +1316,7 @@ def make_thumbnail(upload) {
   return Image.decode(upload)
     .cover(400, 400, { anchor: TOP, filter: LANCZOS })
     .sharpen(0.4)
-    .encode('webp', { quality: 82 })
+    .encode('webp')
 }
 ```
 
