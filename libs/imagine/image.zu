@@ -1686,7 +1686,9 @@ class Image < Canvas {
    *   losslessly.
    * - `compression` for PNG: `'fast'`, `'default'` or `'best'`. All
    *   three are lossless; they trade encoding time for file size.
-   * - `speed` (1-10) for AVIF. Lower is slower and smaller.
+   * - `speed` for AVIF (1-10, lower is slower and smaller) and for
+   *   GIF (1-30, lower is slower and picks better colours; 15 by
+   *   default).
    * - `background` for JPEG, the colour transparent pixels are
    *   flattened against. Defaults to white.
    * - `threshold` (0-255) for WBMP, the brightness cut.
@@ -2022,12 +2024,11 @@ def _percentile(counts, target) {
 # The whole-buffer passes
 # ---------------------------------------------------------------------
 #
-# Ordinary functions with `bytes`-annotated parameters, for the reason
-# spelled out at the bottom of canvas.zu: the JIT proves a typed
-# parameter's shape and drops the guard in front of every indexed
-# access, and cannot do the same for a value read out of a field.
-# Everything here walks every pixel at least once, which is where that
-# difference is worth the indirection.
+# Ordinary functions with `bytes`-annotated parameters: the JIT proves
+# a typed parameter's shape and drops the guard in front of every
+# indexed access, and cannot do the same for a value read out of a
+# field. Everything here walks every pixel at least once, which is
+# where that difference is worth the indirection.
 
 
 /**

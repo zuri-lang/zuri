@@ -338,6 +338,24 @@ assert raises(@() { colors.mix('#fff', '#000', 'x') }), 'mix() must reject a non
 assert raises(@() { colors.contrast_ratio(123, '#fff') }), 'contrast_ratio() must reject a non-string argument'
 ok('color manipulation and accessibility functions all validate their arguments')
 
+# ---------------------------------------------------------------------------
+# is_hex
+# ---------------------------------------------------------------------------
+assert colors.is_hex('#4f46e5') and colors.is_hex('4f46e5'), 'is_hex() must accept a color with or without a leading #'
+assert colors.is_hex('FFF') and colors.is_hex('#ffffff00'), 'is_hex() must accept all four lengths in either case'
+assert !colors.is_hex('rebeccapurple'), 'is_hex() must reject a color name'
+assert !colors.is_hex('#ff000'), 'is_hex() must reject a length that is not 3, 4, 6 or 8'
+assert !colors.is_hex('#ff'), 'is_hex() must reject a length that is not 3, 4, 6 or 8'
+assert !colors.is_hex('#gggggg'), 'is_hex() must reject a non-hexadecimal digit'
+assert !colors.is_hex(123) and !colors.is_hex(nil), 'is_hex() must return false rather than raise for a non-string'
+ok('is_hex() accepts exactly what hex_to_rgb() accepts, and never raises')
+
+assert colors.hex_to_rgb('#4f46e5') == [79, 70, 229, 1], 'hex_to_rgb() must convert without a regular expression'
+assert colors.hex_to_rgb('FFF') == [255, 255, 255, 1], 'the short form must still double each digit'
+assert raises(@() { colors.hex_to_rgb('nonsense') }), 'hex_to_rgb() must raise on a malformed color'
+assert raises(@() { colors.hex_to_rgb('#ff000') }), 'hex_to_rgb() must raise on a length that is not 3, 4, 6 or 8'
+ok('hex_to_rgb() keeps its contract with the pattern gone')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

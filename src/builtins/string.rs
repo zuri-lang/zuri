@@ -1,6 +1,10 @@
 #![allow(unused)]
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::LazyLock;
+
+use rustc_hash::FxHashMap;
 
 use pcre2::bytes::{CaptureLocations, Match, Regex, RegexBuilder};
 
@@ -102,7 +106,67 @@ fn parse_regex(s: &str) -> Option<(&str, &str)> {
 /// prepended to the pattern instead. `D` (dollar-endonly) has no such
 /// inline equivalent and, like any unrecognized modifier letter, is
 /// simply accepted and has no effect.
-fn compile_regex(pattern: &str, modifiers: &str) -> Result<(Regex, bool), String> {
+/// How many distinct patterns one thread keeps compiled. A program
+/// normally uses a handful of literal patterns over and over, so this
+/// is generous; the cap exists only so a program that builds patterns
+/// from user input cannot grow the cache without bound. Going over it
+/// clears the whole cache rather than evicting one entry, which costs
+/// a recompile for the surviving patterns but keeps this to a counter
+/// and no bookkeeping on the hot path.
+const REGEX_CACHE_LIMIT: usize = 256;
+
+thread_local! {
+  /// Compiled patterns, keyed by pattern then modifiers.
+  ///
+  /// Nested rather than keyed on a combined string so a lookup can
+  /// borrow both halves as `&str` and allocate nothing on a hit, which
+  /// is the whole point: compiling a PCRE2 pattern costs orders of
+  /// magnitude more than matching a short subject against it, and
+  /// programs reuse a small set of literal patterns.
+  ///
+  /// Thread-local because a `Regex` need not be `Send` for this and
+  /// every isolate runs on its own OS thread; each gets its own cache
+  /// and there is no synchronization anywhere on the path.
+  static REGEX_CACHE: RefCell<FxHashMap<String, FxHashMap<String, Rc<(Regex, bool)>>>> =
+    RefCell::new(FxHashMap::default());
+}
+
+/// Compiles a pattern, or hands back the one already compiled for it.
+///
+/// The `bool` is the `A` (anchored) modifier, which PCRE2 has no
+/// builder option for and which the caller has to honour itself.
+fn compile_regex(pattern: &str, modifiers: &str) -> Result<Rc<(Regex, bool)>, String> {
+  let cached = REGEX_CACHE.with(|cache| {
+    cache
+      .borrow()
+      .get(pattern)
+      .and_then(|by_modifier| by_modifier.get(modifiers))
+      .cloned()
+  });
+
+  if let Some(hit) = cached {
+    return Ok(hit);
+  }
+
+  let compiled = Rc::new(build_regex(pattern, modifiers)?);
+
+  REGEX_CACHE.with(|cache| {
+    let mut cache = cache.borrow_mut();
+
+    if cache.len() >= REGEX_CACHE_LIMIT {
+      cache.clear();
+    }
+
+    cache
+      .entry(pattern.to_string())
+      .or_default()
+      .insert(modifiers.to_string(), Rc::clone(&compiled));
+  });
+
+  Ok(compiled)
+}
+
+fn build_regex(pattern: &str, modifiers: &str) -> Result<(Regex, bool), String> {
   let mut builder = RegexBuilder::new();
   // Zuri strings are always valid UTF-8; matching per-codepoint
   // (rather than per-byte) is what keeps `.` and every byte offset
@@ -446,7 +510,8 @@ fn split(ctx: &mut ZuriContext) -> Result<Value, String> {
   let parts: Vec<String> = if delim.is_empty() {
     s.chars().map(|c| c.to_string()).collect()
   } else if let Some((pattern, modifiers)) = parse_regex(&delim) {
-    let (re, anchored) = compile_regex(pattern, modifiers)?;
+    let compiled = compile_regex(pattern, modifiers)?;
+    let (re, anchored) = (&compiled.0, compiled.1);
     let bytes = s.as_bytes();
     let matches = find_all_captures(&re, anchored, bytes, 0)?;
 
@@ -644,8 +709,9 @@ fn string_match(ctx: &mut ZuriContext) -> Result<Value, String> {
   let start = char_offset_to_byte(&s, optional_offset(ctx, 2)?);
 
   if let Some((pattern, modifiers)) = parse_regex(&pattern_str) {
-    let (re, anchored) = compile_regex(pattern, modifiers)?;
-    match find_at_anchored(&re, anchored, s.as_bytes(), start)? {
+    let compiled = compile_regex(pattern, modifiers)?;
+    let (re, anchored) = (&compiled.0, compiled.1);
+    match find_at_anchored(re, anchored, s.as_bytes(), start)? {
       Some(m) => {
         let matched = ctx
           .vm
@@ -682,7 +748,8 @@ fn string_matches(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (pattern, modifiers) = parse_regex(&pattern_str)
     .ok_or_else(|| "matches() expects a regular expression".to_string())?;
-  let (re, anchored) = compile_regex(pattern, modifiers)?;
+  let compiled = compile_regex(pattern, modifiers)?;
+  let (re, anchored) = (&compiled.0, compiled.1);
 
   let bytes = s.as_bytes();
   let all_matches = find_all_captures(&re, anchored, bytes, start)?;
@@ -723,7 +790,8 @@ fn replace(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let result = match (use_regex, parse_regex(&pattern_str)) {
     (true, Some((pattern, modifiers))) => {
-      let (re, anchored) = compile_regex(pattern, modifiers)?;
+      let compiled = compile_regex(pattern, modifiers)?;
+      let (re, anchored) = (&compiled.0, compiled.1);
       let bytes = s.as_bytes();
       let all_matches = find_all_captures(&re, anchored, bytes, 0)?;
 
@@ -818,7 +886,8 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (pattern, modifiers) = parse_regex(&pattern_str)
     .ok_or_else(|| "replace_with() expects a regular expression".to_string())?;
-  let (re, anchored) = compile_regex(pattern, modifiers)?;
+  let compiled = compile_regex(pattern, modifiers)?;
+  let (re, anchored) = (&compiled.0, compiled.1);
 
   let bytes = s.as_bytes();
   let all_matches = find_all_captures(&re, anchored, bytes, 0)?;

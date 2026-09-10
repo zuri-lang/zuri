@@ -56,6 +56,14 @@ assert raises(@() { Color.parse(true) }), 'parse() must reject a value that is n
 assert raises(@() { Color.parse([1, 2]) }), 'parse() must reject a list with too few channels'
 ok('Color.parse() accepts every documented spelling and rejects the rest')
 
+# A malformed colour is the colors module's own ValueError, raised
+# where it happens rather than caught and relabelled.
+assert raises(@() { Color.hex('nonsense') }), 'a malformed hex colour must raise'
+assert raises(@() { Color.hex(42) }), 'a non-string spec must raise'
+assert raises(@() { Color.named('chartroose') }), 'an unknown colour name must raise'
+assert raises(@() { Color.named(42) }), 'a non-string name must raise'
+ok('bad colours raise rather than being silently accepted')
+
 # ---------------------------------------------------------------------------
 # Color: conversion, mixing and contrast
 # ---------------------------------------------------------------------------

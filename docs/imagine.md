@@ -353,7 +353,7 @@ echo can.animated    # every format it can read as an animation
 |---|---|---|
 | `quality` | JPEG, AVIF | 1 to 100. Defaults to 85 for JPEG, 80 for AVIF. |
 | `compression` | PNG | `'fast'`, `'default'` or `'best'`. All lossless. |
-| `speed` | AVIF | 1 to 10. Lower is slower and smaller. |
+| `speed` | AVIF, GIF | AVIF 1-10, lower is slower and smaller. GIF 1-30, lower is slower and picks better colours; 15 by default. |
 | `background` | JPEG | What transparent pixels are flattened against. Defaults to white. |
 | `threshold` | WBMP | The brightness cut, 0 to 255. |
 
@@ -1317,8 +1317,8 @@ somewhere else entirely.
 
 ## Errors
 
-Everything this module raises descends from `ImageError`, so one catch
-covers it:
+Almost everything this module raises descends from `ImageError`, so one
+catch covers it:
 
 ```zuri
 import imagine { Image, ImageError, DecodeError }
@@ -1342,6 +1342,16 @@ catch {
 | `FormatError` | A format name or file extension is not one this module knows. |
 | `BoundsError` | A rectangle, crop or resize falls outside the image, or a dimension is below 1. |
 | `FontError` | A font cannot be parsed, found, or laid out with. |
+
+The exception is colour parsing. `Color.hex()` and `Color.named()`
+raise `ValueError`, because a malformed hexadecimal colour or an
+unknown colour name is what [[colors]] itself reports and relabelling
+it would lose that:
+
+```zuri
+Color.hex('nonsense')        # ValueError
+Color.named('chartroose')    # ValueError
+```
 
 `DecodeError` is the one to always be ready for, since anything arriving
 from outside the program can raise it.

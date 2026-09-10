@@ -1,1 +1,53 @@
-(unused: this fixture is checked by exit code, not output match; see run_exit_code_fixture in tests/zuri.rs)
+═══════════════════════════════════════════════════════
+  colors module: test suite
+═══════════════════════════════════════════════════════
+  [PASS] rgb_to_hsl() computes correct saturation on both sides of l=0.5
+  [PASS] hwb_to_rgb() sector index no longer overflows the interpolation factor
+  [PASS] ansi256_to_ansi() bit-packing matches the canonical reference for direct and cube-mapped codes
+  [PASS] rgb_to_hex() pads correctly and never leaks a literal "nil"
+  [PASS] hex_to_rgb() is case-insensitive, accepts #, and uses RRGGBBAA byte order
+  [PASS] rgb_to_hex()/hex_to_rgb() round-trip
+  [PASS] hsv_to_rgb() wraps negative hue correctly
+  [PASS] hsl_to_rgb() wraps hue but still validates saturation/lightness
+  [PASS] lab_to_rgb() round-trips with rgb_to_lab()
+  [PASS] lighten()/darken() move HSL lightness in the correct direction
+  [PASS] saturate()/desaturate() move HSL saturation in the correct direction
+  [PASS] grayscale() zeroes out saturation
+  [PASS] invert() flips every RGB channel
+  [PASS] mix() interpolates correctly across its weight range
+  [PASS] color manipulation functions preserve alpha only when the input actually has any
+  [PASS] contrast_ratio() matches the WCAG formula at its known extremes
+  [PASS] style/text_color/background tables expose the standard ANSI codes
+  [PASS] text() applies a foreground color and always resets afterward
+  [PASS] text() combines a foreground color and a background into one escape sequence
+  [PASS] text() with no color or background never leaks a literal "nil" prefix
+  [PASS] text() nests correctly
+  [PASS] rgb_to_ansi256() matches known reference codes and validates its arguments
+  [PASS] ansi256_to_ansi() validates its argument
+  [PASS] hex_to_ansi256() matches rgb_to_ansi256() and validates its argument
+  [PASS] hex_to_ansi() chains hex_to_ansi256() and ansi256_to_ansi() correctly
+  [PASS] hex() strips an optional # and matches hex_to_ansi()
+  [PASS] rgb() chains rgb_to_ansi256() and ansi256_to_ansi() correctly
+  [PASS] hsl() converts through hsl_to_rgb() to the same terminal color as rgb()
+  [PASS] hsv() converts through hsv_to_rgb() to the same terminal color as rgb()
+  [PASS] hwb() converts through hwb_to_rgb() to the same terminal color as rgb()
+  [PASS] cmyk() converts through cmyk_to_rgb() to the same terminal color as rgb()
+  [PASS] xyz() validates its argument before converting
+  [PASS] rgb_to_hsv() matches known reference points and validates its arguments
+  [PASS] rgb_to_hwb() matches known reference points and validates its arguments
+  [PASS] rgb_to_cmyk() matches known reference points (including the pure-black NaN regression) and validates its arguments
+  [PASS] rgb_to_xyz() matches the D65 white point and validates its arguments
+  [PASS] rgb_to_lab() validates its arguments
+  [PASS] hsl_to_hsv() matches known reference points and validates its arguments
+  [PASS] hsv_to_hsl() matches known reference points (including the white NaN regression) and validates its arguments
+  [PASS] cmyk_to_rgb() matches known reference points and validates its arguments
+  [PASS] xyz_to_rgb() matches the D65 white point and validates its arguments
+  [PASS] hwb_to_rgb() matches known reference points
+  [PASS] lab_to_rgb() validates its arguments
+  [PASS] color manipulation and accessibility functions all validate their arguments
+  [PASS] is_hex() accepts exactly what hex_to_rgb() accepts, and never raises
+  [PASS] hex_to_rgb() keeps its contract with the pattern gone
+
+═══════════════════════════════════════════════════════
+  All 46 assertions passed.
+═══════════════════════════════════════════════════════

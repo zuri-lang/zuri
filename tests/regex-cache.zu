@@ -1,0 +1,32 @@
+# Compiled patterns are cached and reused, so this checks the things a
+# cache can get wrong: sharing an entry between patterns that only
+# differ by modifier, corrupting an outer match with a nested one, and
+# going wrong once the cache has evicted.
+
+# The same pattern text under different modifiers must not share one
+# compiled regex.
+echo 'ABC'.match('/abc/')
+echo 'ABC'.match('/abc/i')
+echo 'xxabc'.match('/abc/')
+echo 'xxabc'.match('/abc/A')
+
+# A nested match on the pattern already in use must leave the outer
+# match's own state alone.
+echo 'a1b2c3'.replace_with('/[a-z][0-9]/', @(m) {
+  var inner = 'x9'.match('/[a-z][0-9]/')
+  return '<${m}:${inner[0]}>'
+})
+
+# Capture groups survive reuse.
+echo 'a1b2'.matches('/([a-z])([0-9])/')
+echo 'a1b2'.matches('/([a-z])([0-9])/')
+
+# Correct after far more distinct patterns than the cache holds.
+iter var i = 0; i < 600; i++ {
+  var n = i % 9 + 1
+  'zz'.match('/^[a-z]{${n}}$/')
+}
+
+echo 'a1'.match('/[a-z][0-9]/')
+echo 'a,b,c'.split('/,/')
+echo 'a1b2'.replace('/[0-9]/', '#')

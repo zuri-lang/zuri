@@ -585,9 +585,9 @@ fn tiff_orientation(tiff: &[u8]) -> u16 {
 
 /// `_imagine.encode(pixels, width, height, format, options)`.
 ///
-/// Options understood, per format: `quality` (JPEG, AVIF, WebP),
-/// `speed` (AVIF), `compression` (PNG: "default"/"fast"/"best"),
-/// `lossless` (WebP). Anything else is ignored rather than rejected,
+/// Options understood, per format: `quality` (JPEG, AVIF),
+/// `speed` (AVIF 1-10, GIF 1-30), `compression` (PNG:
+/// "default"/"fast"/"best"). Anything else is ignored rather than rejected,
 /// so the Zuri layer can pass one options dict through to whichever
 /// encoder the caller picked.
 fn encode(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -669,8 +669,12 @@ fn encode_rgba(
 
     ImageFormat::Gif => {
       // The GIF encoder wants whole frames, and quantizes internally.
+      //
+      // The speed is set explicitly because the encoder's own default
+      // is 1, the slowest of its 1-30 range, for a quality difference
+      // this format's 256 colours mostly cannot show.
       let buffer = to_image("encode", pixels.to_vec(), width, height)?;
-      let mut encoder = GifEncoder::new(&mut out);
+      let mut encoder = GifEncoder::new_with_speed(&mut out, gif_speed(options));
       encoder
         .encode(&buffer, width, height, ExtendedColorType::Rgba8)
         .map_err(|e| format!("encode(): {}", e))?;
@@ -686,6 +690,17 @@ fn encode_rgba(
   }
 
   Ok(out)
+}
+
+/// The GIF quantizer's effort, 1 (slowest, best) to 30 (fastest).
+fn gif_speed(options: Value) -> i32 {
+  let raw = option_number(options, "speed", 15.0);
+
+  if !raw.is_finite() {
+    return 15;
+  }
+
+  raw.clamp(1.0, 30.0) as i32
 }
 
 fn clamp_quality(raw: f64) -> u8 {
@@ -776,7 +791,7 @@ fn encode_frames(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let mut out = Vec::new();
   {
-    let mut encoder = GifEncoder::new(&mut out);
+    let mut encoder = GifEncoder::new_with_speed(&mut out, gif_speed(options));
     let repeat = if repeat <= 0.0 {
       Repeat::Infinite
     } else {

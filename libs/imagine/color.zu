@@ -51,7 +51,7 @@ def _channel(value) {
  * hexadecimal string can be done to a `Color` by way of `to_hex()`
  * and `Color.hex()`.
  *
- * Two conventions follow from that and are worth knowing:
+ * Three conventions follow from that and are worth knowing:
  *
  * - Hue is in degrees and saturation, lightness and value are in
  *   percentage points (0-100), exactly as in `colors` and in CSS.
@@ -59,6 +59,9 @@ def _channel(value) {
  * - `to_hex()` returns a leading `#`, because that is the form you
  *   paste into a stylesheet. `colors` returns the bare form. Both are
  *   accepted everywhere either is.
+ * - A malformed hexadecimal colour or an unknown colour name raises
+ *   `ValueError`, which is what `colors` reports for them, rather than
+ *   this module's own `ImageError`.
  *
  * @printable
  * @serializable
@@ -190,23 +193,16 @@ class Color {
    *
    * @param string spec
    * @returns Color
-   * @throws ImageError When _spec_ is not a hexadecimal colour.
+   * @throws ValueError When _spec_ is not a hexadecimal colour.
    */
   static hex(spec) {
     if !is_string(spec) {
-      raise ImageError('hex colour must be a string, ${typeof(spec)} given')
+      raise ValueError('hex colour must be a string, ${typeof(spec)} given')
     }
 
-    var parsed = nil
+    # colors reports alpha as a 0-1 ratio; every channel here is a byte.
+    var parsed = colors.hex_to_rgb(spec)
 
-    catch {
-      parsed = colors.hex_to_rgb(spec)
-    } as e {
-      raise ImageError("'${spec}' is not a hexadecimal colour")
-    }
-
-    # colors.hex_to_rgb() reports alpha as a 0-1 ratio; every channel
-    # here is a byte.
     return Color(parsed[0], parsed[1], parsed[2], parsed[3] * 255)
   }
 
@@ -220,18 +216,14 @@ class Color {
    *
    * @param string name
    * @returns Color
-   * @throws ImageError When _name_ is not a CSS colour name.
+   * @throws ValueError When _name_ is not a CSS colour name.
    */
   static named(name) {
     if !is_string(name) {
-      raise ImageError('colour name must be a string, ${typeof(name)} given')
+      raise ValueError('colour name must be a string, ${typeof(name)} given')
     }
 
-    catch {
-      return Color.hex(colors.named(name))
-    } as e {
-      raise ImageError("'${name}' is not a known colour name")
-    }
+    return Color.hex(colors.named(name))
   }
 
   /**

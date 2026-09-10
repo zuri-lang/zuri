@@ -208,6 +208,75 @@ def ansi256_to_ansi(code: int) {
 }
 
 /**
+ * The four lengths a hexadecimal color can be written in: `rgb`,
+ * `rgba`, `rrggbb` and `rrggbbaa`.
+ */
+const _VALID_HEX_LENGTHS = [3, 4, 6, 8]
+
+
+/**
+ * Whether _text_ is 3, 4, 6 or 8 hexadecimal digits, the four lengths
+ * a color can be written in.
+ *
+ * A character loop rather than a regular expression, because
+ * compiling a pattern costs far more than the comparison itself and
+ * [[colors.hex_to_rgb]] sits under every color a drawing API parses.
+ */
+def _is_hex_digits(text) {
+  var length = text.length()
+
+  if !_VALID_HEX_LENGTHS.contains(length) {
+    return false
+  }
+
+  iter var i = 0; i < length; i++ {
+    var code = text[i].ord()
+
+    # 0-9, then a-f, then A-F.
+    if (code < 48 or code > 57) and
+       (code < 97 or code > 102) and
+       (code < 65 or code > 70) {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+/**
+ * Returns `true` if _color_ is a hexadecimal color that
+ * [[colors.hex_to_rgb]] would accept, and `false` otherwise.
+ *
+ * A leading `#` is optional and the digits may be in either case.
+ * This raises nothing, so it is the way to test a color before
+ * converting it rather than converting inside a `catch`.
+ *
+ * ```zuri-repl
+ * %> import colors
+ * %> colors.is_hex('#4f46e5')
+ * true
+ * %> colors.is_hex('rebeccapurple')
+ * false
+ * ```
+ *
+ * @param any color
+ * @returns bool
+ */
+def is_hex(color) {
+  if !is_string(color) {
+    return false
+  }
+
+  if color.length() > 0 and color[0] == '#' {
+    return _is_hex_digits(color[1,])
+  }
+
+  return _is_hex_digits(color)
+}
+
+
+/**
  * Converts the hexadecimal string _h_ to its RGBA component.
  *
  * Accepts an optional leading `#`, is case-insensitive, and
@@ -221,16 +290,14 @@ def ansi256_to_ansi(code: int) {
  * @throws ValueError When _h_ is not a valid hexadecimal color.
  */
 def hex_to_rgb(h: string) {
-
   var s = h
   if s.length() > 0 and s[0] == '#' s = s[1,]
 
-  var value = s.match('/^([a-fA-F0-9]{8}|[a-fA-F0-9]{6}|[a-fA-F0-9]{4}|[a-fA-F0-9]{3})$/')
-  if !value {
+  if !_is_hex_digits(s) {
     raise ValueError('invalid hexadecimal color: ${h}')
   }
 
-  var v = value[0]
+  var v = s
 
   # if we have four characters or less, duplicate every digit.
   if v.length() <= 4 {

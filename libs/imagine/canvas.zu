@@ -601,13 +601,20 @@ class Canvas {
     var steps = self._antialias ? _SUBSAMPLES : 1
     var step_weight = 1 / steps
 
+    # The range of the coverage buffer the previous row wrote into.
+    # Only that range is cleared and blended, so a shape costs what it
+    # actually covers rather than the width of the box it spans; a thin
+    # diagonal touches a few entries per row out of the whole width.
+    var dirty_lo = 0
+    var dirty_hi = -1
+
     iter var py = start_y; py < end_y; py++ {
-      # Reset only what the previous row actually touched.
-      iter var i = 0; i < row_width; i++ {
+      iter var i = dirty_lo; i <= dirty_hi; i++ {
         coverage[i] = 0
       }
 
-      var touched = false
+      dirty_lo = row_width
+      dirty_hi = -1
 
       iter var s = 0; s < steps; s++ {
         var sample_y = py + (s + 0.5) / steps
@@ -622,17 +629,33 @@ class Canvas {
           self._spans_non_zero(crossings)
 
         for span in spans {
-          if self._accumulate(coverage, start_x, end_x, span[0], span[1], step_weight) {
-            touched = true
+          var left = span[0].max(start_x)
+          var right = span[1].min(end_x)
+
+          if right <= left {
+            continue
           }
+
+          var first = left.floor() - start_x
+          var last = right.ceil() - 1 - start_x
+
+          if first < dirty_lo {
+            dirty_lo = first
+          }
+
+          if last > dirty_hi {
+            dirty_hi = last
+          }
+
+          self._accumulate(coverage, start_x, end_x, span[0], span[1], step_weight)
         }
       }
 
-      if !touched {
+      if dirty_hi < dirty_lo {
         continue
       }
 
-      self._blend_row(py, start_x, row_width, coverage, paint)
+      self._blend_row(py, start_x + dirty_lo, dirty_hi - dirty_lo + 1, coverage, paint, dirty_lo)
     }
   }
 
@@ -795,10 +818,11 @@ class Canvas {
    * is already half transparent through an edge pixel at half coverage
    * lands at a quarter, which is what stacking the two would give.
    */
-  _blend_row(py, start_x, row_width, coverage, paint) {
+  _blend_row(py, start_x, row_width, coverage, paint, offset) {
     _blend_coverage(
       self._pixels,
       (py * self._width + start_x) * 4,
+      offset,
       row_width,
       coverage,
       paint.r,
@@ -1783,10 +1807,8 @@ def _build_ramp(stops) {
 # are annotated `bytes`, for one reason: the JIT can prove a typed
 # parameter's shape and drop the guard in front of every indexed
 # access, and it cannot do the same for a value read out of a field.
-# Measured on a million-element read loop, the typed-parameter form
-# runs at 2.6ns per element against 5.8ns for the same loop reading
-# `self._pixels` into a local, so this is worth the indirection on
-# exactly the paths that touch every pixel and nowhere else.
+# That is worth the indirection on exactly the paths that touch every
+# pixel, and nowhere else.
 #
 # All of them index without bounds checks. Their callers have already
 # clipped, which is what makes that safe and is why none of them is
@@ -1849,6 +1871,7 @@ def _blend_at(pixels: bytes, at: number, r: number, g: number, b: number, a: num
 def _blend_coverage(
   pixels: bytes,
   at: number,
+  offset: number,
   count: number,
   coverage: list,
   r: number,
@@ -1857,7 +1880,7 @@ def _blend_coverage(
   a: number
 ) {
   iter var i = 0; i < count; i++ {
-    var amount = coverage[i]
+    var amount = coverage[offset + i]
 
     # Below this the contribution rounds away to nothing, and skipping
     # it saves the whole blend on the many empty pixels a shape's

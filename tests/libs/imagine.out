@@ -3,6 +3,7 @@
 ═══════════════════════════════════════════════════════
   [PASS] Color construction clamps, rounds, and reads every hex and named form
   [PASS] Color.parse() accepts every documented spelling and rejects the rest
+  [PASS] bad colours raise rather than being silently accepted
   [PASS] Color conversions, luminance and contrast agree with the colors module
   [PASS] Color mixing, compositing and adjustment behave as documented
   [PASS] Image construction validates its dimensions and starts transparent
@@ -42,5 +43,5 @@
   [PASS] the built-in stroke font measures, scales, wraps and draws without any font file
 
 ═══════════════════════════════════════════════════════
-  All 39 assertions passed.
+  All 40 assertions passed.
 ═══════════════════════════════════════════════════════
