@@ -1463,11 +1463,20 @@ fn convolve_buffer(
       let mut sums = [0f32; 4];
 
       if row_interior && x >= radius && x < width - radius {
+        // All four channels, unconditionally and by fixed index. The
+        // count is otherwise a runtime value, which is enough to stop
+        // the compiler unrolling this at all, and an unrolled four-wide
+        // accumulate is exactly the shape it can turn into vector
+        // instructions. Working out an alpha that `keep_alpha` then
+        // discards costs less than losing that.
         for &(shift, weight) in &flat {
           let tap = (base as isize + shift) as usize;
-          for channel in 0..channels {
-            sums[channel] += pixels[tap + channel] as f32 * weight;
-          }
+          let source = &pixels[tap..tap + 4];
+
+          sums[0] += source[0] as f32 * weight;
+          sums[1] += source[1] as f32 * weight;
+          sums[2] += source[2] as f32 * weight;
+          sums[3] += source[3] as f32 * weight;
         }
       } else {
         for &(dx, dy, weight) in &taps {
