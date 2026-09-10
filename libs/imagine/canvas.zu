@@ -720,18 +720,6 @@ class Canvas {
     var dirty_lo = 0
     var dirty_hi = -1
 
-    # Scratch for the crossings and spans of one scanline, sized once
-    # for the whole fill: a scanline meets each edge at most once, so
-    # `count` entries always suffice. Rebuilding these per sample is
-    # what used to dominate a long thin shape; a single thick diagonal
-    # crosses hundreds of scanlines, each sampled several times, and
-    # every one of those allocated a list for the crossings, another
-    # for the spans, and a two-element list per crossing on top.
-    var cross_x = [0] * count
-    var cross_dir = [0] * count
-    var span_lo = [0] * count
-    var span_hi = [0] * count
-
     iter var py = start_y; py < end_y; py++ {
       iter var i = dirty_lo; i <= dirty_hi; i++ {
         coverage[i] = 0
@@ -742,19 +730,19 @@ class Canvas {
 
       iter var s = 0; s < steps; s++ {
         var sample_y = py + (s + 0.5) / steps
-        var found = _crossings_into(flat, count, sample_y, cross_x, cross_dir)
+        var crossings = self._crossings(flat, count, sample_y)
 
-        if found == 0 {
+        if crossings.length() == 0 {
           continue
         }
 
-        var spans = _spans_into(cross_x, cross_dir, found, even_odd, span_lo, span_hi)
+        var spans = even_odd ?
+          self._spans_even_odd(crossings) :
+          self._spans_non_zero(crossings)
 
-        iter var k = 0; k < spans; k++ {
-          var from_x = span_lo[k]
-          var to_x = span_hi[k]
-          var left = from_x.max(start_x)
-          var right = to_x.min(end_x)
+        for span in spans {
+          var left = span[0].max(start_x)
+          var right = span[1].min(end_x)
 
           if right <= left {
             continue
@@ -771,7 +759,7 @@ class Canvas {
             dirty_hi = last
           }
 
-          self._accumulate(coverage, start_x, end_x, from_x, to_x, step_weight)
+          self._accumulate(coverage, start_x, end_x, span[0], span[1], step_weight)
         }
       }
 
@@ -793,6 +781,110 @@ class Canvas {
     }
 
     return self._clip
+  }
+
+  /**
+   * Every edge crossing of the horizontal line at `sample_y`, as
+   * `[x, direction]` pairs sorted by x. Direction is +1 for a
+   * downward edge and -1 for an upward one, which is what the non-zero
+   * rule counts.
+   *
+   * A vertex sitting exactly on the sample line would otherwise be
+   * counted twice; the half-open test (`y0 <= sample_y < y1`) is what
+   * prevents that, and is why the sample lines sit at pixel centres
+   * rather than on integers.
+   */
+  _crossings(flat, count, sample_y) {
+    var found = []
+
+    iter var i = 0; i < count; i++ {
+      var j = (i + 1) % count
+
+      var x0 = flat[i * 2]
+      var y0 = flat[i * 2 + 1]
+      var x1 = flat[j * 2]
+      var y1 = flat[j * 2 + 1]
+
+      if y0 == y1 {
+        continue
+      }
+
+      var direction = 1
+      var top = y0
+      var bottom = y1
+      var top_x = x0
+      var bottom_x = x1
+
+      if y0 > y1 {
+        direction = -1
+        top = y1
+        bottom = y0
+        top_x = x1
+        bottom_x = x0
+      }
+
+      if sample_y < top or sample_y >= bottom {
+        continue
+      }
+
+      var t = (sample_y - top) / (bottom - top)
+      found.append([top_x + (bottom_x - top_x) * t, direction])
+    }
+
+    # Insertion sort by x. A scanline crosses a handful of edges even
+    # for a complicated outline, and `list.sort()` takes no comparator,
+    # so this is both the simplest and the fastest option here.
+    iter var i = 1; i < found.length(); i++ {
+      var current = found[i]
+      var j = i - 1
+
+      while j >= 0 and found[j][0] > current[0] {
+        found[j + 1] = found[j]
+        j--
+      }
+
+      found[j + 1] = current
+    }
+
+    return found
+  }
+
+  /**
+   * Spans under the even-odd rule: fill between the first and second
+   * crossing, the third and fourth, and so on.
+   */
+  _spans_even_odd(crossings) {
+    var spans = []
+
+    iter var i = 0; i + 1 < crossings.length(); i += 2 {
+      spans.append([crossings[i][0], crossings[i + 1][0]])
+    }
+
+    return spans
+  }
+
+  /**
+   * Spans under the non-zero winding rule: a span is filled wherever
+   * the running sum of edge directions is not zero.
+   */
+  _spans_non_zero(crossings) {
+    var spans = []
+    var winding = 0
+    var span_start = 0
+
+    for crossing in crossings {
+      var was_inside = winding != 0
+      winding += crossing[1]
+      var is_inside = winding != 0
+
+      if !was_inside and is_inside {
+        span_start = crossing[0]
+      } else if was_inside and !is_inside {
+        spans.append([span_start, crossing[0]])
+      }
+    }
+
+    return spans
   }
 
   /**
@@ -1998,164 +2090,13 @@ def _fill_buffer(pixels: bytes, r: number, g: number, b: number, a: number) {
  * Copies one pixel between two buffers.
  */
 /**
- * Every edge crossing of the horizontal line at `sample_y`, written
- * into `xs`/`dirs` sorted by x; returns how many there were.
- *
- * Direction is +1 for a downward edge and -1 for an upward one, which
- * is what the non-zero rule counts.
- *
- * A vertex sitting exactly on the sample line would otherwise be
- * counted twice; the half-open test (`y0 <= sample_y < y1`) is what
- * prevents that, and is why the sample lines sit at pixel centres
- * rather than on integers.
- *
- * Fills buffers the caller owns instead of returning a fresh list, and
- * keeps each crossing's two halves in parallel arrays rather than
- * pairing them into a small list apiece. Both are there to keep this
- * allocation-free: it runs once per scanline per sample, which for a
- * shape spanning the surface is thousands of times per fill.
- */
-def _crossings_into(flat: list, count: number, sample_y: number, xs: list, dirs: list) {
-  var found = 0
-
-  iter var i = 0; i < count; i++ {
-    var j = (i + 1) % count
-
-    var x0 = flat[i * 2]
-    var y0 = flat[i * 2 + 1]
-    var x1 = flat[j * 2]
-    var y1 = flat[j * 2 + 1]
-
-    if y0 == y1 {
-      continue
-    }
-
-    var direction = 1
-    var top = y0
-    var bottom = y1
-    var top_x = x0
-    var bottom_x = x1
-
-    if y0 > y1 {
-      direction = -1
-      top = y1
-      bottom = y0
-      top_x = x1
-      bottom_x = x0
-    }
-
-    if sample_y < top or sample_y >= bottom {
-      continue
-    }
-
-    var t = (sample_y - top) / (bottom - top)
-
-    xs[found] = top_x + (bottom_x - top_x) * t
-    dirs[found] = direction
-    found++
-  }
-
-  # Insertion sort by x. A scanline crosses a handful of edges even for
-  # a complicated outline, and `list.sort()` takes no comparator, so
-  # this is both the simplest and the fastest option here.
-  iter var i = 1; i < found; i++ {
-    var current_x = xs[i]
-    var current_dir = dirs[i]
-    var j = i - 1
-
-    while j >= 0 and xs[j] > current_x {
-      xs[j + 1] = xs[j]
-      dirs[j + 1] = dirs[j]
-      j--
-    }
-
-    xs[j + 1] = current_x
-    dirs[j + 1] = current_dir
-  }
-
-  return found
-}
-
-
-/**
- * Turns sorted crossings into inside spans under the chosen fill rule,
- * writing them into `lo`/`hi` and returning how many there are.
- *
- * Under the even-odd rule a span runs between the first and second
- * crossing, the third and fourth, and so on. Under the non-zero
- * winding rule a span is filled wherever the running sum of edge
- * directions is not zero.
- */
-def _spans_into(xs: list, dirs: list, found: number, even_odd: bool, lo: list, hi: list) {
-  var spans = 0
-
-  if even_odd {
-    iter var i = 0; i + 1 < found; i += 2 {
-      lo[spans] = xs[i]
-      hi[spans] = xs[i + 1]
-      spans++
-    }
-
-    return spans
-  }
-
-  var winding = 0
-  var span_start = 0
-
-  iter var i = 0; i < found; i++ {
-    var was_inside = winding != 0
-    winding += dirs[i]
-
-    if !was_inside and winding != 0 {
-      span_start = xs[i]
-    } else if was_inside and winding == 0 {
-      lo[spans] = span_start
-      hi[spans] = xs[i]
-      spans++
-    }
-  }
-
-  return spans
-}
-
-
-/**
- * Writes one ramp entry into the buffer, replacing what was there.
- *
- * Spelled out rather than calling `_copy_pixel`, because at one call
- * per pixel the call itself costs several times the four writes it is
- * wrapping: the JIT's inliner only takes leaf functions whose every
- * argument is a proven number, and a `bytes` buffer is not one.
- */
-def _write_ramp(buffer: bytes, at: number, ramp: bytes, from: number) {
-  buffer[at] = ramp[from]
-  buffer[at + 1] = ramp[from + 1]
-  buffer[at + 2] = ramp[from + 2]
-  buffer[at + 3] = ramp[from + 3]
-}
-
-
-/**
- * The ramp index for a position along the gradient, clamped to the
- * ends so anything before or after the vector takes the nearest stop.
- */
-def _ramp_step(t: number) {
-  var step = (t * 255).round()
-
-  if step < 0 {
-    return 0
-  }
-
-  if step > 255 {
-    return 255
-  }
-
-  return step
-}
-
-
-/**
  * Paints a linear gradient over the given area.
+ *
+ * The ramp lookup and the four writes are spelled out in the loop
+ * rather than factored into helpers. At one call per pixel the call
+ * itself costs several times the work it wraps, because the JIT's
+ * inliner only takes leaf functions whose every argument is a proven
+ * number and a `bytes` buffer is not one.
  *
  * A zero-length gradient vector leaves every pixel at the far end of
  * the ramp, which is what the projection converges to.
@@ -2182,14 +2123,23 @@ def _paint_linear(
     var oy = py + 0.5 - y1
 
     iter var px = left; px < right; px++ {
-      var from = flat ?
-        1020 :
-        _ramp_step(((px + 0.5 - x1) * dx + oy * dy) / length_squared) * 4
+      var step = flat ? 255 : (((px + 0.5 - x1) * dx + oy * dy) / length_squared * 255).round()
+
+      if step < 0 {
+        step = 0
+      } else if step > 255 {
+        step = 255
+      }
+
+      var from = step * 4
 
       var at = row + px * 4
 
       if replace {
-        _write_ramp(buffer, at, ramp, from)
+        buffer[at] = ramp[from]
+        buffer[at + 1] = ramp[from + 1]
+        buffer[at + 2] = ramp[from + 2]
+        buffer[at + 3] = ramp[from + 3]
         continue
       }
 
@@ -2223,11 +2173,22 @@ def _paint_radial(
 
     iter var px = left; px < right; px++ {
       var ox = px + 0.5 - cx
-      var from = _ramp_step((ox * ox + oy2).sqrt() / radius) * 4
+      var step = ((ox * ox + oy2).sqrt() / radius * 255).round()
+
+      if step < 0 {
+        step = 0
+      } else if step > 255 {
+        step = 255
+      }
+
+      var from = step * 4
       var at = row + px * 4
 
       if replace {
-        _write_ramp(buffer, at, ramp, from)
+        buffer[at] = ramp[from]
+        buffer[at + 1] = ramp[from + 1]
+        buffer[at + 2] = ramp[from + 2]
+        buffer[at + 3] = ramp[from + 3]
         continue
       }
 
