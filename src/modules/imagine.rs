@@ -179,13 +179,6 @@ fn option_number(options: Value, key: &str, fallback: f64) -> f64 {
   }
 }
 
-fn option_bool(options: Value, key: &str, fallback: bool) -> bool {
-  match option(options, key) {
-    Some(v) if v.is_bool() => v.as_bool(),
-    _ => fallback,
-  }
-}
-
 fn option_string(options: Value, key: &str) -> Option<String> {
   match option(options, key) {
     Some(v) if v.is_string() => Some(v.as_str().to_string()),
