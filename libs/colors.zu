@@ -157,9 +157,7 @@ def text(value, color, bg) {
  * @param int b
  * @returns number
  */
-def rgb_to_ansi256(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_ansi256(r: int, g: int, b: int) {
 
   # From https://github.com/Qix-/color-convert/blob/3f0e0d4e92e235796ccb17f6e85c72094a651f49/conversions.js
   if r == g and g == b {
@@ -179,9 +177,7 @@ def rgb_to_ansi256(r, g, b) {
  * @param int code
  * @returns number
  */
-def ansi256_to_ansi(code) {
-  if !is_int(code)
-    raise TypeError('integer expected')
+def ansi256_to_ansi(code: int) {
 
   if code < 8 return 30 + code
   if code < 16 return 90 + (code - 8)
@@ -224,9 +220,7 @@ def ansi256_to_ansi(code) {
  * @returns list `[r, g, b, a]`
  * @throws ValueError When _h_ is not a valid hexadecimal color.
  */
-def hex_to_rgb(h) {
-  if !is_string(h)
-    raise TypeError('string expected')
+def hex_to_rgb(h: string) {
 
   var s = h
   if s.length() > 0 and s[0] == '#' s = s[1,]
@@ -266,9 +260,7 @@ def hex_to_rgb(h) {
  * @param string color
  * @returns number
  */
-def hex_to_ansi256(color) {
-  if !is_string(color)
-    raise TypeError('string expected')
+def hex_to_ansi256(color: string) {
 
   var v = hex_to_rgb(color)
   return rgb_to_ansi256(v[0], v[1], v[2])
@@ -282,9 +274,7 @@ def hex_to_ansi256(color) {
  * @param string color
  * @returns number
  */
-def hex_to_ansi(color) {
-  if !is_string(color)
-    raise TypeError('string expected')
+def hex_to_ansi(color: string) {
 
   return ansi256_to_ansi(hex_to_ansi256(color))
 }
@@ -299,9 +289,7 @@ def hex_to_ansi(color) {
  * @param string color
  * @returns number
  */
-def hex(color) {
-  if !is_string(color)
-    raise TypeError('string expected')
+def hex(color: string) {
 
   if color[0] == '#' color = color[1,]
   return hex_to_ansi(color)
@@ -315,9 +303,7 @@ def hex(color) {
  * @param number b
  * @returns number
  */
-def rgb(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb(r: int, g: int, b: int) {
   return ansi256_to_ansi(rgb_to_ansi256(r, g, b))
 }
 
@@ -329,9 +315,7 @@ def rgb(r, g, b) {
  * @param number l
  * @returns number
  */
-def hsl(h, s, l) {
-  if !is_number(h) or !is_number(s) or !is_number(l)
-    raise TypeError('number expected')
+def hsl(h: number, s: number, l: number) {
 
   var rgb = hsl_to_rgb(h, s, l)
 
@@ -346,9 +330,7 @@ def hsl(h, s, l) {
  * @param number v
  * @returns number
  */
-def hsv(h, s, v) {
-  if !is_number(h) or !is_number(s) or !is_number(v)
-    raise TypeError('number expected')
+def hsv(h: number, s: number, v: number) {
 
   var rgb = hsv_to_rgb(h, s, v)
 
@@ -363,9 +345,7 @@ def hsv(h, s, v) {
  * @param number b
  * @returns number
  */
-def hwb(h, w, b) {
-  if !is_number(h) or !is_number(w) or !is_number(b)
-    raise TypeError('number expected')
+def hwb(h: number, w: number, b: number) {
 
   var rgb = hwb_to_rgb(h, w, b)
 
@@ -382,9 +362,7 @@ def hwb(h, w, b) {
  * @param number k
  * @returns number
  */
-def cmyk(c, m, y, k) {
-  if !is_number(c) or !is_number(m) or !is_number(y) or !is_number(k)
-    raise TypeError('number expected')
+def cmyk(c: number, m: number, y: number, k: number) {
 
   var rgb = cmyk_to_rgb(c, m, y, k)
 
@@ -399,9 +377,7 @@ def cmyk(c, m, y, k) {
  * @param number z
  * @returns number
  */
-def xyz(x, y, z) {
-  if !is_number(x) or !is_number(y) or !is_number(z)
-    raise TypeError('number expected')
+def xyz(x: number, y: number, z: number) {
 
   var rgb = xyz_to_rgb(x, y, z)
 
@@ -422,9 +398,7 @@ def xyz(x, y, z) {
  * @param ?int a
  * @returns string
  */
-def rgb_to_hex(r, g, b, a) {
-  if !is_int(r) or !is_int(g) or !is_int(b) or (a != nil and !is_int(a))
-    raise TypeError('integer expected')
+def rgb_to_hex(r: int, g: int, b: int, a: ?int) {
 
   var r_str = r.hex().lpad(2, '0')
   var g_str = g.hex().lpad(2, '0')
@@ -442,9 +416,7 @@ def rgb_to_hex(r, g, b, a) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_hsl(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_hsl(r: int, g: int, b: int) {
 
   r /= 255
   g /= 255
@@ -479,9 +451,7 @@ def rgb_to_hsl(r, g, b) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_hsv(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_hsv(r: int, g: int, b: int) {
 
   r /= 255
   g /= 255
@@ -512,9 +482,7 @@ def rgb_to_hsv(r, g, b) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_hwb(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_hwb(r: int, g: int, b: int) {
 
   var h = rgb_to_hsl(r, g, b)[0]
   var w = 1 / 255 * r.min(g.min(b))
@@ -530,9 +498,7 @@ def rgb_to_hwb(r, g, b) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_cmyk(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_cmyk(r: int, g: int, b: int) {
 
   r /= 255
   g /= 255
@@ -567,9 +533,7 @@ def rgb_to_cmyk(r, g, b) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_xyz(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_xyz(r: int, g: int, b: int) {
 
   r /= 255
   g /= 255
@@ -595,9 +559,7 @@ def rgb_to_xyz(r, g, b) {
  * @param int b
  * @returns list[float]
  */
-def rgb_to_lab(r, g, b) {
-  if !is_int(r) or !is_int(g) or !is_int(b)
-    raise TypeError('integer expected')
+def rgb_to_lab(r: int, g: int, b: int) {
 
   var xyz = rgb_to_xyz(r, g, b)
 
@@ -627,9 +589,7 @@ def rgb_to_lab(r, g, b) {
  * @param number l
  * @returns list[float]
  */
-def hsl_to_rgb(h, s, l) {
-  if !is_number(h) or !is_number(s) or !is_number(l)
-    raise TypeError('number expected')
+def hsl_to_rgb(h: number, s: number, l: number) {
 
   # Hue is circular, so it wraps rather than being rejected; s/l
   # (each 0-100) aren't, so those still raise on an out-of-range value.
@@ -696,9 +656,7 @@ def hsl_to_rgb(h, s, l) {
  * @param number l
  * @returns list[float]
  */
-def hsl_to_hsv(h, s, l) {
-  if !is_number(h) or !is_number(s) or !is_number(l)
-    raise TypeError('number expected')
+def hsl_to_hsv(h: number, s: number, l: number) {
 
   s /= 100
   l /= 100
@@ -716,9 +674,7 @@ def hsl_to_hsv(h, s, l) {
  * @param number v
  * @returns list[float]
  */
-def hsv_to_rgb(h, s, v) {
-  if !is_number(h) or !is_number(s) or !is_number(v)
-    raise TypeError('number expected')
+def hsv_to_rgb(h: number, s: number, v: number) {
 
   h = h % 360
   if h < 0 h += 360
@@ -754,9 +710,7 @@ def hsv_to_rgb(h, s, v) {
  * @param number v
  * @returns list[float]
  */
-def hsv_to_hsl(h, s, v) {
-  if !is_number(h) or !is_number(s) or !is_number(v)
-    raise TypeError('number expected')
+def hsv_to_hsl(h: number, s: number, v: number) {
 
   s /= 100
   v /= 100
@@ -786,9 +740,7 @@ def hsv_to_hsl(h, s, v) {
  * @param number b
  * @returns list[float]
  */
-def hwb_to_rgb(h, w, b) {
-  if !is_number(h) or !is_number(w) or !is_number(b)
-    raise TypeError('number expected')
+def hwb_to_rgb(h: number, w: number, b: number) {
 
   h /= 360
   w /= 100
@@ -833,9 +785,7 @@ def hwb_to_rgb(h, w, b) {
  * @param number k
  * @returns list[float]
  */
-def cmyk_to_rgb(c, m, y, k) {
-  if !is_number(c) or !is_number(m) or !is_number(y) or !is_number(k)
-    raise TypeError('number expected')
+def cmyk_to_rgb(c: number, m: number, y: number, k: number) {
 
   c /= 100
   m /= 100
@@ -858,9 +808,7 @@ def cmyk_to_rgb(c, m, y, k) {
  * @param number z
  * @returns list[float]
  */
-def xyz_to_rgb(x, y, z) {
-  if !is_number(x) or !is_number(y) or !is_number(z)
-    raise TypeError('number expected')
+def xyz_to_rgb(x: number, y: number, z: number) {
 
   x /= 100
   y /= 100
@@ -901,9 +849,7 @@ def xyz_to_rgb(x, y, z) {
  * @param number b
  * @returns list[float]
  */
-def lab_to_rgb(l, a, b) {
-  if !is_number(l) or !is_number(a) or !is_number(b)
-    raise TypeError('number expected')
+def lab_to_rgb(l: number, a: number, b: number) {
 
   var y = (l + 16) / 116
   var x = a / 500 + y
@@ -943,9 +889,7 @@ def _alpha_byte(a) {
  * @param number amount
  * @returns string
  */
-def lighten(hex, amount) {
-  if !is_string(hex) raise TypeError('string expected')
-  if !is_number(amount) raise TypeError('number expected')
+def lighten(hex: string, amount: number) {
 
   var rgb = hex_to_rgb(hex)
   var hsl = rgb_to_hsl(rgb[0], rgb[1], rgb[2])
@@ -962,8 +906,7 @@ def lighten(hex, amount) {
  * @param number amount
  * @returns string
  */
-def darken(hex, amount) {
-  if !is_number(amount) raise TypeError('number expected')
+def darken(hex: string, amount: number) {
   return lighten(hex, -amount)
 }
 
@@ -975,9 +918,7 @@ def darken(hex, amount) {
  * @param number amount
  * @returns string
  */
-def saturate(hex, amount) {
-  if !is_string(hex) raise TypeError('string expected')
-  if !is_number(amount) raise TypeError('number expected')
+def saturate(hex: string, amount: number) {
 
   var rgb = hex_to_rgb(hex)
   var hsl = rgb_to_hsl(rgb[0], rgb[1], rgb[2])
@@ -995,8 +936,7 @@ def saturate(hex, amount) {
  * @param number amount
  * @returns string
  */
-def desaturate(hex, amount) {
-  if !is_number(amount) raise TypeError('number expected')
+def desaturate(hex: string, amount: number) {
   return saturate(hex, -amount)
 }
 
@@ -1019,8 +959,7 @@ def grayscale(hex) {
  * @param string hex
  * @returns string
  */
-def invert(hex) {
-  if !is_string(hex) raise TypeError('string expected')
+def invert(hex: string) {
 
   var rgb = hex_to_rgb(hex)
   return rgb_to_hex(255 - rgb[0], 255 - rgb[1], 255 - rgb[2], _alpha_byte(rgb[3]))
@@ -1036,10 +975,10 @@ def invert(hex) {
  *    Default: 0.5 (the midpoint).
  * @returns string
  */
-def mix(hex_a, hex_b, weight) {
-  if !is_string(hex_a) or !is_string(hex_b) raise TypeError('string expected')
-  if weight == nil weight = 0.5
-  if !is_number(weight) raise TypeError('number expected')
+def mix(hex_a: string, hex_b: string, weight: ?number) {
+  if weight == nil {
+    weight = 0.5
+  }
 
   var c1 = hex_to_rgb(hex_a)
   var c2 = hex_to_rgb(hex_b)
@@ -1063,7 +1002,30 @@ def mix(hex_a, hex_b, weight) {
 # more precise CIE Y-row constants; the two are extremely close but
 # not identical, and a function claiming WCAG compliance should match
 # the spec's own formula exactly.
-def _relative_luminance(r, g, b) {
+/**
+ * Returns the relative luminance of an RGB color, from 0 (black) to
+ * 1 (white), as defined by WCAG 2.x.
+ *
+ * This is perceived brightness in linear light, not the `l` of HSL:
+ * pure green is far brighter to the eye than pure blue even though
+ * HSL gives both a lightness of 0.5. It is what `contrast_ratio()` is
+ * built on, and what to compare against a threshold when deciding
+ * whether light or dark text belongs on a background.
+ *
+ * ```zuri-repl
+ * %> import colors
+ * %> colors.relative_luminance(255, 255, 255)
+ * 1
+ * %> colors.relative_luminance(0, 255, 0)
+ * 0.7152
+ * ```
+ *
+ * @param int r
+ * @param int g
+ * @param int b
+ * @returns number
+ */
+def relative_luminance(r, g, b) {
   r /= 255
   g /= 255
   b /= 255
@@ -1086,15 +1048,13 @@ def _relative_luminance(r, g, b) {
  * @param string hex_b
  * @returns number
  */
-def contrast_ratio(hex_a, hex_b) {
-  if !is_string(hex_a) or !is_string(hex_b)
-    raise TypeError('string expected')
+def contrast_ratio(hex_a: string, hex_b: string) {
 
   var c1 = hex_to_rgb(hex_a)
   var c2 = hex_to_rgb(hex_b)
 
-  var l1 = _relative_luminance(c1[0], c1[1], c1[2])
-  var l2 = _relative_luminance(c2[0], c2[1], c2[2])
+  var l1 = relative_luminance(c1[0], c1[1], c1[2])
+  var l2 = relative_luminance(c2[0], c2[1], c2[2])
 
   var lighter = l1.max(l2)
   var darker = l1.min(l2)
@@ -1102,3 +1062,128 @@ def contrast_ratio(hex_a, hex_b) {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
+
+/**
+ * The CSS Color Level 4 named colors, mapped to their hexadecimal
+ * values.
+ *
+ * Values carry no leading `#`, matching every other function in this
+ * module that produces a hexadecimal color. Both the American and
+ * British spellings of the greys are present, as are `rebeccapurple`
+ * and `transparent`, which is the only entry with an alpha component
+ * and therefore the only 8-digit one.
+ *
+ * Keys are lower case with no separators; use [[colors.named]] rather
+ * than indexing this directly if the name might arrive in mixed case
+ * or spaced out.
+ *
+ * @type dict
+ */
+var NAMED = {
+  transparent: '00000000',
+  aliceblue: 'f0f8ff', antiquewhite: 'faebd7', aqua: '00ffff',
+  aquamarine: '7fffd4', azure: 'f0ffff', beige: 'f5f5dc',
+  bisque: 'ffe4c4', black: '000000', blanchedalmond: 'ffebcd',
+  blue: '0000ff', blueviolet: '8a2be2', brown: 'a52a2a',
+  burlywood: 'deb887', cadetblue: '5f9ea0', chartreuse: '7fff00',
+  chocolate: 'd2691e', coral: 'ff7f50', cornflowerblue: '6495ed',
+  cornsilk: 'fff8dc', crimson: 'dc143c', cyan: '00ffff',
+  darkblue: '00008b', darkcyan: '008b8b', darkgoldenrod: 'b8860b',
+  darkgray: 'a9a9a9', darkgrey: 'a9a9a9', darkgreen: '006400',
+  darkkhaki: 'bdb76b', darkmagenta: '8b008b', darkolivegreen: '556b2f',
+  darkorange: 'ff8c00', darkorchid: '9932cc', darkred: '8b0000',
+  darksalmon: 'e9967a', darkseagreen: '8fbc8f', darkslateblue: '483d8b',
+  darkslategray: '2f4f4f', darkslategrey: '2f4f4f', darkturquoise: '00ced1',
+  darkviolet: '9400d3', deeppink: 'ff1493', deepskyblue: '00bfff',
+  dimgray: '696969', dimgrey: '696969', dodgerblue: '1e90ff',
+  firebrick: 'b22222', floralwhite: 'fffaf0', forestgreen: '228b22',
+  fuchsia: 'ff00ff', gainsboro: 'dcdcdc', ghostwhite: 'f8f8ff',
+  gold: 'ffd700', goldenrod: 'daa520', gray: '808080',
+  grey: '808080', green: '008000', greenyellow: 'adff2f',
+  honeydew: 'f0fff0', hotpink: 'ff69b4', indianred: 'cd5c5c',
+  indigo: '4b0082', ivory: 'fffff0', khaki: 'f0e68c',
+  lavender: 'e6e6fa', lavenderblush: 'fff0f5', lawngreen: '7cfc00',
+  lemonchiffon: 'fffacd', lightblue: 'add8e6', lightcoral: 'f08080',
+  lightcyan: 'e0ffff', lightgoldenrodyellow: 'fafad2', lightgray: 'd3d3d3',
+  lightgrey: 'd3d3d3', lightgreen: '90ee90', lightpink: 'ffb6c1',
+  lightsalmon: 'ffa07a', lightseagreen: '20b2aa', lightskyblue: '87cefa',
+  lightslategray: '778899', lightslategrey: '778899', lightsteelblue: 'b0c4de',
+  lightyellow: 'ffffe0', lime: '00ff00', limegreen: '32cd32',
+  linen: 'faf0e6', magenta: 'ff00ff', maroon: '800000',
+  mediumaquamarine: '66cdaa', mediumblue: '0000cd', mediumorchid: 'ba55d3',
+  mediumpurple: '9370db', mediumseagreen: '3cb371', mediumslateblue: '7b68ee',
+  mediumspringgreen: '00fa9a', mediumturquoise: '48d1cc', mediumvioletred: 'c71585',
+  midnightblue: '191970', mintcream: 'f5fffa', mistyrose: 'ffe4e1',
+  moccasin: 'ffe4b5', navajowhite: 'ffdead', navy: '000080',
+  oldlace: 'fdf5e6', olive: '808000', olivedrab: '6b8e23',
+  orange: 'ffa500', orangered: 'ff4500', orchid: 'da70d6',
+  palegoldenrod: 'eee8aa', palegreen: '98fb98', paleturquoise: 'afeeee',
+  palevioletred: 'db7093', papayawhip: 'ffefd5', peachpuff: 'ffdab9',
+  peru: 'cd853f', pink: 'ffc0cb', plum: 'dda0dd',
+  powderblue: 'b0e0e6', purple: '800080', rebeccapurple: '663399',
+  red: 'ff0000', rosybrown: 'bc8f8f', royalblue: '4169e1',
+  saddlebrown: '8b4513', salmon: 'fa8072', sandybrown: 'f4a460',
+  seagreen: '2e8b57', seashell: 'fff5ee', sienna: 'a0522d',
+  silver: 'c0c0c0', skyblue: '87ceeb', slateblue: '6a5acd',
+  slategray: '708090', slategrey: '708090', snow: 'fffafa',
+  springgreen: '00ff7f', steelblue: '4682b4', tan: 'd2b48c',
+  teal: '008080', thistle: 'd8bfd8', tomato: 'ff6347',
+  turquoise: '40e0d0', violet: 'ee82ee', wheat: 'f5deb3',
+  white: 'ffffff', whitesmoke: 'f5f5f5', yellow: 'ffff00',
+  yellowgreen: '9acd32',
+}
+
+
+/**
+ * Returns the hexadecimal value of a CSS named color.
+ *
+ * Matching ignores case, whitespace, hyphens and underscores, so
+ * `'Tomato'`, `'tomato'` and `' TOMATO '` all resolve, as do both
+ * `'darkseagreen'` and `'Dark Sea Green'`.
+ *
+ * The result carries no leading `#`, the same as [[colors.rgb_to_hex]]
+ * and [[colors.lighten]], so it can be handed straight to any function
+ * here that takes a hexadecimal color. Every name returns 6 digits
+ * except `transparent`, which returns the 8-digit `'00000000'`.
+ *
+ * ```zuri-repl
+ * %> import colors
+ * %> colors.named('rebeccapurple')
+ * '663399'
+ * %> colors.named('Dark Sea Green')
+ * '8fbc8f'
+ * ```
+ *
+ * @note Spaces inside the name are ignored, so both the CSS spelling
+ *    and the spaced-out reading of a name resolve to the same color.
+ *
+ * @param string name
+ * @returns string
+ * @throws ValueError When _name_ is not a CSS color name.
+ */
+def named(name: string) {
+  var key = name.trim().lower().replace('/[ _-]/', '')
+  var found = NAMED.get(key)
+
+  if found == nil {
+    raise ValueError("'${name}' is not a CSS color name")
+  }
+
+  return found
+}
+
+
+/**
+ * Returns `true` if _name_ is a CSS color name that [[colors.named]]
+ * would resolve, and `false` otherwise.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_named(name) {
+  if !is_string(name) {
+    return false
+  }
+
+  return NAMED.contains(name.trim().lower().replace('/[ _-]/', ''))
+}

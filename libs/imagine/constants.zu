@@ -1,0 +1,429 @@
+#!-- part of the imagine module
+
+# Every constant here is a plain string whose value is the name the
+# module understands. That means `img.resize(w, h, LANCZOS)` and
+# `img.resize(w, h, 'lanczos')` are the same call: the constant gives
+# you completion and a typo that fails at import rather than at run
+# time, and the bare string keeps a value read from a config file or a
+# query parameter usable without a lookup table.
+
+
+# ---------------------------------------------------------------------
+# Resampling filters
+# ---------------------------------------------------------------------
+
+/**
+ * Nearest-neighbour. Picks the single closest source pixel and copies
+ * it, so it is the fastest filter and the only one that keeps hard
+ * edges perfectly hard.
+ *
+ * Right for pixel art, QR codes, and any image where a blurred edge
+ * would be wrong. Wrong for photographs, where it produces visible
+ * stair-stepping.
+ *
+ * @type string
+ */
+var NEAREST = 'nearest'
+
+/**
+ * Bilinear. Averages the four surrounding pixels.
+ *
+ * A good default when speed matters more than sharpness. Enlarging
+ * with it looks soft; shrinking by more than about half loses detail,
+ * because it samples too few source pixels to represent what it
+ * discards.
+ *
+ * @type string
+ */
+var BILINEAR = 'bilinear'
+
+/**
+ * Bicubic (Catmull-Rom). Fits a curve through sixteen surrounding
+ * pixels.
+ *
+ * Noticeably sharper than bilinear when enlarging, at a few times the
+ * cost. A reasonable default for photographs.
+ *
+ * @type string
+ */
+var BICUBIC = 'bicubic'
+
+/**
+ * Gaussian. Weights the neighbourhood by a bell curve.
+ *
+ * Softer than bicubic on purpose. Useful when the result will be
+ * sharpened afterwards, or when resampling noisy input where a sharper
+ * filter would emphasise the noise.
+ *
+ * @type string
+ */
+var GAUSSIAN = 'gaussian'
+
+/**
+ * Lanczos with a 3-lobe window. The highest quality filter here and
+ * the slowest.
+ *
+ * The usual choice for thumbnails, where the image is being shrunk a
+ * long way and every remaining pixel matters. It can produce faint
+ * ringing next to very high-contrast edges, which is the price of its
+ * sharpness.
+ *
+ * @type string
+ */
+var LANCZOS = 'lanczos'
+
+
+# ---------------------------------------------------------------------
+# Blend modes
+# ---------------------------------------------------------------------
+
+/**
+ * Ordinary alpha compositing: the source is painted over the
+ * destination according to its alpha. This is the default for every
+ * drawing and compositing operation.
+ *
+ * @type string
+ */
+var BLEND_NORMAL = 'normal'
+
+/**
+ * Multiplies the two colours. The result is never lighter than either
+ * input, so white leaves the backdrop alone and black forces black.
+ * The usual way to paint a shadow.
+ *
+ * @type string
+ */
+var BLEND_MULTIPLY = 'multiply'
+
+/**
+ * The inverse of multiply. The result is never darker than either
+ * input, so black leaves the backdrop alone and white forces white.
+ * The usual way to paint a glow.
+ *
+ * @type string
+ */
+var BLEND_SCREEN = 'screen'
+
+/**
+ * Multiply where the backdrop is dark, screen where it is light.
+ * Increases contrast while keeping highlights and shadows.
+ *
+ * @type string
+ */
+var BLEND_OVERLAY = 'overlay'
+
+/**
+ * Keeps whichever channel is darker.
+ *
+ * @type string
+ */
+var BLEND_DARKEN = 'darken'
+
+/**
+ * Keeps whichever channel is lighter.
+ *
+ * @type string
+ */
+var BLEND_LIGHTEN = 'lighten'
+
+/**
+ * Brightens the backdrop toward the source. Strong effect; saturates
+ * quickly.
+ *
+ * @type string
+ */
+var BLEND_COLOR_DODGE = 'color_dodge'
+
+/**
+ * Darkens the backdrop toward the source. The counterpart of dodge.
+ *
+ * @type string
+ */
+var BLEND_COLOR_BURN = 'color_burn'
+
+/**
+ * Overlay with the roles of source and backdrop swapped.
+ *
+ * @type string
+ */
+var BLEND_HARD_LIGHT = 'hard_light'
+
+/**
+ * A gentler hard light, as if the source were a diffuse spotlight.
+ *
+ * @type string
+ */
+var BLEND_SOFT_LIGHT = 'soft_light'
+
+/**
+ * The absolute difference between the two colours. Identical images
+ * blended this way come out black, which makes it a quick visual diff.
+ *
+ * @type string
+ */
+var BLEND_DIFFERENCE = 'difference'
+
+/**
+ * Like difference, but lower contrast in the midtones.
+ *
+ * @type string
+ */
+var BLEND_EXCLUSION = 'exclusion'
+
+/**
+ * Adds the channels, clamped at white. Also called linear dodge.
+ *
+ * @type string
+ */
+var BLEND_ADD = 'add'
+
+/**
+ * Subtracts the source from the backdrop, clamped at black.
+ *
+ * @type string
+ */
+var BLEND_SUBTRACT = 'subtract'
+
+
+# ---------------------------------------------------------------------
+# Convolution edge handling
+# ---------------------------------------------------------------------
+
+/**
+ * Pixels off the edge take the value of the nearest edge pixel. The
+ * default, and what keeps a blur from darkening the border.
+ *
+ * @type string
+ */
+var EDGE_CLAMP = 'clamp'
+
+/**
+ * Pixels off the edge are treated as transparent black. Correct when
+ * the image really does end there and you want the blur to fade out.
+ *
+ * @type string
+ */
+var EDGE_TRANSPARENT = 'transparent'
+
+/**
+ * Pixels off the edge wrap to the opposite side. For images meant to
+ * tile seamlessly.
+ *
+ * @type string
+ */
+var EDGE_WRAP = 'wrap'
+
+
+# ---------------------------------------------------------------------
+# Image formats
+# ---------------------------------------------------------------------
+
+/**
+ * PNG. Lossless, alpha, universally supported. The right default for
+ * anything with sharp edges, text or transparency.
+ *
+ * @type string
+ */
+var PNG = 'png'
+
+/**
+ * JPEG. Lossy, no alpha. The right choice for photographs, and the
+ * wrong one for anything with hard edges. Transparent pixels are
+ * flattened against the `background` option on export, white unless
+ * you say otherwise.
+ *
+ * @type string
+ */
+var JPEG = 'jpeg'
+
+/**
+ * GIF. At most 256 colours per frame, one-bit transparency, and the
+ * only animated format this module can write.
+ *
+ * @type string
+ */
+var GIF = 'gif'
+
+/**
+ * BMP. Uncompressed and enormous, but readable by anything.
+ *
+ * @type string
+ */
+var BMP = 'bmp'
+
+/**
+ * TIFF. Lossless, alpha, common in printing and scanning workflows.
+ *
+ * @type string
+ */
+var TIFF = 'tiff'
+
+/**
+ * Truevision TGA. Lossless with alpha, still common in game asset
+ * pipelines.
+ *
+ * @type string
+ */
+var TGA = 'tga'
+
+/**
+ * WebP. Smaller than PNG and JPEG at comparable quality, with alpha.
+ * This build reads both still and animated WebP, and writes stills.
+ *
+ * @type string
+ */
+var WEBP = 'webp'
+
+/**
+ * AVIF. The smallest files of anything here at a given quality.
+ *
+ * Write only. Opening an AVIF raises `DecodeError`, and
+ * [[imagine.capabilities]] lists AVIF under `encode` but not
+ * `decode`, so a program can check rather than discover it at run
+ * time.
+ *
+ * @type string
+ */
+var AVIF = 'avif'
+
+/**
+ * QOI, the Quite OK Image format. Lossless with alpha, encodes and
+ * decodes several times faster than PNG at a modest size penalty.
+ * Good for caches and intermediate files.
+ *
+ * @type string
+ */
+var QOI = 'qoi'
+
+/**
+ * Windows ICO. An icon container; a single image is written as one
+ * entry.
+ *
+ * @type string
+ */
+var ICO = 'ico'
+
+/**
+ * Netpbm (PBM, PGM, PPM). Trivially simple and trivially large.
+ *
+ * @type string
+ */
+var PNM = 'pnm'
+
+/**
+ * Wireless Bitmap. One bit per pixel, no compression, no alpha.
+ *
+ * Writing thresholds each pixel on its perceived brightness, so a
+ * colour image comes out as a black and white silhouette. Reading
+ * gives opaque black and white pixels.
+ *
+ * @type string
+ */
+var WBMP = 'wbmp'
+
+
+# ---------------------------------------------------------------------
+# Anchors
+# ---------------------------------------------------------------------
+
+/**
+ * Where a smaller image or a piece of text sits inside a larger box,
+ * used by `Image.cover()`, `Image.contain()` and `Image.place()`.
+ *
+ * @type string
+ */
+var TOP_LEFT = 'top_left'
+
+/**
+ * @type string
+ */
+var TOP = 'top'
+
+/**
+ * @type string
+ */
+var TOP_RIGHT = 'top_right'
+
+/**
+ * @type string
+ */
+var LEFT = 'left'
+
+/**
+ * @type string
+ */
+var CENTER = 'center'
+
+/**
+ * @type string
+ */
+var RIGHT = 'right'
+
+/**
+ * @type string
+ */
+var BOTTOM_LEFT = 'bottom_left'
+
+/**
+ * @type string
+ */
+var BOTTOM = 'bottom'
+
+/**
+ * @type string
+ */
+var BOTTOM_RIGHT = 'bottom_right'
+
+
+# ---------------------------------------------------------------------
+# Text alignment
+# ---------------------------------------------------------------------
+
+/**
+ * Lines of a multi-line string start at the same left edge. The
+ * default.
+ *
+ * @type string
+ */
+var ALIGN_LEFT = 'left'
+
+/**
+ * Lines of a multi-line string are centred against each other.
+ *
+ * @type string
+ */
+var ALIGN_CENTER = 'center'
+
+/**
+ * Lines of a multi-line string end at the same right edge.
+ *
+ * @type string
+ */
+var ALIGN_RIGHT = 'right'
+
+
+# ---------------------------------------------------------------------
+# Flip directions
+# ---------------------------------------------------------------------
+
+/**
+ * Mirror left to right.
+ *
+ * @type number
+ */
+var FLIP_HORIZONTAL = 1
+
+/**
+ * Mirror top to bottom.
+ *
+ * @type number
+ */
+var FLIP_VERTICAL = 2
+
+/**
+ * Mirror both ways at once, which is the same as rotating 180
+ * degrees.
+ *
+ * @type number
+ */
+var FLIP_BOTH = 3

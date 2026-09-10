@@ -1,0 +1,556 @@
+#!-- part of the imagine module
+
+import os
+
+import _imagine
+
+import .errors { FontError }
+
+
+/**
+ * Where `Font.system()` looks, in order, per platform.
+ *
+ * Only the standard locations; a font installed somewhere unusual is
+ * loaded by path with `Font.load()` instead.
+ */
+var _SEARCH_PATHS = {
+  linux: [
+    '/usr/share/fonts',
+    '/usr/local/share/fonts',
+    '~/.local/share/fonts',
+    '~/.fonts',
+  ],
+  osx: [
+    '/System/Library/Fonts',
+    '/Library/Fonts',
+    '~/Library/Fonts',
+  ],
+  windows: [
+    'C:/Windows/Fonts',
+  ],
+}
+
+/**
+ * Families `Font.sans()` tries, in preference order.
+ *
+ * The list runs from the most widely installed to the least, so the
+ * first hit on any given machine is the one most likely to look like
+ * what its user expects a plain sans-serif to look like.
+ */
+var _DEFAULT_FAMILIES = [
+  'DejaVuSans',
+  'LiberationSans',
+  'NotoSans-Regular',
+  'NotoSans',
+  'Ubuntu-R',
+  'Arial',
+  'Helvetica',
+  'FreeSans',
+  'SegoeUI',
+  'Verdana',
+]
+
+var _FONT_EXTENSIONS = ['.ttf', '.otf', '.ttc']
+
+# Parsing a face is the expensive part of drawing text, so a path is
+# parsed once per process no matter how many sizes are asked for.
+var _cache = {}
+
+
+/**
+ * A typeface at a particular size, ready to draw with.
+ *
+ * A `Font` is immutable and cheap to copy: `size()` hands back another
+ * `Font` sharing the same parsed face, so keeping one font around and
+ * asking it for several sizes costs nothing extra.
+ *
+ * ```zuri
+ * import imagine { Image, Font, Color }
+ *
+ * var title = Font.load('assets/Inter.ttf').size(32)
+ * var body = title.size(14)
+ *
+ * Image(400, 120, Color.WHITE)
+ *   .text(20, 20, 'Quarterly report', title, '#111111')
+ *   .text(20, 64, 'Revenue is up 12% year on year.', body, '#555555')
+ *   .save('report.png')
+ * ```
+ *
+ * ## What text layout does and does not do
+ *
+ * Glyphs are positioned by advance width with kerning applied, and
+ * `\n` starts a new line. That covers Latin, Greek, Cyrillic and
+ * anything else written left to right without contextual shaping.
+ *
+ * It does not do complex shaping: Arabic letters will not join, Indic
+ * clusters will not reorder, and ligatures are not substituted. Those
+ * need a shaping engine, and a standard library that pretended to do
+ * them would be worse than one that says plainly it does not.
+ *
+ * @printable
+ */
+class Font {
+
+  var _handle
+  var _size
+  var _source
+
+  /**
+   * Wraps an already-parsed face.
+   *
+   * Not the way to get a `Font`; use `load()`, `from_bytes()`,
+   * `system()` or `default()`, all of which end up here.
+   *
+   * @param ptr handle
+   * @param number size
+   * @param string source
+   */
+  @new(handle, size, source) {
+    self._handle = handle
+    self._size = size == nil ? 16 : size
+    self._source = source == nil ? '<memory>' : source
+  }
+
+  /**
+   * Loads a TrueType or OpenType font from a file.
+   *
+   * The parsed face is cached by absolute path, so loading the same
+   * file twice in one process parses it once.
+   *
+   * @param string path: A path to a `.ttf`, `.otf` or `.ttc` file.
+   * @param ?number size: The size in pixels - Default: 16.
+   * @returns Font
+   */
+  static load(path, size) {
+    if !is_string(path) {
+      raise FontError('font path must be a string, ${typeof(path)} given')
+    }
+
+    var resolved = path
+
+    catch {
+      resolved = os.abs_path(path)
+    } as e {
+      resolved = path
+    }
+
+    var cached = _cache.get(resolved)
+
+    if cached != nil {
+      return Font(cached, size, resolved)
+    }
+
+    var handle = file(resolved, 'rb').read()
+
+    catch {
+      handle = _imagine.font_load(handle)
+    } as e {
+      raise FontError("could not read the font at '${path}': ${e.message}")
+    }
+
+    _cache.set(resolved, handle)
+    return Font(handle, size, resolved)
+  }
+
+  /**
+   * Parses a font already held in memory.
+   *
+   * Useful for a font embedded in the program, downloaded, or read out
+   * of an archive. Nothing is cached, since there is no path to key a
+   * cache on; call this once and keep the result.
+   *
+   * @param bytes data
+   * @param ?number size: The size in pixels - Default: 16.
+   * @returns Font
+   */
+  static from_bytes(data, size) {
+    if !is_bytes(data) {
+      raise FontError('font data must be bytes, ${typeof(data)} given')
+    }
+
+    var handle = nil
+
+    catch {
+      handle = _imagine.font_load(data)
+    } as e {
+      raise FontError('could not parse the font data: ${e.message}')
+    }
+
+    return Font(handle, size, '<memory>')
+  }
+
+  /**
+   * Finds a font installed on this machine by family name.
+   *
+   * The standard font directories for the platform are searched, and
+   * the match ignores case, spaces and hyphens, so `'DejaVu Sans'`,
+   * `'dejavusans'` and `'DejaVuSans'` all find the same file. A
+   * family with several weights matches whichever file the search
+   * reaches first, which is why `load()` is the right call when a
+   * specific weight matters.
+   *
+   * Raises `FontError` when nothing matches.
+   *
+   * @param string family
+   * @param ?number size: The size in pixels - Default: 16.
+   * @returns Font
+   */
+  static system(family, size) {
+    var found = _find_system_font(family)
+
+    if found == nil {
+      raise FontError(
+        "no font matching '${family}' is installed; load one by path with Font.load()"
+      )
+    }
+
+    return Font.load(found, size)
+  }
+
+  /**
+   * Finds a reasonable sans-serif font installed on this machine.
+   *
+   * A short list of the families most likely to be installed is tried
+   * in turn. This is a convenience for scripts and tests, not
+   * something to rely on for output that has to look the same
+   * everywhere: which font it lands on depends entirely on the
+   * machine, and a container image with no fonts installed has none to
+   * find.
+   *
+   * Raises `FontError` when the machine has no usable font, with a
+   * message saying so rather than a parse failure.
+   *
+   * @param ?number size: The size in pixels - Default: 16.
+   * @returns Font
+   */
+  static sans(size) {
+    for family in _DEFAULT_FAMILIES {
+      var found = _find_system_font(family)
+
+      if found != nil {
+        return Font.load(found, size)
+      }
+    }
+
+    # Nothing from the preferred list; take the first usable face in
+    # any of the search directories rather than giving up.
+    for candidate in _all_system_fonts() {
+      catch {
+        return Font.load(candidate, size)
+      } as e {
+        # An unreadable or unsupported file just means try the next.
+      }
+    }
+
+    raise FontError(
+      'no usable font was found on this system; install one, or supply a ' +
+      'font file with Font.load() or Font.from_bytes()'
+    )
+  }
+
+  /**
+   * Returns the same typeface at a different size.
+   *
+   * The parsed face is shared, so this is cheap enough to call in a
+   * loop.
+   *
+   * @param number pixels: The size in pixels.
+   * @returns Font
+   */
+  size(pixels) {
+    if !is_number(pixels) or pixels <= 0 {
+      raise FontError('font size must be greater than zero, got ${pixels}')
+    }
+
+    return Font(self._handle, pixels, self._source)
+  }
+
+  /**
+   * The size in pixels this font draws at.
+   *
+   * @returns number
+   */
+  pixel_size() {
+    return self._size
+  }
+
+  /**
+   * The typeface's own name, as recorded in the font file.
+   *
+   * @returns string
+   */
+  name() {
+    return _imagine.font_info(self._handle, self._size).name
+  }
+
+  /**
+   * Where this font came from: an absolute path, or `'<memory>'` for
+   * one parsed from bytes.
+   *
+   * @returns string
+   */
+  source() {
+    return self._source
+  }
+
+  /**
+   * The font's vertical metrics at its current size, in pixels.
+   *
+   * The dictionary holds:
+   *
+   * - `name`: the typeface's name.
+   * - `ascent`: how far the tallest glyphs rise above the baseline.
+   * - `descent`: how far descenders fall below it, as a negative number.
+   * - `line_gap`: the designer's recommended extra space between lines.
+   * - `line_height`: ascent minus descent plus line gap, which is the
+   *   distance between consecutive baselines at single spacing.
+   *
+   * @returns dict
+   */
+  metrics() {
+    return _imagine.font_info(self._handle, self._size)
+  }
+
+  /**
+   * Measures a string without drawing it.
+   *
+   * Returns a dictionary holding `width` and `height` in pixels,
+   * `baseline` (the first line's baseline, measured down from the top
+   * of the box) and `lines` (how many lines the string has).
+   *
+   * The box covers the text's advance widths. A glyph can paint a
+   * fraction of a pixel outside it, which is why `Image.text()` allows
+   * for a little slack when it draws.
+   *
+   * @param string text
+   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @returns dict
+   */
+  measure(text, options) {
+    return _imagine.measure_text(self._handle, text.to_string(), self._size, options)
+  }
+
+  /**
+   * Breaks a string into lines that fit within a width.
+   *
+   * Returns the same text with newlines inserted, ready to hand to
+   * `Image.text()`. Newlines already in the text are kept as
+   * paragraph breaks, and runs of spaces are collapsed to one.
+   *
+   * Words are kept whole where they can be. A single word too long for
+   * the width is broken between characters rather than allowed to
+   * overflow, since overflowing text in an image cannot be scrolled to.
+   *
+   * ```zuri
+   * var body = Font.load('Inter.ttf', 16)
+   * var text = body.wrap(article, 520)
+   *
+   * page.text(40, 120, text, body, '#334155')
+   * ```
+   *
+   * @param string text
+   * @param number width: The maximum line width in pixels.
+   * @param ?dict options: `tracking`, as `measure()` takes.
+   * @returns string
+   */
+  wrap(text, width, options) {
+    if !is_number(width) or width <= 0 {
+      raise FontError('wrap width must be greater than zero, got ${width}')
+    }
+
+    var content = text.to_string()
+    var wrapped = []
+
+    for paragraph in content.split('\n') {
+      var line = ''
+
+      for word in paragraph.split(' ') {
+        if word == '' {
+          continue
+        }
+
+        var candidate = line == '' ? word : line + ' ' + word
+
+        if self._fits(candidate, width, options) {
+          line = candidate
+          continue
+        }
+
+        if line != '' {
+          wrapped.append(line)
+          line = ''
+        }
+
+        # The word alone still does not fit, so it has to be split.
+        if !self._fits(word, width, options) {
+          var piece = ''
+
+          iter var i = 0; i < word.length(); i++ {
+            var grown = piece + word[i]
+
+            if piece != '' and !self._fits(grown, width, options) {
+              wrapped.append(piece)
+              piece = word[i]
+            } else {
+              piece = grown
+            }
+          }
+
+          line = piece
+          continue
+        }
+
+        line = word
+      }
+
+      wrapped.append(line)
+    }
+
+    return '\n'.join(wrapped)
+  }
+
+  /**
+   * Whether one line of text measures within a width.
+   */
+  _fits(text, width, options) {
+    return self.measure(text, options).width <= width
+  }
+
+  /**
+   * Rasterizes a string into an 8-bit coverage mask.
+   *
+   * Returns a dictionary holding `coverage` (the mask, one byte per
+   * pixel), `width`, `height` and `baseline`. Drawing the mask through
+   * `Canvas.draw_mask()` is what `Image.text()` does; this is here for
+   * code that wants the mask itself, to use as a stencil or an alpha
+   * channel.
+   *
+   * @param string text
+   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @returns dict
+   */
+  render(text, options) {
+    return _imagine.render_text(self._handle, text.to_string(), self._size, options)
+  }
+
+  to_string() {
+    return '<Font ${self.name()} at ${self._size}px>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * The search directories for whatever platform this is, with `~`
+ * already expanded and non-existent entries dropped.
+ */
+def _search_roots() {
+  var roots = _SEARCH_PATHS.get(os.platform, [])
+  var usable = []
+
+  for root in roots {
+    var resolved = root
+
+    if root.starts_with('~') {
+      catch {
+        resolved = os.expand_user(root)
+      } as e {
+        continue
+      }
+    }
+
+    if os.dir_exists(resolved) {
+      usable.append(resolved)
+    }
+  }
+
+  return usable
+}
+
+
+/**
+ * Every font file under the search roots.
+ */
+def _all_system_fonts() {
+  var found = []
+
+  for root in _search_roots() {
+    catch {
+      for entry in os.read_dir(root, true) {
+        if _is_font_file(entry) {
+          found.append(os.join_paths(root, entry))
+        }
+      }
+    } as e {
+      # An unreadable directory is not worth failing over; the next
+      # root may well have what we are looking for.
+    }
+  }
+
+  return found
+}
+
+
+def _is_font_file(name) {
+  var lower = name.lower()
+
+  for extension in _FONT_EXTENSIONS {
+    if lower.ends_with(extension) {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+/**
+ * Reduces a family name to the form matching compares: lower case,
+ * with spaces, hyphens and underscores removed. That is what lets
+ * `'DejaVu Sans'` find `DejaVuSans.ttf`.
+ */
+def _normalize_family(name) {
+  return name.lower().replace('/[ _-]/', '')
+}
+
+
+/**
+ * The path of an installed font whose file name matches `family`, or
+ * `nil`. An exact stem match wins over a prefix match, so asking for
+ * `'DejaVuSans'` does not land on `DejaVuSansMono` when the plain face
+ * is present.
+ */
+def _find_system_font(family) {
+  if !is_string(family) {
+    raise FontError('font family must be a string, ${typeof(family)} given')
+  }
+
+  var wanted = _normalize_family(family)
+  var prefix_match = nil
+
+  for candidate in _all_system_fonts() {
+    var stem = os.base_name(candidate)
+
+    for extension in _FONT_EXTENSIONS {
+      if stem.lower().ends_with(extension) {
+        stem = stem[0, stem.length() - extension.length()]
+        break
+      }
+    }
+
+    var normalized = _normalize_family(stem)
+
+    if normalized == wanted {
+      return candidate
+    }
+
+    if prefix_match == nil and normalized.starts_with(wanted) {
+      prefix_match = candidate
+    }
+  }
+
+  return prefix_match
+}

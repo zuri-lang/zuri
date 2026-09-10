@@ -1,0 +1,226 @@
+/**
+ * @module imagine
+ *
+ * Reading, writing, drawing and transforming raster images.
+ *
+ * `imagine` covers the whole path an image takes through a program:
+ * decoding it from a file or an upload, resizing and cropping it,
+ * adjusting its colour, drawing shapes and text onto it, compositing
+ * several together, and writing the result back out in whatever format
+ * suits.
+ *
+ * ```zuri
+ * import imagine { Image, Font, LANCZOS }
+ *
+ * Image.open('photo.jpg')
+ *   .thumbnail(600, 600, LANCZOS)
+ *   .sharpen(0.6)
+ *   .save('thumb.webp', { quality: 82 })
+ * ```
+ *
+ * ## The shape of the API
+ *
+ * Almost everything is a method on [[imagine.Image]], and almost
+ * everything returns an image, so operations chain. There is one rule
+ * worth learning up front:
+ *
+ * - **Operations that change the image's size return a new image.**
+ *   `resize()`, `crop()`, `rotate()`, `flip()` and `pad()` leave the
+ *   original alone.
+ * - **Everything else changes the image in place.** Drawing, filters
+ *   and compositing modify the image you called them on and hand it
+ *   back for chaining.
+ *
+ * Call `clone()` when you want to keep an image before filtering it.
+ *
+ * ## Colours
+ *
+ * Anywhere a colour is expected you can write a [[imagine.Color]], a
+ * hexadecimal string, a CSS colour name, a packed `0xRRGGBBAA` number,
+ * or a list of channels. These are all the same red:
+ *
+ * ```zuri
+ * image.fill(Color(255, 0, 0))
+ * image.fill('#ff0000')
+ * image.fill('red')
+ * image.fill(0xFF0000FF)
+ * image.fill([255, 0, 0])
+ * ```
+ *
+ * Alpha runs 0 (transparent) to 255 (opaque), as in CSS and PNG. The
+ * colour space conversions come from [[colors]], so hue is in degrees
+ * and saturation and lightness are in percentage points.
+ *
+ * ## Pixels
+ *
+ * An image is 8-bit RGBA with straight (not premultiplied) alpha, laid
+ * out row by row with no padding, so pixel `(x, y)` begins at byte
+ * `(y * width + x) * 4`. [[imagine.Canvas.pixels]] hands back that
+ * buffer live, which is the fastest way to write an operation this
+ * module does not provide:
+ *
+ * ```zuri
+ * var buffer = image.pixels()
+ * var total = buffer.length()
+ *
+ * iter var at = 0; at < total; at += 4 {
+ *   buffer[at] = 255 - buffer[at]
+ * }
+ * ```
+ *
+ * ## Formats
+ *
+ * Read: PNG, JPEG, GIF, BMP, TIFF, TGA, WebP, QOI, ICO, PNM, WBMP.
+ * Write: all of those plus AVIF.
+ *
+ * AVIF is write-only, and TGA carries no signature of its own so it
+ * can only be identified by its file extension or by naming the
+ * format outright. [[imagine.capabilities]] reports what this build
+ * can actually do, so a program can check rather than guess.
+ *
+ * Animated GIF and animated WebP are read through
+ * [[imagine.Animation]], and animated GIF can be written.
+ *
+ * ## Drawing
+ *
+ * Every filled shape becomes a polygon and goes through one
+ * anti-aliased scanline rasterizer, and every outline becomes the
+ * polygon around its stroke and goes through the same one. Shapes this
+ * module does not name can be drawn by handing
+ * [[imagine.Canvas.fill_polygon]] the points.
+ *
+ * ```zuri
+ * import imagine { Image, Color }
+ *
+ * Image(300, 200, 'white')
+ *   .fill_rounded_rect(20, 20, 260, 160, 16, '#4f46e5')
+ *   .circle(150, 100, 50, 'white', { thickness: 4 })
+ *   .save('card.png')
+ * ```
+ *
+ * ## Text
+ *
+ * Text needs a font, loaded from a file with [[imagine.Font.load]] or
+ * found on the machine with [[imagine.Font.system]]. Glyphs are placed
+ * by advance width with kerning; complex scripts that need shaping are
+ * not supported, and the `Font` documentation says exactly what that
+ * rules out.
+ *
+ * ## Memory
+ *
+ * Four bytes per pixel, so a 6000x4000 photograph occupies 96 MB
+ * however small its file was. For images whose size you do not
+ * control, [[imagine.probe]] reads the dimensions out of the header
+ * without decoding anything.
+ *
+ * ```zuri
+ * var header = imagine.probe(upload)
+ *
+ * if header == nil or header.width * header.height > 40000000 {
+ *   raise Exception('image is missing or too large')
+ * }
+ * ```
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import @.animation { Animation }
+import @.canvas { Canvas }
+import @.color { * }
+import @.constants { * }
+import @.errors { * }
+import @.filters
+import @.font { Font }
+import @.formats
+import @.image { Image }
+
+
+/**
+ * Opens an image file.
+ *
+ * A shorthand for [[imagine.Image.open]].
+ *
+ * @param string|file source
+ * @param ?dict options
+ * @returns Image
+ */
+def open(source, options) {
+  return Image.open(source, options)
+}
+
+
+/**
+ * Decodes image data held in memory.
+ *
+ * A shorthand for [[imagine.Image.decode]].
+ *
+ * @param bytes data
+ * @param ?dict options
+ * @returns Image
+ */
+def decode(data, options) {
+  return Image.decode(data, options)
+}
+
+
+/**
+ * Creates a new image.
+ *
+ * A shorthand for the [[imagine.Image]] constructor.
+ *
+ * @param number width
+ * @param number height
+ * @param ?Color|string|number fill
+ * @returns Image
+ */
+def create(width, height, fill) {
+  return Image(width, height, fill)
+}
+
+
+/**
+ * Reads an image's format and dimensions from its header, without
+ * decoding any pixels.
+ *
+ * Returns `{format, width, height}`, or `nil` when the data is not a
+ * recognisable image. Reading a large JPEG's header costs microseconds
+ * where decoding it costs tens of milliseconds, which makes this the
+ * right way to size up an upload before committing to it.
+ *
+ * @param bytes data
+ * @returns ?dict
+ */
+def probe(data) {
+  return formats.probe(data)
+}
+
+
+/**
+ * Identifies image data by its contents, returning a format name or
+ * `nil`.
+ *
+ * @param bytes data
+ * @returns ?string
+ */
+def detect(data) {
+  return formats.detect(data)
+}
+
+
+/**
+ * What this build can do, as a dictionary holding `decode`, `encode`
+ * and `animated`, each a list of format names.
+ *
+ * Worth checking rather than assuming: AVIF appears under `encode` but
+ * not `decode`, and which formats are compiled in can differ between
+ * builds.
+ *
+ * @returns dict
+ */
+def capabilities() {
+  var decode = formats.readable()
+  var encode = formats.writable()
+  var animated = formats.animatable()
+
+  return { decode, encode, animated }
+}

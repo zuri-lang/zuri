@@ -1,0 +1,2297 @@
+#!-- part of the imagine module
+
+import base64
+
+import _imagine
+
+import .canvas { Canvas }
+import .color { Color, TRANSPARENT }
+import .constants { * }
+import .errors { BoundsError, DecodeError, EncodeError, FormatError, ImageError }
+import .filters
+import .formats
+
+
+/**
+ * How EXIF's eight orientation values map onto the operations that
+ * undo them: a quarter-turn count and whether to mirror first.
+ *
+ * Values 2, 4, 5 and 7 are the mirrored ones, which cameras almost
+ * never produce but scanners and some phone front cameras do.
+ */
+var _ORIENTATIONS = {
+  '1': [0, false],
+  '2': [0, true],
+  '3': [180, false],
+  '4': [180, true],
+  '5': [90, true],
+  '6': [90, false],
+  '7': [270, true],
+  '8': [270, false],
+}
+
+
+/**
+ * A raster image: a rectangle of 8-bit RGBA pixels, everything that
+ * draws onto one, and everything that reshapes, filters or writes one
+ * out.
+ *
+ * ```zuri
+ * import imagine { Image, Color, LANCZOS }
+ *
+ * Image.open('photo.jpg')
+ *   .thumbnail(400, 400, LANCZOS)
+ *   .save('thumb.webp')
+ * ```
+ *
+ * ## Which operations copy and which do not
+ *
+ * There is one rule, and it is worth learning because it is the only
+ * thing here that is not obvious:
+ *
+ * - **Anything that changes the image's size returns a new `Image`.**
+ *   `resize()`, `crop()`, `rotate()`, `flip()`, `pad()` and the rest
+ *   leave the original untouched.
+ * - **Everything else changes the image in place and returns it.**
+ *   Drawing, filters and compositing all work on the image you called
+ *   them on, and return it so calls can be chained.
+ *
+ * That means a chain mixing the two kinds still reads correctly, and
+ * `clone()` is there for the times you want to keep the original
+ * before a filter.
+ *
+ * ```zuri
+ * var original = Image.open('photo.jpg')
+ * var small = original.thumbnail(200, 200)   # original untouched
+ *
+ * small.grayscale()                          # small is now grey
+ * ```
+ *
+ * ## Memory
+ *
+ * An image costs four bytes per pixel, so a 6000x4000 photograph is
+ * 96 MB in memory however small its file was. Reach for
+ * [[imagine.formats.probe]] before opening anything whose size you do
+ * not control.
+ *
+ * @printable
+ */
+class Image < Canvas {
+
+  # The format this image was decoded from, or nil for one created
+  # from scratch. Purely informational; it never constrains what the
+  # image can be written as.
+  var _format
+
+  /**
+   * Creates a new image.
+   *
+   * The image starts fully transparent unless a fill colour is given.
+   *
+   * @param number width: At least 1.
+   * @param number height: At least 1.
+   * @param ?Color|string|number fill: A colour to fill with - Default: transparent.
+   * @throws BoundsError When either dimension is below 1.
+   */
+  @new(width, height, fill) {
+    if !is_number(width) or !is_number(height) {
+      raise BoundsError('image dimensions must be numbers, got ${typeof(width)} and ${typeof(height)}')
+    }
+
+    var w = width.floor()
+    var h = height.floor()
+
+    if w < 1 or h < 1 {
+      raise BoundsError('an image must be at least 1x1, got ${w}x${h}')
+    }
+
+    parent(bytes(w * h * 4), w, h)
+    self._format = nil
+
+    if fill != nil {
+      self.fill(fill)
+    }
+  }
+
+  # ------------------------------------------------------------------
+  # loading
+  # ------------------------------------------------------------------
+
+  /**
+   * Opens an image file.
+   *
+   * The format is detected from the file's contents, not its name, so
+   * a mislabelled file still opens correctly.
+   *
+   * JPEGs carrying an EXIF orientation tag are rotated upright, since
+   * that is what the photograph was meant to look like and almost
+   * never what the raw pixels are. Pass `{ orient: false }` to get the
+   * pixels exactly as stored.
+   *
+   * @param string|file source: A path, or an already-open file.
+   * @param ?dict options: `orient` (bool, default true), `format` (string).
+   * @returns Image
+   * @throws DecodeError When the file is not a readable image.
+   */
+  static open(source, options) {
+    var handle = source
+
+    if is_string(source) {
+      handle = file(source, 'rb')
+    }
+
+    if !is_file(handle) {
+      raise ImageError('expected a path or a file, ${typeof(source)} given')
+    }
+
+    if !handle.exists() {
+      raise DecodeError("no such file: '${handle.path()}'")
+    }
+
+    var data = nil
+
+    catch {
+      data = handle.read()
+    } as e {
+      raise DecodeError("could not read '${handle.path()}': ${e.message}")
+    }
+
+    if !is_bytes(data) {
+      data = data.to_bytes()
+    }
+
+    # TGA and a few others carry no magic number, so sniffing cannot
+    # place them. The file name is the only remaining evidence.
+    if (!is_dict(options) or options.get('format') == nil) and formats.detect(data) == nil {
+      var guessed = formats.from_extension(handle.path())
+
+      if guessed != nil {
+        var settings = is_dict(options) ? options.clone() : {}
+        settings.set('format', guessed)
+
+        return Image.decode(data, settings)
+      }
+    }
+
+    return Image.decode(data, options)
+  }
+
+  /**
+   * Decodes image data held in memory.
+   *
+   * The format is detected from the data unless `format` says
+   * otherwise, in which case a file that is not really that format
+   * fails loudly rather than being decoded as whatever it actually is.
+   *
+   * @param bytes data
+   * @param ?dict options: `orient` (bool, default true), `format` (string).
+   * @returns Image
+   * @throws DecodeError When the data is not a readable image.
+   */
+  static decode(data, options) {
+    if !is_bytes(data) {
+      raise ImageError('image data must be bytes, ${typeof(data)} given')
+    }
+
+    if data.length() == 0 {
+      raise DecodeError('cannot decode an empty buffer')
+    }
+
+    var wanted = is_dict(options) ? options.get('format') : nil
+
+    if wanted != nil {
+      wanted = formats.normalize(wanted)
+    }
+
+    var decoded = nil
+
+    if wanted == 'wbmp' or (wanted == nil and formats.detect(data) == 'wbmp') {
+      decoded = formats.decode_wbmp(data)
+      decoded.format = 'wbmp'
+    } else {
+      catch {
+        decoded = _imagine.decode(data, wanted)
+      } as e {
+        raise DecodeError(e.message)
+      }
+    }
+
+    var image = Image.from_pixels(
+      decoded.width, decoded.height, decoded.pixels, decoded.format
+    )
+
+    var orient = is_dict(options) ? options.get('orient', true) : true
+
+    if orient != false {
+      return _apply_orientation(image, _imagine.orientation(data))
+    }
+
+    return image
+  }
+
+  /**
+   * Wraps an existing RGBA pixel buffer as an image.
+   *
+   * The buffer is adopted, not copied, so whatever produced it must
+   * not keep writing to it. Pixels run red, green, blue, alpha with
+   * straight (not premultiplied) alpha and no row padding.
+   *
+   * @param number width
+   * @param number height
+   * @param bytes pixels: Exactly `width * height * 4` bytes.
+   * @param ?string format: The format these pixels were decoded from,
+   *    recorded as metadata - Default: nil.
+   * @returns Image
+   */
+  static from_pixels(width, height, pixels, format) {
+    return Image(width, height).set_pixels(pixels).set_format(format)
+  }
+
+  # ------------------------------------------------------------------
+  # properties
+  # ------------------------------------------------------------------
+
+  /**
+   * The image's dimensions as `{width, height}`.
+   *
+   * @returns dict
+   */
+  size() {
+    var width = self._width
+    var height = self._height
+
+    return { width, height }
+  }
+
+  /**
+   * The format this image was decoded from, or `nil` for one created
+   * in memory.
+   *
+   * This records where the image came from and never constrains where
+   * it can go; a PNG can always be saved as a JPEG.
+   *
+   * @returns ?string
+   */
+  format() {
+    return self._format
+  }
+
+  /**
+   * Records which format this image should be considered to have come
+   * from.
+   *
+   * The only thing this changes is what `encode()` and `save()` write
+   * when no format is given. It is set for you when an image is
+   * decoded; setting it by hand is for pixels that arrived some other
+   * way and whose origin you happen to know.
+   *
+   * @param ?string format: A format name, or nil to clear it.
+   * @returns self
+   */
+  set_format(format) {
+    self._format = format == nil ? nil : formats.normalize(format)
+    return self
+  }
+
+  /**
+   * The rectangle covering the whole image, as
+   * `{x, y, width, height}`.
+   *
+   * @returns dict
+   */
+  bounds() {
+    var x = 0
+    var y = 0
+    var width = self._width
+    var height = self._height
+
+    return { x, y, width, height }
+  }
+
+  /**
+   * `true` when every pixel is fully opaque.
+   *
+   * This walks the alpha channel, so it costs a pass over the image.
+   * Worth knowing before choosing an output format: an opaque image
+   * loses nothing as a JPEG.
+   *
+   * @returns bool
+   */
+  is_opaque() {
+    return _scan_opaque(self._pixels)
+  }
+
+  /**
+   * A summary of the image as a dictionary holding `width`, `height`,
+   * `format`, `pixels` (the count, not the buffer) and `opaque`.
+   *
+   * @returns dict
+   */
+  info() {
+    var width = self._width
+    var height = self._height
+    var format = self._format
+    var pixels = width * height
+    var opaque = self.is_opaque()
+
+    return { width, height, format, pixels, opaque }
+  }
+
+  /**
+   * An independent copy of the image, sharing nothing with it.
+   *
+   * @returns Image
+   */
+  clone() {
+    return self._derive(self._pixels.clone(), self._width, self._height)
+  }
+
+  /**
+   * A new image of the same size, fully transparent.
+   *
+   * The usual way to build up a composite: draw onto the layer, then
+   * bring it back with `draw_image()` under whichever blend mode and
+   * opacity the effect calls for.
+   *
+   * @param ?Color|string|number fill: A colour to fill with - Default: transparent.
+   * @returns Image
+   */
+  layer(fill) {
+    return Image(self._width, self._height, fill)
+  }
+
+  /**
+   * Hands back an image built from a new pixel buffer, carrying over
+   * everything about this one that is not the pixels themselves.
+   */
+  _derive(pixels, width, height) {
+    return Image.from_pixels(width, height, pixels, self._format)
+      .antialias(self._antialias)
+      .thickness(self._thickness)
+  }
+
+  /**
+   * Swaps this image's pixels for a new buffer of the same size. Used
+   * by the filters that cannot work in place.
+   */
+  _replace(pixels) {
+    self._pixels = pixels
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # geometry
+  # ------------------------------------------------------------------
+
+  /**
+   * Returns the image resampled to an exact size.
+   *
+   * The aspect ratio is not preserved; the result is exactly the size
+   * asked for. Use `thumbnail()` or `cover()` when the proportions
+   * matter.
+   *
+   * @param number width: At least 1.
+   * @param number height: At least 1.
+   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @returns Image
+   * @throws BoundsError When either dimension is below 1.
+   */
+  resize(width, height, filter) {
+    var w = self._dimension(width, 'width')
+    var h = self._dimension(height, 'height')
+
+    if w == self._width and h == self._height {
+      return self.clone()
+    }
+
+    var resampled = _imagine.resize(
+      self._pixels, self._width, self._height, w, h,
+      filter == nil ? LANCZOS : filter
+    )
+
+    return self._derive(resampled, w, h)
+  }
+
+  /**
+   * Returns the image resampled by a factor, keeping its proportions.
+   *
+   * @param number factor: Greater than zero. 0.5 halves each side.
+   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @returns Image
+   */
+  scale(factor, filter) {
+    if !is_number(factor) or factor <= 0 {
+      raise BoundsError('scale factor must be greater than zero, got ${factor}')
+    }
+
+    return self.resize(
+      (self._width * factor).round().max(1),
+      (self._height * factor).round().max(1),
+      filter
+    )
+  }
+
+  /**
+   * Returns the image shrunk to fit inside a box, keeping its
+   * proportions.
+   *
+   * The result is no larger than the box in either direction, and
+   * usually smaller in one. An image that already fits is returned at
+   * its original size rather than enlarged, which is what makes this
+   * the right call for thumbnails: enlarging a small image to fill a
+   * thumbnail box only makes it blurry.
+   *
+   * @param number max_width
+   * @param number max_height
+   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @returns Image
+   */
+  thumbnail(max_width, max_height, filter) {
+    var ratio = (max_width / self._width).min(max_height / self._height)
+
+    if ratio >= 1 {
+      return self.clone()
+    }
+
+    return self.resize(
+      (self._width * ratio).round().max(1),
+      (self._height * ratio).round().max(1),
+      filter
+    )
+  }
+
+  /**
+   * Returns the image scaled to fit inside a box, keeping its
+   * proportions, enlarging it if it is smaller than the box.
+   *
+   * The difference from `thumbnail()` is exactly that: this one will
+   * scale up.
+   *
+   * @param number width
+   * @param number height
+   * @param ?string filter: A resampling filter - Default: `LANCZOS`.
+   * @returns Image
+   */
+  fit(width, height, filter) {
+    var ratio = (width / self._width).min(height / self._height)
+
+    return self.resize(
+      (self._width * ratio).round().max(1),
+      (self._height * ratio).round().max(1),
+      filter
+    )
+  }
+
+  /**
+   * Returns the image filling a box exactly, keeping its proportions
+   * by cropping whatever overflows.
+   *
+   * This is what a CSS `background-size: cover` does, and what almost
+   * every avatar or card thumbnail wants: the box is filled edge to
+   * edge with no distortion and no letterboxing, at the cost of losing
+   * some of the image.
+   *
+   * @param number width
+   * @param number height
+   * @param ?dict options: `anchor` (where the kept part comes from,
+   *    default `CENTER`), `filter`.
+   * @returns Image
+   */
+  cover(width, height, options) {
+    var w = self._dimension(width, 'width')
+    var h = self._dimension(height, 'height')
+
+    var filter = is_dict(options) ? options.get('filter') : nil
+    var anchor = is_dict(options) ? options.get('anchor', CENTER) : CENTER
+
+    var ratio = (w / self._width).max(h / self._height)
+    var scaled = self.resize(
+      (self._width * ratio).ceil().max(w),
+      (self._height * ratio).ceil().max(h),
+      filter
+    )
+
+    var offset = _anchor_offset(anchor, scaled.width(), scaled.height(), w, h)
+
+    return scaled.crop(offset[0], offset[1], w, h)
+  }
+
+  /**
+   * Returns the image fitted inside a box exactly, keeping its
+   * proportions by padding whatever is left over.
+   *
+   * The counterpart to `cover()`: nothing is lost, but the result has
+   * bars on two sides.
+   *
+   * @param number width
+   * @param number height
+   * @param ?dict options: `background` (the padding colour, default
+   *    transparent), `anchor` (default `CENTER`), `filter`.
+   * @returns Image
+   */
+  contain(width, height, options) {
+    var w = self._dimension(width, 'width')
+    var h = self._dimension(height, 'height')
+
+    var filter = is_dict(options) ? options.get('filter') : nil
+    var anchor = is_dict(options) ? options.get('anchor', CENTER) : CENTER
+    var background = is_dict(options) ? options.get('background', TRANSPARENT) : TRANSPARENT
+
+    var scaled = self.fit(w, h, filter)
+    var canvas = Image(w, h, background)
+    var offset = _anchor_offset(anchor, w, h, scaled.width(), scaled.height())
+
+    canvas.draw_image(scaled, offset[0], offset[1])
+
+    return Image.from_pixels(w, h, canvas.pixels(), self._format)
+  }
+
+  /**
+   * Returns a rectangular region of the image.
+   *
+   * The rectangle must lie entirely inside the image. Clamping a crop
+   * that runs off the edge would hand back different dimensions than
+   * were asked for, which is a worse surprise than an error; use
+   * `pad()` first if the region really is meant to extend past the
+   * edge.
+   *
+   * @param number x
+   * @param number y
+   * @param number width
+   * @param number height
+   * @returns Image
+   * @throws BoundsError When the rectangle does not fit inside the image.
+   */
+  crop(x, y, width, height) {
+    var left = x.floor()
+    var top = y.floor()
+    var w = self._dimension(width, 'width')
+    var h = self._dimension(height, 'height')
+
+    if left < 0 or top < 0 or left + w > self._width or top + h > self._height {
+      raise BoundsError(
+        '${w}x${h} at (${left}, ${top}) does not fit inside a ${self._width}x${self._height} image'
+      )
+    }
+
+    var cropped = _imagine.crop(self._pixels, self._width, self._height, left, top, w, h)
+
+    return self._derive(cropped, w, h)
+  }
+
+  /**
+   * Returns the image with a uniform border trimmed away.
+   *
+   * The border colour is taken from the top-left pixel unless
+   * `background` names one. `tolerance` is how far a pixel may differ
+   * from it and still count as border, measured as the largest
+   * difference across the four channels.
+   *
+   * An image that is entirely border is returned as a 1x1 image
+   * rather than an empty one, since an image with no pixels is not a
+   * thing this module can represent.
+   *
+   * @param ?dict options: `background`, `tolerance` (default 0).
+   * @returns Image
+   */
+  trim(options) {
+    var tolerance = is_dict(options) ? options.get('tolerance', 0) : 0
+    var reference = is_dict(options) ? options.get('background') : nil
+
+    var seed = reference == nil ?
+      self.get_pixel(0, 0) :
+      Color.parse(reference)
+
+    var box = _content_bounds(
+      self._pixels, self._width, self._height,
+      seed.r, seed.g, seed.b, seed.a, tolerance
+    )
+
+    if box[1] < 0 {
+      return Image(1, 1)
+    }
+
+    return self.crop(box[0], box[2], box[1] - box[0] + 1, box[3] - box[2] + 1)
+  }
+
+  /**
+   * Returns the image with a border added on each side.
+   *
+   * Negative amounts are not accepted; use `crop()` to remove edges.
+   *
+   * @param number top
+   * @param ?number right: - Default: the same as _top_.
+   * @param ?number bottom: - Default: the same as _top_.
+   * @param ?number left: - Default: the same as _right_.
+   * @param ?Color|string|number background: - Default: transparent.
+   * @returns Image
+   */
+  pad(top, right, bottom, left, background) {
+    var t = top.floor().max(0)
+    var r = (right == nil ? top : right).floor().max(0)
+    var b = (bottom == nil ? top : bottom).floor().max(0)
+    var l = (left == nil ? r : left).floor().max(0)
+
+    var padded = Image(self._width + l + r, self._height + t + b, background)
+
+    padded.draw_image(self, l, t)
+
+    return Image.from_pixels(
+      padded.width(), padded.height(), padded.pixels(), self._format
+    )
+  }
+
+  /**
+   * Returns the image rotated by an angle in degrees, clockwise.
+   *
+   * Quarter turns are exact and lossless. Any other angle resamples
+   * the pixels and grows the canvas to hold the rotated corners,
+   * filling the gaps with `background`.
+   *
+   * @param number degrees
+   * @param ?Color|string|number background: The colour behind the
+   *    corners - Default: transparent.
+   * @returns Image
+   */
+  rotate(degrees, background) {
+    if !is_number(degrees) {
+      raise ImageError('rotation must be a number of degrees, ${typeof(degrees)} given')
+    }
+
+    var fill = background == nil ? TRANSPARENT : Color.parse(background)
+
+    var rotated = _imagine.rotate(
+      self._pixels, self._width, self._height, degrees, fill.to_packed()
+    )
+
+    return self._derive(rotated.pixels, rotated.width, rotated.height)
+  }
+
+  /**
+   * Returns the image turned a quarter turn clockwise. Lossless.
+   *
+   * @returns Image
+   */
+  rotate_90() {
+    return self.rotate(90)
+  }
+
+  /**
+   * Returns the image turned upside down. Lossless.
+   *
+   * @returns Image
+   */
+  rotate_180() {
+    return self.rotate(180)
+  }
+
+  /**
+   * Returns the image turned a quarter turn anticlockwise. Lossless.
+   *
+   * @returns Image
+   */
+  rotate_270() {
+    return self.rotate(270)
+  }
+
+  /**
+   * Returns the image mirrored.
+   *
+   * @param ?number mode: `FLIP_HORIZONTAL`, `FLIP_VERTICAL` or
+   *    `FLIP_BOTH` - Default: `FLIP_HORIZONTAL`.
+   * @returns Image
+   */
+  flip(mode) {
+    var direction = mode == nil ? FLIP_HORIZONTAL : mode
+
+    if direction != FLIP_HORIZONTAL and direction != FLIP_VERTICAL and
+       direction != FLIP_BOTH {
+      raise ImageError('flip mode must be FLIP_HORIZONTAL, FLIP_VERTICAL or FLIP_BOTH')
+    }
+
+    var flipped = _imagine.flip(self._pixels, self._width, self._height, direction)
+
+    return self._derive(flipped, self._width, self._height)
+  }
+
+  /**
+   * Returns the image mirrored left to right.
+   *
+   * @returns Image
+   */
+  flip_horizontal() {
+    return self.flip(FLIP_HORIZONTAL)
+  }
+
+  /**
+   * Returns the image mirrored top to bottom.
+   *
+   * @returns Image
+   */
+  flip_vertical() {
+    return self.flip(FLIP_VERTICAL)
+  }
+
+  /**
+   * Returns the image reflected across its main diagonal, so a
+   * `w x h` image becomes `h x w`.
+   *
+   * @returns Image
+   */
+  transpose() {
+    var flipped = _imagine.transpose(self._pixels, self._width, self._height)
+
+    return self._derive(flipped, self._height, self._width)
+  }
+
+  /**
+   * Validates one dimension argument.
+   */
+  _dimension(value, what) {
+    if !is_number(value) {
+      raise BoundsError('${what} must be a number, ${typeof(value)} given')
+    }
+
+    var rounded = value.floor()
+
+    if rounded < 1 {
+      raise BoundsError('${what} must be at least 1, got ${value}')
+    }
+
+    return rounded
+  }
+
+  # ------------------------------------------------------------------
+  # colour filters
+  # ------------------------------------------------------------------
+
+  /**
+   * Rewrites every pixel through up to four 256-entry lookup tables,
+   * one per channel.
+   *
+   * This is the primitive behind most of the adjustments below, and
+   * it is the fastest way to apply any per-channel tone curve: the
+   * table is built once whatever the image's size, and applying it is
+   * a single indexed load per channel.
+   *
+   * A `nil` table leaves that channel alone. Tables are built with the
+   * helpers in [[imagine.filters]], or with
+   * [[imagine.filters.build_lut]] for a curve of your own.
+   *
+   * @param ?bytes red: A 256-entry table, or nil.
+   * @param ?bytes green
+   * @param ?bytes blue
+   * @param ?bytes alpha
+   * @returns self
+   */
+  apply_lut(red, green, blue, alpha) {
+    _imagine.apply_lut(self._pixels, red, green, blue, alpha)
+    return self
+  }
+
+  /**
+   * Rewrites every pixel through a 4x5 colour matrix.
+   *
+   * The matrix is a flat list of 20 numbers, laid out row by row, and
+   * is the same shape SVG and CSS filters use. The last entry of each
+   * row is a constant added afterwards, in 0-255 units.
+   *
+   * ```text
+   * r' = m0*r  + m1*g  + m2*b  + m3*a  + m4
+   * g' = m5*r  + m6*g  + m7*b  + m8*a  + m9
+   * b' = m10*r + m11*g + m12*b + m13*a + m14
+   * a' = m15*r + m16*g + m17*b + m18*a + m19
+   * ```
+   *
+   * Applying several matrices in a row is both slower and less
+   * accurate than combining them with
+   * [[imagine.filters.combine_matrices]] and applying the result once.
+   *
+   * @param list matrix: 20 numbers.
+   * @returns self
+   */
+  apply_matrix(matrix) {
+    _imagine.apply_matrix(self._pixels, matrix)
+    return self
+  }
+
+  /**
+   * Adds a fixed amount to every colour channel.
+   *
+   * @param number delta: -255 to 255. Positive brightens.
+   * @returns self
+   */
+  brightness(delta) {
+    var table = filters.brightness_lut(delta)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Pushes colours away from or toward mid-grey.
+   *
+   * @param number amount: -100 (flat grey) through 0 (unchanged) to
+   *    100 (hard black and white).
+   * @returns self
+   */
+  contrast(amount) {
+    var table = filters.contrast_lut(amount)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Applies a gamma curve, moving the midtones without touching black
+   * or white.
+   *
+   * @param number gamma: Greater than zero. Below 1 darkens, above 1
+   *    lightens.
+   * @returns self
+   */
+  gamma(gamma) {
+    var table = filters.gamma_lut(gamma)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Stretches a range of input values across the full scale.
+   *
+   * The single most useful correction for a flat or washed-out
+   * photograph: everything at or below `black` becomes black,
+   * everything at or above `white` becomes white, and the rest is
+   * spread between them.
+   *
+   * @param number black: The input value that becomes black, 0-255.
+   * @param number white: The input value that becomes white, 0-255.
+   * @param ?number gamma: A midtone curve to apply along the way - Default: 1.
+   * @returns self
+   */
+  levels(black, white, gamma) {
+    var table = filters.levels_lut(black, white, gamma)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Inverts the colour channels, producing a photographic negative.
+   *
+   * Alpha is untouched, so a transparent image stays transparent
+   * rather than becoming opaque.
+   *
+   * @returns self
+   */
+  invert() {
+    var table = filters.invert_lut()
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Forces every pixel to black or white by comparing its brightness
+   * against a threshold.
+   *
+   * The image is converted to grey first, so the split is made on
+   * perceived brightness rather than on each channel separately.
+   *
+   * @param ?number level: The cut, 0-255 - Default: 128.
+   * @returns self
+   */
+  threshold(level) {
+    self.grayscale()
+
+    var table = filters.threshold_lut(level == nil ? 128 : level)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Reduces each channel to a fixed number of evenly spaced steps.
+   *
+   * This flattens gradients into visible bands. For a reduction that
+   * picks the colours to keep rather than spacing them evenly, use
+   * `quantize()`.
+   *
+   * @param number levels: 2 or more.
+   * @returns self
+   */
+  posterize(levels) {
+    var table = filters.posterize_lut(levels)
+
+    return self.apply_lut(table, table, table, nil)
+  }
+
+  /**
+   * Scales the alpha channel, making the whole image more
+   * transparent.
+   *
+   * The scaling is relative: applying 0.5 twice leaves a quarter of
+   * the original opacity, not half.
+   *
+   * @param number factor: 0 (invisible) to 1 (unchanged).
+   * @returns self
+   */
+  opacity(factor) {
+    return self.apply_lut(nil, nil, nil, filters.scale_lut(factor))
+  }
+
+  /**
+   * Converts the image to shades of grey.
+   *
+   * Channels are weighted for perceived brightness, so a bright yellow
+   * comes out light and a deep blue comes out dark, which is what the
+   * eye expects.
+   *
+   * @returns self
+   */
+  grayscale() {
+    return self.apply_matrix(filters.grayscale_matrix())
+  }
+
+  /**
+   * Gives the image the warm brown cast of an old photograph.
+   *
+   * @returns self
+   */
+  sepia() {
+    return self.apply_matrix(filters.sepia_matrix())
+  }
+
+  /**
+   * Scales the image's saturation.
+   *
+   * @param number amount: 0 removes all colour, 1 leaves it alone,
+   *    above 1 intensifies.
+   * @returns self
+   */
+  saturate(amount) {
+    return self.apply_matrix(filters.saturation_matrix(amount))
+  }
+
+  /**
+   * Rotates every hue around the colour wheel, leaving brightness and
+   * saturation alone.
+   *
+   * @param number degrees
+   * @returns self
+   */
+  hue_rotate(degrees) {
+    return self.apply_matrix(filters.hue_rotate_matrix(degrees))
+  }
+
+  /**
+   * Maps the image's brightness onto a two-colour ramp.
+   *
+   * Dark pixels take `shadow`, light ones take `highlight`, and
+   * everything between is interpolated.
+   *
+   * @param Color|string|number shadow
+   * @param Color|string|number highlight
+   * @returns self
+   */
+  duotone(shadow, highlight) {
+    return self.apply_matrix(filters.duotone_matrix(shadow, highlight))
+  }
+
+  /**
+   * Blends a flat colour into the image.
+   *
+   * At an amount of 1 the image becomes that colour entirely; at 0.2
+   * it takes on a wash of it. Alpha is untouched, so transparent areas
+   * stay transparent.
+   *
+   * @param Color|string|number color
+   * @param ?number amount: 0 to 1 - Default: 0.5.
+   * @returns self
+   */
+  tint(color, amount) {
+    var paint = Color.parse(color)
+    var mix = amount == nil ? 0.5 : (0).max((1).min(amount))
+    var keep = 1 - mix
+
+    return self.apply_matrix([
+      keep, 0, 0, 0, paint.r * mix,
+      0, keep, 0, 0, paint.g * mix,
+      0, 0, keep, 0, paint.b * mix,
+      0, 0, 0, 1, 0,
+    ])
+  }
+
+  /**
+   * Converts to grey and then tints, producing a monochrome image in
+   * a single colour.
+   *
+   * @param Color|string|number color
+   * @returns self
+   */
+  colorize(color) {
+    var paint = Color.parse(color)
+
+    return self.duotone(Color(0, 0, 0, paint.a), paint)
+  }
+
+  /**
+   * Reduces the image to at most a given number of colours.
+   *
+   * Unlike `posterize()`, the colours kept are chosen to suit the
+   * image rather than spaced evenly, so a photograph survives far
+   * fewer of them. Dithering trades visible banding for a fine
+   * stipple, which almost always looks better at low colour counts.
+   *
+   * This is also a preview of what GIF export will do, since GIF
+   * cannot hold more than 256 colours per frame.
+   *
+   * @param ?number colors: 2 to 256 - Default: 256.
+   * @param ?bool dither: - Default: false.
+   * @returns self
+   */
+  quantize(colors, dither) {
+    _imagine.quantize(
+      self._pixels, self._width, self._height,
+      colors == nil ? 256 : colors,
+      dither == true
+    )
+
+    return self
+  }
+
+  /**
+   * Multiplies the colour channels by alpha.
+   *
+   * `imagine` keeps straight alpha everywhere, so this is for handing
+   * pixels to something that expects them premultiplied. It loses
+   * precision in near-transparent pixels and cannot be perfectly
+   * undone.
+   *
+   * @returns self
+   */
+  premultiply() {
+    _imagine.premultiply(self._pixels, false)
+    return self
+  }
+
+  /**
+   * Undoes `premultiply()`, as far as 8 bits allow.
+   *
+   * @returns self
+   */
+  unpremultiply() {
+    _imagine.premultiply(self._pixels, true)
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # convolution filters
+  # ------------------------------------------------------------------
+
+  /**
+   * Applies a convolution kernel to the image.
+   *
+   * The kernel is a flat list of `size * size` numbers with an odd
+   * `size`. The default divisor of 0 means "divide by the kernel's
+   * own sum", which is what nearly every published kernel expects;
+   * pass an explicit divisor for the ones whose weights sum to zero.
+   *
+   * Alpha goes through the kernel along with the colour channels
+   * unless `keep_alpha` says otherwise, so blurring a shape softens
+   * its edge rather than leaving a hard cutout. Turn that off for any
+   * kernel whose weights do not sum to one: a Laplacian over a
+   * uniformly opaque image sums to zero, and would make the whole
+   * result invisible.
+   *
+   * @param list kernel
+   * @param ?dict options: `divisor` (default 0), `offset` (default 0),
+   *    `edge` (default `EDGE_CLAMP`), `keep_alpha` (default false).
+   * @returns self
+   */
+  convolve(kernel, options) {
+    var divisor = is_dict(options) ? options.get('divisor', 0) : 0
+    var offset = is_dict(options) ? options.get('offset', 0) : 0
+    var edge = is_dict(options) ? options.get('edge', EDGE_CLAMP) : EDGE_CLAMP
+    var keep_alpha = is_dict(options) ? options.get('keep_alpha', false) : false
+
+    return self._replace(_imagine.convolve(
+      self._pixels, self._width, self._height,
+      kernel, divisor, offset, edge, keep_alpha == true
+    ))
+  }
+
+  /**
+   * Blurs the image with a true Gaussian.
+   *
+   * The radius is the blur's standard deviation in pixels: about two
+   * thirds of each pixel's contribution falls within that distance,
+   * and the visible spread is roughly three times it. Cost grows with
+   * the radius but only linearly, because the blur is separable.
+   *
+   * Alpha is premultiplied for the duration, so blurring a shape on a
+   * transparent background does not drag a dark halo into its edge.
+   *
+   * @param ?number radius: Greater than zero - Default: 2.
+   * @returns self
+   */
+  blur(radius) {
+    return self._replace(
+      _imagine.blur(self._pixels, self._width, self._height, radius == nil ? 2 : radius)
+    )
+  }
+
+  /**
+   * Sharpens the image.
+   *
+   * @param ?number strength: 1 is moderate; much above 3 starts
+   *    producing halos - Default: 1.
+   * @returns self
+   */
+  sharpen(strength) {
+    return self.convolve(filters.sharpen_kernel(strength), { keep_alpha: true })
+  }
+
+  /**
+   * Softens the image with a weighted 3x3 average.
+   *
+   * Cheaper and harsher than `blur()`, and fixed at one pixel of
+   * reach.
+   *
+   * @param ?number weight: How much of the original to keep - Default: 8.
+   * @returns self
+   */
+  smooth(weight) {
+    return self.convolve(filters.smooth_kernel(weight))
+  }
+
+  /**
+   * Turns the image into a grey relief, as if stamped into metal.
+   *
+   * @returns self
+   */
+  emboss() {
+    return self.convolve(filters.emboss_kernel(), {
+      divisor: 1,
+      offset: 128,
+      keep_alpha: true,
+    })
+  }
+
+  /**
+   * Leaves only the image's edges, everything flat going black.
+   *
+   * @returns self
+   */
+  edges() {
+    return self.convolve(filters.edge_kernel(), { divisor: 1, keep_alpha: true })
+  }
+
+  /**
+   * Exaggerates local detail by removing the local mean.
+   *
+   * @returns self
+   */
+  mean_removal() {
+    return self.convolve(filters.mean_removal_kernel(), {
+      divisor: 1,
+      keep_alpha: true,
+    })
+  }
+
+  /**
+   * Replaces each block of pixels with its average, producing the
+   * familiar censoring mosaic.
+   *
+   * @param ?number size: The block's side in pixels - Default: 8.
+   * @returns self
+   */
+  pixelate(size) {
+    var block = size == nil ? 8 : size.floor()
+
+    if block < 2 {
+      return self
+    }
+
+    var width = self._width
+    var height = self._height
+
+    iter var by = 0; by < height; by += block {
+      iter var bx = 0; bx < width; bx += block {
+        _average_block(
+          self._pixels, width,
+          bx, by, (bx + block).min(width), (by + block).min(height)
+        )
+      }
+    }
+
+    return self
+  }
+
+  # ------------------------------------------------------------------
+  # compositing
+  # ------------------------------------------------------------------
+
+  /**
+   * Draws another image onto this one.
+   *
+   * The source is clipped to this image's edges, and its position may
+   * be negative, so a sprite hanging off the top-left corner draws
+   * correctly.
+   *
+   * ```zuri
+   * var badge = Image.open('badge.png')
+   *
+   * photo.draw_image(badge, 12, 12, { opacity: 0.8 })
+   * ```
+   *
+   * @param Image source
+   * @param ?number x: - Default: 0.
+   * @param ?number y: - Default: 0.
+   * @param ?dict options: `opacity` (0-1, default 1), `blend`
+   *    (default `BLEND_NORMAL`).
+   * @returns self
+   */
+  draw_image(source, x, y, options) {
+    if !is_instance(source) or !instance_of(source, Image) {
+      raise ImageError('draw_image() needs an Image, ${typeof(source)} given')
+    }
+
+    var opacity = is_dict(options) ? options.get('opacity', 1) : 1
+    var blend = is_dict(options) ? options.get('blend', BLEND_NORMAL) : BLEND_NORMAL
+
+    # Compositing an image onto itself needs a snapshot of the source,
+    # or reads would see pixels this call has already written.
+    var pixels = source.pixels()
+
+    if pixels == self._pixels {
+      pixels = pixels.clone()
+    }
+
+    _imagine.composite(
+      self._pixels, self._width, self._height,
+      pixels, source.width(), source.height(),
+      x == nil ? 0 : x, y == nil ? 0 : y,
+      opacity, blend
+    )
+
+    return self
+  }
+
+  /**
+   * Draws another image onto this one, positioned by anchor rather
+   * than by coordinates.
+   *
+   * ```zuri
+   * photo.place(watermark, BOTTOM_RIGHT, { margin: 16, opacity: 0.5 })
+   * ```
+   *
+   * @param Image source
+   * @param ?string anchor: - Default: `CENTER`.
+   * @param ?dict options: `margin` (inset from the edges, default 0),
+   *    plus everything `draw_image()` takes.
+   * @returns self
+   */
+  place(source, anchor, options) {
+    if !is_instance(source) or !instance_of(source, Image) {
+      raise ImageError('place() needs an Image, ${typeof(source)} given')
+    }
+
+    var margin = is_dict(options) ? options.get('margin', 0) : 0
+
+    var offset = _anchor_offset(
+      anchor == nil ? CENTER : anchor,
+      self._width - margin * 2,
+      self._height - margin * 2,
+      source.width(),
+      source.height()
+    )
+
+    return self.draw_image(source, offset[0] + margin, offset[1] + margin, options)
+  }
+
+  /**
+   * Uses another image as an alpha mask.
+   *
+   * Each of this image's pixels keeps its colour and takes its
+   * transparency from the mask: where the mask is opaque white this
+   * image shows through fully, where the mask is black or transparent
+   * this image disappears, and greys give partial transparency.
+   *
+   * The mask's own alpha counts too, so a shape drawn on a transparent
+   * background works as a mask without being filled in first.
+   *
+   * The mask must be the same size as this image.
+   *
+   * @param Image mask
+   * @returns self
+   * @throws BoundsError When the mask is a different size.
+   */
+  mask(mask) {
+    if !is_instance(mask) or !instance_of(mask, Image) {
+      raise ImageError('mask() needs an Image, ${typeof(mask)} given')
+    }
+
+    if mask.width() != self._width or mask.height() != self._height {
+      raise BoundsError(
+        'the mask is ${mask.width()}x${mask.height()} but the image is ${self._width}x${self._height}'
+      )
+    }
+
+    _apply_mask(self._pixels, mask.pixels())
+    return self
+  }
+
+  /**
+   * Composites the image over a solid colour, leaving it fully
+   * opaque.
+   *
+   * This is what happens on export to a format without an alpha
+   * channel; doing it explicitly first lets you choose the colour and
+   * see the result.
+   *
+   * @param ?Color|string|number background: - Default: white.
+   * @returns self
+   */
+  flatten(background) {
+    var under = background == nil ? Color(255, 255, 255) : Color.parse(background)
+
+    _flatten_buffer(self._pixels, under.r, under.g, under.b)
+    return self
+  }
+
+
+  # ------------------------------------------------------------------
+  # analysis
+  # ------------------------------------------------------------------
+
+  /**
+   * Counts how many pixels hold each value, per channel.
+   *
+   * Returns a dictionary of four 256-entry lists: `red`, `green`,
+   * `blue` and `luma`, where luma is perceived brightness. Fully
+   * transparent pixels are skipped, since their colour is not visible
+   * and would otherwise pile up at whatever the buffer happens to
+   * hold there.
+   *
+   * A histogram is what tells you an image is underexposed (everything
+   * bunched at the low end), flat (bunched in the middle), or clipped
+   * (a spike at 0 or 255).
+   *
+   * @returns dict
+   */
+  histogram() {
+    var red = [0] * 256
+    var green = [0] * 256
+    var blue = [0] * 256
+    var luma = [0] * 256
+
+    _count_values(self._pixels, red, green, blue, luma)
+
+    return { red, green, blue, luma }
+  }
+
+  /**
+   * Stretches the image's tones to fill the full range.
+   *
+   * The black and white points are found from the brightness
+   * histogram, ignoring a small fraction at each end so that a handful
+   * of stray pixels cannot decide the result. This is the automatic
+   * version of `levels()`, and it is the first thing to try on a flat
+   * or hazy photograph.
+   *
+   * An image that already spans the full range, or one with no visible
+   * pixels at all, is left alone.
+   *
+   * @param ?dict options: `clip` (the fraction to ignore at each end,
+   *    0 to 0.2 - Default: 0.005), `gamma` (a midtone curve to apply
+   *    as well - Default: 1).
+   * @returns self
+   */
+  auto_levels(options) {
+    var clip = is_dict(options) ? options.get('clip', 0.005) : 0.005
+    var gamma = is_dict(options) ? options.get('gamma') : nil
+
+    clip = (0).max((0.2).min(clip))
+
+    var luma = self.histogram().luma
+    var counted = 0
+
+    for count in luma {
+      counted += count
+    }
+
+    if counted == 0 {
+      return self
+    }
+
+    var cut = (counted * clip).floor()
+    var black = _percentile(luma, cut)
+    var white = _percentile(luma, counted - cut - 1)
+
+    if white <= black {
+      return self
+    }
+
+    return self.levels(black, white, gamma)
+  }
+
+  /**
+   * The average colour of the image.
+   *
+   * Pixels are weighted by their alpha, so a mostly transparent image
+   * reports the colour of the part you can actually see rather than
+   * having it washed out by whatever is behind the transparency. The
+   * returned colour's own alpha is the mean alpha.
+   *
+   * An image with nothing visible in it returns transparent black.
+   *
+   * @returns Color
+   */
+  average_color() {
+    var totals = _sum_channels(self._pixels)
+
+    if totals[4] == 0 {
+      return Color(0, 0, 0, 0)
+    }
+
+    return Color(
+      totals[0] / totals[4],
+      totals[1] / totals[4],
+      totals[2] / totals[4],
+      totals[3] / (self._pixels.length() / 4)
+    )
+  }
+
+  /**
+   * The colours that occupy the most of the image, most common first.
+   *
+   * The image is shrunk and reduced to a small palette first, so this
+   * costs about the same whatever the original size. Nearly
+   * transparent pixels are ignored.
+   *
+   * The usual use is picking a background or accent colour to show
+   * while a photograph is still loading.
+   *
+   * ```zuri
+   * var accent = photo.dominant_colors(1)[0]
+   * ```
+   *
+   * @param ?number count: How many to return - Default: 5.
+   * @param ?dict options: `sample` (the size the image is reduced to
+   *    before counting - Default: 96), `palette` (how many colours to
+   *    quantize to - Default: 32).
+   * @returns list
+   */
+  dominant_colors(count, options) {
+    var wanted = count == nil ? 5 : count.floor().max(1)
+    var sample = is_dict(options) ? options.get('sample', 96) : 96
+    var palette = is_dict(options) ? options.get('palette', 32) : 32
+
+    var small = self.thumbnail(sample, sample, BILINEAR)
+
+    if small.width() * small.height() < 4 {
+      small = self.clone()
+    }
+
+    small.quantize(palette)
+
+    var counts = _tally_colors(small.pixels())
+
+    var keys = counts.keys()
+
+    # Selection sort by count, taking only as many as were asked for;
+    # the palette is small and only the top few matter.
+    var found = []
+
+    iter var taken = 0; taken < wanted and keys.length() > 0; taken++ {
+      var best = 0
+
+      iter var i = 1; i < keys.length(); i++ {
+        if counts[keys[i]] > counts[keys[best]] {
+          best = i
+        }
+      }
+
+      var parts = keys[best].split(',')
+      found.append(Color(
+        parts[0].to_number(),
+        parts[1].to_number(),
+        parts[2].to_number()
+      ))
+
+      keys.remove_at(best)
+    }
+
+    return found
+  }
+
+  /**
+   * How different two images are, from 0 (identical) to 1.
+   *
+   * The score is the mean difference across the colour channels,
+   * weighted by how opaque each pixel is in either image, so
+   * transparent regions do not count as agreement. Images of different
+   * sizes are never comparable and return 1.
+   *
+   * ```zuri
+   * if rendered.difference(expected) > 0.01 {
+   *   raise Exception('the rendering changed')
+   * }
+   * ```
+   *
+   * @param Image other
+   * @returns number
+   */
+  difference(other) {
+    if !is_instance(other) or !instance_of(other, Image) {
+      raise ImageError('difference() needs an Image, ${typeof(other)} given')
+    }
+
+    if other.width() != self._width or other.height() != self._height {
+      return 1
+    }
+
+    var scored = _score_difference(self._pixels, other.pixels())
+
+    if scored[1] == 0 {
+      return 0
+    }
+
+    return scored[0] / scored[1] / (255 * 4)
+  }
+
+  # ------------------------------------------------------------------
+  # text
+  # ------------------------------------------------------------------
+
+  /**
+   * Draws a string.
+   *
+   * `x` and `y` are the top-left corner of the text's box, not its
+   * baseline, because that is what you know when placing text in a
+   * layout. Pass `{ baseline: true }` to treat `y` as the first
+   * line's baseline instead.
+   *
+   * A `\n` starts a new line. Multi-line text is aligned by the
+   * `align` option, which positions the lines against each other, not
+   * against the image.
+   *
+   * ```zuri
+   * var font = Font.load('Inter.ttf').size(28)
+   *
+   * card.text(24, 24, 'Hello\nthere', font, '#111111', {
+   *   align: ALIGN_CENTER,
+   *   line_height: 1.4,
+   * })
+   * ```
+   *
+   * @param number x
+   * @param number y
+   * @param string text
+   * @param Font font
+   * @param Color|string|number color
+   * @param ?dict options: `align`, `line_height` (multiplier, default
+   *    1), `tracking` (extra pixels between characters, default 0),
+   *    `baseline` (bool, default false), `width` (wrap to this many
+   *    pixels).
+   * @returns self
+   */
+  text(x, y, text, font, color, options) {
+    if font == nil {
+      raise ImageError('text() needs a font')
+    }
+
+    var content = text
+
+    if is_dict(options) and is_number(options.get('width')) {
+      content = font.wrap(content, options.width, options)
+    }
+
+    var rendered = font.render(content, options)
+    var from_baseline = is_dict(options) ? options.get('baseline', false) : false
+
+    # render_text() pads the mask so glyphs that overhang their box
+    # are not clipped; the baseline it reports is inside that padding,
+    # so drawing at `y` means offsetting by it.
+    var top = from_baseline == true ?
+      y - rendered.baseline :
+      y - (rendered.baseline - font.metrics().ascent)
+
+    var left = x - (rendered.baseline - font.metrics().ascent)
+
+    return self.draw_mask(
+      rendered.coverage, rendered.width, rendered.height, left, top, color
+    )
+  }
+
+  /**
+   * Measures a string as `text()` would draw it, without drawing it.
+   *
+   * Returns a dictionary holding `width`, `height`, `baseline` and
+   * `lines`.
+   *
+   * @param string text
+   * @param Font font
+   * @param ?dict options: The same options `text()` takes, `width`
+   *    included, so a measurement of wrapped text matches what would
+   *    actually be drawn.
+   * @returns dict
+   */
+  text_size(text, font, options) {
+    if font == nil {
+      raise ImageError('text_size() needs a font')
+    }
+
+    var content = text
+
+    if is_dict(options) and is_number(options.get('width')) {
+      content = font.wrap(content, options.width, options)
+    }
+
+    return font.measure(content, options)
+  }
+
+  /**
+   * Draws a string positioned by anchor rather than by coordinates.
+   *
+   * @param string text
+   * @param Font font
+   * @param Color|string|number color
+   * @param ?string anchor: - Default: `CENTER`.
+   * @param ?dict options: `margin`, plus everything `text()` takes.
+   * @returns self
+   */
+  place_text(text, font, color, anchor, options) {
+    var box = self.text_size(text, font, options)
+    var margin = is_dict(options) ? options.get('margin', 0) : 0
+
+    var offset = _anchor_offset(
+      anchor == nil ? CENTER : anchor,
+      self._width - margin * 2,
+      self._height - margin * 2,
+      box.width,
+      box.height
+    )
+
+    return self.text(offset[0] + margin, offset[1] + margin, text, font, color, options)
+  }
+
+  # ------------------------------------------------------------------
+  # output
+  # ------------------------------------------------------------------
+
+  /**
+   * Encodes the image and returns the bytes.
+   *
+   * Options understood, by format:
+   *
+   * - `quality` (1-100) for JPEG, WebP and AVIF. Defaults to 85 for
+   *   JPEG and 80 for AVIF.
+   * - `compression` for PNG: `'fast'`, `'default'` or `'best'`. All
+   *   three are lossless; they trade encoding time for file size.
+   * - `speed` (1-10) for AVIF. Lower is slower and smaller.
+   * - `background` for JPEG, the colour transparent pixels are
+   *   flattened against. Defaults to white.
+   * - `threshold` (0-255) for WBMP, the brightness cut.
+   *
+   * @param ?string format: - Default: the format this image was
+   *    decoded from, or `PNG`.
+   * @param ?dict options
+   * @returns bytes
+   * @throws EncodeError When the format cannot be written.
+   */
+  encode(format, options) {
+    var target = formats.normalize(format == nil ? (self._format or PNG) : format)
+
+    if target == 'wbmp' {
+      var threshold = is_dict(options) ? options.get('threshold') : nil
+
+      return formats.encode_wbmp(self._pixels, self._width, self._height, threshold)
+    }
+
+    var settings = is_dict(options) ? options.clone() : {}
+
+    # JPEG has no alpha, so the encoder needs to know what to flatten
+    # against; a Color is more convenient here than a packed number.
+    if settings.contains('background') {
+      settings.set('background', Color.parse(settings.background).to_packed())
+    }
+
+    catch {
+      return _imagine.encode(self._pixels, self._width, self._height, target, settings)
+    } as e {
+      raise EncodeError(e.message)
+    }
+  }
+
+  /**
+   * Writes the image to a file.
+   *
+   * The format is taken from the path's extension unless `format`
+   * overrides it, so `save('out.webp')` writes a WebP.
+   *
+   * @param string path
+   * @param ?dict options: `format`, plus everything `encode()` takes.
+   * @returns self
+   * @throws FormatError When the extension names no format this
+   *    module knows and no `format` option is given.
+   */
+  save(path, options) {
+    if !is_string(path) {
+      raise ImageError('save() needs a path, ${typeof(path)} given')
+    }
+
+    var target = is_dict(options) ? options.get('format') : nil
+
+    if target == nil {
+      target = formats.from_extension(path)
+    }
+
+    if target == nil {
+      raise FormatError(
+        "cannot tell what format to write '${path}' as; " +
+        'give it a known extension, or pass a format option'
+      )
+    }
+
+    file(path, 'wb').write(self.encode(target, options))
+    return self
+  }
+
+  /**
+   * Encodes the image as a `data:` URL, ready to drop into an `img`
+   * tag or a stylesheet.
+   *
+   * Base64 costs a third more bytes than the raw image, so this suits
+   * icons and small graphics rather than photographs.
+   *
+   * @param ?string format: - Default: `PNG`.
+   * @param ?dict options: Everything `encode()` takes.
+   * @returns string
+   */
+  to_data_url(format, options) {
+    var target = formats.normalize(format == nil ? PNG : format)
+    var encoded = base64.encode(self.encode(target, options))
+
+    return 'data:${formats.mime_for(target)};base64,${encoded}'
+  }
+
+  /**
+   * Encodes the image as a PNG. Lossless, with alpha.
+   *
+   * @param ?dict options: `compression`.
+   * @returns bytes
+   */
+  to_png(options) {
+    return self.encode(PNG, options)
+  }
+
+  /**
+   * Encodes the image as a JPEG. Lossy, no alpha.
+   *
+   * @param ?number quality: 1-100 - Default: 85.
+   * @param ?dict options: `background`.
+   * @returns bytes
+   */
+  to_jpeg(quality, options) {
+    var settings = is_dict(options) ? options.clone() : {}
+
+    if quality != nil {
+      settings.set('quality', quality)
+    }
+
+    return self.encode(JPEG, settings)
+  }
+
+  /**
+   * Encodes the image as a WebP.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_webp(options) {
+    return self.encode(WEBP, options)
+  }
+
+  /**
+   * Encodes the image as an AVIF.
+   *
+   * Small files, slow encoding. Lower `speed` values are slower and
+   * produce smaller files.
+   *
+   * @param ?number quality: 1-100 - Default: 80.
+   * @param ?dict options: `speed` (1-10, default 6).
+   * @returns bytes
+   */
+  to_avif(quality, options) {
+    var settings = is_dict(options) ? options.clone() : {}
+
+    if quality != nil {
+      settings.set('quality', quality)
+    }
+
+    return self.encode(AVIF, settings)
+  }
+
+  /**
+   * Encodes the image as a single-frame GIF, quantized to 256
+   * colours.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_gif(options) {
+    return self.encode(GIF, options)
+  }
+
+  /**
+   * Encodes the image as a BMP.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_bmp(options) {
+    return self.encode(BMP, options)
+  }
+
+  /**
+   * Encodes the image as a TIFF.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_tiff(options) {
+    return self.encode(TIFF, options)
+  }
+
+  /**
+   * Encodes the image as a QOI. Lossless with alpha, and several
+   * times faster than PNG to read and write.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_qoi(options) {
+    return self.encode(QOI, options)
+  }
+
+  /**
+   * Encodes the image as a Targa.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_tga(options) {
+    return self.encode(TGA, options)
+  }
+
+  /**
+   * Encodes the image as a Windows icon.
+   *
+   * @param ?dict options
+   * @returns bytes
+   */
+  to_ico(options) {
+    return self.encode(ICO, options)
+  }
+
+  /**
+   * Encodes the image as a one-bit Wireless Bitmap.
+   *
+   * @param ?number threshold: The brightness cut, 0-255 - Default: 128.
+   * @returns bytes
+   */
+  to_wbmp(threshold) {
+    return formats.encode_wbmp(self._pixels, self._width, self._height, threshold)
+  }
+
+  to_string() {
+    var kind = self._format == nil ? 'in-memory' : self._format
+
+    return '<Image ${self._width}x${self._height} ${kind}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Applies an EXIF orientation, returning the upright image.
+ *
+ * The image is handed back unchanged for orientation 1 (already
+ * upright) and for 0, which is what the reader reports when there is
+ * no tag at all.
+ */
+def _apply_orientation(image, orientation) {
+  var recipe = _ORIENTATIONS.get('${orientation}')
+
+  if recipe == nil or (recipe[0] == 0 and !recipe[1]) {
+    return image
+  }
+
+  var result = image
+
+  if recipe[1] {
+    result = result.flip(FLIP_HORIZONTAL)
+  }
+
+  if recipe[0] != 0 {
+    result = result.rotate(recipe[0])
+  }
+
+  return result
+}
+
+
+/**
+ * Where a `content_width x content_height` box sits inside a
+ * `width x height` one, for a given anchor.
+ *
+ * Returns `[x, y]`. Used by `cover()` to decide which part of an
+ * overflowing image to keep, and by `contain()` and `place()` to
+ * decide where to put a smaller one.
+ */
+def _anchor_offset(anchor, width, height, content_width, content_height) {
+  var spare_x = width - content_width
+  var spare_y = height - content_height
+
+  var x = (spare_x / 2).round()
+  var y = (spare_y / 2).round()
+
+  using anchor {
+    when TOP_LEFT {
+      x = 0
+      y = 0
+    }
+    when TOP {
+      y = 0
+    }
+    when TOP_RIGHT {
+      x = spare_x
+      y = 0
+    }
+    when LEFT {
+      x = 0
+    }
+    when CENTER {
+      # Already centred.
+    }
+    when RIGHT {
+      x = spare_x
+    }
+    when BOTTOM_LEFT {
+      x = 0
+      y = spare_y
+    }
+    when BOTTOM {
+      y = spare_y
+    }
+    when BOTTOM_RIGHT {
+      x = spare_x
+      y = spare_y
+    }
+    default {
+      raise ImageError("'${anchor}' is not a known anchor")
+    }
+  }
+
+  return [x, y]
+}
+
+
+/**
+ * The bucket a cumulative count lands in, walking a histogram from the
+ * bottom. Used to find the tone that a given fraction of the image
+ * falls below.
+ */
+def _percentile(counts, target) {
+  var running = 0
+
+  iter var value = 0; value < counts.length(); value++ {
+    running += counts[value]
+
+    if running > target {
+      return value
+    }
+  }
+
+  return 255
+}
+
+
+# ---------------------------------------------------------------------
+# The whole-buffer passes
+# ---------------------------------------------------------------------
+#
+# Ordinary functions with `bytes`-annotated parameters, for the reason
+# spelled out at the bottom of canvas.zu: the JIT proves a typed
+# parameter's shape and drops the guard in front of every indexed
+# access, and cannot do the same for a value read out of a field.
+# Everything here walks every pixel at least once, which is where that
+# difference is worth the indirection.
+
+
+/**
+ * Whether every pixel is fully opaque.
+ */
+def _scan_opaque(pixels: bytes) {
+  var total = pixels.length()
+
+  iter var at = 3; at < total; at += 4 {
+    if pixels[at] != 255 {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+/**
+ * Composites every pixel over an opaque colour, in place.
+ */
+def _flatten_buffer(pixels: bytes, r: number, g: number, b: number) {
+  var total = pixels.length()
+
+  iter var at = 0; at < total; at += 4 {
+    var alpha = pixels[at + 3]
+
+    if alpha == 255 {
+      continue
+    }
+
+    var inverse = 255 - alpha
+
+    pixels[at] = ((pixels[at] * alpha + r * inverse) / 255).round()
+    pixels[at + 1] = ((pixels[at + 1] * alpha + g * inverse) / 255).round()
+    pixels[at + 2] = ((pixels[at + 2] * alpha + b * inverse) / 255).round()
+    pixels[at + 3] = 255
+  }
+}
+
+
+/**
+ * Scales each pixel's alpha by the brightness and alpha of the
+ * matching pixel in a mask.
+ */
+def _apply_mask(pixels: bytes, mask: bytes) {
+  var total = pixels.length()
+
+  iter var at = 0; at < total; at += 4 {
+    var luma = 0.299 * mask[at] + 0.587 * mask[at + 1] + 0.114 * mask[at + 2]
+    var coverage = luma * mask[at + 3] / 255
+
+    pixels[at + 3] = (pixels[at + 3] * coverage / 255).round()
+  }
+}
+
+
+/**
+ * Replaces one rectangular block with its own average colour.
+ */
+def _average_block(
+  pixels: bytes,
+  width: number,
+  from_x: number,
+  from_y: number,
+  to_x: number,
+  to_y: number
+) {
+  var sum_r = 0
+  var sum_g = 0
+  var sum_b = 0
+  var sum_a = 0
+  var count = 0
+
+  iter var y = from_y; y < to_y; y++ {
+    var row = y * width * 4
+
+    iter var x = from_x; x < to_x; x++ {
+      var at = row + x * 4
+
+      sum_r += pixels[at]
+      sum_g += pixels[at + 1]
+      sum_b += pixels[at + 2]
+      sum_a += pixels[at + 3]
+      count++
+    }
+  }
+
+  if count == 0 {
+    return
+  }
+
+  var r = (sum_r / count).round()
+  var g = (sum_g / count).round()
+  var b = (sum_b / count).round()
+  var a = (sum_a / count).round()
+
+  iter var y = from_y; y < to_y; y++ {
+    var row = y * width * 4
+
+    iter var x = from_x; x < to_x; x++ {
+      var at = row + x * 4
+
+      pixels[at] = r
+      pixels[at + 1] = g
+      pixels[at + 2] = b
+      pixels[at + 3] = a
+    }
+  }
+}
+
+
+/**
+ * Tallies every visible pixel into four 256-entry buckets.
+ */
+def _count_values(pixels: bytes, red: list, green: list, blue: list, luma: list) {
+  var total = pixels.length()
+
+  iter var at = 0; at < total; at += 4 {
+    if pixels[at + 3] == 0 {
+      continue
+    }
+
+    var r = pixels[at]
+    var g = pixels[at + 1]
+    var b = pixels[at + 2]
+
+    red[r] += 1
+    green[g] += 1
+    blue[b] += 1
+    luma[(0.299 * r + 0.587 * g + 0.114 * b).round()] += 1
+  }
+}
+
+
+/**
+ * Alpha-weighted channel sums, as `[r, g, b, alpha, weight]`.
+ */
+def _sum_channels(pixels: bytes) {
+  var total = pixels.length()
+
+  var sum_r = 0
+  var sum_g = 0
+  var sum_b = 0
+  var sum_a = 0
+  var weight = 0
+
+  iter var at = 0; at < total; at += 4 {
+    var alpha = pixels[at + 3]
+
+    sum_a += alpha
+
+    if alpha == 0 {
+      continue
+    }
+
+    sum_r += pixels[at] * alpha
+    sum_g += pixels[at + 1] * alpha
+    sum_b += pixels[at + 2] * alpha
+    weight += alpha
+  }
+
+  return [sum_r, sum_g, sum_b, sum_a, weight]
+}
+
+
+/**
+ * The weighted channel difference between two buffers of one size, as
+ * `[sum, weight]`.
+ */
+def _score_difference(mine: bytes, theirs: bytes) {
+  var total = mine.length()
+
+  var sum = 0
+  var weight = 0
+
+  iter var at = 0; at < total; at += 4 {
+    var alpha = mine[at + 3].max(theirs[at + 3])
+
+    if alpha == 0 {
+      continue
+    }
+
+    var delta = (mine[at] - theirs[at]).abs() +
+      (mine[at + 1] - theirs[at + 1]).abs() +
+      (mine[at + 2] - theirs[at + 2]).abs() +
+      (mine[at + 3] - theirs[at + 3]).abs()
+
+    sum += delta * alpha
+    weight += alpha
+  }
+
+  return [sum, weight]
+}
+
+
+/**
+ * The bounding box of everything differing from a border colour by
+ * more than `tolerance`, as `[left, right, top, bottom]`. A right edge
+ * of -1 means nothing in the image differed from it.
+ */
+def _content_bounds(
+  pixels: bytes,
+  width: number,
+  height: number,
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+  tolerance: number
+) {
+  var left = width
+  var right = -1
+  var top = height
+  var bottom = -1
+
+  iter var y = 0; y < height; y++ {
+    var row = y * width * 4
+
+    iter var x = 0; x < width; x++ {
+      var at = row + x * 4
+
+      var dr = (pixels[at] - r).abs()
+      var dg = (pixels[at + 1] - g).abs()
+      var db = (pixels[at + 2] - b).abs()
+      var da = (pixels[at + 3] - a).abs()
+
+      if dr.max(dg.max(db.max(da))) <= tolerance {
+        continue
+      }
+
+      if x < left {
+        left = x
+      }
+      if x > right {
+        right = x
+      }
+      if y < top {
+        top = y
+      }
+      if y > bottom {
+        bottom = y
+      }
+    }
+  }
+
+  return [left, right, top, bottom]
+}
+
+
+/**
+ * Counts how often each visible colour occurs, keyed by its channels.
+ */
+def _tally_colors(pixels: bytes) {
+  var counts = {}
+  var total = pixels.length()
+
+  iter var at = 0; at < total; at += 4 {
+    if pixels[at + 3] < 8 {
+      continue
+    }
+
+    var key = '${pixels[at]},${pixels[at + 1]},${pixels[at + 2]}'
+    counts.set(key, counts.get(key, 0) + 1)
+  }
+
+  return counts
+}

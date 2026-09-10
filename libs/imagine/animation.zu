@@ -1,0 +1,447 @@
+#!-- part of the imagine module
+
+import _imagine
+
+import .errors { DecodeError, EncodeError, ImageError }
+import .formats
+import .image { Image }
+
+
+/**
+ * A sequence of images with a delay between each, read from or
+ * written to an animated format.
+ *
+ * Frames are whole images, already composited against whatever came
+ * before them, so frame 5 can be pulled out and used on its own
+ * without replaying the first four. That is the useful shape almost
+ * all of the time, and it is why the disposal and transparency rules
+ * an animated GIF is built from never surface here.
+ *
+ * ```zuri
+ * import imagine { Animation }
+ *
+ * var animation = Animation.open('loading.gif')
+ *
+ * echo '${animation.length()} frames, ${animation.duration()}ms total'
+ *
+ * animation
+ *   .map(@(frame) {
+ *     return frame.grayscale()
+ *   })
+ *   .save('loading-grey.gif')
+ * ```
+ *
+ * ## What can be read and written
+ *
+ * Animated GIF and animated WebP can both be read. Only GIF can be
+ * written; an animation saved as WebP raises `EncodeError` rather
+ * than quietly writing one frame. [[imagine.capabilities]] lists what
+ * is available under `animated`.
+ *
+ * ## Memory
+ *
+ * Every frame is a full image, so a 100-frame 500x500 animation is
+ * 100 MB decoded. Animations are worth streaming frame by frame when
+ * they are large, which `frames()` allows by handing back the list
+ * itself.
+ *
+ * @printable
+ */
+class Animation {
+
+  var _frames
+  var _delays
+  var _repeat
+  var _format
+
+  /**
+   * Creates an animation from a list of images.
+   *
+   * Every frame must be the same size, since animated formats have one
+   * canvas that each frame paints into.
+   *
+   * @param list frames: A list of [[imagine.Image]].
+   * @param ?number|list delay: Milliseconds per frame, either one
+   *    number for all of them or one per frame - Default: 100.
+   * @param ?number repeat: How many times to loop, 0 for forever
+   *    - Default: 0.
+   * @param ?string format: The format these frames were decoded from,
+   *    recorded as metadata - Default: nil.
+   * @throws ImageError When the frames are not all images of one size.
+   */
+  @new(frames, delay, repeat, format) {
+    if !is_list(frames) or frames.length() == 0 {
+      raise ImageError('an animation needs at least one frame')
+    }
+
+    var width = nil
+    var height = nil
+
+    for frame in frames {
+      if !is_instance(frame) or !instance_of(frame, Image) {
+        raise ImageError('every frame must be an Image, got ${typeof(frame)}')
+      }
+
+      if width == nil {
+        width = frame.width()
+        height = frame.height()
+      } else if frame.width() != width or frame.height() != height {
+        raise ImageError(
+          'every frame must be the same size; found ${frame.width()}x${frame.height()} ' +
+          'among ${width}x${height} frames'
+        )
+      }
+    }
+
+    self._frames = frames
+    self._delays = _expand_delays(delay, frames.length())
+    self._repeat = repeat == nil ? 0 : repeat
+    self._format = format
+  }
+
+  /**
+   * Opens an animated image file.
+   *
+   * A still image opens as a one-frame animation rather than an
+   * error, so code that handles both does not need to branch.
+   *
+   * @param string|file source
+   * @returns Animation
+   * @throws DecodeError When the file is not a readable image.
+   */
+  static open(source) {
+    var handle = source
+
+    if is_string(source) {
+      handle = file(source, 'rb')
+    }
+
+    if !is_file(handle) {
+      raise ImageError('expected a path or a file, ${typeof(source)} given')
+    }
+
+    if !handle.exists() {
+      raise DecodeError("no such file: '${handle.path()}'")
+    }
+
+    return Animation.decode(handle.read())
+  }
+
+  /**
+   * Decodes animated image data held in memory.
+   *
+   * @param bytes data
+   * @returns Animation
+   * @throws DecodeError When the data is not a readable image.
+   */
+  static decode(data) {
+    if !is_bytes(data) {
+      raise ImageError('image data must be bytes, ${typeof(data)} given')
+    }
+
+    var kind = formats.detect(data)
+
+    if kind == nil {
+      raise DecodeError('not a recognisable image')
+    }
+
+    # A still image is a perfectly good one-frame animation, and
+    # treating it as one saves every caller a branch.
+    if !formats.animatable().contains(kind) {
+      return Animation([Image.decode(data)], 100, 0)
+    }
+
+    var decoded = nil
+
+    catch {
+      decoded = _imagine.decode_frames(data, kind)
+    } as e {
+      raise DecodeError(e.message)
+    }
+
+    var frames = []
+    var delays = []
+
+    for entry in decoded {
+      frames.append(Image.from_pixels(entry.width, entry.height, entry.pixels))
+      delays.append(entry.delay)
+    }
+
+    return Animation(frames, delays, 0, kind)
+  }
+
+  /**
+   * How many frames the animation has.
+   *
+   * @returns number
+   */
+  length() {
+    return self._frames.length()
+  }
+
+  /**
+   * The frames, as a list of [[imagine.Image]].
+   *
+   * This is the live list, not a copy: changing an image in it changes
+   * the animation, which is what makes frame-by-frame editing possible
+   * without duplicating everything. Use `map()` when you want the
+   * original left alone.
+   *
+   * @returns list
+   */
+  frames() {
+    return self._frames
+  }
+
+  /**
+   * One frame by index, counting from zero.
+   *
+   * @param number index
+   * @returns Image
+   * @throws ImageError When there is no such frame.
+   */
+  frame(index) {
+    if !is_number(index) or index < 0 or index >= self._frames.length() {
+      raise ImageError('no frame ${index}; the animation has ${self._frames.length()}')
+    }
+
+    return self._frames[index.floor()]
+  }
+
+  /**
+   * The per-frame delays in milliseconds.
+   *
+   * @returns list
+   */
+  delays() {
+    return self._delays
+  }
+
+  /**
+   * How long one pass through the animation takes, in milliseconds.
+   *
+   * @returns number
+   */
+  duration() {
+    var total = 0
+
+    for delay in self._delays {
+      total += delay
+    }
+
+    return total
+  }
+
+  /**
+   * The frames' shared width in pixels.
+   *
+   * @returns number
+   */
+  width() {
+    return self._frames[0].width()
+  }
+
+  /**
+   * The frames' shared height in pixels.
+   *
+   * @returns number
+   */
+  height() {
+    return self._frames[0].height()
+  }
+
+  /**
+   * The format this animation was decoded from, or `nil`.
+   *
+   * @returns ?string
+   */
+  format() {
+    return self._format
+  }
+
+  /**
+   * Sets how many times the animation loops when written out.
+   *
+   * @param number times: 0 loops forever.
+   * @returns self
+   */
+  repeat(times) {
+    if !is_number(times) or times < 0 {
+      raise ImageError('repeat count must not be negative, got ${times}')
+    }
+
+    self._repeat = times.floor()
+    return self
+  }
+
+  /**
+   * Sets the delay between frames.
+   *
+   * @param number|list delay: One value for every frame, or one per
+   *    frame.
+   * @returns self
+   */
+  delay(delay) {
+    self._delays = _expand_delays(delay, self._frames.length())
+    return self
+  }
+
+  /**
+   * Applies a function to every frame, returning a new animation.
+   *
+   * Each frame is copied before the function sees it, so a filter
+   * chain works directly as the body and this animation is left
+   * alone. That copy is the reason `map()` costs as much memory again
+   * as the animation itself; to filter in place instead, walk
+   * `frames()` and change each image directly.
+   *
+   * ```zuri
+   * var grey = animation.map(@(frame) {
+   *   return frame.grayscale().blur(1)
+   * })
+   * ```
+   *
+   * @param function(1) fn
+   * @returns Animation
+   * @throws ImageError When the function returns anything but an image.
+   */
+  map(fn) {
+    if !is_function(fn) {
+      raise ImageError('map() needs a function, ${typeof(fn)} given')
+    }
+
+    var mapped = []
+
+    for frame in self._frames {
+      var result = fn(frame.clone())
+
+      if !is_instance(result) or !instance_of(result, Image) {
+        raise ImageError('the mapping function must return an Image')
+      }
+
+      mapped.append(result)
+    }
+
+    return Animation(mapped, self._delays.clone(), self._repeat, self._format)
+  }
+
+  /**
+   * Returns a new animation with the frames in reverse order.
+   *
+   * The frames themselves are shared with this animation rather than
+   * copied, since reordering them changes nothing about them. Editing
+   * one afterwards therefore shows up in both; `map()` is the one that
+   * copies.
+   *
+   * @returns Animation
+   */
+  reverse() {
+    return Animation(
+      self._frames.reverse(),
+      self._delays.reverse(),
+      self._repeat,
+      self._format
+    )
+  }
+
+  /**
+   * Returns the animation as a single image: its first frame.
+   *
+   * @returns Image
+   */
+  to_image() {
+    return self._frames[0]
+  }
+
+  /**
+   * Encodes the animation and returns the bytes.
+   *
+   * @param ?string format: - Default: `GIF`.
+   * @param ?dict options
+   * @returns bytes
+   * @throws EncodeError When the format cannot hold an animation.
+   */
+  encode(format, options) {
+    var target = formats.normalize(format == nil ? 'gif' : format)
+
+    var entries = []
+
+    iter var i = 0; i < self._frames.length(); i++ {
+      var frame = self._frames[i]
+
+      entries.append({
+        pixels: frame.pixels(),
+        width: frame.width(),
+        height: frame.height(),
+        delay: self._delays[i],
+      })
+    }
+
+    var settings = is_dict(options) ? options.clone() : {}
+    settings.set('repeat', self._repeat)
+
+    catch {
+      return _imagine.encode_frames(entries, target, settings)
+    } as e {
+      raise EncodeError(e.message)
+    }
+  }
+
+  /**
+   * Writes the animation to a file.
+   *
+   * @param string path
+   * @param ?dict options: `format`, plus everything `encode()` takes.
+   * @returns self
+   */
+  save(path, options) {
+    if !is_string(path) {
+      raise ImageError('save() needs a path, ${typeof(path)} given')
+    }
+
+    var target = is_dict(options) ? options.get('format') : nil
+
+    if target == nil {
+      target = formats.from_extension(path)
+    }
+
+    if target == nil {
+      target = 'gif'
+    }
+
+    file(path, 'wb').write(self.encode(target, options))
+    return self
+  }
+
+  to_string() {
+    return '<Animation ${self._frames.length()} frames, ${self.width()}x${self.height()}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Turns a delay argument into one value per frame.
+ */
+def _expand_delays(delay, count) {
+  if delay == nil {
+    return [100] * count
+  }
+
+  if is_number(delay) {
+    return [delay] * count
+  }
+
+  if is_list(delay) {
+    if delay.length() != count {
+      raise ImageError('got ${delay.length()} delays for ${count} frames')
+    }
+
+    return delay.clone()
+  }
+
+  raise ImageError('frame delay must be a number or a list, ${typeof(delay)} given')
+}

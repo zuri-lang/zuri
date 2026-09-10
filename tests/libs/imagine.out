@@ -1,0 +1,44 @@
+═══════════════════════════════════════════════════════
+  imagine module: test suite
+═══════════════════════════════════════════════════════
+  [PASS] Color construction clamps, rounds, and reads every hex and named form
+  [PASS] Color.parse() accepts every documented spelling and rejects the rest
+  [PASS] Color conversions, luminance and contrast agree with the colors module
+  [PASS] Color mixing, compositing and adjustment behave as documented
+  [PASS] Image construction validates its dimensions and starts transparent
+  [PASS] pixel reads and writes blend, replace and ignore out-of-range coordinates
+  [PASS] a clipping rectangle confines drawing and can be cleared
+  [PASS] the scanline rasterizer fills rectangles, ellipses and both winding rules
+  [PASS] anti-aliasing can be turned off and produces partial coverage when on
+  [PASS] stroke thickness is centred on the path
+  [PASS] drawing onto a fully transparent image writes valid partial coverage
+  [PASS] flood fill spreads four-connected and respects a barrier
+  [PASS] linear and radial gradients interpolate, blend and stay inside their bounds
+  [PASS] the resizing family produces the documented sizes and never mutates
+  [PASS] cropping, padding, rotation and transposition report the right dimensions
+  [PASS] mirroring and quarter turns move pixels in the documented direction
+  [PASS] trim() removes a uniform border and degrades sensibly
+  [PASS] lookup-table and colour-matrix filters produce the documented results
+  [PASS] the lookup-table and matrix primitives validate their inputs
+  [PASS] colour matrices combine correctly
+  [PASS] convolution handles alpha correctly and finds real edges
+  [PASS] the Gaussian blur spreads colour and validates its radius
+  [PASS] pixelate() averages each block independently
+  [PASS] compositing clips, honours opacity and applies blend modes
+  [PASS] an image can be composited onto itself
+  [PASS] place() positions by anchor and validates it
+  [PASS] mask() takes alpha from another image and checks its size
+  [PASS] histograms, auto levels, averages and dominant colours read the image correctly
+  [PASS] every self-describing format round-trips at the right size
+  [PASS] lossless formats preserve colour exactly and JPEG approximately
+  [PASS] format names, extensions and media types resolve both ways
+  [PASS] probing and capability reporting are honest about what this build can do
+  [PASS] unsupported and malformed input raises instead of failing quietly
+  [PASS] the WBMP codec round-trips, including multi-byte dimensions
+  [PASS] images encode as data URLs
+  [PASS] animations build, transform and round-trip through GIF
+  [PASS] text measurement and rendering behave correctly (when a system font is available)
+
+═══════════════════════════════════════════════════════
+  All 37 assertions passed.
+═══════════════════════════════════════════════════════

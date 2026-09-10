@@ -350,6 +350,24 @@ impl Value {
     }
   }
 
+  /// `with_bytes` for a caller that writes back into the buffer.
+  ///
+  /// Same rule as the read-only version, and it matters more here:
+  /// allocating anything while the borrow is live lets the collector
+  /// re-enter this `RefCell`, so build whatever you are going to
+  /// allocate before the call or after it, never inside `f`. Handing
+  /// out `&mut Vec<u8>` rather than `&mut [u8]` is deliberate; a
+  /// caller resizing a buffer in place (a decoder filling an empty
+  /// one, say) would otherwise have to allocate a second one and
+  /// copy it back.
+  pub fn with_bytes_mut<R>(&self, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+    debug_assert!(self.is_bytes());
+    match unsafe { &*self.as_obj() } {
+      Obj::Bytes(b) => f(&mut b.borrow_mut()),
+      _ => unreachable!("with_bytes_mut() called on a non-bytes Value"),
+    }
+  }
+
   /// `with_bytes`'s list counterpart; see its docs.
   pub fn with_list<R>(&self, f: impl FnOnce(&[Value]) -> R) -> R {
     debug_assert!(self.is_list());

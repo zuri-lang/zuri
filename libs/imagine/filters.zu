@@ -1,0 +1,599 @@
+#!-- part of the imagine module
+
+import math
+
+import .color { Color }
+import .errors { ImageError }
+
+
+/**
+ * Rec. 601 luma weights.
+ *
+ * These are what "grayscale" means to an image editor, and what
+ * [[imagine.Color.to_grayscale]] uses, so a grey produced by
+ * `Image.grayscale()` and one produced by `Color.to_grayscale()`
+ * agree. They are deliberately not the WCAG linear-light weights that
+ * [[colors.relative_luminance]] uses; those answer a different
+ * question, about contrast rather than appearance.
+ *
+ * @type list
+ */
+var LUMA = [0.299, 0.587, 0.114]
+
+/**
+ * The luma weights the colour-matrix filters use, from the SVG and
+ * CSS filter specifications.
+ *
+ * Saturation and hue rotation are defined against these, so a
+ * `saturate()` here matches what a browser does to the same image.
+ *
+ * @type list
+ */
+var MATRIX_LUMA = [0.213, 0.715, 0.072]
+
+
+/**
+ * The identity colour matrix: applying it changes nothing.
+ *
+ * A useful starting point for building one by hand.
+ *
+ * @returns list
+ */
+def identity_matrix() {
+  return [
+    1, 0, 0, 0, 0,
+    0, 1, 0, 0, 0,
+    0, 0, 1, 0, 0,
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * A colour matrix that collapses every colour to its grey of equal
+ * perceived brightness.
+ *
+ * @returns list
+ */
+def grayscale_matrix() {
+  var r = LUMA[0]
+  var g = LUMA[1]
+  var b = LUMA[2]
+
+  return [
+    r, g, b, 0, 0,
+    r, g, b, 0, 0,
+    r, g, b, 0, 0,
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * A colour matrix approximating the warm brown cast of a sepia
+ * photograph.
+ *
+ * The coefficients are the widely used Microsoft ones, which are what
+ * most software means by "sepia".
+ *
+ * @returns list
+ */
+def sepia_matrix() {
+  return [
+    0.393, 0.769, 0.189, 0, 0,
+    0.349, 0.686, 0.168, 0, 0,
+    0.272, 0.534, 0.131, 0, 0,
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * A colour matrix that scales saturation.
+ *
+ * An amount of 0 removes all colour, 1 leaves the image alone, and
+ * values above 1 push saturation past its original level. Amounts
+ * below 0 pass through the grey point and out the other side, which
+ * inverts hues; that is well defined but rarely what anyone wants.
+ *
+ * @param number amount
+ * @returns list
+ */
+def saturation_matrix(amount) {
+  if !is_number(amount) {
+    raise ImageError('saturation amount must be a number, ${typeof(amount)} given')
+  }
+
+  var r = MATRIX_LUMA[0]
+  var g = MATRIX_LUMA[1]
+  var b = MATRIX_LUMA[2]
+  var inverse = 1 - amount
+
+  return [
+    r + amount * (1 - r), g * inverse, b * inverse, 0, 0,
+    r * inverse, g + amount * (1 - g), b * inverse, 0, 0,
+    r * inverse, g * inverse, b + amount * (1 - b), 0, 0,
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * A colour matrix that rotates every hue around the colour wheel by
+ * an angle in degrees, leaving brightness and saturation alone.
+ *
+ * This is the rotation from the SVG filter specification, which
+ * approximates a true rotation in a luma-preserving space closely
+ * enough that the difference is not visible.
+ *
+ * @param number degrees: Positive rotates toward red, negative away from it.
+ * @returns list
+ */
+def hue_rotate_matrix(degrees) {
+  if !is_number(degrees) {
+    raise ImageError('hue rotation must be a number of degrees, ${typeof(degrees)} given')
+  }
+
+  var radians = degrees * math.PI / 180
+  var c = radians.cos()
+  var s = radians.sin()
+
+  return [
+    0.213 + c * 0.787 - s * 0.213,
+    0.715 - c * 0.715 - s * 0.715,
+    0.072 - c * 0.072 + s * 0.928,
+    0, 0,
+
+    0.213 - c * 0.213 + s * 0.143,
+    0.715 + c * 0.285 + s * 0.140,
+    0.072 - c * 0.072 - s * 0.283,
+    0, 0,
+
+    0.213 - c * 0.213 - s * 0.787,
+    0.715 - c * 0.715 + s * 0.715,
+    0.072 + c * 0.928 + s * 0.072,
+    0, 0,
+
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * A colour matrix that replaces every pixel's colour with a blend
+ * between two colours chosen by its brightness, a duotone.
+ *
+ * Dark pixels take _shadow_, light ones take _highlight_, and
+ * everything between is interpolated. Alpha is untouched.
+ *
+ * @param Color|string|number shadow: The colour black maps to.
+ * @param Color|string|number highlight: The colour white maps to.
+ * @returns list
+ */
+def duotone_matrix(shadow, highlight) {
+  var low = Color.parse(shadow)
+  var high = Color.parse(highlight)
+
+  var r = LUMA[0]
+  var g = LUMA[1]
+  var b = LUMA[2]
+
+  # Each output channel is luma scaled across the two endpoints, plus
+  # the shadow colour as the constant term.
+  var dr = (high.r - low.r) / 255
+  var dg = (high.g - low.g) / 255
+  var db = (high.b - low.b) / 255
+
+  return [
+    r * dr, g * dr, b * dr, 0, low.r,
+    r * dg, g * dg, b * dg, 0, low.g,
+    r * db, g * db, b * db, 0, low.b,
+    0, 0, 0, 1, 0,
+  ]
+}
+
+
+/**
+ * Multiplies two colour matrices, giving one matrix with the effect
+ * of applying _first_ and then _second_.
+ *
+ * Combining matrices this way and applying the result once is both
+ * faster and more accurate than applying each in turn, because the
+ * intermediate result is never rounded back to 8 bits.
+ *
+ * @param list first
+ * @param list second
+ * @returns list
+ */
+def combine_matrices(first, second) {
+  if !is_list(first) or !is_list(second) or
+     first.length() != 20 or second.length() != 20 {
+    raise ImageError('a colour matrix must be a list of 20 numbers')
+  }
+
+  var out = [0] * 20
+
+  iter var row = 0; row < 4; row++ {
+    iter var column = 0; column < 5; column++ {
+      var sum = 0
+
+      iter var k = 0; k < 4; k++ {
+        sum += second[row * 5 + k] * first[k * 5 + column]
+      }
+
+      # The constant column also picks up `second`'s own constant.
+      if column == 4 {
+        sum += second[row * 5 + 4]
+      }
+
+      out[row * 5 + column] = sum
+    }
+  }
+
+  return out
+}
+
+
+/**
+ * Builds a 256-entry lookup table from a function.
+ *
+ * The function is called once per possible input value, 0 through
+ * 255, and whatever it returns is clamped to a byte. This is the
+ * general way to write a tone curve: build the table once, and the
+ * image is then rewritten at memory speed no matter how large it is.
+ *
+ * ```zuri
+ * import imagine { filters }
+ *
+ * # A steep S-curve, for contrast that keeps its highlights.
+ * var curve = filters.build_lut(@(value) {
+ *   var t = value / 255
+ *   return 255 * t * t * (3 - 2 * t)
+ * })
+ * ```
+ *
+ * @param function(1) fn: Called with an input value, returns the output.
+ * @returns bytes
+ */
+def build_lut(fn) {
+  if !is_function(fn) {
+    raise ImageError('a lookup table needs a function, ${typeof(fn)} given')
+  }
+
+  var table = bytes(256)
+
+  iter var i = 0; i < 256; i++ {
+    var value = fn(i)
+
+    if !is_number(value) or value != value {
+      value = 0
+    }
+
+    table[i] = ((0).max((255).min(value))).round()
+  }
+
+  return table
+}
+
+
+/**
+ * A lookup table that leaves every value alone.
+ *
+ * @returns bytes
+ */
+def identity_lut() {
+  return build_lut(@(value) {
+    return value
+  })
+}
+
+
+/**
+ * A lookup table that adds a fixed amount to every value.
+ *
+ * @param number delta: -255 to 255. Positive brightens.
+ * @returns bytes
+ */
+def brightness_lut(delta) {
+  if !is_number(delta) {
+    raise ImageError('brightness must be a number, ${typeof(delta)} given')
+  }
+
+  return build_lut(@(value) {
+    return value + delta
+  })
+}
+
+
+/**
+ * A lookup table that pushes values away from or toward mid-grey.
+ *
+ * The amount runs -100 (everything collapses to grey) through 0 (no
+ * change) to 100 (everything is forced to black or white). This is
+ * the contrast curve most image editors use.
+ *
+ * @param number amount: -100 to 100.
+ * @returns bytes
+ */
+def contrast_lut(amount) {
+  if !is_number(amount) {
+    raise ImageError('contrast must be a number, ${typeof(amount)} given')
+  }
+
+  var clamped = (-100).max((100).min(amount))
+  var factor = (259 * (clamped + 255)) / (255 * (259 - clamped))
+
+  return build_lut(@(value) {
+    return factor * (value - 128) + 128
+  })
+}
+
+
+/**
+ * A lookup table applying a gamma curve.
+ *
+ * Values below 1 darken the midtones and values above 1 lighten them,
+ * while black and white stay put. Correcting an image encoded at one
+ * gamma for display at another is the usual reason to reach for this.
+ *
+ * @param number gamma: Greater than zero.
+ * @returns bytes
+ */
+def gamma_lut(gamma) {
+  if !is_number(gamma) or gamma <= 0 {
+    raise ImageError('gamma must be greater than zero, got ${gamma}')
+  }
+
+  var exponent = 1 / gamma
+
+  return build_lut(@(value) {
+    return 255 * ((value / 255) ** exponent)
+  })
+}
+
+
+/**
+ * A lookup table that inverts every value.
+ *
+ * @returns bytes
+ */
+def invert_lut() {
+  return build_lut(@(value) {
+    return 255 - value
+  })
+}
+
+
+/**
+ * A lookup table that forces every value to black or white.
+ *
+ * @param number level: Values below this become 0, the rest become 255.
+ * @returns bytes
+ */
+def threshold_lut(level) {
+  if !is_number(level) {
+    raise ImageError('threshold level must be a number, ${typeof(level)} given')
+  }
+
+  return build_lut(@(value) {
+    return value < level ? 0 : 255
+  })
+}
+
+
+/**
+ * A lookup table that reduces each channel to a fixed number of
+ * evenly spaced steps.
+ *
+ * @param number levels: 2 or more. Two gives a hard black and white split.
+ * @returns bytes
+ */
+def posterize_lut(levels) {
+  if !is_number(levels) or levels < 2 {
+    raise ImageError('posterize needs at least 2 levels, got ${levels}')
+  }
+
+  var steps = levels.floor()
+  var span = steps - 1
+
+  return build_lut(@(value) {
+    return (value * span / 255).round() * 255 / span
+  })
+}
+
+
+/**
+ * A lookup table that scales every value by a factor.
+ *
+ * Applied to the alpha channel, this is what `Image.opacity()` does.
+ *
+ * @param number factor: 0 to 1, though larger values are allowed and clamp.
+ * @returns bytes
+ */
+def scale_lut(factor) {
+  if !is_number(factor) or factor < 0 {
+    raise ImageError('scale factor must not be negative, got ${factor}')
+  }
+
+  return build_lut(@(value) {
+    return value * factor
+  })
+}
+
+
+/**
+ * A lookup table implementing a levels adjustment.
+ *
+ * Everything at or below _black_ becomes 0, everything at or above
+ * _white_ becomes 255, and the range between is stretched to fill the
+ * whole scale with _gamma_ applied along the way. This is the single
+ * most useful correction for a flat or washed-out photograph.
+ *
+ * @param number black: The input value that becomes black, 0-255.
+ * @param number white: The input value that becomes white, 0-255.
+ * @param ?number gamma: The midtone curve - Default: 1 (linear).
+ * @returns bytes
+ */
+def levels_lut(black, white, gamma) {
+  if !is_number(black) or !is_number(white) {
+    raise ImageError('levels endpoints must be numbers')
+  }
+
+  if white <= black {
+    raise ImageError('the white point (${white}) must be above the black point (${black})')
+  }
+
+  var span = white - black
+  var exponent = gamma == nil ? 1 : 1 / gamma
+
+  if gamma != nil and (!is_number(gamma) or gamma <= 0) {
+    raise ImageError('levels gamma must be greater than zero, got ${gamma}')
+  }
+
+  return build_lut(@(value) {
+    var normalized = (0).max((1).min((value - black) / span))
+
+    return 255 * (normalized ** exponent)
+  })
+}
+
+
+# ---------------------------------------------------------------------
+# Convolution kernels
+# ---------------------------------------------------------------------
+
+/**
+ * A 3x3 sharpening kernel.
+ *
+ * The strength is how much the centre pixel is emphasised over its
+ * neighbours; 1 is a moderate sharpen and values much above 3 start
+ * producing halos around edges.
+ *
+ * @param ?number strength: - Default: 1.
+ * @returns list
+ */
+def sharpen_kernel(strength) {
+  var amount = strength == nil ? 1 : strength
+
+  return [
+    0, -amount, 0,
+    -amount, 1 + 4 * amount, -amount,
+    0, -amount, 0,
+  ]
+}
+
+
+/**
+ * A 3x3 box blur kernel; every neighbour counts equally.
+ *
+ * Cheaper than a Gaussian and visibly boxier. `Image.blur()` uses a
+ * real Gaussian instead; this is here for the cases that want the
+ * harder look, or a single very cheap pass.
+ *
+ * @returns list
+ */
+def box_blur_kernel() {
+  return [
+    1, 1, 1,
+    1, 1, 1,
+    1, 1, 1,
+  ]
+}
+
+
+/**
+ * A 3x3 kernel that lifts edges into a grey relief.
+ *
+ * Used with an offset of 128, so flat areas come out mid-grey rather
+ * than black; `Image.emboss()` supplies that offset.
+ *
+ * @returns list
+ */
+def emboss_kernel() {
+  return [
+    -2, -1, 0,
+    -1, 1, 1,
+    0, 1, 2,
+  ]
+}
+
+
+/**
+ * A 3x3 Laplacian kernel that leaves only the edges.
+ *
+ * Its weights sum to zero, so it needs an explicit divisor of 1
+ * rather than the usual "divide by the sum".
+ *
+ * @returns list
+ */
+def edge_kernel() {
+  return [
+    -1, -1, -1,
+    -1, 8, -1,
+    -1, -1, -1,
+  ]
+}
+
+
+/**
+ * A 3x3 kernel that removes local mean, exaggerating detail.
+ *
+ * @returns list
+ */
+def mean_removal_kernel() {
+  return [
+    -1, -1, -1,
+    -1, 9, -1,
+    -1, -1, -1,
+  ]
+}
+
+
+/**
+ * A 3x3 smoothing kernel weighted toward the centre pixel.
+ *
+ * A larger weight keeps more of the original and smooths less.
+ *
+ * @param ?number weight: The centre weight - Default: 8.
+ * @returns list
+ */
+def smooth_kernel(weight) {
+  var centre = weight == nil ? 8 : weight
+
+  return [
+    1, 1, 1,
+    1, centre, 1,
+    1, 1, 1,
+  ]
+}
+
+
+/**
+ * A square Gaussian kernel with the given standard deviation.
+ *
+ * `Image.blur()` uses a separable Gaussian instead, which is far
+ * faster for anything but the smallest radius; this exists for code
+ * that wants the kernel itself, to combine with another.
+ *
+ * @param number sigma: Greater than zero.
+ * @returns list
+ */
+def gaussian_kernel(sigma) {
+  if !is_number(sigma) or sigma <= 0 {
+    raise ImageError('gaussian sigma must be greater than zero, got ${sigma}')
+  }
+
+  var radius = (sigma * 3).ceil().max(1)
+  var size = radius * 2 + 1
+  var denominator = 2 * sigma * sigma
+
+  var kernel = []
+
+  iter var y = -radius; y <= radius; y++ {
+    iter var x = -radius; x <= radius; x++ {
+      kernel.append(math.E ** (-(x * x + y * y) / denominator))
+    }
+  }
+
+  return kernel
+}

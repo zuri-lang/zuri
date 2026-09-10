@@ -1,0 +1,889 @@
+#!-- part of the imagine module
+
+import colors
+
+import .errors { ImageError }
+
+
+/**
+ * Clamps a channel value to 0-255 and rounds it to a whole number.
+ *
+ * Every entry point that accepts a channel goes through this, so a
+ * colour computed from a ratio never has to be pre-clamped by the
+ * caller.
+ */
+def _channel(value) {
+  if !is_number(value) {
+    raise ImageError('colour channel must be a number, ${typeof(value)} given')
+  }
+
+  # NaN compares unequal to itself, and would otherwise survive the
+  # clamp and reach the pixel buffer.
+  if value != value {
+    return 0
+  }
+
+  return ((0).max((255).min(value))).round()
+}
+
+
+/**
+ * An 8-bit RGBA colour.
+ *
+ * Alpha runs 0 (fully transparent) to 255 (fully opaque), the same
+ * convention as CSS, PNG and every modern image format. Colours are
+ * immutable: every method that would change one returns a new `Color`,
+ * so a colour held in a variable is safe to pass around and reuse.
+ *
+ * ```zuri
+ * import imagine { Color }
+ *
+ * var red = Color(255, 0, 0)
+ * var glass = red.with_alpha(128)
+ * var brand = Color.hex('#4f46e5')
+ * ```
+ *
+ * ## Relationship to the `colors` module
+ *
+ * The colour space conversions here are the standard library's, from
+ * [[colors]]; `Color` is the value type that carries a result around
+ * and puts it into a pixel buffer. Anything `colors` can do to a
+ * hexadecimal string can be done to a `Color` by way of `to_hex()`
+ * and `Color.hex()`.
+ *
+ * Two conventions follow from that and are worth knowing:
+ *
+ * - Hue is in degrees and saturation, lightness and value are in
+ *   percentage points (0-100), exactly as in `colors` and in CSS.
+ *   They are not 0-1 ratios.
+ * - `to_hex()` returns a leading `#`, because that is the form you
+ *   paste into a stylesheet. `colors` returns the bare form. Both are
+ *   accepted everywhere either is.
+ *
+ * @printable
+ * @serializable
+ */
+class Color {
+
+  /**
+   * The red channel, 0-255.
+   *
+   * @type number
+   */
+  var r
+
+  /**
+   * The green channel, 0-255.
+   *
+   * @type number
+   */
+  var g
+
+  /**
+   * The blue channel, 0-255.
+   *
+   * @type number
+   */
+  var b
+
+  /**
+   * The alpha channel, 0 (transparent) to 255 (opaque).
+   *
+   * @type number
+   */
+  var a
+
+  /**
+   * Creates a colour from its channels.
+   *
+   * Values outside 0-255 are clamped rather than rejected, and
+   * fractional values are rounded.
+   *
+   * @param number r: The red channel.
+   * @param number g: The green channel.
+   * @param number b: The blue channel.
+   * @param ?number a: The alpha channel - Default: 255 (opaque).
+   */
+  @new(r, g, b, a) {
+    self.r = _channel(r)
+    self.g = _channel(g)
+    self.b = _channel(b)
+    self.a = a == nil ? 255 : _channel(a)
+  }
+
+  /**
+   * Creates an opaque colour from red, green and blue channels.
+   *
+   * The same as calling the constructor with three arguments; it
+   * exists so a call site that also uses `Color.hsl()` or
+   * `Color.lab()` can name the space it is working in.
+   *
+   * @param number r
+   * @param number g
+   * @param number b
+   * @returns Color
+   */
+  static rgb(r, g, b) {
+    return Color(r, g, b, 255)
+  }
+
+  /**
+   * Creates a colour from red, green, blue and alpha channels.
+   *
+   * @param number r
+   * @param number g
+   * @param number b
+   * @param number a
+   * @returns Color
+   */
+  static rgba(r, g, b, a) {
+    return Color(r, g, b, a)
+  }
+
+  /**
+   * Creates a shade of grey.
+   *
+   * @param number value: The brightness, 0 (black) to 255 (white).
+   * @param ?number a: The alpha channel - Default: 255.
+   * @returns Color
+   */
+  static gray(value, a) {
+    return Color(value, value, value, a)
+  }
+
+  /**
+   * Creates a colour from a packed `0xRRGGBBAA` integer.
+   *
+   * Alpha is in the least significant byte, which is the layout
+   * `to_packed()` produces and the one this module passes around
+   * internally.
+   *
+   * ```zuri-repl
+   * %> Color.packed(0xFF0000FF).to_hex()
+   * '#ff0000'
+   * ```
+   *
+   * @param number value
+   * @returns Color
+   */
+  static packed(value) {
+    if !is_number(value) {
+      raise ImageError('packed colour must be a number, ${typeof(value)} given')
+    }
+
+    var bits = value.round()
+
+    return Color(
+      (bits >> 24) & 0xFF,
+      (bits >> 16) & 0xFF,
+      (bits >> 8) & 0xFF,
+      bits & 0xFF
+    )
+  }
+
+  /**
+   * Creates a colour from a CSS-style hexadecimal string.
+   *
+   * All four CSS lengths are accepted, with or without the leading
+   * `#`, in either case: `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa`.
+   * The short forms double each digit, so `#f0a` is `#ff00aa`.
+   *
+   * @param string spec
+   * @returns Color
+   * @throws ImageError When _spec_ is not a hexadecimal colour.
+   */
+  static hex(spec) {
+    if !is_string(spec) {
+      raise ImageError('hex colour must be a string, ${typeof(spec)} given')
+    }
+
+    var parsed = nil
+
+    catch {
+      parsed = colors.hex_to_rgb(spec)
+    } as e {
+      raise ImageError("'${spec}' is not a hexadecimal colour")
+    }
+
+    # colors.hex_to_rgb() reports alpha as a 0-1 ratio; every channel
+    # here is a byte.
+    return Color(parsed[0], parsed[1], parsed[2], parsed[3] * 255)
+  }
+
+  /**
+   * Looks up one of the CSS named colours.
+   *
+   * Matching ignores case, spaces, hyphens and underscores, so
+   * `'Dark Sea Green'` and `'darkseagreen'` are the same colour. The
+   * full CSS Color Level 4 list is available, including both
+   * spellings of the greys and `transparent`.
+   *
+   * @param string name
+   * @returns Color
+   * @throws ImageError When _name_ is not a CSS colour name.
+   */
+  static named(name) {
+    if !is_string(name) {
+      raise ImageError('colour name must be a string, ${typeof(name)} given')
+    }
+
+    catch {
+      return Color.hex(colors.named(name))
+    } as e {
+      raise ImageError("'${name}' is not a known colour name")
+    }
+  }
+
+  /**
+   * Creates a colour from hue, saturation and lightness.
+   *
+   * @param number h: The hue in degrees. Wraps, so 400 is the same as 40.
+   * @param number s: The saturation in percentage points, 0-100.
+   * @param number l: The lightness in percentage points, 0 (black) to 100 (white).
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static hsl(h, s, l, a) {
+    var rgb = colors.hsl_to_rgb(h, s, l)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Creates a colour from hue, saturation and value (also called HSB).
+   *
+   * @param number h: The hue in degrees.
+   * @param number s: The saturation in percentage points, 0-100.
+   * @param number v: The value in percentage points, 0-100.
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static hsv(h, s, v, a) {
+    var rgb = colors.hsv_to_rgb(h, s, v)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Creates a colour from hue, whiteness and blackness.
+   *
+   * @param number h: The hue in degrees.
+   * @param number w: The whiteness in percentage points, 0-100.
+   * @param number b: The blackness in percentage points, 0-100.
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static hwb(h, w, b, a) {
+    var rgb = colors.hwb_to_rgb(h, w, b)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Creates a colour from cyan, magenta, yellow and key components.
+   *
+   * This is the naive conversion, not a colour-managed one: it takes
+   * no account of an output profile, so it is right for generating
+   * colours and wrong for predicting what a printing press will do.
+   *
+   * @param number c: 0-100.
+   * @param number m: 0-100.
+   * @param number y: 0-100.
+   * @param number k: 0-100.
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static cmyk(c, m, y, k, a) {
+    var rgb = colors.cmyk_to_rgb(c, m, y, k)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Creates a colour from CIE XYZ tristimulus values, against the D65
+   * white point.
+   *
+   * @param number x
+   * @param number y
+   * @param number z
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static xyz(x, y, z, a) {
+    var rgb = colors.xyz_to_rgb(x, y, z)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Creates a colour from CIE L*a*b*, against the D65 white point.
+   *
+   * Lab is perceptually uniform, which makes it the right space for
+   * interpolating between two colours when the intermediate steps
+   * need to look evenly spaced.
+   *
+   * @param number l: Lightness, 0-100.
+   * @param number a_star: The green-red axis.
+   * @param number b_star: The blue-yellow axis.
+   * @param ?number a: The alpha channel, 0-255 - Default: 255.
+   * @returns Color
+   */
+  static lab(l, a_star, b_star, a) {
+    var rgb = colors.lab_to_rgb(l, a_star, b_star)
+
+    return Color(rgb[0], rgb[1], rgb[2], a)
+  }
+
+  /**
+   * Turns whatever a caller passed into a `Color`.
+   *
+   * Every drawing method calls this on its colour argument, so a
+   * colour can be written the shortest way that reads clearly at the
+   * call site. Accepted forms:
+   *
+   * - a `Color`, returned unchanged
+   * - a hexadecimal string, `'#4f46e5'` or `'4f46e5'`
+   * - a CSS colour name, `'rebeccapurple'`
+   * - a packed `0xRRGGBBAA` number
+   * - a list of 3 or 4 channels, `[255, 0, 0]`
+   *
+   * @param Color|string|number|list value
+   * @returns Color
+   * @throws ImageError When _value_ is not a colour in any of those forms.
+   */
+  static parse(value) {
+    if is_instance(value) and instance_of(value, Color) {
+      return value
+    }
+
+    if is_number(value) {
+      return Color.packed(value)
+    }
+
+    if is_list(value) {
+      if value.length() < 3 or value.length() > 4 {
+        raise ImageError('a colour list needs 3 or 4 channels, got ${value.length()}')
+      }
+
+      return Color(
+        value[0],
+        value[1],
+        value[2],
+        value.length() == 4 ? value[3] : 255
+      )
+    }
+
+    if is_string(value) {
+      var text = value.trim()
+
+      # A name is anything that isn't a bare run of hex digits; the
+      # ambiguous cases (`abc`, `beef`) are all real colour names, and
+      # CSS resolves them as names too.
+      if !text.starts_with('#') and colors.is_named(text) {
+        return Color.named(text)
+      }
+
+      return Color.hex(text)
+    }
+
+    raise ImageError('cannot read a colour from ${typeof(value)}')
+  }
+
+  /**
+   * Returns the colour as a packed `0xRRGGBBAA` integer.
+   *
+   * @returns number
+   */
+  to_packed() {
+    return (self.r << 24) | (self.g << 16) | (self.b << 8) | self.a
+  }
+
+  /**
+   * Returns the colour as a hexadecimal string with a leading `#`.
+   *
+   * The alpha digits are included only when the colour is not fully
+   * opaque, unless `always_alpha` asks for them, so the common case
+   * reads as the familiar six digits.
+   *
+   * ```zuri-repl
+   * %> Color(255, 0, 0).to_hex()
+   * '#ff0000'
+   * %> Color(255, 0, 0, 128).to_hex()
+   * '#ff000080'
+   * ```
+   *
+   * @param ?bool always_alpha: Always emit the alpha digits - Default: false.
+   * @returns string
+   */
+  to_hex(always_alpha) {
+    if always_alpha == true or self.a != 255 {
+      return '#' + colors.rgb_to_hex(self.r, self.g, self.b, self.a)
+    }
+
+    return '#' + colors.rgb_to_hex(self.r, self.g, self.b)
+  }
+
+  /**
+   * Returns the colour in HSL, as a dictionary holding `h` (degrees),
+   * `s` and `l` (percentage points) and `a` (0-255).
+   *
+   * @returns dict
+   */
+  to_hsl() {
+    var parts = colors.rgb_to_hsl(self.r, self.g, self.b)
+
+    var h = parts[0]
+    var s = parts[1]
+    var l = parts[2]
+    var a = self.a
+
+    return { h, s, l, a }
+  }
+
+  /**
+   * Returns the colour in HSV, as a dictionary holding `h` (degrees),
+   * `s` and `v` (percentage points) and `a` (0-255).
+   *
+   * @returns dict
+   */
+  to_hsv() {
+    var parts = colors.rgb_to_hsv(self.r, self.g, self.b)
+
+    var h = parts[0]
+    var s = parts[1]
+    var v = parts[2]
+    var a = self.a
+
+    return { h, s, v, a }
+  }
+
+  /**
+   * Returns the colour in HWB, as a dictionary holding `h` (degrees),
+   * `w` and `b` (percentage points) and `a` (0-255).
+   *
+   * @returns dict
+   */
+  to_hwb() {
+    var parts = colors.rgb_to_hwb(self.r, self.g, self.b)
+
+    var h = parts[0]
+    var w = parts[1]
+    var b = parts[2]
+    var a = self.a
+
+    return { h, w, b, a }
+  }
+
+  /**
+   * Returns the colour in CMYK, as a dictionary holding `c`, `m`, `y`
+   * and `k` (percentage points) and `a` (0-255).
+   *
+   * @returns dict
+   */
+  to_cmyk() {
+    var parts = colors.rgb_to_cmyk(self.r, self.g, self.b)
+
+    var c = parts[0]
+    var m = parts[1]
+    var y = parts[2]
+    var k = parts[3]
+    var a = self.a
+
+    return { c, m, y, k, a }
+  }
+
+  /**
+   * Returns the colour in CIE XYZ, as a dictionary holding `x`, `y`,
+   * `z` and `a` (0-255).
+   *
+   * @returns dict
+   */
+  to_xyz() {
+    var parts = colors.rgb_to_xyz(self.r, self.g, self.b)
+
+    var x = parts[0]
+    var y = parts[1]
+    var z = parts[2]
+    var a = self.a
+
+    return { x, y, z, a }
+  }
+
+  /**
+   * Returns the colour in CIE L*a*b*, as a dictionary holding `l`,
+   * `a_star`, `b_star` and `a` (0-255).
+   *
+   * The axes are named `a_star` and `b_star` rather than `a` and `b`
+   * so neither collides with the alpha channel.
+   *
+   * @returns dict
+   */
+  to_lab() {
+    var parts = colors.rgb_to_lab(self.r, self.g, self.b)
+
+    var l = parts[0]
+    var a_star = parts[1]
+    var b_star = parts[2]
+    var a = self.a
+
+    return { l, a_star, b_star, a }
+  }
+
+  /**
+   * Returns a copy of the colour with a different alpha channel.
+   *
+   * @param number a: The new alpha, 0-255.
+   * @returns Color
+   */
+  with_alpha(a) {
+    return Color(self.r, self.g, self.b, a)
+  }
+
+  /**
+   * Returns a copy of the colour with its alpha scaled by a factor.
+   *
+   * A factor of 0.5 halves whatever opacity the colour already had,
+   * rather than setting it to half opaque, so fading an already
+   * translucent colour behaves the way stacking two layers would.
+   *
+   * @param number factor: 0 (transparent) to 1 (unchanged).
+   * @returns Color
+   */
+  fade(factor) {
+    return Color(self.r, self.g, self.b, self.a * (0).max((1).min(factor)))
+  }
+
+  /**
+   * Returns a lighter version of the colour, keeping its hue.
+   *
+   * @param number amount: Percentage points of HSL lightness to add, 0-100.
+   * @returns Color
+   */
+  lighten(amount) {
+    return Color.hex(colors.lighten(self.to_hex(true), amount))
+  }
+
+  /**
+   * Returns a darker version of the colour, keeping its hue.
+   *
+   * @param number amount: Percentage points of HSL lightness to remove, 0-100.
+   * @returns Color
+   */
+  darken(amount) {
+    return Color.hex(colors.darken(self.to_hex(true), amount))
+  }
+
+  /**
+   * Returns a more saturated version of the colour.
+   *
+   * @param number amount: Percentage points of HSL saturation to add, 0-100.
+   * @returns Color
+   */
+  saturate(amount) {
+    return Color.hex(colors.saturate(self.to_hex(true), amount))
+  }
+
+  /**
+   * Returns a less saturated version of the colour.
+   *
+   * An amount of 100 removes all colour, which is not the same as
+   * `to_grayscale()`: this keeps HSL lightness, that one weights the
+   * channels for perceived brightness.
+   *
+   * @param number amount: Percentage points of HSL saturation to remove, 0-100.
+   * @returns Color
+   */
+  desaturate(amount) {
+    return Color.hex(colors.desaturate(self.to_hex(true), amount))
+  }
+
+  /**
+   * Returns the colour rotated around the hue wheel.
+   *
+   * @param number degrees: How far to rotate. Negative rotates backwards.
+   * @returns Color
+   */
+  rotate_hue(degrees) {
+    var hsl = self.to_hsl()
+
+    return Color.hsl(hsl.h + degrees, hsl.s, hsl.l, self.a)
+  }
+
+  /**
+   * Returns a linear blend of this colour and another.
+   *
+   * All four channels are interpolated, alpha included, so mixing a
+   * transparent colour in also makes the result more transparent.
+   *
+   * @param Color|string|number|list other: The colour to blend toward.
+   * @param number t: 0 returns this colour, 1 returns _other_.
+   * @returns Color
+   */
+  mix(other, t) {
+    var target = Color.parse(other)
+    var ratio = (0).max((1).min(t))
+
+    return Color(
+      self.r + (target.r - self.r) * ratio,
+      self.g + (target.g - self.g) * ratio,
+      self.b + (target.b - self.b) * ratio,
+      self.a + (target.a - self.a) * ratio
+    )
+  }
+
+  /**
+   * Composites this colour over an opaque backdrop and returns the
+   * flattened result.
+   *
+   * This is what happens when a translucent colour is drawn onto a
+   * solid background, and it is how a colour has to be resolved before
+   * writing it to a format with no alpha channel, such as JPEG.
+   *
+   * @param Color|string|number|list backdrop
+   * @returns Color
+   */
+  over(backdrop) {
+    if self.a == 255 {
+      return self
+    }
+
+    var under = Color.parse(backdrop)
+    var alpha = self.a / 255
+
+    return Color(
+      self.r * alpha + under.r * (1 - alpha),
+      self.g * alpha + under.g * (1 - alpha),
+      self.b * alpha + under.b * (1 - alpha),
+      255
+    )
+  }
+
+  /**
+   * Returns the relative luminance of the colour, 0 (black) to 1
+   * (white), as defined by WCAG 2.
+   *
+   * The alpha channel is ignored: luminance is a property of the
+   * colour itself, and a translucent colour's apparent brightness
+   * depends on whatever is behind it. Composite with `over()` first if
+   * that matters.
+   *
+   * @returns number
+   */
+  luminance() {
+    return colors.relative_luminance(self.r, self.g, self.b)
+  }
+
+  /**
+   * Returns the WCAG 2 contrast ratio between this colour and another,
+   * from 1 (identical) to 21 (black against white).
+   *
+   * Text is generally held to need a ratio of at least 4.5 against its
+   * background, or 3 at large sizes.
+   *
+   * @param Color|string|number|list other
+   * @returns number
+   */
+  contrast_ratio(other) {
+    var target = Color.parse(other)
+
+    return colors.contrast_ratio(self.to_hex(), target.to_hex())
+  }
+
+  /**
+   * Returns `true` when the colour is dark enough that light text
+   * reads better on it than dark text.
+   *
+   * The threshold is the luminance at which contrast against white
+   * overtakes contrast against black.
+   *
+   * @returns bool
+   */
+  is_dark() {
+    return self.luminance() < 0.179
+  }
+
+  /**
+   * The opposite of `is_dark()`.
+   *
+   * @returns bool
+   */
+  is_light() {
+    return !self.is_dark()
+  }
+
+  /**
+   * Returns whichever of two colours reads better on top of this one.
+   *
+   * @param ?Color|string light: The colour to use on a dark background - Default: white.
+   * @param ?Color|string dark: The colour to use on a light background - Default: black.
+   * @returns Color
+   */
+  best_contrast(light, dark) {
+    if self.is_dark() {
+      return light == nil ? WHITE : Color.parse(light)
+    }
+
+    return dark == nil ? BLACK : Color.parse(dark)
+  }
+
+  /**
+   * Returns the grey with the same perceived brightness as this
+   * colour, keeping its alpha.
+   *
+   * This uses the Rec. 601 luma weights, which is what image editors
+   * mean by "greyscale" and what `Image.grayscale()` applies. It is
+   * deliberately not [[colors.grayscale]], which sets HSL saturation
+   * to zero and so keeps a bright yellow as bright as a dark blue.
+   *
+   * @returns Color
+   */
+  to_grayscale() {
+    var value = 0.299 * self.r + 0.587 * self.g + 0.114 * self.b
+
+    return Color(value, value, value, self.a)
+  }
+
+  /**
+   * Returns the colour with its red, green and blue channels
+   * inverted.
+   *
+   * Alpha is left alone, since inverting it would turn a visible
+   * colour invisible rather than changing how it looks.
+   *
+   * @returns Color
+   */
+  invert() {
+    return Color(255 - self.r, 255 - self.g, 255 - self.b, self.a)
+  }
+
+  /**
+   * Returns `true` when both colours have identical channels.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !is_instance(other) or !instance_of(other, Color) {
+      return false
+    }
+
+    return self.r == other.r and self.g == other.g and
+      self.b == other.b and self.a == other.a
+  }
+
+  /**
+   * Returns the colour as a list of its four channels.
+   *
+   * @returns list
+   */
+  to_list() {
+    return [self.r, self.g, self.b, self.a]
+  }
+
+  /**
+   * Returns the colour as a dictionary holding `r`, `g`, `b` and `a`.
+   *
+   * @returns dict
+   */
+  to_dict() {
+    var r = self.r
+    var g = self.g
+    var b = self.b
+    var a = self.a
+
+    return { r, g, b, a }
+  }
+
+  to_string() {
+    if self.a == 255 {
+      return 'Color(${self.r}, ${self.g}, ${self.b})'
+    }
+
+    return 'Color(${self.r}, ${self.g}, ${self.b}, ${self.a})'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @to_json() {
+    return self.to_hex()
+  }
+}
+
+
+/**
+ * Fully transparent.
+ *
+ * Filling with this clears an area rather than painting it, since
+ * every channel including alpha is zero.
+ *
+ * @type Color
+ */
+var TRANSPARENT = Color(0, 0, 0, 0)
+
+/**
+ * Opaque black.
+ *
+ * @type Color
+ */
+var BLACK = Color(0, 0, 0)
+
+/**
+ * Opaque white.
+ *
+ * @type Color
+ */
+var WHITE = Color(255, 255, 255)
+
+/**
+ * Opaque mid grey.
+ *
+ * @type Color
+ */
+var GRAY = Color(128, 128, 128)
+
+/**
+ * Opaque pure red.
+ *
+ * @type Color
+ */
+var RED = Color(255, 0, 0)
+
+/**
+ * Opaque pure green.
+ *
+ * This is the additive primary, not CSS's `green`, which is half as
+ * bright. `Color.named('green')` gives that one.
+ *
+ * @type Color
+ */
+var GREEN = Color(0, 255, 0)
+
+/**
+ * Opaque pure blue.
+ *
+ * @type Color
+ */
+var BLUE = Color(0, 0, 255)
+
+/**
+ * Opaque yellow.
+ *
+ * @type Color
+ */
+var YELLOW = Color(255, 255, 0)
+
+/**
+ * Opaque cyan.
+ *
+ * @type Color
+ */
+var CYAN = Color(0, 255, 255)
+
+/**
+ * Opaque magenta.
+ *
+ * @type Color
+ */
+var MAGENTA = Color(255, 0, 255)

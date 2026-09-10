@@ -1,0 +1,117 @@
+#!-- part of the imagine module
+
+/**
+ * Base class for every error the `imagine` module raises.
+ *
+ * Catching `ImageError` catches everything this module throws on its
+ * own. The subclasses below exist so a caller can tell an unreadable
+ * upload apart from a coordinate mistake in their own code without
+ * matching on message text.
+ *
+ * @printable
+ */
+class ImageError < Error {
+  to_string() {
+    return '<ImageError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Raised when image data cannot be read: the bytes are not an image at
+ * all, the format is one this build cannot decode, or the file is
+ * truncated or corrupt.
+ *
+ * Anything arriving from outside the program (an upload, a download, a
+ * file a user picked) can raise this, so it is the one error a server
+ * handling images must always be ready for.
+ *
+ * @printable
+ */
+class DecodeError < ImageError {
+  to_string() {
+    return '<DecodeError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Raised when an image cannot be written in the requested format,
+ * either because this build has no encoder for it or because the
+ * encoder rejected the image or the options given.
+ *
+ * @printable
+ */
+class EncodeError < ImageError {
+  to_string() {
+    return '<EncodeError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Raised when a format name is not one `imagine` knows, or when a file
+ * extension cannot be mapped to a format.
+ *
+ * @printable
+ */
+class FormatError < ImageError {
+  to_string() {
+    return '<FormatError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Raised when a rectangle, crop or resize falls outside the image, or
+ * when a dimension is zero or negative.
+ *
+ * Drawing operations do not raise this. A line running off the edge of
+ * the canvas is clipped, which is what every drawing API does and what
+ * callers expect; it is only the operations that must return an image
+ * of an exact size that have no sensible way to continue.
+ *
+ * @printable
+ */
+class BoundsError < ImageError {
+  to_string() {
+    return '<BoundsError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Raised when a font cannot be parsed, cannot be found on the system,
+ * or does not carry the horizontal metrics text layout needs.
+ *
+ * @printable
+ */
+class FontError < ImageError {
+  to_string() {
+    return '<FontError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

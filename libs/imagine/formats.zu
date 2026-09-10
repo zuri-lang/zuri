@@ -1,0 +1,475 @@
+#!-- part of the imagine module
+
+import _imagine
+
+import .errors { DecodeError, EncodeError, FormatError }
+
+
+/**
+ * Extension to format name.
+ *
+ * Every spelling that maps to one format is listed, so a file called
+ * `.jpg`, `.jpeg` or `.jfif` all resolve to `jpeg`.
+ */
+var _BY_EXTENSION = {
+  png: 'png',
+  jpg: 'jpeg', jpeg: 'jpeg', jpe: 'jpeg', jfif: 'jpeg',
+  gif: 'gif',
+  bmp: 'bmp', dib: 'bmp',
+  tif: 'tiff', tiff: 'tiff',
+  tga: 'tga', targa: 'tga',
+  webp: 'webp',
+  avif: 'avif',
+  qoi: 'qoi',
+  ico: 'ico',
+  pnm: 'pnm', ppm: 'pnm', pgm: 'pnm', pbm: 'pnm',
+  wbmp: 'wbmp',
+}
+
+/**
+ * The extension each format is written with, when a name has to be
+ * produced rather than read.
+ */
+var _EXTENSIONS = {
+  png: 'png', jpeg: 'jpg', gif: 'gif', bmp: 'bmp', tiff: 'tiff',
+  tga: 'tga', webp: 'webp', avif: 'avif', qoi: 'qoi', ico: 'ico',
+  pnm: 'ppm', wbmp: 'wbmp',
+}
+
+/**
+ * The IANA media type for each format.
+ */
+var _MIME_TYPES = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  tiff: 'image/tiff',
+  tga: 'image/x-tga',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  qoi: 'image/qoi',
+  ico: 'image/x-icon',
+  pnm: 'image/x-portable-anymap',
+  wbmp: 'image/vnd.wap.wbmp',
+}
+
+
+/**
+ * The format name a file extension implies, or `nil` when the
+ * extension is not one this module knows.
+ *
+ * The argument may be a bare extension or a whole path, with or
+ * without a leading dot, in any case.
+ *
+ * ```zuri-repl
+ * %> imagine.formats.from_extension('photo.JPG')
+ * 'jpeg'
+ * %> imagine.formats.from_extension('.webp')
+ * 'webp'
+ * ```
+ *
+ * @param string path
+ * @returns ?string
+ */
+def from_extension(path: string) {
+  return _BY_EXTENSION.get(_extension(path))
+}
+
+
+/**
+ * The last dot-separated piece of a path, lower-cased.
+ *
+ * The directory part is dropped first, so a dot in a directory name
+ * cannot be mistaken for an extension.
+ */
+def _extension(path) {
+  var text = path.trim().lower()
+
+  for separator in ['/', '\\'] {
+    var pieces = text.split(separator)
+    text = pieces[pieces.length() - 1]
+  }
+
+  var parts = text.split('.')
+
+  if parts.length() < 2 {
+    return ''
+  }
+
+  return parts[parts.length() - 1]
+}
+
+
+/**
+ * The file extension a format is normally written with, without a
+ * leading dot.
+ *
+ * @param string format
+ * @returns string
+ * @throws FormatError When _format_ is not a known format.
+ */
+def extension_for(format: string) {
+  var found = _EXTENSIONS.get(format.trim().lower())
+
+  if found == nil {
+    raise FormatError("'${format}' is not an image format imagine knows")
+  }
+
+  return found
+}
+
+
+/**
+ * The IANA media type for a format, suitable for a `Content-Type`
+ * header.
+ *
+ * @param string format
+ * @returns string
+ * @throws FormatError When _format_ is not a known format.
+ */
+def mime_for(format: string) {
+  var found = _MIME_TYPES.get(format.trim().lower())
+
+  if found == nil {
+    raise FormatError("'${format}' is not an image format imagine knows")
+  }
+
+  return found
+}
+
+
+/**
+ * Normalises a format name, accepting the common aliases.
+ *
+ * `'JPG'`, `'jpeg'` and `'.jpg'` all come back as `'jpeg'`.
+ *
+ * @param string format
+ * @returns string
+ * @throws FormatError When _format_ is not a known format.
+ */
+def normalize(format: string) {
+  var text = format.trim().lower().ltrim('.')
+  var found = _BY_EXTENSION.get(text)
+
+  if found == nil {
+    raise FormatError("'${format}' is not an image format imagine knows")
+  }
+
+  return found
+}
+
+
+/**
+ * Identifies image data by its content rather than its name, or
+ * returns `nil` when the bytes are not a recognisable image.
+ *
+ * This reads only as much of the header as it needs, so it is cheap
+ * enough to run over an upload before deciding whether to decode it.
+ *
+ * ```zuri
+ * var kind = imagine.formats.detect(upload)
+ *
+ * if kind == nil {
+ *   raise Exception('that is not an image')
+ * }
+ * ```
+ *
+ * @param bytes data
+ * @returns ?string
+ */
+def detect(data: bytes) {
+  if _is_wbmp(data) {
+    return 'wbmp'
+  }
+
+  var probed = _imagine.probe(data)
+
+  if probed == nil {
+    return nil
+  }
+
+  return probed.format
+}
+
+
+/**
+ * Reads an image's format and dimensions without decoding its pixels.
+ *
+ * Returns a dictionary holding `format`, `width` and `height`, or
+ * `nil` when the data is not a recognisable image. Reading a
+ * multi-megapixel JPEG's header costs a few microseconds where
+ * decoding it costs tens of milliseconds, so this is the right way to
+ * reject an oversized upload before committing to it.
+ *
+ * @param bytes data
+ * @returns ?dict
+ */
+def probe(data: bytes) {
+  if _is_wbmp(data) {
+    var header = _read_wbmp_header(data)
+
+    if header == nil {
+      return nil
+    }
+
+    var format = 'wbmp'
+    var width = header.width
+    var height = header.height
+
+    return { format, width, height }
+  }
+
+  return _imagine.probe(data)
+}
+
+
+/**
+ * Every format this build can read.
+ *
+ * @returns list
+ */
+def readable() {
+  return _imagine.capabilities().decode + ['wbmp']
+}
+
+
+/**
+ * Every format this build can write.
+ *
+ * @returns list
+ */
+def writable() {
+  return _imagine.capabilities().encode + ['wbmp']
+}
+
+
+/**
+ * Every format this build can read as an animation.
+ *
+ * @returns list
+ */
+def animatable() {
+  return _imagine.capabilities().animated
+}
+
+
+# ---------------------------------------------------------------------
+# WBMP
+# ---------------------------------------------------------------------
+#
+# Wireless Bitmap is one bit per pixel with a four-field header and no
+# compression. Set bits are white and clear bits are black, rows are
+# padded out to a whole byte, and the two dimensions are stored as
+# variable-length integers carrying seven bits each.
+#
+# It has no magic number, only a zero type byte and a zero header byte,
+# so _is_wbmp() has to validate the whole header before it can claim a
+# buffer; that is why detection tries it before anything else rather
+# than after.
+
+
+/**
+ * True when the data looks like a type-0 WBMP.
+ *
+ * The format has no magic number, only a type byte of 0 and a fixed
+ * header byte of 0, so this cannot be certain. It is checked before
+ * the native probe rather than after because nothing else this module
+ * reads begins with two zero bytes.
+ */
+def _is_wbmp(data) {
+  if data.length() < 4 {
+    return false
+  }
+
+  if data[0] != 0 or data[1] != 0 {
+    return false
+  }
+
+  return _read_wbmp_header(data) != nil
+}
+
+
+/**
+ * Reads a WBMP's dimensions, returning `{width, height, offset}` where
+ * `offset` is the first byte of pixel data, or `nil` if the header is
+ * malformed.
+ */
+def _read_wbmp_header(data) {
+  var at = 2
+  var dimensions = []
+
+  iter var i = 0; i < 2; i++ {
+    var value = 0
+    var read = 0
+
+    while at < data.length() {
+      var byte = data[at]
+
+      at++
+      read++
+      value = (value << 7) | (byte & 0x7F)
+
+      if (byte & 0x80) == 0 {
+        break
+      }
+
+      # A sane dimension fits in far fewer than five continuation
+      # bytes; more than that means we are not looking at a WBMP.
+      if read > 4 {
+        return nil
+      }
+    }
+
+    if read == 0 or value <= 0 {
+      return nil
+    }
+
+    dimensions.append(value)
+  }
+
+  var width = dimensions[0]
+  var height = dimensions[1]
+  var offset = at
+
+  var stride = (width + 7) / 8
+  stride = stride.floor()
+
+  if data.length() - offset != stride * height {
+    return nil
+  }
+
+  return { width, height, offset }
+}
+
+
+/**
+ * Decodes a WBMP into straight RGBA pixels.
+ *
+ * Set bits become opaque white and clear bits opaque black; the format
+ * has no colour and no transparency.
+ *
+ * @param bytes data
+ * @returns dict: `pixels`, `width`, `height`.
+ * @throws DecodeError When the data is not a well-formed WBMP.
+ */
+def decode_wbmp(data: bytes) {
+  var header = _read_wbmp_header(data)
+
+  if header == nil {
+    raise DecodeError('not a well-formed WBMP image')
+  }
+
+  var width = header.width
+  var height = header.height
+  var stride = ((width + 7) / 8).floor()
+
+  var pixels = bytes(width * height * 4)
+
+  iter var y = 0; y < height; y++ {
+    var row = header.offset + y * stride
+
+    iter var x = 0; x < width; x++ {
+      var bit = (data[row + (x / 8).floor()] >> (7 - (x % 8))) & 1
+      var value = bit == 1 ? 255 : 0
+      var at = (y * width + x) * 4
+
+      pixels[at] = value
+      pixels[at + 1] = value
+      pixels[at + 2] = value
+      pixels[at + 3] = 255
+    }
+  }
+
+  return { pixels, width, height }
+}
+
+
+/**
+ * Encodes straight RGBA pixels as a WBMP.
+ *
+ * Each pixel is reduced to one bit by comparing its perceived
+ * brightness against _threshold_. Transparent pixels are treated as
+ * white, since the format has no way to say "nothing here" and white
+ * is what a viewer will show as background.
+ *
+ * @param bytes pixels
+ * @param number width
+ * @param number height
+ * @param ?number threshold: The brightness cut, 0-255 - Default: 128.
+ * @returns bytes
+ */
+def encode_wbmp(pixels: bytes, width: number, height: number, threshold: ?number) {
+  if pixels.length() != width * height * 4 {
+    raise EncodeError(
+      'pixel buffer holds ${pixels.length()} bytes, but ${width}x${height} RGBA needs ${width * height * 4}'
+    )
+  }
+
+  var cut = threshold == nil ? 128 : threshold
+  var out = bytes(0)
+
+  out.append(0)
+  out.append(0)
+
+  for value in [width, height] {
+    for byte in _wbmp_length(value) {
+      out.append(byte)
+    }
+  }
+
+  var stride = ((width + 7) / 8).floor()
+
+  iter var y = 0; y < height; y++ {
+    var accumulator = 0
+    var filled = 0
+
+    iter var x = 0; x < width; x++ {
+      var at = (y * width + x) * 4
+      var alpha = pixels[at + 3]
+
+      var luma = 0.299 * pixels[at] + 0.587 * pixels[at + 1] + 0.114 * pixels[at + 2]
+
+      # Composite against white before thresholding, so a faint mark on
+      # a transparent background does not come out solid black.
+      if alpha < 255 {
+        luma = luma * alpha / 255 + 255 * (255 - alpha) / 255
+      }
+
+      accumulator = (accumulator << 1) | (luma >= cut ? 1 : 0)
+      filled++
+
+      if filled == 8 {
+        out.append(accumulator)
+        accumulator = 0
+        filled = 0
+      }
+    }
+
+    if filled > 0 {
+      out.append(accumulator << (8 - filled))
+    }
+  }
+
+  return out
+}
+
+
+/**
+ * A WBMP variable-length integer: seven bits per byte, most
+ * significant group first, with the high bit set on every byte but
+ * the last.
+ */
+def _wbmp_length(value) {
+  var groups = [value & 0x7F]
+  var rest = (value / 128).floor()
+
+  while rest > 0 {
+    groups.append((rest & 0x7F) | 0x80)
+    rest = (rest / 128).floor()
+  }
+
+  # list.reverse() hands back a new list rather than reordering this
+  # one, so the result has to be taken.
+  return groups.reverse()
+}

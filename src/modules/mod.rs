@@ -15,6 +15,7 @@ mod compress_util;
 mod crypto;
 mod date;
 mod hash;
+mod imagine;
 mod io;
 mod isolate;
 mod isolate_util;
@@ -48,6 +49,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   io::MODULE,
   os::MODULE,
   hash::MODULE,
+  imagine::MODULE,
   crypto::MODULE,
   json::MODULE,
   base64::MODULE,
