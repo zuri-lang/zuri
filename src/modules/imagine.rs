@@ -108,16 +108,53 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 // small helpers
 // ---------------------------------------------------------------------------
 
-/// Build a Zuri dict from string keys. Keys are allocated one at a
-/// time before the dict itself, which is fine here because no caller
-/// holds a `bytes` borrow open across this.
+/// Builds a Zuri dict from string keys.
+///
+/// Every value is pinned before the first key is allocated, and each
+/// key is pinned as it is created, because a `Value` living only in a
+/// Rust local or `Vec` is not a GC root: a collection reached from any
+/// later allocation relocates the object it names and leaves the
+/// copy behind it stale. Everything is therefore read back out of
+/// `gc_pins` when the pairs are finally assembled, never from the
+/// local that produced it.
 fn make_dict(ctx: &mut ZuriContext, pairs: Vec<(&str, Value)>) -> Value {
-  let mut entries = Vec::with_capacity(pairs.len());
-  for (key, value) in pairs {
-    let key = ctx.heap().alloc_string(key);
-    entries.push((key, value));
+  let count = pairs.len();
+  let names: Vec<&str> = pairs.iter().map(|(name, _)| *name).collect();
+
+  // Values occupy mark..mark+count, then the keys mark+count..mark+2*count.
+  let mark = ctx.vm.pin_values(pairs.into_iter().map(|(_, value)| value));
+
+  for name in names {
+    let key = ctx.heap().alloc_string(name);
+    ctx.vm.pin_values([key]);
   }
-  ctx.heap().alloc_dict(entries)
+
+  let entries: Vec<(Value, Value)> = (0..count)
+    .map(|i| (ctx.vm.pinned(mark + count + i), ctx.vm.pinned(mark + i)))
+    .collect();
+
+  let dict = ctx.heap().alloc_dict(entries);
+  ctx.vm.unpin(mark);
+
+  dict
+}
+
+
+/// Allocates a list of strings, holding each one pinned until the list
+/// that will own them exists. See `make_dict` on why.
+fn alloc_string_list(ctx: &mut ZuriContext, names: &[&str]) -> Value {
+  let mark = ctx.vm.pin_values(std::iter::empty());
+
+  for name in names {
+    let value = ctx.heap().alloc_string(*name);
+    ctx.vm.pin_values([value]);
+  }
+
+  let items: Vec<Value> = (0..names.len()).map(|i| ctx.vm.pinned(mark + i)).collect();
+  let list = ctx.heap().alloc_list(items);
+  ctx.vm.unpin(mark);
+
+  list
 }
 
 fn num(ctx: &ZuriContext, index: usize) -> f64 {
@@ -244,32 +281,27 @@ const ENCODABLE: &[&str] = &[
 fn capabilities(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
 
-  let mut decode_items = Vec::with_capacity(DECODABLE.len());
-  for name in DECODABLE {
-    decode_items.push(ctx.heap().alloc_string(*name));
-  }
-  let decode_list = ctx.heap().alloc_list(decode_items);
+  // Each list stays pinned while the next is built; see `make_dict`.
+  let decode_list = alloc_string_list(ctx, DECODABLE);
+  let mark = ctx.vm.pin_values([decode_list]);
 
-  let mut encode_items = Vec::with_capacity(ENCODABLE.len());
-  for name in ENCODABLE {
-    encode_items.push(ctx.heap().alloc_string(*name));
-  }
-  let encode_list = ctx.heap().alloc_list(encode_items);
+  let encode_list = alloc_string_list(ctx, ENCODABLE);
+  ctx.vm.pin_values([encode_list]);
 
-  let mut animated_items = Vec::new();
-  for name in ["gif", "webp"] {
-    animated_items.push(ctx.heap().alloc_string(name));
-  }
-  let animated_list = ctx.heap().alloc_list(animated_items);
+  let animated_list = alloc_string_list(ctx, &["gif", "webp"]);
+  ctx.vm.pin_values([animated_list]);
 
-  Ok(make_dict(
+  let dict = make_dict(
     ctx,
     vec![
-      ("decode", decode_list),
-      ("encode", encode_list),
-      ("animated", animated_list),
+      ("decode", ctx.vm.pinned(mark)),
+      ("encode", ctx.vm.pinned(mark + 1)),
+      ("animated", ctx.vm.pinned(mark + 2)),
     ],
-  ))
+  );
+  ctx.vm.unpin(mark);
+
+  Ok(dict)
 }
 
 // ---------------------------------------------------------------------------
@@ -299,6 +331,7 @@ fn probe(ctx: &mut ZuriContext) -> Result<Value, String> {
   };
 
   let format_value = ctx.heap().alloc_string(format_name(format));
+
   Ok(make_dict(
     ctx,
     vec![
@@ -359,17 +392,22 @@ fn decode(ctx: &mut ZuriContext) -> Result<Value, String> {
   let height = image.height();
 
   let pixels = ctx.heap().alloc_bytes(image.into_raw());
+  let mark = ctx.vm.pin_values([pixels]);
+
   let format_value = ctx.heap().alloc_string(format_name(format));
 
-  Ok(make_dict(
+  let dict = make_dict(
     ctx,
     vec![
-      ("pixels", pixels),
+      ("pixels", ctx.vm.pinned(mark)),
       ("width", Value::number(width as f64)),
       ("height", Value::number(height as f64)),
       ("format", format_value),
     ],
-  ))
+  );
+  ctx.vm.unpin(mark);
+
+  Ok(dict)
 }
 
 /// `_imagine.decode_frames(data [, format])`; every frame of an
@@ -441,22 +479,34 @@ fn decode_frames(ctx: &mut ZuriContext) -> Result<Value, String> {
     )
   })?;
 
-  let mut items = Vec::with_capacity(frames.len());
+  let mark = ctx.vm.pin_values(std::iter::empty());
+  let count = frames.len();
+
   for (raw, width, height, delay) in frames {
     let pixels = ctx.heap().alloc_bytes(raw);
+    let inner = ctx.vm.pin_values([pixels]);
+
     let entry = make_dict(
       ctx,
       vec![
-        ("pixels", pixels),
+        ("pixels", ctx.vm.pinned(inner)),
         ("width", Value::number(width as f64)),
         ("height", Value::number(height as f64)),
         ("delay", Value::number(delay)),
       ],
     );
-    items.push(entry);
+
+    // The frame's own pixels are reachable from the entry now; only
+    // the entry itself still needs a root of its own.
+    ctx.vm.unpin(inner);
+    ctx.vm.pin_values([entry]);
   }
 
-  Ok(ctx.heap().alloc_list(items))
+  let items: Vec<Value> = (0..count).map(|i| ctx.vm.pinned(mark + i)).collect();
+  let list = ctx.heap().alloc_list(items);
+  ctx.vm.unpin(mark);
+
+  Ok(list)
 }
 
 /// `image`'s own error text is often just "The image format could not
@@ -2155,6 +2205,7 @@ fn render_text(ctx: &mut ZuriContext) -> Result<Value, String> {
   let (coverage, width, height, baseline) = rendered;
 
   let coverage_value = ctx.heap().alloc_bytes(coverage);
+
   Ok(make_dict(
     ctx,
     vec![
