@@ -1,0 +1,235 @@
+/**
+ * test_net_poll.zu
+ *
+ * Test suite for `net.Poller`: registration, readiness for reads,
+ * writes and listeners, what happens to a socket that is closed or
+ * moved to another isolate, and polling a TLS connection.
+ *
+ * The certificate fixture is the same throwaway self-signed pair the
+ * `net.tls` suite uses, committed rather than generated so this suite
+ * does not depend on the `crypto` module.
+ */
+
+import isolate
+import net
+import net.tls
+import os
+import .net_poll_helper
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+# Waits for a specific token to report something, so a test never
+# depends on how quickly the kernel notices a state change.
+def wait_for(poller, token, deadline_ms) {
+  var waited = 0
+
+  while waited < deadline_ms {
+    for event in poller.wait(50) {
+      if event[0] == token {
+        return event[1]
+      }
+    }
+    waited += 50
+  }
+
+  return 0
+}
+
+var server_cert = '-----BEGIN CERTIFICATE-----
+MIIBxjCCAWugAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQktM0xvAHGLQrfkjDG9GgqlkQ7Jp/M3J5nouQxtkO2DRbN
+8wTgShvkOwPLtTn4QsZzNvNcfYd5yVw3QEbWUygko4GSMIGPMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBoGA1UdEQQT
+MBGCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUYWdSTBIeJ8/+kYIfmzI1jQtz
+t3owHwYDVR0jBBgwFoAUN3Y9x0t+nPvtrH8VBF783RE4PfcwCgYIKoZIzj0EAwID
+SQAwRgIhAKyTEhmIrP+F4HYULeh1NlzYB+Fn8xgSY3OHQEemXM0eAiEA+zIv/TKY
+ygqPPVtOmV8uMme4Jp3vxdZJhkGY4OPTTUQ=
+-----END CERTIFICATE-----
+'
+
+var server_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIKCvr/d71GiDa9QHie6zXXMk+h/PJ6j2mc2dr31IL/xIoAoGCCqGSM49
+AwEHoUQDQgAEJLTNMbwBxi0K35IwxvRoKpZEOyafzNyeZ6LkMbZDtg0WzfME4Eob
+5DsDy7U5+ELGczbzXH2HeclcN0BG1lMoJA==
+-----END EC PRIVATE KEY-----
+'
+
+echo '═══════════════════════════════════════════════════════'
+echo '  net.Poller module - test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+
+var listener = net.TcpStream()
+listener.bind('127.0.0.1:0')
+var address = listener.local_address()
+
+var poller = net.Poller()
+
+assert poller.is_empty(), 'a new poller watches nothing'
+assert poller.wait(0).length() == 0, 'and waiting on nothing returns at once'
+
+poller.add(listener, 0, net.READABLE)
+
+assert poller.length() == 1, 'a registered socket is counted'
+assert poller.contains(0), 'and found by its token'
+assert poller.interest(0) == net.READABLE, 'with the interest it was given'
+assert poller.tokens() == [0], 'and listed'
+
+poller.add(listener, 0, net.WRITABLE)
+assert poller.length() == 1, 're-registering a token replaces it'
+assert poller.interest(0) == net.WRITABLE, 'with the new interest'
+
+assert poller.modify(0, net.READABLE), 'modify reports that the token was known'
+assert poller.interest(0) == net.READABLE, 'and changes what it waits for'
+assert !poller.modify(99, net.READABLE), 'and reports an unknown token as such'
+
+assert raises(@() { poller.add(listener, 1, 0) }), 'an empty interest is refused'
+assert raises(@() { poller.modify(0, 0) }), 'including through modify()'
+assert raises(@() { poller.add('not a socket', 1, net.READABLE) }),
+  'and something that is not a socket is refused'
+ok('registration, replacement, and interest changes')
+
+# ---------------------------------------------------------------------------
+# Readiness
+# ---------------------------------------------------------------------------
+
+assert poller.wait(50).length() == 0, 'an idle listener is not ready'
+
+var client = net.TcpStream()
+client.connect(address)
+
+assert wait_for(poller, 0, 2000) & net.READABLE != 0,
+  'a listener with a connection waiting is readable'
+ok('a pending connection makes a listener readable')
+
+var accepted = listener.accept()
+poller.add(accepted, 1, net.WRITABLE)
+
+assert wait_for(poller, 1, 2000) & net.WRITABLE != 0,
+  'a connected socket with room in its buffer is writable'
+
+poller.modify(1, net.READABLE)
+assert poller.wait(50).length() == 0, 'and is not readable with nothing sent'
+
+client.write_all('ping')
+assert wait_for(poller, 1, 2000) & net.READABLE != 0, 'until data arrives'
+assert accepted.read(16).to_string() == 'ping', 'which is then there to read'
+ok('readability and writability track the socket')
+
+# ---------------------------------------------------------------------------
+# A peer that goes away
+# ---------------------------------------------------------------------------
+
+client.close()
+
+var after_close = wait_for(poller, 1, 2000)
+assert after_close != 0, 'a peer closing wakes the poller'
+assert after_close & (net.READABLE | net.HANGUP) != 0,
+  'reported as readable (the end-of-stream is there to read) or as a hangup'
+assert accepted.read(16).length() == 0, 'and the read that follows sees EOF'
+ok('a peer closing is reported rather than left to be discovered')
+
+# ---------------------------------------------------------------------------
+# A socket that can no longer supply a descriptor
+# ---------------------------------------------------------------------------
+
+accepted.close()
+
+var closed_flags = wait_for(poller, 1, 1000)
+assert closed_flags & net.ERROR != 0,
+  'a closed socket is reported as an error against its own token'
+ok('a closed socket is reported, not polled')
+
+poller.remove(1)
+assert !poller.contains(1), 'removal takes it out'
+assert poller.length() == 1, 'leaving the rest alone'
+assert !poller.remove(1), 'and removing it twice is not an error'
+
+# ---------------------------------------------------------------------------
+# A socket moved to another isolate
+# ---------------------------------------------------------------------------
+
+var mover = net.TcpStream()
+mover.connect(address)
+var moved = listener.accept()
+
+var moving_poller = net.Poller()
+moving_poller.add(moved, 5, net.WRITABLE)
+
+assert moving_poller.wait(200)[0][1] & net.WRITABLE != 0,
+  'the socket is watched normally to begin with'
+
+var inbox = isolate.channel(1)
+var reply = isolate.channel(1)
+var task = isolate.spawn(net_poll_helper.take_socket, inbox, reply)
+
+inbox.send(moved)
+assert reply.recv(5000), 'the socket really did arrive in the other isolate'
+
+# Its Ptr moved with it, so this side can no longer supply a
+# descriptor. The poller has to say so rather than carry on watching a
+# number the operating system may since have handed to something else.
+var moved_flags = wait_for(moving_poller, 5, 1000)
+assert moved_flags & net.ERROR != 0,
+  'a socket moved to another isolate is reported as an error, never polled'
+ok('a socket moved across an isolate boundary cannot be polled by mistake')
+
+catch {
+  task.join(5000)
+}
+mover.close()
+
+# ---------------------------------------------------------------------------
+# TLS
+# ---------------------------------------------------------------------------
+
+var tls_channel = isolate.channel(1)
+var tls_task = isolate.spawn(net_poll_helper.tls_echo, tls_channel, server_cert, server_key)
+var tls_address = tls_channel.recv()
+
+var config = tls.TlsConfig()
+config.set_insecure(true)
+
+var tcp = net.TcpStream()
+tcp.connect(tls_address)
+var secure = tls.TlsStream.connect(tcp, config, 'localhost')
+
+var tls_poller = net.Poller()
+tls_poller.add(secure, 3, net.READABLE)
+
+secure.write_all('hello')
+
+assert wait_for(tls_poller, 3, 3000) & net.READABLE != 0,
+  'a TLS stream becomes readable when its socket does'
+assert secure.read(16).to_string() == 'polled', 'and the decrypted data is there'
+ok('a TLS stream is pollable through the socket underneath it')
+
+tls_channel.send('done')
+secure.close()
+catch {
+  tls_task.join(5000)
+}
+
+listener.close()
+
+# ===========================================================================
+echo ''
+echo '  All ${_passed} checks passed.'

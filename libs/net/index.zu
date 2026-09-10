@@ -20,5 +20,6 @@ import @.tcp { * }
 import @.udp { * }
 import @.ip { * }
 import @.addr { * }
+import @.poll { * }
 import @.tls
 import @.dtls

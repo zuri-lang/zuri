@@ -1,0 +1,50 @@
+/**
+ * Client side of `tests/libs/http_concurrency.zu`. Module-bound so a
+ * spawned isolate can resolve it.
+ */
+
+import http
+import os
+
+/**
+ * Opens a keep-alive connection, makes one request, says so, and then
+ * sits idle - which is what a browser does between a page load and
+ * whatever it fetches next.
+ */
+def hold_connection(ready, address, idle_seconds) {
+  var client = http.HttpClient()
+
+  catch {
+    client.get('http://${address}/ping')
+    ready.send('holding')
+    os.sleep(idle_seconds)
+  }
+
+  catch {
+    client.close()
+  }
+}
+
+/**
+ * Waits until every holder is provably parked on the server, then
+ * times a single request from a brand new connection.
+ */
+def time_a_latecomer(ready, results, address, holders) {
+  iter var i = 0; i < holders; i++ {
+    ready.recv(20000)
+  }
+
+  var client = http.HttpClient()
+  var started = time()
+  var status = 0
+
+  catch {
+    status = client.get('http://${address}/ping').status
+  }
+
+  results.send([status, (time() - started) * 1000])
+
+  catch {
+    client.close()
+  }
+}

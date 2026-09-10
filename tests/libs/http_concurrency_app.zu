@@ -1,0 +1,17 @@
+/**
+ * Routes for `tests/libs/http_concurrency.zu`. `http.serve()` calls
+ * this once inside each worker isolate, so it has to be module-bound.
+ */
+
+import http
+
+def routes(server) {
+  # Left long on purpose: the point of the test is that an idle
+  # connection does not hold a worker hostage, not that it is reaped
+  # quickly.
+  server.keep_alive_timeout = 30000
+
+  server.get('/ping', @(request, response) {
+    response.text('pong')
+  })
+}

@@ -104,6 +104,45 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 
 pub(crate) const TCP_STREAM: &str = "zuri::net::TcpStream";
 
+/// The operating-system descriptor behind a `TcpStream` handle, or
+/// `None` when `value` is not one, or is one that can no longer supply
+/// a descriptor: closed, upgraded into a `TlsStream`, or moved to
+/// another isolate (which retags the `Ptr` and takes its payload).
+///
+/// Deliberately resolved on demand and never handed out to be cached:
+/// see `net_poll`'s own docs on why a stored descriptor is unsound.
+pub(crate) fn descriptor_of(value: Value) -> Option<Descriptor> {
+  if !value.is_ptr_type(TCP_STREAM) {
+    return None;
+  }
+
+  let cell = value.as_ptr_cell().borrow();
+  let tcp = cell.downcast_ref::<ZuriTcp>()?;
+
+  #[cfg(unix)]
+  {
+    use std::os::unix::io::AsRawFd;
+    if let Some(stream) = &tcp.stream {
+      return Some(stream.as_raw_fd());
+    }
+    tcp.listener.as_ref().map(|l| l.as_raw_fd())
+  }
+
+  #[cfg(windows)]
+  {
+    use std::os::windows::io::AsRawSocket;
+    if let Some(stream) = &tcp.stream {
+      return Some(stream.as_raw_socket());
+    }
+    tcp.listener.as_ref().map(|l| l.as_raw_socket())
+  }
+}
+
+#[cfg(unix)]
+pub(crate) type Descriptor = std::os::unix::io::RawFd;
+#[cfg(windows)]
+pub(crate) type Descriptor = std::os::windows::io::RawSocket;
+
 /// Tag a `TcpStream` is switched to once its underlying socket has been
 /// handed off to a `TlsStream` for a STARTTLS-style upgrade, same idea as
 /// `tcp_close`'s own invalidation below: the Zuri-level instance is dead

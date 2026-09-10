@@ -6,6 +6,19 @@ import .server { HttpServer }
 import isolate
 import net
 
+# How long a worker waits for one of its own connections to become
+# ready before looking for newly accepted ones. Short enough that a
+# connection handed over while the worker is busy is picked up
+# promptly; long enough that a worker holding idle connections costs
+# nothing measurable.
+var _POLL_INTERVAL = 10
+
+# How many connections one worker will hold at once. The point of
+# polling is that this can be far larger than one; the ceiling is here
+# so a single greedy worker cannot take every connection the acceptor
+# has and leave its peers idle.
+var _MAX_PER_WORKER = 256
+
 # Pool threads asked for on top of the workers themselves, so a server
 # is not the only thing that can ever run in its own process.
 var _POOL_HEADROOM = 2
@@ -44,15 +57,218 @@ def worker_main(connections, setup, options) {
 
   setup(instance)
 
+  var state = {
+    instance,
+    poller: net.Poller(),
+    live: {},
+    next_token: 1,
+    limit: options.get('max_connections_per_worker', _MAX_PER_WORKER),
+  }
+
   while true {
-    var client = connections.recv()
+    var taken = _admit_waiting(state, connections)
+
+    # Nothing being watched and nothing waiting: block until the
+    # acceptor has something, so an idle server costs nothing at all
+    # rather than spinning on a timeout.
+    if state.live.is_empty() {
+      if taken == 0 {
+        var client = connections.recv()
+
+        if client == nil {
+          break
+        }
+
+        _admit(state, client)
+      }
+
+      continue
+    }
+
+    if connections.is_closed() and taken == 0 {
+      # The acceptor has gone; finish what is still open, then stop.
+      if _drain(state) {
+        break
+      }
+    }
+
+    # A request can already be sitting in a connection's own read
+    # buffer where poll() cannot see it: the protocol probe at
+    # admission reads the first bytes to tell HTTP/2 from HTTP/1.1, and
+    # a pipelined request arrives alongside the one before it. Waiting
+    # for readability on those would stall until the peer happened to
+    # send something else.
+    var buffered = _service_buffered(state)
+
+    for event in state.poller.wait(buffered ? 0 : _POLL_INTERVAL) {
+      var token = event[0]
+
+      # A socket that can no longer supply a descriptor - closed, or
+      # moved elsewhere - is reported rather than polled. Either way
+      # there is nothing left to serve on it.
+      if event[1] & net.ERROR != 0 {
+        _close(state, token)
+        continue
+      }
+
+      _service(state, token)
+    }
+
+    _reap_idle(state)
+  }
+
+  # Whatever is still open when the loop ends is still owed a close.
+  for token in state.live.keys() {
+    _close(state, token)
+  }
+}
+
+# Takes on as many waiting connections as this worker has room for,
+# without ever blocking. Returns how many it took.
+def _admit_waiting(state, connections) {
+  var taken = 0
+
+  while state.live.length() < state.limit {
+    var client = connections.try_recv()
 
     if client == nil {
       break
     }
 
-    instance.serve_connection(client)
+    _admit(state, client)
+    taken++
   }
+
+  return taken
+}
+
+# Brings one accepted socket under this worker's poller, or serves it
+# to completion right here when it turns out not to be HTTP/1.1.
+def _admit(state, client) {
+  var connection = state.instance.accept_connection(client)
+
+  if connection == nil {
+    return
+  }
+
+  # An HTTP/2 connection is already multiplexed internally, so it is
+  # served to completion in place rather than interleaved with the
+  # HTTP/1.1 connections around it.
+  if state.instance.is_http2_connection(connection) {
+    catch {
+      state.instance.serve_http2(connection)
+    } as error
+
+    if error {
+      state.instance.report_error(error, connection)
+    }
+
+    state.instance.finish_connection(connection)
+
+    return
+  }
+
+  var token = state.next_token
+  state.next_token = token + 1
+
+  state.live[token] = [connection, 0, time()]
+  state.poller.add(connection.transport(), token, net.READABLE)
+}
+
+# Serves every connection that already has bytes in hand, and reports
+# whether any did - in which case the poll that follows should not
+# sleep, since there may be more work waiting behind it.
+def _service_buffered(state) {
+  var pending = []
+
+  for token, entry in state.live {
+    if entry[0].buffered() > 0 {
+      pending.append(token)
+    }
+  }
+
+  for token in pending {
+    _service(state, token)
+  }
+
+  return pending.length() > 0
+}
+
+# Answers whatever this connection has to ask, and keeps answering for
+# as long as the next request is already in hand: a pipelined request
+# sits in our own buffer, where the poller cannot see it, so waiting
+# for readability again would stall it until the peer sent something
+# else.
+def _service(state, token) {
+  var entry = state.live.get(token, nil)
+
+  if entry == nil {
+    return
+  }
+
+  var connection = entry[0]
+
+  while true {
+    var keep = false
+
+    catch {
+      keep = state.instance.serve_next(connection, entry[1])
+    } as error
+
+    if error {
+      state.instance.report_error(error, connection)
+      keep = false
+    }
+
+    if !keep {
+      _close(state, token)
+      return
+    }
+
+    entry[1] = entry[1] + 1
+    entry[2] = time()
+
+    if connection.buffered() == 0 {
+      return
+    }
+  }
+}
+
+# Closes an idle connection rather than letting it hold a slot for the
+# rest of the server's life. The poller reports nothing for a peer that
+# has simply gone quiet, so this is the only thing that notices.
+def _reap_idle(state) {
+  var deadline = state.instance.keep_alive_timeout / 1000
+  var now = time()
+  var expired = []
+
+  for token, entry in state.live {
+    if now - entry[2] > deadline {
+      expired.append(token)
+    }
+  }
+
+  for token in expired {
+    _close(state, token)
+  }
+}
+
+def _close(state, token) {
+  var entry = state.live.get(token, nil)
+
+  if entry == nil {
+    return
+  }
+
+  state.poller.remove(token)
+  state.live.remove(token)
+  state.instance.finish_connection(entry[0])
+}
+
+# Serves out whatever is still open once the acceptor has stopped,
+# returning true when there is nothing left to wait for.
+def _drain(state) {
+  return state.live.is_empty()
 }
 
 /**

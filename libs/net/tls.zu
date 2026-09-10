@@ -327,6 +327,18 @@ class TlsStream {
   }
 
   /**
+   * Hands out this stream's underlying native handle, the same way
+   * `TcpStream.native_ptr()` does. `net.Poller` needs it in order to
+   * watch the socket underneath the TLS session, and `_ptr` is not
+   * otherwise reachable from outside this class.
+   *
+   * @returns Ptr
+   */
+  native_ptr() {
+    return self._ptr
+  }
+
+  /**
    * Performs a client-side TLS handshake over `tcp_stream`,
    * verifying the peer's certificate against `config`'s trusted
    * roots and against `server_name`.

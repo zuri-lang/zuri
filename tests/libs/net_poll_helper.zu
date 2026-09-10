@@ -1,0 +1,44 @@
+/**
+ * Helper module for `tests/libs/net_poll.zu`: the isolate-side of the
+ * socket-move scenario. Module-bound so a spawned isolate can resolve
+ * it, the same way `net_tls_server.zu` backs the TLS suite.
+ */
+
+import net
+import net.tls
+
+/**
+ * Receives a socket that was moved across the isolate boundary,
+ * confirms it really did arrive live, and closes it.
+ */
+def take_socket(inbox, reply) {
+  var socket = inbox.recv()
+  reply.send(socket.is_connected())
+  socket.close()
+}
+
+/**
+ * Wraps one accepted connection in TLS, so the poller can be tested
+ * against a `TlsStream` rather than only a bare socket.
+ */
+def tls_echo(port_channel, cert, key) {
+  var config = tls.TlsConfig()
+  config.set_cert_chain(cert, key)
+
+  var server = net.TcpStream()
+  server.bind('127.0.0.1:0')
+  port_channel.send(server.local_address().to_string())
+
+  var client = server.accept()
+  var secure = tls.TlsStream.accept(client, config)
+
+  # Wait for the client to say something, then answer.
+  secure.read(16)
+  secure.write_all('polled')
+
+  # Hold the connection open until the test is done with it.
+  port_channel.recv()
+
+  secure.close()
+  server.close()
+}

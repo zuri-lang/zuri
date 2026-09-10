@@ -1,0 +1,360 @@
+/**
+ * @module poll
+ *
+ * Readiness polling: given a set of sockets, which of them can be read
+ * or written right now, without blocking.
+ *
+ * Every other call in `net` blocks. `TcpStream.read()` waits until its
+ * own socket has something to say and the thread does nothing else in
+ * the meantime, which is right for a client and wrong for a server: a
+ * thread that commits to one connection cannot serve another until
+ * that connection lets it go. A server built only from blocking calls
+ * can hold exactly as many concurrent connections as it has threads.
+ *
+ * A `Poller` is the way out. It watches many sockets at once and tells
+ * you which ones are ready, so a single thread can own hundreds of
+ * connections and spend its time only on the ones with work:
+ *
+ * ```zuri
+ * import net
+ *
+ * var server = net.TcpStream()
+ * server.bind('127.0.0.1:8080')
+ *
+ * var poller = net.Poller()
+ * var clients = {}
+ * var next_token = 1
+ *
+ * # Token 0 watches the listener itself; an incoming connection makes
+ * # it readable exactly the way data does on a connected socket.
+ * poller.add(server, 0, net.READABLE)
+ *
+ * while true {
+ *   for event in poller.wait(1000) {
+ *     var token = event[0]
+ *
+ *     if token == 0 {
+ *       var client = server.accept()
+ *       clients[next_token] = client
+ *       poller.add(client, next_token, net.READABLE)
+ *       next_token++
+ *       continue
+ *     }
+ *
+ *     var client = clients[token]
+ *
+ *     # A peer that has gone away is reported rather than left to be
+ *     # discovered by a read that returns nothing, forever.
+ *     if event[1] & (net.ERROR | net.HANGUP) != 0 {
+ *       poller.remove(token)
+ *       clients.remove(token)
+ *       client.close()
+ *       continue
+ *     }
+ *
+ *     echo client.read(1024).to_string()
+ *   }
+ * }
+ * ```
+ *
+ * ### Isolates
+ *
+ * A `Poller` watches the sockets of the isolate that owns it, and
+ * nothing about it crosses an isolate boundary. Several worker
+ * isolates each keeping their own poller over their own connections is
+ * the intended shape, and is exactly the shared-nothing model.
+ *
+ * A socket that is closed, upgraded into a `TlsStream`, or moved to
+ * another isolate stops being able to supply a descriptor. Rather than
+ * this being a rule you have to remember, `wait()` reports such a
+ * socket as `ERROR` against its own token, because the descriptor is
+ * resolved fresh on every call and never remembered between them. It
+ * is not possible for a poller to end up watching a descriptor that
+ * the operating system has since handed to something else.
+ *
+ * ### What polling does not do
+ *
+ * Readiness is not a guarantee. A socket reported `READABLE` has data
+ * *now*, but a read can still come up short, and a large write can
+ * still be partial on a socket reported `WRITABLE`. Poll to decide
+ * what to work on; keep handling short reads and writes the way you
+ * would anyway.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _net_poll
+
+/**
+ * Interest: tell me when this socket has data to read, a connection to
+ * accept, or an end-of-stream to observe.
+ *
+ * @type int
+ */
+var READABLE = 1
+
+/**
+ * Interest: tell me when this socket can be written to without
+ * blocking.
+ *
+ * @type int
+ */
+var WRITABLE = 2
+
+/**
+ * Readiness only: the socket has failed, or its handle can no longer
+ * supply a descriptor because it was closed, upgraded, or moved to
+ * another isolate. Deregister it.
+ *
+ * @type int
+ */
+var ERROR = 4
+
+/**
+ * Readiness only: the peer has closed its end. Any data already sent
+ * is still readable, so drain the socket before closing it.
+ *
+ * @type int
+ */
+var HANGUP = 8
+
+/**
+ * A set of sockets to watch, each under a token of your choosing.
+ *
+ * The token is whatever number is convenient for finding the socket
+ * again - an index into your own table, a connection id. `wait()`
+ * hands back the tokens that are ready, never the sockets, so the
+ * mapping stays yours.
+ *
+ * @printable
+ */
+class Poller {
+
+  # Parallel lists rather than a dictionary: `wait()` passes the
+  # sockets and interests straight to the platform call with no
+  # rebuilding, and this is also what keeps every registered socket
+  # reachable by the collector for as long as it is being watched.
+  var _sockets = []
+  var _interests = []
+  var _tokens = []
+
+  /**
+   * Returns a new, empty `Poller`.
+   */
+  @new() {
+    self._sockets = []
+    self._interests = []
+    self._tokens = []
+  }
+
+  /**
+   * Starts watching `socket` under `token`.
+   *
+   * Registering a token that is already present replaces it, so a
+   * caller that loses track cannot end up with one token naming two
+   * sockets.
+   *
+   * @param {TcpStream|TlsStream} socket: connected or bound; a bound
+   *    listener becomes readable when a connection is waiting
+   * @param number token: your own identifier for this socket
+   * @param ?number interest: `READABLE`, `WRITABLE`, or both;
+   *    defaults to `READABLE`
+   * @returns Poller: this same instance, for chaining
+   * @throws ValueError if `interest` names neither readability nor
+   *    writability
+   */
+  add(socket, token: number, interest: ?number) {
+    var wanted = interest == nil ? READABLE : interest
+
+    if wanted & (READABLE | WRITABLE) == 0 {
+      raise ValueError('interest must be READABLE, WRITABLE, or both')
+    }
+
+    if !is_instance(socket) {
+      raise TypeError(
+        'add() expects a TcpStream or TlsStream, got ${typeof(socket)}'
+      )
+    }
+
+    # The native handle rather than the wrapper: it is what actually
+    # owns the socket, so holding it here is what keeps the socket
+    # alive for as long as it is watched - and it is what `wait()`
+    # resolves a descriptor from, freshly, on every call.
+    var handle = socket.native_ptr()
+    var at = self._index_of(token)
+
+    if at > -1 {
+      self._sockets[at] = handle
+      self._interests[at] = wanted
+      return self
+    }
+
+    self._sockets.append(handle)
+    self._interests.append(wanted)
+    self._tokens.append(token)
+
+    return self
+  }
+
+  /**
+   * Changes what `token` is watched for, leaving the socket alone.
+   *
+   * This is how a connection with a reply still to write switches from
+   * waiting for a request to waiting for room to send, and back again.
+   *
+   * @param number token
+   * @param number interest
+   * @returns bool: whether the token was registered
+   * @throws ValueError if `interest` names neither readability nor
+   *    writability
+   */
+  modify(token: number, interest: number) {
+    if interest & (READABLE | WRITABLE) == 0 {
+      raise ValueError('interest must be READABLE, WRITABLE, or both')
+    }
+
+    var at = self._index_of(token)
+
+    if at == -1 {
+      return false
+    }
+
+    self._interests[at] = interest
+
+    return true
+  }
+
+  /**
+   * Stops watching `token`, and releases this poller's reference to
+   * its socket. Removing a token that is not registered does nothing
+   * rather than failing.
+   *
+   * @param number token
+   * @returns bool: whether the token was registered
+   */
+  remove(token: number) {
+    var at = self._index_of(token)
+
+    if at == -1 {
+      return false
+    }
+
+    self._sockets.remove_at(at)
+    self._interests.remove_at(at)
+    self._tokens.remove_at(at)
+
+    return true
+  }
+
+  /**
+   * Whether `token` is currently registered.
+   *
+   * @param number token
+   * @returns bool
+   */
+  contains(token: number) {
+    return self._index_of(token) > -1
+  }
+
+  /**
+   * The interest currently registered for `token`, or `nil`.
+   *
+   * @param number token
+   * @returns ?number
+   */
+  interest(token: number) {
+    var at = self._index_of(token)
+    return at == -1 ? nil : self._interests[at]
+  }
+
+  /**
+   * Every registered token, in registration order.
+   *
+   * @returns list
+   */
+  tokens() {
+    return self._tokens.clone()
+  }
+
+  /**
+   * How many sockets are being watched.
+   *
+   * @returns number
+   */
+  length() {
+    return self._tokens.length()
+  }
+
+  /**
+   * Whether nothing is being watched.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self._tokens.is_empty()
+  }
+
+  /**
+   * Stops watching everything.
+   *
+   * @returns Poller: this same instance, for chaining
+   */
+  clear() {
+    self._sockets.clear()
+    self._interests.clear()
+    self._tokens.clear()
+
+    return self
+  }
+
+  /**
+   * Waits until at least one registered socket is ready, and returns
+   * what happened.
+   *
+   * Each entry is `[token, flags]`, where `flags` is any combination
+   * of `READABLE`, `WRITABLE`, `ERROR` and `HANGUP`. An empty list
+   * means the timeout elapsed with nothing ready - and also that
+   * nothing is registered, since waiting on an empty set could only
+   * ever sleep for the full timeout to no purpose.
+   *
+   * @note Test flags with `&`, never `==`: a socket can be readable
+   *    and hung up at the same time, which is what a peer that sent a
+   *    final response and closed looks like.
+   *
+   * @param ?number timeout: milliseconds to wait; `0` polls without
+   *    waiting, a negative number waits indefinitely. Defaults to
+   *    waiting indefinitely.
+   * @returns list: `[token, flags]` pairs, one per ready socket
+   * @throws Error on an underlying platform failure
+   */
+  wait(timeout: ?number) {
+    var milliseconds = timeout == nil ? -1 : timeout
+
+    var ready = _net_poll.poll_wait(self._sockets, self._interests, milliseconds)
+    var events = []
+
+    for event in ready {
+      events.append([self._tokens[event[0]], event[1]])
+    }
+
+    return events
+  }
+
+  _index_of(token) {
+    iter var i = 0; i < self._tokens.length(); i++ {
+      if self._tokens[i] == token {
+        return i
+      }
+    }
+
+    return -1
+  }
+
+  to_string() {
+    return '<Poller watching ${self._tokens.length()} socket(s)>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

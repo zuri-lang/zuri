@@ -20,6 +20,12 @@ import net
 import os
 import .http_server_app
 
+# Sized before anything spawns, because the pool is fixed once it
+# exists. This suite runs servers, worker pools and several concurrent
+# clients at once; the default of one thread per core is not enough for
+# that, and a starved pool shows up as a hang rather than an error.
+isolate.configure(16)
+
 var _passed = 0
 
 def ok(label) {

@@ -774,6 +774,42 @@ class HttpServer {
    * @param TcpStream client
    */
   serve_connection(client) {
+    var connection = self.accept_connection(client)
+
+    if connection == nil {
+      return
+    }
+
+    catch {
+      if self.http2 and self._is_http2(connection) {
+        self.serve_http2(connection)
+      } else {
+        self._serve_requests(connection)
+      }
+    } as error
+
+    if error {
+      self._report(error, connection)
+    }
+
+    self.finish_connection(connection)
+  }
+
+  /**
+   * Turns an accepted socket into a `Connection`, running the TLS
+   * handshake when one is configured and notifying `on_connect()`
+   * listeners.
+   *
+   * Split out of `serve_connection()` so that a caller driving its own
+   * event loop can take a connection on without also committing to
+   * serving it to completion on the spot: see `serve_next()`.
+   *
+   * @param TcpStream client
+   * @returns ?Connection: `nil` when the handshake failed, in which
+   *    case the socket has already been closed and the failure
+   *    reported to `on_error()` listeners
+   */
+  accept_connection(client) {
     var connection
 
     catch {
@@ -789,7 +825,8 @@ class HttpServer {
         client.close()
       }
       self._report(handshake_error, nil)
-      return
+
+      return nil
     }
 
     for listener in self._connect_listeners {
@@ -798,21 +835,122 @@ class HttpServer {
       }
     }
 
-    catch {
-      if self.http2 and self._is_http2(connection) {
-        var session = h2.Http2Connection(connection, true)
-        session.max_body_size = self.max_body_size
-        session.start_server(nil)
-        session.serve(self)
-      } else {
-        self._serve_requests(connection)
-      }
-    } as error
+    return connection
+  }
 
-    if error {
-      self._report(error, connection)
+  /**
+   * Reads and answers exactly one request, and reports whether the
+   * connection may be used again.
+   *
+   * This is the unit an event loop works in. `_serve_requests()` calls
+   * it in a loop for one connection at a time, which is what
+   * `listen()` does; a polled worker calls it once per connection that
+   * has actually become readable, which is what lets one thread hold
+   * many connections at once.
+   *
+   * @param Connection connection
+   * @param ?number served: how many requests this connection has
+   *    already answered, so the keep-alive budget and the shorter idle
+   *    read timeout apply from the second request onwards
+   * @returns bool: whether to keep the connection open
+   */
+  serve_next(connection, served: ?number) {
+    var already = served == nil ? 0 : served
+
+    # The first request may take the full read timeout to arrive; a
+    # subsequent one on an idle connection gets the shorter keep-alive
+    # budget, so a parked connection is not held for the whole read
+    # timeout.
+    if already > 0 {
+      connection.set_read_timeout(self.keep_alive_timeout)
     }
 
+    var request
+
+    catch {
+      request = h1.read_request(connection, {
+        max_line_size: self.max_line_size,
+        max_header_size: self.max_header_size,
+        max_header_count: self.max_header_count,
+        header_timeout: self.header_timeout,
+      })
+    } as read_error
+
+    if read_error {
+      # An idle keep-alive connection timing out, or a peer closing
+      # between requests, is the normal end of a connection.
+      if instance_of(read_error, TimeoutError) or
+          instance_of(read_error, ConnectionError) {
+        return false
+      }
+
+      self._send_early_error(connection, read_error)
+
+      return false
+    }
+
+    if request == nil {
+      return false
+    }
+
+    connection.set_read_timeout(self.read_timeout)
+
+    if !self._serve_one(connection, request) {
+      return false
+    }
+
+    return already + 1 < self.max_keep_alive_requests
+  }
+
+  /**
+   * Runs an HTTP/2 session on `connection` until the peer goes away.
+   *
+   * Unlike HTTP/1.1, this owns the connection for its whole life: an
+   * HTTP/2 connection is already multiplexed internally, so the
+   * streams on it are interleaved even though the connection itself is
+   * not interleaved with any other.
+   *
+   * @param Connection connection
+   */
+  serve_http2(connection) {
+    var session = h2.Http2Connection(connection, true)
+    session.max_body_size = self.max_body_size
+    session.start_server(nil)
+    session.serve(self)
+  }
+
+  /**
+   * Whether a connection that has just been taken on is going to speak
+   * HTTP/2. Reading this costs a peek at the first bytes on a
+   * cleartext connection, so it is asked once and the answer kept.
+   *
+   * @param Connection connection
+   * @returns bool
+   */
+  is_http2_connection(connection) {
+    return self.http2 and self._is_http2(connection)
+  }
+
+  /**
+   * Hands `error` to this server's `on_error()` listeners.
+   *
+   * Public so that a caller running its own connection loop reports
+   * failures through the same listeners the built-in loops use,
+   * instead of inventing a second place errors can appear.
+   *
+   * @param Error error
+   * @param ?Connection connection
+   */
+  report_error(error, connection) {
+    self._report(error, connection)
+  }
+
+  /**
+   * Notifies `on_disconnect()` listeners and closes the connection.
+   *
+   * @param Connection connection
+   */
+  finish_connection(connection) {
     for listener in self._disconnect_listeners {
       catch {
         listener(connection)
@@ -825,51 +963,8 @@ class HttpServer {
   _serve_requests(connection) {
     var served = 0
 
-    while true {
-      # The first request may take the full read timeout to arrive;
-      # a subsequent one on an idle connection gets the shorter
-      # keep-alive budget, so a parked connection is not held for the
-      # whole read timeout.
-      if served > 0 {
-        connection.set_read_timeout(self.keep_alive_timeout)
-      }
-
-      var request
-
-      catch {
-        request = h1.read_request(connection, {
-          max_line_size: self.max_line_size,
-          max_header_size: self.max_header_size,
-          max_header_count: self.max_header_count,
-          header_timeout: self.header_timeout,
-        })
-      } as read_error
-
-      if read_error {
-        # An idle keep-alive connection timing out, or a peer closing
-        # between requests, is the normal end of a connection.
-        if instance_of(read_error, TimeoutError) or
-            instance_of(read_error, ConnectionError) {
-          return
-        }
-
-        self._send_early_error(connection, read_error)
-        return
-      }
-
-      if request == nil {
-        return
-      }
-
+    while self.serve_next(connection, served) {
       served++
-
-      connection.set_read_timeout(self.read_timeout)
-
-      var keep_alive = self._serve_one(connection, request)
-
-      if !keep_alive or served >= self.max_keep_alive_requests {
-        return
-      }
     }
   }
 

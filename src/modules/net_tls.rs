@@ -170,6 +170,37 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 
 const TLS_CONFIG: &str = "zuri::net::TlsConfig";
 const TLS_STREAM: &str = "zuri::net::TlsStream";
+
+/// The descriptor of the socket underneath a `TlsStream`, or `None`
+/// when `value` is not one or has been closed. Readiness is a property
+/// of that socket, not of the TLS session on top of it.
+///
+/// @see `net_tcp::descriptor_of` for why this is resolved on demand.
+pub(crate) fn descriptor_of(value: Value) -> Option<crate::modules::net_tcp::Descriptor> {
+  if !value.is_ptr_type(TLS_STREAM) {
+    return None;
+  }
+
+  let cell = value.as_ptr_cell().borrow();
+  let stream = cell.downcast_ref::<ZuriTlsStream>()?;
+
+  #[cfg(unix)]
+  use std::os::unix::io::AsRawFd;
+  #[cfg(windows)]
+  use std::os::windows::io::AsRawSocket;
+
+  match stream {
+    #[cfg(unix)]
+    ZuriTlsStream::Client(s) => Some(s.sock.as_raw_fd()),
+    #[cfg(unix)]
+    ZuriTlsStream::Server(s) => Some(s.sock.as_raw_fd()),
+    #[cfg(windows)]
+    ZuriTlsStream::Client(s) => Some(s.sock.as_raw_socket()),
+    #[cfg(windows)]
+    ZuriTlsStream::Server(s) => Some(s.sock.as_raw_socket()),
+    ZuriTlsStream::Closed => None,
+  }
+}
 const TLS_STREAM_CLOSED: &str = "zuri::net::TlsStream::__closed__";
 
 // ---------------------------------------------------------------------------

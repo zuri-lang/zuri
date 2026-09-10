@@ -1,0 +1,70 @@
+/**
+ * test_http_concurrency.zu
+ *
+ * One worker, several connections at once.
+ *
+ * Three clients park an idle keep-alive connection on a single worker
+ * and then sit there doing nothing. A fourth turns up afterwards.
+ *
+ * Before the worker loop polled its connections it served them one at
+ * a time to completion, so a worker blocked reading from an idle peer
+ * could not look at anyone else: the newcomer waited out that peer's
+ * whole keep-alive window, measured at 2914 ms against a 3-second
+ * idle. It is now served in milliseconds.
+ *
+ * The server runs on this script's own isolate - the shape a real
+ * server is written in - rather than being spawned, so the only
+ * isolates in play are the pool's own worker and the clients.
+ */
+
+import http
+import isolate
+import os
+import .http_concurrency_app
+import .http_concurrency_client
+
+var holders = 3
+
+# Sized before anything spawns, since the pool is fixed once it
+# exists: one worker, three holders, one latecomer, and room over.
+isolate.configure(holders + 8)
+
+var results = isolate.channel(1)
+
+echo '═══════════════════════════════════════════════════════'
+echo '  http concurrency - one worker, many connections'
+echo '═══════════════════════════════════════════════════════'
+
+http.serve(http_concurrency_app.routes, {
+  host: '127.0.0.1',
+  port: 0,
+  workers: 1,
+  # The holders, plus the one latecomer. The acceptor stops after
+  # that, which is what ends the run.
+  max_connections: holders + 1,
+  on_ready: @(address, stop) {
+    var at = address.to_string()
+    var ready = isolate.channel(holders)
+
+    iter var i = 0; i < holders; i++ {
+      isolate.spawn(http_concurrency_client.hold_connection, ready, at, 3)
+    }
+
+    isolate.spawn(http_concurrency_client.time_a_latecomer, ready, results, at, holders)
+  },
+})
+
+var timing = results.recv(30000)
+
+assert timing != nil, 'the latecomer got an answer at all'
+assert timing[0] == 200, 'and was served properly'
+assert timing[1] < 1000,
+  'a client arriving while every connection is parked and idle is served ' +
+  'promptly, in ${timing[1] // 1}ms, rather than after an idle peer ' +
+  'releases the worker'
+
+echo '  [PASS] one worker serves many connections at once (${timing[1] // 1}ms)'
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All 1 check passed.'
+echo '═══════════════════════════════════════════════════════'
