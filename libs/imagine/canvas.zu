@@ -5,6 +5,7 @@ import math
 import _imagine
 
 import .color { Color }
+import .constants { CAP_BUTT, CAP_ROUND, CAP_SQUARE }
 import .errors { BoundsError, ImageError }
 
 
@@ -76,6 +77,7 @@ class Canvas {
   # passed to every call.
   var _antialias
   var _thickness
+  var _cap
 
   /**
    * Wraps an existing pixel buffer.
@@ -111,6 +113,7 @@ class Canvas {
     self._clip = nil
     self._antialias = true
     self._thickness = 1
+    self._cap = CAP_ROUND
   }
 
   # ------------------------------------------------------------------
@@ -276,6 +279,44 @@ class Canvas {
 
     self._thickness = thickness
     return self
+  }
+
+  /**
+   * Sets how the two ends of an open stroke are finished.
+   *
+   * `CAP_ROUND` (the default) ends in a half-disc, `CAP_SQUARE` in a
+   * square, and both reach half the stroke's width past the endpoint.
+   * `CAP_BUTT` stops exactly at it.
+   *
+   * Reach for `CAP_BUTT` when the coordinates have to mean exactly
+   * what they say: segments meeting end to end, a scale bar of a known
+   * length, the pieces of a dashed line. The joins between a path's
+   * segments are always round and are not affected by this.
+   *
+   * ```zuri
+   * chart.cap(CAP_BUTT).thickness(6)
+   * chart.line(40, 200, 40, 40, '#334155')
+   * ```
+   *
+   * @param string style: `CAP_BUTT`, `CAP_ROUND` or `CAP_SQUARE`.
+   * @returns self
+   */
+  cap(style) {
+    if style != CAP_BUTT and style != CAP_ROUND and style != CAP_SQUARE {
+      raise ImageError("'${style}' is not a line cap, expected butt, round or square")
+    }
+
+    self._cap = style
+    return self
+  }
+
+  /**
+   * The line cap in force.
+   *
+   * @returns string
+   */
+  get_cap() {
+    return self._cap
   }
 
   # ------------------------------------------------------------------
@@ -794,9 +835,20 @@ class Canvas {
 
     var paint = Color.parse(color)
     var width = self._thickness
+    var cap = self._cap
 
-    if is_dict(options) and is_number(options.get('thickness')) {
-      width = options.thickness
+    if is_dict(options) {
+      if is_number(options.get('thickness')) {
+        width = options.thickness
+      }
+
+      if options.get('cap') != nil {
+        cap = options.cap
+      }
+    }
+
+    if cap != CAP_BUTT and cap != CAP_ROUND and cap != CAP_SQUARE {
+      raise ImageError("'${cap}' is not a line cap, expected butt, round or square")
     }
 
     var half = width / 2
@@ -822,6 +874,21 @@ class Canvas {
         continue
       }
 
+      if !closed and cap == CAP_SQUARE {
+        var ex = dx / length * half
+        var ey = dy / length * half
+
+        if i == 0 {
+          x0 -= ex
+          y0 -= ey
+        }
+
+        if i == segments - 1 {
+          x1 += ex
+          y1 += ey
+        }
+      }
+
       # The unit normal, scaled to half the stroke width.
       var nx = -dy / length * half
       var ny = dx / length * half
@@ -842,12 +909,15 @@ class Canvas {
       self._scan_fill(piece, paint, false)
     }
 
-    # Round joints, which also round the ends of an open path. Only
-    # worth drawing once the stroke is wide enough for the gap between
-    # two quads to be visible.
+    # A disc at every interior joint, filling the wedge two quads leave
+    # between them, so joins are always round. The two ends of an open
+    # path get one only when the cap is round; a square cap was already
+    # handled by extending the end segments, and a butt cap wants
+    # nothing past the endpoint at all. Only worth drawing once the
+    # stroke is wide enough for any of it to show.
     if width > 1.5 {
-      var first = closed ? 0 : 1
-      var last = closed ? count : count - 1
+      var first = closed or cap == CAP_ROUND ? 0 : 1
+      var last = closed or cap == CAP_ROUND ? count : count - 1
 
       iter var i = first; i < last; i++ {
         self._fill_disc(flat[i * 2], flat[i * 2 + 1], half, paint)

@@ -43,11 +43,13 @@ anything outside the standard library.
 - [Drawing](#drawing)
   - [Shapes](#shapes)
   - [Strokes and Anti-aliasing](#strokes-and-anti-aliasing)
+  - [Line Caps](#line-caps)
   - [Paths and Polygons](#paths-and-polygons)
   - [Filling Areas](#filling-areas)
   - [Gradients](#gradients)
   - [Clipping](#clipping)
 - [Text](#text)
+  - [The Built-in Font](#the-built-in-font)
   - [Loading a Font](#loading-a-font)
   - [Drawing Text](#drawing-text)
   - [Measuring and Positioning](#measuring-and-positioning)
@@ -740,6 +742,37 @@ Stroke widths of 1, 3, 6 and 12:
 
 ![four vertical lines of increasing thickness](imagine/images/strokes.png)
 
+### Line Caps
+
+How an open stroke finishes at its two ends is a separate choice from
+its width:
+
+```zuri
+image.cap(CAP_ROUND)     # a half-disc. The default.
+image.cap(CAP_SQUARE)    # a square, reaching the same distance
+image.cap(CAP_BUTT)      # stops dead at the endpoint
+```
+
+![the same line drawn with butt, round and square caps, with its endpoints marked](imagine/images/caps.png)
+
+The red marks are the exact coordinates the line was given. A round or
+square cap reaches half the stroke's width past them; a butt cap does
+not.
+
+`CAP_BUTT` is the one to reach for whenever the coordinates have to
+mean exactly what they say — segments meeting end to end, a scale bar
+of a known length, the pieces of a dashed line. `CAP_SQUARE` gives the
+same reach as round with a blunt finish.
+
+A single call can override the surface's setting:
+
+```zuri
+image.line(40, 200, 40, 40, '#334155', { thickness: 6, cap: CAP_BUTT })
+```
+
+Joins *between* a path's segments are always round, and closed outlines
+have no ends, so neither is affected by this.
+
 ### Paths and Polygons
 
 Every filled shape in this module becomes a polygon and goes through one
@@ -861,6 +894,59 @@ affect reading: `get_pixel()` sees the whole image either way.
 
 ## Text
 
+### The Built-in Font
+
+`imagine` ships no font file, so everything in the next section
+depends on what is installed on the machine and can fail. One font
+always works:
+
+```zuri
+import imagine { Image, StrokeFont }
+
+Image(300, 70, 'white')
+  .text(16, 20, 'Always available', StrokeFont(28), '#0f172a')
+  .save('label.png')
+```
+
+`Font.builtin(size)` is the same thing under a name you will find from
+`Font`.
+
+It is not a font file. Every glyph is defined as geometry — centre-line
+strokes rather than filled outlines — in
+[`libs/imagine/strokefont.zu`](../libs/imagine/strokefont.zu), and
+drawn through the same anti-aliased rasterizer as everything else. So
+it scales cleanly to any size, and its weight is a parameter rather
+than part of the design:
+
+![the built-in font at four weights](imagine/images/builtin-weights.png)
+
+```zuri
+StrokeFont(24)              # regular
+StrokeFont(24).weight(0.13) # bold
+StrokeFont(24).weight(0.05) # light
+```
+
+Here is the whole thing:
+
+![a specimen of the built-in font: uppercase, lowercase, digits and punctuation](imagine/images/builtin-specimen.png)
+
+**What it is for.** Labels, chart axes, watermarks, diagrams,
+placeholder text, and any output that has to work on a machine with no
+fonts installed. The look is geometric and single-weight, closer to a
+technical drawing than to a typeface, because that is what centre-line
+strokes give you honestly.
+
+**What it is not for.** Body text, headlines, or anything where the
+shapes themselves matter. Load a real font for those.
+
+**Coverage** is printable ASCII, from space through `~`. Anything else
+draws the empty box a font uses for a glyph it does not have, so text
+in another script comes out visibly missing rather than silently blank.
+
+A `StrokeFont` has the same interface as a `Font` — `size()`,
+`metrics()`, `measure()`, `render()`, `wrap()` — so anywhere a font is
+accepted, either works.
+
 ### Loading a Font
 
 ```zuri
@@ -877,11 +963,12 @@ face by path, so loading the same file twice in one process parses it
 once. `Font.system()` searches the platform's font directories by family
 name, matching ignoring case, spaces and hyphens.
 
-`Font.sans()` finds whichever common sans-serif face is installed. It is
+`Font.sans()` finds whichever common sans-serif font is installed. It is
 a convenience for scripts and tests, not something to rely on for output
 that must look the same everywhere: which font it lands on depends on
 the machine, and a container image with no fonts installed has none to
-find. It raises `FontError` in that case, with a message saying so.
+find. It raises `FontError` in that case, pointing at
+`Font.builtin()`, which never depends on what is installed.
 
 A `Font` is immutable and cheap to copy. `size()` returns the same face
 at another size, sharing the parsed data:

@@ -12,6 +12,7 @@
   [PASS] anti-aliasing can be turned off and produces partial coverage when on
   [PASS] stroke thickness is centred on the path
   [PASS] drawing onto a fully transparent image writes valid partial coverage
+  [PASS] line caps can be butt, round or square, and only affect open ends
   [PASS] flood fill spreads four-connected and respects a barrier
   [PASS] linear and radial gradients interpolate, blend and stay inside their bounds
   [PASS] the resizing family produces the documented sizes and never mutates
@@ -38,7 +39,8 @@
   [PASS] images encode as data URLs
   [PASS] animations build, transform and round-trip through GIF
   [PASS] text measurement and rendering behave correctly (when a system font is available)
+  [PASS] the built-in stroke font measures, scales, wraps and draws without any font file
 
 ═══════════════════════════════════════════════════════
-  All 37 assertions passed.
+  All 39 assertions passed.
 ═══════════════════════════════════════════════════════

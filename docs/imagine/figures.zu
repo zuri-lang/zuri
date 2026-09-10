@@ -267,6 +267,29 @@ clipped.rect(30, 25, 100, 70, LABEL, { thickness: 1 })
 emit('clipping.png', clipped)
 
 
+var caps = Image(220, 140, PAPER)
+
+iter var i = 0; i < 3; i++ {
+  var style = [CAP_BUTT, CAP_ROUND, CAP_SQUARE][i]
+  var y = 28 + i * 42
+
+  caps.cap(style).thickness(20)
+  caps.line(60, y, 160, y, ACCENT)
+
+  # The exact endpoints, so the overhang is visible.
+  caps.cap(CAP_BUTT).thickness(1)
+  caps.line(60, y - 18, 60, y + 18, '#ef4444')
+  caps.line(160, y - 18, 160, y + 18, '#ef4444')
+
+  if caption != nil {
+    caps.text(170, y - 8, style, caption, LABEL)
+  }
+}
+
+caps.cap(CAP_ROUND)
+emit('caps.png', caps)
+
+
 # ---------------------------------------------------------------------
 # Gradients
 # ---------------------------------------------------------------------
@@ -537,3 +560,37 @@ if caption != nil {
 }
 
 echo 'done'
+
+
+# ---------------------------------------------------------------------
+# The built-in font
+# ---------------------------------------------------------------------
+
+var specimen_lines = [
+  'ABCDEFGHIJKLM',
+  'NOPQRSTUVWXYZ',
+  'abcdefghijklm',
+  'nopqrstuvwxyz',
+  '0123456789',
+  '!"#$%&\'()*+,-./:;<=>?',
+  '@[\\]^_`{|}~',
+]
+
+var specimen_font = StrokeFont(26)
+var specimen_text = '\n'.join(specimen_lines)
+var specimen_box = specimen_font.measure(specimen_text, nil)
+
+var specimen = Image(specimen_box.width + 40, specimen_box.height + 36, PAPER)
+specimen.text(20, 18, specimen_text, specimen_font, INK)
+
+emit('builtin-specimen.png', specimen)
+
+var weights = []
+
+for entry in [[0.05, 'light'], [0.085, 'regular'], [0.115, 'medium'], [0.15, 'bold']] {
+  var panel = Image(110, 52, PAPER)
+  panel.text(8, 12, 'Aa Bb', StrokeFont(30, entry[0]), INK)
+  weights.append(labelled(panel, entry[1]))
+}
+
+emit('builtin-weights.png', row(weights))

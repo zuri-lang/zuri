@@ -5,6 +5,7 @@ import os
 import _imagine
 
 import .errors { FontError }
+import .strokefont { StrokeFont }
 
 
 /**
@@ -243,9 +244,36 @@ class Font {
     }
 
     raise FontError(
-      'no usable font was found on this system; install one, or supply a ' +
-      'font file with Font.load() or Font.from_bytes()'
+      'no usable font was found on this system; install one, supply a font ' +
+      'file with Font.load() or Font.from_bytes(), or use Font.builtin(), ' +
+      'which never depends on what is installed'
     )
+  }
+
+  /**
+   * The built-in font, which is always available.
+   *
+   * `imagine` ships no font file, so `system()` and `sans()` both
+   * depend on what happens to be installed and can fail. This one
+   * cannot: it is drawn from stroke geometry rather than loaded, and
+   * scales to any size.
+   *
+   * The result is a [[imagine.StrokeFont]], not a `Font`. The two have
+   * the same interface, so anywhere a font is accepted either works.
+   * Read that class's own documentation for what the built-in font is
+   * and is not suitable for.
+   *
+   * ```zuri
+   * var font = Font.builtin(20)
+   *
+   * chart.text(12, 8, 'requests / second', font, '#334155')
+   * ```
+   *
+   * @param ?number size: The size in pixels - Default: 16.
+   * @returns StrokeFont
+   */
+  static builtin(size) {
+    return StrokeFont(size)
   }
 
   /**

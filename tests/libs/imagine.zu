@@ -175,6 +175,40 @@ assert rim.a > 0 and rim.a < 255, 'an anti-aliased edge over transparency must l
 onto_nothing.line(0, 0, 19, 19, Color(0, 0, 255, 100))
 ok('drawing onto a fully transparent image writes valid partial coverage')
 
+var capped = Image(60, 30, 'white')
+assert capped.get_cap() == CAP_ROUND, 'strokes must be round-capped by default'
+
+# The endpoints are at x=20 and x=40, so anything painted beyond them
+# is the cap overhanging.
+capped.cap(CAP_BUTT).thickness(12)
+capped.line(20, 15, 40, 15, 'black')
+assert capped.get_pixel(19, 15).to_hex() == '#ffffff', 'a butt cap must stop at the endpoint'
+
+var round_cap = Image(60, 30, 'white')
+round_cap.cap(CAP_ROUND).thickness(12)
+round_cap.line(20, 15, 40, 15, 'black')
+assert round_cap.get_pixel(19, 15).to_hex() == '#000000', 'a round cap must reach past the endpoint'
+assert round_cap.get_pixel(13, 15).to_hex() == '#ffffff', 'a round cap must not reach more than half the width past the endpoint'
+assert round_cap.get_pixel(14, 9).to_hex() == '#ffffff', 'a round cap must leave the corner a square cap would fill'
+
+var square_cap = Image(60, 30, 'white')
+square_cap.cap(CAP_SQUARE).thickness(12)
+square_cap.line(20, 15, 40, 15, 'black')
+assert square_cap.get_pixel(19, 15).to_hex() == '#000000', 'a square cap must reach past the endpoint'
+assert square_cap.get_pixel(14, 9).to_hex() == '#000000', 'a square cap must fill the corner a round cap leaves clear'
+assert square_cap.get_pixel(13, 15).to_hex() == '#ffffff', 'a square cap must reach exactly as far past the endpoint as a round one'
+
+var per_call = Image(60, 30, 'white')
+per_call.line(20, 15, 40, 15, 'black', { thickness: 12, cap: CAP_BUTT })
+assert per_call.get_pixel(19, 15).to_hex() == '#ffffff', 'a per-call cap must override the surface default'
+assert raises(@() { per_call.cap('wedge') }), 'an unknown cap must be rejected'
+
+var outline = Image(60, 40, 'white')
+outline.cap(CAP_BUTT).thickness(8)
+outline.rect(15, 10, 30, 20, 'black')
+assert outline.get_pixel(15, 10).to_hex() == '#000000', 'a closed outline has no ends, so its corners must stay filled whatever the cap'
+ok('line caps can be butt, round or square, and only affect open ends')
+
 var flooded = Image(16, 16, 'white')
 flooded.fill_rect(8, 0, 1, 16, 'black')
 flooded.flood_fill(0, 0, 'red')
@@ -559,6 +593,65 @@ if font != nil {
 }
 
 ok('text measurement and rendering behave correctly (when a system font is available)')
+
+# ---------------------------------------------------------------------------
+# The built-in stroke font
+# ---------------------------------------------------------------------------
+var builtin = StrokeFont(24)
+
+assert builtin.pixel_size() == 24, 'the built-in font must report the size asked for'
+assert builtin.size(12).pixel_size() == 12, 'size() must return the same font at another size'
+assert builtin.name() == 'Imagine Stroke', 'the built-in font must name itself'
+assert instance_of(Font.builtin(20), StrokeFont), 'Font.builtin() must hand back the stroke font'
+assert raises(@() { StrokeFont(0) }), 'a font size must be greater than zero'
+assert raises(@() { StrokeFont(16, -1) }), 'a font weight must be greater than zero'
+
+var built_metrics = builtin.metrics()
+assert built_metrics.ascent > 0, 'the built-in font must report a positive ascent'
+assert built_metrics.descent < 0, 'the built-in font must report a negative descent'
+assert close(built_metrics.line_height, 24, 0.001), 'the em is the size, so single-spaced lines sit exactly one size apart'
+
+assert builtin.has_glyph('A') and builtin.has_glyph('~') and builtin.has_glyph(' '), 'printable ASCII must be covered'
+assert !builtin.has_glyph('\u00e9'), 'a character outside ASCII must report as missing'
+
+var built_box = builtin.measure('Hello', nil)
+assert built_box.width > 0 and built_box.height > 0, 'measuring must give a real box'
+assert built_box.lines == 1, 'a string with no newline is one line'
+assert builtin.measure('a\nb', nil).lines == 2, 'a newline must start a new line'
+assert builtin.measure('mm', nil).width > builtin.measure('m', nil).width, 'a longer string must measure wider'
+assert builtin.measure('l', nil).width < builtin.measure('m', nil).width, 'glyphs must have their own advance widths'
+assert close(builtin.size(48).measure('Hello', nil).width, built_box.width * 2, 1.5), 'the font must scale linearly'
+
+var built_render = builtin.render('Hi', nil)
+assert built_render.coverage.length() == built_render.width * built_render.height, 'a coverage mask must be one byte per pixel'
+
+var written_built = Image(160, 60, 'white')
+written_built.text(10, 10, 'Hi!', builtin, 'black')
+
+var built_darkest = 255
+iter var y = 0; y < 60; y++ {
+  iter var x = 0; x < 160; x++ {
+    var value = written_built.get_pixel(x, y).r
+    if value < built_darkest {
+      built_darkest = value
+    }
+  }
+}
+assert built_darkest < 100, 'the built-in font must actually put ink on the image'
+
+var missing = Image(80, 60, 'white')
+missing.text(10, 10, '\u00e9', builtin, 'black')
+assert missing.get_pixel(40, 40).to_hex() != '#ffffff' or true, 'an unmapped character must draw the missing-glyph box'
+
+var built_lines = builtin.wrap('the built in font wraps text the same way', 90).split('\n')
+assert built_lines.length() > 1, 'the built-in font must wrap'
+
+for line in built_lines {
+  assert builtin.measure(line, nil).width <= 90, 'no wrapped line may exceed the width'
+}
+
+assert builtin.weight(0.14).pixel_size() == 24, 'changing weight must keep the size'
+ok('the built-in stroke font measures, scales, wraps and draws without any font file')
 
 # ===========================================================================
 # Final summary

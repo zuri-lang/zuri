@@ -186,6 +186,43 @@ var BLEND_SUBTRACT = 'subtract'
 
 
 # ---------------------------------------------------------------------
+# Line caps
+# ---------------------------------------------------------------------
+#
+# How the two ends of an open stroke are finished. Joins between
+# segments are always round; this is only about the ends. A closed
+# outline has no ends, so it is unaffected.
+
+/**
+ * The stroke stops dead at its endpoint. Nothing is drawn past the
+ * coordinates given.
+ *
+ * The right choice when segments have to meet exactly, when a stroke's
+ * length must be precisely what was asked for, or for the pieces of a
+ * dashed line.
+ *
+ * @type string
+ */
+var CAP_BUTT = 'butt'
+
+/**
+ * The stroke ends in a half-disc, so it reaches half its width past
+ * the endpoint. The default.
+ *
+ * @type string
+ */
+var CAP_ROUND = 'round'
+
+/**
+ * The stroke ends in a square, so it reaches half its width past the
+ * endpoint, the same distance a round cap does but with corners.
+ *
+ * @type string
+ */
+var CAP_SQUARE = 'square'
+
+
+# ---------------------------------------------------------------------
 # Convolution edge handling
 # ---------------------------------------------------------------------
 

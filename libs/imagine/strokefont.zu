@@ -1,0 +1,954 @@
+#!-- part of the imagine module
+
+import .canvas { Canvas }
+import .color { Color }
+import .errors { FontError }
+
+
+# ---------------------------------------------------------------------
+# Design grid
+# ---------------------------------------------------------------------
+#
+# Glyphs are drawn on a grid with the baseline at y = 0 and y running
+# UP, which is how type is normally drawn and keeps the data readable.
+# The renderer flips it when it puts the glyph on an image.
+#
+# The em is 20 units, and the vertical proportions below are the
+# conventional ones for a sans-serif, scaled to that em. Everything a
+# glyph is built from is expressed in these units, so a glyph is
+# resolution-independent: it is drawn at whatever size is asked for
+# rather than scaled up from a fixed bitmap.
+
+/**
+ * The em square's height in design units. A font asked for 20 pixels
+ * draws its em at 20 pixels, so `scale` is simply `size / EM`.
+ *
+ * @type number
+ */
+var EM = 20
+
+/**
+ * The height of a capital letter.
+ *
+ * @type number
+ */
+var CAP_HEIGHT = 14
+
+/**
+ * The height of a lowercase letter with no ascender.
+ *
+ * @type number
+ */
+var X_HEIGHT = 10
+
+/**
+ * How far the tallest glyphs rise above the baseline.
+ *
+ * @type number
+ */
+var ASCENDER = 15
+
+/**
+ * How far descenders fall below the baseline, as a negative number.
+ *
+ * @type number
+ */
+var DESCENDER = -5
+
+/**
+ * The default stroke width in design units, a little under a tenth of
+ * the em, which is the usual weight for a regular sans-serif.
+ *
+ * @type number
+ */
+var WEIGHT = 1.7
+
+
+# ---------------------------------------------------------------------
+# Glyph construction
+# ---------------------------------------------------------------------
+#
+# Every glyph is a list of open polylines in design units, drawn as
+# centre-line strokes rather than filled outlines. That is what keeps
+# the data small enough to read: a letter is a handful of points rather
+# than a pair of contours, and its weight is a rendering parameter
+# instead of part of the shape.
+#
+# The three builders below are evaluated once when this module loads,
+# so the curved letters are stored as real point lists and cost nothing
+# to draw.
+
+
+/**
+ * A polyline from a flat run of coordinates.
+ */
+def _l(...points) {
+  return points
+}
+
+
+/**
+ * Points along an elliptical arc, in degrees measured anticlockwise
+ * from three o'clock, on the y-up design grid.
+ *
+ * The sweep may run either way: `_a(cx, cy, r, r, 90, -90)` goes over
+ * the right-hand side and `_a(cx, cy, r, r, 90, 270)` over the left.
+ */
+def _a(cx, cy, rx, ry, from_angle, to_angle) {
+  var sweep = to_angle - from_angle
+  var steps = (8).max((sweep.abs() / 8).ceil())
+
+  var points = []
+
+  iter var i = 0; i <= steps; i++ {
+    var angle = (from_angle + sweep * i / steps) * 3.141592653589793 / 180
+
+    points.append(cx + angle.cos() * rx)
+    points.append(cy + angle.sin() * ry)
+  }
+
+  return points
+}
+
+
+/**
+ * A closed ellipse, as one polyline that returns to its start.
+ */
+def _o(cx, cy, rx, ry) {
+  return _a(cx, cy, rx, ry, 0, 360)
+}
+
+
+/**
+ * Concatenates several point runs into one continuous polyline, so a
+ * letter built from a straight and a curve is stroked as a single path
+ * with no seam where they meet.
+ */
+def _join(...runs) {
+  var points = []
+
+  for run in runs {
+    for value in run {
+      points.append(value)
+    }
+  }
+
+  return points
+}
+
+
+/**
+ * Every glyph, keyed by character.
+ *
+ * `advance` is how far the pen moves after drawing, in design units.
+ * `strokes` is a list of polylines.
+ */
+var GLYPHS = {
+
+  # --- uppercase ---
+
+  A: { advance: 12, strokes: [
+    _l(1, 0, 6, 14, 11, 0),
+    _l(2.79, 5, 9.21, 5),
+  ] },
+
+  B: { advance: 12, strokes: [
+    _l(1.5, 0, 1.5, 14),
+    _join(_l(1.5, 14, 6, 14), _a(6, 11, 3.3, 3, 90, -90), _l(1.5, 8)),
+    _join(_l(1.5, 8, 6.3, 8), _a(6.3, 4, 3.7, 4, 90, -90), _l(1.5, 0)),
+  ] },
+
+  C: { advance: 12, strokes: [_a(6.3, 7, 4.8, 7, 52, 308)] },
+
+  D: { advance: 12.5, strokes: [
+    _join(_l(1.5, 0, 1.5, 14, 5, 14), _a(5, 7, 5.5, 7, 90, -90), _l(1.5, 0)),
+  ] },
+
+  E: { advance: 11, strokes: [
+    _l(9.5, 14, 1.5, 14, 1.5, 0, 9.5, 0),
+    _l(1.5, 7, 8, 7),
+  ] },
+
+  F: { advance: 10.5, strokes: [
+    _l(9.5, 14, 1.5, 14, 1.5, 0),
+    _l(1.5, 7, 8, 7),
+  ] },
+
+  G: { advance: 12.5, strokes: [
+    _join(_a(6.3, 7, 4.8, 7, 52, 356), _l(7.4, 6.5)),
+  ] },
+
+  H: { advance: 12.5, strokes: [
+    _l(1.5, 0, 1.5, 14),
+    _l(11, 0, 11, 14),
+    _l(1.5, 7, 11, 7),
+  ] },
+
+  I: { advance: 5, strokes: [_l(2.5, 0, 2.5, 14)] },
+
+  J: { advance: 10, strokes: [
+    _join(_l(8, 14, 8, 3.5), _a(4.5, 3.5, 3.5, 3.5, 0, -180)),
+  ] },
+
+  K: { advance: 12, strokes: [
+    _l(1.5, 0, 1.5, 14),
+    _l(10.5, 14, 1.5, 6.5),
+    _l(4.4, 8.9, 10.8, 0),
+  ] },
+
+  L: { advance: 10.5, strokes: [_l(1.5, 14, 1.5, 0, 9.5, 0)] },
+
+  M: { advance: 14.5, strokes: [_l(1.5, 0, 1.5, 14, 7.25, 4, 13, 14, 13, 0)] },
+
+  N: { advance: 12.5, strokes: [_l(1.5, 0, 1.5, 14, 11, 0, 11, 14)] },
+
+  O: { advance: 13, strokes: [_o(6.5, 7, 5, 7)] },
+
+  P: { advance: 12, strokes: [
+    _l(1.5, 0, 1.5, 14),
+    _join(_l(1.5, 14, 6.3, 14), _a(6.3, 10.75, 3.7, 3.25, 90, -90), _l(1.5, 7.5)),
+  ] },
+
+  Q: { advance: 13.5, strokes: [
+    _o(6.5, 7, 5, 7),
+    _l(8.4, 3.8, 12.8, -1.2),
+  ] },
+
+  R: { advance: 12, strokes: [
+    _l(1.5, 0, 1.5, 14),
+    _join(_l(1.5, 14, 6.3, 14), _a(6.3, 10.75, 3.7, 3.25, 90, -90), _l(1.5, 7.5)),
+    _l(5.5, 7.5, 11, 0),
+  ] },
+
+  S: { advance: 11.5, strokes: [
+    _join(_a(6, 10.5, 4.2, 3.5, 30, 270), _a(6, 3.5, 4.2, 3.5, 90, -150)),
+  ] },
+
+  T: { advance: 11, strokes: [
+    _l(1, 14, 10, 14),
+    _l(5.5, 14, 5.5, 0),
+  ] },
+
+  U: { advance: 12.5, strokes: [
+    _join(_l(1.5, 14, 1.5, 4), _a(6.25, 4, 4.75, 4, 180, 360), _l(11, 14)),
+  ] },
+
+  V: { advance: 12, strokes: [_l(1, 14, 6, 0, 11, 14)] },
+
+  W: { advance: 16, strokes: [_l(1, 14, 4.5, 0, 8, 11, 11.5, 0, 15, 14)] },
+
+  X: { advance: 12, strokes: [
+    _l(1.5, 14, 10.5, 0),
+    _l(10.5, 14, 1.5, 0),
+  ] },
+
+  Y: { advance: 11.5, strokes: [
+    _l(1.5, 14, 5.75, 7, 10, 14),
+    _l(5.75, 7, 5.75, 0),
+  ] },
+
+  Z: { advance: 11.5, strokes: [_l(1.5, 14, 10, 14, 1.5, 0, 10, 0)] },
+
+  # --- lowercase ---
+
+  a: { advance: 11, strokes: [
+    _o(5.2, 5, 3.7, 5),
+    _l(8.9, 10, 8.9, 0),
+  ] },
+
+  b: { advance: 11.5, strokes: [
+    _l(1.5, 14, 1.5, 0),
+    _o(6, 5, 4.5, 5),
+  ] },
+
+  c: { advance: 10.5, strokes: [_a(5.6, 5, 4.1, 5, 50, 310)] },
+
+  d: { advance: 11.5, strokes: [
+    _l(10, 14, 10, 0),
+    _o(5.5, 5, 4.5, 5),
+  ] },
+
+  e: { advance: 10.5, strokes: [
+    _a(5.5, 5, 4, 5, 0, 320),
+    _l(1.5, 5, 9.5, 5),
+  ] },
+
+  f: { advance: 7, strokes: [
+    _join(_l(3.5, 0, 3.5, 11.5), _a(6, 11.5, 2.5, 2.5, 180, 90)),
+    _l(1, 10, 6.5, 10),
+  ] },
+
+  g: { advance: 11.5, strokes: [
+    _o(5.5, 5, 4, 5),
+    _join(_l(9.5, 10, 9.5, -2), _a(6, -2, 3.5, 3, 0, -180)),
+  ] },
+
+  h: { advance: 11.5, strokes: [
+    _l(1.5, 14, 1.5, 0),
+    _join(_a(5.75, 5.8, 4.25, 4.2, 180, 0), _l(10, 0)),
+  ] },
+
+  i: { advance: 5, strokes: [
+    _l(2.5, 10, 2.5, 0),
+    _l(2.5, 12.9, 2.5, 13.3),
+  ] },
+
+  j: { advance: 5.5, strokes: [
+    _join(_l(3.5, 10, 3.5, -2), _a(2.15, -2, 1.35, 3, 0, -180)),
+    _l(3.5, 12.9, 3.5, 13.3),
+  ] },
+
+  k: { advance: 11, strokes: [
+    _l(1.5, 14, 1.5, 0),
+    _l(9.5, 10, 2, 4.5),
+    _l(4.3, 6.2, 10, 0),
+  ] },
+
+  l: { advance: 5, strokes: [_l(2.5, 14, 2.5, 0)] },
+
+  m: { advance: 16.5, strokes: [
+    _l(1.5, 10, 1.5, 0),
+    _join(_a(4.6, 6.4, 3.1, 3.6, 180, 0), _l(7.7, 0)),
+    _join(_a(10.8, 6.4, 3.1, 3.6, 180, 0), _l(13.9, 0)),
+  ] },
+
+  n: { advance: 11.5, strokes: [
+    _l(1.5, 10, 1.5, 0),
+    _join(_a(5.75, 5.8, 4.25, 4.2, 180, 0), _l(10, 0)),
+  ] },
+
+  o: { advance: 11.5, strokes: [_o(5.75, 5, 4.25, 5)] },
+
+  p: { advance: 11.5, strokes: [
+    _l(1.5, 10, 1.5, -5),
+    _o(6, 5, 4.5, 5),
+  ] },
+
+  q: { advance: 11.5, strokes: [
+    _l(10, 10, 10, -5),
+    _o(5.5, 5, 4.5, 5),
+  ] },
+
+  r: { advance: 8, strokes: [
+    _l(1.5, 10, 1.5, 0),
+    _a(4.9, 6.6, 3.4, 3.4, 180, 60),
+  ] },
+
+  s: { advance: 10, strokes: [
+    _join(_a(5, 7.4, 3.5, 2.6, 30, 270), _a(5, 2.6, 3.5, 2.6, 90, -150)),
+  ] },
+
+  t: { advance: 7, strokes: [
+    _join(_l(3.5, 14, 3.5, 2), _a(5.5, 2, 2, 2, 180, 270)),
+    _l(1, 10, 6.5, 10),
+  ] },
+
+  u: { advance: 11.5, strokes: [
+    _join(_l(1.5, 10, 1.5, 4.2), _a(5.75, 4.2, 4.25, 4.2, 180, 360)),
+    _l(10, 10, 10, 0),
+  ] },
+
+  v: { advance: 10.5, strokes: [_l(1, 10, 5.25, 0, 9.5, 10)] },
+
+  w: { advance: 14.5, strokes: [_l(1, 10, 4, 0, 7, 7.5, 10, 0, 13, 10)] },
+
+  x: { advance: 10, strokes: [
+    _l(1.5, 10, 8.5, 0),
+    _l(8.5, 10, 1.5, 0),
+  ] },
+
+  y: { advance: 10.5, strokes: [
+    _l(1, 10, 5.25, 0),
+    _l(9.5, 10, 3, -5),
+  ] },
+
+  z: { advance: 10, strokes: [_l(1.5, 10, 8.5, 10, 1.5, 0, 8.5, 0)] },
+
+  # --- digits ---
+
+  '0': { advance: 12, strokes: [_o(6, 7, 4.5, 7)] },
+
+  '1': { advance: 12, strokes: [
+    _l(3, 11.5, 6, 14, 6, 0),
+    _l(2.5, 0, 9.5, 0),
+  ] },
+
+  '2': { advance: 12, strokes: [
+    _join(_a(6, 10.3, 4, 3.7, 180, -10), _l(2, 0, 10.2, 0)),
+  ] },
+
+  '3': { advance: 12, strokes: [
+    _join(_a(6, 10.5, 3.8, 3.5, 170, -70), _a(6, 3.7, 4.1, 3.7, 70, -170)),
+  ] },
+
+  '4': { advance: 12, strokes: [_l(8, 0, 8, 14, 1.5, 4.5, 10.5, 4.5)] },
+
+  '5': { advance: 12, strokes: [
+    _join(_l(9.5, 14, 3, 14, 3, 7.6), _a(6.4, 4.2, 4, 4.2, 135, -165)),
+  ] },
+
+  '6': { advance: 12, strokes: [
+    _o(6, 4.6, 4.3, 4.6),
+    _a(11.2, 4.6, 9.5, 9.5, 180, 112),
+  ] },
+
+  '7': { advance: 12, strokes: [_l(1.5, 14, 10.5, 14, 4.5, 0)] },
+
+  '8': { advance: 12, strokes: [
+    _o(6, 10.6, 3.7, 3.4),
+    _o(6, 3.8, 4.3, 3.8),
+  ] },
+
+  '9': { advance: 12, strokes: [
+    _o(6, 9.4, 4.3, 4.6),
+    _a(0.8, 9.4, 9.5, 9.5, 0, -68),
+  ] },
+
+  # --- punctuation and symbols ---
+
+  ' ': { advance: 6, strokes: [] },
+
+  '!': { advance: 5, strokes: [
+    _l(2.5, 14, 2.5, 4),
+    _l(2.5, 0.3, 2.5, 0.9),
+  ] },
+
+  '"': { advance: 7, strokes: [
+    _l(2, 14, 2, 10.5),
+    _l(5, 14, 5, 10.5),
+  ] },
+
+  '#': { advance: 12, strokes: [
+    _l(3.5, 0, 5, 14),
+    _l(7.5, 0, 9, 14),
+    _l(1.5, 4.5, 11, 4.5),
+    _l(2, 9.5, 11.5, 9.5),
+  ] },
+
+  '$': { advance: 12, strokes: [
+    _join(_a(6, 10.5, 3.6, 3, 30, 270), _a(6, 4, 3.6, 3, 90, -150)),
+    _l(6, 15.5, 6, -1.5),
+  ] },
+
+  '%': { advance: 14, strokes: [
+    _o(3.4, 11, 2.1, 2.1),
+    _o(10.6, 3, 2.1, 2.1),
+    _l(1.5, 0, 12.5, 14),
+  ] },
+
+  '&': { advance: 13.5, strokes: [
+    _join(
+      _l(11.8, 2.6, 3.5, 9.4),
+      _a(5.6, 11.2, 2.6, 2.6, 220, -40),
+      _a(5.8, 4.4, 4.3, 4.4, 65, 335)
+    ),
+  ] },
+
+  "'": { advance: 4.5, strokes: [_l(2.25, 14, 2.25, 10.5)] },
+
+  '(': { advance: 6, strokes: [_a(7.5, 7, 6, 9, 135, 225)] },
+
+  ')': { advance: 6, strokes: [_a(-1.5, 7, 6, 9, 45, -45)] },
+
+  '*': { advance: 9, strokes: [
+    _l(4.5, 13.5, 4.5, 7.5),
+    _l(1.9, 12, 7.1, 9),
+    _l(1.9, 9, 7.1, 12),
+  ] },
+
+  '+': { advance: 12, strokes: [
+    _l(6, 2, 6, 12),
+    _l(1, 7, 11, 7),
+  ] },
+
+  ',': { advance: 5, strokes: [_l(2.8, 1, 1.8, -2.2)] },
+
+  '-': { advance: 8, strokes: [_l(1.5, 7, 6.5, 7)] },
+
+  '.': { advance: 5, strokes: [_l(2.5, 0.3, 2.5, 0.9)] },
+
+  '/': { advance: 9, strokes: [_l(1, -1.5, 8, 15.5)] },
+
+  ':': { advance: 5, strokes: [
+    _l(2.5, 0.3, 2.5, 0.9),
+    _l(2.5, 6.3, 2.5, 6.9),
+  ] },
+
+  ';': { advance: 5, strokes: [
+    _l(2.5, 6.3, 2.5, 6.9),
+    _l(2.8, 1, 1.8, -2.2),
+  ] },
+
+  '<': { advance: 11, strokes: [_l(9.5, 12, 2, 7, 9.5, 2)] },
+
+  '=': { advance: 12, strokes: [
+    _l(1.5, 9.5, 10.5, 9.5),
+    _l(1.5, 4.5, 10.5, 4.5),
+  ] },
+
+  '>': { advance: 11, strokes: [_l(1.5, 12, 9, 7, 1.5, 2)] },
+
+  '?': { advance: 10, strokes: [
+    _join(_a(5, 10.5, 3.4, 3.4, 185, -25), _l(5.2, 6.3, 5.2, 3.8)),
+    _l(5.2, 0.3, 5.2, 0.9),
+  ] },
+
+  '@': { advance: 15, strokes: [
+    _o(7, 6.3, 2.3, 2.3),
+    _a(7, 7, 6.3, 7.2, -45, 295),
+    _l(9.3, 8.6, 9.3, 4.6),
+  ] },
+
+  '[': { advance: 6, strokes: [_l(5, 14.5, 2, 14.5, 2, -0.5, 5, -0.5)] },
+
+  '\\': { advance: 9, strokes: [_l(1, 15.5, 8, -1.5)] },
+
+  ']': { advance: 6, strokes: [_l(1, 14.5, 4, 14.5, 4, -0.5, 1, -0.5)] },
+
+  '^': { advance: 10, strokes: [_l(1.5, 9.5, 5, 14, 8.5, 9.5)] },
+
+  '_': { advance: 10, strokes: [_l(0.5, -2.5, 9.5, -2.5)] },
+
+  '`': { advance: 5, strokes: [_l(1.2, 14.5, 3.4, 12)] },
+
+  '{': { advance: 7, strokes: [
+    _l(5.5, 14.5, 4, 14.5, 4, 8.5, 2, 7, 4, 5.5, 4, -0.5, 5.5, -0.5),
+  ] },
+
+  '|': { advance: 5, strokes: [_l(2.5, 15.5, 2.5, -2.5)] },
+
+  '}': { advance: 7, strokes: [
+    _l(1.5, 14.5, 3, 14.5, 3, 8.5, 5, 7, 3, 5.5, 3, -0.5, 1.5, -0.5),
+  ] },
+
+  '~': { advance: 11, strokes: [_l(1.5, 7, 3.5, 9, 5.5, 7, 7.5, 5, 9.5, 7)] },
+}
+
+
+/**
+ * What an unmapped character draws: an empty box, the same convention
+ * a font uses for a glyph it does not have.
+ */
+var NOTDEF = { advance: 11, strokes: [
+  _l(1.5, 0, 9.5, 0, 9.5, 13, 1.5, 13, 1.5, 0),
+] }
+
+
+/**
+ * The built-in font: a sans-serif drawn from centre-line strokes
+ * rather than loaded from a file.
+ *
+ * `imagine` deliberately ships no font file, so
+ * [[imagine.Font.system]] and [[imagine.Font.sans]] both depend on
+ * what happens to be installed. This one is always there. It is
+ * defined as geometry in [[imagine.strokefont]], drawn through the
+ * same anti-aliased rasterizer everything else uses, and therefore
+ * scales cleanly to any size and takes a weight as a parameter.
+ *
+ * ```zuri
+ * import imagine { Image, StrokeFont }
+ *
+ * Image(300, 80, 'white')
+ *   .text(16, 22, 'Always available', StrokeFont(28), '#0f172a')
+ *   .save('label.png')
+ * ```
+ *
+ * It has the same interface as [[imagine.Font]], so anywhere a font is
+ * accepted this can be used instead.
+ *
+ * ## What it is for
+ *
+ * Labels, chart axes, watermarks, diagrams, placeholder text, and any
+ * output that has to work on a machine with no fonts installed. The
+ * look is geometric and single-weight, closer to a technical drawing
+ * than to a typeface, because that is what centre-line strokes give
+ * you honestly.
+ *
+ * It is not a substitute for real typography. For body text, a
+ * headline, or anything where the shapes matter, load an actual font
+ * with [[imagine.Font.load]].
+ *
+ * ## Coverage
+ *
+ * Printable ASCII, from space through `~`. Anything else draws the
+ * empty box a font uses for a glyph it does not have, so text in
+ * another script comes out visibly missing rather than silently blank.
+ *
+ * @printable
+ */
+class StrokeFont {
+
+  var _size
+  var _weight
+
+  /**
+   * Creates the built-in font at a size.
+   *
+   * @param ?number size: The size in pixels - Default: 16.
+   * @param ?number weight: The stroke width, as a fraction of the size
+   *    - Default: 0.085, a regular weight. Around 0.13 reads as bold.
+   */
+  @new(size, weight) {
+    var pixels = size == nil ? 16 : size
+
+    if !is_number(pixels) or pixels <= 0 or pixels > 4096 {
+      raise FontError('font size must be between 1 and 4096 pixels, got ${size}')
+    }
+
+    if weight != nil and (!is_number(weight) or weight <= 0) {
+      raise FontError('font weight must be greater than zero, got ${weight}')
+    }
+
+    self._size = pixels
+    self._weight = weight == nil ? WEIGHT / EM : weight
+  }
+
+  /**
+   * Returns the same font at a different size.
+   *
+   * @param number pixels
+   * @returns StrokeFont
+   */
+  size(pixels) {
+    return StrokeFont(pixels, self._weight)
+  }
+
+  /**
+   * Returns the same font at a different stroke weight.
+   *
+   * @param number weight: A fraction of the size. 0.085 is regular,
+   *    0.13 reads as bold, 0.05 as light.
+   * @returns StrokeFont
+   */
+  weight(weight) {
+    return StrokeFont(self._size, weight)
+  }
+
+  /**
+   * The size in pixels this font draws at.
+   *
+   * @returns number
+   */
+  pixel_size() {
+    return self._size
+  }
+
+  /**
+   * The font's name.
+   *
+   * @returns string
+   */
+  name() {
+    return 'Imagine Stroke'
+  }
+
+  /**
+   * Where this font came from.
+   *
+   * @returns string
+   */
+  source() {
+    return '<built-in>'
+  }
+
+  /**
+   * `true` when this font has a glyph for a character, which for the
+   * built-in font means printable ASCII.
+   *
+   * @param string character
+   * @returns bool
+   */
+  has_glyph(character) {
+    return GLYPHS.contains(character)
+  }
+
+  /**
+   * The font's vertical metrics at its current size, in pixels.
+   *
+   * The dictionary holds `name`, `ascent`, `descent` (negative),
+   * `line_gap` and `line_height`, the same shape [[imagine.Font]]
+   * reports. The em is the size, so single-spaced lines sit exactly
+   * `size` pixels apart.
+   *
+   * @returns dict
+   */
+  metrics() {
+    var scale = self._size / EM
+
+    var name = self.name()
+    var ascent = ASCENDER * scale
+    var descent = DESCENDER * scale
+    var line_gap = 0
+    var line_height = (ASCENDER - DESCENDER) * scale
+
+    return { name, ascent, descent, line_gap, line_height }
+  }
+
+  /**
+   * Breaks a string into lines that fit within a width, returning the
+   * text with newlines inserted.
+   *
+   * @param string text
+   * @param number width: The maximum line width in pixels.
+   * @param ?dict options: `tracking`.
+   * @returns string
+   */
+  wrap(text, width, options) {
+    if !is_number(width) or width <= 0 {
+      raise FontError('wrap width must be greater than zero, got ${width}')
+    }
+
+    var content = text.to_string()
+    var wrapped = []
+
+    for paragraph in content.split('\n') {
+      var line = ''
+
+      for word in paragraph.split(' ') {
+        if word == '' {
+          continue
+        }
+
+        var candidate = line == '' ? word : line + ' ' + word
+
+        if self._width_of(candidate, options) <= width {
+          line = candidate
+          continue
+        }
+
+        if line != '' {
+          wrapped.append(line)
+          line = ''
+        }
+
+        if self._width_of(word, options) > width {
+          var piece = ''
+
+          iter var i = 0; i < word.length(); i++ {
+            var grown = piece + word[i]
+
+            if piece != '' and self._width_of(grown, options) > width {
+              wrapped.append(piece)
+              piece = word[i]
+            } else {
+              piece = grown
+            }
+          }
+
+          line = piece
+          continue
+        }
+
+        line = word
+      }
+
+      wrapped.append(line)
+    }
+
+    return '\n'.join(wrapped)
+  }
+
+  /**
+   * Measures a string without drawing it.
+   *
+   * Returns `width`, `height`, `baseline` (the first line's baseline,
+   * measured down from the top of the box) and `lines`.
+   *
+   * @param string text
+   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @returns dict
+   */
+  measure(text, options) {
+    var laid = self._layout(text, options)
+
+    var width = laid.width.ceil()
+    var height = laid.height.ceil()
+    var baseline = laid.ascent
+    var lines = laid.lines.length()
+
+    return { width, height, baseline, lines }
+  }
+
+  /**
+   * Rasterizes a string into an 8-bit coverage mask.
+   *
+   * Returns `coverage`, `width`, `height` and `baseline`, the same
+   * shape [[imagine.Font]] returns, which is what lets both be handed
+   * to `Image.text()` interchangeably.
+   *
+   * @param string text
+   * @param ?dict options: `tracking`, `line_height`, `align`.
+   * @returns dict
+   */
+  render(text, options) {
+    var laid = self._layout(text, options)
+    var scale = self._size / EM
+
+    # Strokes are centred on the path and joints are round, so a glyph
+    # paints up to half a stroke beyond its box. The mask is grown to
+    # hold that, and the padding is folded into the reported baseline
+    # exactly as the loaded-font path does it.
+    var padding = (self._size * 0.5).ceil()
+
+    var width = (laid.width.ceil() + padding * 2).max(1)
+    var height = (laid.height.ceil() + padding * 2).max(1)
+
+    # Drawn white on transparent, then reduced to its alpha channel:
+    # colour belongs to whoever is drawing, not to the glyphs.
+    var sheet = Canvas(bytes(width * height * 4), width, height)
+    sheet.thickness((self._size * self._weight).max(0.8))
+
+    var ink = Color(255, 255, 255, 255)
+
+    iter var index = 0; index < laid.lines.length(); index++ {
+      var line = laid.lines[index]
+      var baseline = padding + laid.ascent + laid.step * index
+
+      var pen = padding + laid.offsets[index]
+
+      for character in line {
+        var glyph = GLYPHS.get(character, NOTDEF)
+
+        for stroke in glyph.strokes {
+          sheet.polyline(_place(stroke, pen, baseline, scale), ink)
+        }
+
+        pen += glyph.advance * scale + laid.tracking
+      }
+    }
+
+    var coverage = _alpha_of(sheet.pixels())
+
+    return {
+      coverage,
+      width,
+      height,
+      baseline: padding + laid.ascent,
+    }
+  }
+
+  /**
+   * The advance width of one line, in pixels.
+   */
+  _width_of(text, options) {
+    var scale = self._size / EM
+    var tracking = is_dict(options) ? options.get('tracking', 0) : 0
+
+    var width = 0
+    var count = 0
+
+    for character in text {
+      width += GLYPHS.get(character, NOTDEF).advance * scale
+      count++
+    }
+
+    if count > 1 {
+      width += tracking * (count - 1)
+    }
+
+    return width.max(0)
+  }
+
+  /**
+   * Splits the text into lines and works out the block's size, the
+   * baseline of its first line, and each line's horizontal offset
+   * under the requested alignment.
+   */
+  _layout(text, options) {
+    var scale = self._size / EM
+    var tracking = is_dict(options) ? options.get('tracking', 0) : 0
+    var spacing = is_dict(options) ? options.get('line_height', 1) : 1
+    var align = is_dict(options) ? options.get('align', 'left') : 'left'
+
+    if align != 'left' and align != 'center' and
+       align != 'centre' and align != 'right' {
+      raise FontError("unknown text alignment '${align}', expected left, center or right")
+    }
+
+    var lines = text.to_string().split('\n')
+    var widths = []
+    var width = 0
+
+    for line in lines {
+      var measured = self._width_of(line, options)
+
+      widths.append(measured)
+      width = width.max(measured)
+    }
+
+    var natural = (ASCENDER - DESCENDER) * scale
+    var step = natural * spacing.max(0)
+
+    var height = lines.length() <= 1 ?
+      natural :
+      step * (lines.length() - 1) + natural
+
+    var offsets = []
+
+    for measured in widths {
+      if align == 'right' {
+        offsets.append(width - measured)
+      } else if align == 'center' or align == 'centre' {
+        offsets.append((width - measured) / 2)
+      } else {
+        offsets.append(0)
+      }
+    }
+
+    return {
+      lines,
+      widths,
+      offsets,
+      width,
+      height,
+      step,
+      tracking,
+      ascent: ASCENDER * scale,
+    }
+  }
+
+  to_string() {
+    return '<StrokeFont built-in at ${self._size}px>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+
+/**
+ * Places one stroke on the sheet: design units, y up from the
+ * baseline, become pixels with y down from the top.
+ */
+def _place(stroke, pen, baseline, scale) {
+  var points = []
+  var count = stroke.length()
+
+  iter var i = 0; i < count; i += 2 {
+    points.append(pen + stroke[i] * scale)
+    points.append(baseline - stroke[i + 1] * scale)
+  }
+
+  return points
+}
+
+
+/**
+ * The alpha channel of an RGBA buffer, as a coverage mask.
+ *
+ * A typed free function for the reason given at the bottom of
+ * canvas.zu: this walks every pixel of the glyph sheet.
+ */
+def _alpha_of(pixels: bytes) {
+  var total = pixels.length()
+  var mask = bytes(total / 4)
+  var out = 0
+
+  iter var at = 3; at < total; at += 4 {
+    mask[out] = pixels[at]
+    out++
+  }
+
+  return mask
+}
