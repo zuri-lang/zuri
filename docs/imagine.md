@@ -10,6 +10,10 @@ built from nothing but shapes and text. An avatar is cropped to a
 square, rounded off, and cached as a data URL. None of that needs
 anything outside the standard library.
 
+> Every image on this page is the output of the code beside it,
+> produced by [`docs/imagine/figures.zu`](imagine/figures.zu). Re-run
+> that script and the figures follow whatever the module actually does.
+
 - [Introduction](#introduction)
   - [A First Image](#a-first-image)
   - [Copying and Mutation](#copying-and-mutation)
@@ -87,6 +91,8 @@ Image(400, 200, '#0f172a')
   .circle(200, 100, 70, 'white', { thickness: 3 })
   .save('badge.png')
 ```
+
+![A dark rectangle with a cyan circle outlined in white](imagine/images/first-image.png)
 
 Almost every method returns an image, so operations chain.
 
@@ -394,6 +400,14 @@ photo.cover(300, 300, { anchor: TOP })             # keeps the top, crops the bo
 photo.contain(300, 300, { background: 'white' })   # letterboxes instead
 ```
 
+The same 320x180 image asked for a 120x120 result four ways:
+
+![thumbnail, cover, contain and resize compared](imagine/images/resize-modes.png)
+
+`thumbnail()` keeps the proportions and does not fill the box.
+`cover()` fills it and loses the sides. `contain()` fills it and adds
+bars. `resize()` fills it by distorting the picture.
+
 The anchors are `TOP_LEFT`, `TOP`, `TOP_RIGHT`, `LEFT`, `CENTER`,
 `RIGHT`, `BOTTOM_LEFT`, `BOTTOM` and `BOTTOM_RIGHT`. `CENTER` is the
 default, and `TOP` is what you want for photographs of people, where the
@@ -413,6 +427,14 @@ face is rarely in the bottom third.
 photo.thumbnail(200, 200, LANCZOS)
 sprite.scale(4, NEAREST)             # keeps pixel art crisp
 ```
+
+A 16x16 sprite enlarged seven times over, so the differences are
+visible at all:
+
+![the four resampling filters compared on an enlarged sprite](imagine/images/resample-filters.png)
+
+This is the case where `NEAREST` is right and everything else is
+wrong. Shrinking a photograph inverts that judgement entirely.
 
 `LANCZOS` is the default because most resizing is shrinking, and that is
 where it earns its cost. It can produce faint ringing next to very
@@ -438,6 +460,8 @@ extend past the edge.
 `trim()` takes the border colour from the top-left pixel unless you name
 one. Scanned documents and screenshots almost always want a tolerance,
 because a "white" border from a lossy format is not exactly white.
+
+![a small shape on a large background, then trimmed to it](imagine/images/trim.png)
 
 ### Rotating and Mirroring
 
@@ -499,6 +523,10 @@ washed-out photograph. Everything at or below the black point becomes
 black, everything at or above the white point becomes white, and the
 range between is stretched to fill the scale.
 
+![brightness, contrast and gamma applied to one image](imagine/images/filters-tone.png)
+
+![levels, posterize, threshold and invert applied to one image](imagine/images/filters-tone-2.png)
+
 Note the difference between `posterize()` and `quantize()`:
 `posterize()` spaces its levels evenly, `quantize()` picks the colours
 to suit the image, so a photograph survives far fewer of them.
@@ -507,6 +535,10 @@ to suit the image, so a photograph survives far fewer of them.
 photo.quantize(32)                # 32 well-chosen colours
 photo.quantize(16, true)          # ...with dithering
 ```
+
+`auto_levels()` does the same job as `levels()` without being told
+where the endpoints are; it is shown alongside the detail filters
+below.
 
 ### Colour
 
@@ -524,6 +556,10 @@ photo.flatten('white')            # composite over a colour, drop alpha
 `grayscale()` weights the channels for perceived brightness, so a bright
 yellow comes out light and a deep blue comes out dark. That is different
 from `saturate(0)`, which keeps HSL lightness and makes both mid-grey.
+
+![grayscale, sepia, saturate and hue rotation](imagine/images/filters-color.png)
+
+![duotone, tint, colorize and a dithered eight-colour quantization](imagine/images/filters-color-2.png)
 
 ### Blur, Sharpen and Detail
 
@@ -544,6 +580,10 @@ the visible spread is roughly three times it.
 
 Alpha is premultiplied for the duration of a blur, so blurring a shape
 on a transparent background does not drag a dark halo into its edge.
+
+![blur, sharpen, edge detection and emboss](imagine/images/filters-detail.png)
+
+![pixelate, smooth, mean removal and automatic levels](imagine/images/filters-detail-2.png)
 
 ### Writing Your Own Filter
 
@@ -619,6 +659,11 @@ photo.convolve(filters.edge_kernel(), { divisor: 1, keep_alpha: true })
 The built-in `edges()`, `emboss()`, `sharpen()` and `mean_removal()`
 already do this.
 
+The S-curve and the channel-swap matrix from this section, run against
+the same picture:
+
+![an original image beside an S-curve LUT and a channel-swap matrix](imagine/images/custom-filters.png)
+
 `edge` controls what happens off the image's border: `EDGE_CLAMP` (the
 default) repeats the nearest edge pixel, `EDGE_TRANSPARENT` treats the
 outside as empty, and `EDGE_WRAP` wraps to the opposite side for images
@@ -652,6 +697,8 @@ image.bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)
 Angles are in degrees, measured clockwise from three o'clock, matching
 the direction the y axis runs.
 
+![lines, rectangles, ellipses, arcs, a pie slice, a polygon and a bezier](imagine/images/shapes.png)
+
 Drawing outside the image is never an error; anything that falls outside
 is clipped away. That is what makes it safe to draw a shape that only
 partly overlaps.
@@ -677,6 +724,12 @@ Anti-aliasing is on by default. Turn it off for output that has to be
 pixel-exact — barcodes, QR codes, anything that will be thresholded
 afterwards.
 
+![the same circle and line drawn with anti-aliasing off and on](imagine/images/antialias.png)
+
+Stroke widths of 1, 3, 6 and 12:
+
+![four vertical lines of increasing thickness](imagine/images/strokes.png)
+
 ### Paths and Polygons
 
 Every filled shape in this module becomes a polygon and goes through one
@@ -699,6 +752,8 @@ Self-intersecting outlines are filled by the non-zero winding rule,
 which fills a five-pointed star solid. Pass `{ even_odd: true }` for the
 other convention, which leaves its middle empty.
 
+![a solid star and a hollow one, from identical points](imagine/images/winding.png)
+
 ### Filling Areas
 
 ```zuri
@@ -717,6 +772,8 @@ Flood fill spreads four-connected — up, down, left and right, but not
 diagonally — through pixels within `tolerance` of the colour at the
 starting point. A tolerance of 0 spreads only through exactly equal
 pixels; on a photograph or anything anti-aliased you will want more.
+
+![two flood fills stopped by a drawn barrier](imagine/images/flood-fill.png)
 
 ### Gradients
 
@@ -749,6 +806,8 @@ image.linear_gradient(0, 0, 200, 0, [
 ])
 ```
 
+![two linear gradients, one evenly spaced and one with explicit offsets](imagine/images/gradient-linear.png)
+
 By default a gradient replaces what is there. Pass `{ blend: true }` to
 composite it instead, which is what makes overlays and vignettes work:
 
@@ -772,6 +831,11 @@ photo.linear_gradient(0, photo.height() - 120, 0, photo.height(), [
 `{ rect: {x, y, width, height} }` confines the fill to a rectangle
 instead of covering the whole surface.
 
+![an image, the same image with a radial vignette, and with a linear scrim](imagine/images/gradient-radial.png)
+
+Both of those are the snippets above, run against the picture on the
+left.
+
 ### Clipping
 
 ```zuri
@@ -782,6 +846,8 @@ image.clear_clip()
 
 A clip confines every drawing operation until it is cleared. It does not
 affect reading: `get_pixel()` sees the whole image either way.
+
+![two circles drawn through a rectangular clip, with the clip outlined](imagine/images/clipping.png)
 
 ## Text
 
@@ -840,6 +906,10 @@ card.text(24, 24, 'Quarterly report\n2026', title, '#111111', {
 `line_height` is a multiplier on the font's own recommended spacing, and
 `tracking` adds pixels between characters.
 
+![headline and body text drawn onto an image](imagine/images/text.png)
+
+![the same three lines under left, centre and right alignment](imagine/images/text-align.png)
+
 ### Measuring and Positioning
 
 ```zuri
@@ -892,6 +962,8 @@ word too long for the width is broken between characters rather than
 allowed to overflow, since text spilling out of an image cannot be
 scrolled to.
 
+![the same paragraph wrapped to two different widths](imagine/images/text-wrap.png)
+
 ### What Text Layout Does Not Do
 
 Glyphs are positioned by advance width with kerning applied. That covers
@@ -941,6 +1013,12 @@ also what every image editor implements.
 `BLEND_DIFFERENCE` makes a quick visual diff: identical images blended
 this way come out black.
 
+A red circle drawn onto a gradient under eight of the modes:
+
+![normal, multiply, screen and overlay](imagine/images/blend-modes.png)
+
+![darken, colour dodge, difference and soft light](imagine/images/blend-modes-2.png)
+
 ```zuri
 var diff = before.clone().draw_image(after, 0, 0, { blend: BLEND_DIFFERENCE })
 ```
@@ -966,6 +1044,8 @@ filled in first.
 
 The mask must be the same size as the image.
 
+![an image, a circular mask, and the masked result](imagine/images/mask.png)
+
 ### Layers
 
 `layer()` gives a transparent image of the same size. Building a
@@ -981,6 +1061,8 @@ glow.blur(30)
 
 photo.draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.7 })
 ```
+
+![an image before and after a blurred glow layer is screened in](imagine/images/layers-glow.png)
 
 ## Inspecting an Image
 
@@ -1026,6 +1108,8 @@ var accent = photo.dominant_colors(1)[0]
 page.fill(accent.darken(40))       # a placeholder while the photo loads
 ```
 
+![an image beside the five colours occupying most of it](imagine/images/dominant-colors.png)
+
 **`difference()`** scores how far two images are apart, from 0
 (identical) to 1, which makes it usable as a rendering assertion:
 
@@ -1066,6 +1150,8 @@ iter var i = 0; i < 30; i++ {
 
 Animation(frames, 40, 0).save('pulse.gif')     # 40ms per frame, loops forever
 ```
+
+![an animated GIF of a growing, colour-shifting circle](imagine/images/animation.gif)
 
 ```zuri
 animation
@@ -1242,6 +1328,8 @@ def avatar(source, size) {
 }
 ```
 
+![a photograph cropped to a circle with a pale ring around it](imagine/images/recipe-avatar.png)
+
 **A social card**
 
 ```zuri
@@ -1261,6 +1349,8 @@ def card(title, subtitle) {
   return image.to_png()
 }
 ```
+
+![a dark social card with a cyan rule, a headline and a subtitle](imagine/images/recipe-card.png)
 
 **Serving a generated image over HTTP**
 
