@@ -1,0 +1,166 @@
+# A callback builtin that accumulates results while it iterates has to
+# keep what it has gathered so far reachable by the collector. A plain
+# Rust-side Vec is not a GC root, and every later iteration's callback
+# is free to trigger a collection, so anything gathered earlier gets
+# relocated or reclaimed out from under it.
+#
+# `churn()` allocates enough to push the nursery past its threshold, so
+# calling it from a callback forces a real minor collection mid-iteration.
+#
+# The filter/partition cases deliberately hold off on churning until
+# half way through. Their accumulated values are elements of the
+# receiver, which the native pins; once a collection has promoted those
+# out of the nursery they stop moving, so the exposed window is the run
+# of elements gathered BEFORE the first collection. Churning late makes
+# that window most of the list instead of a handful of entries.
+
+var N = 800
+var HALF = N / 2
+
+def churn() {
+  var junk = bytes(200000)
+
+  return junk.length()
+}
+
+def fresh(count) {
+  var out = []
+
+  iter var i = 0; i < count; i++ {
+    out.append({ n: i })
+  }
+
+  return out
+}
+
+
+# map(): every result is allocated by the callback itself, so until the
+# list exists the native is the only thing holding them.
+
+var mapped = fresh(N).map(@(d, i) {
+  churn()
+
+  var n = d.n
+  var doubled = n * 2
+
+  return { n, doubled }
+})
+
+var bad = 0
+
+iter var i = 0; i < mapped.length(); i++ {
+  catch {
+    var m = mapped[i]
+
+    if m.n != i or m.doubled != i * 2 {
+      bad++
+    }
+  } as e {
+    bad++
+  }
+}
+
+echo 'map ${mapped.length()} ${bad}'
+
+
+# filter(): the kept values are elements of the receiver, gathered one
+# at a time across the same collections.
+
+var kept = fresh(N).filter(@(d, i) {
+  if i >= HALF {
+    churn()
+  }
+
+  return d.n % 2 == 0
+})
+
+bad = 0
+
+iter var i = 0; i < kept.length(); i++ {
+  catch {
+    if kept[i].n != i * 2 {
+      bad++
+    }
+  } as e {
+    bad++
+  }
+}
+
+echo 'filter ${kept.length()} ${bad}'
+
+
+# partition(): two accumulators running at once.
+
+var split = fresh(N).partition(@(d, i) {
+  if i >= HALF {
+    churn()
+  }
+
+  return d.n % 2 == 0
+})
+
+var evens = split[0]
+var odds = split[1]
+bad = 0
+
+iter var i = 0; i < evens.length(); i++ {
+  catch {
+    if evens[i].n != i * 2 {
+      bad++
+    }
+  } as e {
+    bad++
+  }
+}
+
+iter var i = 0; i < odds.length(); i++ {
+  catch {
+    if odds[i].n != i * 2 + 1 {
+      bad++
+    }
+  } as e {
+    bad++
+  }
+}
+
+echo 'partition ${evens.length()} ${odds.length()} ${bad}'
+
+
+# dict.filter(): accumulates key/value PAIRS, both of which have to
+# survive. The keys are freshly built strings, so they are young too.
+
+var lookup = {}
+
+iter var i = 0; i < N; i++ {
+  lookup['k${i}'] = { n: i }
+}
+
+var picked = lookup.filter(@(v, k) {
+  if v.n >= HALF {
+    churn()
+  }
+
+  return v.n % 2 == 0
+})
+
+bad = 0
+
+iter var i = 0; i < N; i++ {
+  var key = 'k${i}'
+
+  catch {
+    if i % 2 == 0 {
+      if picked[key].n != i {
+        bad++
+      }
+    } else {
+      if picked.contains(key) {
+        bad++
+      }
+    }
+  } as e {
+    bad++
+  }
+}
+
+echo 'dict-filter ${picked.length()} ${bad}'

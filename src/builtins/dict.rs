@@ -268,6 +268,10 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
+  // Pair INDICES, not the pairs themselves. A `(Value, Value)` pushed
+  // here would be re-read fresh at the moment it was kept and then go
+  // stale on the next iteration's own collection, since a plain Vec is
+  // not a GC root; the pinned slots stay correct throughout.
   let mut kept = Vec::new();
   for i in 0..count {
     let callback = ctx.vm.pinned(mark + 1);
@@ -278,15 +282,16 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
       .call_value(callback, &[v, k])
       .map_err(|e| ctx.vm.describe_error(e))?;
     if !keep.is_falsey() {
-      // Re-read again: `call_value` above may have relocated either
-      // one since the copies taken just before the call.
-      let k = ctx.vm.pinned(mark + 2 + 2 * i);
-      let v = ctx.vm.pinned(mark + 3 + 2 * i);
-      kept.push((k, v));
+      kept.push(i);
     }
   }
+
+  let pairs: Vec<(Value, Value)> = kept
+    .into_iter()
+    .map(|i| (ctx.vm.pinned(mark + 2 + 2 * i), ctx.vm.pinned(mark + 3 + 2 * i)))
+    .collect();
   ctx.vm.unpin(mark);
-  Ok(ctx.vm.heap_mut().alloc_dict(kept))
+  Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
 
 fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {

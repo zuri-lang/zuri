@@ -110,51 +110,39 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
 
 /// Builds a Zuri dict from string keys.
 ///
-/// Every value is pinned before the first key is allocated, and each
-/// key is pinned as it is created, because a `Value` living only in a
-/// Rust local or `Vec` is not a GC root: a collection reached from any
-/// later allocation relocates the object it names and leaves the
-/// copy behind it stale. Everything is therefore read back out of
-/// `gc_pins` when the pairs are finally assembled, never from the
-/// local that produced it.
+/// No GC pinning here, deliberately. A `Value` in a Rust local is not a
+/// root, but it only needs to be one if a collection can run while the
+/// local is holding it, and nothing in this module can make that happen:
+/// allocation never collects (the collector runs at safepoints -- the
+/// interpreter's dispatch loop, `jit::runtime::zuri_jit_safepoint`,
+/// `VM::ensure_stable_for_compiled_entry`, the `gc()` native), and no
+/// native here ever calls back into Zuri code to reach one.
+///
+/// That reasoning is what to re-check before pinning anything in this
+/// module, and what stops the pattern being copied somewhere it would be
+/// wrong: a native that DOES re-enter Zuri (`call_value`, `instantiate`,
+/// constructing an instance) can be collected underneath, and every
+/// `Value` it holds across that call has to come back out of `gc_pins`
+/// rather than a local. `builtins::list`'s callback natives are the
+/// worked example.
 fn make_dict(ctx: &mut ZuriContext, pairs: Vec<(&str, Value)>) -> Value {
-  let count = pairs.len();
-  let names: Vec<&str> = pairs.iter().map(|(name, _)| *name).collect();
-
-  // Values occupy mark..mark+count, then the keys mark+count..mark+2*count.
-  let mark = ctx.vm.pin_values(pairs.into_iter().map(|(_, value)| value));
-
-  for name in names {
-    let key = ctx.heap().alloc_string(name);
-    ctx.vm.pin_values([key]);
-  }
-
-  let entries: Vec<(Value, Value)> = (0..count)
-    .map(|i| (ctx.vm.pinned(mark + count + i), ctx.vm.pinned(mark + i)))
+  let entries: Vec<(Value, Value)> = pairs
+    .into_iter()
+    .map(|(name, value)| (ctx.heap().alloc_string(name), value))
     .collect();
 
-  let dict = ctx.heap().alloc_dict(entries);
-  ctx.vm.unpin(mark);
-
-  dict
+  ctx.heap().alloc_dict(entries)
 }
 
 
-/// Allocates a list of strings, holding each one pinned until the list
-/// that will own them exists. See `make_dict` on why.
+/// Allocates a list of strings. See `make_dict` on why no pinning.
 fn alloc_string_list(ctx: &mut ZuriContext, names: &[&str]) -> Value {
-  let mark = ctx.vm.pin_values(std::iter::empty());
+  let items: Vec<Value> = names
+    .iter()
+    .map(|name| ctx.heap().alloc_string(*name))
+    .collect();
 
-  for name in names {
-    let value = ctx.heap().alloc_string(*name);
-    ctx.vm.pin_values([value]);
-  }
-
-  let items: Vec<Value> = (0..names.len()).map(|i| ctx.vm.pinned(mark + i)).collect();
-  let list = ctx.heap().alloc_list(items);
-  ctx.vm.unpin(mark);
-
-  list
+  ctx.heap().alloc_list(items)
 }
 
 fn num(ctx: &ZuriContext, index: usize) -> f64 {
@@ -281,25 +269,18 @@ const ENCODABLE: &[&str] = &[
 fn capabilities(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
 
-  // Each list stays pinned while the next is built; see `make_dict`.
   let decode_list = alloc_string_list(ctx, DECODABLE);
-  let mark = ctx.vm.pin_values([decode_list]);
-
   let encode_list = alloc_string_list(ctx, ENCODABLE);
-  ctx.vm.pin_values([encode_list]);
-
   let animated_list = alloc_string_list(ctx, &["gif", "webp"]);
-  ctx.vm.pin_values([animated_list]);
 
   let dict = make_dict(
     ctx,
     vec![
-      ("decode", ctx.vm.pinned(mark)),
-      ("encode", ctx.vm.pinned(mark + 1)),
-      ("animated", ctx.vm.pinned(mark + 2)),
+      ("decode", decode_list),
+      ("encode", encode_list),
+      ("animated", animated_list),
     ],
   );
-  ctx.vm.unpin(mark);
 
   Ok(dict)
 }
@@ -392,20 +373,17 @@ fn decode(ctx: &mut ZuriContext) -> Result<Value, String> {
   let height = image.height();
 
   let pixels = ctx.heap().alloc_bytes(image.into_raw());
-  let mark = ctx.vm.pin_values([pixels]);
-
   let format_value = ctx.heap().alloc_string(format_name(format));
 
   let dict = make_dict(
     ctx,
     vec![
-      ("pixels", ctx.vm.pinned(mark)),
+      ("pixels", pixels),
       ("width", Value::number(width as f64)),
       ("height", Value::number(height as f64)),
       ("format", format_value),
     ],
   );
-  ctx.vm.unpin(mark);
 
   Ok(dict)
 }
@@ -479,32 +457,23 @@ fn decode_frames(ctx: &mut ZuriContext) -> Result<Value, String> {
     )
   })?;
 
-  let mark = ctx.vm.pin_values(std::iter::empty());
-  let count = frames.len();
+  let mut items: Vec<Value> = Vec::with_capacity(frames.len());
 
   for (raw, width, height, delay) in frames {
     let pixels = ctx.heap().alloc_bytes(raw);
-    let inner = ctx.vm.pin_values([pixels]);
 
-    let entry = make_dict(
+    items.push(make_dict(
       ctx,
       vec![
-        ("pixels", ctx.vm.pinned(inner)),
+        ("pixels", pixels),
         ("width", Value::number(width as f64)),
         ("height", Value::number(height as f64)),
         ("delay", Value::number(delay)),
       ],
-    );
-
-    // The frame's own pixels are reachable from the entry now; only
-    // the entry itself still needs a root of its own.
-    ctx.vm.unpin(inner);
-    ctx.vm.pin_values([entry]);
+    ));
   }
 
-  let items: Vec<Value> = (0..count).map(|i| ctx.vm.pinned(mark + i)).collect();
   let list = ctx.heap().alloc_list(items);
-  ctx.vm.unpin(mark);
 
   Ok(list)
 }

@@ -1,0 +1,4 @@
+map 800 0
+filter 400 0
+partition 400 400 0
+dict-filter 400 0

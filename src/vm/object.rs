@@ -2475,7 +2475,15 @@ impl Heap {
   /// visits; same contract the old HashSet-based version had.
   pub(crate) fn mark_object(ptr: *const Obj) -> bool {
     let gcbox = unsafe { &*Self::gcbox_of(ptr) };
-    debug_assert!(gcbox.live.get(), "marking a supposedly-dead object");
+    // Already reclaimed, so there is nothing here to keep alive and, more
+    // to the point, nothing safe to read: returning true would send the
+    // caller off to walk a freed `Obj`'s children and push whatever those
+    // bytes happen to look like onto the mark worklist. See
+    // `forward_or_promote`'s matching guard for how a dead pointer
+    // reaches a collector in the first place.
+    if !gcbox.live.get() {
+      return false;
+    }
     !gcbox.marked.replace(true)
   }
 
@@ -2810,6 +2818,30 @@ impl Heap {
     if gcbox.generation.get() != Generation::Young {
       return ptr;
     }
+    // A nursery slot `reset_nursery` has already finished with. Every
+    // slot it walks is marked dead, whether its payload was reclaimed
+    // (gone) or moved out by a forwarding promotion (a stub whose
+    // `list_next` may since have been swept and recycled). Neither is
+    // safe to follow, and nothing overwrote the box to say so:
+    // `generation` still reads `Young`, so without this the reclaimed
+    // case would promote a corpse into the old generation for
+    // `Heap::sweep` to drop a second time -- a straight double free --
+    // and the forwarded case would hand back a stale target for
+    // `walk_children_mut` to read.
+    //
+    // A register outside the top frame's window is how one gets here.
+    // `collect_minor` bounds its root scan to that window, so when a
+    // callee whose registers reach past its caller's returns, the slots
+    // above the caller's window stop being roots and whatever they name
+    // dies; their BITS stay put, and a later, deeper call brings those
+    // same slots back inside the window with the dead pointer still in
+    // them. Nothing reads such a register (the compiler only ever reads
+    // a register it has defined), so leaving the pointer alone is
+    // exactly right: it is dead, and the collector's job here is simply
+    // not to mistake it for something worth resurrecting.
+    if !gcbox.live.get() {
+      return ptr;
+    }
     if gcbox.marked.get() {
       let new_gcbox = gcbox.list_next.get();
       return unsafe { &(*new_gcbox).obj };
@@ -2926,6 +2958,14 @@ impl Heap {
     let mut freed_bytes = 0usize;
     for chunk in self.nursery_chunks.iter_mut() {
       for gcbox in chunk.slots.iter_mut() {
+        // Dead either way by the time this loop is done with it: a
+        // forwarded slot is a stub whose payload now lives in the old
+        // generation, and an unmarked one is reclaimed just below.
+        // Recording that matters because nothing else does: the slot's
+        // BYTES outlive it until something allocates over them, and
+        // `generation` goes on reading `Young` the whole time. See
+        // `forward_or_promote`'s liveness guard for what reads this.
+        gcbox.live.set(false);
         if !gcbox.marked.get() {
           if let Obj::Instance(instance) = &gcbox.obj
             && instance.fields.is_inline()

@@ -1,0 +1,92 @@
+# A callee's register window routinely reaches past its caller's, so a
+# heap value the callee leaves in one of those high slots stops being a
+# GC root the moment it returns. The collector bounds its register scan
+# to the top frame's window; the slot keeps its bits either way, and the
+# next call at the same base brings them back into view.
+#
+# Nothing here should be able to observe that: a register the compiler
+# has not defined is never read, and a value still in use must survive
+# whatever collections run underneath it. This walks that shape at
+# several depths, with both minor and major collections running
+# throughout, and checks every result.
+
+def churn(n) {
+  var junk = bytes(20000)
+
+  return junk.length() + n - 20000
+}
+
+
+# Wide: more registers than any of its callers, holding heap values of
+# every kind that the collector has to trace.
+def wide(n) {
+  var a = @() { return n }
+  var b = @() { return n + 1 }
+  var c = { x: n, y: n + 1 }
+  var d = [n, n + 1, n + 2]
+  var e = 'e${n}'
+  var f = { z: n + 2 }
+
+  return a() + b() + c.x + c.y + d[2] + e.length() + f.z
+}
+
+
+# Narrow: fewer registers, so while this is on top the slots wide used
+# are outside the scan window.
+def narrow(n) {
+  return n + 1
+}
+
+
+def looper(n) {
+  var total = 0
+
+  iter var i = 0; i < 24; i++ {
+    total = total + wide(n)
+    total = total + narrow(n)
+    total = total + churn(n)
+  }
+
+  return total
+}
+
+
+def depth3(n) {
+  return looper(n)
+}
+
+
+def depth2(n) {
+  return depth3(n)
+}
+
+
+def depth1(n) {
+  return depth2(n)
+}
+
+
+# Taken once up front, on a clean heap, rather than written out by hand:
+# the point of the check is that the answer never CHANGES, not what it is.
+var per_round = 24 * (wide(0) + narrow(0) + churn(0))
+
+var keep = []
+var bad = 0
+
+iter var round = 0; round < 400; round++ {
+  var got = depth1(0)
+
+  if got != per_round {
+    bad++
+  }
+
+  # A growing long-lived set, so major collections run as well as minor
+  # ones; the second free only ever shows up in a sweep.
+  keep.append({ n: round, tag: 'k${round}' })
+
+  if keep.length() > 600 {
+    keep = []
+  }
+}
+
+echo 'rounds=400 bad=${bad}'

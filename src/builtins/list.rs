@@ -557,7 +557,13 @@ fn map_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
-  let mut result = Vec::with_capacity(count);
+  // Each result is pinned the moment it comes back, and read out again
+  // only once the loop is over. Collecting straight into a `Vec<Value>`
+  // makes that Vec a private copy the collector cannot reach, while
+  // every later iteration's callback is still free to trigger a
+  // collection; by the end of a long map, the earliest results would
+  // name objects that had since been relocated or reclaimed.
+  let mut result_slots = Vec::with_capacity(count);
   for i in 0..count {
     let callback = ctx.vm.pinned(mark + 1);
     let item = ctx.vm.pinned(mark + 2 + i);
@@ -565,8 +571,13 @@ fn map_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
-    result.push(mapped);
+    result_slots.push(ctx.vm.pin_values([mapped]));
   }
+
+  let result: Vec<Value> = result_slots
+    .into_iter()
+    .map(|slot| ctx.vm.pinned(slot))
+    .collect();
   ctx.vm.unpin(mark);
   Ok(ctx.vm.heap_mut().alloc_list(result))
 }
@@ -577,7 +588,12 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
-  let mut result = Vec::new();
+  // Only the INDEX of a kept element is remembered while the loop
+  // runs. A `Value` pushed here instead would be re-read fresh at the
+  // moment it was kept and then go stale on the very next iteration's
+  // own collection, since a plain Vec is not a GC root; the element's
+  // pinned slot, on the other hand, stays correct throughout.
+  let mut kept = Vec::new();
   for i in 0..count {
     let callback = ctx.vm.pinned(mark + 1);
     let item = ctx.vm.pinned(mark + 2 + i);
@@ -586,11 +602,14 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
       .call_value(callback, &[item, Value::number(i as f64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
     if !keep.is_falsey() {
-      // Re-read again: `call_value` above may have relocated it since
-      // the `item` copy taken just before the call.
-      result.push(ctx.vm.pinned(mark + 2 + i));
+      kept.push(i);
     }
   }
+
+  let result: Vec<Value> = kept
+    .into_iter()
+    .map(|i| ctx.vm.pinned(mark + 2 + i))
+    .collect();
   ctx.vm.unpin(mark);
   Ok(ctx.vm.heap_mut().alloc_list(result))
 }
@@ -781,6 +800,8 @@ fn partition(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let (mark, count) = pin_each_call(ctx, ctx.args[0], ctx.args[1]);
 
+  // Indices, not `Value`s, for the same reason `filter` keeps them:
+  // see its own comment.
   let mut matched = Vec::new();
   let mut unmatched = Vec::new();
   for i in 0..count {
@@ -790,15 +811,21 @@ fn partition(ctx: &mut ZuriContext) -> Result<Value, String> {
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
       .map_err(|e| ctx.vm.describe_error(e))?;
-    // Re-read again: `call_value` above may have relocated it since
-    // the `item` copy taken just before the call.
-    let item = ctx.vm.pinned(mark + 2 + i);
     if !keep.is_falsey() {
-      matched.push(item);
+      matched.push(i);
     } else {
-      unmatched.push(item);
+      unmatched.push(i);
     }
   }
+
+  let matched: Vec<Value> = matched
+    .into_iter()
+    .map(|i| ctx.vm.pinned(mark + 2 + i))
+    .collect();
+  let unmatched: Vec<Value> = unmatched
+    .into_iter()
+    .map(|i| ctx.vm.pinned(mark + 2 + i))
+    .collect();
   ctx.vm.unpin(mark);
 
   let matched = ctx.vm.heap_mut().alloc_list(matched);
