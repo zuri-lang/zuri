@@ -438,6 +438,130 @@ class Canvas {
    * once. Kept in terms of plain numbers rather than `Color` because
    * a filled shape calls it once per pixel.
    */
+  
+  /**
+   * Draws one hairline segment straight onto the buffer.
+   *
+   * Steps along whichever axis the segment covers more of, one pixel
+   * column at a time, and works out that column's coverage directly.
+   * The work is proportional to the segment's length rather than to
+   * the area of its bounding box, which is what the general scanline
+   * path costs for a shape this thin.
+   *
+   * The stroke this models is the same one the rasterizer would fill:
+   * a quad one pixel wide measured perpendicular to the line. A sloped
+   * line therefore spans a little over a pixel vertically in each
+   * column, and both rows it touches take a share of the colour. That
+   * is why this is not simply Wu's line, which would put a 45-degree
+   * diagonal entirely on one row and lose the softness.
+   *
+   * Every write goes through `_blend`, so clipping and the surface
+   * bounds are enforced exactly as they are everywhere else.
+   */
+  _thin_segment(x1, y1, x2, y2, paint) {
+    var x0 = x1
+    var y0 = y1
+    var xn = x2
+    var yn = y2
+
+    # Step along the axis the line covers more of, so consecutive
+    # columns are always neighbours and never leave a gap.
+    var steep = (yn - y0).abs() > (xn - x0).abs()
+
+    if steep {
+      var swap = x0
+      x0 = y0
+      y0 = swap
+
+      swap = xn
+      xn = yn
+      yn = swap
+    }
+
+    if x0 > xn {
+      var swap = x0
+      x0 = xn
+      xn = swap
+
+      swap = y0
+      y0 = yn
+      yn = swap
+    }
+
+    var dx = xn - x0
+
+    if dx == 0 {
+      return
+    }
+
+    var gradient = (yn - y0) / dx
+
+    var r = paint.r
+    var g = paint.g
+    var b = paint.b
+    var a = paint.a
+
+    # Half the stroke's vertical extent in one column. A level line
+    # covers exactly one row; the more it slopes, the further it
+    # reaches, up to about 1.41 rows at 45 degrees.
+    var half_span = 0.5 * (1 + gradient * gradient).sqrt()
+
+    var col_end = xn.ceil()
+
+    # Coverage is averaged over a few positions across each column
+    # rather than read off its middle. The stroke's vertical reach
+    # changes as it crosses the column, and a single reading in the
+    # centre calls the middle row fully covered on a 45-degree line when
+    # the true figure is about 91%: enough to lose the soft edge the
+    # rasterizer produces. Four readings land within a fraction of a
+    # percent of the exact area.
+    var SAMPLES = 4
+    var step = 1.0 / SAMPLES
+
+    iter var col = x0.floor(); col < col_end; col++ {
+
+      # The rows this column can reach, taken from the stroke's extent
+      # at both of its edges.
+      var left = y0 + gradient * (col - x0)
+      var right = y0 + gradient * (col + 1 - x0)
+      var first_row = (left.min(right) - half_span).floor()
+      var last_row = (left.max(right) + half_span).floor()
+
+      iter var row = first_row; row <= last_row; row++ {
+        var total = 0.0
+
+        iter var i = 0; i < SAMPLES; i++ {
+          var sx = col + (i + 0.5) * step
+
+          # Outside the segment's own span: this is what gives a butt
+          # cap its clean end instead of a half-pixel overhang.
+          if sx < x0 or sx > xn {
+            continue
+          }
+
+          var sy = y0 + gradient * (sx - x0)
+          var covered = (sy + half_span).min(row + 1) - (sy - half_span).max(row)
+
+          if covered > 0 {
+            total = total + covered
+          }
+        }
+
+        if total <= 0 {
+          continue
+        }
+
+        var cover = total * step
+
+        if steep {
+          self._blend(row, col, r, g, b, a * cover)
+        } else {
+          self._blend(col, row, r, g, b, a * cover)
+        }
+      }
+    }
+  }
+
   _blend(px, py, r, g, b, a) {
     if a <= 0 or !self._writable(px, py) {
       return
@@ -865,6 +989,40 @@ class Canvas {
 
     var half = width / 2
     var segments = closed ? count : count - 1
+
+    # A hairline has almost no interior for the scanline rasterizer to
+    # find. Its stroke quad is a pixel wide, so filling it costs a pass
+    # over the whole bounding box (every scanline the segment crosses,
+    # sampled for coverage) to light what is really just one run of
+    # pixels. Walking the segment itself writes exactly those pixels and
+    # nothing else.
+    #
+    # Anti-aliased only. With it off the rasterizer still accumulates
+    # fractional coverage across x while sampling a single scanline per
+    # row, and reproducing that rule exactly is a different job from
+    # this one; drawing a hairline the obvious way instead comes out
+    # visibly thinner, so those keep the general path.
+    #
+    # Every cap but square, which is the only one that changes the shape
+    # at this width: it pushes the endpoints out by half the stroke
+    # before the quad is even built. A round cap draws a disc of radius
+    # half a pixel, which the general path below skips anyway (it only
+    # bothers past 1.5 wide), so round and butt come out identical here.
+    if self._antialias and width <= 1 and cap != CAP_SQUARE {
+      iter var i = 0; i < segments; i++ {
+        var j = (i + 1) % count
+
+        self._thin_segment(
+          flat[i * 2],
+          flat[i * 2 + 1],
+          flat[j * 2],
+          flat[j * 2 + 1],
+          paint
+        )
+      }
+
+      return self
+    }
 
     # Every quad and every joint disc, filled together so the overlaps
     # count once.

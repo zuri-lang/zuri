@@ -1398,6 +1398,21 @@ fn convolve(ctx: &mut ZuriContext) -> Result<Value, String> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Applies `kernel` to every pixel.
+///
+/// Split into an interior and a border because they want different
+/// code. Away from the edges every tap is guaranteed in bounds, so the
+/// whole footprint collapses to a set of fixed byte offsets from the
+/// centre pixel and the inner loop becomes a multiply-accumulate over
+/// those. That is worth separating out: the edge-mode decision used to
+/// run per tap per pixel, which for a 3x3 kernel meant nine bounds
+/// tests and nine clamps to produce nine multiplies, and it only ever
+/// changed the answer on the handful of pixels within `radius` of a
+/// side.
+///
+/// Zero weights are dropped up front rather than skipped in the loop,
+/// which matters for the sparse kernels (edge detection, embossing)
+/// where most entries are zero.
 fn convolve_buffer(
   pixels: &[u8],
   width: u32,
@@ -1417,19 +1432,47 @@ fn convolve_buffer(
 
   let mut out = vec![0u8; pixels.len()];
 
+  // (dx, dy, weight) for the taps that can actually contribute.
+  let mut taps: Vec<(i64, i64, f32)> = Vec::with_capacity(kernel.len());
+  for ky in 0..size as i64 {
+    for kx in 0..size as i64 {
+      let weight = kernel[(ky * size as i64 + kx) as usize];
+      if weight != 0.0 {
+        taps.push((kx - radius, ky - radius, weight));
+      }
+    }
+  }
+
+  // The same taps as a flat byte offset from the centre pixel, for the
+  // interior where no tap can fall outside the image.
+  let flat: Vec<(isize, f32)> = taps
+    .iter()
+    .map(|&(dx, dy, weight)| ((dy * stride as i64 + dx * 4) as isize, weight))
+    .collect();
+
+  // One reciprocal instead of a divide per channel per pixel. A divisor
+  // of 1 (the common case, and every normalised kernel after the caller
+  // folds the sum in) inverts exactly, so nothing moves.
+  let inverse = 1.0 / divisor;
+
   for y in 0..height {
+    let row_interior = y >= radius && y < height - radius;
+
     for x in 0..width {
+      let base = y as usize * stride + x as usize * 4;
       let mut sums = [0f32; 4];
 
-      for ky in 0..size as i64 {
-        for kx in 0..size as i64 {
-          let weight = kernel[(ky * size as i64 + kx) as usize];
-          if weight == 0.0 {
-            continue;
+      if row_interior && x >= radius && x < width - radius {
+        for &(shift, weight) in &flat {
+          let tap = (base as isize + shift) as usize;
+          for channel in 0..channels {
+            sums[channel] += pixels[tap + channel] as f32 * weight;
           }
-
-          let mut sx = x + kx - radius;
-          let mut sy = y + ky - radius;
+        }
+      } else {
+        for &(dx, dy, weight) in &taps {
+          let mut sx = x + dx;
+          let mut sy = y + dy;
 
           match edge {
             EdgeMode::Clamp => {
@@ -1447,16 +1490,15 @@ fn convolve_buffer(
             },
           }
 
-          let base = sy as usize * stride + sx as usize * 4;
+          let tap = sy as usize * stride + sx as usize * 4;
           for channel in 0..channels {
-            sums[channel] += pixels[base + channel] as f32 * weight;
+            sums[channel] += pixels[tap + channel] as f32 * weight;
           }
         }
       }
 
-      let base = y as usize * stride + x as usize * 4;
       for channel in 0..channels {
-        out[base + channel] = (sums[channel] / divisor + offset).clamp(0.0, 255.0) as u8;
+        out[base + channel] = (sums[channel] * inverse + offset).clamp(0.0, 255.0) as u8;
       }
 
       if keep_alpha {
@@ -1496,24 +1538,162 @@ fn blur(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// over the result. Alpha is premultiplied for the duration so that
 /// blurring a shape against transparency doesn't drag the colour of
 /// fully transparent pixels into the visible edge.
+/// Box sizes whose successive application approximates a Gaussian of
+/// this sigma, one per pass.
+///
+/// Three box blurs is the usual stopping point: the central limit
+/// theorem says repeated box convolution converges on a Gaussian, and
+/// by the third pass the error is well under a quantisation step for
+/// 8-bit channels, which is why libvips, Pillow and the SVG
+/// `feGaussianBlur` spec all settle there too. The sizes come out of
+/// solving for the box width whose variance, tripled, matches the
+/// Gaussian's; `wl`/`wu` are the odd widths either side of the ideal,
+/// and `m` decides how many passes take the smaller one.
+fn box_sizes_for_gaussian(sigma: f32, passes: usize) -> Vec<i64> {
+  let n = passes as f32;
+  let ideal = ((12.0 * sigma * sigma / n) + 1.0).sqrt();
+
+  let mut wl = ideal.floor() as i64;
+  if wl % 2 == 0 {
+    wl -= 1;
+  }
+  wl = wl.max(1);
+  let wu = wl + 2;
+
+  let wl_f = wl as f32;
+  let m_ideal =
+    (12.0 * sigma * sigma - n * wl_f * wl_f - 4.0 * n * wl_f - 3.0 * n) / (-4.0 * wl_f - 4.0);
+  let m = m_ideal.round() as i64;
+
+  (0..passes)
+    .map(|i| if (i as i64) < m { wl } else { wu })
+    .collect()
+}
+
+/// One horizontal box blur, edge-clamped, over interleaved RGBA floats.
+///
+/// The window moves one pixel at a time and the running sum moves with
+/// it: one add and one subtract per pixel, whatever the radius. That
+/// O(1)-per-pixel behaviour is the whole point of going through boxes
+/// rather than convolving the Gaussian directly.
+fn box_blur_h(src: &[f32], dst: &mut [f32], width: usize, height: usize, radius: i64) {
+  if radius <= 0 {
+    dst.copy_from_slice(src);
+    return;
+  }
+
+  let r = radius as usize;
+  let scale = 1.0 / (2 * r + 1) as f32;
+  let last = width - 1;
+
+  for y in 0..height {
+    let row = y * width * 4;
+    let mut sum = [0f32; 4];
+
+    // The window starts hanging off the left edge, so the first pixel
+    // stands in for everything out there.
+    for c in 0..4 {
+      sum[c] = src[row + c] * (r + 1) as f32;
+    }
+    for x in 1..=r.min(last) {
+      for c in 0..4 {
+        sum[c] += src[row + x * 4 + c];
+      }
+    }
+    if r > last {
+      for c in 0..4 {
+        sum[c] += src[row + last * 4 + c] * (r - last) as f32;
+      }
+    }
+
+    for x in 0..width {
+      for c in 0..4 {
+        dst[row + x * 4 + c] = sum[c] * scale;
+      }
+      let add = (x + r + 1).min(last);
+      let drop = x.saturating_sub(r);
+      for c in 0..4 {
+        sum[c] += src[row + add * 4 + c] - src[row + drop * 4 + c];
+      }
+    }
+  }
+}
+
+/// One vertical box blur, edge-clamped.
+///
+/// Same running sum as the horizontal pass, but held for a whole row of
+/// columns at once and advanced a row at a time. Walking rows rather
+/// than columns keeps every access sequential; a column-at-a-time loop
+/// touches a new cache line on every step and costs several times more
+/// for the identical arithmetic.
+fn box_blur_v(src: &[f32], dst: &mut [f32], width: usize, height: usize, radius: i64) {
+  if radius <= 0 {
+    dst.copy_from_slice(src);
+    return;
+  }
+
+  let r = radius as usize;
+  let scale = 1.0 / (2 * r + 1) as f32;
+  let stride = width * 4;
+  let last = height - 1;
+  let mut sum = vec![0f32; stride];
+
+  for i in 0..stride {
+    sum[i] = src[i] * (r + 1) as f32;
+  }
+  for y in 1..=r.min(last) {
+    let row = y * stride;
+    for i in 0..stride {
+      sum[i] += src[row + i];
+    }
+  }
+  if r > last {
+    let row = last * stride;
+    for i in 0..stride {
+      sum[i] += src[row + i] * (r - last) as f32;
+    }
+  }
+
+  for y in 0..height {
+    let row = y * stride;
+    for i in 0..stride {
+      dst[row + i] = sum[i] * scale;
+    }
+    let add = ((y + r + 1).min(last)) * stride;
+    let drop = (if y >= r { y - r } else { 0 }) * stride;
+    for i in 0..stride {
+      sum[i] += src[add + i] - src[drop + i];
+    }
+  }
+}
+
+/// Gaussian blur, approximated by three box blurs per axis.
+///
+/// Convolving the Gaussian directly costs O(sigma) taps per pixel per
+/// axis, which is what made a heavy blur so much dearer than a light
+/// one. Boxes make the cost independent of sigma entirely.
+///
+/// The trade is a little fidelity: three boxes can only land on the
+/// discrete variances their widths allow, so the effective sigma comes
+/// out within roughly 5-18% of the one asked for (`blur(4)` measures
+/// about 3.8). Every library that approximates this way has the same
+/// property, it is well under what the eye picks up on a blur, and odd
+/// box widths keep the result centred, so nothing shifts by half a
+/// pixel. Code that needs an exact kernel should convolve one itself.
+///
+/// Colour is premultiplied by alpha before blurring and divided back out
+/// afterwards. Without that, a transparent pixel's colour (which may be
+/// anything at all, since nothing is drawn there) bleeds into its
+/// visible neighbours and leaves a dark or coloured fringe along every
+/// soft edge.
 fn gaussian(pixels: &[u8], width: u32, height: u32, sigma: f32) -> Vec<u8> {
-  let radius = (sigma * 3.0).ceil().max(1.0) as i64;
-  let mut weights = Vec::with_capacity((radius * 2 + 1) as usize);
-  let denominator = 2.0 * sigma * sigma;
+  let width = width as usize;
+  let height = height as usize;
 
-  for offset in -radius..=radius {
-    weights.push((-(offset * offset) as f32 / denominator).exp());
-  }
-  let total: f32 = weights.iter().sum();
-  for weight in &mut weights {
-    *weight /= total;
+  if width == 0 || height == 0 {
+    return pixels.to_vec();
   }
 
-  let width = width as i64;
-  let height = height as i64;
-  let stride = width as usize * 4;
-
-  // Premultiplied, in floats, for both passes.
   let mut source: Vec<f32> = Vec::with_capacity(pixels.len());
   for pixel in pixels.chunks_exact(4) {
     let alpha = pixel[3] as f32 / 255.0;
@@ -1523,49 +1703,25 @@ fn gaussian(pixels: &[u8], width: u32, height: u32, sigma: f32) -> Vec<u8> {
     source.push(pixel[3] as f32);
   }
 
-  let mut middle = vec![0f32; source.len()];
-  for y in 0..height {
-    for x in 0..width {
-      let mut sums = [0f32; 4];
-      for (index, weight) in weights.iter().enumerate() {
-        let sx = (x + index as i64 - radius).clamp(0, width - 1);
-        let base = y as usize * stride + sx as usize * 4;
-        for channel in 0..4 {
-          sums[channel] += source[base + channel] * weight;
-        }
-      }
-      let base = y as usize * stride + x as usize * 4;
-      middle[base..base + 4].copy_from_slice(&sums);
-    }
+  let mut scratch = vec![0f32; source.len()];
+  for size in box_sizes_for_gaussian(sigma, 3) {
+    let radius = (size - 1) / 2;
+    box_blur_h(&source, &mut scratch, width, height, radius);
+    box_blur_v(&scratch, &mut source, width, height, radius);
   }
 
   let mut out = vec![0u8; pixels.len()];
-  for y in 0..height {
-    for x in 0..width {
-      let mut sums = [0f32; 4];
-      for (index, weight) in weights.iter().enumerate() {
-        let sy = (y + index as i64 - radius).clamp(0, height - 1);
-        let base = sy as usize * stride + x as usize * 4;
-        for channel in 0..4 {
-          sums[channel] += middle[base + channel] * weight;
-        }
-      }
+  for (chunk, dst) in source.chunks_exact(4).zip(out.chunks_exact_mut(4)) {
+    let alpha = chunk[3].clamp(0.0, 255.0);
+    dst[3] = alpha.round() as u8;
 
-      let base = y as usize * stride + x as usize * 4;
-      let alpha = sums[3].clamp(0.0, 255.0);
-      out[base + 3] = alpha.round() as u8;
+    if alpha <= 0.0 {
+      continue;
+    }
 
-      if alpha <= 0.0 {
-        out[base] = 0;
-        out[base + 1] = 0;
-        out[base + 2] = 0;
-        continue;
-      }
-
-      let scale = 255.0 / alpha;
-      for channel in 0..3 {
-        out[base + channel] = (sums[channel] * scale).clamp(0.0, 255.0).round() as u8;
-      }
+    let scale = 255.0 / alpha;
+    for channel in 0..3 {
+      dst[channel] = (chunk[channel] * scale).clamp(0.0, 255.0).round() as u8;
     }
   }
 

@@ -329,7 +329,7 @@ class Color {
    * @throws ImageError When _value_ is not a colour in any of those forms.
    */
   static parse(value) {
-    if is_instance(value) and instance_of(value, Color) {
+    if instance_of(value, Color) {
       return value
     }
 
@@ -351,16 +351,44 @@ class Color {
     }
 
     if is_string(value) {
+      # Drawing code hands the same few colour strings back in call after
+      # call, and re-deriving one costs far more than the pixel it is
+      # about to be written into: trimming allocates, the hex digits are
+      # picked apart one at a time, and a fresh Color is built at the end
+      # of it. Remembering the answer turns every repeat into a lookup.
+      #
+      # Safe to hand the same instance back because a Color never
+      # changes after it is built, which is the same reason `parse`
+      # already returns a caller's own Color untouched.
+      var remembered = _parse_cache.get(value)
+
+      if remembered != nil {
+        return remembered
+      }
+
       var text = value.trim()
+      var parsed = nil
 
       # A name is anything that isn't a bare run of hex digits; the
       # ambiguous cases (`abc`, `beef`) are all real colour names, and
       # CSS resolves them as names too.
       if !text.starts_with('#') and colors.is_named(text) {
-        return Color.named(text)
+        parsed = Color.named(text)
+      } else {
+        parsed = Color.hex(text)
       }
 
-      return Color.hex(text)
+      # Bounded, and cleared wholesale rather than evicted one at a time.
+      # Anything generating unbounded distinct colour strings is not the
+      # pattern this helps, and it should not be able to grow the table
+      # without limit either.
+      if _parse_cache.length() >= _PARSE_CACHE_LIMIT {
+        _parse_cache = {}
+      }
+
+      _parse_cache[value] = parsed
+
+      return parsed
     }
 
     raise ImageError('cannot read a colour from ${typeof(value)}')
@@ -797,6 +825,11 @@ class Color {
  *
  * @type Color
  */
+# Colour strings already turned into Colors. See `Color.parse`.
+var _parse_cache = {}
+var _PARSE_CACHE_LIMIT = 512
+
+
 var TRANSPARENT = Color(0, 0, 0, 0)
 
 /**
