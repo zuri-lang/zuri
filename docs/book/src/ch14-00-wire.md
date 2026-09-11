@@ -96,14 +96,14 @@ Blade adds its own directive syntax on top of plain text
 second language layered over HTML. Wire instead expresses everything
 as attributes on the HTML you were already going to write:
 
-```blade
+```html
 {{-- Blade --}}
 @if ($user->isAdmin())
     <p>Welcome back, administrator.</p>
 @endif
 ```
 
-```wire
+```html
 {{-- Wire --}}
 <p x-if="user.is_admin">Welcome back, administrator.</p>
 ```
@@ -221,7 +221,7 @@ an empty folder somewhere unexpected.
 You have already seen the basic form. `{{ expression }}` evaluates
 whatever is between the braces and writes the result into the page:
 
-```wire
+```html
 <h1>{{ post.title }}</h1>
 <p>By {{ post.author.name }}</p>
 ```
@@ -230,7 +230,7 @@ whatever is between the braces and writes the result into the page:
 expression, covered in its own section below — so all of the following
 are valid:
 
-```wire
+```html
 <p>{{ post.views > 1000 ? 'Popular' : 'New' }}</p>
 <p>{{ post.tags|join(', ') }}</p>
 <p>{{ user.nickname ?? user.name }}</p>
@@ -242,7 +242,7 @@ Every interpolation is escaped for the specific place it lands, and
 this cannot be turned off from inside a template. If `name` holds
 `<b>Ada</b>`:
 
-```wire
+```html
 <p>Hello {{ name }}</p>
 ```
 
@@ -280,7 +280,7 @@ have markup — the output of another render, a snippet you built and
 trust — and you want it written out as markup. The `raw` filter is how
 you say so:
 
-```wire
+```html
 <div class="article-body">{{ post.rendered_html|raw }}</div>
 ```
 
@@ -314,7 +314,7 @@ use for their own. If a Wire template also contains inline script that
 a browser-side framework is meant to interpret, escape the braces with
 a leading `%` so Wire leaves them alone:
 
-```wire
+```html
 <div id="app">
   <p>{{ user.name }}</p>          {{-- rendered by Wire, server-side --}}
   <p>%{{ message }}</p>           {{-- left as literal {{ message }}, for Vue --}}
@@ -339,7 +339,7 @@ code that calls `render()`, not in the template itself.
 
 ### Literals
 
-```wire
+```html
 {{ 42 }}            {{-- a number --}}
 {{ 3.14 }}           {{-- a decimal --}}
 {{ 'a string' }}     {{-- single quotes --}}
@@ -352,7 +352,7 @@ code that calls `render()`, not in the template itself.
 
 ### Looking Up Values
 
-```wire
+```html
 {{ user.name }}                 {{-- a dotted lookup --}}
 {{ user.address.city }}         {{-- chains as deep as you like --}}
 {{ items.0 }}                   {{-- a numeric key reads a list position --}}
@@ -366,7 +366,7 @@ raising, and reading a key off `nil` gives `nil` too. That is what
 makes an optional value safe to reach through without a guard in front
 of it:
 
-```wire
+```html
 {{ user.profile.avatar_url }}
 ```
 
@@ -383,7 +383,7 @@ show.
 
 ### Operators
 
-```wire
+```html
 {{ price * quantity }}
 {{ subtotal + tax }}
 {{ stock - reserved }}
@@ -410,7 +410,7 @@ show.
 
 A string on either side of `+` concatenates rather than raising:
 
-```wire
+```html
 {{ 'Hello, ' + user.name }}
 ```
 
@@ -422,7 +422,7 @@ them up is the single most common Wire mistake:
   truthiness](#truthiness), and falls back on anything falsy — `nil`,
   `false`, an empty string, an empty collection, or the number `0`.
 
-```wire
+```html
 {{ discount ?? 0 }}   {{-- a missing discount becomes 0 --}}
 {{ discount or 0 }}   {{-- a discount that IS 0 also becomes 0, harmlessly here --}}
 
@@ -463,7 +463,7 @@ with nothing.
 
 A value [registered as a global](#globals) can be called directly:
 
-```wire
+```html
 <a href="{{ route('user.profile', user.id) }}">{{ user.name }}</a>
 ```
 
@@ -471,13 +471,13 @@ There is also an older, standalone spelling for calling a function
 that takes no arguments, kept from Wire's very first version because
 it reads well on its own:
 
-```wire
+```html
 {! current_year !}
 ```
 
 is exactly the same as writing:
 
-```wire
+```html
 {{ current_year() }}
 ```
 
@@ -491,7 +491,7 @@ cleaner without the parentheses.
 A filter transforms the value on the left of a `|`. It is the same
 idea as a Unix pipe:
 
-```wire
+```html
 {{ name|upper }}
 {{ price|round(2) }}
 {{ post.body|truncate(150) }}
@@ -505,7 +505,7 @@ calls the `truncate` filter as `truncate(post.body, 150)`.
 
 Filters read left to right, each one's output feeding the next:
 
-```wire
+```html
 {{ name|trim|title }}
 {{ comment.body|strip_tags|truncate(200) }}
 ```
@@ -515,13 +515,13 @@ Filters read left to right, each one's output feeding the next:
 For a filter that takes exactly one argument, `name=value` is
 shorthand for `name(value)`:
 
-```wire
+```html
 {{ status|is='active' }}
 ```
 
 is the same as:
 
-```wire
+```html
 {{ status|is('active') }}
 ```
 
@@ -604,7 +604,7 @@ more than one argument.
 | --- | --- |
 | `date(format?)` | Formats a `date.Date`, a Unix timestamp, or a parseable date string, using [the same format directives as `Date.format()`](ch13-00-stdlib-tour.md#date). Defaults to `'Y-m-d H:i:s'`. |
 
-```wire
+```html
 <time datetime="{{ post.published_at|date('Y-m-d') }}">
   {{ post.published_at|date('jS F Y') }}
 </time>
@@ -621,7 +621,7 @@ See [Custom Filters](#custom-filters) below.
 `x-if` renders an element, and everything inside it, only when its
 expression is [truthy](#truthiness):
 
-```wire
+```html
 <p x-if="user.is_admin">You have administrator access.</p>
 ```
 
@@ -631,7 +631,7 @@ left out of the page entirely. There is no empty element left behind.
 Chain further conditions with `x-elif`, and close the chain with a
 plain `x-else`:
 
-```wire
+```html
 <p x-if="user.role == 'admin'">Administrator</p>
 <p x-elif="user.role == 'staff'">Staff member</p>
 <p x-elif="user.role == 'contributor'">Contributor</p>
@@ -643,7 +643,7 @@ allowed between the elements in a chain — any real content in between
 ends it, and an `x-elif` or `x-else` with no `x-if` in front of it is
 rejected when the template compiles, not silently ignored:
 
-```wire
+```html
 {{-- this chain is broken by the text between the two elements --}}
 <p x-if="a">A</p>
 some text
@@ -655,7 +655,7 @@ some text
 `x-not` is the plain inverse of `x-if` — it renders when its expression
 is falsy — and does not take part in a chain:
 
-```wire
+```html
 <div x-not="user.has_verified_email">
   <p>Please verify your email address.</p>
 </div>
@@ -670,7 +670,7 @@ clause.
 `x-for` repeats an element once per entry of whatever its expression
 evaluates to — a list, a dict, a string, or a range:
 
-```wire
+```html
 <ul>
   <li x-for="posts" x-value="post">{{ post.title }}</li>
 </ul>
@@ -685,7 +685,7 @@ refer to the entry by name.
 An optional `x-key` binds the position (for a list) or the key (for a
 dict):
 
-```wire
+```html
 <tr x-for="users" x-key="id" x-value="user">
   <td>{{ id }}</td>
   <td>{{ user.name }}</td>
@@ -694,7 +694,7 @@ dict):
 
 Every kind of collection iterates naturally:
 
-```wire
+```html
 <li x-for="tags" x-value="tag">{{ tag }}</li>              {{-- a list --}}
 <li x-for="scores" x-key="name" x-value="score">           {{-- a dict --}}
   {{ name }}: {{ score }}
@@ -706,7 +706,7 @@ Every kind of collection iterates naturally:
 A missing or empty collection simply renders nothing — there is no
 need to guard a loop with an `x-if` first:
 
-```wire
+```html
 <li x-for="comments" x-value="comment">{{ comment.body }}</li>
 {{-- renders nothing at all if `comments` is empty or was never supplied --}}
 ```
@@ -728,7 +728,7 @@ Every iteration publishes a `loop` variable with the following fields:
 | `loop.value` | The current value, whether or not `x-value` binds it too. |
 | `loop.parent` | The enclosing loop's own `loop`, for a nested `x-for`. |
 
-```wire
+```html
 <tr x-for="rows" x-value="row" x-attr="{ 'class': loop.odd ? 'zebra' : nil }">
   <td>{{ loop.index }}</td>
   <td>{{ row.name }}</td>
@@ -741,7 +741,7 @@ Every iteration publishes a `loop` variable with the following fields:
 which is what lets an inner loop's own `loop` and an outer loop's
 `loop` both be reached at once:
 
-```wire
+```html
 <table x-for="rows" x-loop="row" x-value="cells">
   <tr>
     <td x-for="cells" x-value="cell">
@@ -755,7 +755,7 @@ Without `x-loop`, the inner loop's own `loop` would simply shadow the
 outer one for the scope of the inner loop — reach for `loop.parent`
 instead if you would rather not rename anything:
 
-```wire
+```html
 <td x-for="cells" x-value="cell">
   outer position {{ loop.parent.index }}, inner position {{ loop.index }}
 </td>
@@ -768,7 +768,7 @@ element wrapping them, or without introducing any element at all. Put
 the directive on a `<template>` instead of on the element you want
 repeated:
 
-```wire
+```html
 <select>
   <template x-for="countries" x-value="country">
     <option value="{{ country.code }}">{{ country.name }}</option>
@@ -783,7 +783,7 @@ entirely, leaving only what was inside it, once per pass. This is also
 the way to apply [`x-if`](#conditionals) to a group of elements without
 picking one of them to carry the attribute:
 
-```wire
+```html
 <template x-if="user.is_admin">
   <a href="/admin">Dashboard</a>
   <a href="/admin/users">Users</a>
@@ -798,13 +798,13 @@ picking one of them to carry the attribute:
 as plain text — useful when the element already has other attributes
 and you would rather not write the value twice:
 
-```wire
+```html
 <p x-text="post.summary"></p>
 ```
 
 is the same as:
 
-```wire
+```html
 <p>{{ post.summary }}</p>
 ```
 
@@ -817,7 +817,7 @@ exists only to describe what would go there without JavaScript.
 element's children with its expression's value, written as markup
 rather than text:
 
-```wire
+```html
 <div x-html="post.rendered_body|raw"></div>
 ```
 
@@ -833,7 +833,7 @@ applies here just as much as it does to the `raw` filter.
 `x-attr` spreads a dictionary of names and values onto the element as
 attributes:
 
-```wire
+```html
 <input x-attr="{ type: 'text', name: field.name, required: field.is_required }">
 ```
 
@@ -850,7 +850,7 @@ Within that dictionary:
 This is what turns a boolean into a real HTML boolean attribute
 without a ternary in every place one is needed:
 
-```wire
+```html
 <button x-attr="{ disabled: !form.is_valid }">Submit</button>
 ```
 
@@ -858,7 +858,7 @@ A computed attribute takes over from one written directly on the same
 element, so you can set a sensible default and only override it when
 there is something to override:
 
-```wire
+```html
 <div class="card" x-attr="{ 'class': featured ? 'card card-featured' : nil }">
 ```
 
@@ -869,7 +869,7 @@ never reaches the rendered page, and nothing inside one is evaluated —
 which is exactly what makes it safe to leave notes for other people
 maintaining the template, without those notes shipping to a browser:
 
-```wire
+```html
 <!-- TODO: replace this hard-coded banner once marketing sends the real copy -->
 <div class="banner">Coming soon</div>
 
@@ -891,13 +891,13 @@ what lets them work correctly inside a `<head>` or a `<table>` where an
 element the parser does not recognise would otherwise be moved or
 dropped.
 
-```wire
+```html
 <include path="partials/nav.html" />
 ```
 
 is the same as:
 
-```wire
+```html
 <template x-include="partials/nav.html"></template>
 ```
 
@@ -907,12 +907,12 @@ the same as `render()`'s own path argument.
 By default, an include sees every variable the page around it can
 see — it is not a separate scope:
 
-```wire
+```html
 {{-- page.html --}}
 <include path="partials/greeting.html" />
 ```
 
-```wire
+```html
 {{-- partials/greeting.html --}}
 <p>Hi, {{ user.name }}!</p>
 ```
@@ -925,7 +925,7 @@ partial.
 `x-with` adds variables for the included template, alongside whatever
 it already inherits:
 
-```wire
+```html
 <include path="partials/badge.html" x-with="{ label: 'New', tone: 'green' }" />
 ```
 
@@ -933,7 +933,7 @@ it already inherits:
 with only what `x-with` gave it — turning a plain partial into
 something closer to a real component with a defined interface:
 
-```wire
+```html
 <include path="components/price-tag.html" x-with="{ amount: item.price }" only />
 ```
 
@@ -943,7 +943,7 @@ Anything written *inside* an `<include>` tag is handed to the included
 template as a named region called `content`, declared with
 `<declare name="content">`:
 
-```wire
+```html
 {{-- components/card.html --}}
 <section class="card">
   <h3>{{ title }}</h3>
@@ -951,7 +951,7 @@ template as a named region called `content`, declared with
 </section>
 ```
 
-```wire
+```html
 {{-- the page --}}
 <include path="components/card.html" x-with="{ title: 'Recent Orders' }">
   <p>{{ orders|length }} orders this week</p>
@@ -980,7 +980,7 @@ inside it — not as an expression in its own right, so
 `x-include="header"` names a file called `header`, rather than reading
 a variable of that name:
 
-```wire
+```html
 <include path="themes/{{ current_theme }}/header.html" />
 ```
 
@@ -1002,7 +1002,7 @@ parts that differ.
 A base template marks the regions a page is allowed to fill in with
 `<declare name="...">`:
 
-```wire
+```html
 {{-- layouts/app.html --}}
 <!DOCTYPE html>
 <html>
@@ -1033,7 +1033,7 @@ a page does not define that region at all.
 A page declares which layout it extends with `<extend base="...">`,
 and fills in regions with `<define name="...">`:
 
-```wire
+```html
 {{-- pages/dashboard.html --}}
 <extend base="layouts/app.html">
   <define name="head">
@@ -1062,7 +1062,7 @@ A template can extend exactly one base.
 A region a page does not define keeps whatever the layout put inside
 its own `<declare>` tag:
 
-```wire
+```html
 {{-- pages/minimal.html --}}
 <extend base="layouts/app.html">
   <define name="content">
@@ -1081,7 +1081,7 @@ above — simply renders empty when nothing defines it.
 this definition replaced it. That lets a page *add to* a section
 instead of fully restating it:
 
-```wire
+```html
 <extend base="layouts/app.html">
   <define name="footer">
     <super />
@@ -1101,14 +1101,14 @@ letting a further template extend *it*. This is how a site with, say,
 a general layout and several page-type-specific layouts (a blog post,
 a product page) is usually structured:
 
-```wire
+```html
 {{-- layouts/app.html --}}
 <html><body>
   <declare name="body"><p>default</p></declare>
 </body></html>
 ```
 
-```wire
+```html
 {{-- layouts/article.html --}}
 <extend base="layouts/app.html">
   <define name="body">
@@ -1119,7 +1119,7 @@ a product page) is usually structured:
 </extend>
 ```
 
-```wire
+```html
 {{-- pages/post.html --}}
 <extend base="layouts/article.html">
   <define name="article-content">
@@ -1140,7 +1140,7 @@ accident — two people editing the same file, a copy-paste that was
 never cleaned up — so Wire refuses it at compile time unless you say
 the replacement is deliberate with `override`:
 
-```wire
+```html
 <extend base="layouts/app.html">
   <define name="content"><p>First draft</p></define>
   <define name="content" override><p>Final version</p></define>
@@ -1180,7 +1180,7 @@ several others — gets more than entity escaping. Its scheme is checked
 against an allowlist, and a disallowed scheme is replaced with
 `about:blank` rather than written through:
 
-```wire
+```html
 <a href="{{ profile_link }}">{{ user.name }}</a>
 ```
 
@@ -1206,7 +1206,7 @@ A value interpolated inside a `<script>` element, or inside an event
 handler attribute like `onclick`, is encoded as JSON rather than
 merely escaped — automatically, with no filter needed:
 
-```wire
+```html
 <script>
   var currentUser = {{ user }};
 </script>
@@ -1217,7 +1217,7 @@ included. That is worth internalising, because it changes how you
 write the surrounding script: **do not** wrap the interpolation in
 your own quotes.
 
-```wire
+```html
 {{-- correct: renders   var name = "Ada";   --}}
 <script>var name = {{ user.name }};</script>
 
@@ -1239,7 +1239,7 @@ from an interpolated value — is resolved *inside* the configured root
 and refused if it resolves anywhere else, `..` segments and symbolic
 links both included:
 
-```wire
+```html
 <include path="{{ theme }}/header.html" />
 ```
 
@@ -1263,7 +1263,7 @@ view.register_filter('excerpt', @(value, words) {
 })
 ```
 
-```wire
+```html
 <p>{{ post.body|excerpt(40) }}</p>
 ```
 
@@ -1289,7 +1289,7 @@ view.register_global('route', @(name) {
 })
 ```
 
-```wire
+```html
 <title>{{ page_title }} — {{ site_name }}</title>
 <a href="{{ route('user.profile', user.id) }}">{{ user.name }}</a>
 ```
@@ -1311,7 +1311,7 @@ view.register_element('icon', @(view, element) {
 })
 ```
 
-```wire
+```html
 <icon name="star" />
 ```
 
@@ -1458,7 +1458,7 @@ before the template is parsed:
 
 ## Cheat Sheet
 
-```wire
+```html
 {{-- Variables --}}
 {{ name }}
 {{ user.address.city }}

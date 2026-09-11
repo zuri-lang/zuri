@@ -358,7 +358,7 @@ them.
 | `ZURI_GC_LOG=1` | garbage collector activity |
 | `ZURI_OPCODE_PROFILE=1` | interpreter opcode histogram |
 
-`ZURI_JIT=0` is the useful one. Running a benchmark with and without it
+`ZURI_JIT=0` is the most useful one. Running a benchmark with and without it
 tells you immediately whether your hot path is being compiled at all, which
 is the first question to ask when something is slower than it should be.
 

@@ -95,6 +95,14 @@ bites.
 
 ## The Board
 
+`storage/index.zu` is the layer above. It holds `Task` objects, answers
+questions about them, and persists through `_json_store` — and it is the
+only thing in the application that knows a file is involved at all.
+
+Rather than read it as one hundred lines, here it is a piece at a time.
+
+### The Error It Raises
+
 <span class="filename">Filename: storage/index.zu</span>
 
 ```zuri,ignore
@@ -108,12 +116,29 @@ import ._json_store
  * Raised when a task id does not name a task on the board.
  */
 class NotFoundError < Error {
+
   @new(message) {
     parent(message)
     self.type = 'NotFoundError'
   }
 }
+```
 
+A custom error class, four lines, and it earns them. Every layer above can
+say `instance_of(error, NotFoundError)` instead of matching on a message
+string, and the middleware in
+[Middleware, Logging and Errors](ch20-06-middleware.md) turns exactly this
+class into a 404. Had `get()` raised a plain `Error('not found')`, that
+mapping would be a substring search.
+
+Note the two lines inside `@new`. `parent(message)` lets the base
+constructor set `message` and capture the stack trace; `self.type` is what
+makes the class name show up in logs and in the uncaught-error banner.
+Both are the pattern from [Chapter 7](ch07-00-error-handling.md).
+
+### The Fields and the Constructor
+
+```zuri,ignore
 /**
  * A board backed by a JSON file.
  */
@@ -132,7 +157,30 @@ class Board {
     self.path = os.join_paths(directory or config.DATA_DIR, 'board.json')
     self.tasks = _json_store.read_all(self.path).map(@(record) => from_dict(record))
   }
+```
 
+Two fields, declared with `var` even though `@new` assigns both. The
+constructor could have declared them implicitly; writing them out means the
+class's shape is visible at the top without reading the constructor, and it
+is required the moment any other method assigns to them.
+
+The constructor does two things and no more. It works out **where** the
+file is, and it loads **what** is in it.
+
+`directory or config.DATA_DIR` is the optional-parameter idiom from
+[Chapter 5](ch05-01-defining-functions.md). It is safe here precisely
+because a directory is never legitimately `''` or `0` — the falsy-default
+trap does not apply to paths.
+
+The `map` on the second line is the boundary between two worlds.
+`read_all()` returns plain dictionaries, because that is what JSON is;
+`from_dict()` turns each into a real `Task`. **Everything above this line
+deals in objects, everything below it deals in dictionaries**, and this is
+the single place they meet.
+
+### Reading the Board
+
+```zuri,ignore
   all() {
     return self.tasks
   }
@@ -140,7 +188,19 @@ class Board {
   in_column(column: string) {
     return self.tasks.filter(@(task) => task.column == column)
   }
+```
 
+`all()` is a one-liner, and it hands back the real list rather than a copy
+— deliberate, because every caller in this application only reads it. If
+that changed, this is the line that would need `clone()`.
+
+`in_column()` is `filter()` and nothing else. It is a method rather than a
+loop at each call site so that "which column is this task in" is decided in
+one place.
+
+### Shaping It for the Page
+
+```zuri,ignore
   /**
    * The board grouped for display: one entry per configured column,
    * in board order, each with its own tasks.
@@ -154,7 +214,27 @@ class Board {
       return { name, tasks }
     })
   }
+```
 
+This is the method the HTML template consumes, and three decisions inside
+it are worth naming.
+
+**It iterates `config.COLUMNS`, not the tasks.** That means a column with
+no tasks still appears, as an empty column — which is what a board should
+look like. Grouping by walking the tasks instead would silently drop empty
+columns and produce them in whatever order the data happened to be in.
+
+**It returns `to_view()` results, not `Task` objects.** A view carries the
+formatted date and the `is_done` flag already computed, so the template
+never has to. [Server-Rendered Pages](ch20-05-pages.md) explains why that
+matters for templates specifically.
+
+**`{ name, tasks }` uses the shorthand.** Both keys match the variables
+holding them, so writing `{ name: name, tasks: tasks }` would be noise.
+
+### Finding One
+
+```zuri,ignore
   /**
    * @throws NotFoundError if no task has that id.
    */
@@ -167,7 +247,23 @@ class Board {
 
     return found
   }
+```
 
+The important decision is that **`get()` raises rather than returning
+`nil`**.
+
+That choice propagates. Every caller either has a real task or has an
+error, so no route handler contains `if task == nil`. The alternative —
+returning `nil` — would put that check in five places and guarantee one of
+them was eventually forgotten, producing a `nil` field access somewhere far
+away from the cause.
+
+The message includes the id, because the person reading the log has the
+request and nothing else.
+
+### Changing It
+
+```zuri,ignore
   add(title, options) {
     var task = Task(title, options)
 
@@ -193,7 +289,27 @@ class Board {
 
     return task
   }
+```
 
+All three follow one shape: **change the in-memory list, then save, then
+return what changed**.
+
+`update()` and `remove()` both start by calling `get()`, which means a bad
+id raises `NotFoundError` before anything is modified. There is no path
+that half-applies a change.
+
+Each returns the affected task rather than nothing, which is what lets the
+JSON API answer with the created or updated record without a second
+lookup.
+
+`remove_at(index_of(task))` rather than `remove(task)` is deliberate: list
+`remove()` compares by value, and two tasks with identical fields would
+make that ambiguous. Removing by position removes exactly the object
+`get()` found.
+
+### Counting, and Saving
+
+```zuri,ignore
   summary() {
     var counts = {}
 
@@ -210,24 +326,28 @@ class Board {
 }
 ```
 
-The whole board is held in memory and written out in full after every
-change. For a board a team can read on one screen that is the right trade,
-and it is the first assumption to revisit if this ever has to hold a
-hundred thousand tasks.
+`summary()` walks the configured columns for the same reason `columns()`
+does: an empty column should report `0`, not be missing.
 
-Three things are deliberate.
+`_save()` is the other side of the constructor's `map`. Objects go out as
+dictionaries via `to_dict()`, exactly as they came in through
+`from_dict()`. The two are a matched pair, and a field added to `Task`
+needs to appear in both or it will not survive a restart.
 
-**`_save()` is private.** Callers change the board through `add`, `update`
-and `remove`, each of which saves. There is no way to mutate without
-persisting, because there is no method that does one without the other.
+**`_save()` is private**, and that is the class's most important property.
+There is no public method that changes the board without persisting,
+because `add`, `update` and `remove` each call it and nothing else can. A
+caller cannot forget to save, because a caller is never given the choice.
 
-**`get()` raises rather than returning `nil`.** Every caller of `get()`
-either has a task or has an error, so no handler has to check. That
-`NotFoundError` is what the middleware turns into a 404.
+### The Trade It Makes
 
-**`columns()` returns views, not tasks.** `to_view()` adds the formatted
-date and the `is_done` flag the template wants, so the template never
-computes anything.
+The whole board is held in memory and rewritten in full after every change.
+
+For a board a team can read on one screen, that is the right trade: the
+code is simple enough to hold in your head, and a full rewrite of a few
+kilobytes is immaterial. It is also the first assumption to revisit if this
+ever has to hold a hundred thousand tasks, at which point the answer is a
+real database rather than a cleverer file format.
 
 ## Concurrency
 

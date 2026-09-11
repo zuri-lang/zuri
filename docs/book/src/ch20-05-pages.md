@@ -119,6 +119,11 @@ dictionaries and bytes.
 
 ## The Routes
 
+`routes/pages.zu` registers four routes: one that renders the board, and
+three that handle the forms on it. Here it is a piece at a time.
+
+### The Shape of the File
+
 <span class="filename">Filename: routes/pages.zu</span>
 
 ```zuri,ignore
@@ -132,7 +137,20 @@ import ..config
  * @param Wire view: the template engine to render through
  */
 def register(server, board, view) {
+```
 
+The whole file is one `register()` function that takes its dependencies as
+arguments. Nothing here reaches for a global board or a global template
+engine, which is what makes the routes testable: hand `register()` a board
+backed by a temporary directory and the same code runs against it.
+
+This is the "pass dependencies in" habit from
+[Debugging](ch19-00-debugging.md), applied at the layer where it costs
+nothing and buys the most.
+
+### Rendering the Board
+
+```zuri,ignore
   server.get('/', @(request, response) {
     response.html(view.render('board.html', {
       title: 'Task Board',
@@ -141,7 +159,24 @@ def register(server, board, view) {
       error: request.query_param('error', nil),
     }))
   })
+```
 
+One route, one call, no logic. Everything it hands the template is either a
+constant or a method call on the board — there is no loop, no formatting
+and no branching in this handler, because all of that already happened
+somewhere better suited to it.
+
+`board.columns()` does the grouping. `_tagline()` does the counting.
+`to_view()`, back in the domain model, did the date formatting. By the time
+the template runs, every value it needs is sitting in front of it.
+
+`request.query_param('error', nil)` is the other half of the redirect
+pattern below: a failed form redirects with `?error=...`, and this is where
+that message comes back in to be rendered.
+
+### Handling a Form
+
+```zuri,ignore
   server.post('/tasks', @(request, response) {
     var form = request.form()
 
@@ -154,7 +189,29 @@ def register(server, board, view) {
 
     response.redirect('/')
   })
+```
 
+All three form handlers follow this exact shape, so it is worth reading
+once carefully.
+
+`request.form()` parses a URL-encoded body into a dictionary.
+`form.get('title', nil)` rather than `form.title`, because a browser can
+post a body with any fields at all — or none — and `form.title` would raise
+`undefined key` on a request that simply omitted it. With `get()`, a
+missing field arrives as `nil`, and `_clean_title()` turns that into a
+proper `TaskError`.
+
+The `catch` wraps **only** the board call. `response.redirect('/')` on the
+success path sits outside it, so a mistake in the redirect is not reported
+as a validation failure. That is the "keep the catch block small" rule from
+[Chapter 7](ch07-00-error-handling.md).
+
+The `return` inside the handler is what stops execution falling through to
+the success redirect. Without it, a failed add would issue two redirects.
+
+### The Other Two
+
+```zuri,ignore
   server.post('/tasks/:id/move', @(request, response) {
     catch {
       board.update(request.param('id'), {
@@ -179,7 +236,21 @@ def register(server, board, view) {
     response.redirect('/')
   })
 }
+```
 
+`:id` in the path is a route parameter, and `request.param('id')` reads it.
+
+Notice what is **not** in these handlers. Neither checks that the id names
+a real task — `board.get()` raises `NotFoundError` and the `catch` picks it
+up. Neither validates the column — `_clean_column()` does. Neither checks
+that the task exists before deleting it — `remove()` calls `get()` first.
+
+That is the payoff for putting the rules in the domain model. A route
+handler is four lines because there is nothing left for it to do.
+
+### The Two Helpers
+
+```zuri,ignore
 def _tagline(board) {
   var counts = board.summary()
 
@@ -191,25 +262,46 @@ def _escape(message) {
 }
 ```
 
+`_tagline()` turns the board's counts into the line under the heading. It
+lives here rather than in `Board` because it is a presentation decision:
+another front end would word it differently, and the board should not have
+an opinion.
+
+`_escape()` is doing something more careful than it looks. The message is
+about to be put into a URL, so it strips everything that is not a letter,
+digit, space or basic punctuation, then turns spaces into `+`.
+
+Two details in that one line. The first `replace()` uses a **regular
+expression**; the second passes `false` as the third argument to turn
+pattern handling **off**, so the single space is matched literally rather
+than as a pattern. And stripping rather than percent-encoding is the
+deliberate choice: this is a message we generated, not user input echoed
+back, so a conservative allow-list is simpler than encoding and cannot
+produce a malformed URL.
+
 ## Redirect After Post
 
 Every form handler ends in a redirect rather than rendering a page. That is
-the post/redirect/get pattern, and it exists because a browser that
+the **post/redirect/get** pattern, and it exists because a browser that
 rendered a page in response to a `POST` will re-submit that `POST` when the
 user presses refresh. Adding a task twice because someone hit F5 is not a
 bug you want to explain.
 
 The failure path redirects too, carrying the message as a query parameter
-that the next `GET` renders into the error banner.
+that the next `GET` renders into the error banner. So both outcomes leave
+the browser sitting on a plain `GET /`, which is refreshable, bookmarkable
+and safe to go back to.
 
-## Why These Handlers Do Catch
+## Why These Handlers Catch and the API's Do Not
 
-The API handlers let errors propagate, because the middleware turns them
-into status codes. These catch, because a browser filling in a form does
-not want a 422 page; it wants the board back with a message on it.
+The API handlers in [The JSON API](ch20-04-api.md) let errors propagate,
+because the middleware turns them into status codes. These catch, because a
+browser submitting a form does not want a 422 page — it wants the board
+back with a message on it.
 
-Same domain errors, two presentations, chosen at the layer that knows which
-kind of client it is talking to.
+Same domain errors, two presentations, and the choice is made at the layer
+that knows which kind of client it is talking to. Neither the `Board` nor
+the `Task` has to know that a browser is involved.
 
 ## The Stylesheet
 

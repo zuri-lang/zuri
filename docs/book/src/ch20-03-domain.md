@@ -186,9 +186,9 @@ file format.
 `to_string()` means `echo` through it during debugging shows something
 useful.
 
-## Rebuilding and the Rules
+## Rebuilding From Storage
 
-```zuri
+```zuri,ignore
 /**
  * Rebuilds a task from the dictionary `to_dict()` produced.
  *
@@ -204,7 +204,30 @@ def from_dict(data: dict) {
     created_at: data.get('created_at', nil),
   })
 }
+```
 
+This is four lines with one important property: **it goes through the same
+constructor as everything else**.
+
+It would have been shorter to assign the fields directly. Doing it this way
+means a hand-edited `board.json` containing an unknown column, or a task
+with no title, is rejected when the board loads rather than becoming a task
+that nothing can render and nothing can fix.
+
+`data.get(key, nil)` rather than `data.key` throughout, because a stored
+record written by an older version of the program may be missing a key
+entirely. `get()` with a fallback turns that into `nil`, which the
+constructor's own defaults then handle; `data.column` would raise
+`undefined key`.
+
+It is also the exact inverse of `to_dict()`. The two are a matched pair,
+and a field added to `Task` has to appear in both or it will not survive a
+restart — the kind of bug that only shows up the second time you run the
+program.
+
+## Where the Rules Live
+
+```zuri,ignore
 def _clean_title(title) {
   if !is_string(title) {
     raise TaskError('a task needs a title', 'title')
@@ -222,7 +245,28 @@ def _clean_title(title) {
 
   return cleaned
 }
+```
 
+Read the order of those three checks, because it is the whole function.
+
+**The type check comes first.** A `PATCH` body of `{"title": 42}` reaches
+this function as a number, and `42.trim()` would be a `TypeError` about
+methods rather than a `TaskError` about titles. Checking first means the
+caller gets an error in the application's own vocabulary.
+
+**The trim happens before the emptiness check**, so `'   '` is rejected. A
+title of three spaces is not a title, and checking `title.is_empty()` on
+the raw input would have accepted it.
+
+**The length check happens after the trim**, so trailing whitespace does
+not count against the limit.
+
+And the function **returns the cleaned value**. It is not a validator that
+answers yes or no; it is a normaliser that either produces a good value or
+raises. That is why the constructor can write `self.title =
+_clean_title(title)` with nothing around it.
+
+```zuri,ignore
 def _clean_column(column) {
   if !config.COLUMNS.contains(column) {
     raise TaskError(
@@ -235,13 +279,28 @@ def _clean_column(column) {
 }
 ```
 
-`from_dict()` goes through the same constructor as everything else, so a
-hand-edited `board.json` with an invalid column is rejected on load rather
-than becoming a task nothing can render.
+The message names both what was wrong **and** what would have been right.
+`unknown column "backlog", expected one of todo, doing, done` tells the
+caller how to fix it; `invalid column` does not.
 
-The two `_clean_` helpers are private to the module. They are where every
-rule lives, and they are called from exactly two places each: the
-constructor and `update()`. There is no path into a `Task` that skips them.
+Note that the valid set comes from `config.COLUMNS` rather than being
+written out here. Adding a column to the board is a one-line change in one
+file, and this check, `columns()`, and `summary()` all follow it.
+
+### Two Call Sites Each
+
+Both helpers are module-private — the leading underscore means no other
+file can reach them — and each is called from exactly two places: the
+constructor and `update()`.
+
+That is the property the whole chapter is built on. **There is no path into
+a `Task` that skips them.** Not `from_dict()`, which goes through the
+constructor. Not `move_to()`, which calls `_clean_column()` itself. Not a
+route handler, which cannot reach the private function at all.
+
+Every layer above can therefore assume a `Task` it is holding is valid,
+which is why no route handler in
+[The JSON API](ch20-04-api.md) re-checks a title.
 
 ## Why Not the `validate` Module?
 
