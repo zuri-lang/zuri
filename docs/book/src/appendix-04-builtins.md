@@ -35,7 +35,16 @@ These 28 functions are globals. Nothing has to be imported to reach them.
 
 ## `time()`
 
-Returns the current epoch time to the seconds resolution.
+Returns the current epoch time to the microseconds resolution.
+
+The time is returned as a floating point number where the integer 
+part represents the number of seconds since the epoch and the 
+fractional part represents the microseconds.
+
+```zuri-repl
+%> time()
+1686787200.123456
+```
 
 - **Returns** `number`
 

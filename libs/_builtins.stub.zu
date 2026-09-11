@@ -1,6 +1,19 @@
 /**
- * Returns the current epoch time to the seconds resolution.
- *
+ * Returns the current epoch time to the microseconds resolution.
+ * 
+ * Example:
+ * 
+ * ```zuri-repl
+ * %> time()
+ * 1686787200.123456
+ * ```
+ * 
+ * The time is returned as a floating point number where the integer 
+ * part represents the number of seconds since the epoch and the 
+ * fractional part represents the microseconds.
+ * 
+ * @note The epoch time is the number of seconds that have elapsed 
+ *    since January 1, 1970 (midnight UTC/GMT).
  * @returns {number}
  */
 def time() {}

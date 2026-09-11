@@ -13,7 +13,8 @@ src = "src"
 build-dir = "../../target/book"
 
 [output.html]
-default-theme = "rust"
+default-theme = "light"
+preferred-dark-theme = "ayu"
 git-repository-url = "https://github.com/zuri-lang/zuri-rs"
 edit-url-template = "https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/{path}"
 mathjax-support = false
