@@ -257,13 +257,11 @@ private
 
 That one is an ordinary local, and it disappears when `outer` returns.
 
-## Redeclaring a Name
+## One Declaration Per Name
 
-Declaring the same function name twice in one module is **not** an error.
-The second declaration replaces the first, and the last one to execute
-wins:
+Declaring the same function name twice in one scope is a compile error:
 
-```zuri
+```zuri,ignore
 def pick() {
   return 'first'
 }
@@ -271,25 +269,94 @@ def pick() {
 def pick() {
   return 'second'
 }
-
-echo pick()
 ```
 
 ```console
-second
+SyntaxError: multiple declaration for function 'pick' found
+  --> /path/to/main.zu:5:5
+  |
+5 | def pick() {
+  |     ^
 ```
 
-This follows from `def` being a statement that runs: the second one
-executes after the first and rebinds the name, exactly as a second `var` at
-the top level does.
+A different parameter list does not make it a different function. **Zuri
+has no overloading**: one name, one function.
 
-It is worth knowing because nothing warns you. Two functions of the same
-name in a long file, or a name that collides with one a wildcard import
-brought in, will silently resolve to whichever ran last. Keep names
-distinct.
+```zuri,ignore
+def render(value) {}
+def render(value, width) {}
+```
 
-Classes are stricter. Declaring the same **method** twice in one class is a
-compile error:
+```console
+SyntaxError: multiple declaration for function 'render' found
+```
+
+When you want one name to handle several shapes of input, take the extra
+arguments as optional and branch in the body — which is what the
+`greeting` parameter above is doing.
+
+The check is per **scope**, exactly like `var`'s. A function declared
+inside another does not *compile-error* against a top-level one of the same
+name:
+
+```zuri
+def render() {
+  return 'top level'
+}
+
+def wrapper() {
+  def render() {
+    return 'inner'
+  }
+
+  return render()
+}
+
+echo wrapper()
+echo render()
+```
+
+```console
+inner
+inner
+```
+
+Look at the second line, and remember that a nested `def` binds a
+**module-level** name. The two declarations are in different scopes, so the
+compiler allows both — and then running `wrapper()` executes the inner
+declaration, which rebinds the module-level `render`. The top-level version
+is gone from that point on.
+
+So the compile-time rule and the runtime behaviour answer different
+questions. The rule stops you writing two declarations that obviously
+conflict; it cannot stop a nested one from replacing an outer one when it
+runs, because that only happens if and when the outer function is called.
+
+The practical advice is simply to keep function names distinct across a
+module. When you genuinely want a helper local to one function, use an
+anonymous function in a `var`, which creates no module-level name at all:
+
+```zuri
+def render() {
+  return 'top level'
+}
+
+def wrapper() {
+  var render = @() => 'inner'
+
+  return render()
+}
+
+echo wrapper()
+echo render()
+```
+
+```console
+inner
+top level
+```
+
+Classes follow the same rule for their methods:
 
 ```zuri,ignore
 class Duplicate {
@@ -301,6 +368,9 @@ class Duplicate {
 ```console
 SyntaxError: multiple declaration for method 'm' found in class 'Duplicate'
 ```
+
+The REPL is the one exception. Retyping a `def` there replaces the previous
+one, because correcting something you just typed is what the prompt is for.
 
 ## Declaration Order
 

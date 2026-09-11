@@ -56,6 +56,13 @@ struct FunctionScope {
   /// declared inside a loop starts with an empty stack, so `break` inside
   /// it (if it were otherwise valid) can't reach the enclosing loop.
   loops: Vec<LoopContext>,
+  /// Every `def` name declared so far in this function, with the scope
+  /// depth it was declared at. A second `def` of the same name in the
+  /// same scope is an error, mirroring both the duplicate-method check
+  /// and `var`'s own "already declared in this scope"; a `def` binds a
+  /// module-level name, so two of them silently resolving to whichever
+  /// ran last is never what the author meant.
+  declared_functions: Vec<(String, usize)>,
   /// Source line of whatever statement is CURRENTLY being compiled --
   /// stamped onto every instruction `Compiler::emit` produces until
   /// it's next updated (see `Compiler::compile`'s top-level loop and
@@ -74,6 +81,7 @@ impl FunctionScope {
       locals: Vec::new(),
       upvalues: Vec::new(),
       loops: Vec::new(),
+      declared_functions: Vec::new(),
       scope_depth: 0,
       next_reg: 0,
       max_reg: 0,
@@ -613,6 +621,28 @@ impl<'a> Compiler<'a> {
     is_variadic: bool,
   ) {
     let name = Self::identifier_name(token);
+
+    // A `def` binds a module-level name, so a second one of the same
+    // name in the same scope silently replaces the first with no
+    // diagnostic at all. The REPL is exempt: redefining something you
+    // just typed is the point of it.
+    if !self.is_repl {
+      let depth = self.cur().scope_depth;
+      if self
+        .cur()
+        .declared_functions
+        .iter()
+        .any(|(n, d)| *n == name && *d == depth)
+      {
+        self.report_error(
+          format!("multiple declaration for function '{}' found", name),
+          token,
+        );
+      } else {
+        self.cur_mut().declared_functions.push((name.clone(), depth));
+      }
+    }
+
     let obj_fn = self.compile_function_prototype(token, params, body, is_variadic, false);
     let proto_val = self.heap.alloc_function(obj_fn);
     let const_idx = self.add_constant(proto_val);

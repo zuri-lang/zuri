@@ -50,6 +50,11 @@ creating one. That rules out a family of bugs — a typo in a field name is
 an error, not a new field — and it rules out monkey-patching, which is a
 technique some languages rely on and Zuri does not offer.
 
-Inheritance is single: a class has at most one parent. There are no
-interfaces, no mixins and no abstract keyword. The sections that follow
-show what you write instead.
+Inheritance is single: a class has at most one parent, written with `<`.
+There are no interfaces, no mixins and no abstract keyword. The sections
+that follow show what you write instead.
+
+Sealed does not mean unchangeable forever, though. A separate declaration
+written with `>` instead of `<` — a **class extension** — can add methods
+to a class after the fact, including one you did not write.
+[Class Extensions](ch06-06-class-extensions.md) covers it.

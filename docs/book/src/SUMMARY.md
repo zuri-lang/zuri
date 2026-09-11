@@ -34,6 +34,8 @@
   - [Inheritance](ch06-02-inheritance.md)
   - [Decorated Methods](ch06-03-decorated-methods.md)
   - [Encapsulation and Class Immutability](ch06-04-encapsulation.md)
+  - [Making a Class Iterable](ch06-05-iterable-classes.md)
+  - [Class Extensions](ch06-06-class-extensions.md)
 - [Error Handling](ch07-00-error-handling.md)
 - [The Module System](ch08-00-modules.md)
 

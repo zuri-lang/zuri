@@ -516,7 +516,7 @@ true
 
 ## Walking
 
-There are three ways to visit every element, and they are not
+There are four ways to visit every element, and they are not
 interchangeable. Pick by what you need in the body.
 
 ### `for`, When You Want the Values

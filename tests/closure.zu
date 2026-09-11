@@ -12,7 +12,7 @@ outer()
 
 # test 2
 
-def outer() {
+def outer_nested() {
   var x = "value"
   def middle() {
     def inner() {
@@ -27,7 +27,7 @@ def outer() {
   return middle
 }
 
-var mid = outer()
+var mid = outer_nested()
 var _in = mid()
 _in()
 

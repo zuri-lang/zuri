@@ -38,6 +38,12 @@ circle with area 3.141592653589793
 A subclass inherits every field and method. Single inheritance only; a
 class has at most one parent.
 
+Note the direction of the arrow. `class Circle < Shape` creates a **new**
+class that borrows from `Shape`. Turning it around —
+`class Anything > Shape` — is a different declaration entirely: it adds
+methods to `Shape` itself and creates no class at all. See
+[Class Extensions](ch06-06-class-extensions.md).
+
 ## `parent`
 
 `parent` means two related things.
@@ -228,30 +234,218 @@ def total_area(shapes: list) {
 
 ## Checking What Something Is
 
-`instance_of()` walks the whole chain, and `typeof()` reports the concrete
-class:
+Two built-ins answer questions about an instance's type, and they answer
+**different** questions.
+
+### `instance_of(value, Class)`
+
+`instance_of()` asks "does this behave like a `Class`?", and it walks the
+whole inheritance chain to answer:
 
 ```zuri
 class Shape {}
 class Circle < Shape {}
 class Square < Shape {}
+class Ellipse < Circle {}
 
 var c = Circle()
 
 echo instance_of(c, Circle)
 echo instance_of(c, Shape)
 echo instance_of(c, Square)
-echo typeof(c)
+echo instance_of(Ellipse(), Shape)
 ```
 
 ```console
 true
 true
 false
-Circle
+true
 ```
 
-`typeof()` on an instance gives the name of its concrete class, not the
-name of any base class it inherits from. Use `instance_of()` when the
-question is "does this behave like a Shape?", and `typeof()` when the
-question is "what exactly is this?".
+`Ellipse` is two levels below `Shape` and still answers `true`. There is no
+depth limit: the check follows parents until it finds a match or runs out.
+A sibling — `Circle` against `Square` — is `false`, because siblings share
+an ancestor rather than a lineage.
+
+**It never raises for the first argument.** Anything that is not an
+instance of the class simply answers `false`, including values that are not
+instances at all:
+
+```zuri
+class Shape {}
+
+echo instance_of(42, Shape)
+echo instance_of('circle', Shape)
+echo instance_of(nil, Shape)
+echo instance_of([1, 2], Shape)
+```
+
+```console
+false
+false
+false
+false
+```
+
+That makes it safe to use as a guard on a value you know nothing about; no
+`is_instance()` check has to come first.
+
+**A class is not an instance of itself.** Passing the class rather than an
+object gives `false`:
+
+```zuri
+class Shape {}
+class Circle < Shape {}
+
+echo instance_of(Circle, Shape)
+echo instance_of(Circle(), Shape)
+```
+
+```console
+false
+true
+```
+
+This trips people up when a variable might hold either. `Circle` is a
+class; `Circle()` is an instance; only the second is "a Shape".
+
+**The second argument must be a class**, and here it does raise:
+
+```zuri
+class Shape {}
+
+catch {
+  instance_of(Shape(), 'Shape')
+} as e {
+  echo e.message
+}
+```
+
+```console
+instance_of() expects argument 2 to be a class, got string
+```
+
+The class name as a *string* is the common version of this mistake. Pass
+the class itself.
+
+A class held in a variable works, because the check is on the value rather
+than on the spelling:
+
+```zuri
+class Base {}
+class Derived < Base {}
+
+var Alias = Base
+
+echo instance_of(Derived(), Alias)
+```
+
+```console
+true
+```
+
+So does a class reached through a module:
+
+```zuri
+import set
+
+echo instance_of(set.set([1, 2]), set.Set)
+```
+
+```console
+true
+```
+
+### It Is How the Error Hierarchy Works
+
+Every built-in error inherits from `Error`, so `instance_of()` is what lets
+one handler sort them:
+
+```zuri
+echo instance_of(ValueError('bad'), Error)
+echo instance_of(ValueError('bad'), TypeError)
+```
+
+```console
+true
+false
+```
+
+That is the mechanism behind the "handle one kind, re-raise the rest"
+pattern in [Error Handling](ch07-00-error-handling.md), and behind mapping
+a domain error to an HTTP status in [Chapter 20](ch20-06-middleware.md).
+
+### `typeof(value)`
+
+`typeof()` asks a different question: "what exactly is this?". On an
+instance it names the **concrete** class, and it never mentions ancestors:
+
+```zuri
+class Shape {}
+class Circle < Shape {}
+
+echo typeof(Circle())
+echo typeof(Shape())
+echo typeof(Circle)
+echo typeof(42)
+echo typeof('text')
+```
+
+```console
+Circle
+Shape
+class
+number
+string
+```
+
+Note the third line. `typeof()` on the class itself answers `class`, not
+`Circle` — the class is a value of kind "class", and its name is not what
+`typeof()` reports.
+
+### Which to Use
+
+| Question | Use |
+| --- | --- |
+| can I treat this as a `Shape`? | `instance_of(x, Shape)` |
+| which exact class is this? | `typeof(x)` |
+| is this any instance at all? | `is_instance(x)` |
+
+Reach for `instance_of()` by default. It is the one that respects
+inheritance, and code written with `typeof(x) == 'Circle'` breaks the day
+someone subclasses `Circle` — the subclass is a perfectly good `Circle`,
+and the string comparison says otherwise.
+
+### A Type Annotation Is the Same Check
+
+Annotating a parameter with a class name performs exactly the
+`instance_of()` test, at every call, with a better error message:
+
+```zuri
+class Shape {}
+class Circle < Shape {}
+
+def describe(shape: Shape) {
+  return 'a shape of type ${typeof(shape)}'
+}
+
+echo describe(Circle())
+echo describe(Shape())
+
+catch {
+  describe(42)
+} as e {
+  echo e.message
+}
+```
+
+```console
+a shape of type Circle
+a shape of type Shape
+describe() expects parameter 'shape' (argument 1) to be a Shape, got number
+```
+
+Prefer the annotation when the answer decides whether the function should
+run at all, and `instance_of()` when the answer decides which branch to
+take.

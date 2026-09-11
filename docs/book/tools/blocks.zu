@@ -93,9 +93,11 @@ def extract(source: string) {
     var next = i + 1 < fences.length() ? fences[i + 1] : nil
 
     # A `console` block is this example's output only when it follows
-    # immediately. Prose in between means it is illustrating something
-    # else, which the middleware chapter's sample log does.
-    var adjacent = next != nil and next.line == fence.close + 2
+    # immediately: `close` is the index of this fence's closing line, so
+    # the next fence opens two lines later with one blank between them.
+    # Prose in between means it is illustrating something else, which the
+    # middleware chapter's sample log does.
+    var adjacent = next != nil and next.line == fence.close + 3
 
     if adjacent and next.info == 'console' and !_is_shell(next.body) {
       expected = next.body

@@ -1,36 +1,62 @@
 # Anonymous Functions and Closures
 
-## Three Spellings
+## The Spellings
 
-An anonymous function can be written three ways, and they compile to the
-same thing:
+An anonymous function has two halves you can vary independently: how it
+opens, and how its body is written. That gives a small grid rather than a
+list to memorise.
 
-```zuri
-var square = def(x) { return x * x }
-var square = @(x) { return x * x }
-var square = @(x) => x * x
-```
+**Opening.** `def` is the keyword; `@` is its shorthand. They are the same
+thing.
 
-- `def(...) { ... }` is the long form. Use it when the body has several
-  statements and you want it to look like the declarations around it.
-- `@(...) { ... }` is the shorthand. This is what most Zuri code uses for a
-  callback with a real body.
-- `@(...) => expr` is the arrow form. The expression is returned, so there
-  is no `return` and no braces. Use it when the body is one expression.
-
-The arrow form works with `def` too, and the parameter list may be dropped
-entirely when there are none:
+**Body.** A block in braces returns with `return`. An arrow returns the one
+expression after it.
 
 ```zuri
-var answer = @ => 42
-echo answer()
+var block_long = def(x) { return x * x }
+var block_short = @(x) { return x * x }
+
+var arrow_long = def(x) => x * x
+var arrow_short = @(x) => x * x
+
+echo [block_long(3), block_short(3), arrow_long(3), arrow_short(3)]
 ```
 
 ```console
-42
+[9, 9, 9, 9]
 ```
 
-Compare the three in the place they actually show up:
+When there are **no parameters**, the empty parentheses may be dropped as
+well:
+
+```zuri
+var a = @() { return 1 }
+var b = @() => 2
+var c = def() { return 3 }
+var d = def() => 4
+var e = @ => 5
+var f = @{ return 6 }
+var g = def { return 7 }
+var h = def => 8
+
+echo [a(), b(), c(), d(), e(), f(), g(), h()]
+```
+
+```console
+[1, 2, 3, 4, 5, 6, 7, 8]
+```
+
+All eight are the same construct. Which to use:
+
+- **`@(x) => expr`** for a one-expression callback. This is what most Zuri
+  code uses, and what the standard library is written in.
+- **`@(x) { ... }`** when the body needs more than one statement.
+- **`def(x) { ... }`** when the function is long enough that you want it to
+  look like the declarations around it.
+- **`@ => expr`** for a thunk — a value computed on demand, with nothing
+  passed in.
+
+Compare the two common ones where they actually turn up:
 
 ```zuri
 echo ['  a ', ' b'].map(@(t) => t.trim())
@@ -39,6 +65,7 @@ echo [1, 2, 3].filter(@(n) {
   if n == 2 {
     return false
   }
+
   return n > 0
 })
 ```
@@ -48,8 +75,38 @@ echo [1, 2, 3].filter(@(n) {
 [1, 3]
 ```
 
-Anonymous functions are variadic-capable and take type annotations exactly
-like named ones.
+The arrow form has no `return` because the expression *is* the return
+value. Adding one is a mistake the compiler will not catch: `@(x) => return x`
+does not parse, but `@(x) { x }` parses and returns `nil`.
+
+Anonymous functions take variadic parameters and type annotations exactly
+like named ones:
+
+```zuri
+var sum = @(...numbers) => numbers.reduce(@(a, b) => a + b, 0)
+var doubled = @(n: number) => n * 2
+
+echo sum(1, 2, 3)
+echo doubled(4)
+
+catch {
+  doubled('four')
+} as e {
+  echo e.message.replace('/@anon\d+/', '@anonN')
+}
+```
+
+```console
+6
+8
+@anonN() expects parameter 'n' (argument 1) to be a number, got string
+```
+
+The real message carries a number rather than the `N` shown here. An
+anonymous function is named `@anonN` in the order the compiler met it in
+the file, which is worth knowing when one turns up in a stack trace — and
+worth not depending on, since inserting another anonymous function above it
+renumbers everything below.
 
 ## Closures
 

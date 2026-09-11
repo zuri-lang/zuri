@@ -1,0 +1,12 @@
+═══════════════════════════════════════════════════════
+  duplicate function declaration: test suite
+═══════════════════════════════════════════════════════
+  [PASS] a duplicate declaration in the same scope is a compile error
+  [PASS] a different arity does not make it a separate function
+  [PASS] a duplicate inside one function body is rejected too
+  [PASS] a declaration in a different scope is still allowed
+  [PASS] a single declaration behaves exactly as before
+
+═══════════════════════════════════════════════════════
+  All 5 assertions passed.
+═══════════════════════════════════════════════════════

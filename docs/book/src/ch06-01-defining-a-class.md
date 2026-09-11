@@ -47,27 +47,8 @@ instance with every field at its default.
 ## The Constructor
 
 `@new` is the constructor. It runs once, when the class is called, and its
-job is to put the instance into a usable state.
-
-```zuri
-class Account {
-
-  @new(owner, balance) {
-    self.owner = owner
-    self.balance = balance
-  }
-}
-
-var a = Account('Ada', 50)
-
-echo a.owner
-echo a.balance
-```
-
-```console
-Ada
-50
-```
+job is to put the instance into a usable state — which is what
+`Account`'s did above.
 
 ### It Is Optional
 
@@ -259,8 +240,27 @@ that instead.
 
 ## Methods
 
+A method is a `name(params) { ... }` declaration inside the class body.
+There is no `def` keyword on it:
+
 ```zuri
+class Account {
+
+  @new(owner, balance) {
+    self.owner = owner
+    self.balance = balance
+  }
+
+  deposit(amount) {
+    self.balance += amount
+    return self
+  }
+}
+
+var a = Account('Ada', 50)
+
 a.deposit(25).deposit(25)
+
 echo a.balance
 ```
 

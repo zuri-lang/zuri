@@ -38,6 +38,6 @@ looks for a **method** on the dictionary, and a dictionary has no method
 called `twice`. Either read it into a variable first, as above, or index
 with brackets and call the result: `operations['twice'](5)`.
 
-This chapter covers declaring a function, the three ways to write an
-anonymous one, how a closure captures the variables around it, and the
-optional type annotations that make the runtime check arguments for you.
+This chapter covers declaring a function, the spellings an anonymous one
+can take, how a closure captures the variables around it, and the optional
+type annotations that make the runtime check arguments for you.

@@ -1,0 +1,86 @@
+# A `def` binds a module-level name, so two declarations of one name used
+# to resolve silently to whichever ran last, with no diagnostic at all.
+# Class methods have always rejected that; module-level functions now do
+# too, and a declaration in a different scope is still fine.
+
+import zuri
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# `zuri.compile()` raises on a compile error, which is how a test can ask
+# "would this have compiled?" without ending its own run. `zuri.parse()`
+# would not do: this rule is enforced by the compiler, not the parser.
+def compile_error(source) {
+  catch {
+    zuri.compile(source)
+    return nil
+  } as e
+  return e.message
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  duplicate function declaration: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Two declarations of one name in one scope: rejected.
+# ---------------------------------------------------------------------------
+assert compile_error('def f() {}\ndef f() {}') != nil,
+  'two top-level declarations of one name must not compile'
+
+assert compile_error('def f() {}\ndef f() {}').contains('multiple declaration'),
+  'the error must say what went wrong'
+
+assert compile_error('def f() {}\ndef f() {}').contains("'f'"),
+  'the error must name the function'
+
+ok('a duplicate declaration in the same scope is a compile error')
+
+# ---------------------------------------------------------------------------
+# Arity does not distinguish them: there is no overloading.
+# ---------------------------------------------------------------------------
+assert compile_error('def f(a) {}\ndef f(a, b) {}') != nil,
+  'a different parameter list must not make a second declaration legal'
+
+ok('a different arity does not make it a separate function')
+
+# ---------------------------------------------------------------------------
+# Duplicates inside one function body are rejected the same way.
+# ---------------------------------------------------------------------------
+assert compile_error('def outer() {\n def g() {}\n def g() {}\n}') != nil,
+  'two declarations of one name inside one body must not compile'
+
+ok('a duplicate inside one function body is rejected too')
+
+# ---------------------------------------------------------------------------
+# Separate scopes stay legal: this is a per-scope rule, like `var`'s.
+# ---------------------------------------------------------------------------
+assert compile_error('def f() {}\ndef wrapper() {\n def f() {}\n}') == nil,
+  'a nested declaration must not collide with a top-level one'
+
+assert compile_error('def a() {}\ndef b() {}') == nil,
+  'distinct names must still compile'
+
+ok('a declaration in a different scope is still allowed')
+
+# ---------------------------------------------------------------------------
+# The runtime behaviour the rule protects: one name, one function.
+# ---------------------------------------------------------------------------
+def only_one() {
+  return 'the only one'
+}
+
+assert only_one() == 'the only one',
+  'an ordinary declaration must still work'
+
+ok('a single declaration behaves exactly as before')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

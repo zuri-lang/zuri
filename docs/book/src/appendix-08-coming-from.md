@@ -18,6 +18,8 @@ This is that list.
 | `switch`/`case` with fall-through | `using`/`when`, first match only, no `break`. |
 | a `main` function | A file's top level is the program. |
 | declaration hoisting | None. A `def` must appear above the top-level line that calls it. |
+| overloading by arity | None. Two `def`s of one name in one scope is a compile error. |
+| reopening a class | `class Ext > Target` adds methods to an existing class, globally. See [Extensions](ch06-06-class-extensions.md). |
 | string ordering with `<` | `<` is numbers only. Use `compare()`, which returns `-1`, `0` or `1`. |
 | `x in collection` | No membership operator. Use `contains()`. |
 | `?.` and `??` | Neither exists. `or` covers the common case, with the truthiness caveat above. |
@@ -53,7 +55,8 @@ This is that list.
 - There is no `this` rebinding to worry about. `self` is the instance,
   always.
 - Objects and dictionaries are the same thing, and a class is not one.
-  Classes are sealed; you cannot add a property to an instance.
+  Classes are sealed: you cannot add a property to an instance, though a
+  `class Ext > Target` declaration can add a *method* to the class.
 - `null` and `undefined` are both `nil`.
 - No `async`/`await` and no event loop. Concurrency is isolates: real
   threads with separate heaps, communicating by copying.
@@ -69,8 +72,9 @@ This is that list.
   mutation is documented rather than punctuated.
 - `each` hands the callback **value first, index second**. `for` hands you
   **key first, value second**.
-- Classes are sealed. There is no reopening a class, no monkey-patching,
-  and no `method_missing`.
+- There is no `method_missing`. Adding methods to an existing class is
+  possible, but through an explicit `class Ext > Target` declaration rather
+  than by reopening the class.
 - Modules are files, not a language construct. There is no `include` or
   `extend`.
 
@@ -97,7 +101,8 @@ This is that list.
   `NotImplementedError` is the idiom.
 - `public`/`private` is a leading underscore, enforced at compile time for
   both class members and module members.
-- There is no overloading. One name, one method.
+- There is no overloading. One name, one method, and a second
+  declaration of either is a compile error.
 - `toString()` is `to_string()`, and `echo` does **not** call it.
 
 ## From C

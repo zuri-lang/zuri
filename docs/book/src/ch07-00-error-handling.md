@@ -365,9 +365,10 @@ Keep the `catch` block small. The block should contain the operation that
 can fail and nothing else, so the handler is not accidentally catching a
 mistake somewhere further down:
 
-```zuri
-# Too wide: a failure inside render() gets reported as a parse failure.
-def show(text) {
+Too wide — a failure inside `render()` is reported as a parse failure:
+
+```zuri,ignore
+def show_wide(text) {
   catch {
     var data = json.decode(text)
     render(data)
@@ -375,9 +376,12 @@ def show(text) {
     echo 'bad json'
   }
 }
+```
 
-# Right.
-def show(text) {
+Right — only the call that can fail is inside the block:
+
+```zuri,ignore
+def show_narrow(text) {
   var data
 
   catch {

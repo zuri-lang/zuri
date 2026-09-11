@@ -27,11 +27,12 @@ var PAGES = os.join_paths(ROOT, 'docs', 'book', 'src')
 var WORK = os.join_paths(ROOT, 'tmp', 'bookverify')
 var ZURI = os.join_paths(ROOT, 'target', 'debug', 'zuri')
 
-# How long one example may take before it is treated as hung. Every
-# example in the book finishes in well under a second; anything that
-# does not is waiting on input or serving a socket, and wants an
-# `ignore` tag.
-var TIMEOUT_MS = 30000
+# How long one example may take before it is treated as hung. Nearly
+# every example finishes in well under a second; the exceptions are the
+# `imagine` ones, whose per-pixel work takes tens of seconds against a
+# debug build. Anything exceeding even this is waiting on input or
+# serving a socket, and wants an `ignore` tag.
+var TIMEOUT_MS = 180000
 
 def _pages(filter: string) {
   var found = []
@@ -107,7 +108,14 @@ def main(filter: string) {
       var result = _run(example.source)
       var continued = false
 
-      if !result.ok and !earlier.is_empty() {
+      # An example that catches its own error still exits cleanly, so
+      # "did it run" is not enough to decide whether it needs the rest of
+      # the page: a wrong answer is a reason to retry too.
+      var wrong = example.expected != nil
+        and result.ok
+        and result.output.rtrim() != example.expected.rtrim()
+
+      if (!result.ok or wrong) and !earlier.is_empty() {
         var retry = _run('${'\n'.join(earlier)}\n${example.source}')
 
         if retry.ok {

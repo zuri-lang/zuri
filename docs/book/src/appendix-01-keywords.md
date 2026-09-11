@@ -10,7 +10,7 @@ function, class or parameter name.
 | `assert` | raises `AssertError` when its condition is falsy | [Control Flow](ch03-05-control-flow.md) |
 | `break` | leaves the innermost loop | [Control Flow](ch03-05-control-flow.md) |
 | `catch` | runs a block, intercepting anything it raises | [Errors](ch07-00-error-handling.md) |
-| `class` | declares a class | [Classes](ch06-01-defining-a-class.md) |
+| `class` | declares a class, or with `>` an extension to one | [Classes](ch06-01-defining-a-class.md), [Extensions](ch06-06-class-extensions.md) |
 | `const` | declares a name that cannot be reassigned | [Variables](ch03-01-variables.md) |
 | `continue` | skips to the next iteration | [Control Flow](ch03-05-control-flow.md) |
 | `def` | declares a function, named or anonymous | [Functions](ch05-01-defining-functions.md) |

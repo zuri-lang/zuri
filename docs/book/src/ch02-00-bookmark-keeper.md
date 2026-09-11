@@ -242,8 +242,9 @@ you want returned, `=>` replaces the braces and the `return`:
 tags.split(',').map(@(t) => t.trim())
 ```
 
-That is the same function written three ways. [Chapter 5](ch05-02-closures.md)
-covers all of them, and when each one reads best.
+That is the same function written three ways.
+[Chapter 5](ch05-02-closures.md) covers every spelling, and when each one
+reads best.
 
 Also notice `or` rather than `||`. Zuri spells its logical operators `and`,
 `or` and `!`.

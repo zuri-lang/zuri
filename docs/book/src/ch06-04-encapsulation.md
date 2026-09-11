@@ -146,3 +146,84 @@ and it is required the moment a helper method does the assigning instead.
 **Model optional state as a field holding `nil`, not as an absent field.**
 There is no such thing as an absent field, so a `var cached_result` that
 starts `nil` is the shape you want.
+
+## A Worked Example
+
+Privacy earns its place when a class has an invariant to protect. Here is a
+bounded history buffer: it keeps the last `n` entries and nothing else, and
+there is no way for a caller to break that from outside.
+
+```zuri
+class History {
+  var _entries = []
+  var _limit = 0
+
+  @new(limit: number) {
+    if limit < 1 {
+      raise ValueError('limit must be at least 1, got ${limit}')
+    }
+
+    self._limit = limit
+  }
+
+  record(entry) {
+    self._entries.append(entry)
+
+    if self._entries.length() > self._limit {
+      self._entries.shift()
+    }
+
+    return self
+  }
+
+  # A copy, so a caller cannot append through the value we hand back.
+  entries() {
+    return self._entries.clone()
+  }
+
+  length() {
+    return self._entries.length()
+  }
+}
+
+var history = History(3)
+
+history.record('a').record('b').record('c').record('d')
+
+echo history.entries()
+echo history.length()
+
+var taken = history.entries()
+taken.append('e')
+
+echo history.entries()
+
+catch {
+  History(0)
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+[b, c, d]
+3
+[b, c, d]
+ValueError: limit must be at least 1, got 0
+```
+
+Four decisions are doing the work.
+
+**The list is private**, so nothing outside can append to it and skip the
+trimming. `history._entries.append('x')` does not compile.
+
+**`entries()` returns a clone.** Without it, the caller would hold the
+real list and could grow it past the limit — which is exactly what the
+fourth output line shows *not* happening. Handing out a private mutable
+collection is the most common way encapsulation leaks.
+
+**The invariant is established in the constructor.** `_limit` is validated
+once, so `record()` never has to wonder whether it is sensible.
+
+**The class is sealed**, so `history.limit = 999` is an error rather than a
+second, ignored field sitting alongside `_limit`.

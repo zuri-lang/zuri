@@ -5,7 +5,8 @@ of syntax is applied to an instance of its class. They are ordinary
 methods otherwise: inherited, overridable, and callable by name.
 
 See [Decorated Methods](ch06-03-decorated-methods.md) for the guided
-treatment.
+treatment, and [Class Extensions](ch06-06-class-extensions.md) for adding
+one to a class you did not write.
 
 ## Construction
 

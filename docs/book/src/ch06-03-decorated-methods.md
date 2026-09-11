@@ -151,8 +151,110 @@ true
 true
 ```
 
-There is **no `@eq`**. `==` on instances compares identity, and that is not
-overridable. When you need value equality, write a plain `equals()` method
+### Each Operator Is Separate
+
+There is no derivation between them. Defining `@lt` does **not** give you
+`>`, and defining `@add` does not give you `+=` on the other side:
+
+```zuri
+class Price {
+
+  @new(cents) {
+    self.cents = cents
+  }
+
+  @lt(other) {
+    return self.cents < other.cents
+  }
+}
+
+echo Price(250) < Price(500)
+
+catch {
+  echo Price(500) > Price(250)
+} as e {
+  echo e.message
+}
+```
+
+```console
+true
+operator '>' not defined for Price and Price
+```
+
+Define every operator you want to support. `@gt` is usually one line, as
+the `Version` example above shows.
+
+### The Other Operand Is Not Checked
+
+A decorated method is an ordinary method, and its parameter is an ordinary
+parameter. Nothing guarantees the other side is the same class:
+
+```zuri
+class Amount {
+
+  @new(cents) {
+    self.cents = cents
+  }
+
+  @add(other) {
+    return Amount(self.cents + other.cents)
+  }
+}
+
+catch {
+  echo Amount(500) + 5
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+catch {
+  echo 5 + Amount(500)
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+TypeError: cannot read property 'cents' on a number
+TypeError: operator '+' not defined for call signature (number, Amount)
+```
+
+Read those two together. With the instance on the **left**, `@add` ran and
+failed inside your own method with a confusing message. With it on the
+**right**, the operator was never dispatched to your class at all — a
+decorated method only handles the case where its own instance is the left
+operand.
+
+Annotate the parameter to fix the first message, and accept the second as
+the rule:
+
+```zuri
+class Sum {
+
+  @new(cents) {
+    self.cents = cents
+  }
+
+  @add(other: Sum) {
+    return Sum(self.cents + other.cents)
+  }
+}
+
+catch {
+  echo Sum(500) + 5
+} as e {
+  echo e.message
+}
+```
+
+```console
+@add() expects parameter 'other' (argument 1) to be a Sum, got number
+```
+
+### There Is No `@eq`
+
+`==` on instances compares identity, and that is not overridable. When you need value equality, write a plain `equals()` method
 and call it:
 
 ```zuri
@@ -183,46 +285,14 @@ as idiomatic rather than as a workaround.
 
 ## Iteration
 
-`@key` and `@value` together make a class work with `for ... in`.
+`@key` and `@value` together make a class work with `for ... in`. They are
+the largest of the decorated methods to get right, so they have a section
+of their own: [Making a Class Iterable](ch06-05-iterable-classes.md).
 
-`@key(previous)` is handed the previous key, starting with `nil`, and
-returns the next one, or `nil` when the sequence is finished.
-`@value(key)` returns what is stored at that key.
-
-```zuri
-class Countdown {
-  @new(from) {
-    self.from = from
-  }
-
-  @key(previous) {
-    if previous == nil {
-      return self.from
-    }
-    if previous <= 1 {
-      return nil
-    }
-    return previous - 1
-  }
-
-  @value(key) {
-    return key
-  }
-}
-
-for n in Countdown(3) {
-  echo n
-}
-```
-
-```console
-3
-2
-1
-```
-
-Defining both is also what makes `is_iterable()` answer `true` for your
-class.
+| Decorator | Called by | Signature |
+| --- | --- | --- |
+| `@key` | `for ... in` | `@key(previous)` |
+| `@value` | `for ... in` | `@value(key)` |
 
 ## `@to_json`
 
