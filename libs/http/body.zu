@@ -1,3 +1,16 @@
+/**
+ * @module body
+ *
+ * A request or response body, in whatever shape the wire delivered it:
+ * a fixed `Content-Length`, a chunked stream, or nothing at all.
+ *
+ * `BodyReader` hides that difference behind one interface, and
+ * `decode_content()`/`encode_content()` handle the `Content-Encoding`
+ * layer on top of it: gzip, deflate, brotli and zstd.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ProtocolError, TooLargeError }

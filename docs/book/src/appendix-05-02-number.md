@@ -454,8 +454,8 @@ expm1() -> number
 ```
 
 Returns _e_ raised to the power of the number, minus `1`. For a number
-close to zero, this is more numerically accurate than computing `n.exp()
-- 1` directly.
+close to zero, this is more numerically accurate than computing `n.exp() - 1`
+directly.
 
 **Returns** `number`
 
@@ -511,8 +511,8 @@ log1p() -> number
 ```
 
 Returns the natural logarithm of `1` plus the number. For a number close
-to zero, this is more numerically accurate than computing `(1 +
-n).log()` directly.
+to zero, this is more numerically accurate than computing `(1 + n).log()`
+directly.
 
 **Returns** `number`
 
@@ -678,8 +678,8 @@ fraction() -> number
 ```
 
 Returns the digits after the number's decimal point, read as a whole
-number rather than a fraction. Note that this is NOT the same as `(n -
-n.int())`: `1.92.fraction()` is `92`, not `0.92`.
+number rather than a fraction. Note that this is NOT the same as `(n - n.int())`:
+`1.92.fraction()` is `92`, not `0.92`.
 
 ```zuri,ignore
 %> 1.92.fraction()

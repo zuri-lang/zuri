@@ -67,11 +67,22 @@ fn main() {
   println!("cargo:rerun-if-changed=LICENSE");
 
   generate_zu_conformance_tests(&manifest_dir);
-  build_book(&manifest_dir);
+  build_docs(&manifest_dir);
 }
 
-/// Renders `docs/book` whenever mdBook is installed and the book has
+/// Renders both books whenever mdBook is installed and either has
 /// actually changed.
+fn build_docs(manifest_dir: &str) {
+  for (name, stamp, generated) in [
+    ("book", "book.stamp", false),
+    ("reference", "reference.stamp", true),
+  ] {
+    build_book(manifest_dir, name, stamp, generated);
+  }
+}
+
+/// Renders one book in `docs/` whenever mdBook is installed and that
+/// book has actually changed.
 ///
 /// Two things keep this off the critical path of ordinary work. The
 /// `newest_mtime` check below means a day spent in `src/` never spends
@@ -85,23 +96,44 @@ fn main() {
 /// always sees the directory as dirty. Leaning on `rerun-if-changed`
 /// alone would rebuild the book every time.
 ///
-/// Output goes to `target/book` (set in `book.toml`), deliberately not
+/// Output goes to `target/<name>` (set in each `book.toml`), deliberately not
 /// under `docs/`; writing into a directory this script also watches
 /// would have every build trigger the next one.
-fn build_book(manifest_dir: &str) {
-  let book_dir = Path::new(manifest_dir).join("docs").join("book");
+fn build_book(manifest_dir: &str, name: &str, stamp_name: &str, generated: bool) {
+  let book_dir = Path::new(manifest_dir).join("docs").join(name);
   let manifest = book_dir.join("book.toml");
 
-  println!("cargo:rerun-if-changed={}", book_dir.join("src").display());
+  // The book keeps its pages beside `book.toml`; the reference's are
+  // generated under `target/`, which is where its `src` setting points.
+  let src_dir = match generated {
+    true => Path::new(manifest_dir).join("target").join(name).join("src"),
+    false => book_dir.join("src"),
+  };
+
+  println!("cargo:rerun-if-changed={}", src_dir.display());
   println!("cargo:rerun-if-changed={}", manifest.display());
 
   if !manifest.is_file() {
     return;
   }
 
-  let newest = newest_mtime(&book_dir.join("src")).max(file_mtime(&manifest));
-  let stamp = Path::new(&env::var("OUT_DIR").unwrap()).join("book.stamp");
-  let rendered = Path::new(manifest_dir).join("target").join("book");
+  // The reference's pages are generated rather than committed, so a
+  // fresh clone has none until `cargo build-docs` writes them. Running
+  // the generator from here is not an option: it needs the `zuri`
+  // binary, which this script runs before linking.
+  if !src_dir.join("SUMMARY.md").is_file() {
+    println!(
+      "cargo:warning=the {name} has no pages yet; run `cargo build-docs` to generate them"
+    );
+    return;
+  }
+
+  let newest = newest_mtime(&src_dir).max(file_mtime(&manifest));
+  let stamp = Path::new(&env::var("OUT_DIR").unwrap()).join(stamp_name);
+  let rendered = match generated {
+    true => Path::new(manifest_dir).join("target").join(name).join("html"),
+    false => Path::new(manifest_dir).join("target").join(name),
+  };
 
   if rendered.is_dir() && file_mtime(&stamp) >= newest {
     return;
@@ -109,8 +141,8 @@ fn build_book(manifest_dir: &str) {
 
   if !mdbook_available() {
     println!(
-      "cargo:warning=mdbook not found, skipping the book. \
-       Install it with `cargo install mdbook`, or read docs/book/src directly."
+      "cargo:warning=mdbook not found, skipping the {name}. \
+       Install it with `cargo install mdbook`, or read docs/{name}/src directly."
     );
     return;
   }

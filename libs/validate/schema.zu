@@ -364,12 +364,16 @@ class Schema {
    * Returns the result dictionary on success.
    *
    * ```zuri
-   * catch {
-   *   schema.check_or_raise(req.body)
-   * } as e
+   * def create_user(req, res) {
+   *   catch {
+   *     schema.check_or_raise(req.body)
+   *   } as e
    *
-   * if e {
-   *   return res.json({ errors: e.errors }, 422)
+   *   if e {
+   *     return res.json({ errors: e.errors }, 422)
+   *   }
+   *
+   *   return res.json({ ok: true })
    * }
    * ```
    *

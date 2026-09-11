@@ -1,0 +1,346 @@
+/**
+ * @module docs
+ *
+ * The doc block grammar: turning the text a documentation comment
+ * carries into prose plus a list of `@tag` entries.
+ *
+ * A block is free markdown followed by a run of tags. A tag's text
+ * may wrap onto the lines below it, recognised by their indentation,
+ * so dropping those continuations silently truncates a sentence. That
+ * wrapping rule is the part of this file worth reading twice.
+ *
+ * Fenced code inside a block is copied through untouched. Zuri block
+ * comments nest, so an example that opens a comment of its own does
+ * not end the block it sits in.
+ */
+
+# The tags whose text begins with a name rather than a description.
+# `@param count The number of rows` names `count`; `@returns list` does
+# not name anything.
+var NAMED_TAGS = ['param', 'property']
+
+# Spellings that mean the same thing, collapsed onto one so the
+# renderer only has to know about one of each pair.
+var TAG_ALIASES = {
+  'return': 'returns',
+  'raises': 'throws',
+  'params': 'param',
+  'number': 'numeric',
+}
+
+# Type names a stub may write where a parameter name would normally
+# go, as in `@param ...number values`. Recognising them is what stops
+# a type being printed as if it were the argument's name.
+var TYPE_WORDS = [
+  'any', 'number', 'int', 'float', 'string', 'list', 'dict', 'bool',
+  'boolean', 'bytes', 'file', 'function', 'callable', 'range',
+  'bigint', 'instance', 'class', 'module', 'iterable', 'void', 'nil',
+  'pointer',
+]
+
+/**
+ * One `@tag` from a doc block, already unwrapped into a single
+ * string.
+ *
+ * `kind` is the tag name without its `@`, run through `TAG_ALIASES`.
+ * `type` and `name` are empty strings when the tag does not carry
+ * them, never `nil`, so a renderer can test them with `!=  ''`
+ * instead of guarding for two different absences.
+ */
+class Tag {
+
+  @new(kind: string, type: string, name: string, text: string) {
+    self.kind = kind
+    self.type = type
+    self.name = name
+    self.text = text
+  }
+
+  to_string() {
+    return 'Tag(@${self.kind} ${self.type} ${self.name})'
+  }
+}
+
+/**
+ * A parsed doc block: `body` is the markdown prose as a list of
+ * lines, `tags` is every `@tag` in the order it was written.
+ */
+class Block {
+
+  @new(body: list, tags: list) {
+    self.body = body
+    self.tags = tags
+  }
+
+  /** Every tag of one kind, in source order. */
+  all(kind: string) {
+    return self.tags.filter(@(tag) => tag.kind == kind)
+  }
+
+  /** The first tag of one kind, or `nil` if the block has none. */
+  first(kind: string) {
+    var found = self.all(kind)
+
+    if found.is_empty() {
+      return nil
+    }
+
+    return found[0]
+  }
+
+  /** True when the block carries at least one tag of this kind. */
+  has(kind: string) {
+    return !self.all(kind).is_empty()
+  }
+
+  /** The first line of prose, for a one-line summary in an index. */
+  summary() {
+    var sentence = []
+
+    for line in self.body {
+      var text = line.trim()
+
+      if text == '' {
+        break
+      }
+
+      if text.starts_with('#') or text.starts_with('```') {
+        break
+      }
+
+      sentence.append(text)
+    }
+
+    return ' '.join(sentence)
+  }
+
+  is_empty() {
+    return self.body.is_empty() and self.tags.is_empty()
+  }
+}
+
+# Strips the leading `*` from one line of a block, keeping whatever
+# indentation followed it. That indentation is what marks a tag
+# continuation, so it must survive this function.
+def _strip_star(line: string) {
+  var text = line.ltrim()
+
+  if !text.starts_with('*') {
+    return text
+  }
+
+  text = text[1, text.length()]
+
+  if text.starts_with(' ') {
+    return text[1, text.length()]
+  }
+
+  return text
+}
+
+# Pulls `{type}` or a bare leading type word off the front of a tag's
+# text. Libraries write both spellings, and a few write neither.
+def _take_type(text: string) {
+  if text.starts_with('{') {
+    var close = text.index_of('}')
+
+    if close > 0 {
+      return {
+        type: text[1, close],
+        rest: text[close + 1, text.length()].ltrim(),
+      }
+    }
+  }
+
+  var space = text.index_of(' ')
+  var head = space < 0 ? text : text[0, space]
+  var bare = head.replace('/^\.\.\./', '').replace('/^\?/', '')
+
+  # `list[string]`, `list<string>` and `number|string` are all types,
+  # so test the outermost name rather than the whole spelling.
+  var root = bare.replace('/[\[<\|].*$/', '')
+
+  if TYPE_WORDS.contains(root.lower()) {
+    return {
+      type: head,
+      rest: space < 0 ? '' : text[space + 1, text.length()].ltrim(),
+    }
+  }
+
+  return { type: '', rest: text }
+}
+
+# Pulls the argument name off the front of what is left, for the tags
+# that name something.
+def _take_name(text: string) {
+  var space = text.index_of(' ')
+  var name = space < 0 ? text : text[0, space]
+  var rest = space < 0 ? '' : text[space + 1, text.length()].ltrim()
+
+  # `@param count: how many` and `@param count - how many` both mean
+  # the same thing as `@param count how many`.
+  if name.ends_with(':') {
+    name = name[0, name.length() - 1]
+  }
+
+  if rest.starts_with('- ') or rest.starts_with(': ') {
+    rest = rest[2, rest.length()].ltrim()
+  }
+
+  return { name, rest }
+}
+
+# Splits one tag's accumulated text into type, name and description.
+def _split(kind: string, text: string) {
+  var type = ''
+  var name = ''
+  var rest = text
+
+  if NAMED_TAGS.contains(kind) {
+    var taken = _take_type(rest)
+
+    type = taken.type
+    rest = taken.rest
+
+    var named = _take_name(rest)
+
+    name = named.name
+    rest = named.rest
+
+    # `@param name: string` puts the type last. Recover it rather than
+    # leaving the description reading as a lone type word.
+    if type == '' {
+      var trailing = _take_type(rest)
+
+      if trailing.type != '' and trailing.rest == '' {
+        type = trailing.type
+        rest = ''
+      }
+    }
+
+    return Tag(kind, type, name, rest)
+  }
+
+  if kind == 'returns' or kind == 'throws' or kind == 'type' {
+    var taken = _take_type(rest)
+
+    type = taken.type
+    rest = taken.rest
+
+    # `@throws TypeError When ...` names a class rather than one of the
+    # built-in type words, so take the first word as the type when it
+    # looks like a class name.
+    if type == '' and (kind == 'throws' or kind == 'type') {
+      var space = rest.index_of(' ')
+      var head = space < 0 ? rest : rest[0, space]
+
+      if head != '' and head[0] == head[0].upper() and head != head.upper() {
+        type = head
+        rest = space < 0 ? '' : rest[space + 1, rest.length()].ltrim()
+      }
+    }
+  }
+
+  if rest.starts_with('- ') or rest.starts_with(': ') {
+    rest = rest[2, rest.length()].ltrim()
+  }
+
+  return Tag(kind, type, name, rest)
+}
+
+# Drops the blank lines that top and tail nearly every block.
+def _tidy(lines: list) {
+  var start = 0
+  var end = lines.length()
+
+  while start < end and lines[start].trim() == '' {
+    start++
+  }
+
+  while end > start and lines[end - 1].trim() == '' {
+    end--
+  }
+
+  return lines[start, end]
+}
+
+/**
+ * Parses the raw lines of a doc block into prose and tags.
+ *
+ * Everything before the first tag is prose. Once tags start, a line
+ * beginning with whitespace continues the tag above it, a line
+ * beginning with `@` starts a new one, and a blank line ends the run.
+ *
+ * @param list lines: the block's text, already split on newlines and
+ *    still carrying its `*` furniture.
+ * @returns Block
+ */
+def parse(lines: list) {
+  var body = []
+  var tags = []
+  var current = nil
+  var fenced = false
+
+  for line in lines {
+    var raw = _strip_star(line)
+    var text = raw.trim()
+
+    if text.starts_with('```') {
+      fenced = !fenced
+      current = nil
+      body.append(raw)
+      continue
+    }
+
+    if fenced {
+      body.append(raw)
+      continue
+    }
+
+    if text.starts_with('@') {
+      var space = text.index_of(' ')
+      var kind = space < 0 ? text[1, text.length()] : text[1, space]
+      var rest = space < 0 ? '' : text[space + 1, text.length()].ltrim()
+
+      # `@internal: use parse()` hangs the colon off the tag name.
+      if kind.ends_with(':') {
+        kind = kind[0, kind.length() - 1]
+      }
+
+      kind = TAG_ALIASES.get(kind, kind)
+      current = { kind, text: rest }
+      tags.append(current)
+      continue
+    }
+
+    if current != nil and text != '' and raw.starts_with(' ') {
+      current.text = current.text == '' ? text : '${current.text} ${text}'
+      continue
+    }
+
+    if text == '' {
+      current = nil
+    }
+
+    if current == nil {
+      body.append(raw)
+    }
+  }
+
+  return Block(_tidy(body), tags.map(@(tag) => _split(tag.kind, tag.text)))
+}
+
+/**
+ * Parses the text a `DocBlock` AST node carries.
+ *
+ * @param string text
+ * @returns Block
+ */
+def parse_text(text: string) {
+  return parse(text.split('\n'))
+}
+
+/** An empty block, for a declaration that carries no documentation. */
+def empty() {
+  return Block([], [])
+}

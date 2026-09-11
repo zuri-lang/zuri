@@ -1,3 +1,16 @@
+/**
+ * @module files
+ *
+ * Serving files off disk, with the parts that make it correct rather than
+ * merely working: conditional requests, entity tags, and byte ranges.
+ *
+ * `StaticFiles` is the handler. `ByteRange` and the range parser
+ * implement `Range`/`206 Partial Content`, which is what lets a browser
+ * seek within a video without downloading it whole.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { HttpError }

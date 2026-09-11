@@ -1,3 +1,17 @@
+/**
+ * @module connection
+ *
+ * One HTTP/2 connection and the streams multiplexed over it.
+ *
+ * `Http2Connection` owns the connection-level state: the settings
+ * exchange, flow-control windows, and the HPACK contexts shared by every
+ * stream. `Http2Stream` is one request/response pair within it, and
+ * `Http2Writer` serialises frames so that concurrent streams cannot
+ * interleave mid-frame.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import ..cookies

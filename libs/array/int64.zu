@@ -1,3 +1,15 @@
+/**
+ * @module int64
+ *
+ * `Int64Array`: a packed array of twos-complement 64-bit signed integers, 8 bytes per
+ * element.
+ *
+ * `INT64_MAX` and `INT64_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

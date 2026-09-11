@@ -1,30 +1,41 @@
 /**
- * Runs every example in the book and checks what it prints.
+ * Runs every example in the documentation and checks what it prints.
  *
- * The book's claim is that no output in it was typed from memory, and
- * this is what backs that claim. Every ```zuri block is extracted and
- * run; when a ```console block follows it directly, the two are
+ * The claim both books make is that no output in them was typed from
+ * memory, and this is what backs it. Every ```zuri block is extracted
+ * and run; when a ```console block follows it directly, the two are
  * compared.
  *
- * Run it from the repository root:
+ * Run it from the repository root. The first argument picks which set
+ * of pages to check, the second narrows it to the pages whose name
+ * contains a fragment:
  *
  * ```
- * zuri docs/book/tools/verify.zu           # the whole book
- * zuri docs/book/tools/verify.zu ch04       # only pages matching 'ch04'
+ * zuri docs/tools/verify.zu                  # the book and the reference
+ * zuri docs/tools/verify.zu book             # only the book
+ * zuri docs/tools/verify.zu book ch04        # only the book's chapter 4
+ * zuri docs/tools/verify.zu reference net    # only the net pages
  * ```
  *
- * A block tagged `zuri,ignore` is skipped. There are three legitimate
+ * A block tagged `zuri,ignore` is skipped. There are five legitimate
  * reasons to tag one: it deliberately shows an error, it is one file of
- * a multi-file program, or it would never terminate (a server, a
- * prompt). Anything else is expected to run.
+ * a multi-file program, it would never terminate (a server, a prompt),
+ * it needs a resource that is not there, or it is a catalogue of
+ * alternative calls rather than a program. Anything else is expected
+ * to run.
  */
 
 import os
 import .blocks { * }
 
-var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
-var PAGES = os.join_paths(ROOT, 'docs', 'book', 'src')
-var WORK = os.join_paths(ROOT, 'tmp', 'bookverify')
+var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
+# The two sets of pages this checks, in the order they are reported.
+var BOOKS = [
+  { name: 'book', pages: os.join_paths(ROOT, 'docs', 'book', 'src') },
+  { name: 'reference', pages: os.join_paths(ROOT, 'target', 'reference', 'src') },
+]
+
+var WORK = os.join_paths(ROOT, 'tmp', 'docverify')
 var ZURI = os.join_paths(ROOT, 'target', 'debug', 'zuri')
 
 # How long one example may take before it is treated as hung. Nearly
@@ -34,10 +45,10 @@ var ZURI = os.join_paths(ROOT, 'target', 'debug', 'zuri')
 # serving a socket, and wants an `ignore` tag.
 var TIMEOUT_MS = 180000
 
-def _pages(filter: string) {
+def _pages(root: string, filter: string) {
   var found = []
 
-  for name in os.read_dir(PAGES) {
+  for name in os.read_dir(root) {
     if !name.ends_with('.md') or name == 'SUMMARY.md' {
       continue
     }
@@ -87,14 +98,42 @@ def _has_placeholder(text: string) {
   return false
 }
 
-def main(filter: string) {
+def main(which: string, filter: string) {
   os.create_dir(WORK, nil, true)
 
   var ran = 0
   var failed = 0
 
-  for name in _pages(filter) {
-    var page = os.join_paths(PAGES, name)
+  for book in BOOKS {
+    if which != '' and book.name != which {
+      continue
+    }
+
+    if !os.dir_exists(book.pages) {
+      continue
+    }
+
+    ran += _check(book, filter, @(message) {
+      echo message
+      failed++
+    })
+  }
+
+  echo ''
+  echo '${ran} examples run, ${failed} failed'
+
+  if failed > 0 {
+    os.exit(1)
+  }
+}
+
+# Runs one set of pages, reporting each failure through `fail` and
+# returning how many examples it ran.
+def _check(book, filter: string, fail: function) {
+  var ran = 0
+
+  for name in _pages(book.pages, filter) {
+    var page = os.join_paths(book.pages, name)
     var examples = extract(file(page).read())
 
     # A reader working through a page has the earlier examples in
@@ -125,9 +164,7 @@ def main(filter: string) {
       }
 
       if !result.ok {
-        failed++
-        echo '${name}:${example.line}  did not run'
-        echo '    ${result.output.lines()[0]}'
+        fail('${book.name}/${name}:${example.line}  did not run\n    ${result.output.lines()[0]}')
         continue
       }
 
@@ -146,22 +183,19 @@ def main(filter: string) {
       }
 
       if actual != expected {
-        failed++
-        echo '${name}:${example.line}  wrong output'
-        echo '    expected: ${expected}'
-        echo '    actual:   ${actual}'
+        fail('${book.name}/${name}:${example.line}  wrong output\n'
+          + '    expected: ${expected}\n'
+          + '    actual:   ${actual}')
       }
     }
   }
 
-  echo ''
-  echo '${ran} examples run, ${failed} failed'
-
-  if failed > 0 {
-    os.exit(1)
-  }
+  return ran
 }
 
 if __root__ == __file__ {
-  main(os.args.length() > 2 ? os.args[2] : '')
+  main(
+    os.args.length() > 2 ? os.args[2] : '',
+    os.args.length() > 3 ? os.args[3] : ''
+  )
 }

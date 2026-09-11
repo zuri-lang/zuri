@@ -1,3 +1,15 @@
+/**
+ * @module int16
+ *
+ * `Int16Array`: a packed array of twos-complement 16-bit signed integers, 2 bytes per
+ * element.
+ *
+ * `INT16_MAX` and `INT16_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

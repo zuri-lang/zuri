@@ -1,3 +1,17 @@
+/**
+ * @module util
+ *
+ * The small, exact pieces of the HTTP specifications that several parts
+ * of the module need: date formatting, percent-encoding, quoted strings,
+ * header parameter lists, path normalisation and authorization headers.
+ *
+ * `secure_equals()` and `random_token()` are here because they are used
+ * where timing matters: comparing a token in constant time, and
+ * generating one that cannot be guessed.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import base64

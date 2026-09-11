@@ -1,3 +1,18 @@
+/**
+ * @module formats
+ *
+ * What the build can actually read and write, and how to tell one format
+ * from another.
+ *
+ * `detect()` and `probe()` identify an image from its leading bytes
+ * rather than its file name, which is the only reliable way to do it.
+ * `readable()`, `writable()` and `animatable()` report what this
+ * particular build supports, since that depends on which codecs were
+ * compiled in.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import _imagine

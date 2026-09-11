@@ -1,3 +1,15 @@
+/**
+ * @module uint32
+ *
+ * `UInt32Array`: a packed array of unsigned 32-bit integers, 4 bytes per
+ * element.
+ *
+ * `UINT32_MAX` and `UINT32_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

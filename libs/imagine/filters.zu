@@ -1,3 +1,17 @@
+/**
+ * @module filters
+ *
+ * The maths behind the filters: colour matrices, lookup tables and
+ * convolution kernels.
+ *
+ * `Image` exposes these as named methods, and this is where the numbers
+ * those methods pass come from. Building a matrix, a LUT or a kernel
+ * here and applying it yourself is how to get a filter the module does
+ * not already name.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import math

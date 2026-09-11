@@ -1,0 +1,131 @@
+/**
+ * Pairs the doc blocks in a built-in type's stub with the
+ * declarations they document.
+ *
+ * Finding the blocks and the declarations they belong to is the
+ * `zuri` module's job. `zuri.parse()` keeps every doc block in the
+ * tree as a node sitting right before whatever it documents, so both
+ * the pairing and the signatures come from the parser rather than
+ * from guessing at source text. Reading the inside of a block is
+ * `docs.zu`'s job, which the library reference shares.
+ */
+
+import zuri
+import ..docs
+
+/**
+ * One documented member: a method on a built-in type, or a built-in
+ * function. `body` is the markdown prose and `params` is the real
+ * parameter list the parser produced, not a slice of source text.
+ */
+class Member {
+
+  @new(name: string, params: list, block) {
+    self.name = name
+    self.params = params
+    self.block = block
+    self.body = block.body
+    self.tags = block.tags
+  }
+
+  /** The signature as it appears in a heading, e.g. `lpad(width, fill)`. */
+  signature() {
+    return '${self.name}(${', '.join(self.params)})'
+  }
+
+  /** The anchor mdBook generates for this member's heading. */
+  anchor() {
+    return self.name
+  }
+
+  tags_of(kind: string) {
+    return self.block.all(kind)
+  }
+
+  first_tag(kind: string) {
+    return self.block.first(kind)
+  }
+}
+
+# Renders one parameter node the way the stub's own source spells it.
+def _param(node, variadic: bool) {
+  var hint = node.fields.type_hint
+  var name = node.fields.name
+
+  if variadic {
+    name = '...${name}'
+  }
+
+  if hint == nil {
+    return name
+  }
+
+  var types = hint.fields.types.map(@(type) => type.kind.lower())
+
+  # An unannotated parameter parses as a nullable `any`, which is the
+  # absence of an annotation rather than something to print.
+  if types.length() == 1 and types[0] == 'any' {
+    return name
+  }
+
+  var prefix = hint.fields.nullable ? '?' : ''
+
+  return '${name}: ${prefix}${'|'.join(types)}'
+}
+
+def _params_of(node) {
+  var params = node.fields.parameters
+  var variadic = node.fields.get('is_variadic', false)
+  var out = []
+
+  iter var i = 0; i < params.length(); i++ {
+    out.append(_param(params[i], variadic and i == params.length() - 1))
+  }
+
+  return out
+}
+
+# Walks a list of sibling nodes, pairing each declaration with the doc
+# block that precedes it. A declaration with no doc block above it is
+# undocumented and does not belong in the reference.
+def _members(nodes: list, kind: string) {
+  var members = []
+  var pending = nil
+
+  for node in nodes {
+    if node.kind == 'DocBlock' {
+      pending = node.fields.text
+      continue
+    }
+
+    if node.kind == kind and pending != nil {
+      members.append(Member(node.fields.name, _params_of(node), docs.parse_text(pending)))
+    }
+
+    # Anything else between a block and a declaration breaks the
+    # pairing, including a plain `#` comment.
+    pending = nil
+  }
+
+  return members
+}
+
+/** Every documented method on the class a type stub declares. */
+def parse_members(source: string) {
+  var members = []
+
+  for node in zuri.parse(source) {
+    if node.kind == 'Class' {
+      for member in _members(node.fields.methods, 'Method') {
+        members.append(member)
+      }
+    }
+  }
+
+  return members
+}
+
+/** Every documented free function, for the built-ins appendix. */
+def parse_functions(source: string) {
+  return _members(zuri.parse(source), 'Function')
+}

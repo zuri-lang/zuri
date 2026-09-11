@@ -28,7 +28,7 @@
  *
  * Running the following command:
  *
- * ```zuri
+ * ```sh
  * zuri myprogram.zu -h
  * ```
  *
@@ -404,14 +404,16 @@ class _Optionable {
   /**
    * Adds an option (flag) to this parser or command.
    *
-   * `opts` keys: - `short_name` {string}: single-character
-   * alias (`-x`) - `type` {int}: one of the type constants;
-   * default `NONE` - `value` {any}: default value when the
-   * option is absent - `choices` {list|dict}: restrict allowed
-   * values - `required` {bool}: error if option is absent -
-   * `metavar` {string}: placeholder shown in help (default: the
-   * option's own name, lower-cased) - `deprecated` {bool}: print
-   * a warning when the option is used
+   * `opts` keys:
+   *
+   * - `short_name` (string): single-character alias (`-x`).
+   * - `type` (int): one of the type constants; default `NONE`.
+   * - `value` (any): default value when the option is absent.
+   * - `choices` (list|dict): restrict allowed values.
+   * - `required` (bool): error if the option is absent.
+   * - `metavar` (string): placeholder shown in help, defaulting to
+   *   the option's own name, lower-cased.
+   * - `deprecated` (bool): print a warning when the option is used.
    *
    * @param string name
    * @param ?string help
@@ -508,12 +510,13 @@ class _Positional < _Optionable {
  *
  * ### Properties you can set after construction
  *
- * - `description` {string}: paragraph shown between USAGE and
- * OPTIONS. - `epilog` {string}: paragraph shown after all
- * sections. - `allow_abbrev` {bool}: allow unambiguous
- * long-option prefix matching (default `true`, like Python
- * argparse). - `allow_atfile` {bool}: expand `@filename` tokens
- * by reading arguments from that file (default `true`).
+ * - `description` (string): paragraph shown between USAGE and
+ *   OPTIONS.
+ * - `epilog` (string): paragraph shown after all sections.
+ * - `allow_abbrev` (bool): allow unambiguous long-option prefix
+ *   matching. Defaults to `true`, like Python's argparse.
+ * - `allow_atfile` (bool): expand `@filename` tokens by reading
+ *   arguments from that file. Defaults to `true`.
  */
 class Parser < _Optionable {
 
@@ -595,14 +598,16 @@ class Parser < _Optionable {
   /**
    * Adds an option (flag) to the top-level parser.
    *
-   * `opts` keys can include any of: - `short_name` {string}:
-   * single-character alias (`-x`) - `type` {int}: one of the
-   * type constants; default `NONE` - `value` {any}: default
-   * value when the option is absent - `choices` {list|dict}:
-   * restrict allowed values - `required` {bool}: error if
-   * option is absent - `metavar` {string}: placeholder shown in
-   * help (default: the option's own name, lower-cased) -
-   * `deprecated` {bool}: print a warning when the option is used
+   * `opts` keys can include any of:
+   *
+   * - `short_name` (string): single-character alias (`-x`).
+   * - `type` (int): one of the type constants; default `NONE`.
+   * - `value` (any): default value when the option is absent.
+   * - `choices` (list|dict): restrict allowed values.
+   * - `required` (bool): error if the option is absent.
+   * - `metavar` (string): placeholder shown in help, defaulting to
+   *   the option's own name, lower-cased.
+   * - `deprecated` (bool): print a warning when the option is used.
    *
    * @param string name
    * @param ?string help

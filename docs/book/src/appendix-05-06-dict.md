@@ -6,13 +6,13 @@ thing.
 
 | Method | Returns | Summary |
 | --- | --- | --- |
-| [`length()`](#length) |  | Returns the length of the dictionary. |
+| [`length()`](#length) | `number` | Returns the length of the dictionary. |
 | [`add(key: string, value)`](#add) |  | Adds a new key-value pair to the dictionary with the given key and value. |
 | [`set(key: string, value)`](#set) |  | Sets the value of the given key to the given value in the dictionary. |
 | [`clear()`](#clear) |  | Clears the content of the dictionary. |
 | [`clone()`](#clone) | `dict` | Returns a new dictionary which is a deep copy of the original dictionary. |
 | [`compact()`](#compact) | `dict` | Returns a new dictionary that contains every key-value pair in the original dictionary except for keys whose associated value is `nil`. |
-| [`contains(key: string)`](#contains) |  | Returns `true` if any of the keys in the dictionary is equal to _x_, `false` otherwise. |
+| [`contains(key: string)`](#contains) | `boolean` | Returns `true` if any of the keys in the dictionary is equal to _x_, `false` otherwise. |
 | [`extend(dict: dict)`](#extend) |  | Adds all key-value pairs in dictionary _x_ to the original dictionary. |
 | [`get(key: string, default_value)`](#get) | `any\|nil` | Returns the value of the given _key_ in the dictionary. |
 | [`keys()`](#keys) | `list` | Returns a list containing the keys in the dictionary. |
@@ -31,12 +31,11 @@ thing.
 ## `length()`
 
 ```zuri,ignore
-length()
+length() -> number
 ```
 
 Returns the length of the dictionary. The length of a Zuri dictionary is
-equal to the number of keys it contains. i.e. `dict.length() ==
-dict.keys().length()`.
+equal to the number of keys it contains. i.e. `dict.length() == dict.keys().length()`.
 
 For example:
 
@@ -45,7 +44,7 @@ For example:
 2
 ```
 
-**Returns** — number
+**Returns** `number`
 
 ## `add()`
 
@@ -166,7 +165,7 @@ For example:
 ## `contains()`
 
 ```zuri,ignore
-contains(key: string)
+contains(key: string) -> boolean
 ```
 
 Returns `true` if any of the keys in the dictionary is equal to _x_,
@@ -185,7 +184,7 @@ false
 
 - `key` (`string`)
 
-**Returns** — boolean
+**Returns** `boolean`
 
 ## `extend()`
 

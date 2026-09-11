@@ -1,3 +1,16 @@
+/**
+ * @module errors
+ *
+ * Every error the module raises, under `ImageError` as their root.
+ *
+ * The subclasses separate the cases a caller treats differently: input
+ * that is not an image it can read, output it cannot write, a format it
+ * does not know, a coordinate outside the surface, and a font that will
+ * not load.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 /**

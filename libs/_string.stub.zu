@@ -368,7 +368,7 @@
  * For example,
  *
  * ```zuri-repl
- * > 'Zuri'[0] = 'J'
+ * %> 'Zuri'[0] = 'J'
  * Unhandled Error: strings do not support object assignment
  * StackTrace:
  *   <repl>:1 -> @.script()

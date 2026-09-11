@@ -25,7 +25,8 @@
  * `COUNT` is a decimal integer, or `*` to mean "the rest" (the
  * whole remaining argument for a string-like code, or every
  * remaining argument/byte for a numeric code). Omitted means
- * `1`. - `:NAME` names the field(s) produced by that ONE group
+ * `1`.
+ * - `:NAME` names the field(s) produced by that ONE group
  * when unpacking. A count > 1 numbers the keys `NAME1`, `NAME2`,
  * ... A segment carrying a `:NAME` may only contain a single
  * group. - A group with no `:NAME` gets a purely numeric key

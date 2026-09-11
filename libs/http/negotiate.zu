@@ -1,3 +1,16 @@
+/**
+ * @module negotiate
+ *
+ * Content negotiation: choosing what to send when the client has said
+ * what it prefers.
+ *
+ * `Accept`, `Accept-Encoding` and `Accept-Language` all use the same
+ * quality-value grammar, which `parse_accept()` reads and `best_match()`
+ * scores against what the server can actually produce.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .util

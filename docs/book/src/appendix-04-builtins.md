@@ -7,7 +7,7 @@ syntax.
 | Function | Returns | Summary |
 | --- | --- | --- |
 | [`time()`](#time) | `number` | Returns the current epoch time to the microseconds resolution. |
-| [`sum(...values: list)`](#sum) |  | Calculates the sum of all the elements passed as arguments. |
+| [`sum(...values: list)`](#sum) | `number` | Calculates the sum of all the elements passed as arguments. |
 | [`bytes(x: number\|list)`](#bytes) | `bytes\|any` | If x is a number, this function returns a new `bytes` object with length x having all its bytes set to `0x0`. |
 | [`file(path: string, mode: ?string)`](#file) | `file` | Returns an open file handle to the file specified in the path in the specified mode. |
 | [`instance_of(x, y)`](#instance_of) | `boolean` | Returns `true` if x is an instance of the given class y or `false` otherwise. |
@@ -17,7 +17,7 @@ syntax.
 | [`hasprop(object: instance, name: string)`](#hasprop) | `boolean` | Returns true if the property name exists in the given instance of object. |
 | [`setprop(obj: instance, prop: string, value)`](#setprop) | `boolean` | Sets the value of the object's property with the matching name to the given value. |
 | [`id(x)`](#id) | `number` | Returns the unique identifier of value x within the system. |
-| [`print(...values: list)`](#print) |  | Prints the given arguments to standard output. |
+| [`print(...values: list)`](#print) | `void` | Prints the given arguments to standard output. |
 | [`rand(x: ?number, y: ?number)`](#rand) | `number` | If no argument is given, returns a random number between 0 and 1. |
 | [`is_bigint(x)`](#is_bigint) | `boolean` | Returns `true` if x is a bigint or `false` otherwise. |
 | [`is_bool(x)`](#is_bool) | `boolean` | Returns `true` if x is a boolean or `false` otherwise. |
@@ -62,7 +62,7 @@ represents the microseconds.
 ## `sum()`
 
 ```zuri,ignore
-sum(...values: list)
+sum(...values: list) -> number
 ```
 
 Calculates the sum of all the elements passed as arguments. Returns `0`
@@ -79,7 +79,7 @@ Example:
 
 - `values` (`...number`)
 
-**Returns** — number
+**Returns** `number`
 
 ## `bytes()`
 
@@ -232,7 +232,7 @@ is also equivalent to the current address of object x in memory.
 ## `print()`
 
 ```zuri,ignore
-print(...values: list)
+print(...values: list) -> void
 ```
 
 Prints the given arguments to standard output.
@@ -246,9 +246,9 @@ scanline at a time).
 
 **Parameters**
 
-- `...vany` — values: Any number of arguments to print
+- `values` (`...any`) — Any number of arguments to print
 
-**Returns** — void
+**Returns** `void`
 
 > **Note:** In the REPL, it also appends a newline at the end.
 

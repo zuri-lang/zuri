@@ -1,3 +1,15 @@
+/**
+ * @module uint16
+ *
+ * `UInt16Array`: a packed array of unsigned 16-bit integers, 2 bytes per
+ * element.
+ *
+ * `UINT16_MAX` and `UINT16_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

@@ -16,7 +16,7 @@
  * ```zuri
  * import html
  *
- * var doc = html.parse('''
+ * var doc = html.parse('
  *   <article>
  *     <h1 id="title">Zuri</h1>
  *     <ul class="links">
@@ -24,7 +24,7 @@
  *       <li><a href="/spec">Spec</a>
  *     </ul>
  *   </article>
- * ''')
+ * ')
  *
  * echo doc.get_element_by_id('title').text_content()
  *

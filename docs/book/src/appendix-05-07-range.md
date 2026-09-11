@@ -12,7 +12,7 @@ thing.
 | [`within(value: number)`](#within) | `boolean` | Returns true if the given number falls somewhere within the or false otherwise. |
 | [`step(size: int)`](#step) | `range` | Sets the step size of the range. |
 | [`get_step()`](#get_step) | `number` | Returns the step size of the range. |
-| [`loop(callback: function)`](#loop) |  | Iterates over each number in the range, calling the provided callback function with the number, its index. |
+| [`loop(callback: function)`](#loop) | `void` | Iterates over each number in the range, calling the provided callback function with the number, its index. |
 | [`to_list()`](#to_list) | `list` | Returns the range as a list of its individual numbers, stepping from the lower limit to the upper limit (exclusive), or in reverse when the range descends. |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the range. |
 
@@ -143,7 +143,7 @@ Returns the step size of the range.
 ## `loop()`
 
 ```zuri,ignore
-loop(callback: function)
+loop(callback: function) -> void
 ```
 
 Iterates over each number in the range, calling the provided callback
@@ -170,7 +170,7 @@ r.loop(@(num, index) {
 - `callback` (`function`) — A function that takes two arguments: the
   number, its index.
 
-**Returns** — void
+**Returns** `void`
 
 **Raises** `Error` if the callback is not a function.
 

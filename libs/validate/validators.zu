@@ -1,5 +1,5 @@
 /**
- * # validate.validators
+ * @module validators
  *
  * Top-level convenience functions that create a fresh `Validator` instance
  * with one rule pre-applied.  Every rule exposed by the `Validator` class

@@ -10,15 +10,15 @@
  * Run it from the repository root:
  *
  * ```
- * zuri docs/book/tools/reference.zu
+ * zuri docs/tools/book/generate.zu
  * ```
  */
 
 import os
 import io
-import .docblock { * }
+import .stubs { * }
 import .render { * }
-import .audit
+import ..audit
 
 var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
 var STUBS = os.join_paths(ROOT, 'libs')

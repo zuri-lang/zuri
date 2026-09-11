@@ -1,0 +1,680 @@
+/**
+ * @module render
+ *
+ * Turns the module tree into the reference's markdown pages.
+ *
+ * Two rules shape every page here. The first is that a heading's text
+ * is the bare member name, never the qualified call path, because
+ * mdBook derives an anchor from the heading and a path full of dots
+ * and brackets makes an anchor nobody can link to by hand. The
+ * qualified path goes in the signature block directly underneath,
+ * where it is what a reader copies.
+ *
+ * The second is that a member is documented on exactly one page: the
+ * page of the file that declares it. Everything else that mentions it
+ * links there. A module's own page opens with an index of its whole
+ * public surface, so a reader who knows only `import os` can still
+ * find `os.get_env` without knowing that `os/env.zu` exists.
+ */
+
+import ..markdown { * }
+
+# mdBook derives a heading's anchor by lowercasing it and dropping
+# everything that is not a letter, a digit, a dash or an underscore.
+# Anchors are written by hand in a few places here, so this has to
+# match what it does rather than approximate it.
+def anchor(text: string) {
+  var out = ''
+
+  for character in text.lower() {
+    if character == ' ' {
+      out += '-'
+      continue
+    }
+
+    if character.is_alnum() or character == '-' or character == '_' {
+      out += character
+    }
+  }
+
+  return out
+}
+
+# The heading one member is documented under, and the anchor that
+# reaches it. A method is qualified by its class so that two classes
+# on one page can both have a `read()` without colliding.
+def heading_of(member, owner) {
+  if owner == '' {
+    return '`${member.name}()`'
+  }
+
+  return '`${owner}.${member.name}()`'
+}
+
+# The signature line: the full call path, plus the return type when the
+# doc block names one.
+def _signature(member) {
+  var text = member.signature()
+  var returns = member.block.first('returns')
+
+  if returns != nil and returns.type != '' {
+    return '${text} -> ${returns.type}'
+  }
+
+  return text
+}
+
+# The sentence an index table shows for a member.
+#
+# A `{Name}` reference becomes plain code rather than a link: the table
+# already links the row's own name, and a cell carrying two links reads
+# as noise.
+def _summary(block) {
+  var text = block.summary().replace('/\{([A-Za-z_][A-Za-z0-9_.]*)\}/', '`$1`')
+
+  return escape(summarise(text, 110))
+}
+
+# Renders the `@param`, `@returns`, `@throws` and `@note` tags every
+# documented member may carry, in that order.
+def _tags(out: list, block) {
+  var params = block.all('param')
+
+  if !params.is_empty() {
+    out.append('**Parameters**')
+    out.append('')
+
+    for tag in params {
+      var head = '`${tag.name}`'
+
+      if tag.type != '' {
+        head = '`${tag.name}` (`${tag.type}`)'
+      }
+
+      var line = tag.text == '' ? '- ${head}' : '- ${head} — ${tag.text}'
+
+      for wrapped in wrap_bullet(line, 2) {
+        out.append(wrapped)
+      }
+    }
+
+    out.append('')
+  }
+
+  var returns = block.first('returns')
+
+  if returns != nil {
+    var head = returns.type == '' ? '**Returns**' : '**Returns** `${returns.type}`'
+
+    if returns.text == '' {
+      out.append(head)
+    } else {
+      for wrapped in wrap('${head} — ${returns.text}') {
+        out.append(wrapped)
+      }
+    }
+
+    out.append('')
+  }
+
+  for tag in block.all('throws') {
+    var head = tag.type == '' ? '**Raises**' : '**Raises** `${tag.type}`'
+
+    for wrapped in wrap('${head} ${tag.text}') {
+      out.append(wrapped)
+    }
+
+    out.append('')
+  }
+
+  for tag in block.all('deprecated') {
+    for wrapped in wrap('**Deprecated.** ${tag.text}') {
+      out.append('> ${wrapped}')
+    }
+
+    out.append('')
+  }
+
+  for tag in block.all('note') {
+    for wrapped in wrap('**Note:** ${tag.text}') {
+      out.append('> ${wrapped}')
+    }
+
+    out.append('')
+  }
+
+  for tag in block.all('see') {
+    for wrapped in wrap('**See also:** ${tag.text}') {
+      out.append(wrapped)
+    }
+
+    out.append('')
+  }
+}
+
+# One documented member, heading and all.
+def _member(out: list, member, owner: string, level: string, owner_module, index) {
+  out.append('${level} ${heading_of(member, owner)}')
+  out.append('')
+  out.append('```zuri,ignore')
+  out.append(_signature(member))
+  out.append('```')
+  out.append('')
+
+  for line in demote(reflow(_references(member.block.body, owner_module, index)), level.length() + 1) {
+    out.append(line)
+  }
+
+  out.append('')
+
+  _tags(out, member.block)
+}
+
+# A constant is rendered like a member but with its value beside it,
+# since a constant with no visible value tells a reader nothing.
+def _constant(out: list, member, level: string, owner_module, index) {
+  out.append('${level} `${member.name}`')
+  out.append('')
+  out.append('```zuri,ignore')
+
+  var type = member.block.first('type')
+  var suffix = ''
+
+  if type != nil and type.type != '' {
+    suffix = ': ${type.type}'
+  }
+
+  if member.value == nil {
+    out.append('${member.path}${suffix}')
+  } else {
+    out.append('${member.path}${suffix} = ${member.value}')
+  }
+
+  out.append('```')
+  out.append('')
+
+  for line in demote(reflow(_references(member.block.body, owner_module, index)), level.length() + 1) {
+    out.append(line)
+  }
+
+  out.append('')
+
+  _tags(out, member.block)
+}
+
+# The badge line a class carries when its doc block claims one of the
+# decorated-method capabilities.
+var CAPABILITIES = {
+  'printable': 'has a `to_string()`, so `echo` and interpolation show something useful',
+  'serializable': 'has a `@to_json()`, so it can be handed straight to `json.encode()`',
+  'valueable': 'has a `@to_value()`, so it converts to a plain Zuri value',
+  'numeric': 'converts to a number',
+  'iterable': 'can be walked with `for` and `iter`',
+}
+
+def _class(out: list, klass, level: string, module, index) {
+  var inner = '${level}#'
+
+  out.append('${level} `${klass.name}`')
+  out.append('')
+  out.append('```zuri,ignore')
+
+  if klass.superclass == nil {
+    out.append('class ${klass.path}')
+  } else {
+    out.append('class ${klass.path} < ${klass.superclass}')
+  }
+
+  out.append('```')
+  out.append('')
+
+  for line in demote(reflow(_references(klass.block.body, module, index)), inner.length() + 1) {
+    out.append(line)
+  }
+
+  out.append('')
+
+  var capabilities = klass.capabilities()
+
+  if !capabilities.is_empty() {
+    for name in capabilities {
+      for wrapped in wrap_bullet('- **${name}** — ${CAPABILITIES.get(name, '')}', 2) {
+        out.append(wrapped)
+      }
+    }
+
+    out.append('')
+  }
+
+  _tags(out, klass.block)
+
+  if !klass.fields.is_empty() {
+    out.append('${inner} Fields')
+    out.append('')
+    out.append('| Field | Type | Description |')
+    out.append('| --- | --- | --- |')
+
+    for field in klass.fields {
+      var type = field.block.first('type')
+      var spelled = type == nil ? '' : escape(code(type.type))
+
+      out.append('| `${field.name}` | ${spelled} | ${_summary(field.block)} |')
+    }
+
+    out.append('')
+  }
+
+  if klass.constructor != nil {
+    out.append('${inner} Constructor')
+    out.append('')
+    out.append('```zuri,ignore')
+    out.append('${klass.path}(${', '.join(klass.constructor.params)})')
+    out.append('```')
+    out.append('')
+
+    for line in demote(reflow(_references(klass.constructor.block.body, module, index)), inner.length() + 1) {
+      out.append(line)
+    }
+
+    out.append('')
+
+    _tags(out, klass.constructor.block)
+  }
+
+  for method in klass.static_methods {
+    _member(out, method, klass.name, inner, module, index)
+  }
+
+  for method in klass.methods {
+    _member(out, method, klass.name, inner, module, index)
+  }
+}
+
+# Resolves the `{Name}` references library prose uses to name another
+# part of the API.
+#
+# The brace form is only turned into a link when the name actually
+# resolves: `{self.name}` inside an example is an interpolation and
+# `{string}` in a tag is a type, and neither is a reference to
+# anything. Anything that does not resolve is left exactly as written
+# rather than guessed at.
+def _references(lines: list, module, index) {
+  var fenced = false
+
+  return lines.map(@(line) {
+    if line.trim().starts_with('```') {
+      fenced = !fenced
+      return line
+    }
+
+    if fenced or !line.contains('{') {
+      return line
+    }
+
+    var out = ''
+    var at = 0
+
+    while true {
+      var open = line.index_of('{', at)
+
+      if open < 0 {
+        out += line[at, line.length()]
+        break
+      }
+
+      var close = line.index_of('}', open)
+
+      if close < 0 {
+        out += line[at, line.length()]
+        break
+      }
+
+      var name = line[open + 1, close]
+      var target = _resolve(name, module, index)
+
+      out += line[at, open]
+      out += target == nil ? line[open, close + 1] : target
+      at = close + 1
+    }
+
+    return out
+  })
+}
+
+# A reference is written either fully qualified (`set.Set`) or bare
+# (`Ipv4`), and a bare one means the module it was written in. Bare
+# names are tried against this module's own prefix first, then its
+# root, so `net/ip.zu` saying `{Ipv4}` finds `net.Ipv4`.
+def _resolve(name: string, module, index) {
+  if name == '' or name.contains(' ') {
+    return nil
+  }
+
+  var bare = name
+
+  if bare.ends_with('()') {
+    bare = bare[0, bare.length() - 2]
+  }
+
+  if bare.contains('(') {
+    return nil
+  }
+
+  for candidate in [bare, '${module.prefix}.${bare}', '${module.root}.${bare}'] {
+    var entry = index.get(candidate, nil)
+
+    if entry != nil {
+      var target = entry.page == module.slug() ? '' : '${entry.page}.md'
+
+      if entry.anchor == '' {
+        return '[`${name}`](${entry.page}.md)'
+      }
+
+      return '[`${name}`](${target}#${entry.anchor})'
+    }
+  }
+
+  return nil
+}
+
+# Where a member is documented, as a markdown link. `index` maps a
+# call path to the page that carries it.
+def _link(member, owner: string, index, from_page: string) {
+  var entry = index.get(member.path, nil)
+
+  if entry == nil {
+    return '`${member.path}`'
+  }
+
+  var target = entry.page == from_page ? '' : '${entry.page}.md'
+
+  return '[`${member.path}`](${target}#${entry.anchor})'
+}
+
+# How a reader reaches this module, stated at the top of its page. The
+# four cases are the four ways a package entry point can re-export a
+# neighbour, and getting this wrong sends someone looking for a name
+# that is not there.
+def _reach(module) {
+  if module.exposure == 'root' {
+    return []
+  }
+
+  var root = module.root
+  var own = module.name
+
+  if module.exposure == 'flatten' {
+    return wrap(
+      'Everything here is re-exported by `${root}`, so `import ${root}` '
+      + 'is enough and the names are called as `${module.prefix}.*`. '
+      + 'Importing `${own}` on its own works too and reaches the same '
+      + 'definitions.'
+    )
+  }
+
+  if module.exposure == 'namespace' {
+    return wrap(
+      '`${root}` exposes this as `${module.prefix}`, so `import ${root}` '
+      + 'is enough and the names are called as `${module.prefix}.*`. '
+      + '`import ${own}` reaches the same definitions directly.'
+    )
+  }
+
+  if module.exposure == 'partial' {
+    return wrap(
+      '`${root}` lifts part of this module out to its own top level; '
+      + 'each name below is shown with the path that reaches it. '
+      + 'Anything still spelled `${module.prefix}.*` needs '
+      + '`import ${own}`.'
+    )
+  }
+
+  return wrap(
+    '`${root}` does not re-export this module, so it is reached only by '
+    + 'importing it directly.'
+  )
+}
+
+# The import line that opens every page.
+def _import(module) {
+  if module.exposure == 'root' {
+    return module.name
+  }
+
+  if module.exposure == 'flatten' or module.exposure == 'namespace' {
+    return module.root
+  }
+
+  return module.name
+}
+
+# One row of an index table.
+def _row(member, kind: string, index, page: string) {
+  return '| ${_link(member, '', index, page)} | ${kind} | ${_summary(member.block)} |'
+}
+
+# The whole public surface of a root module, gathered from every module
+# beneath it. This is the first thing on a root module's page: a reader
+# who knows only `import os` can find `os.get_env` here without knowing
+# that `os/env.zu` exists.
+def _surface(out: list, module, index) {
+  var rows = []
+
+  for entry in module.tree() {
+    for member in entry.constants {
+      rows.append({ sort: member.path, row: _row(member, 'constant', index, module.slug()) })
+    }
+
+    for member in entry.functions {
+      rows.append({ sort: member.path, row: _row(member, 'function', index, module.slug()) })
+    }
+
+    for member in entry.classes {
+      rows.append({ sort: member.path, row: _row(member, 'class', index, module.slug()) })
+    }
+  }
+
+  if rows.is_empty() {
+    return
+  }
+
+  out.append('## The `${module.name}` API')
+  out.append('')
+
+  for line in wrap(
+    'Every public name in `${module.name}`, wherever it is declared. '
+    + 'Each links to the page that documents it.'
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('| Name | Kind | Summary |')
+  out.append('| --- | --- | --- |')
+
+  var keys = rows.map(@(entry) => entry.sort)
+  var lookup = {}
+
+  for entry in rows {
+    lookup.set(entry.sort, entry.row)
+  }
+
+  keys.sort()
+
+  for key in keys {
+    out.append(lookup.get(key))
+  }
+
+  out.append('')
+}
+
+# The child pages, as a table rather than a bare list, because the
+# summary is what tells a reader which one they want.
+def _submodules(out: list, module) {
+  if module.children.is_empty() {
+    return
+  }
+
+  out.append('## Submodules')
+  out.append('')
+  out.append('| Module | Reached as | Summary |')
+  out.append('| --- | --- | --- |')
+
+  for child in module.children {
+    var reached = '`${child.prefix}.*`'
+
+    if child.exposure == 'flatten' {
+      reached = '`${child.prefix}.*`'
+    }
+
+    if child.exposure == 'direct' {
+      reached = '`import ${child.name}`'
+    }
+
+    out.append('| [`${child.name}`](${child.slug()}.md) | ${reached} | ${_summary(child.overview)} |')
+  }
+
+  out.append('')
+}
+
+/**
+ * Renders one module's page.
+ *
+ * @param Module module
+ * @param dict index: call path to `{ page, anchor }`, for cross-links
+ * @returns string
+ */
+def page(module, index) {
+  var out = []
+
+  out.append('# `${module.name}`')
+  out.append('')
+  out.append('```zuri,ignore')
+  out.append('import ${_import(module)}')
+  out.append('```')
+  out.append('')
+
+  var reach = _reach(module)
+
+  if !reach.is_empty() {
+    for line in reach {
+      out.append('> ${line}')
+    }
+
+    out.append('')
+  }
+
+  for line in demote(reflow(_references(module.overview.body, module, index)), 2) {
+    out.append(line)
+  }
+
+  out.append('')
+
+  if module.default_export != nil {
+    var fn = module.default_export
+
+    for line in wrap(
+      'The module is callable. `${module.root}(...)` is the same call as '
+      + '`${fn.path}(...)`, documented below.'
+    ) {
+      out.append(line)
+    }
+
+    out.append('')
+  }
+
+  if module.exposure == 'root' {
+    _surface(out, module, index)
+  }
+
+  _submodules(out, module)
+
+  if !module.constants.is_empty() {
+    out.append('## Constants')
+    out.append('')
+
+    for member in module.constants {
+      _constant(out, member, '###', module, index)
+    }
+  }
+
+  if !module.functions.is_empty() {
+    out.append('## Functions')
+    out.append('')
+
+    for member in module.functions {
+      _member(out, member, '', '###', module, index)
+    }
+  }
+
+  if !module.classes.is_empty() {
+    out.append('## Classes')
+    out.append('')
+
+    for klass in module.classes {
+      _class(out, klass, '###', module, index)
+    }
+  }
+
+  var copyright = module.copyright
+
+  if copyright != nil {
+    out.append('---')
+    out.append('')
+    out.append('<small>${copyright.text}</small>')
+  }
+
+  return '${'\n'.join(squeeze(out))}\n'
+}
+
+/**
+ * Builds the map from a call path to the page and anchor that
+ * document it, which is what every cross-link in the reference is
+ * resolved through.
+ *
+ * @param list roots
+ * @returns dict
+ */
+def build_index(roots: list) {
+  var index = {}
+
+  for root in roots {
+    for module in root.tree() {
+      var page = module.slug()
+
+      index.set(module.name, { page, anchor: '' })
+
+      # A member is indexed under the path that reaches it and, when
+      # the two differ, under the module that declares it as well.
+      def alias(member, slug: string) {
+        var entry = { page, anchor: slug }
+
+        index.set(member.path, entry)
+        index.set('${module.name}.${member.name}', entry)
+      }
+
+      for member in module.constants {
+        alias(member, anchor(member.name))
+      }
+
+      for member in module.functions {
+        alias(member, anchor(member.name))
+      }
+
+      for klass in module.classes {
+        alias(klass, anchor(klass.name))
+
+        for group in [klass.methods, klass.static_methods] {
+          for method in group {
+            var slug = anchor('${klass.name}.${method.name}')
+
+            index.set(method.path, { page, anchor: slug })
+            index.set('${module.name}.${klass.name}.${method.name}', { page, anchor: slug })
+          }
+        }
+      }
+    }
+  }
+
+  return index
+}

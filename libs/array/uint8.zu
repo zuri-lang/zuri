@@ -1,3 +1,15 @@
+/**
+ * @module uint8
+ *
+ * `UInt8Array`: a packed array of unsigned 8-bit integers, 1 byte per
+ * element.
+ *
+ * `UINT8_MAX` and `UINT8_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

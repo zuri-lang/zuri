@@ -1,3 +1,17 @@
+/**
+ * @module worker
+ *
+ * The multi-process side of `HttpServer`: a pool of isolates, each
+ * accepting and serving connections from the same listening socket.
+ *
+ * Each worker polls the connections it holds rather than blocking on
+ * one, so a slow client occupies a descriptor and not a thread. This is
+ * what `HttpServer` uses when it is configured with more than one
+ * worker.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { HttpError }

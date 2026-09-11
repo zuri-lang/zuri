@@ -1,3 +1,17 @@
+/**
+ * @module h1
+ *
+ * HTTP/1.1 on the wire (RFC 9110 and RFC 9112): reading a request line
+ * and its headers, writing a status line and its headers, and the
+ * chunked transfer encoding.
+ *
+ * This is the layer `HttpServer` and `HttpClient` sit on when the
+ * connection is not HTTP/2. `DEFAULT_LIMITS` is what stops a malformed
+ * or hostile peer from making the parser allocate without bound.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .body

@@ -6,14 +6,15 @@
  * submodule for inspecting live functions, classes, and modules
  * at runtime.
  *
- * - `tokenize(source)` returns every lexical token in `source`,
- * in order; see {zuri.token}. - `parse(source)` returns
- * `source`'s AST as a list of nodes, with every comment and doc
- * block preserved in place; see {zuri.ast}. - `compile(source)`
- * returns `source`'s compiled VM instructions; see
- * {zuri.compile}. - `zuri.reflect` inspects live
- * functions/classes/modules, and reads or updates an instance's
- * own properties; see {zuri.reflect}.
+ * - `tokenize(source)` returns every lexical token in `source`, in
+ *   order; see {zuri.token}.
+ * - `parse(source)` returns `source`'s AST as a list of nodes, with
+ *   every comment and doc block preserved in place; see {zuri.ast}.
+ * - `compile(source)` returns `source`'s compiled VM instructions;
+ *   see {zuri.compile}.
+ * - `zuri.reflect` inspects live functions, classes and modules, and
+ *   reads or updates an instance's own properties; see
+ *   {zuri.reflect}.
  *
  * The ordinary starting point in practice is a real file on
  * disk, not a source string already sitting in a variable, so

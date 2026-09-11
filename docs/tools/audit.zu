@@ -10,15 +10,16 @@
  * Run it on its own, or let `reference.zu` run it for you:
  *
  * ```
- * zuri docs/book/tools/audit.zu
+ * zuri docs/tools/audit.zu
  * ```
  *
  * Exits non-zero when anything is reported.
  */
 
 import os
+import zuri
 
-var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
+var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
 var LIBS = os.join_paths(ROOT, 'libs')
 
 # One thing wrong with one doc block.
@@ -124,6 +125,49 @@ def _first_line(body: string) {
   return '(no description)'
 }
 
+# Every fenced block in a doc block body, as `{ info, source, line }`.
+# The body's own line numbering is relative to the block, which is what
+# a report adds to the block's own line to point at the example.
+def _fences(body: string) {
+  var lines = body.split('\n')
+  var found = []
+  var i = 0
+
+  while i < lines.length() {
+    var opener = _bare(lines[i])
+
+    if !opener.starts_with('```') {
+      i++
+      continue
+    }
+
+    var info = opener[3, opener.length()].trim()
+    var start = i + 1
+    var end = start
+
+    while end < lines.length() and !_bare(lines[end]).starts_with('```') {
+      end++
+    }
+
+    var body_lines = []
+
+    iter var j = start; j < end; j++ {
+      body_lines.append(_bare(lines[j]))
+    }
+
+    found.append({ info, line: i, source: '\n'.join(body_lines) })
+    i = end + 1
+  }
+
+  return found
+}
+
+# A transcript of an interactive session is a dialogue, not a program,
+# so it is not expected to parse as one.
+def _is_transcript(source: string) {
+  return source.ltrim().starts_with('%>')
+}
+
 def _fence_count(body: string) {
   var fences = 0
 
@@ -163,6 +207,36 @@ def check_source(path: string, source: string) {
         'unbalanced code fence (${fences} markers)',
         _first_line(block.body)
       ))
+
+      # With a fence unaccounted for there is no telling where one
+      # example ends and the next begins, so checking them is pointless
+      # until that is fixed.
+      continue
+    }
+
+    # Every Zuri example in the documentation is expected to be Zuri.
+    # Running them all is a separate job with separate costs (a socket,
+    # a file, a REPL prompt); parsing them costs nothing and catches
+    # the example that rotted when the syntax it used moved on.
+    for fence in _fences(block.body) {
+      if !fence.info.starts_with('zuri') or _is_transcript(fence.source) {
+        continue
+      }
+
+      if fence.info.contains('ignore') {
+        continue
+      }
+
+      catch {
+        zuri.parse(fence.source)
+      } as error {
+        findings.append(Finding(
+          path,
+          block.line + fence.line,
+          'example does not parse',
+          ' '.join(error.message.lines().map(@(line) => line.trim())).trim()
+        ))
+      }
     }
   }
 

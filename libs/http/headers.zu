@@ -1,3 +1,17 @@
+/**
+ * @module headers
+ *
+ * `Headers`: a case-insensitive, order-preserving multimap, because HTTP
+ * header names do not compare case-sensitively and some headers may
+ * legitimately appear more than once.
+ *
+ * The validation functions enforce what a name and a value may contain,
+ * which is what keeps a header value carrying a newline from splitting
+ * one response into two.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ProtocolError }

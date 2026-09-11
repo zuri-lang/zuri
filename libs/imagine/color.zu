@@ -1,3 +1,16 @@
+/**
+ * @module color
+ *
+ * `Color`: one RGBA colour, and the conversions between the ways of
+ * naming one.
+ *
+ * It reads and writes hex, RGB, HSL and HSV, blends against another
+ * colour, and reports its own luminance. The named constants are the
+ * handful worth not spelling out every time.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import colors

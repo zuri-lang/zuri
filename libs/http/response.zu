@@ -1,3 +1,16 @@
+/**
+ * @module response
+ *
+ * `HttpResponse`: one response, whether it is being built by a handler
+ * or read back from a server.
+ *
+ * It carries the status, the headers and the body, and the helpers on it
+ * cover what a handler nearly always wants: JSON, a file, a redirect, or
+ * a stream written a chunk at a time.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .cookies { Cookie }

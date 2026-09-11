@@ -58,7 +58,7 @@
  * ```zuri
  * import isolate
  *
- * var ch = isolate.channel(10) // Bounded channel with capacity 10
+ * var ch = isolate.channel(10)  # bounded channel with capacity 10
  *
  * def producer(out_ch) {
  *   iter var i = 1; i <= 5; i++ {
@@ -71,7 +71,10 @@
  *
  * while true {
  *   var msg = ch.recv()
- *   if msg == nil break // Channel is closed and empty
+ *   if msg == nil {
+ *     break  # the channel is closed and empty
+ *   }
+ *
  *   echo "Received: ${msg}"
  * }
  *
@@ -177,7 +180,7 @@ class Channel {
    *
    * ```zuri
    * ch.send("data payload")
-   * ch.send(42, 0.5) // wait at most 500ms
+   * ch.send(42, 0.5)  # wait at most 500ms
    * ```
    */
   send(value, timeout: ?number) {

@@ -1,3 +1,15 @@
+/**
+ * @module int8
+ *
+ * `Int8Array`: a packed array of twos-complement 8-bit signed integers, 1 byte per
+ * element.
+ *
+ * `INT8_MAX` and `INT8_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

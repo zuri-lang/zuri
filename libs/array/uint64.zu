@@ -1,3 +1,15 @@
+/**
+ * @module uint64
+ *
+ * `UInt64Array`: a packed array of unsigned 64-bit integers, 8 bytes per
+ * element.
+ *
+ * `UINT64_MAX` and `UINT64_MIN` bound what an element
+ * may be; a value outside them raises rather than wrapping.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

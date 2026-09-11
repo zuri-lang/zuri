@@ -1,3 +1,16 @@
+/**
+ * @module request
+ *
+ * `HttpRequest`: one inbound request, with its method, target, headers
+ * and body, plus the query string and route parameters already parsed.
+ *
+ * The query-string functions are separate because they are useful on
+ * their own: `build_query_string()` is what constructs a URL to request,
+ * not only what reads one.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { HttpError, ProtocolError }

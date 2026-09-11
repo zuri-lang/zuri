@@ -156,7 +156,7 @@ def id(x: any) {}
  * scanline at a time).
  *
  * @note In the REPL, it also appends a newline at the end.
- * @param ...vany values: Any number of arguments to print
+ * @param ...any values: Any number of arguments to print
  * @return void
  */
 def print(...values) {}

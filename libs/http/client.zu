@@ -1,3 +1,17 @@
+/**
+ * @module client
+ *
+ * `HttpClient`: the connection-pooling, redirect-following, cookie-aware
+ * side of the module.
+ *
+ * It negotiates HTTP/2 over TLS when the server offers it, falls back to
+ * HTTP/1.1 otherwise, and reuses connections between requests. The
+ * module-level `http.get()`/`http.post()` shortcuts are thin wrappers
+ * around a shared instance of this.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .body

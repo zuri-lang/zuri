@@ -1,3 +1,15 @@
+/**
+ * @module float
+ *
+ * `FloatArray`: a packed array of single-precision IEEE 754 floats, 4 bytes per
+ * element.
+ *
+ * `FLOAT_MAX` and `FLOAT_MIN` are the largest and
+ * smallest finite values the type can hold.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

@@ -1,3 +1,16 @@
+/**
+ * @module multipart
+ *
+ * `multipart/form-data`, in both directions.
+ *
+ * `MultipartData` and `UploadedFile` are what a parsed upload arrives
+ * as; `MultipartBuilder` constructs one for sending. Parsing streams
+ * rather than buffering, so an upload larger than memory is still an
+ * upload.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ProtocolError, TooLargeError }

@@ -1,3 +1,17 @@
+/**
+ * @module proxy
+ *
+ * `ReverseProxy` forwards a request to another server and streams the
+ * response back; `LoadBalancer` spreads those forwards across several
+ * backends and stops sending to one that is failing.
+ *
+ * Hop-by-hop headers are stripped on the way through, and forwarding
+ * headers are added, so the backend can still tell who the original
+ * client was.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .client { HttpClient }

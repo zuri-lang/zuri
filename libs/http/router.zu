@@ -1,3 +1,17 @@
+/**
+ * @module router
+ *
+ * Matching a request to a handler.
+ *
+ * `Router` holds the route table, `Route` is one pattern, and
+ * `RouteMatch` is the result of matching including whatever the path
+ * parameters captured. Patterns support named parameters and wildcards,
+ * and the router answers `405` rather than `404` when a path exists
+ * under a different method.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { HttpError }

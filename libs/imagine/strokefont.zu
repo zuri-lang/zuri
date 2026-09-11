@@ -1,3 +1,16 @@
+/**
+ * @module strokefont
+ *
+ * `StrokeFont`: the font built into the module, defined as stroke
+ * geometry rather than glyph outlines.
+ *
+ * It exists so that text can be drawn with no font file present at all.
+ * Because a glyph is a path rather than a filled shape, it scales to any
+ * size and takes a weight without needing a separate face per weight.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import .canvas { Canvas }

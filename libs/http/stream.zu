@@ -1,3 +1,16 @@
+/**
+ * @module stream
+ *
+ * The transport underneath everything else: a byte stream with buffering,
+ * timeouts and optional TLS.
+ *
+ * `Connection` is what both the client and the server read and write
+ * through, so the protocol layers above never have to know whether they
+ * are talking over TCP or over TLS.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ConnectionError, ProtocolError, TimeoutError, TooLargeError }

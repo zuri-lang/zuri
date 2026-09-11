@@ -1,3 +1,16 @@
+/**
+ * @module font
+ *
+ * `Font`: a loaded TrueType or OpenType face, ready to measure and draw
+ * text with.
+ *
+ * Glyph rasterisation and metrics come from the font file itself, so
+ * kerning and line height are whatever the designer specified rather
+ * than an approximation.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import os

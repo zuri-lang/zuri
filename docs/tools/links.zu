@@ -1,0 +1,249 @@
+/**
+ * Checks that every internal link in the documentation resolves.
+ *
+ * A markdown link to a page that does not exist, or to an anchor that
+ * no heading produces, renders as a link and fails only when someone
+ * clicks it. Both books cross-reference heavily and the reference is
+ * generated, so a renamed module silently breaks every link into it.
+ *
+ * Run it from the repository root:
+ *
+ * ```
+ * zuri docs/tools/links.zu              # both books
+ * zuri docs/tools/links.zu reference    # just one
+ * ```
+ *
+ * Exits non-zero when anything does not resolve.
+ */
+
+import os
+
+var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
+
+var BOOKS = [
+  { name: 'book', pages: os.join_paths(ROOT, 'docs', 'book', 'src') },
+  { name: 'reference', pages: os.join_paths(ROOT, 'target', 'reference', 'src') },
+]
+
+# mdBook derives a heading's anchor by lowercasing it and dropping
+# everything that is not a letter, a digit, a dash or an underscore.
+def _anchor(text: string) {
+  var out = ''
+
+  for character in text.lower() {
+    if character == ' ' {
+      out += '-'
+      continue
+    }
+
+    if character.is_alnum() or character == '-' or character == '_' {
+      out += character
+    }
+  }
+
+  return out
+}
+
+# Every anchor a page offers: one per heading, plus mdBook's numbered
+# suffixes for headings that repeat.
+def _anchors(source: string) {
+  var found = []
+  var seen = {}
+  var fenced = false
+
+  for line in source.split('\n') {
+    var text = line.trim()
+
+    if text.starts_with('```') {
+      fenced = !fenced
+      continue
+    }
+
+    if fenced or !text.starts_with('#') {
+      continue
+    }
+
+    var level = 0
+
+    while level < text.length() and text[level] == '#' {
+      level++
+    }
+
+    if level > 6 or level >= text.length() or text[level] != ' ' {
+      continue
+    }
+
+    var base = _anchor(text[level, text.length()].trim())
+    var count = seen.get(base, 0)
+
+    seen.set(base, count + 1)
+    found.append(count == 0 ? base : '${base}-${count}')
+  }
+
+  return found
+}
+
+def _ticks(text: string) {
+  var count = 0
+
+  for character in text {
+    if character == '`' {
+      count++
+    }
+  }
+
+  return count
+}
+
+# Every `](target)` on a page, with the line it sits on.
+def _links(source: string) {
+  var found = []
+  var lines = source.split('\n')
+  var fenced = false
+
+  iter var i = 0; i < lines.length(); i++ {
+    var text = lines[i]
+
+    if text.trim().starts_with('```') {
+      fenced = !fenced
+      continue
+    }
+
+    if fenced {
+      continue
+    }
+
+    var at = 0
+
+    while true {
+      var open = text.index_of('](', at)
+
+      if open < 0 {
+        break
+      }
+
+      var close = text.index_of(')', open)
+
+      if close < 0 {
+        break
+      }
+
+      # `operations['twice'](5)` inside a code span is not a link. An
+      # odd number of backticks before the bracket means the text is
+      # inside a span rather than in the prose around it.
+      if _ticks(text[0, open]) % 2 == 0 {
+        found.append({ target: text[open + 2, close], line: i + 1 })
+      }
+
+      at = close + 1
+    }
+  }
+
+  return found
+}
+
+def check(book) {
+  var anchors = {}
+  var names = []
+
+  for name in os.read_dir(book.pages) {
+    if name == '.' or name == '..' or !name.ends_with('.md') {
+      continue
+    }
+
+    names.append(name)
+    anchors.set(name, _anchors(file(os.join_paths(book.pages, name)).read()))
+  }
+
+  names.sort()
+
+  var broken = []
+
+  for name in names {
+    for link in _links(file(os.join_paths(book.pages, name)).read()) {
+      var target = link.target
+
+      # External links and mail are somebody else's problem.
+      if target.contains('://') or target.starts_with('mailto:') {
+        continue
+      }
+
+      var page = target
+      var fragment = ''
+      var hash = target.index_of('#')
+
+      if hash >= 0 {
+        page = target[0, hash]
+        fragment = target[hash + 1, target.length()]
+      }
+
+      # An empty page means the link points inside this same page.
+      if page == '' {
+        page = name
+      }
+
+      # Anything with a directory in it is a file rather than a page:
+      # an image beside the chapter that uses it, or a link out of this
+      # book into the other one. Both resolve against the file system.
+      if page.contains('/') {
+        if !file(os.join_paths(book.pages, page)).exists() {
+          broken.append('${book.name}/${name}:${link.line}  no such file: ${page}')
+        }
+
+        continue
+      }
+
+      if !anchors.contains(page) {
+        broken.append('${book.name}/${name}:${link.line}  no such page: ${page}')
+        continue
+      }
+
+      if fragment != '' and !anchors.get(page).contains(fragment) {
+        broken.append('${book.name}/${name}:${link.line}  no anchor #${fragment} on ${page}')
+      }
+    }
+  }
+
+  return { checked: names.length(), broken }
+}
+
+def main(which: string) {
+  var pages = 0
+  var broken = []
+
+  for book in BOOKS {
+    if which != '' and book.name != which {
+      continue
+    }
+
+    if !os.dir_exists(book.pages) {
+      continue
+    }
+
+    var result = check(book)
+
+    pages += result.checked
+
+    for problem in result.broken {
+      broken.append(problem)
+    }
+  }
+
+  for problem in broken {
+    echo problem
+  }
+
+  echo ''
+
+  if broken.is_empty() {
+    echo '${pages} pages checked, every link resolves'
+    return
+  }
+
+  echo '${pages} pages checked, ${broken.length()} broken link${broken.length() == 1 ? '' : 's'}'
+  os.exit(1)
+}
+
+if __root__ == __file__ {
+  main(os.args.length() > 2 ? os.args[2] : '')
+}

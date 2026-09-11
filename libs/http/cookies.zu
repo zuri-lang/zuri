@@ -1,3 +1,17 @@
+/**
+ * @module cookies
+ *
+ * Cookies, both halves of them: `Cookie` is one cookie with its
+ * attributes, `CookieJar` is a store that applies the domain, path and
+ * expiry rules when deciding what to send.
+ *
+ * The parsing and formatting functions handle the two header formats,
+ * which are not symmetric: a request sends many cookies in one `Cookie`
+ * header, a response sets one per `Set-Cookie`.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ProtocolError }

@@ -1,3 +1,15 @@
+/**
+ * @module bytesio
+ *
+ * `BytesIO`: an in-memory buffer that behaves like a file.
+ *
+ * Anything that reads or writes through a file handle can be pointed at
+ * one of these instead, which is what makes a function that writes to
+ * disk testable without touching the disk.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 # io.BytesIO implementation
 
 /**
@@ -8,8 +20,8 @@
  * that ties it to the operating system filesystem such as
  * symbolic links, chmod and set time.
  *
- * See the tutorial on [working with
- * files](/tutorial/working-with-files) for more information.
+ * See the chapter on files in *The Zuri Programming Language* for
+ * more information.
  */
 class BytesIO {
   # trackers

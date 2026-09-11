@@ -1,3 +1,16 @@
+/**
+ * @module constants
+ *
+ * Every named constant the module takes as an argument: resampling
+ * filters, blend modes, line caps, edge handling, file formats, anchor
+ * points, text alignment and flip axes.
+ *
+ * They are gathered here so that a call reads as `imagine.BILINEAR`
+ * rather than a bare number whose meaning has to be looked up.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 # Every constant here is a plain string whose value is the name the

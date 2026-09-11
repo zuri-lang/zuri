@@ -1,3 +1,15 @@
+/**
+ * @module double
+ *
+ * `DoubleArray`: a packed array of double-precision IEEE 754 floats, 8 bytes per
+ * element.
+ *
+ * `DOUBLE_MAX` and `DOUBLE_MIN` are the largest and
+ * smallest finite values the type can hold.
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
 import ._base { Array }
 
 

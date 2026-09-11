@@ -419,8 +419,7 @@ negative and no modular inverse exists.
 modinv(modulus) -> bigint|nil
 ```
 
-Returns the modular multiplicative inverse: the `x` solving `self * x ==
-1 (mod modulus)`.
+Returns the modular multiplicative inverse: the `x` solving `self * x == 1 (mod modulus)`.
 
 ```zuri,ignore
 %> (3n).modinv(11n)

@@ -302,8 +302,8 @@ class Bzip2Decoder {
  * that ties it to the operating system filesystem such as
  * symbolic links, chmod and set time.
  *
- * See the tutorial on [working with
- * files](/tutorial/working-with-files) for more information.
+ * See the chapter on files in *The Zuri Programming Language* for
+ * more information.
  */
 class BzFile {
   var _is_encoder

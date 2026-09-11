@@ -311,7 +311,7 @@
  *
  * # A filter: the value comes first, then whatever the template passed.
  * view.register_filter('excerpt', @(value, words) {
- *   var count = words ?? 25
+ *   var count = words == nil ? 25 : words
  *   return ' '.join(value.split('/\\s+/').take(count)) + '…'
  * })
  *
@@ -717,7 +717,7 @@ class Wire {
    *
    * ```zuri
    * view.register_filter('excerpt', @(value, words) {
-   *   var count = words ?? 25
+   *   var count = words == nil ? 25 : words
    *   return ' '.join(value.split('/\\s+/').take(count)) + '…'
    * })
    * ```

@@ -1,3 +1,17 @@
+/**
+ * @module image
+ *
+ * `Image`: a raster image as an RGBA pixel buffer, and everything that
+ * transforms one.
+ *
+ * Resizing, cropping, rotation, compositing, colour adjustment and the
+ * named filters are all methods here. Every one produces a new image
+ * rather than altering the receiver, except where a method says
+ * otherwise.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import base64

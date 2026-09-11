@@ -1,0 +1,232 @@
+/**
+ * @module catalogue
+ *
+ * The one hand-written thing in the reference: which modules belong
+ * together, and the order they are introduced in.
+ *
+ * Everything else on every page comes out of `libs/`. This does not,
+ * because no doc block can say that `hash` belongs beside `crypto`
+ * rather than beside `math`. `check()` makes the list answer for
+ * itself: a module added to `libs/` and not catalogued here stops the
+ * build rather than quietly vanishing from the contents.
+ */
+
+import ..markdown { * }
+
+/**
+ * The reference's table of contents, in reading order.
+ *
+ * Each group is `{ title, blurb, modules }`. The blurb heads the
+ * group's section on the landing page.
+ */
+var GROUPS = [
+  {
+    title: 'The Language Itself',
+    blurb: 'Types, reflection, and the compiler Zuri is written with.',
+    modules: ['types', 'enum', 'convert', 'zuri'],
+  },
+  {
+    title: 'Text and Markup',
+    blurb: 'Parsing, building and colouring text meant to be read.',
+    modules: ['html', 'wire', 'url', 'mime', 'colors'],
+  },
+  {
+    title: 'Data Formats',
+    blurb: 'Reading and writing the formats other programs speak.',
+    modules: ['json', 'yaml', 'csv', 'base64', 'struct'],
+  },
+  {
+    title: 'Numbers and Collections',
+    blurb: 'Arithmetic, statistics, and the containers the built-in types do not cover.',
+    modules: ['math', 'stat', 'array', 'set'],
+  },
+  {
+    title: 'Dates and Times',
+    blurb: 'Calendar arithmetic, formatting, and the timezone database.',
+    modules: ['date'],
+  },
+  {
+    title: 'The Machine',
+    blurb: 'The filesystem, other processes, the terminal, and the command line.',
+    modules: ['os', 'io', 'args', 'log'],
+  },
+  {
+    title: 'Networking',
+    blurb: 'Sockets, addresses, and a complete HTTP stack on top of them.',
+    modules: ['net', 'http'],
+  },
+  {
+    title: 'Security and Identity',
+    blurb: 'Hashing, signing, password storage, tokens and input validation.',
+    modules: ['crypto', 'hash', 'bcrypt', 'jwt', 'uuid', 'validate'],
+  },
+  {
+    title: 'Compression and Archives',
+    blurb: 'Every codec and container format the runtime ships with.',
+    modules: ['compress'],
+  },
+  {
+    title: 'Concurrency',
+    blurb: 'Real OS threads, with separate heaps and message passing between them.',
+    modules: ['isolate'],
+  },
+  {
+    title: 'Images',
+    blurb: 'Decoding, drawing, filtering and encoding raster images.',
+    modules: ['imagine'],
+  },
+]
+
+/**
+ * Fails the build when a module in `libs/` is missing from `GROUPS`,
+ * or `GROUPS` names one that does not exist.
+ *
+ * @param list roots
+ * @throws Error naming what is wrong on either side.
+ */
+def check(roots: list) {
+  var catalogued = []
+
+  for group in GROUPS {
+    for name in group.modules {
+      catalogued.append(name)
+    }
+  }
+
+  var present = roots.map(@(module) => module.name)
+  var missing = present.filter(@(name) => !catalogued.contains(name))
+  var phantom = catalogued.filter(@(name) => !present.contains(name))
+
+  if !missing.is_empty() {
+    raise Error(
+      'these modules are in libs/ but not in the catalogue: '
+      + ', '.join(missing)
+      + '. Add each to a group in catalogue.zu.'
+    )
+  }
+
+  if !phantom.is_empty() {
+    raise Error(
+      'the catalogue names modules that are not in libs/: '
+      + ', '.join(phantom)
+    )
+  }
+}
+
+# The first sentence of a module's own `@module` block, for the
+# landing page's tables.
+def _summary(module) {
+  var text = module.overview.summary().replace('/\{([A-Za-z_][A-Za-z0-9_.]*)\}/', '`$1`')
+
+  return escape(summarise(text, 130))
+}
+
+/**
+ * Renders the reference's landing page.
+ *
+ * @param list roots
+ * @param dict index
+ * @returns string
+ */
+def landing(roots: list, index) {
+  var by_name = {}
+
+  for module in roots {
+    by_name.set(module.name, module)
+  }
+
+  var out = []
+
+  out.append('# The Zuri Standard Library')
+  out.append('')
+
+  for line in wrap(
+    'Every module Zuri ships with, and every public name in each one. '
+    + 'The pages here are generated from the library\'s own doc blocks, '
+    + 'so what you read is what the code says.'
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+
+  for line in wrap(
+    'This is a reference, not a tutorial. It answers "what does this '
+    + 'take and what does it return". For the narrative version, with '
+    + 'worked examples and the reasoning behind the design, read *The '
+    + 'Zuri Programming Language*, which `cargo run-docs` serves '
+    + 'alongside this.'
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('## How to Read a Page')
+  out.append('')
+
+  for line in wrap(
+    'Every module page opens with the import that reaches it, then the '
+    + 'module\'s own description, then its members. A package also '
+    + 'carries an index of its whole public surface, because a name '
+    + 'you reach as `os.get_env` may well be declared in a file called '
+    + 'something else.'
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('Signatures are written the way the source declares them:')
+  out.append('')
+
+  for entry in [
+    '`name: string` is a parameter that must be a string, enforced at the call.',
+    '`name: ?string` accepts a string or `nil`, which is how an optional argument is spelled.',
+    '`...values` takes any number of arguments and arrives as a list.',
+    '`-> string` is what the call gives back.',
+  ] {
+    for line in wrap_bullet('- ${entry}', 2) {
+      out.append(line)
+    }
+  }
+
+  out.append('')
+
+  for line in wrap(
+    'A name beginning with an underscore is private: the compiler '
+    + 'refuses to import it across a module boundary, so none appear '
+    + 'here.'
+  ) {
+    out.append(line)
+  }
+
+  out.append('')
+  out.append('## The Modules')
+  out.append('')
+
+  for group in GROUPS {
+    out.append('### ${group.title}')
+    out.append('')
+
+    for line in wrap(group.blurb) {
+      out.append(line)
+    }
+
+    out.append('')
+    out.append('| Module | What it is for |')
+    out.append('| --- | --- |')
+
+    for name in group.modules {
+      var module = by_name.get(name, nil)
+
+      if module == nil {
+        continue
+      }
+
+      out.append('| [`${name}`](${module.slug()}.md) | ${_summary(module)} |')
+    }
+
+    out.append('')
+  }
+
+  return '${'\n'.join(squeeze(out))}\n'
+}

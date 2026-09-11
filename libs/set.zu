@@ -20,10 +20,10 @@
  * 
  * var my_set = set()
  * 
- * my_set.add(11) # <Set(1) {1}>
- * my_set.add(56) # <Set(2) {1, 5}>
- * my_set.add(97) # <Set(2) {1, 5}>
- * my_set.add('some text') # <Set(3) {1, 5, 'some text'}>
+ * my_set.add(11) # <Set(1) {11}>
+ * my_set.add(56) # <Set(2) {11, 56}>
+ * my_set.add(97) # <Set(3) {11, 56, 97}>
+ * my_set.add('some text') # <Set(4) {11, 56, 97, some text}>
  * var o = { a: 1, b: 2 }
  * my_set.add(o)
  * 

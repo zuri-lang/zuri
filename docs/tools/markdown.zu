@@ -1,0 +1,429 @@
+/**
+ * @module markdown
+ *
+ * Markdown the two generators both emit: reflowing prose, wrapping
+ * bullets, and escaping the characters a table cell cannot hold.
+ *
+ * Doc blocks are hard-wrapped narrow so they sit comfortably in a
+ * source file. Markdown does not care where the source broke its
+ * lines, but the rendered result reads badly if those breaks survive,
+ * so every paragraph is unwrapped and re-wrapped at one width.
+ */
+
+/** The column prose is re-wrapped at. */
+var WIDTH = 72
+
+/**
+ * Unwraps a run of hard-wrapped text and re-wraps it at `WIDTH`.
+ *
+ * @param string text
+ * @returns list[string]
+ */
+def wrap(text: string) {
+  var words = text.split(' ').filter(@(word) => word != '')
+  var lines = []
+  var current = ''
+  var spanned = false
+
+  for word in words {
+    if current == '' {
+      current = word
+      spanned = _odd_ticks(word)
+      continue
+    }
+
+    var open = spanned != _odd_ticks(word)
+
+    # A break inside a code span is not just ugly, it can change what
+    # the markdown means: a wrapped `</p>` landing at the start of a
+    # line opens an HTML block, which ends the paragraph and leaves the
+    # span's opening backtick sitting there as a literal character.
+    if spanned or current.length() + 1 + word.length() <= WIDTH {
+      current = '${current} ${word}'
+      spanned = open
+      continue
+    }
+
+    lines.append(current)
+    current = word
+    spanned = _odd_ticks(word)
+  }
+
+  if current != '' {
+    lines.append(current)
+  }
+
+  return lines
+}
+
+# True when a word carries an odd number of backticks, and so opens or
+# closes a code span rather than sitting wholly inside or outside one.
+def _odd_ticks(word: string) {
+  var count = 0
+
+  for character in word {
+    if character == '`' {
+      count++
+    }
+  }
+
+  return count % 2 == 1
+}
+
+/**
+ * Wraps a bullet, indenting every continuation under the text rather
+ * than under the marker.
+ *
+ * @param string line
+ * @param ?number indent: spaces to hang continuations by, 2 by default
+ * @returns list[string]
+ */
+def wrap_bullet(line: string, indent) {
+  var pad = ' ' * (indent or 2)
+  var wrapped = wrap(line)
+  var out = []
+
+  iter var i = 0; i < wrapped.length(); i++ {
+    out.append(i == 0 ? wrapped[i] : '${pad}${wrapped[i]}')
+  }
+
+  return out
+}
+
+# True for a line markdown treats structurally, which has to survive
+# reflowing exactly as it was written.
+def _is_literal(line: string) {
+  var text = line.trim()
+
+  if text == '' {
+    return true
+  }
+
+  return text.starts_with('#')
+    or text.starts_with('>')
+    or text.starts_with('|')
+    or text.starts_with('- ')
+    or text.starts_with('* ')
+    or text.starts_with('```')
+}
+
+/**
+ * Reflows a block of markdown, leaving fenced code and structural
+ * lines untouched.
+ *
+ * A doc block whose own fence is never closed would otherwise emit an
+ * unterminated fence, swallowing every heading after it on the page,
+ * so an open fence is closed on the way out.
+ *
+ * @param list lines
+ * @returns list[string]
+ */
+def reflow(lines: list) {
+  var out = []
+  var paragraph = []
+  var fenced = false
+  var listing = false
+
+  def flush() {
+    if paragraph.is_empty() {
+      return
+    }
+
+    for line in wrap(' '.join(paragraph)) {
+      out.append(line)
+    }
+
+    paragraph.clear()
+  }
+
+  for line in lines {
+    var text = line.trim()
+
+    if text.starts_with('```') {
+      flush()
+      fenced = !fenced
+
+      # Library examples tagged `zuri-repl` are transcripts of an
+      # interactive session rather than programs. Highlight them as
+      # Zuri, but mark them unrunnable so the verifier leaves them be.
+      out.append(fenced and text.starts_with('```zuri') ? '```zuri,ignore' : text)
+      continue
+    }
+
+    if fenced {
+      out.append(line)
+      continue
+    }
+
+    # An indented line under a bullet continues that bullet. Trimming
+    # it and folding it into the surrounding paragraph would break the
+    # item apart, so it is kept exactly as written.
+    if listing and text != '' and line.starts_with(' ') {
+      flush()
+      out.append(line.rtrim())
+      continue
+    }
+
+    if _is_literal(line) {
+      flush()
+
+      if text == '' {
+        listing = false
+      }
+
+      if text.starts_with('- ') or text.starts_with('* ') {
+        listing = true
+      }
+
+      out.append(text)
+      continue
+    }
+
+    listing = false
+    paragraph.append(text)
+  }
+
+  flush()
+
+  if fenced {
+    out.append('```')
+  }
+
+  return out
+}
+
+
+# The `#` count a line opens with, or 0 when it is not a heading.
+def _level(line: string) {
+  var text = line.trim()
+  var count = 0
+
+  while count < text.length() and text[count] == '#' {
+    count++
+  }
+
+  if count == 0 or count > 6 {
+    return 0
+  }
+
+  # `#hashtag` is not a heading; a heading has a space after its hashes.
+  if count < text.length() and text[count] != ' ' {
+    return 0
+  }
+
+  return count
+}
+
+/**
+ * Shifts the headings in a block of markdown so its shallowest one
+ * sits at `target`, leaving the relative depths between them intact.
+ *
+ * Doc blocks are written without knowing where on a page they will
+ * end up, so a module overview that opens at `##` and a method
+ * description that opens at `###` both have to be fitted under the
+ * heading the generator gave them. Without this the two run together
+ * and the page outline stops meaning anything.
+ *
+ * Headings inside a fence are left alone: in Zuri a leading `#` is a
+ * comment, and every example is full of them.
+ *
+ * @param list lines
+ * @param number target: the level the shallowest heading should take
+ * @returns list[string]
+ */
+def demote(lines: list, target: number) {
+  var shallowest = 0
+  var fenced = false
+
+  for line in lines {
+    if line.trim().starts_with('```') {
+      fenced = !fenced
+      continue
+    }
+
+    if fenced {
+      continue
+    }
+
+    var level = _level(line)
+
+    if level > 0 and (shallowest == 0 or level < shallowest) {
+      shallowest = level
+    }
+  }
+
+  if shallowest == 0 or shallowest == target {
+    return lines
+  }
+
+  var shift = target - shallowest
+  var out = []
+
+  fenced = false
+
+  for line in lines {
+    if line.trim().starts_with('```') {
+      fenced = !fenced
+      out.append(line)
+      continue
+    }
+
+    var level = _level(line)
+
+    if fenced or level == 0 {
+      out.append(line)
+      continue
+    }
+
+    var moved = level + shift
+
+    if moved < 1 {
+      moved = 1
+    }
+
+    if moved > 6 {
+      moved = 6
+    }
+
+    out.append('${'#' * moved}${line.trim()[level, line.trim().length()]}')
+  }
+
+  return out
+}
+
+/**
+ * Collapses the doubled blank lines a reflow can leave behind, and
+ * trims the trailing ones.
+ *
+ * @param list lines
+ * @returns list[string]
+ */
+def squeeze(lines: list) {
+  var out = []
+  var blank = false
+
+  for line in lines {
+    if line.trim() == '' {
+      if blank or out.is_empty() {
+        continue
+      }
+
+      blank = true
+      out.append('')
+      continue
+    }
+
+    blank = false
+    out.append(line)
+  }
+
+  while !out.is_empty() and out[out.length() - 1] == '' {
+    out.pop()
+  }
+
+  return out
+}
+
+# Abbreviations that end in a full stop without ending the sentence.
+# Without these, "an IPv4 address and port, e.g. 10.0.0.1:80" summarises
+# as "an IPv4 address and port, e.g." and says nothing at all.
+var ABBREVIATIONS = ['e.g.', 'i.e.', 'etc.', 'cf.', 'vs.', 'approx.', 'Dr.', 'Mr.', 'Ms.', 'St.']
+
+# Where the first real sentence ends, or -1 when the text is one
+# sentence.
+def _sentence_end(text: string) {
+  var at = 0
+
+  while true {
+    var stop = text.index_of('. ', at)
+
+    if stop < 0 {
+      return -1
+    }
+
+    var abbreviated = false
+
+    for word in ABBREVIATIONS {
+      # The `. ` sits at the end of the abbreviation, so compare the run
+      # of text ending there against it.
+      var start = stop + 1 - word.length()
+
+      if start >= 0 and text[start, stop + 1] == word {
+        abbreviated = true
+        break
+      }
+    }
+
+    if !abbreviated {
+      return stop
+    }
+
+    at = stop + 1
+  }
+}
+
+/**
+ * The one-sentence form of a description, for an index table.
+ *
+ * Library prose often opens with a sentence that runs to two hundred
+ * characters, which in a table cell is a wall rather than a summary.
+ * The first sentence is taken where there is one, and what is left is
+ * cut at a word boundary.
+ *
+ * @param string text
+ * @param ?number limit: characters to allow, 110 by default
+ * @returns string
+ */
+def summarise(text: string, limit) {
+  var width = limit or 110
+  var trimmed = text.replace('/<br\s*\/?>/', ' ').trim()
+  var stop = _sentence_end(trimmed)
+
+  if stop > 0 {
+    trimmed = trimmed[0, stop + 1]
+  }
+
+  if trimmed.length() <= width {
+    return trimmed
+  }
+
+  var cut = trimmed[0, width]
+  var space = -1
+
+  # `string` has `index_of` but no reverse of it, so the last space is
+  # found by walking back from the cut.
+  iter var i = cut.length() - 1; i >= 0; i-- {
+    if cut[i] == ' ' {
+      space = i
+      break
+    }
+  }
+
+  if space > 40 {
+    cut = cut[0, space]
+  }
+
+  return '${cut.rtrim()}...'
+}
+
+/**
+ * A table cell cannot hold a bare `|`, and union types such as
+ * `number|list` are full of them.
+ *
+ * @param string text
+ * @returns string
+ */
+def escape(text: string) {
+  return text.replace('/\|/', '\\|')
+}
+
+/**
+ * Wraps `text` in backticks, or returns an empty string when there is
+ * nothing to wrap.
+ *
+ * @param string text
+ * @returns string
+ */
+def code(text: string) {
+  return text == '' ? '' : '`${text}`'
+}

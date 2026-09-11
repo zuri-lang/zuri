@@ -1,0 +1,28 @@
+[book]
+title = "The Zuri Standard Library"
+authors = ["The Zuri Project"]
+description = "Every module Zuri ships with, generated from the library's own doc blocks."
+language = "en"
+
+# Nothing about this book is kept in the repository. The pages are
+# generated from the doc blocks in `libs/` on every build, so a page and
+# the doc block it came from cannot disagree, and both the markdown and
+# the rendered HTML are build output living under `target/`.
+src = "../../target/reference/src"
+
+[build]
+build-dir = "../../target/reference/html"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/zuri-lang/zuri-rs"
+mathjax-support = false
+
+# The pages are generated, so an "edit this page" link would point at a
+# file that the next generator run overwrites. The doc block in `libs/`
+# is what anyone should be editing.
+
+[output.html.fold]
+enable = true
+level = 1

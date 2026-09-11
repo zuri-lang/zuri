@@ -1,3 +1,15 @@
+/**
+ * @module animation
+ *
+ * `Animation`: an ordered set of frames with per-frame delays, which is
+ * what an animated GIF or WebP decodes to and encodes from.
+ *
+ * Frames are full images rather than deltas, so each can be edited on
+ * its own and the encoder works out what actually changed.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the imagine module
 
 import _imagine

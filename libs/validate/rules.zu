@@ -1,5 +1,5 @@
 /**
- * # validate.rules
+ * @module rules
  *
  * All built-in validation rule implementations.  Rules are plain classes
  * that extend `Rule`.  They are not intended to be constructed directly;
@@ -1420,8 +1420,10 @@ class Confirmed < Rule {
  * ### Example
  *
  * ```zuri
- * # "shipping_address" is required when "has_delivery" is true
- * shipping_address: validate.string().required_if('has_delivery', true)
+ * var rules = validate.schema({
+ *   # "shipping_address" is required when "has_delivery" is true
+ *   shipping_address: validate.string().required_if('has_delivery', true),
+ * })
  * ```
  */
 class RequiredIf < Rule {

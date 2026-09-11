@@ -1,0 +1,129 @@
+/**
+ * Generates the standard library reference from `libs/`.
+ *
+ * Every page comes from a doc block in the library itself, read with
+ * the `zuri` module's own parser, so the reference cannot drift from
+ * the documentation the runtime ships. Nothing it writes is kept in
+ * the repository: the pages land in `target/reference/src` and are
+ * rewritten from scratch on every run, so editing one by hand is
+ * pointless. Edit the library's doc block instead.
+ *
+ * Run it from the repository root:
+ *
+ * ```
+ * zuri docs/tools/reference/generate.zu
+ * ```
+ *
+ * The doc blocks are audited first, and a defect there is reported
+ * before the pages that come from it. Generation still runs, because a
+ * stale reference helps nobody, but the exit status is non-zero.
+ */
+
+import os
+
+import .model
+import .render
+import .catalogue
+import ..audit
+
+var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
+var LIBS = os.join_paths(ROOT, 'libs')
+var OUT = os.join_paths(ROOT, 'target', 'reference', 'src')
+
+# Removes the pages from a previous run, so a module that has been
+# deleted or renamed does not leave an orphan behind that nothing links
+# to and nothing regenerates.
+def _clean() {
+  if !os.dir_exists(OUT) {
+    os.create_dir(OUT, nil, true)
+    return
+  }
+
+  for name in os.read_dir(OUT) {
+    if name == '.' or name == '..' or !name.ends_with('.md') {
+      continue
+    }
+
+    file(os.join_paths(OUT, name)).delete()
+  }
+}
+
+# The nesting mdBook reads as a sub-chapter: two spaces per level.
+def _summary(roots: list) {
+  var out = []
+
+  out.append('# Summary')
+  out.append('')
+  out.append('[The Zuri Standard Library](index.md)')
+  out.append('')
+
+  def walk(module, depth: number) {
+    out.append('${' ' * (depth * 2)}- [${module.name}](${module.slug()}.md)')
+
+    for child in module.children {
+      walk(child, depth + 1)
+    }
+  }
+
+  for group in catalogue.GROUPS {
+    out.append('# ${group.title}')
+    out.append('')
+
+    for name in group.modules {
+      for module in roots {
+        if module.name == name {
+          walk(module, 0)
+        }
+      }
+    }
+
+    out.append('')
+  }
+
+  return '${'\n'.join(out)}\n'
+}
+
+def main() {
+  var findings = audit.run()
+  var roots = model.read_all(LIBS)
+
+
+  catalogue.check(roots)
+
+  var index = render.build_index(roots)
+
+  _clean()
+
+  var pages = 0
+  var members = 0
+
+  for root in roots {
+    for module in root.tree() {
+      file(os.join_paths(OUT, '${module.slug()}.md'), 'w').write(render.page(module, index))
+
+      pages++
+      members += module.members().length()
+
+      for klass in module.classes {
+        members += klass.methods.length() + klass.static_methods.length()
+      }
+    }
+  }
+
+  file(os.join_paths(OUT, 'index.md'), 'w').write(catalogue.landing(roots, index))
+  file(os.join_paths(OUT, 'SUMMARY.md'), 'w').write(_summary(roots))
+
+  echo '${roots.length()} modules, ${pages} pages, ${members} documented names'
+
+  if !findings.is_empty() {
+    echo ''
+    var count = findings.length()
+
+    echo 'generated, but ${count} doc block ${count == 1 ? 'problem' : 'problems'} above need fixing'
+    os.exit(1)
+  }
+}
+
+if __root__ == __file__ {
+  main()
+}

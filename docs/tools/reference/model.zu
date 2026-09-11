@@ -1,0 +1,682 @@
+/**
+ * @module model
+ *
+ * Reads `libs/` and builds the tree the reference is rendered from.
+ *
+ * Nothing here guesses at source text. `zuri.parse()` supplies the
+ * declarations, their parameter lists and the doc blocks sitting
+ * above them; `docs.zu` reads the inside of a block. What is left for
+ * this file is the question the parser cannot answer on its own:
+ * given a package whose entry point re-exports its neighbours in four
+ * different ways, what is the name a reader actually types to reach
+ * each thing?
+ *
+ * That question has one answer per member, and it is the spine of the
+ * whole reference. `os/env.zu` declares `get_env`, but nobody writes
+ * `env.get_env` because `os/index.zu` lifts it with a wildcard; the
+ * reader types `os.get_env`. `net/index.zu` binds `tls` as a
+ * namespace instead, so the reader types `net.tls.connect`. And
+ * `http/headers.zu` is lifted only in part, so `Headers` is
+ * `http.Headers` while everything beside it stays `http.headers.*`.
+ * Each member carries the shortest path that reaches it.
+ */
+
+import os
+import zuri
+import ..docs
+
+# Names beginning with an underscore are private: the compiler refuses
+# to import them across a module boundary, so they are not API.
+def _is_private(name: string) {
+  return name.starts_with('_')
+}
+
+# The module intrinsics every module carries. They are language
+# furniture rather than anything a library declares.
+var INTRINSICS = ['__file__', '__root__']
+
+/**
+ * One documented declaration: a function, a class member, a constant.
+ *
+ * `path` is the canonical call path, the shortest spelling that
+ * reaches this member from an `import` of its root module.
+ */
+class Doc {
+
+  @new(name: string, kind: string, block, options) {
+    options = options or {}
+
+    self.name = name
+    self.kind = kind
+    self.block = block
+    self.params = options.get('params', [])
+    self.variadic = options.get('variadic', false)
+    self.is_static = options.get('is_static', false)
+    self.is_constant = options.get('is_constant', false)
+    self.value = options.get('value', nil)
+    self.line = options.get('line', 0)
+    self.path = name
+  }
+
+  /** The parameter list as it is written in a signature. */
+  signature() {
+    if self.kind == 'constant' or self.kind == 'property' {
+      return self.path
+    }
+
+    return '${self.path}(${', '.join(self.params)})'
+  }
+
+  /** True when the library asked for this to stay out of the docs. */
+  is_internal() {
+    return self.block.has('internal')
+  }
+
+  to_string() {
+    return 'Doc(${self.kind} ${self.signature()})'
+  }
+}
+
+/**
+ * A documented class, with its parts already sorted into the order
+ * they are rendered in.
+ */
+class ClassDoc {
+
+  @new(name: string, superclass, block, line: number) {
+    self.name = name
+    self.superclass = superclass
+    self.block = block
+    self.line = line
+    self.path = name
+
+    self.constructor = nil
+    self.fields = []
+    self.statics = []
+    self.methods = []
+    self.static_methods = []
+  }
+
+  is_internal() {
+    return self.block.has('internal')
+  }
+
+  /**
+   * The capability tags a class carries: `@printable`, `@serializable`
+   * and friends, which say that it implements the decorated method of
+   * the same idea.
+   */
+  capabilities() {
+    var found = []
+
+    for tag in ['printable', 'serializable', 'valueable', 'numeric', 'iterable'] {
+      if self.block.has(tag) {
+        found.append(tag)
+      }
+    }
+
+    return found
+  }
+
+  to_string() {
+    return 'ClassDoc(${self.path})'
+  }
+}
+
+/**
+ * One module: a single `.zu` file, or the `index.zu` that fronts a
+ * package.
+ *
+ * `name` is the dotted module path (`os`, `os.path`, `http.h2`).
+ * `prefix` is what a member of this module is called through, which
+ * is only the same thing when the module is not re-exported by a
+ * parent.
+ */
+class Module {
+
+  @new(name: string, path: string, is_package: bool) {
+    self.name = name
+    self.path = path
+    self.is_package = is_package
+
+    self.overview = docs.empty()
+    self.copyright = nil
+    self.default_export = nil
+
+    self.functions = []
+    self.constants = []
+    self.classes = []
+    self.children = []
+    self.imports = []
+
+    self.owner = nil
+    self.exposure = 'root'
+    self.prefix = name
+    self.root = name
+  }
+
+  /** The file name a reader would `import`, e.g. `os` or `os.path`. */
+  import_name() {
+    return self.name
+  }
+
+  /** The slug this module's page is written to. */
+  slug() {
+    return self.name.replace('/\./', '-')
+  }
+
+  /** Every documented thing this module declares, in one list. */
+  members() {
+    var all = []
+
+    for constant in self.constants {
+      all.append(constant)
+    }
+
+    for fn in self.functions {
+      all.append(fn)
+    }
+
+    for klass in self.classes {
+      all.append(klass)
+    }
+
+    return all
+  }
+
+  /** This module and every module beneath it, depth first. */
+  tree() {
+    var found = [self]
+
+    for child in self.children {
+      for descendant in child.tree() {
+        found.append(descendant)
+      }
+    }
+
+    return found
+  }
+
+  to_string() {
+    return 'Module(${self.name})'
+  }
+}
+
+# Unwraps the `Stmt` that top-level statements are parsed inside, so a
+# walk over siblings sees the declaration rather than its wrapper.
+def _unwrap(node) {
+  if node.kind == 'Stmt' {
+    return node.fields.statement
+  }
+
+  return node
+}
+
+# Spells one parameter the way the source wrote it, including the
+# leading dots on a variadic tail.
+def _param(node, variadic: bool) {
+  var name = variadic ? '...${node.fields.name}' : node.fields.name
+  var hint = node.fields.type_hint
+
+  if hint == nil {
+    return name
+  }
+
+  var types = hint.fields.types.map(@(type) => type.kind.lower())
+
+  # An unannotated parameter parses as a nullable `any`. That is the
+  # absence of an annotation, not something to print.
+  if types.length() == 1 and types[0] == 'any' {
+    return name
+  }
+
+  return '${name}: ${hint.fields.nullable ? '?' : ''}${'|'.join(types)}'
+}
+
+def _params_of(node) {
+  var params = node.fields.parameters
+  var variadic = node.fields.get('is_variadic', false)
+  var out = []
+
+  iter var i = 0; i < params.length(); i++ {
+    out.append(_param(params[i], variadic and i == params.length() - 1))
+  }
+
+  return out
+}
+
+# Renders a literal initialiser so a constant's value can be shown
+# beside its name. Anything that is not a literal is left out; a
+# constant built by calling something is documented by its prose.
+def _literal(node) {
+  if node == nil {
+    return nil
+  }
+
+  if node.kind == 'Literal' or node.kind == 'Integer' or node.kind == 'Number' {
+    var value = node.fields.get('value', nil)
+
+    if is_string(value) {
+      return "'${value}'"
+    }
+
+    return '${value}'
+  }
+
+  if node.kind == 'List' {
+    return '[...]'
+  }
+
+  if node.kind == 'Dict' {
+    return '{...}'
+  }
+
+  return nil
+}
+
+# Pairs each declaration in a run of sibling nodes with the doc block
+# immediately above it. Anything else in between breaks the pairing,
+# including a plain `#` comment, which is how a source file says "this
+# note is for the next reader, not for the reference".
+def _paired(nodes: list, visit: function) {
+  var pending = nil
+
+  for node in nodes {
+    if node.kind == 'DocBlock' {
+      pending = docs.parse_text(node.fields.text)
+      continue
+    }
+
+    var inner = _unwrap(node)
+
+    visit(inner, pending or docs.empty(), pending != nil)
+    pending = nil
+  }
+}
+
+# Builds a class from its AST node, sorting the members as it goes.
+def _class(node, block) {
+  var superclass = node.fields.superclass
+  var doc = ClassDoc(
+    node.fields.name,
+    superclass == nil ? nil : superclass.fields.name,
+    block,
+    node.line
+  )
+
+  _paired(node.fields.properties, @(inner, member_block, documented) {
+    if inner.kind != 'Property' or _is_private(inner.fields.name) {
+      return
+    }
+
+    var field = Doc(inner.fields.name, 'property', member_block, {
+      is_static: inner.fields.is_static,
+      is_constant: inner.fields.is_constant,
+      value: _literal(inner.fields.get('value', nil)),
+      line: inner.line,
+    })
+
+    if field.is_internal() {
+      return
+    }
+
+    if inner.fields.is_static {
+      doc.statics.append(field)
+    } else {
+      doc.fields.append(field)
+    }
+  })
+
+  _paired(node.fields.methods, @(inner, member_block, documented) {
+    if inner.kind != 'Method' {
+      return
+    }
+
+    var name = inner.fields.name
+
+    # `@new` is the constructor; the other decorated methods are the
+    # operator hooks, which a reader meets through the syntax that
+    # triggers them rather than by calling them.
+    if name != '@new' and (name.starts_with('@') or _is_private(name)) {
+      return
+    }
+
+    var method = Doc(name, 'method', member_block, {
+      params: _params_of(inner),
+      variadic: inner.fields.get('is_variadic', false),
+      is_static: inner.fields.get('is_static', false),
+      line: inner.line,
+    })
+
+    if method.is_internal() {
+      return
+    }
+
+    if name == '@new' {
+      doc.constructor = method
+      return
+    }
+
+    if method.is_static {
+      doc.static_methods.append(method)
+      return
+    }
+
+    doc.methods.append(method)
+  })
+
+  return doc
+}
+
+# Works out the name an import binds. A plain `import @.tcp` leaves the
+# parser a placeholder rather than a real alias, because the name is
+# just the last segment of the path.
+def _binding(node) {
+  var alias = node.fields.name.fields.name
+
+  if alias.starts_with('Literal{') {
+    var parts = node.fields.path.split('/')
+
+    return parts[parts.length() - 1]
+  }
+
+  return alias
+}
+
+/**
+ * Reads one source file into a `Module`, without resolving anything
+ * that depends on its neighbours.
+ *
+ * @param string name: the dotted module path
+ * @param string path: the file to read
+ * @param bool is_package
+ * @returns Module
+ */
+def read(name: string, path: string, is_package: bool) {
+  var module = Module(name, path, is_package)
+  var nodes = zuri.parse(file(path).read())
+  var seen_module_block = false
+
+  # A doc block with no declaration under it and an `@module` tag is
+  # the module's own documentation. Only the first one counts; a
+  # second is a stray.
+  var pending = nil
+
+  for node in nodes {
+    if node.kind == 'DocBlock' {
+      var block = docs.parse_text(node.fields.text)
+
+      if block.has('module') and !seen_module_block {
+        module.overview = block
+        module.copyright = block.first('copyright')
+        seen_module_block = true
+        pending = nil
+        continue
+      }
+
+      pending = block
+      continue
+    }
+
+    var inner = _unwrap(node)
+    var block = pending or docs.empty()
+
+    pending = nil
+
+    if inner.kind == 'Import' {
+      module.imports.append({
+        path: inner.fields.path,
+        binding: _binding(inner),
+        elements: inner.fields.elements.map(@(element) => element.fields.name),
+        all: inner.fields.imports_all,
+        exported: inner.fields.exported,
+      })
+      continue
+    }
+
+    if inner.kind == 'Function' {
+      if _is_private(inner.fields.name) {
+        continue
+      }
+
+      var fn = Doc(inner.fields.name, 'function', block, {
+        params: _params_of(inner),
+        variadic: inner.fields.get('is_variadic', false),
+        line: inner.line,
+      })
+
+      if fn.is_internal() {
+        continue
+      }
+
+      # A function tagged `@default` is what the module itself calls
+      # through, so `date(2026)` reaches `date.date(2026)`.
+      if block.has('default') and block.first('default').text == '' {
+        module.default_export = fn
+      }
+
+      module.functions.append(fn)
+      continue
+    }
+
+    if inner.kind == 'Var' {
+      if _is_private(inner.fields.name) or INTRINSICS.contains(inner.fields.name) {
+        continue
+      }
+
+      var constant = Doc(inner.fields.name, 'constant', block, {
+        is_constant: inner.fields.get('is_constant', false),
+        value: _literal(inner.fields.get('value', nil)),
+        line: inner.line,
+      })
+
+      if constant.is_internal() {
+        continue
+      }
+
+      module.constants.append(constant)
+      continue
+    }
+
+    if inner.kind == 'Class' {
+      if _is_private(inner.fields.name) {
+        continue
+      }
+
+      var klass = _class(inner, block)
+
+      if klass.is_internal() {
+        continue
+      }
+
+      module.classes.append(klass)
+    }
+  }
+
+  return module
+}
+
+# The dotted module name a path under `libs/` maps to. `os/path.zu` is
+# `os.path`, `http/h2/index.zu` is `http.h2`, and the `.stub.zu` suffix
+# is an implementation detail of how a built-in module is documented
+# rather than part of its name.
+def _module_name(relative: string) {
+  var trimmed = relative
+    .replace('/\/index\.zu$/', '')
+    .replace('/\.stub\.zu$/', '')
+    .replace('/\.zu$/', '')
+
+  return trimmed.replace('/\//', '.')
+}
+
+# True for a path that is not API: anything with an underscore-prefixed
+# segment is private, and the compiler refuses to import across it.
+def _is_hidden(relative: string) {
+  for segment in relative.split('/') {
+    if segment.starts_with('_') {
+      return true
+    }
+  }
+
+  return false
+}
+
+# How the entry point of a package exposes one of its children, read
+# off the entry point's own import list.
+def _exposure(module, child) {
+  var base = child.name.split('.').last()
+
+  for entry in module.imports {
+    if !entry.exported {
+      continue
+    }
+
+    if entry.path != './${base}' {
+      continue
+    }
+
+    if entry.all {
+      return { style: 'flatten', names: nil }
+    }
+
+    if !entry.elements.is_empty() {
+      return { style: 'partial', names: entry.elements }
+    }
+
+    return { style: 'namespace', binding: entry.binding }
+  }
+
+  return { style: 'none' }
+}
+
+# Assigns every member of `module` the shortest path that reaches it,
+# then does the same for its children.
+def _resolve(module, prefix: string, root: string) {
+  module.prefix = prefix
+  module.root = root
+
+  for member in module.members() {
+    member.path = '.'.join([prefix, member.name])
+  }
+
+  for klass in module.classes {
+    for group in [klass.fields, klass.statics, klass.methods, klass.static_methods] {
+      for member in group {
+        member.path = '.'.join([klass.path, member.name])
+      }
+    }
+  }
+
+  for child in module.children {
+    var exposure = _exposure(module, child)
+    var base = child.name.split('.').last()
+
+    # Not re-exported at all, or hidden behind a private alias: the
+    # only way in is a direct `import package.child`.
+    if exposure.style == 'none'
+      or (exposure.style == 'namespace' and _is_private(exposure.binding))
+    {
+      child.exposure = 'direct'
+      _resolve(child, '.'.join([prefix, base]), root)
+      continue
+    }
+
+    if exposure.style == 'namespace' {
+      child.exposure = 'namespace'
+      _resolve(child, '.'.join([prefix, exposure.binding]), root)
+      continue
+    }
+
+    if exposure.style == 'flatten' {
+      child.exposure = 'flatten'
+      _resolve(child, prefix, root)
+      continue
+    }
+
+    # A partial lift: the named members answer to the parent, the rest
+    # keep the child's own path.
+    child.exposure = 'partial'
+    _resolve(child, '.'.join([prefix, base]), root)
+
+    for member in child.members() {
+      if exposure.names.contains(member.name) {
+        member.path = '.'.join([prefix, member.name])
+      }
+    }
+
+    for klass in child.classes {
+      for group in [klass.fields, klass.statics, klass.methods, klass.static_methods] {
+        for member in group {
+          member.path = '.'.join([klass.path, member.name])
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Reads every public module in `libs/`.
+ *
+ * One recursive `os.read_dir()` gives every candidate path in the
+ * tree; the rest is deciding which of them are modules and hanging
+ * them off each other. A directory is a package when it holds an
+ * `index.zu`, and that file fronts the package rather than sitting
+ * inside it.
+ *
+ * @param string libs: the directory to read
+ * @returns list[Module]: the root modules, alphabetically
+ */
+def read_all(libs: string) {
+  var modules = {}
+
+  for relative in os.read_dir(libs, true) {
+    if relative == '.' or relative == '..' or _is_hidden(relative) {
+      continue
+    }
+
+    if !relative.ends_with('.zu') {
+      continue
+    }
+
+    var name = _module_name(relative)
+    var path = os.join_paths(libs, relative)
+
+    modules.set(name, read(name, path, relative.ends_with('index.zu')))
+  }
+
+  var names = modules.keys()
+
+  names.sort()
+
+  var roots = []
+
+  # Sorting the names puts every parent before its own children, so one
+  # forward pass is enough to hang the tree together.
+  for name in names {
+    var module = modules.get(name)
+    var segments = name.split('.')
+
+    if segments.length() == 1 {
+      roots.append(module)
+      continue
+    }
+
+    var owner = modules.get('.'.join(segments[0, segments.length() - 1]), nil)
+
+    # A module whose package has no `index.zu` has nothing to hang off,
+    # so it stands on its own.
+    if owner == nil {
+      roots.append(module)
+      continue
+    }
+
+    module.owner = owner
+    owner.children.append(module)
+  }
+
+  for module in roots {
+    _resolve(module, module.name, module.name)
+  }
+
+  return roots
+}

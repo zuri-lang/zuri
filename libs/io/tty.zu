@@ -1,3 +1,16 @@
+/**
+ * @module tty
+ *
+ * `TTY`: control over a terminal attached to a file handle.
+ *
+ * Raw and cooked modes, echo, cursor visibility and terminal size all
+ * live here. The underlying constants are read from the platform's own
+ * `libc` at load time rather than hard-coded, because they differ
+ * between operating systems.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 # io.TTY implementation
 
 import _io
@@ -573,9 +586,9 @@ class TTY {
    * Returns the size of the current TTY device as a dictionary
    * of cols and rows.
    *
-   * - `cols`: The number of text columns that can fit into the
-   * TTY device. - `rows`: The number of text rows that can fit
-   * into the TTY device.
+   * - `cols`: the number of text columns that fit into the TTY
+   *   device.
+   * - `rows`: the number of text rows that fit into the TTY device.
    *
    * @returns dict
    */

@@ -1,3 +1,17 @@
+/**
+ * @module errors
+ *
+ * Every error the HTTP stack raises, under one root.
+ *
+ * `HttpError` is that root, so a caller that only wants to know whether
+ * the request failed can catch it and ignore the rest. The subclasses
+ * separate the cases worth handling differently: a connection that never
+ * opened, one that timed out, a response too large to accept, a redirect
+ * loop, and a status the caller asked to be treated as an error.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 /**

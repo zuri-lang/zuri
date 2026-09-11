@@ -98,8 +98,10 @@ class Validator {
    * optional while still validating them when they are present.
    *
    * ```zuri
-   * # "bio" is optional; when provided, it must be a string ≤ 500 chars.
-   * bio: validate.string().max_length(500).sometimes()
+   * var rules = validate.schema({
+   *   # "bio" is optional; when given it must be at most 500 chars.
+   *   bio: validate.string().max_length(500).sometimes(),
+   * })
    * ```
    *
    * @returns Validator
@@ -998,10 +1000,12 @@ class Validator {
    * Every item in the list must pass the given `Validator` chain.
    *
    * ```zuri
-   * # A list of valid email strings, 1–10 items.
-   * recipients: validate.list()
-   *   .min_items(1).max_items(10)
-   *   .each(validate.string().email())
+   * var rules = validate.schema({
+   *   # A list of between 1 and 10 valid email strings.
+   *   recipients: validate.list()
+   *     .min_items(1).max_items(10)
+   *     .each(validate.string().email()),
+   * })
    * ```
    *
    * @param  Validator validator
@@ -1091,8 +1095,13 @@ class Validator {
    * import validate { Rule, Validator }
    *
    * class Palindrome < Rule {
-   *   validate(value) { ... }
-   *   error()         { return '${self.name} must be a palindrome.' }
+   *   validate(value) {
+   *     return value == value.to_list().reverse().join('')
+   *   }
+   *
+   *   error() {
+   *     return '${self.name} must be a palindrome.'
+   *   }
    * }
    *
    * var v = Validator().string().use(Palindrome)

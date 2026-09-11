@@ -47,11 +47,13 @@
  *
  * ```zuri
  * # Collects every error for "password" rather than stopping at the first.
- * password: validate.required().string()
- *   .min_length(8)
- *   .regex('/[A-Z]/')
- *   .regex('/[0-9]/')
- *   .bail(false)
+ * var rules = validate.schema({
+ *   password: validate.required().string()
+ *     .min_length(8)
+ *     .regex('/[A-Z]/')
+ *     .regex('/[0-9]/')
+ *     .bail(false),
+ * })
  * ```
  *
  * ---
@@ -59,11 +61,13 @@
  * ### Optional fields
  *
  * ```zuri
- * # bio is optional; when present it must be ≤ 500 chars.
- * bio: validate.string().max_length(500).sometimes()
+ * var rules = validate.schema({
+ *   # bio is optional; when present it must be at most 500 chars.
+ *   bio: validate.string().max_length(500).sometimes(),
  *
- * # nickname is optional and may be nil.
- * nickname: validate.nullable().string().max_length(30).sometimes()
+ *   # nickname is optional and may be nil.
+ *   nickname: validate.nullable().string().max_length(30).sometimes(),
+ * })
  * ```
  *
  * ---
@@ -144,12 +148,16 @@
  * ```zuri
  * import validate { ValidationError }
  *
- * catch {
- *   schema.check_or_raise(req.body)
- * } as e
+ * def create_user(req, res) {
+ *   catch {
+ *     schema.check_or_raise(req.body)
+ *   } as e
  *
- * if e {
- *   return res.json({ errors: schema.group_errors(e.errors) }, 422)
+ *   if e {
+ *     return res.json({ errors: schema.group_errors(e.errors) }, 422)
+ *   }
+ *
+ *   return res.json({ ok: true })
  * }
  * ```
  *

@@ -1,5 +1,5 @@
 /**
- * # validate.rule
+ * @module rule
  *
  * Defines the base `Rule` class that all built-in and custom validation
  * rules extend.  To create a custom rule, subclass `Rule` and implement

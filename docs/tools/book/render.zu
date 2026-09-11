@@ -1,147 +1,13 @@
 /**
  * Renders parsed stub doc blocks as book appendix pages.
  *
- * The stubs are hard-wrapped narrow to sit comfortably in a source
- * file. Markdown does not care about the source wrapping, but the
- * result reads badly, so every paragraph is unwrapped and re-wrapped
- * at the width the rest of the book uses.
+ * Prose arrives hard-wrapped to sit comfortably in a source file and
+ * is re-wrapped here at the width the rest of the book uses; that,
+ * and the rest of the shared markdown plumbing, lives in
+ * `markdown.zu`.
  */
 
-var WIDTH = 72
-
-# Unwraps a run of hard-wrapped lines and re-wraps them at `WIDTH`.
-def _wrap(text: string) {
-  var words = text.split(' ').filter(@(w) => w != '')
-  var lines = []
-  var current = ''
-
-  for word in words {
-    if current == '' {
-      current = word
-      continue
-    }
-
-    if current.length() + 1 + word.length() <= WIDTH {
-      current = '${current} ${word}'
-      continue
-    }
-
-    lines.append(current)
-    current = word
-  }
-
-  if current != '' {
-    lines.append(current)
-  }
-
-  return lines
-}
-
-# True for a line markdown treats structurally, which must survive
-# reflowing exactly as written.
-def _is_literal(line: string) {
-  var text = line.trim()
-
-  if text == '' {
-    return true
-  }
-
-  return text.starts_with('#')
-    or text.starts_with('>')
-    or text.starts_with('|')
-    or text.starts_with('- ')
-    or text.starts_with('* ')
-    or text.starts_with('```')
-}
-
-# Reflows a block of markdown, leaving fenced code and structural
-# lines untouched.
-def reflow(lines: list) {
-  var out = []
-  var paragraph = []
-  var in_fence = false
-
-  def flush() {
-    if paragraph.is_empty() {
-      return
-    }
-
-    for line in _wrap(' '.join(paragraph)) {
-      out.append(line)
-    }
-
-    paragraph.clear()
-  }
-
-  for line in lines {
-    var text = line.trim()
-
-    if text.starts_with('```') {
-      flush()
-      in_fence = !in_fence
-
-      # The stubs tag their examples `zuri-repl`. They are interactive
-      # transcripts rather than programs, so they are highlighted as Zuri
-      # but marked unrunnable.
-      out.append(in_fence and text.starts_with('```zuri') ? '```zuri,ignore' : text)
-      continue
-    }
-
-    if in_fence {
-      out.append(line)
-      continue
-    }
-
-    if _is_literal(line) {
-      flush()
-      out.append(text)
-      continue
-    }
-
-    paragraph.append(text)
-  }
-
-  flush()
-
-  # A doc block whose own fence was never closed would otherwise emit an
-  # unterminated fence, swallowing every heading after it on the page.
-  if in_fence {
-    out.append('```')
-  }
-
-  return out
-}
-
-# Collapses the blank lines a reflow can leave doubled up.
-def _squeeze(lines: list) {
-  var out = []
-  var blank = false
-
-  for line in lines {
-    if line.trim() == '' {
-      if blank or out.is_empty() {
-        continue
-      }
-
-      blank = true
-      out.append('')
-      continue
-    }
-
-    blank = false
-    out.append(line)
-  }
-
-  while !out.is_empty() and out[out.length() - 1] == '' {
-    out.pop()
-  }
-
-  return out
-}
-
-def _code(type: string) {
-  return type == '' ? '' : '`${type}`'
-}
+import ..markdown { * }
 
 # The one-line signature that heads every entry.
 def _signature(member, receiver: string) {
@@ -173,11 +39,11 @@ def render_member(member, receiver: string) {
     out.append('')
 
     for tag in params {
-      var type = _code(tag.type)
-      var head = type == '' ? '`${tag.label}`' : '`${tag.label}` (${type})'
+      var type = code(tag.type)
+      var head = type == '' ? '`${tag.name}`' : '`${tag.name}` (${type})'
       var line = tag.text == '' ? '- ${head}' : '- ${head} — ${tag.text}'
 
-      for wrapped in _wrap_bullet(line) {
+      for wrapped in wrap_bullet(line, 2) {
         out.append(wrapped)
       }
     }
@@ -188,13 +54,13 @@ def render_member(member, receiver: string) {
   var returns = member.first_tag('returns')
 
   if returns != nil {
-    var type = _code(returns.type)
+    var type = code(returns.type)
     var head = type == '' ? '**Returns**' : '**Returns** ${type}'
 
     if returns.text == '' {
       out.append(head)
     } else {
-      for wrapped in _wrap('${head} — ${returns.text}') {
+      for wrapped in wrap('${head} — ${returns.text}') {
         out.append(wrapped)
       }
     }
@@ -203,10 +69,10 @@ def render_member(member, receiver: string) {
   }
 
   for tag in member.tags_of('throws') {
-    var type = _code(tag.type)
+    var type = code(tag.type)
     var head = type == '' ? '**Raises**' : '**Raises** ${type}'
 
-    for wrapped in _wrap('${head} ${tag.text}') {
+    for wrapped in wrap('${head} ${tag.text}') {
       out.append(wrapped)
     }
 
@@ -214,19 +80,19 @@ def render_member(member, receiver: string) {
   }
 
   for tag in member.tags_of('note') {
-    for wrapped in _wrap('**Note:** ${tag.text}') {
+    for wrapped in wrap('**Note:** ${tag.text}') {
       out.append('> ${wrapped}')
     }
 
     out.append('')
   }
 
-  return _squeeze(out)
+  return squeeze(out)
 }
 
 # Wraps a bullet, indenting the continuation under the text.
-def _wrap_bullet(line: string) {
-  var wrapped = _wrap(line)
+def wrap_bullet(line: string) {
+  var wrapped = wrap(line)
   var out = []
 
   iter var i = 0; i < wrapped.length(); i++ {
@@ -245,8 +111,8 @@ def _index(members: list, heading: string) {
 
   for member in members {
     var returns = member.first_tag('returns')
-    var type = returns == nil ? '' : _escape(_code(returns.type))
-    out.append('| [`${_escape(member.signature())}`](#${member.anchor()}) | ${type} | ${_summary(member)} |')
+    var type = returns == nil ? '' : escape(code(returns.type))
+    out.append('| [`${escape(member.signature())}`](#${member.anchor()}) | ${type} | ${_summary(member)} |')
   }
 
   return out
@@ -275,12 +141,12 @@ def _summary(member) {
     text = text[0, stop + 1]
   }
 
-  return _escape(text)
+  return escape(text)
 }
 
 # A table cell cannot hold a bare `|`, and union types such as
 # `number|list` are full of them.
-def _escape(text: string) {
+def escape(text: string) {
   return text.replace('/\|/', '\\|')
 }
 
@@ -316,7 +182,7 @@ def render_type_page(spec, members: list) {
   out.append('# ${spec.title}')
   out.append('')
 
-  for line in _wrap(
+  for line in wrap(
     'Every method on the built-in `${spec.stub}` type, with its '
     + 'signature, what it returns, and the cases where it does '
     + 'something other than the obvious thing.'
@@ -340,7 +206,7 @@ def render_type_page(spec, members: list) {
     out.append('')
   }
 
-  return '${'\n'.join(_squeeze(out))}\n'
+  return '${'\n'.join(squeeze(out))}\n'
 }
 
 def render_builtins_page(functions: list) {
@@ -349,7 +215,7 @@ def render_builtins_page(functions: list) {
   out.append('# Appendix D: Built-in Functions')
   out.append('')
 
-  for line in _wrap(
+  for line in wrap(
     'These functions are available in every file with no import. '
     + 'They are the parts of the language that happen to be spelled '
     + 'as calls rather than as syntax.'
@@ -373,7 +239,7 @@ def render_builtins_page(functions: list) {
     out.append('')
   }
 
-  return '${'\n'.join(_squeeze(out))}\n'
+  return '${'\n'.join(squeeze(out))}\n'
 }
 
 # Appendix E's own front page: the table that points at the per-type
@@ -385,7 +251,7 @@ def render_index_page(types: list, counts: dict) {
   out.append('# Appendix E: Built-in Type Methods')
   out.append('')
 
-  for line in _wrap(
+  for line in wrap(
     'Every method on every built-in type, with its signature, what it '
     + 'returns, and its edge cases. This is the reference; the chapters '
     + 'in [Text, Numbers and Collections](ch04-00-collections.md) are '
@@ -450,5 +316,5 @@ def render_index_page(types: list, counts: dict) {
     out.append(line)
   }
 
-  return '${'\n'.join(_squeeze(out))}\n'
+  return '${'\n'.join(squeeze(out))}\n'
 }

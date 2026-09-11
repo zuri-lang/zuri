@@ -1,3 +1,16 @@
+/**
+ * @module server
+ *
+ * `HttpServer`: the server end of the module.
+ *
+ * It accepts connections, speaks HTTP/1.1 or HTTP/2 as negotiated, runs
+ * the middleware chain around the matched handler, and serves static
+ * files when configured to. It can run single-threaded or hand
+ * connections to a pool of workers.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .body

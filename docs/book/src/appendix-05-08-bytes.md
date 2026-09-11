@@ -30,7 +30,7 @@ thing.
 | [`is_space()`](#is_space) | `boolean` | Returns `true` if the byte stream only contains space characters, `false` otherwise. |
 | [`to_list()`](#to_list) | `list` | Returns the byte stream as a list of bytes. |
 | [`to_string()`](#to_string) | `string` | Returns the byte stream as a string. |
-| [`each(callback: function)`](#each) |  | Iterates over each byte of the bytes object, calling the provided callback function with the byte and its index. |
+| [`each(callback: function)`](#each) | `void` | Iterates over each byte of the bytes object, calling the provided callback function with the byte and its index. |
 
 ## `bytes()`
 
@@ -511,7 +511,7 @@ Returns the byte stream as a string.
 ## `each()`
 
 ```zuri,ignore
-each(callback: function)
+each(callback: function) -> void
 ```
 
 Iterates over each byte of the bytes object, calling the provided
@@ -538,6 +538,6 @@ data.each(def(byte, index) {
 - `callback` (`function`) — A function that takes two arguments: the
   byte and its index.
 
-**Returns** — void
+**Returns** `void`
 
 **Raises** `Error` if the callback is not a function.

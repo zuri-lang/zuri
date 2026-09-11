@@ -25,18 +25,21 @@ import _zuri_lex
 /**
  * One lexical token from a Zuri source file.
  *
- * Every instance has: - `kind` (string): the token's kind, e.g.
- * `'Identifier'`, `'Plus'`, `'Comment'`, `'Eof'`, the exact
- * variant name from the lexer's own token kind enum. - `line` /
- * `column` (number): 1-indexed source position this token starts
- * at; `column` counts characters, not bytes. - `start` / `end`
- * (number): character offsets into the source string spanning
- * this token's exact text. - `text` (string): this token's exact
- * source text, `source[start, end]`, delimiters included: a
- * string literal's quotes, a doc block's opening and closing
- * markers, and so on. - `value` (any): this token's own payload,
- * where it has one, a literal, identifier, comment, or doc
- * block's string content, a number, or a bigint. `nil` for every
+ * Every instance has:
+ *
+ * - `kind` (string): the token's kind, e.g. `'Identifier'`,
+ *   `'Plus'`, `'Comment'`, `'Eof'`, the exact variant name from the
+ *   lexer's own token kind enum.
+ * - `line` / `column` (number): 1-indexed source position this token
+ *   starts at; `column` counts characters, not bytes.
+ * - `start` / `end` (number): character offsets into the source
+ *   string spanning this token's exact text.
+ * - `text` (string): this token's exact source text,
+ *   `source[start, end]`, delimiters included: a string literal's
+ *   quotes, a doc block's opening and closing markers, and so on.
+ * - `value` (any): this token's own payload, where it has one, a
+ *   literal, identifier, comment, or doc block's string content, a
+ *   number, or a bigint. `nil` for every
  * fixed symbol or keyword, and for `Newline`/`Eof`. An
  * `Error`-kind token instead carries `{ message, line, offset }`
  * describing what went wrong.

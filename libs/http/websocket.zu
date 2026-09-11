@@ -1,3 +1,17 @@
+/**
+ * @module websocket
+ *
+ * WebSocket (RFC 6455), both ends of it.
+ *
+ * `accept()` upgrades an inbound request, `connect()` opens an outbound
+ * connection, and `WebSocket` is the resulting full-duplex channel.
+ * `Message` is one complete message, reassembled from however many
+ * frames carried it, and the `CLOSE_*` constants are the status codes a
+ * close may carry.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
 #!-- part of the http module
 
 import .errors { ConnectionError, HttpError, ProtocolError }
@@ -601,7 +615,7 @@ def is_handshake(request) {
  * ```zuri
  * server.get('/ws', @(request, response) {
  *   var socket = websocket.accept(request, response)
- *   ...
+ *   # ... talk to the socket from here
  * })
  * ```
  *

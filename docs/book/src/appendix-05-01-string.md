@@ -40,7 +40,7 @@ thing.
 | [`is_empty()`](#is_empty) | `boolean` | Returns true if the string is empty, false otherwise. |
 | [`contains(str: string)`](#contains) | `boolean` | Returns true if the string contains the specified substring, false otherwise. |
 | [`lines()`](#lines) | `list` | Returns the lines of the string as an list as it would be if split on newline characters. |
-| [`each_line(callback: function)`](#each_line) |  | Iterates over each line of the string, calling the provided callback function with the line and its index. |
+| [`each_line(callback: function)`](#each_line) | `void` | Iterates over each line of the string, calling the provided callback function with the line and its index. |
 | [`each(callback: function)`](#each) | `void` | Iterates over each character of the string, calling the provided callback function with the character and its index. |
 | [`capitalize()`](#capitalize) | `string` | Returns a new string with the first character capitalized and the rest in lowercase. |
 | [`title()`](#title) | `string` | Returns a new string with each word capitalized. |
@@ -910,9 +910,9 @@ Compares the string with another string.
 
 - `other` (`string`) — The other string to compare with.
 
-**Returns** `number` — - A negative number if the string is less than
-the other string. - Zero if the strings are equal. - A positive number
-if the string is greater than the other string.
+**Returns** `number` — A negative number if the string is less than the
+other string. - Zero if the strings are equal. - A positive number if
+the string is greater than the other string.
 
 **Raises** `Error` if the other string is not a string.
 
@@ -955,7 +955,7 @@ newline characters.
 ## `each_line()`
 
 ```zuri,ignore
-each_line(callback: function)
+each_line(callback: function) -> void
 ```
 
 Iterates over each line of the string, calling the provided callback
@@ -966,7 +966,7 @@ function with the line and its index.
 - `callback` (`function`) — A function that takes two arguments: the
   line and its index.
 
-**Returns** — void
+**Returns** `void`
 
 **Raises** `Error` if the callback is not a function.
 
