@@ -117,6 +117,22 @@ fn build_book(manifest_dir: &str, name: &str, stamp_name: &str, generated: bool)
     return;
   }
 
+  // Both books declare `theme/zuri-highlight.js` in their `book.toml`;
+  // the file itself has one source in `docs/tools`. Copying it here as
+  // well as in the docs tool keeps a plain `cargo build` able to render
+  // a book that someone has never run `cargo build-docs` on.
+  let highlighter = Path::new(manifest_dir)
+    .join("docs")
+    .join("tools")
+    .join("zuri-highlight.js");
+  let theme = book_dir.join("theme");
+
+  if highlighter.is_file() && fs::create_dir_all(&theme).is_ok() {
+    let _ = fs::copy(&highlighter, theme.join("zuri-highlight.js"));
+  }
+
+  println!("cargo:rerun-if-changed={}", highlighter.display());
+
   // The reference's pages are generated rather than committed, so a
   // fresh clone has none until `cargo build-docs` writes them. Running
   // the generator from here is not an option: it needs the `zuri`

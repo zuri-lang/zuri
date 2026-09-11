@@ -143,10 +143,19 @@ def reflow(lines: list) {
       flush()
       fenced = !fenced
 
-      # Library examples tagged `zuri-repl` are transcripts of an
-      # interactive session rather than programs. Highlight them as
-      # Zuri, but mark them unrunnable so the verifier leaves them be.
-      out.append(fenced and text.starts_with('```zuri') ? '```zuri,ignore' : text)
+      # A `zuri-repl` block is a transcript of an interactive session,
+      # not a program. It keeps its own tag, because only its prompt
+      # lines are code and the highlighter needs to know which is
+      # which; the verifier skips it on its `%>` either way. Everything
+      # else tagged `zuri` here is a fragment lifted out of a doc
+      # block, so it is highlighted but not run.
+      var info = text
+
+      if fenced and text.starts_with('```zuri') and !text.starts_with('```zuri-repl') {
+        info = '```zuri,ignore'
+      }
+
+      out.append(info)
       continue
     }
 

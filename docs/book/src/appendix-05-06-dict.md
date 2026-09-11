@@ -39,7 +39,7 @@ equal to the number of keys it contains. i.e. `dict.length() == dict.keys().leng
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> {name: 'Zuri', version: 1}.length()
 2
 ```
@@ -57,7 +57,7 @@ value.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var dict = {}
 %> dict.add('name', 'Zuri')
 %> dict
@@ -81,7 +81,7 @@ will be added.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.set('name', 'New Zuri')
 %> dict
 {name: New Zuri}
@@ -115,7 +115,7 @@ Clears the content of the dictionary.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = {name: 'Zuri'}
 %> a
 {name: Zuri}
@@ -135,7 +135,7 @@ dictionary.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var new_dict = dict.clone()
 %> new_dict
 {name: New Zuri, version: 1}
@@ -154,7 +154,7 @@ original dictionary except for keys whose associated value is `nil`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var dict2 = {name: 'James', age: 20, address: nil, country: nil}
 %> dict2.compact()
 {name: James, age: 20}
@@ -173,7 +173,7 @@ Returns `true` if any of the keys in the dictionary is equal to _x_,
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict2.contains('name')
 true
 %> dict2.contains('street')
@@ -197,7 +197,7 @@ dictionary.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var dict = {name: 'Zuri'}
 %> dict.extend({version: 1})
 %> dict
@@ -220,7 +220,7 @@ default value will be returned. Otherwise, `nil` is returned.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.get('version')   # value exists
 1
 %> dict.get('age')   # value does not exist
@@ -247,7 +247,7 @@ Returns a list containing the keys in the dictionary.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.keys()
 [name, version]
 ```
@@ -264,7 +264,7 @@ Returns a list containing the value of all keys in the dictionary.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.values()
 [Zuri, 1]
 ```
@@ -282,7 +282,7 @@ returns the value of the key.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict = {username: 'james', email: 'a@b.c', active: true}
 %> dict.remove('active')
 true
@@ -307,7 +307,7 @@ Returns `true` if the dictionary is empty, otherwise returns
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.is_empty()
 false
 %> {}.is_empty()
@@ -327,7 +327,7 @@ if no key has the value _x_.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> dict.find_key('james')
 'username'
 %> dict.find_key('camel')
@@ -350,7 +350,7 @@ dictionary. <br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var dict = {username: 'james', email: 'a@b.c'}
 %> dict.to_list()
 [[username, email], [james, a@b.c]]
@@ -533,7 +533,7 @@ to_string() -> string
 
 Returns the string representation of the dictionary.
 
-```zuri,ignore
+```zuri-repl
 %> {a: 1, b: 2}.to_string()
 '{a: 1, b: 2}'
 ```

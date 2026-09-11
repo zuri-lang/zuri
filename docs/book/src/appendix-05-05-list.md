@@ -57,7 +57,7 @@ Returns the number of items in the list. <br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> ['A', 'B', 'C'].length()
 3
 ```
@@ -74,7 +74,7 @@ Adds the given value _x_ to the end of the list.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1,2,3]
 %> a.append(4)
 %> a
@@ -97,7 +97,7 @@ Removes all items from the list.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1,2,3,4,5]
 %> a
 [1, 2, 3, 4, 5]
@@ -117,7 +117,7 @@ a shallow copy of the original list. This is equivalent to `list[,]`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1, 2, 3]
 %> var b = a.clone()
 %> a.append(4)
@@ -139,7 +139,7 @@ Returns the number of times item _x_ occurs in the list.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1, 2, 1, 3, 2, 1, 1].count(1)
 4
 ```
@@ -162,7 +162,7 @@ to `list + x`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1, 2, 3]
 %> var b = [4, 5, 6]
 %> a.extend(b)
@@ -190,7 +190,7 @@ not contain the value _x_.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1,2].index_of(3)
 -1
 %> [4,5,6,5].index_of(5)
@@ -229,7 +229,7 @@ match each other.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1,2].last_index_of(3)
 -1
 %> [4,5,6,5].last_index_of(5)
@@ -262,7 +262,7 @@ preceding the specified index.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1,2,3]
 %> a.insert(4, 0)
 %> a
@@ -295,7 +295,7 @@ Removes the last item in a list and returns the value of that item.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [4, 5, 6]
 %> a.pop()
 6
@@ -326,7 +326,7 @@ list, the list is cleared and `nil` is returned.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
 %> a.shift()
 9
@@ -359,7 +359,7 @@ is raised.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1, 2, 3, 4, 5]
 %> a.remove_at(3)
 4
@@ -391,7 +391,7 @@ Removes the first occurrence of item _x_ from the list.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = ['Kirk', 'Tasha', 'Emily', 'Kirk']
 %> a.remove('Kirk')
 %> a
@@ -417,7 +417,7 @@ order.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = ['apple', 'mango', 'banana', 'orange', 'peach']
 %> a.reverse()
 [peach, orange, banana, mango, apple]
@@ -446,7 +446,7 @@ in the sort.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a  = ['A', 5, false, nil, [21, 13, 46]]
 %> a.sort()
 %> a
@@ -470,7 +470,7 @@ Returns `true` if the list contains the item _x_ or `false` otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %>  ['dog', 'cat', 'wolf', 'tiger'].contains('cat')
 true
 %>  ['dog', 'cat', 'wolf', 'tiger'].contains('giraffe')
@@ -495,7 +495,7 @@ are the same, this will be equivalent to `list.remove_at(start)`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 %> a.delete(3, 6)
 4
@@ -524,7 +524,7 @@ Returns the first item in the list or `nil` if the list is empty.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> ['c', 'd', 'a', 'b'].first()
 'c'
 ```
@@ -541,7 +541,7 @@ Returns the last item in the list or `nil` if the list is empty.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> ['c', 'd', 'a', 'b'].last()
 'b'
 ```
@@ -558,7 +558,7 @@ Returns `true` if the list is empty or `false` otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1, 2].is_empty()
 false
 %> [].is_empty()
@@ -579,7 +579,7 @@ If `n < 0`, returns `list.take(list.length() - n)`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 %> a.take(4)
 [10, 11, 12, 13]
@@ -607,7 +607,7 @@ Error is thrown. This method is equivalent to `list[index]`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [13, 14, 15, 16].get(1)
 14
 %> [13, 14, 15, 16].get(6)
@@ -633,7 +633,7 @@ all `nil` values removed.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [21, nil, 14, 'age', nil, nil, [], 11].compact()
 [21, 14, age, [], 11]
 ```
@@ -650,7 +650,7 @@ Returns a new list containing the unique values from the original list.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1, 1, 3, 5].unique()
 [1, 3, 5]
 ```
@@ -672,7 +672,7 @@ original list, it's corresponding entry will be `nil`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = [4, 5, 6]
 %> var b = [7, 8, 9]
 %> [1, 2, 3].zip(a, b)
@@ -707,7 +707,7 @@ lists.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> [1, 2].zip_from([[3, 4]])
 [[1, 3], [2, 4]]
 ```
@@ -728,7 +728,7 @@ Returns a number indexed dictionary representing the list.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> ['English', 'French', 'Spanish'].to_dict()
 {0: English, 1: French, 2: Spanish}
 ```
@@ -1105,7 +1105,7 @@ to_string() -> string
 
 Returns the string representation of the list.
 
-```zuri,ignore
+```zuri-repl
 %> [1, 'two', 3].to_string()
 '[1, two, 3]'
 ```

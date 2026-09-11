@@ -1,3 +1,5 @@
 /target
 sample.zu
 /tests/generated
+/docs/book/theme/zuri-highlight.js
+/docs/reference/theme

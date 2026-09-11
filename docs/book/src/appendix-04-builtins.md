@@ -45,7 +45,7 @@ Returns the current epoch time to the microseconds resolution.
 
 Example:
 
-```zuri,ignore
+```zuri-repl
 %> time()
 1686787200.123456
 ```
@@ -70,7 +70,7 @@ when no argument is passed in.
 
 Example:
 
-```zuri,ignore
+```zuri-repl
 %> math.sum([1, 2, [3, 4, [5, 6]]])
 21
 ```

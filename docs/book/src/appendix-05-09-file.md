@@ -46,7 +46,7 @@ If the mode is not specified, the file is opened in the read-only mode.
 
 Valid modes include:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt', 'r')
 <file at sample.txt in mode r>
 %> file('sample.txt', 'w')
@@ -76,7 +76,7 @@ Returns `true` if a file exists or `false` otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').exists()
 true
 ```
@@ -94,7 +94,7 @@ this method yourself in most use cases.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var f = file('sample.txt')
 %> f.close()
 ```
@@ -114,7 +114,7 @@ read or write again as the file will already be closed.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> f.open()
 ```
 
@@ -210,7 +210,7 @@ act as file descriptors.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').number()
 6
 ```
@@ -228,7 +228,7 @@ otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').is_tty()
 false
 %> import io
@@ -251,7 +251,7 @@ otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').is_open()
 true
 ```
@@ -269,7 +269,7 @@ otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').is_closed()
 false
 ```
@@ -287,7 +287,7 @@ files as file writes are buffered.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> w.flush()
 ```
 
@@ -303,7 +303,7 @@ Returns the statistics or details of a file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').stats()
 {is_readable: true, is_writable: true, is_executable: false, is_symbolic: false, size: 72, mode: 33188, dev: 16777230, 
 ino: 4865113, nlink: 1, uid: 501, gid: 20, mtime: 1631395239, atime: 1631395271, ctime: 1631395239, blocks: 8, 
@@ -322,7 +322,7 @@ Creates a symbolic link for the original file at the specified path.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').symlink('sample2.txt')
 true
 ```
@@ -339,7 +339,7 @@ Deletes a file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('test-2.zu').delete()
 true
 ```
@@ -363,7 +363,7 @@ another location in which case the file will be moved.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample copy.txt').rename('sample-2.txt')
 true
 ```
@@ -388,7 +388,7 @@ Returns the path to the file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').path()
 'sample.txt'
 ```
@@ -405,7 +405,7 @@ Returns the absolute path to the file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').abs_path()
 'C:\Users\username\zuri-docs\sample.txt'
 ```
@@ -423,7 +423,7 @@ path.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('./sample.txt').copy('samp.txt')
 true
 ```
@@ -445,7 +445,7 @@ such that only length number of bytes is left in it.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('./samp.txt').truncate()
 true
 ```
@@ -470,7 +470,7 @@ given.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').chmod(0c755)
 true
 ```
@@ -494,7 +494,7 @@ Sets the last access time and last modified time of the file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').set_times(time(), time())
 true
 %> file('sample.txt').stats()
@@ -522,7 +522,7 @@ must be within the range of the file size. _seek_type_ must be on of
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> f.seek(5, io.SEEK_SET)
 true
 ```
@@ -544,7 +544,7 @@ Returns the current position of the reader/writer in a file.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> import io
 %> var f = file('sample.txt')
 %> f.seek(5, io.SEEK_SET)
@@ -565,7 +565,7 @@ Returns the mode in which the current file was opened.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('sample.txt').mode()
 'r'
 ```
@@ -582,7 +582,7 @@ Returns the name of the current file.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> file('./sample.txt').name()
 'sample.txt'
 ```

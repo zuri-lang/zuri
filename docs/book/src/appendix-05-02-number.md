@@ -58,7 +58,7 @@ to_string() -> string
 
 Returns the string representation of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 5.to_string()
 '5'
 ```
@@ -75,7 +75,7 @@ Converts the number to a boolean. A number is considered truthy (`true`)
 when it is greater than or equal to zero, and falsy (`false`) when it is
 negative.
 
-```zuri,ignore
+```zuri-repl
 %> 5.to_bool()
 true
 %> 0.to_bool()
@@ -95,7 +95,7 @@ to_bigint() -> bigint
 Converts the number to a `bigint`, the counterpart to
 `bigint.to_number()`.
 
-```zuri,ignore
+```zuri-repl
 %> (12345).to_bigint()
 12345n
 %> (2).to_bigint() ** (100).to_bigint()
@@ -120,7 +120,7 @@ abs() -> number
 
 Returns the absolute value of the number.
 
-```zuri,ignore
+```zuri-repl
 %> (-5).abs()
 5
 %> 5.abs()
@@ -137,7 +137,7 @@ chr() -> string
 
 Returns the Unicode character whose code point is equal to the number.
 
-```zuri,ignore
+```zuri-repl
 %> 65.chr()
 'A'
 ```
@@ -153,7 +153,7 @@ bin() -> string
 Converts the number to its binary string representation. The number is
 truncated to an integer first.
 
-```zuri,ignore
+```zuri-repl
 %> 10.bin()
 '1010'
 ```
@@ -172,7 +172,7 @@ hex() -> string
 Converts the number to its hexadecimal string representation. The number
 is truncated to an integer first.
 
-```zuri,ignore
+```zuri-repl
 %> 255.hex()
 'ff'
 ```
@@ -191,7 +191,7 @@ oct() -> string
 Converts the number to its octal string representation. The number is
 truncated to an integer first.
 
-```zuri,ignore
+```zuri-repl
 %> 8.oct()
 '10'
 ```
@@ -212,7 +212,7 @@ the decimal point. Unlike `floor()`, this rounds towards zero rather
 than towards negative infinity, so the result for a negative number
 differs from `floor()`.
 
-```zuri,ignore
+```zuri-repl
 %> 3.9.int()
 3
 %> (-3.9).int()
@@ -229,7 +229,7 @@ max(other: number) -> number
 
 Returns the larger of the number and _other_.
 
-```zuri,ignore
+```zuri-repl
 %> 5.max(9)
 9
 %> 9.max(5)
@@ -250,7 +250,7 @@ min(other: number) -> number
 
 Returns the smaller of the number and _other_.
 
-```zuri,ignore
+```zuri-repl
 %> 5.min(9)
 5
 %> 9.min(5)
@@ -273,7 +273,7 @@ Returns the factorial of the number, i.e. the product of every positive
 integer less than or equal to it. `0.factorial()` is `1`, matching the
 standard mathematical definition.
 
-```zuri,ignore
+```zuri-repl
 %> 5.factorial()
 120
 %> 0.factorial()
@@ -390,7 +390,7 @@ Returns the four-quadrant arctangent of the number and _x_, in radians.
 The receiver is treated as the y-coordinate and _x_ as the x-coordinate,
 matching the conventional `atan2(y, x)` signature: `y.atan2(x)`.
 
-```zuri,ignore
+```zuri-repl
 %> 1.0.atan2(1.0)
 0.7853981633974483
 ```
@@ -467,7 +467,7 @@ log() -> number
 
 Returns the natural logarithm (base _e_) of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 1.0.log()
 0
 ```
@@ -482,7 +482,7 @@ log2() -> number
 
 Returns the base-2 logarithm of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 8.0.log2()
 3
 ```
@@ -497,7 +497,7 @@ log10() -> number
 
 Returns the base-10 logarithm of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 100.0.log10()
 2
 ```
@@ -524,7 +524,7 @@ cbrt() -> number
 
 Returns the cube root of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 27.0.cbrt()
 3
 ```
@@ -539,7 +539,7 @@ sqrt() -> number
 
 Returns the square root of the number.
 
-```zuri,ignore
+```zuri-repl
 %> 16.sqrt()
 4
 ```
@@ -560,7 +560,7 @@ sign() -> number
 Returns the sign of the number: `1` if it is positive, `-1` if it is
 negative, and `0` (with its own original sign preserved) if it is zero.
 
-```zuri,ignore
+```zuri-repl
 %> 7.sign()
 1
 %> (-7).sign()
@@ -579,7 +579,7 @@ ceil() -> number
 
 Returns the smallest whole number greater than or equal to the number.
 
-```zuri,ignore
+```zuri-repl
 %> 3.14159.ceil()
 4
 ```
@@ -595,7 +595,7 @@ round() -> number
 Rounds the number to the nearest whole number. A value exactly halfway
 between two whole numbers rounds away from zero.
 
-```zuri,ignore
+```zuri-repl
 %> 3.14159.round()
 3
 %> 3.6.round()
@@ -612,7 +612,7 @@ floor() -> number
 
 Returns the largest whole number less than or equal to the number.
 
-```zuri,ignore
+```zuri-repl
 %> 3.14159.floor()
 3
 ```
@@ -664,7 +664,7 @@ unlike `int()`, `trunc()` stays a floating-point result rather than
 going through an integer cast, so it does not overflow for numbers
 larger than a 64-bit integer can hold.
 
-```zuri,ignore
+```zuri-repl
 %> (-3.9).trunc()
 -3
 ```
@@ -681,7 +681,7 @@ Returns the digits after the number's decimal point, read as a whole
 number rather than a fraction. Note that this is NOT the same as `(n - n.int())`:
 `1.92.fraction()` is `92`, not `0.92`.
 
-```zuri,ignore
+```zuri-repl
 %> 1.92.fraction()
 92
 %> 1.5.fraction()
@@ -705,7 +705,7 @@ A number already shorter than _n_ places is returned unchanged, and so
 are `NaN` and the infinities. Beyond 17 places an `f64` has no digits
 left to round, so a larger _n_ behaves as 17.
 
-```zuri,ignore
+```zuri-repl
 %> 1.554576852757686786786.fixed(9)
 1.554576853
 %> 1.554576852757686786786.fixed(8)

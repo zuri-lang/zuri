@@ -43,7 +43,7 @@ Creates a new byte stream.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> bytes(5)
 (0 0 0 0 0)
 %> bytes([65, 66, 67, 68, 69])
@@ -70,7 +70,7 @@ length() -> number
 
 Returns the number of bytes in the byte stream.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([25, 57]).length()
 2
 ```
@@ -88,7 +88,7 @@ otherwise. Equivalent to testing `length() == 0`, and unaffected by
 whatever the bytes happen to contain: a stream of zero bytes is not
 empty.
 
-```zuri,ignore
+```zuri-repl
 %> bytes(0).is_empty()
 true
 %> bytes(3).is_empty()
@@ -109,7 +109,7 @@ Adds an item to the top of a byte stream.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([0x40, 0x75])
 %> a.append(0x16)
 %> echo a
@@ -132,7 +132,7 @@ Returns a deep clone of the byte stream.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> bytes([19, 11]).clone()
 (13 b)
 ```
@@ -149,7 +149,7 @@ Extends the byte stream with the bytes from the given byte stream.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([33, 91, 126])
 %> var b = bytes([119, 42])
 %> a
@@ -180,7 +180,7 @@ index_of(byte: int, start_index: ?number) -> number
 Returns the index of the first occurrence of the given byte in the byte
 stream.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([25, 57, 25]).index_of(57)
 1
 %> bytes([25, 57, 25]).index_of(25, 1)
@@ -209,7 +209,7 @@ That is the same position `index_of()`'s own second parameter bounds, so
 for any index `n`, `index_of(b, n)` and `last_index_of(b, n)` are the
 first and last occurrences in the two halves `n` splits the stream into.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([25, 57, 25]).last_index_of(25)
 2
 %> bytes([25, 57, 25]).last_index_of(25, 1)
@@ -232,7 +232,7 @@ pop() -> number
 
 Removes the last item in a byte stream and returns it.
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([79, 43, 9])
 %> a.pop()
 9
@@ -251,7 +251,7 @@ remove(index: number) -> bytes
 Removes the item at the specified index in the byte stream and return
 the previous value at the specified index.
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([25, 57, 25])
 %> a.remove(1)
 57
@@ -273,7 +273,7 @@ reverse() -> bytes
 
 Reverses the items in the byte stream.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([5, 4, 3, 2, 1]).reverse()
 (1 2 3 4 5)
 ```
@@ -289,7 +289,7 @@ first() -> number
 Returns the first item in the byte stream or `nil` if the byte stream is
 empty.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([25, 57, 42]).first()
 25
 ```
@@ -305,7 +305,7 @@ last() -> number
 Returns the last item in the byte stream or `nil` if the byte stream is
 empty.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([25, 57, 42]).last()
 42
 ```
@@ -338,7 +338,7 @@ a new copy of the bytes if _n_ greater than or equals to the
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
 %> a.take(4)
 (0a 0b 0c 0d)
@@ -364,7 +364,7 @@ Splits the content of a byte stream based on the specified delimiter.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> bytes(0).split(bytes(0))
 []
 %> echo 'test'.to_bytes().split(bytes(0))
@@ -393,7 +393,7 @@ and empty it.
 
 For example,
 
-```zuri,ignore
+```zuri-repl
 %> var a = bytes([13, 36])
 %> a.dispose()
 %> a
@@ -409,7 +409,7 @@ is_alpha() -> boolean
 Returns `true` if the byte stream only contains alpha characters,
 `false` otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([65, 66, 67]).is_alpha()
 true
 %> bytes([65, 66, 67, 128]).is_alpha()
@@ -427,7 +427,7 @@ is_alnum() -> boolean
 Returns `true` if the byte stream only contains alpha characters and
 numbers, `false` otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([65, 66, 67, 48, 49, 50]).is_alnum()
 true
 %> bytes([65, 66, 67, 48, 49, 50, 8]).is_alnum()
@@ -445,7 +445,7 @@ is_number() -> boolean
 Returns `true` if the byte stream only contains numbers, `false`
 otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([48, 49, 50]).is_number()
 true
 %> bytes([48, 49, 50, 68]).is_number()
@@ -463,7 +463,7 @@ is_lower(n) -> boolean
 Returns `true` if the byte stream only contains lower case characters,
 `false` otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([97, 98, 99]).is_lower()
 true
 %> bytes([97, 98, 99, 68]).is_lower()
@@ -481,7 +481,7 @@ is_upper() -> boolean
 Returns `true` if the byte stream only contains upper case characters,
 `false` otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([65, 66, 67]).is_upper()
 true
 %> bytes([65, 66, 67, 98]).is_upper()
@@ -499,7 +499,7 @@ is_space() -> boolean
 Returns `true` if the byte stream only contains space characters,
 `false` otherwise.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([32, 32, 32]).is_space()
 true
 %> bytes([32, 32, 32, 68]).is_space()
@@ -516,7 +516,7 @@ to_list() -> list
 
 Returns the byte stream as a list of bytes.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([0x31, 0x55, 0x149, 0x215]).to_list()
 [49, 85, 233, 33]
 ```
@@ -531,7 +531,7 @@ to_string() -> string
 
 Returns the byte stream as a string.
 
-```zuri,ignore
+```zuri-repl
 %> bytes([65, 66, 67, 68, 69]).to_string()
 'ABCDE'
 ```

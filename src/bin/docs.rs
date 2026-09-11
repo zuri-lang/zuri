@@ -147,11 +147,34 @@ fn build(args: &[String]) -> Result<(), String> {
   };
 
   for doc in chosen {
+    install_highlighter(doc)?;
     generate(doc)?;
 
     println!("building {}", doc.name);
     run_mdbook(doc, &["build", &dir_string(doc)])?;
   }
+
+  Ok(())
+}
+
+/// Puts the Zuri highlighter where this book's `book.toml` expects it.
+///
+/// mdBook resolves `additional-js` relative to the book's own root and
+/// copies the file into the rendered output preserving that relative
+/// path, so a path reaching out of the book with `..` lands outside the
+/// build directory and survives `cargo clean-docs`. Both books render
+/// the same language, so the file has one source in `docs/tools` and is
+/// copied into each book's `theme/` on the way past.
+fn install_highlighter(doc: &Doc) -> Result<(), String> {
+  let root = crate_root();
+  let source = root.join("docs").join("tools").join("zuri-highlight.js");
+  let theme = root.join(doc.dir).join("theme");
+
+  std::fs::create_dir_all(&theme)
+    .map_err(|e| format!("could not create {}: {e}", theme.display()))?;
+
+  std::fs::copy(&source, theme.join("zuri-highlight.js"))
+    .map_err(|e| format!("could not copy {}: {e}", source.display()))?;
 
   Ok(())
 }
@@ -221,6 +244,7 @@ fn serve(args: &[String]) -> Result<(), String> {
   let (doc, rest) = select(args)?;
   let port = parse_port(&rest)?;
 
+  install_highlighter(doc)?;
   generate(doc)?;
 
   println!("serving the {} at http://localhost:{port}", doc.name);

@@ -16,7 +16,7 @@ to_string() -> string
 
 Returns the string representation of the boolean.
 
-```zuri,ignore
+```zuri-repl
 %> true.to_string()
 'true'
 %> false.to_string()

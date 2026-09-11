@@ -26,7 +26,7 @@ Returns the lower limit of the range.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> (10..100).lower()
 10
 ```
@@ -43,7 +43,7 @@ Returns the upper limit of the range.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> (20..30).upper()
 30
 ```
@@ -60,7 +60,7 @@ Returns a number equal to the numbers between the range.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> (21..93).range()
 72
 ```
@@ -69,7 +69,7 @@ The result of stays the same irrespective of the direction of the range.
 For example, swapping the upper and lower limit of our previous still
 returns the same result.
 
-```zuri,ignore
+```zuri-repl
 %> (21..93).range()
 72
 ```
@@ -87,7 +87,7 @@ otherwise.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> (93..21).within(103)
 false
 %> (93..21).within(57)
@@ -110,7 +110,7 @@ Sets the step size of the range.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> var a = (10..100).step(20)
 %> a
 <range 10..100, step=20>
@@ -184,7 +184,7 @@ Returns the range as a list of its individual numbers, stepping from the
 lower limit to the upper limit (exclusive), or in reverse when the range
 descends.
 
-```zuri,ignore
+```zuri-repl
 %> (1..5).to_list()
 [1, 2, 3, 4]
 %> (5..1).to_list()
@@ -201,7 +201,7 @@ to_string() -> string
 
 Returns the string representation of the range.
 
-```zuri,ignore
+```zuri-repl
 %> (1..5).to_string()
 '1..5'
 ```

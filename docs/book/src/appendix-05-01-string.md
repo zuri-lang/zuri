@@ -60,7 +60,7 @@ contains UTF-8 characters whether written directly or via the `\u` or
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'This is a pretty long string'.length()
 28
 %> 'उनका एक समय'.length()
@@ -84,7 +84,7 @@ that are not case folded.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'zuri'.upper()
 'ZURI'
 ```
@@ -102,7 +102,7 @@ lowercase.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'Zuri Is Bae'.lower()
 'zuri is bae'
 ```
@@ -120,7 +120,7 @@ the string is not empty., otherwise returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'abracadabra'.is_alpha()
 true
 %> 'my tooth aches'.is_alpha()
@@ -143,7 +143,7 @@ method is the same as `string.is_alpha() or string.is_number()`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '3Idiots'.is_alnum()
 true
 %> 'Three Idiots'.is_alnum()
@@ -171,7 +171,7 @@ the string is not empty, otherwise returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '123.5'.is_number()
 false
 %> '1970'.is_number()
@@ -192,7 +192,7 @@ it returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'all'.is_lower()
 true
 %> 'all...123'.is_lower()
@@ -217,7 +217,7 @@ it returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'ALL'.is_upper()
 true
 %> 'ALL...123'.is_upper()
@@ -241,7 +241,7 @@ the string is not empty. Otherwise, it returns empty.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '.     '.is_space()
 false
 %> '\r\n'.is_space()
@@ -261,7 +261,7 @@ ord() -> number
 Returns the Unicode code point of the string, which must be exactly one
 character long.
 
-```zuri,ignore
+```zuri-repl
 %> 'A'.ord()
 65
 %> 'AB'.ord()
@@ -293,7 +293,7 @@ returned.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '  example  '.trim()
 'example'
 %> '  example  '.trim('e')
@@ -319,7 +319,7 @@ characters at the beginning of the string.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '  example  '.ltrim()
 'example  '
 %> 'example'.ltrim('e')
@@ -343,7 +343,7 @@ characters at the end of the string.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '  example  '.rtrim()
 '  example'
 %> 'example'.rtrim('e')
@@ -372,7 +372,7 @@ string representation before joining.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> ','.join(['ok', 1, true])
 'ok,1,true'
 %> '--'.join('name')
@@ -406,7 +406,7 @@ This method has full UTF-8 support.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'name'.split('')
 [n, a, m, e]
 %> '1<>2<>3'.split('<>')
@@ -440,7 +440,7 @@ will start scanning from the given index.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'hello, world'.index_of(' ')
 6
 %> 'hello, world'.index_of('e')
@@ -480,7 +480,7 @@ An empty _str_ returns -1, matching `index_of()`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'hello, world'.last_index_of('o')
 8
 %> 'hello, world'.last_index_of('l')
@@ -494,7 +494,7 @@ For example:
 Splitting a path on its final separator is the usual reason to reach for
 it:
 
-```zuri,ignore
+```zuri-repl
 %> var path = 'a/b/c'
 %> path.last_index_of('/')
 3
@@ -520,7 +520,7 @@ specified in _str_, otherwise it returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'hello, world'.starts_with('hello')
 true
 %> 'hello, world'.starts_with('hellios')
@@ -544,7 +544,7 @@ in _str_, otherwise it returns `false`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'gumtree'.ends_with('tree')
 true
 %> 'gumtree'.ends_with('mree')
@@ -573,7 +573,7 @@ as the same can be accomplished by slicing the string._
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'Hallelujah'.count('l')
 3
 %> 'ding dong'.count('ng')
@@ -601,7 +601,7 @@ value.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '123.0 hell'.to_number()
 123
 %> '427 and 12'.to_number()
@@ -627,7 +627,7 @@ string.<br>
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'Zuri'.to_list()
 [B, l, a, d, e]
 %> 'Plantation'.to_list()
@@ -649,7 +649,7 @@ Returns the content of the string as a stream of `bytes`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'Zuri'.to_bytes()
 (42 6c 61 64 65)
 %> 'Plantation'.to_bytes()
@@ -671,7 +671,7 @@ is less than _`string.length()`_.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'cat'.lpad(5)
 '  cat'
 %> 'cat'.lpad(5, '-')
@@ -700,7 +700,7 @@ width is less than _`string.length()`_.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'Hmm'.rpad(6)
 'Hmm   '
 %> 'Hmm'.rpad(6, '.')
@@ -736,7 +736,7 @@ _string_ at which to start matching.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'gorilla'.match('go')      # regular string match
 true
 %> 'gorilla'.match('gox')     # regular string non-match
@@ -768,7 +768,7 @@ _string_ at which to start matching.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> '123 dollars'.matches('/[a-z]+|\d+/')
 {0: [123, dollars]}
 %> 'who is in the garden'.matches('/\w+/')
@@ -800,7 +800,7 @@ the _replacement_ string as `$0`.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> 'lady friend'.replace('d', 'z')  # non-regex
 'lazy frienz'
 %> 'John is 26 years old'.replace('/(\d+)/', '1$1') # regex example
@@ -863,7 +863,7 @@ contained in the regex.
 
 For example:
 
-```zuri,ignore
+```zuri-repl
 %> echo 'name'.replace_with('/m/', @(match, offset) {
 ..   return match + '-'
 .. })
@@ -872,7 +872,7 @@ For example:
 
 Below is another example that uses a capture group:
 
-```zuri,ignore
+```zuri-repl
 %> var text = 'all is well'
 %> 
 %> echo text.replace_with('/([a-z]+)/', @(match, val) {
@@ -914,7 +914,7 @@ byte-for-byte instead of character-by-character, e.g. one that
 originated from a byte stream where the bytes were never meant to be
 decoded as Unicode at all.
 
-```zuri,ignore
+```zuri-repl
 %> 'café'.length()
 4
 %> 'café'.ascii().length()
@@ -939,7 +939,7 @@ identical output from `case_fold()`, which makes it the correct method
 to use for case-insensitive comparisons; `lower()` is not a substitute
 for it.
 
-```zuri,ignore
+```zuri-repl
 %> 'HELLO World'.case_fold()
 'hello world'
 %> 'Straße'.case_fold()
