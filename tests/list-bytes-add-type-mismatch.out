@@ -1,0 +1,10 @@
+═══════════════════════════════════════════════════════
+  list/bytes + mismatched operand: test suite
+═══════════════════════════════════════════════════════
+  [PASS] a list added to a non-list raises a catchable TypeError
+  [PASS] a byte stream added to a non-byte-stream raises a catchable TypeError
+  [PASS] matching operands, and string concatenation, are unaffected
+
+═══════════════════════════════════════════════════════
+  All 3 assertions passed.
+═══════════════════════════════════════════════════════

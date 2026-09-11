@@ -46,6 +46,23 @@ import http.websocket as ws
 
 Use this when the natural name is long, or when it would collide.
 
+`as` renames the **module**, not a member. There is no way to rename an
+individual name in a member list — `import math { PI as pi }` does not
+parse. When you want a different name for one imported thing, bind it
+yourself:
+
+```zuri
+import math { PI }
+
+var pi = PI
+
+echo pi
+```
+
+```console
+3.141592653589793
+```
+
 ## Relative Imports
 
 A path starting with `.` or `..` is resolved against the directory of the
@@ -330,3 +347,80 @@ myapp/
 
 Run it with `zuri myapp`. The capstone in [Chapter 20](ch20-00-task-board.md)
 is laid out exactly this way.
+
+### A Package, End to End
+
+Here is the smallest complete version of that shape. Three files, one
+package, one public entry point.
+
+<span class="filename">Filename: greet/english.zu</span>
+
+```zuri,ignore
+def hello(name) {
+  return 'Hello, ${name}'
+}
+
+def _shout(text) {
+  return text.upper()
+}
+```
+
+<span class="filename">Filename: greet/french.zu</span>
+
+```zuri,ignore
+def hello(name) {
+  return 'Bonjour, ${name}'
+}
+```
+
+<span class="filename">Filename: greet/index.zu</span>
+
+```zuri,ignore
+import @.english
+import @.french
+
+def greet(name, language) {
+  return language == 'fr' ? french.hello(name) : english.hello(name)
+}
+```
+
+<span class="filename">Filename: index.zu</span>
+
+```zuri,ignore
+import .greet
+
+echo greet.greet('Ada', 'en')
+echo greet.greet('Ada', 'fr')
+echo greet.english.hello('Grace')
+```
+
+```console
+$ zuri .
+Hello, Ada
+Bonjour, Ada
+Hello, Grace
+```
+
+Four things to take from it.
+
+**`greet/index.zu` is what `import .greet` loads.** A directory with an
+`index.zu` is a package, and importing the directory runs that file.
+
+**The `@` on `import @.english` is what re-exports it.** Without it,
+`greet.english` would not be reachable from outside `greet/index.zu`, even
+though `greet()` itself would still work — which is often exactly what you
+want.
+
+**Both submodules define `hello`, and they do not collide.** Each lives in
+its own namespace, reached through its own module name. That is the whole
+reason to use `import @.english` rather than `import @.english { * }` here.
+
+**`_shout` is unreachable from outside.** Writing `greet.english._shout(x)`
+anywhere else is a compile error, not a runtime one:
+
+```console
+SyntaxError: '_shout' is private and can only be accessed via 'self' or 'parent'
+```
+
+The leading underscore is the only declaration of privacy there is, and it
+is checked before the program runs.

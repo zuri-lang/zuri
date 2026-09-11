@@ -176,8 +176,36 @@ the check you want on an upload.
 
 ### `colors`
 
-ANSI colour for terminal output, with true-colour, 256-colour and 16-colour
-conversion so the same code degrades on a limited terminal.
+ANSI colour for terminal output, and conversion between every colour space
+you are likely to have a value in:
+
+```zuri
+import colors
+
+echo colors.hex_to_rgb('#ff8800')
+echo colors.rgb_to_hex(255, 136, 0)
+echo colors.rgb_to_ansi256(255, 136, 0)
+```
+
+```console
+[255, 136, 0, 1]
+ff8800
+214
+```
+
+`colors.text(value, color, background)` wraps a string in the escape codes:
+
+```zuri,ignore
+import colors
+
+echo colors.text('warning', colors.text_color.yellow)
+```
+
+The conversions are what make the same code work on a terminal that cannot
+do what you asked: a true-colour value becomes the nearest of 256, and 256
+becomes the nearest of 16. `hex()`, `rgb()`, `hsl()`, `hsv()`, `hwb()`,
+`cmyk()` and `xyz()` each take a colour in that space and produce the
+escape sequence for it.
 
 ## Time
 
@@ -291,8 +319,41 @@ an update schema stay in sync.
 
 ### `types`
 
-Coercion with checking: `types.int(value)`, `types.string(value)` and the
-rest convert and raise rather than guessing.
+Type predicates, one per type, as an alternative to the `is_*` built-ins:
+
+```zuri
+import types
+
+echo types.of(42)
+echo types.int(42)
+echo types.int(4.2)
+echo types.digit('7')
+echo types.alpha('a')
+echo types.iterable([1])
+echo types.instance(ValueError('x'), Error)
+```
+
+```console
+number
+true
+false
+true
+true
+true
+true
+```
+
+Each one **answers a question** and returns a boolean; none of them
+converts anything. `types.int(4.2)` is `false` because `4.2` is not an
+integer, not because it failed to become one.
+
+`types.of()` is `typeof()`. `digit()`, `alpha()` and `char()` are the
+string-shape tests the built-ins do not cover, and `instance(value, Class)`
+walks the inheritance chain.
+
+When you want conversion rather than a question, the methods on the value
+do it: `to_number()`, `to_string()`, `to_bigint()`, `to_list()`,
+`to_bytes()`.
 
 ### `set`
 
@@ -358,7 +419,7 @@ Processes, the filesystem, paths and the environment. Covered in
 
 Standard streams, terminal control and in-memory files:
 
-```zuri
+```zuri,ignore
 import io
 
 var name = io.readline('Your name: ')
@@ -373,7 +434,31 @@ in-memory file from [Chapter 10](ch10-00-binary-data.md).
 
 ### `stat`
 
-The `S_IS*` predicates over a mode word from `file().stats()`.
+The `S_IS*` predicates over the `mode` word from `file().stats()`, plus a
+renderer for it:
+
+```zuri
+import stat
+
+file('notes.txt', 'w').write('x')
+
+var info = file('notes.txt').stats()
+
+echo stat.S_ISREG(info.mode)
+echo stat.S_ISDIR(info.mode)
+echo stat.file_mode(info.mode)
+```
+
+```console
+true
+false
+-rw-rw-r--
+```
+
+`S_ISREG`, `S_ISDIR`, `S_ISLNK`, `S_ISCHR`, `S_ISBLK`, `S_ISFIFO` and
+`S_ISSOCK` each answer one question about the kind of entry.
+`S_IMODE(mode)` strips the type bits and leaves the permissions;
+`file_mode(mode)` renders the whole thing the way `ls -l` does.
 
 ### `args`
 

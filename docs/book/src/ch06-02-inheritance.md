@@ -42,17 +42,11 @@ class has at most one parent.
 
 `parent` means two related things.
 
-**`parent(args)`** calls the parent's constructor. Do it first in `@new`,
-before you set up anything of your own:
-
-```zuri,ignore
-class Circle < Shape {
-  @new(radius) {
-    parent('circle')
-    self.radius = radius
-  }
-}
-```
+**`parent(args)`** calls the parent's constructor. That is the
+`parent('circle')` line in `Circle` above, and it comes first in `@new`,
+before the subclass sets up anything of its own. Calling it late means the
+parent's constructor overwrites what you just assigned; not calling it at
+all means the parent's fields are never initialised.
 
 **`parent.method(args)`** calls the parent's version of a method that this
 class has overridden:
@@ -95,7 +89,7 @@ terms of a method the child supplies. `Shape.area()` raises
 `NotImplementedError`, so a subclass that forgets to override it says so
 clearly:
 
-```zuri,ignore
+```zuri
 catch {
   Shape('blob').area()
 } as e {

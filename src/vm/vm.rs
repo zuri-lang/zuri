@@ -5309,11 +5309,10 @@ impl VM {
       return Ok(result);
     }
 
-    // `||` here, not `&&`: matches Add's existing behavior including its
-    // edge case where `.as_list()`/`.as_bytes()` panics if only one side
-    // is actually a list/bytes (e.g. `[1,2] + 5`). Deliberately preserved
-    // so a literal RHS behaves identically to a variable RHS holding the
-    // same value.
+    // Both sides have to be the same kind. `||` here would reach
+    // `with_list`/`with_bytes` with an operand that is neither, which
+    // aborts the process rather than raising: `[1, 2] + 5` is a
+    // TypeError the program can catch, not a crash it cannot.
     if va.is_string() && vb.is_string() {
       // Both sides already strings, the common shape format! serves worst.
       // Display for a string Value is its raw contents, so this produces a
@@ -5328,13 +5327,13 @@ impl VM {
     } else if va.is_string() || vb.is_string() {
       let s = format!("{}{}", va, vb);
       return Ok(self.heap.alloc_string(s));
-    } else if va.is_list() || vb.is_list() {
+    } else if va.is_list() && vb.is_list() {
       // Built before allocating: `alloc_list` can run the GC, which
       // must not find either operand's storage still borrowed.
       let mut value = va.with_list(|a| a.to_vec());
       vb.with_list(|b| value.extend_from_slice(b));
       return Ok(self.heap.alloc_list(value));
-    } else if va.is_bytes() || vb.is_bytes() {
+    } else if va.is_bytes() && vb.is_bytes() {
       let mut value = va.with_bytes(|a| a.to_vec());
       vb.with_bytes(|b| value.extend_from_slice(b));
       return Ok(self.heap.alloc_bytes(value));

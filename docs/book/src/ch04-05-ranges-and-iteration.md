@@ -5,6 +5,22 @@
 `a..b` builds a range value: the integers from `a` up to but not including
 `b`.
 
+`..` binds tighter than a method call, so a range takes a method directly
+with no parentheses around it:
+
+```zuri
+echo 1..5.to_list()
+echo 1..10.step(3).get_step()
+```
+
+```console
+[1, 2, 3, 4]
+3
+```
+
+Parenthesise only when the bounds are themselves expressions, since `..`
+takes primaries: `(n * 2)..(n * 3)`.
+
 ```zuri
 var r = 1..10
 
@@ -67,7 +83,7 @@ second is not.
 ### Stepping
 
 ```zuri
-for i in (1..10).step(3) {
+for i in 1..10.step(3) {
   echo i
 }
 ```
@@ -85,7 +101,7 @@ it; the default is `1`.
 step you set:
 
 ```zuri
-echo (1..5).to_list()
+echo 1..5.to_list()
 ```
 
 ```console
@@ -95,7 +111,7 @@ echo (1..5).to_list()
 ### Membership
 
 `within()` tests against the bounds **inclusively on both sides**, and it
-normalises direction, so `(10..1).within(10)` and `(1..10).within(10)` both
+normalises direction, so `10..1.within(10)` and `1..10.within(10)` both
 answer the same:
 
 ```zuri
@@ -144,7 +160,7 @@ what makes it useful: `3..6` yields values 3, 4, 5 at positions 0, 1, 2.
 `loop()` is the callback form. It honours the step and the direction:
 
 ```zuri
-(25..18).loop(@(i) { print('${i} ') })
+25..18.loop(@(i) { print('${i} ') })
 print('\n')
 ```
 

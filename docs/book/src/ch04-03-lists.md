@@ -286,7 +286,7 @@ One assignment changed every row, because there is only one row. Build
 nested structure with a loop, or with `map()`:
 
 ```zuri
-var grid = (0..3).to_list().map(@(i) => [0, 0])
+var grid = 0..3.to_list().map(@(i) => [0, 0])
 
 grid[0][0] = 9
 

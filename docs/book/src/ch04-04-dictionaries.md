@@ -332,6 +332,209 @@ name
 pairs. `find_key()` searches by value and returns the first key holding
 it.
 
+## Dictionaries of Functions
+
+A dictionary value can be a function, and that turns a dictionary into a
+**dispatch table**: a set of named behaviours you can choose between at
+runtime by looking a name up. It is the structure that replaces `eval()`,
+and it is worth knowing well.
+
+```zuri
+def plus(a, b) {
+  return a + b
+}
+
+var ops = {
+  plus: plus,
+  minus: @(a, b) => a - b,
+  times: @(a, b) { return a * b },
+}
+```
+
+All three forms are equivalent: a named function by name, an arrow
+function, and an anonymous function with a body.
+
+### Calling One
+
+This is the part that surprises people, so it comes first. **You cannot
+call one with a dot in a single step:**
+
+```zuri,ignore
+echo ops.plus(1, 2)
+```
+
+```console
+Unhandled TypeError: object of type dict does not define method 'plus'
+```
+
+A dot followed by a call looks for a **method on the dictionary itself** —
+`length()`, `keys()`, `get()` and the rest — not for a value stored under
+that key. Dictionaries have no method called `plus`, so the call fails.
+
+There are two forms that do work. Read the function out first:
+
+```zuri
+def plus(a, b) {
+  return a + b
+}
+
+var ops = { plus: plus, minus: @(a, b) => a - b }
+
+var chosen = ops.plus
+
+echo chosen(1, 2)
+```
+
+```console
+3
+```
+
+Or index with brackets and call the result:
+
+```zuri
+var ops = { plus: @(a, b) => a + b, minus: @(a, b) => a - b }
+
+echo ops['minus'](5, 2)
+```
+
+```console
+3
+```
+
+The bracket form is the one to reach for when the key is computed, which is
+the whole point of a dispatch table:
+
+```zuri
+var ops = {
+  plus: @(a, b) => a + b,
+  minus: @(a, b) => a - b,
+  times: @(a, b) => a * b,
+}
+
+for name in ['plus', 'minus', 'times'] {
+  echo '${name}: ${ops[name](6, 3)}'
+}
+```
+
+```console
+plus: 9
+minus: 3
+times: 18
+```
+
+### Beware of Names That Are Already Methods
+
+A dictionary's own methods take priority over its keys when you use a dot
+call. Storing a function under `add`, `keys`, `get`, `length` or any other
+method name produces a call that succeeds and does the **wrong thing**:
+
+```zuri
+def plus(a, b) {
+  return a + b
+}
+
+var d = { add: plus }
+
+echo d.add(1, 2)
+echo d.keys()
+```
+
+```console
+nil
+[add, 1]
+```
+
+`d.add(1, 2)` called the dictionary's own `add()`, which is a synonym for
+`set()` — so it stored the key `1` with the value `2` and returned `nil`.
+Nothing raised. The only sign is the extra key in the output.
+
+Two habits avoid this entirely: use bracket calls for dispatch tables, and
+avoid method names as keys. [Appendix E](appendix-05-06-dict.md) lists
+every name a dictionary already uses.
+
+### A Dispatch Table in Practice
+
+The pattern is a table of handlers, a lookup with a fallback, and a call:
+
+```zuri
+def _unknown(args) {
+  return 'unknown command: ${args[0]}'
+}
+
+var commands = {
+  greet: @(args) => 'hello, ${args[1]}',
+  add: @(args) => args[1].to_number() + args[2].to_number(),
+  version: @(args) => '1.0.0',
+}
+
+def run(line) {
+  var args = line.split(' ')
+  var handler = commands.get(args[0], _unknown)
+
+  return handler(args)
+}
+
+echo run('greet ada')
+echo run('add 2 40')
+echo run('version')
+echo run('explode')
+```
+
+```console
+hello, ada
+42
+1.0.0
+unknown command: explode
+```
+
+`commands.get(args[0], _unknown)` is doing the work. A key that exists
+gives you its handler; one that does not gives you the fallback, so there
+is no separate `contains()` check and no branch for the error case.
+
+The important property is that **only the handlers in the table can ever
+run**. A user typing anything at all selects one of four functions you
+wrote, or the fallback. That is the difference between a program that
+handles input and one that executes it, and it is why Zuri has no
+`eval()`. [Chapter 17](ch17-00-metaprogramming.md) covers the reasoning.
+
+### Storing Methods
+
+`zuri.reflect.bind_method()` puts an instance's method in a table with the
+instance still attached:
+
+```zuri
+import zuri
+
+class Counter {
+
+  @new() {
+    self.n = 0
+  }
+
+  increment() {
+    self.n++
+    return self.n
+  }
+}
+
+var counter = Counter()
+
+var actions = { up: zuri.reflect.bind_method(counter, 'increment') }
+
+echo actions['up']()
+echo actions['up']()
+echo counter.n
+```
+
+```console
+1
+2
+2
+```
+
+The bound method keeps its receiver, so calling it through the table
+changes the counter it came from.
+
 ## Comparing Dictionaries
 
 `==` compares dictionaries by value, and **order is not part of the

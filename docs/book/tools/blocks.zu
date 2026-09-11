@@ -52,6 +52,7 @@ def _fences(source: string) {
     found.append({
       info,
       line: i + 1,
+      close: end,
       body: '${'\n'.join(lines[start, end])}\n',
     })
 
@@ -91,7 +92,12 @@ def extract(source: string) {
     var expected = nil
     var next = i + 1 < fences.length() ? fences[i + 1] : nil
 
-    if next != nil and next.info == 'console' and !_is_shell(next.body) {
+    # A `console` block is this example's output only when it follows
+    # immediately. Prose in between means it is illustrating something
+    # else, which the middleware chapter's sample log does.
+    var adjacent = next != nil and next.line == fence.close + 2
+
+    if adjacent and next.info == 'console' and !_is_shell(next.body) {
       expected = next.body
     }
 

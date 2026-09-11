@@ -168,21 +168,32 @@ Two of those rows deserve a second look.
 fallback. When a negative number is a legitimate result, compare it
 explicitly:
 
-```zuri,ignore
-var position = haystack.index_of(needle)
+```zuri
+var haystack = ['a', 'b', 'c']
+var position = haystack.index_of('z')
 
 if position == -1 {
   echo 'not found'
 }
 ```
 
+```console
+not found
+```
+
 **An empty list is truthy.** `[]` and `{}` are objects, and objects are
 truthy. Use `is_empty()`:
 
-```zuri,ignore
+```zuri
+var items = []
+
 if items.is_empty() {
   echo 'nothing here'
 }
+```
+
+```console
+nothing here
 ```
 
 ## `nil`
@@ -367,7 +378,7 @@ var config = { host, port }
 
 ```zuri
 echo 1..5
-echo (1..5).to_list()
+echo 1..5.to_list()
 ```
 
 ```console

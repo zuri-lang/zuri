@@ -1,0 +1,80 @@
+# Adding a list or a byte stream to something that is not one used to
+# reach the runtime's list/bytes accessors with an operand of the wrong
+# kind, which aborted the process instead of raising. A `catch` cannot
+# intercept an abort, so a program had no way to recover from what is an
+# ordinary type error.
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def message_of(fn) {
+  catch {
+    fn()
+    return nil
+  } as e
+  return e.message
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  list/bytes + mismatched operand: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# A list plus a non-list raises, and names both sides.
+# ---------------------------------------------------------------------------
+assert message_of(@() { return [1, 2] + 5 }) ==
+  "operator '+' not defined for call signature (list, number)",
+  'list + number must raise a TypeError naming both operand types'
+
+assert message_of(@() { return [1, 2] + nil }) ==
+  "operator '+' not defined for call signature (list, nil)",
+  'list + nil must raise rather than abort the process'
+
+assert message_of(@() { return [1, 2] + true }) ==
+  "operator '+' not defined for call signature (list, bool)",
+  'list + bool must raise rather than abort the process'
+
+assert message_of(@() { return 5 + [1, 2] }) ==
+  "operator '+' not defined for call signature (number, list)",
+  'a non-list on the left must raise the same way'
+
+ok('a list added to a non-list raises a catchable TypeError')
+
+# ---------------------------------------------------------------------------
+# Byte streams behave identically.
+# ---------------------------------------------------------------------------
+assert message_of(@() { return bytes([1]) + 5 }) ==
+  "operator '+' not defined for call signature (bytes, number)",
+  'bytes + number must raise a TypeError'
+
+assert message_of(@() { return bytes([1]) + nil }) ==
+  "operator '+' not defined for call signature (bytes, nil)",
+  'bytes + nil must raise rather than abort the process'
+
+ok('a byte stream added to a non-byte-stream raises a catchable TypeError')
+
+# ---------------------------------------------------------------------------
+# The cases that were already correct stay correct.
+# ---------------------------------------------------------------------------
+assert [1, 2] + [3] == [1, 2, 3],
+  'list + list must still concatenate'
+
+assert (bytes([1]) + bytes([2])).to_list() == [1, 2],
+  'bytes + bytes must still concatenate'
+
+assert [1] + 'x' == '[1]x',
+  'a string on either side still wins, and stringifies the list'
+
+assert 'x' + [1] == 'x[1]',
+  'a string on the left still wins'
+
+ok('matching operands, and string concatenation, are unaffected')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'
