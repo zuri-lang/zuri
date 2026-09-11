@@ -208,6 +208,17 @@ opt-level = 3
 [features]
 opcode-profile = []
 ast-log = []
+# Only needed to build/serve the book. Off by default so an ordinary
+# build (and `cargo install --path .`) carries just the `zuri` binary.
+docs-tool = []
 
 [lib]
 doctest = false
+
+# Gated behind `docs-tool` so it never rides along with the language
+# binary. The cargo aliases in `.cargo/config.toml` turn the feature on
+# for you; see docs/README.md.
+[[bin]]
+name = "docs"
+path = "src/bin/docs.rs"
+required-features = ["docs-tool"]

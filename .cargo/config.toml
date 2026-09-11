@@ -1,0 +1,16 @@
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# Documentation. See docs/README.md, or `cargo docs help`.
+#
+# `--quiet` keeps cargo's own compile chatter out of the way; the docs
+# tool prints what it is doing itself.
+[alias]
+build-docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--", "build"]
+run-docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--", "serve"]
+clean-docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--", "clean"]
+
+# The same tool with nothing assumed, for `cargo docs help` and for
+# passing a subcommand of your own choosing.
+docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--"]

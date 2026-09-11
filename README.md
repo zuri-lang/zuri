@@ -4,6 +4,14 @@ This project is a Just-In-Time (JIT) compiler for the [Zuri](https://github.com/
 
 This project will also support more operating systems and more processor architectures compared to the C implementation.
 
+## Documentation
+
+[`docs/`](docs) holds everything written about the language, and [the book](docs/book/src/SUMMARY.md) is the main text. Read it on GitHub as it is, or render it locally:
+
+```console
+$ cargo run-docs
+```
+
 ## Roadmap
 
 - [x] 100% compatibility with the original Zuri language

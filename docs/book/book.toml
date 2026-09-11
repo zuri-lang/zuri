@@ -5,10 +5,17 @@ description = "An introduction to Zuri, from your first line of code to a full-s
 language = "en"
 src = "src"
 
+# Rendered output goes in target/, not beside the source. It is a build
+# artifact, it is already git-ignored there, and build.rs watches this
+# directory for changes; writing into it would make every build trigger
+# the next one.
+[build]
+build-dir = "../../target/book"
+
 [output.html]
 default-theme = "rust"
 git-repository-url = "https://github.com/zuri-lang/zuri-rs"
-edit-url-template = "https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/{path}"
+edit-url-template = "https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/{path}"
 mathjax-support = false
 
 [output.html.fold]

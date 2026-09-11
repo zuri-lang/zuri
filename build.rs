@@ -4,6 +4,7 @@ use copy_to_output::copy_to_output;
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 fn main() {
   let now = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
@@ -66,6 +67,107 @@ fn main() {
   println!("cargo:rerun-if-changed=LICENSE");
 
   generate_zu_conformance_tests(&manifest_dir);
+  build_book(&manifest_dir);
+}
+
+/// Renders `docs/book` whenever mdBook is installed and the book has
+/// actually changed.
+///
+/// Two things keep this off the critical path of ordinary work. The
+/// `newest_mtime` check below means a day spent in `src/` never spends
+/// a second rendering markdown, and a machine without mdBook gets one
+/// warning rather than a failed build, because the book reads perfectly
+/// well as the markdown it already is.
+///
+/// The stamp file is needed because this script re-runs on every single
+/// build regardless: `generate_zu_conformance_tests` writes into
+/// `tests/generated` while `tests` is itself a rerun trigger, so Cargo
+/// always sees the directory as dirty. Leaning on `rerun-if-changed`
+/// alone would rebuild the book every time.
+///
+/// Output goes to `target/book` (set in `book.toml`), deliberately not
+/// under `docs/`; writing into a directory this script also watches
+/// would have every build trigger the next one.
+fn build_book(manifest_dir: &str) {
+  let book_dir = Path::new(manifest_dir).join("docs").join("book");
+  let manifest = book_dir.join("book.toml");
+
+  println!("cargo:rerun-if-changed={}", book_dir.join("src").display());
+  println!("cargo:rerun-if-changed={}", manifest.display());
+
+  if !manifest.is_file() {
+    return;
+  }
+
+  let newest = newest_mtime(&book_dir.join("src")).max(file_mtime(&manifest));
+  let stamp = Path::new(&env::var("OUT_DIR").unwrap()).join("book.stamp");
+  let rendered = Path::new(manifest_dir).join("target").join("book");
+
+  if rendered.is_dir() && file_mtime(&stamp) >= newest {
+    return;
+  }
+
+  if !mdbook_available() {
+    println!(
+      "cargo:warning=mdbook not found, skipping the book. \
+       Install it with `cargo install mdbook`, or read docs/book/src directly."
+    );
+    return;
+  }
+
+  let status = Command::new("mdbook").arg("build").arg(&book_dir).status();
+
+  match status {
+    Ok(status) if status.success() => {
+      // Only stamped on success, so a build that failed for a fixable
+      // reason (a bad `book.toml`, a missing chapter) is retried next
+      // time instead of being remembered as done.
+      let _ = fs::write(&stamp, "");
+    },
+    Ok(status) => println!("cargo:warning=mdbook build exited with {status}"),
+    Err(e) => println!("cargo:warning=could not run mdbook: {e}"),
+  }
+}
+
+/// The most recently modified file anywhere under `dir`, as seconds
+/// since the epoch. Zero for a directory that does not exist, which
+/// makes a missing book look older than any stamp and skip cleanly.
+fn newest_mtime(dir: &Path) -> u64 {
+  let Ok(entries) = fs::read_dir(dir) else {
+    return 0;
+  };
+
+  entries
+    .flatten()
+    .map(|entry| {
+      let path = entry.path();
+      if path.is_dir() {
+        newest_mtime(&path)
+      } else {
+        file_mtime(&path)
+      }
+    })
+    .max()
+    .unwrap_or(0)
+}
+
+fn file_mtime(path: &Path) -> u64 {
+  fs::metadata(path)
+    .and_then(|m| m.modified())
+    .ok()
+    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    .map(|d| d.as_secs())
+    .unwrap_or(0)
+}
+
+fn mdbook_available() -> bool {
+  Command::new("mdbook")
+    .arg("--version")
+    .stdout(Stdio::null())
+    .stderr(Stdio::null())
+    .status()
+    .map(|status| status.success())
+    .unwrap_or(false)
 }
 
 /// Where `copy_to_output` puts things: the profile directory that holds

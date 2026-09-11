@@ -3,10 +3,11 @@
 //! Reached through the cargo aliases in `.cargo/config.toml`:
 //!
 //! ```text
-//! cargo build-docs           render to target/book
-//! cargo run-docs             render, serve on :3000, reload on edit
-//! cargo run-docs -- -p 4000  serve somewhere else
-//! cargo clean-docs           throw the rendered output away
+//! cargo build-docs             render to target/book
+//! cargo run-docs               render, serve on :3000, reload on edit
+//! cargo run-docs -- -p 4000    serve somewhere else
+//! cargo clean-docs             throw the rendered output away
+//! cargo docs help              this, from the command line
 //! ```
 //!
 //! All of the actual rendering is mdBook's. This exists so that the
@@ -57,6 +58,7 @@ fn print_help() {
   cargo run-docs                render it and serve with live reload
   cargo run-docs -- -p 4000     serve on a different port
   cargo clean-docs              remove the rendered output
+  cargo docs <command>          any of build, serve, clean, help
 
 The book source is markdown under {BOOK_DIR}/src and reads fine without
 any of this; these commands only exist to render it."

@@ -54,8 +54,15 @@ not installed they offer to install it for you, and nothing is installed
 without your say-so.
 
 A plain `cargo build` also rebuilds the book, but only when mdBook is
-already installed and only when something under `docs/book/src` changed.
-Without mdBook you get one line of warning and the build carries on.
+already installed and only when something under `docs/book/src` actually
+changed. Without mdBook you get one line of warning and the build carries
+on, because the book is markdown that reads perfectly well unrendered.
+
+To throw the rendered output away:
+
+```console
+$ cargo clean-docs
+```
 
 ## Writing for the Book
 
