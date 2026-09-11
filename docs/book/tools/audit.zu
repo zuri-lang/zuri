@@ -1,0 +1,213 @@
+/**
+ * Checks the standard library's doc blocks for defects that would reach
+ * the book.
+ *
+ * Appendices D and E are generated from `libs/`, so a malformed doc block
+ * there becomes a malformed page here. The renderer defends against the
+ * worst of it, but the stub is the source of truth and is where a problem
+ * should be fixed.
+ *
+ * Run it on its own, or let `reference.zu` run it for you:
+ *
+ * ```
+ * zuri docs/book/tools/audit.zu
+ * ```
+ *
+ * Exits non-zero when anything is reported.
+ */
+
+import os
+
+var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
+var LIBS = os.join_paths(ROOT, 'libs')
+
+# One thing wrong with one doc block.
+class Finding {
+
+  @new(path: string, line: number, summary: string, detail: string) {
+    self.path = path
+    self.line = line
+    self.summary = summary
+    self.detail = detail
+  }
+
+  to_string() {
+    return '${self.path}:${self.line}  ${self.summary}\n    ${self.detail}'
+  }
+}
+
+# Finds the offset just past the `*/` that closes the block opened at
+# `start`, or `-1` when nothing closes it.
+#
+# Zuri block comments nest, so this counts depth rather than stopping at
+# the first `*/`: one of the string stubs documents a callback whose own
+# example contains `/* ... */`, and a naive scan ends the block there.
+def _block_end(source: string, start: number) {
+  var depth = 1
+  var i = start + 3
+
+  while depth > 0 {
+    var open = source.index_of('/*', i)
+    var close = source.index_of('*/', i)
+
+    if close < 0 {
+      return -1
+    }
+
+    if open >= 0 and open < close {
+      depth++
+      i = open + 2
+    } else {
+      depth--
+      i = close + 2
+    }
+  }
+
+  return i
+}
+
+# Every doc block in `source`, as `{ line, body }`.
+def _doc_blocks(source: string) {
+  var found = []
+  var i = 0
+
+  while true {
+    var start = source.index_of('/**', i)
+
+    if start < 0 {
+      return found
+    }
+
+    var end = _block_end(source, start)
+
+    if end < 0 {
+      # An unterminated block is itself worth reporting, and there is
+      # nothing after it to scan.
+      found.append({ line: _line_of(source, start), body: nil })
+      return found
+    }
+
+    found.append({
+      line: _line_of(source, start),
+      body: source[start + 3, end - 2],
+    })
+
+    i = end
+  }
+}
+
+def _line_of(source: string, offset: number) {
+  return source[0, offset].count('\n') + 1
+}
+
+# The comment furniture stripped from one line of a block body.
+def _bare(line: string) {
+  var text = line.trim()
+
+  if !text.starts_with('*') {
+    return text
+  }
+
+  return text[1, text.length()].trim()
+}
+
+# The first line of prose in a block, to name it in a report.
+def _first_line(body: string) {
+  for line in body.split('\n') {
+    var text = _bare(line)
+
+    if text != '' and !text.starts_with('@') {
+      return text.length() > 60 ? text[0, 60] + '...' : text
+    }
+  }
+
+  return '(no description)'
+}
+
+def _fence_count(body: string) {
+  var fences = 0
+
+  for line in body.split('\n') {
+    if _bare(line).starts_with('```') {
+      fences++
+    }
+  }
+
+  return fences
+}
+
+# Checks one file and returns what is wrong with it.
+def check_source(path: string, source: string) {
+  var findings = []
+
+  for block in _doc_blocks(source) {
+    if block.body == nil {
+      findings.append(Finding(
+        path,
+        block.line,
+        'doc block is never closed',
+        'no matching */, so the rest of the file is inside the comment'
+      ))
+      continue
+    }
+
+    var fences = _fence_count(block.body)
+
+    # An odd number means one fence was opened and never closed. That
+    # swallows the block's own tags, and once rendered it swallows every
+    # heading after it on the page.
+    if fences % 2 != 0 {
+      findings.append(Finding(
+        path,
+        block.line,
+        'unbalanced code fence (${fences} markers)',
+        _first_line(block.body)
+      ))
+    }
+  }
+
+  return findings
+}
+
+# Every `.zu` file under `libs/`, as paths relative to it.
+def _sources() {
+  return os.read_dir(LIBS, true).filter(@(name) => name.ends_with('.zu')).sort()
+}
+
+def run() {
+  var findings = []
+
+  for name in _sources() {
+    var path = os.join_paths(LIBS, name)
+    var relative = os.join_paths('libs', name)
+
+    for finding in check_source(relative, file(path).read()) {
+      findings.append(finding)
+    }
+  }
+
+  for finding in findings {
+    echo finding.to_string()
+  }
+
+  return findings
+}
+
+def main() {
+  var findings = run()
+  var checked = _sources().length()
+
+  echo ''
+
+  if findings.is_empty() {
+    echo '${checked} files checked, no problems found'
+    return
+  }
+
+  echo '${checked} files checked, ${findings.length()} problem${findings.length() == 1 ? '' : 's'} found'
+  os.exit(1)
+}
+
+if __root__ == __file__ {
+  main()
+}

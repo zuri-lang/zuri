@@ -18,6 +18,7 @@ import os
 import io
 import .docblock { * }
 import .render { * }
+import .audit
 
 var ROOT = os.dir_name(os.dir_name(os.dir_name(os.dir_name(__file__))))
 var STUBS = os.join_paths(ROOT, 'libs')
@@ -39,6 +40,12 @@ var TYPES = [
 ]
 
 def main() {
+  # The stubs are the source of truth, so a defect there is reported
+  # before the pages that come from them. Generation still runs: the
+  # renderer is defensive enough to produce a usable page either way, and
+  # a stale appendix helps nobody. The non-zero exit is the signal.
+  var findings = audit.run()
+
   var counts = {}
 
   iter var i = 0; i < TYPES.length(); i++ {
@@ -60,6 +67,15 @@ def main() {
   file(os.join_paths(OUT, 'appendix-04-builtins.md'), 'w').write(render_builtins_page(builtins))
 
   echo 'appendix-04-builtins.md: ${builtins.length()} functions'
+
+  if !findings.is_empty() {
+    echo ''
+    var count = findings.length()
+    var subject = count == 1 ? '1 stub problem' : '${count} stub problems'
+
+    echo 'generated, but ${subject} above ${count == 1 ? 'needs' : 'need'} fixing'
+    os.exit(1)
+  }
 }
 
 if __root__ == __file__ {

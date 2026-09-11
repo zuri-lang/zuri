@@ -127,9 +127,29 @@ every `appendix-05-NN-*.md` page. Edit the stub, then re-run it. The one
 exception is `appendix-05-10-function.md`, whose methods live in the
 runtime rather than in a stub and which is maintained by hand.
 
-The generator is three files in [`book/tools`](book/tools):
+The generator is four files in [`book/tools`](book/tools):
 `reference.zu` drives it, `docblock.zu` parses a doc block's prose and
-`@tag` lines, and `render.zu` turns the result into markdown.
+`@tag` lines, `render.zu` turns the result into markdown, and `audit.zu`
+checks the stubs before any of that happens.
+
+**A defect in a stub becomes a defect in the book**, so the audit runs as
+part of generation and reports anything it finds:
+
+```console
+$ zuri docs/book/tools/audit.zu
+161 files checked, no problems found
+```
+
+It catches a doc block that is never closed, and a code fence that is
+opened and never closed — which swallows the block's own `@tag` lines and,
+once rendered, every heading after it on the page. Zuri block comments
+nest, so it counts depth rather than stopping at the first `*/`; one of the
+string stubs documents a callback whose example contains `/* ... */`, and a
+naive scan ends the block there.
+
+`reference.zu` still writes the pages when the audit finds something — the
+renderer is defensive enough to produce a usable page, and a stale appendix
+helps nobody — but it exits non-zero so the problem is not missed.
 
 The images in the Imagine chapter are produced by
 [`book/src/imagine/figures.zu`](book/src/imagine/figures.zu). Re-run it
