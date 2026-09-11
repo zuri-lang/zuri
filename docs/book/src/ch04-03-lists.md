@@ -336,7 +336,30 @@ true
 2
 ```
 
-`index_of()` gives `-1` when the value is absent.
+`index_of()` gives `-1` when the value is absent. `last_index_of()`
+searches from the other end:
+
+```zuri
+var l = [3, 1, 4, 1, 5]
+
+echo l.index_of(1)
+echo l.last_index_of(1)
+echo l.last_index_of(1, 2)
+echo l.last_index_of(9)
+```
+
+```console
+1
+3
+1
+-1
+```
+
+Both take a second argument bounding *where a match may sit*, so the
+pair splits the list at one index: `index_of(x, n)` finds the first
+match at or after `n`, `last_index_of(x, n)` the last one at or before
+it. Both compare by value, so a list of dictionaries can be searched
+with a dictionary literal.
 
 ## Adding and Removing
 

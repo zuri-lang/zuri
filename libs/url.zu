@@ -172,25 +172,6 @@ def remove_dot_segments(path: string) {
 }
 
 
-# Index of the last occurrence of `needle` in `s`, or -1.
-# `string` only exposes a forward `index_of`, so a trailing
-# search is just a forward search that keeps overwriting its
-# answer.
-def _last_index_of(s, needle) {
-  var result = -1
-  var pos = 0
-
-  while true {
-    var found = s.index_of(needle, pos)
-    if found == -1 break
-    result = found
-    pos = found + 1
-  }
-
-  return result
-}
-
-
 /**
  * The Url class represents a parsed (or hand-built) URL and
  * provides methods for inspecting, normalizing, resolving and
@@ -710,7 +691,7 @@ def _merge_paths(base, ref_path) {
     return '/' + ref_path
   }
 
-  var last_slash = _last_index_of(base.path, '/')
+  var last_slash = base.path.last_index_of('/')
   if last_slash == -1 {
     return ref_path
   }

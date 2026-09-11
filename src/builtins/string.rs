@@ -42,6 +42,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("join", 1, join),
     method_n("split", 1, split),
     method_opt("index_of", 1, index_of),
+    method_opt("last_index_of", 1, last_index_of),
     method_n("starts_with", 1, starts_with),
     method_n("ends_with", 1, ends_with),
     method_n("contains", 1, contains),
@@ -584,6 +585,95 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
     },
     None => Ok(Value::number(-1.0)),
   }
+}
+
+/// The mirror of `index_of`: char-indexed, `-1` for both "not found"
+/// and "nothing at or before that point", never an error.
+///
+/// The optional second argument bounds where a match may *start*, the
+/// same thing `index_of`'s does, so `s.index_of(x, n)` and
+/// `s.last_index_of(x, n)` are the first and last matches of the two
+/// halves the index splits the string into.
+fn last_index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_range!(ctx, 1, 2);
+  enforce_method_arg_type!(ctx, 1, ArgType::String);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+
+  let ascii = ctx.args[0].str_is_ascii();
+  let haystack = ctx.args[0].as_str();
+  let needle = ctx.args[1].as_str();
+
+  // An empty needle matches nowhere, matching `index_of` rather than
+  // the other convention where it matches everywhere.
+  if needle.is_empty() {
+    return Ok(Value::number(-1.0));
+  }
+
+  let bound = ctx.args.get(2).map(|v| v.as_number().max(0.0) as usize);
+
+  // The whole string, which is the common case, is a plain reverse
+  // search with nothing to convert and no bound to respect.
+  let found = match bound {
+    None => haystack.rfind(needle),
+    Some(limit) => {
+      let byte_limit = if ascii {
+        limit.min(haystack.len())
+      } else {
+        char_offset_to_byte(haystack, limit)
+      };
+
+      last_match_within(haystack, needle, byte_limit)
+    },
+  };
+
+  match found {
+    Some(offset) => {
+      let index = if ascii {
+        offset
+      } else {
+        haystack[..offset].chars().count()
+      };
+      Ok(Value::number(index as f64))
+    },
+    None => Ok(Value::number(-1.0)),
+  }
+}
+
+/// Byte offset of the last match of `needle` that *starts* at or before
+/// `byte_limit`, or `None`.
+///
+/// This scans forward rather than using `rfind` on a slice, because a
+/// match may begin at the limit and run past it: the slice that would
+/// have to be searched is not `haystack[..byte_limit]`, and widening it
+/// to fit lets `rfind` land on a match that starts too late while an
+/// earlier legitimate one goes unreported. Stepping forward one match
+/// at a time also finds overlapping matches, which the `rmatch_indices`
+/// family skips.
+fn last_match_within(haystack: &str, needle: &str, byte_limit: usize) -> Option<usize> {
+  let mut best = None;
+  let mut at = 0;
+
+  while at <= byte_limit {
+    let offset = match haystack[at..].find(needle) {
+      Some(offset) => at + offset,
+      None => break,
+    };
+
+    if offset > byte_limit {
+      break;
+    }
+
+    best = Some(offset);
+
+    // One character on, so an overlapping match is still reachable.
+    at = offset + 1;
+
+    while at < haystack.len() && !haystack.is_char_boundary(at) {
+      at += 1;
+    }
+  }
+
+  best
 }
 
 fn starts_with(ctx: &mut ZuriContext) -> Result<Value, String> {

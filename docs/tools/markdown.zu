@@ -388,16 +388,7 @@ def summarise(text: string, limit) {
   }
 
   var cut = trimmed[0, width]
-  var space = -1
-
-  # `string` has `index_of` but no reverse of it, so the last space is
-  # found by walking back from the cut.
-  iter var i = cut.length() - 1; i >= 0; i-- {
-    if cut[i] == ' ' {
-      space = i
-      break
-    }
-  }
+  var space = cut.last_index_of(' ')
 
   if space > 40 {
     cut = cut[0, space]

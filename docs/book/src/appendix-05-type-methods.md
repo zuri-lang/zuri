@@ -21,14 +21,14 @@ ff
 
 | Type | Methods | Page |
 | --- | --- | --- |
-| `string` | 39 | [String Methods](appendix-05-01-string.md) |
+| `string` | 40 | [String Methods](appendix-05-01-string.md) |
 | `number` | 43 | [Number Methods](appendix-05-02-number.md) |
 | `bigint` | 26 | [Bigint Methods](appendix-05-03-bigint.md) |
 | `bool` | 1 | [Boolean Methods](appendix-05-04-bool.md) |
-| `list` | 39 | [List Methods](appendix-05-05-list.md) |
+| `list` | 40 | [List Methods](appendix-05-05-list.md) |
 | `dict` | 21 | [Dictionary Methods](appendix-05-06-dict.md) |
 | `range` | 9 | [Range Methods](appendix-05-07-range.md) |
-| `bytes` | 25 | [Bytes Methods](appendix-05-08-bytes.md) |
+| `bytes` | 26 | [Bytes Methods](appendix-05-08-bytes.md) |
 | `file` | 27 | [File Methods](appendix-05-09-file.md) |
 | `function` | 5 | [Function Methods](appendix-05-10-function.md) |
 

@@ -639,6 +639,30 @@ true
 `index_of()` returns `-1` when there is no match, and takes an optional
 second argument to start the search from.
 
+`last_index_of()` searches from the other end, which is what you want
+whenever the interesting separator is the final one:
+
+```zuri
+var path = 'src/vm/value.rs'
+
+echo path.index_of('/')
+echo path.last_index_of('/')
+echo path[path.last_index_of('/') + 1, path.length()]
+echo path.last_index_of('\\')
+```
+
+```console
+3
+6
+value.rs
+-1
+```
+
+Both take a second argument, and in both it bounds where a *match may
+begin*. That makes the pair split a string at one index: for any `n`,
+`index_of(str, n)` finds the first match at or after `n` and
+`last_index_of(str, n)` the last match at or before it.
+
 There is a family of character-class predicates, each true when **every**
 character in the string qualifies:
 

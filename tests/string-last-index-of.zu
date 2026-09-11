@@ -1,0 +1,72 @@
+# `last_index_of` is the reverse of `index_of`: same char indexing, same
+# -1 for "no answer", and a second argument that bounds where a match may
+# begin rather than where the search starts reading.
+
+var failures = 0
+
+def check(label, actual, expected) {
+  if actual == expected {
+    return
+  }
+
+  echo 'FAIL ${label}: expected ${expected}, got ${actual}'
+  failures++
+}
+
+# The basics, against index_of so the pairing is visible.
+check('first slash', 'a/b/c'.index_of('/'), 1)
+check('last slash', 'a/b/c'.last_index_of('/'), 3)
+check('single char', 'hello'.last_index_of('l'), 3)
+check('whole string', 'hello'.last_index_of('hello'), 0)
+check('absent', 'hello'.last_index_of('z'), -1)
+check('empty haystack', ''.last_index_of('a'), -1)
+
+# An empty needle matches nowhere, the same as index_of.
+check('empty needle', 'hello'.last_index_of(''), -1)
+check('empty needle forward', 'hello'.index_of(''), -1)
+
+# The second argument bounds where a match may START, which is what
+# index_of's own second argument bounds.
+check('bounded before', 'a/b/c'.last_index_of('/', 2), 1)
+check('bounded at', 'a/b/c'.last_index_of('/', 3), 3)
+check('bounded past all', 'a/b/c'.last_index_of('/', 0), -1)
+check('bound beyond end', 'a/b/c'.last_index_of('/', 99), 3)
+check('negative bound', 'abc'.last_index_of('b', -5), -1)
+
+# Overlapping matches are reachable. A reverse scan that skipped them
+# would answer -1 for the third of these.
+check('overlap unbounded', 'aaaa'.last_index_of('aa'), 2)
+check('overlap bounded', 'aaaa'.last_index_of('aa', 1), 1)
+check('overlap at bound', 'aaa'.last_index_of('aa', 0), 0)
+
+# A match may begin at the bound and run past it.
+check('match crosses bound', 'xxabc'.last_index_of('abc', 2), 2)
+
+# Indexes count characters, not bytes.
+check('multibyte last', 'héllo héllo'.last_index_of('héllo'), 6)
+check('multibyte first', 'héllo héllo'.index_of('héllo'), 0)
+check('multibyte needle', 'αβγ/δε/ζ'.last_index_of('/'), 6)
+check('multibyte bounded', 'αβγ/δε/ζ'.last_index_of('/', 5), 3)
+check('multibyte absent', 'αβγ'.last_index_of('/'), -1)
+
+# index_of and last_index_of split the string at the same index.
+var text = 'one,two,three'
+check('split forward', text.index_of(',', 4), 7)
+check('split backward', text.last_index_of(',', 4), 3)
+
+# Wrong types are rejected the way index_of rejects them.
+catch {
+  'abc'.last_index_of(5)
+} as error {
+  check('type error', error.message, "'last_index_of' expects argument 1 to be a string, got number")
+}
+
+catch {
+  'abc'.last_index_of('a', 'x')
+} as error {
+  check('bound type error', error.message, "'last_index_of' expects argument 2 to be a number, got string")
+}
+
+if failures == 0 {
+  echo 'ok'
+}

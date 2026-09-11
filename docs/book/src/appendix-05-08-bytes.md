@@ -13,6 +13,7 @@ thing.
 | [`clone()`](#clone) | `bytes` | Returns a deep clone of the byte stream. |
 | [`extend(n: bytes)`](#extend) | `bytes` | Extends the byte stream with the bytes from the given byte stream. |
 | [`index_of(byte: int, start_index: ?number)`](#index_of) | `number` | Returns the index of the first occurrence of the given byte in the byte stream. |
+| [`last_index_of(byte: int, end_index: ?number)`](#last_index_of) | `number` | Returns the index of the last occurrence of the given byte in the byte stream, searching from the end, or `-1` when the byte is not there. |
 | [`pop()`](#pop) | `number` | Removes the last item in a byte stream and returns it. |
 | [`remove(index: number)`](#remove) | `bytes` | Removes the item at the specified index in the byte stream and return the previous value at the specified index. |
 | [`reverse()`](#reverse) | `bytes` | Reverses the items in the byte stream. |
@@ -191,6 +192,35 @@ stream.
 - `byte` (`int`) — The byte to search for.
 - `start_index` (`?number`) — The index to start the search from.
   Defaults to 0.
+
+**Returns** `number`
+
+## `last_index_of()`
+
+```zuri,ignore
+last_index_of(byte: int, end_index: ?number) -> number
+```
+
+Returns the index of the last occurrence of the given byte in the byte
+stream, searching from the end, or `-1` when the byte is not there.
+
+If _end_index_ is given, only a match at or before that index counts.
+That is the same position `index_of()`'s own second parameter bounds, so
+for any index `n`, `index_of(b, n)` and `last_index_of(b, n)` are the
+first and last occurrences in the two halves `n` splits the stream into.
+
+```zuri,ignore
+%> bytes([25, 57, 25]).last_index_of(25)
+2
+%> bytes([25, 57, 25]).last_index_of(25, 1)
+0
+```
+
+**Parameters**
+
+- `byte` (`int`) — The byte to search for.
+- `end_index` (`?number`) — The highest index a match may sit at.
+  Defaults to the last byte.
 
 **Returns** `number`
 

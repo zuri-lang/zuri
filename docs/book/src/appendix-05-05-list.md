@@ -13,6 +13,7 @@ thing.
 | [`count(value)`](#count) | `number` | Returns the number of times item _x_ occurs in the list. |
 | [`extend(list: list)`](#extend) | `list` | Updates the content of the _list_ by appending all the contents of list _x_ to the end of the original list in exact order. |
 | [`index_of(value, start_index: ?int)`](#index_of) | `number` | Returns the zero-based index of the first occurrence of the value _x_ in the list starting from the given _start_index_ or `-1` if the list does not contain the value _x_. |
+| [`last_index_of(value, end_index: ?int)`](#last_index_of) | `number` | Returns the zero-based index of the last occurrence of the value _x_ in the list, searching from the end, or `-1` if the list does not contain the value _x_. |
 | [`insert(value, index: int)`](#insert) | `list` | Inserts the item _x_ into the list at the specified _index_. |
 | [`pop()`](#pop) | `any` | Removes the last item in a list and returns the value of that item. |
 | [`shift(count: ?int)`](#shift) | `any` | Removed the specified count of items from the beginning of the list and returns it. |
@@ -204,6 +205,45 @@ For example:
 
 - `value` (`any`)
 - `start_index` (`?int`)
+
+**Returns** `number`
+
+## `last_index_of()`
+
+```zuri,ignore
+last_index_of(value, end_index: ?int) -> number
+```
+
+Returns the zero-based index of the last occurrence of the value _x_ in
+the list, searching from the end, or `-1` if the list does not contain
+the value _x_.
+
+If _end_index_ is given, only a match at or before that index counts.
+That is the same position `index_of()`'s own second parameter bounds, so
+for any index `n`, `index_of(x, n)` and `last_index_of(x, n)` are the
+first and last matches of the two halves `n` splits the list into.
+
+Values are compared the way `index_of()` compares them, by value rather
+than by identity, so two separate dictionaries holding the same entries
+match each other.
+
+For example:
+
+```zuri,ignore
+%> [1,2].last_index_of(3)
+-1
+%> [4,5,6,5].last_index_of(5)
+3
+%> ['a', 'b', 'r', 'a', 'h', 'a', 'm'].last_index_of('a')
+5
+%> ['a', 'b', 'r', 'a', 'h', 'a', 'm'].last_index_of('a', 4)
+3
+```
+
+**Parameters**
+
+- `value` (`any`)
+- `end_index` (`?int`)
 
 **Returns** `number`
 

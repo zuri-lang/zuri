@@ -22,6 +22,7 @@ thing.
 | [`join(string: string)`](#join) | `string` | Returns a string which is a concatenation of the items in the iterable using the _string_ as the separator. |
 | [`split(delimiter: string)`](#split) | `list` | Returns a list of words or characters in a string after separating the content of the string at every point where the _delimiter_ is found. |
 | [`index_of(str: string, start_index: ?number)`](#index_of) | `number` | Returns the index position of the first occurrence of the string _`str`_ in the string _`string`_. |
+| [`last_index_of(str: string, end_index: ?number)`](#last_index_of) | `number` | Returns the index position of the last occurrence of the string _`str`_ in the string _`string`_, searching from the end. |
 | [`starts_with(str: string)`](#starts_with) | `boolean` | Returns `true` if the string begins with the string or character specified in _str_, otherwise it returns `false`. |
 | [`ends_with(str: string)`](#ends_with) | `boolean` | Returns `true` if the string ends with the string or character specified in _str_, otherwise it returns `false`. |
 | [`count(str: string)`](#count) | `number` | Returns the number of non-overlapping occurrences of the substring _str_ in the string. |
@@ -456,6 +457,55 @@ For example:
 
 - `str` (`string`) — The string to search for.
 - `start_index` (`?number`) — The index to start the search from.
+
+**Returns** `number`
+
+## `last_index_of()`
+
+```zuri,ignore
+last_index_of(str: string, end_index: ?number) -> number
+```
+
+Returns the index position of the last occurrence of the string _`str`_
+in the string _`string`_, searching from the end. If _str_ cannot be
+found anywhere in _string_, it returns -1.
+
+If the `end_index` parameter is given, only a match that _begins_ at or
+before that index counts. That is the same thing `index_of()`'s own
+second parameter bounds, so for any index `n`, `index_of(str, n)` and
+`last_index_of(str, n)` are the first and last matches of the two halves
+`n` splits the string into.
+
+An empty _str_ returns -1, matching `index_of()`.
+
+For example:
+
+```zuri,ignore
+%> 'hello, world'.last_index_of('o')
+8
+%> 'hello, world'.last_index_of('l')
+10
+%> 'hello, world'.last_index_of('q')
+-1
+%> 'hello, world'.last_index_of('o', 7)  # last `o` starting at or before index 7.
+4
+```
+
+Splitting a path on its final separator is the usual reason to reach for
+it:
+
+```zuri,ignore
+%> var path = 'a/b/c'
+%> path.last_index_of('/')
+3
+%> path[path.last_index_of('/') + 1, path.length()]
+'c'
+```
+
+**Parameters**
+
+- `str` (`string`) — The string to search for.
+- `end_index` (`?number`) — The highest index a match may start at.
 
 **Returns** `number`
 

@@ -34,6 +34,7 @@ pub static BYTES_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("clone", clone_bytes),
     method_n("extend", 1, extend),
     method_opt("index_of", 1, index_of),
+    method_opt("last_index_of", 1, last_index_of),
     method("pop", pop),
     method_n("remove", 1, remove),
     method("reverse", reverse),
@@ -142,6 +143,36 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
     }
     match bytes[start..].iter().position(|&b| b == target) {
       Some(pos) => Ok(Value::number((start + pos) as f64)),
+      None => Ok(Value::number(-1.0)),
+    }
+  })
+}
+
+/// The mirror of `index_of`: the last byte equal to the target rather
+/// than the first, with the optional argument naming the highest index
+/// a match may sit at.
+fn last_index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_range!(ctx, 1, 2);
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+
+  let target = expect_byte(ctx, 1)?;
+  let bound = ctx.args.get(2).map(|v| v.as_number().max(0.0) as usize);
+
+  ctx.args[0].with_bytes(|bytes| {
+    if bytes.is_empty() {
+      return Ok(Value::number(-1.0));
+    }
+
+    // A bound past the end means the whole buffer, not nothing: there
+    // is still everything before it to search.
+    let end = match bound {
+      Some(limit) => limit.min(bytes.len() - 1),
+      None => bytes.len() - 1,
+    };
+
+    match bytes[..=end].iter().rposition(|&b| b == target) {
+      Some(pos) => Ok(Value::number(pos as f64)),
       None => Ok(Value::number(-1.0)),
     }
   })

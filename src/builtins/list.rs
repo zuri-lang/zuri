@@ -31,6 +31,7 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("count", 1, count),
     method_n("extend", 1, extend),
     method_opt("index_of", 1, index_of),
+    method_opt("last_index_of", 1, last_index_of),
     method_n("insert", 2, insert),
     method("pop", pop),
     method_opt("shift", 0, shift),
@@ -144,6 +145,38 @@ fn index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
         return Ok(Value::number(i as f64));
       }
     }
+    Ok(Value::number(-1.0))
+  })
+}
+
+/// The mirror of `index_of`: the last item equal to the target rather
+/// than the first, with the optional argument naming the highest index
+/// a match may sit at.
+fn last_index_of(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_range!(ctx, 1, 2);
+  enforce_method_arg_type_opt!(ctx, 2, ArgType::Number);
+
+  let target = ctx.args[1];
+  let bound = ctx.args.get(2).map(|v| v.as_number().max(0.0) as usize);
+
+  ctx.args[0].with_list(|items| {
+    if items.is_empty() {
+      return Ok(Value::number(-1.0));
+    }
+
+    // A bound past the end means the whole list, not nothing: there is
+    // still everything before it to search.
+    let end = match bound {
+      Some(limit) => limit.min(items.len() - 1),
+      None => items.len() - 1,
+    };
+
+    for i in (0..=end).rev() {
+      if items[i].equals(&target) {
+        return Ok(Value::number(i as f64));
+      }
+    }
+
     Ok(Value::number(-1.0))
   })
 }

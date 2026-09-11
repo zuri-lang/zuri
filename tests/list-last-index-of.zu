@@ -1,0 +1,83 @@
+# `last_index_of` on lists and bytes, the reverse of `index_of`: same
+# zero-based indexing, same -1 for "no answer", and a second argument
+# naming the highest index a match may sit at.
+
+var failures = 0
+
+def check(label, actual, expected) {
+  if actual == expected {
+    return
+  }
+
+  echo 'FAIL ${label}: expected ${expected}, got ${actual}'
+  failures++
+}
+
+# Lists, paired with index_of so the symmetry is visible.
+var l = [1, 2, 3, 2, 1]
+
+check('list first', l.index_of(2), 1)
+check('list last', l.last_index_of(2), 3)
+check('list last of edge', l.last_index_of(1), 4)
+check('list absent', l.last_index_of(9), -1)
+check('list empty', [].last_index_of(1), -1)
+check('list single', [7].last_index_of(7), 0)
+
+check('list bounded before', l.last_index_of(2, 2), 1)
+check('list bounded at', l.last_index_of(2, 3), 3)
+check('list bounded past all', l.last_index_of(2, 0), -1)
+check('list bound beyond end', l.last_index_of(1, 99), 4)
+check('list negative bound', l.last_index_of(1, -3), 0)
+
+# Values compare the way index_of compares them, by value.
+check('list by value', [{ a: 1 }, 'x', { a: 1 }].last_index_of({ a: 1 }), 2)
+check('list strings', ['a', 'b', 'a'].last_index_of('a'), 2)
+check('list nested', [[1], [2], [1]].last_index_of([1]), 2)
+check('list nil', [nil, 1, nil].last_index_of(nil), 2)
+
+# index_of and last_index_of split the list at the same index.
+check('list split forward', l.index_of(2, 2), 3)
+check('list split backward', l.last_index_of(2, 2), 1)
+
+# Bytes.
+var b = bytes([10, 20, 30, 20, 10])
+
+check('bytes first', b.index_of(20), 1)
+check('bytes last', b.last_index_of(20), 3)
+check('bytes last of edge', b.last_index_of(10), 4)
+check('bytes absent', b.last_index_of(99), -1)
+check('bytes empty', bytes(0).last_index_of(1), -1)
+
+check('bytes bounded before', b.last_index_of(20, 2), 1)
+check('bytes bounded at', b.last_index_of(20, 3), 3)
+check('bytes bounded past all', b.last_index_of(20, 0), -1)
+check('bytes bound beyond end', b.last_index_of(10, 99), 4)
+
+check('bytes split forward', b.index_of(20, 2), 3)
+check('bytes split backward', b.last_index_of(20, 2), 1)
+
+# A zero byte is a real value, not an absence.
+check('bytes zero', bytes([0, 1, 0]).last_index_of(0), 2)
+
+# Bad arguments are rejected the way index_of rejects them.
+catch {
+  l.last_index_of(1, 'x')
+} as error {
+  check('list bound type', error.message, "'last_index_of' expects argument 2 to be a number, got string")
+}
+
+catch {
+  b.last_index_of('x')
+} as error {
+  check('bytes value type', error.message, "'last_index_of' expects argument 1 to be a number, got string")
+}
+
+catch {
+  b.last_index_of(999)
+} as error {
+  check('bytes out of range', error.message, "'last_index_of' expects an integer in 0..=255, got 999")
+}
+
+if failures == 0 {
+  echo 'ok'
+}

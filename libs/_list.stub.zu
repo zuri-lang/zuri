@@ -272,6 +272,41 @@ class list {
 
 
   /**
+   * Returns the zero-based index of the last occurrence of the
+   * value _x_ in the list, searching from the end, or `-1` if the
+   * list does not contain the value _x_.
+   *
+   * If _end_index_ is given, only a match at or before that index
+   * counts. That is the same position `index_of()`'s own second
+   * parameter bounds, so for any index `n`, `index_of(x, n)` and
+   * `last_index_of(x, n)` are the first and last matches of the
+   * two halves `n` splits the list into.
+   *
+   * Values are compared the way `index_of()` compares them, by
+   * value rather than by identity, so two separate dictionaries
+   * holding the same entries match each other.
+   *
+   * For example:
+   *
+   * ```zuri-repl
+   * %> [1,2].last_index_of(3)
+   * -1
+   * %> [4,5,6,5].last_index_of(5)
+   * 3
+   * %> ['a', 'b', 'r', 'a', 'h', 'a', 'm'].last_index_of('a')
+   * 5
+   * %> ['a', 'b', 'r', 'a', 'h', 'a', 'm'].last_index_of('a', 4)
+   * 3
+   * ```
+   *
+   * @param {any} value
+   * @param {?int} end_index
+   * @return {number}
+   */
+  last_index_of(value: any, end_index: ?int) {}
+
+
+  /**
    * Inserts the item _x_ into the list at the specified _index_.
    * By specifying an index of zero (`list.insert(x, 0)`), one
    * can prepend the list and `list.insert(x, list.length())` is

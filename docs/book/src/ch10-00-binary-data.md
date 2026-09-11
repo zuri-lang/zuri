@@ -43,6 +43,7 @@ echo b.first()
 echo b.last()
 echo b.get(2)
 echo b.index_of(3)
+echo b.last_index_of(3)
 echo b.to_list()
 echo 'Hi'.to_bytes().to_string()
 ```
@@ -55,12 +56,17 @@ echo 'Hi'.to_bytes().to_string()
 5
 3
 2
+2
 [1, 2, 3, 4, 5]
 Hi
 ```
 
 Indexing gives a **number**. Slicing gives `bytes`. `to_string()` decodes
 as UTF-8, `to_list()` gives numbers.
+
+`index_of()` and `last_index_of()` both return `-1` when the byte is not
+there, and both take a second argument bounding where a match may sit,
+so they search the two halves either side of one index.
 
 ### Slicing
 
