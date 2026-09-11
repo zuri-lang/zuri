@@ -1,8 +1,13 @@
 # Error Handling
 
-Zuri has one error mechanism: an `Error` object, raised with `raise` and
-intercepted with `catch`. There is no `try`, no `finally`, and no checked
-exceptions.
+Things go wrong. A file is not there, a number arrives as text, a network
+peer stops answering. Zuri has one mechanism for all of it: an `Error`
+object, raised with `raise` and intercepted with `catch`. There is no
+`try`, no `finally`, and no checked exceptions.
+
+This chapter covers raising, the three shapes of `catch`, what an error
+carries, the built-in hierarchy, writing your own, and the patterns that
+replace `finally`.
 
 ## Raising
 
@@ -15,9 +20,27 @@ def withdraw(balance, amount) {
 }
 ```
 
-`raise` takes an instance of `Error` or any subclass. An error that nobody
-catches ends the program with a message, a source excerpt and a stack
-trace:
+`raise` takes an instance of `Error` or any subclass, and nothing else. A
+bare string or number is a `TypeError` in its own right:
+
+```zuri
+catch {
+  raise 'something went wrong'
+} as e {
+  echo e.message
+}
+```
+
+```console
+can only raise an Error or subclass, got a string
+```
+
+That rule is worth the small inconvenience: every value that travels
+through the error system has a `type`, a `message` and a stack trace,
+because there is no way to put anything else in.
+
+An error that nobody catches ends the program with a message, a source
+excerpt and a stack trace:
 
 ```console
 Unhandled ValueError: cannot withdraw 100 from 50
@@ -113,6 +136,34 @@ bad input
 - `stacktrace` is a list of frames, innermost first, each naming a file, a
   line and a function.
 
+The stack trace is captured where the error was **raised**, not where it
+was caught, so it points at the origin no matter how many frames it
+travelled through:
+
+```zuri
+def inner() {
+  raise ValueError('deep')
+}
+
+def middle() {
+  inner()
+}
+
+catch {
+  middle()
+} as e {
+  echo e.stacktrace.length()
+}
+```
+
+```console
+3
+```
+
+Three frames: `inner`, `middle`, and the script's top level. Printing them
+is often the fastest way to answer "how did we get here?" in code you did
+not write.
+
 ## The Built-in Errors
 
 Every one of these is a class, and every one inherits from `Error`:
@@ -170,7 +221,7 @@ the class name shows up in logs and in the uncaught-error banner.
 `catch` catches everything inside its block. To handle one kind and let the
 others through, test and re-raise:
 
-```zuri
+```zuri,ignore
 catch {
   load_config()
 } as e {
@@ -212,7 +263,7 @@ That covers the common case. When the handler re-raises, or when the block
 contains a `return`, the trailing code is skipped, so a resource that must
 be released either way goes in the handler as well:
 
-```zuri
+```zuri,ignore
 var handle = file(path, 'w')
 
 catch {
@@ -227,7 +278,7 @@ handle.close()
 
 Closing twice is safe, so the simpler form is usually fine:
 
-```zuri
+```zuri,ignore
 var handle = file(path, 'w')
 
 catch {
@@ -294,7 +345,7 @@ outer: inner
 
 ## `assert` Versus `raise`
 
-```zuri
+```zuri,ignore
 assert items.length() > 0, 'caller must pass a non-empty list'
 ```
 
@@ -346,9 +397,210 @@ statement runs.
 
 Write messages that name the value:
 
-```zuri
+```zuri,ignore
 raise ValueError('port must be between 1 and 65535, got ${port}')
 ```
 
 The person reading that message is trying to work out what went wrong from
 one line of a log file. Give them the number.
+
+## Catching Inside a Loop
+
+A `catch` inside a loop body handles one iteration and lets the rest carry
+on. This is the shape for processing a batch where individual items are
+allowed to fail:
+
+```zuri
+def parse_positive(text) {
+  if !text.match('/^\d+$/') {
+    raise ValueError('not a number: ${text}')
+  }
+
+  var n = text.to_number()
+
+  if n <= 0 {
+    raise ValueError('must be positive: ${text}')
+  }
+
+  return n
+}
+
+var inputs = ['12', 'not a number', '30']
+var total = 0
+var rejected = []
+
+for raw in inputs {
+  catch {
+    total += parse_positive(raw)
+  } as e {
+    rejected.append(raw)
+  }
+}
+
+echo total
+echo rejected
+```
+
+```console
+42
+[not a number]
+```
+
+Put the `catch` **outside** the loop instead, and the first failure ends
+the whole loop — which is the right choice when one bad item makes the
+rest meaningless, and the wrong one when it does not. The placement of the
+block is the decision; there is no flag to set.
+
+## Nesting and Re-raising
+
+A `catch` inside a handler works like any other, which is how you translate
+a low-level failure into one your caller understands:
+
+```zuri
+import json
+
+class ConfigError < Error {
+
+  @new(message) {
+    parent(message)
+    self.type = 'ConfigError'
+  }
+}
+
+def load(text) {
+  catch {
+    return json.decode(text)
+  } as e {
+    raise ConfigError('config is not valid JSON: ${e.message}')
+  }
+}
+
+catch {
+  load('{ broken')
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+The caller now gets an error in its own vocabulary. Include the original
+message, as above, so the detail is not lost on the way up.
+
+Re-raising the **same** error, rather than a new one, keeps the original
+stack trace pointing at the original line:
+
+```zuri
+def only_handle_missing(work) {
+  catch {
+    return work()
+  } as e {
+    if !instance_of(e, ModuleNotFoundError) {
+      raise e
+    }
+
+    return 'defaulted'
+  }
+}
+
+echo only_handle_missing(@() => 'fine')
+
+catch {
+  only_handle_missing(@() { raise ValueError('not mine') })
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+fine
+ValueError: not mine
+```
+
+That is the pattern for "handle one kind and let everything else through",
+and it is worth reaching for whenever a handler would otherwise swallow a
+bug along with the failure it meant to catch.
+
+## A Worked Example
+
+Here is the whole chapter in one function: a loader that validates its
+input, distinguishes the failures a caller can act on from the ones it
+cannot, and closes what it opened on every path.
+
+```zuri
+import json
+
+class StoreError < Error {
+
+  @new(message) {
+    parent(message)
+    self.type = 'StoreError'
+  }
+}
+
+def read_records(path) {
+  var handle = file(path)
+
+  if !handle.exists() {
+    raise StoreError('no store at ${path}')
+  }
+
+  var records
+
+  catch {
+    records = json.decode(handle.read())
+  } as e {
+    handle.close()
+    raise StoreError('${path} is corrupt: ${e.message}')
+  }
+
+  handle.close()
+
+  if !is_list(records) {
+    raise StoreError('${path} should hold a list, found ${typeof(records)}')
+  }
+
+  return records
+}
+
+file('records.json', 'w').write('[{"id": 1}]')
+echo read_records('records.json').length()
+
+file('records.json', 'w').write('{ not json')
+
+catch {
+  read_records('records.json')
+} as e {
+  echo e.type
+}
+
+file('records.json').delete()
+
+catch {
+  read_records('records.json')
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+1
+StoreError
+StoreError: no store at records.json
+```
+
+Four things in there are worth naming.
+
+Every failure the caller might reasonably handle arrives as one error type,
+`StoreError`, so `catch` on the calling side needs one branch rather than
+three.
+
+The message always names the path. A log line saying "file is corrupt"
+with no filename costs someone an hour.
+
+`handle.close()` appears on both paths — once in the handler before the
+re-raise, once after the block. There is no `finally` to do it for you, and
+forgetting the one in the handler is the most common resource leak in Zuri
+code.
+
+And the shape check at the end is a `raise`, not an `assert`. A file on
+disk containing the wrong thing is the world being uncooperative, not a bug
+in this function.

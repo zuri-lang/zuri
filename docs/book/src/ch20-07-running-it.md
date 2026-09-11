@@ -13,7 +13,7 @@ is still there.
 
 <span class="filename">Filename: index.zu</span>
 
-```zuri
+```zuri,ignore
 import log
 import os
 
@@ -109,7 +109,7 @@ Zuri can serve across cores, and `http.serve()` is how. It takes a setup
 function, calls it once inside each worker with that worker's own server,
 and runs the pool:
 
-```zuri
+```zuri,ignore
 import http
 import .app
 

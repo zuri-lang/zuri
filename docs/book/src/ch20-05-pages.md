@@ -121,7 +121,7 @@ dictionaries and bytes.
 
 <span class="filename">Filename: routes/pages.zu</span>
 
-```zuri
+```zuri,ignore
 import ..config
 
 /**

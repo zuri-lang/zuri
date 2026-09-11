@@ -85,7 +85,7 @@ one shared client, which keeps its connections open between calls.
 
 ### A First Server
 
-```zuri
+```zuri,ignore
 import http
 
 var server = http.server(3000)
@@ -132,7 +132,7 @@ anything more specific.
 
 ### Building a Client
 
-```zuri
+```zuri,ignore
 var api = http.client('https://api.example.com', {
   headers: { 'Authorization': 'Bearer ' + token },
   read_timeout: 5000,
@@ -146,7 +146,7 @@ already absolute, so the rest of the program addresses the service by
 path. Everything in the options dictionary is a field of `HttpClient`,
 plus `headers`, and every one of them can also be set afterwards:
 
-```zuri
+```zuri,ignore
 api.user_agent = 'my-service/2.1'
 api.max_redirects = 3
 api.set_header('X-Client-Version', '2.1')
@@ -181,7 +181,7 @@ the rest take the options dictionary in that position.
 Every argument after the first is optional, so the short forms all
 work:
 
-```zuri
+```zuri,ignore
 import http
 
 # Reading
@@ -207,7 +207,7 @@ echo http.options('https://example.com/items').headers.get('allow')
 The same calls on a client of your own, which is what you want for
 anything that runs more than once:
 
-```zuri
+```zuri,ignore
 var api = http.client('https://api.example.com')
 
 api.get('/items')
@@ -219,7 +219,7 @@ api.delete('/items/1')
 that has no function of its own — a WebDAV `PROPFIND`, or anything
 else a service has invented:
 
-```zuri
+```zuri,ignore
 api.request('PROPFIND', '/files/', {
   headers: { 'Depth': '1' },
   body: '<propfind xmlns="DAV:"><allprop/></propfind>',
@@ -241,7 +241,7 @@ is uppercase; a lowercase name is uppercased for you.
 The second argument to `post()`, `put()` and `patch()` is the body,
 and what it is decides how it is sent:
 
-```zuri
+```zuri,ignore
 api.post('/items', { name: 'Widget', price: 9 })   # JSON
 api.post('/items', ['a', 'b'])                     # JSON
 api.post('/items', 'raw text')                     # sent as-is
@@ -264,7 +264,7 @@ dictionary:
 | `multipart` | a `MultipartBuilder` | `multipart/form-data`, boundary included |
 | `content_type` | — | overrides whichever of the above applied |
 
-```zuri
+```zuri,ignore
 # A login form
 api.post('/login', nil, {
   form: { username: 'ada', password: secret },
@@ -291,7 +291,7 @@ request-smuggling bug rather than a formatting choice.
 A file upload is a `multipart/form-data` body, which
 `MultipartBuilder` assembles:
 
-```zuri
+```zuri,ignore
 import http
 
 var form = http.MultipartBuilder()
@@ -318,7 +318,7 @@ boundary parameter and the `Content-Length` all follow from it.
 Several files under one field name is just several calls — that is
 what an `<input type="file" multiple>` sends:
 
-```zuri
+```zuri,ignore
 for path in paths {
   form.add_file('attachments', os.base_name(path), file(path, 'rb').read())
 }
@@ -332,7 +332,7 @@ one of the two.
 If you need the body separately — to sign it, to log its size, to send
 it somewhere this client is not going — build it yourself:
 
-```zuri
+```zuri,ignore
 var body = form.build()
 
 api.post('/photos', nil, {
@@ -353,7 +353,7 @@ boundary a peer can write into a field value to forge extra parts.
 
 ### Reading a Response
 
-```zuri
+```zuri,ignore
 var response = api.get('/items/1')
 
 response.status              # 200
@@ -375,7 +375,7 @@ returns the response otherwise, so it can be used inline. The response
 stays reachable on the raised error, which matters because that is
 where an API usually explains what went wrong:
 
-```zuri
+```zuri,ignore
 catch {
   var data = api.get('/items/1').raise_for_status().as_dict()
 } as error {
@@ -391,7 +391,7 @@ second time.
 
 ### Query Parameters and Headers
 
-```zuri
+```zuri,ignore
 api.get('/search', {
   query: { q: 'zuri', page: 2, tag: ['new', 'featured'] },
   headers: { 'Accept-Language': 'en-GB' },
@@ -404,7 +404,7 @@ merged over the client's own.
 
 ### Authentication
 
-```zuri
+```zuri,ignore
 api.get('/me', { auth: ['bearer', token] })
 api.get('/me', { auth: ['basic', 'ada', 'lovelace'] })
 ```
@@ -434,7 +434,7 @@ does, and a server that meant otherwise should have sent `307` or
 
 Turn following off per request or per client:
 
-```zuri
+```zuri,ignore
 http.get(url, { follow_redirects: false })
 ```
 
@@ -446,7 +446,7 @@ HEAD is usually to inspect the very response a redirect would hide.
 A client with a cookie jar carries cookies between requests, so a
 login and the requests after it behave the way a browser would:
 
-```zuri
+```zuri,ignore
 var session = http.client('https://example.com')
 session.enable_cookies()
 
@@ -462,7 +462,7 @@ control is refused.
 
 ### Timeouts and Retries
 
-```zuri
+```zuri,ignore
 var api = http.client('https://api.example.com', {
   connect_timeout: 5000,
   read_timeout: 10000,
@@ -487,7 +487,7 @@ reaps would surface as a spurious error.
 
 A large response does not have to be held in memory:
 
-```zuri
+```zuri,ignore
 var response = api.get('/exports/large.csv', { stream: true })
 var out = file('large.csv', 'wb')
 
@@ -513,7 +513,7 @@ Certificates are verified against the platform's trust store by
 default. To talk to a service with an internal or self-signed
 certificate, trust its authority:
 
-```zuri
+```zuri,ignore
 api.add_ca(file('/etc/ssl/internal-ca.pem').read())
 ```
 
@@ -536,7 +536,7 @@ an optional trailing catch-all:
 | `/users/:id/posts/:post` | `/users/4/posts/7` | `id`, `post` |
 | `/files/` + `*path` | `/files/css/site.css` | `path` = `'css/site.css'` |
 
-```zuri
+```zuri,ignore
 server.get('/users/:id', @(request, response) {
   response.json({ id: request.param('id') })
 })
@@ -554,7 +554,7 @@ the same per request as one with ten.
 method as an argument, which is how a method with no function of its
 own — `PROPFIND`, or anything a service has invented — gets a route:
 
-```zuri
+```zuri,ignore
 server.handle('PROPFIND', '/files/' + '*path', list_properties)
 ```
 
@@ -569,7 +569,7 @@ Three things are answered without a handler:
 
 Name a route to build URLs from it later:
 
-```zuri
+```zuri,ignore
 server.get('/users/:id', show_user, 'user.show')
 
 server.routes().url_for('user.show', { id: 42 })    # '/users/42'
@@ -577,7 +577,7 @@ server.routes().url_for('user.show', { id: 42 })    # '/users/42'
 
 ### The Request Object
 
-```zuri
+```zuri,ignore
 server.post('/items', @(request, response) {
   request.method          # 'POST'
   request.path            # decoded and normalised
@@ -605,7 +605,7 @@ matching on it is how directory traversal gets through.
 
 An uploaded file is an `UploadedFile`:
 
-```zuri
+```zuri,ignore
 var upload = request.file('avatar')
 
 upload.filename       # what the client claimed
@@ -628,7 +628,7 @@ is decided by the `enctype` on the `<form>`: the default
 `application/x-www-form-urlencoded` for a form of plain fields, and
 `multipart/form-data` for one that carries a file.
 
-```zuri
+```zuri,ignore
 server.post('/signup', @(request, response) {
   var email = request.form_field('email', '')
   var password = request.form_field('password', '')
@@ -660,7 +660,7 @@ anything else.
 A field a form can repeat — a set of checkboxes, a multi-select —
 needs `form_all()`, since `form()` keeps only the first value:
 
-```zuri
+```zuri,ignore
 var tags = request.form_all().get('tags', [])
 ```
 
@@ -679,7 +679,7 @@ var tags = request.form_all().get('tags', [])
 </form>
 ```
 
-```zuri
+```zuri,ignore
 import os
 
 server.post('/avatar', @(request, response) {
@@ -723,7 +723,7 @@ An `UploadedFile` carries:
 An `<input type="file" multiple>` sends several parts under one name,
 which is what `files()` returns a list for:
 
-```zuri
+```zuri,ignore
 for upload in request.files().get('attachments', []) {
   upload.save_to(os.join_paths('./uploads', upload.safe_name()))
 }
@@ -736,7 +736,7 @@ a full local path from a Windows client, `..` segments from a hostile
 one, or a NUL byte meant to truncate a later check. Never join it to a
 path directly:
 
-```zuri
+```zuri,ignore
 os.join_paths('./uploads', upload.filename)     # no
 os.join_paths('./uploads', upload.safe_name())  # yes
 ```
@@ -746,7 +746,7 @@ reduces the rest to letters, digits, `.`, `-` and `_`, returning
 `'unnamed'` when nothing usable is left. Better still, name the file
 yourself and keep the client's name as a label:
 
-```zuri
+```zuri,ignore
 var stored = '${uuid.v4()}.jpg'
 upload.save_to(os.join_paths('./uploads', stored))
 record_upload(stored, upload.filename)
@@ -759,7 +759,7 @@ matters, look at the bytes — `mime.detect_from_header()` reads a real
 file's leading bytes, so sniffing an upload means writing it somewhere
 first:
 
-```zuri
+```zuri,ignore
 import mime
 import os
 
@@ -782,7 +782,7 @@ os.rename(staged, os.join_paths('./uploads', stored_name))
 The body is read into memory, bounded by the server's
 `max_body_size` — 10 MiB by default, which is deliberately small:
 
-```zuri
+```zuri,ignore
 server.max_body_size = 50 * 1024 * 1024   # accept uploads up to 50 MB
 ```
 
@@ -807,7 +807,7 @@ earns its overhead only when there are fields alongside the file.
 
 A request validates itself against a `validate` schema:
 
-```zuri
+```zuri,ignore
 import http
 import validate
 
@@ -846,7 +846,7 @@ want:
 To branch rather than catch, validate the input yourself — there is
 no separate API for it:
 
-```zuri
+```zuri,ignore
 var result = create_user.check(request.input())
 
 if !result.valid {
@@ -874,7 +874,7 @@ the handler caring which arrived.
 
 Take one source on its own by naming it:
 
-```zuri
+```zuri,ignore
 request.validate(schema, 'body')     # only the body
 request.validate(schema, 'query')    # only the query string
 request.validate(schema, 'params')   # only the route parameters
@@ -913,7 +913,7 @@ at a query string.
 
 Write a schema that has to serve both with the value rules:
 
-```zuri
+```zuri,ignore
 age: validate.required().integer().gte(18).lte(120)   # both
 age: validate.required().integer().between(18, 120)   # JSON bodies only
 ```
@@ -947,7 +947,7 @@ through `form_all()` or `request.query` directly and validated with
 
 ### The Response Object
 
-```zuri
+```zuri,ignore
 response.text('plain')                    # text/plain
 response.html('<h1>hi</h1>')              # text/html
 response.json({ ok: true })               # application/json
@@ -980,7 +980,7 @@ hold in memory a one-liner.
 A middleware takes `(request, response, next)` and decides whether the
 rest of the chain runs:
 
-```zuri
+```zuri,ignore
 server.use(@(request, response, next) {
   var started = time()
   next()
@@ -992,7 +992,7 @@ server.use(@(request, response, next) {
 Not calling `next()` is how a middleware short-circuits, which is
 exactly what an authentication or rate-limiting layer wants:
 
-```zuri
+```zuri,ignore
 server.use(@(request, response, next) {
   if request.header('x-api-key') != expected {
     response.json({ error: 'unauthorized' }, 401)
@@ -1009,7 +1009,7 @@ Anything a middleware wants to hand to the handler goes on
 `request.context`, which is a plain dictionary that exists for exactly
 that:
 
-```zuri
+```zuri,ignore
 server.use(@(request, response, next) {
   request.context['started_at'] = time()
   next()
@@ -1019,7 +1019,7 @@ server.use(@(request, response, next) {
 A middleware that wants to act on the *response* calls `next()` first
 and then works on what came back:
 
-```zuri
+```zuri,ignore
 server.use(@(request, response, next) {
   next()
   response.header('X-Served-By', hostname)
@@ -1036,7 +1036,7 @@ reaches the client — an exception message routinely carries a file
 path, a query, or a fragment of the data being processed, and none of
 that belongs in a reply to whoever triggered it.
 
-```zuri
+```zuri,ignore
 server.on_error(@(error, connection) {
   log.error('${error.message}')
 })
@@ -1059,7 +1059,7 @@ bare `500`.
 
 ### Static Files
 
-```zuri
+```zuri,ignore
 server.serve_files('/static', './public', {
   cache_age: 86400,
   precompressed: true,
@@ -1090,7 +1090,7 @@ For a single-page application, `fallback` serves the shell for any
 path that names no file, which is what makes client-side routes work
 on reload:
 
-```zuri
+```zuri,ignore
 server.serve_files('/', './dist', { fallback: 'index.html' })
 ```
 
@@ -1113,7 +1113,7 @@ cannot serve a compressed body to a client that asked for none.
 
 Turning it off, or moving the threshold:
 
-```zuri
+```zuri,ignore
 server.compression = false          # off entirely
 server.compression_min_size = 4096  # only bodies over 4 KiB
 ```
@@ -1147,7 +1147,7 @@ body is decoded before you see it.
 
 A response body can come from a callback instead of memory:
 
-```zuri
+```zuri,ignore
 server.get('/export.csv', @(request, response) {
   response.content_type('text/csv')
 
@@ -1168,7 +1168,7 @@ on HTTP/2 — the handler does not have to know which.
 
 ### Cookies and Sessions
 
-```zuri
+```zuri,ignore
 response.set_cookie('session', token, {
   max_age: 86400,
   secure: true,
@@ -1186,7 +1186,7 @@ browser will silently refuse to store.
 
 ### Content Negotiation
 
-```zuri
+```zuri,ignore
 import http.negotiate
 
 var type = negotiate.best_match(
@@ -1418,7 +1418,7 @@ one character at a time.
 
 To guard part of a site rather than all of it, wrap it:
 
-```zuri
+```zuri,ignore
 var guard = middleware.basic_auth(check_credentials)
 
 server.use(@(request, response, next) {
@@ -1470,7 +1470,7 @@ than leaving them to the verifier you write here.
 
 Requires a valid JSON Web Token, verified by the `jwt` module.
 
-```zuri
+```zuri,ignore
 import http.middleware
 import jwt
 
@@ -1534,7 +1534,7 @@ not help.
 is asking without requiring it — a public page that shows an edit
 button to its author:
 
-```zuri
+```zuri,ignore
 server.use(middleware.jwt_auth(verifier, { optional: true }))
 
 server.get('/posts/:id', @(request, response) {
@@ -1553,7 +1553,7 @@ through unauthenticated, and `request.context['claims']` is simply
 never set. Nothing here raises when it is built, so registering it
 never needs a `catch` around it.
 
-```zuri
+```zuri,ignore
 var verifier = production ? jwt.Verifier(secret, options) : nil
 
 server.use(middleware.jwt_auth(verifier))
@@ -1663,7 +1663,7 @@ the cleartext request at all.
 Middleware run outermost first, so the order they are registered in is
 the order they wrap the request. A workable default:
 
-```zuri
+```zuri,ignore
 server.use(middleware.request_id())        # so everything after can log it
 server.use(middleware.logger())            # so it sees the final status
 server.use(middleware.force_https())       # before any work is done
@@ -1681,7 +1681,7 @@ inspects the response body innermost, where the body exists.
 
 ## TLS
 
-```zuri
+```zuri,ignore
 var server = http.server(443, '0.0.0.0')
 server.load_certs('/etc/certs/site.crt', '/etc/certs/site.key')
 server.listen()
@@ -1689,7 +1689,7 @@ server.listen()
 
 Or from strings, with more control:
 
-```zuri
+```zuri,ignore
 server.use_tls(cert_chain_pem, private_key_pem, {
   min_version: '1.2',
   client_ca: internal_ca_pem,
@@ -1768,7 +1768,7 @@ is answered and then handed back so you can see the code and reason.
 
 The client side is `ws.connect()`:
 
-```zuri
+```zuri,ignore
 var socket = ws.connect('wss://example.com/ws')
 
 socket.send('hello')
@@ -1857,7 +1857,7 @@ def setup(server) {
 }
 ```
 
-```zuri
+```zuri,ignore
 # main.zu
 import http
 import .app
@@ -1918,7 +1918,7 @@ before a byte of it is read, which is the whole point of the header.
 
 ### Graceful Shutdown
 
-```zuri
+```zuri,ignore
 import os
 
 http.serve(app.setup, {

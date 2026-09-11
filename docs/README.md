@@ -76,16 +76,44 @@ Two rules the existing text follows:
 `console` block is what the program actually printed, not what it ought to
 print. When you change behaviour, re-run the examples that cover it.
 
+A block tagged ```` ```zuri,ignore ```` is exempt, and there are only three
+reasons to tag one: it deliberately shows an error, it is one file of a
+multi-file program, or it blocks forever (a server, a prompt). Everything
+else must run.
+
+That rule is enforced, not just stated. This runs every example in the book
+and compares what it printed against the `console` block beneath it:
+
+```console
+$ zuri docs/book/tools/verify.zu
+```
+
+Pass a fragment of a filename to check one part of the book while you are
+working on it:
+
+```console
+$ zuri docs/book/tools/verify.zu ch04
+```
+
 **Limits are stated as rules, not as caveats.** "The `const` keyword is
 enforced in local scopes" rather than a note apologising for it.
 
-Two appendices are generated rather than hand-written, and are regenerated
-from the standard library's own stub documentation:
+**Appendices D and E are generated, not written.** They come from the doc
+blocks in `libs/_*.stub.zu`, read with the `zuri` module's own parser, so
+the reference can never drift from the documentation the runtime ships:
 
-- Appendix D comes from `libs/_builtins.stub.zu`
-- Appendix E comes from `libs/_*.stub.zu`
+```console
+$ zuri docs/book/tools/reference.zu
+```
 
-Edit the stub, not the appendix.
+That rewrites `appendix-04-builtins.md`, `appendix-05-type-methods.md` and
+every `appendix-05-NN-*.md` page. Edit the stub, then re-run it. The one
+exception is `appendix-05-10-function.md`, whose methods live in the
+runtime rather than in a stub and which is maintained by hand.
+
+The generator is three files in [`book/tools`](book/tools):
+`reference.zu` drives it, `docblock.zu` parses a doc block's prose and
+`@tag` lines, and `render.zu` turns the result into markdown.
 
 The images in the Imagine chapter are produced by
 [`book/src/imagine/figures.zu`](book/src/imagine/figures.zu). Re-run it

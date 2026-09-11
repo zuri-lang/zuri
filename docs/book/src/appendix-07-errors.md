@@ -68,7 +68,7 @@ bad input
 `catch` catches everything inside its block. To handle one kind and let the
 rest through, test and re-raise:
 
-```zuri
+```zuri,ignore
 catch {
   load_config()
 } as e {
@@ -146,11 +146,3 @@ Code after a `catch` statement runs whether the block raised or not,
 because the handler either recovers or re-raises. See
 [Error Handling](ch07-00-error-handling.md) for the patterns that replace
 it.
-
-## A Function With a `catch` Is Never JIT-Compiled
-
-`catch` maintains unwind state the interpreter owns, so a function
-containing one stays interpreted for the life of the program. Put the hot
-loop in its own function and wrap the call, not the loop. See
-[Performance and the JIT](ch18-00-performance.md); the measured difference
-is large.

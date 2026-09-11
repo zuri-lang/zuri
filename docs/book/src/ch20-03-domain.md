@@ -5,7 +5,7 @@ re-checks a title, and nothing below it stores a task that broke a rule.
 
 <span class="filename">Filename: models/task.zu</span>
 
-```zuri
+```zuri,ignore
 import date
 import uuid
 
@@ -31,7 +31,7 @@ exists precisely so it can carry more than a string.
 
 ## The Class
 
-```zuri
+```zuri,ignore
 /**
  * A single task on the board.
  */
@@ -85,7 +85,7 @@ ordered, that is free value.
 
 ## Mutation
 
-```zuri
+```zuri,ignore
   /**
    * Moves the task to another column.
    *
@@ -132,7 +132,7 @@ Both return `self`, so `board.get(id).move_to('done')` reads as one thought.
 
 ## Conversion
 
-```zuri
+```zuri,ignore
   /**
    * The task as a plain dictionary, which is what the store writes
    * and what `from_dict()` reads back.

@@ -1,85 +1,102 @@
-# `list`
+# List Methods
 
-39 methods. See [Lists](ch04-03-lists.md) for the guided introduction.
+Every method on the built-in `list` type, with its signature, what it
+returns, and the cases where it does something other than the obvious
+thing.
 
-| Method | Returns |
-| --- | --- |
-| [`length()`](#length) | `number` |
-| [`append(value: any)`](#append) | `list` |
-| [`clear()`](#clear) |  |
-| [`clone()`](#clone) | `list` |
-| [`count(value)`](#count) | `number` |
-| [`extend(list: list)`](#extend) | `list` |
-| [`index_of(value: any, start_index: ?int)`](#index_of) | `number` |
-| [`insert(value: any, index: int)`](#insert) | `list` |
-| [`pop()`](#pop) | `any` |
-| [`shift(count: ?int)`](#shift) | `any` |
-| [`remove_at(index: int)`](#remove_at) | `any` |
-| [`remove(value: any)`](#remove) | `any` |
-| [`reverse()`](#reverse) | `list` |
-| [`sort()`](#sort) | `list` |
-| [`contains(value: any)`](#contains) | `boolean` |
-| [`delete(start: int, end: int)`](#delete) | `number` |
-| [`first()`](#first) | `any` |
-| [`last()`](#last) | `any` |
-| [`is_empty()`](#is_empty) | `boolean` |
-| [`take(n: int)`](#take) | `list` |
-| [`get(index: int)`](#get) | `any` |
-| [`compact()`](#compact) | `list` |
-| [`unique()`](#unique) | `list` |
-| [`zip(...)`](#zip) | `list` |
-| [`zip_from(list: list)`](#zip_from) | `list` |
-| [`to_dict()`](#to_dict) | `dict` |
-| [`each(callback: function)`](#each) |  |
-| [`map(callback: function)`](#map) | `list` |
-| [`filter(callback: function)`](#filter) | `list` |
-| [`reduce(callback: function, initial: any)`](#reduce) | `any` |
-| [`some(callback: function)`](#some) | `boolean` |
-| [`every(callback: function)`](#every) | `boolean` |
-| [`find(callback: function)`](#find) | `list` |
-| [`find_index(callback: function)`](#find_index) | `list` |
-| [`find_last(callback: function)`](#find_last) | `list` |
-| [`find_last_index(callback: function)`](#find_last_index) | `list` |
-| [`find_all(callback: function)`](#find_all) | `list` |
-| [`partition(callback: function)`](#partition) | `list` |
-| [`to_string()`](#to_string) | `string` |
+| Method | Returns | Summary |
+| --- | --- | --- |
+| [`length()`](#length) | `number` | Returns the number of items in the list. |
+| [`append(value)`](#append) | `list` | Adds the given value _x_ to the end of the list. |
+| [`clear()`](#clear) |  | Removes all items from the list. |
+| [`clone()`](#clone) | `list` | Returns a new list containing all items from the _list_. |
+| [`count(value)`](#count) | `number` | Returns the number of times item _x_ occurs in the list. |
+| [`extend(list: list)`](#extend) | `list` | Updates the content of the _list_ by appending all the contents of list _x_ to the end of the original list in exact order. |
+| [`index_of(value, start_index: ?int)`](#index_of) | `number` | Returns the zero-based index of the first occurrence of the value _x_ in the list starting from the given _start_index_ or `-1` if the list does not contain the value _x_. |
+| [`insert(value, index: int)`](#insert) | `list` | Inserts the item _x_ into the list at the specified _index_. |
+| [`pop()`](#pop) | `any` | Removes the last item in a list and returns the value of that item. |
+| [`shift(count: ?int)`](#shift) | `any` | Removed the specified count of items from the beginning of the list and returns it. |
+| [`remove_at(index: int)`](#remove_at) | `any` | Removes the item at the specified index in the list and returns it. |
+| [`remove(value)`](#remove) | `any` | Removes the first occurrence of item _x_ from the list. |
+| [`reverse()`](#reverse) | `list` | Returns a new list containing the items in the original list in reverse order. |
+| [`sort()`](#sort) | `list` | Sorts the items in the list in-place and returns the sorted list. |
+| [`contains(value)`](#contains) | `boolean` | Returns `true` if the list contains the item _x_ or `false` otherwise. |
+| [`delete(start: int, end: int)`](#delete) | `number` | Deletes a range of items from the list starting from the start to the end limit and returns the number of items removed. |
+| [`first()`](#first) | `any` | Returns the first item in the list or `nil` if the list is empty. |
+| [`last()`](#last) | `any` | Returns the last item in the list or `nil` if the list is empty. |
+| [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the list is empty or `false` otherwise. |
+| [`take(n: int)`](#take) | `list` | Returns a new list containing the first _n_ items in the list or a new copy of the list if _n_ greater than or equals to the `list.length()`. |
+| [`get(index: int)`](#get) | `any` | Returns the value at the specified index in the list. |
+| [`compact()`](#compact) | `list` | Returns a new list containing the items in the original list but with all `nil` values removed. |
+| [`unique()`](#unique) | `list` | Returns a new list containing the unique values from the original list. |
+| [`zip(...lists: list)`](#zip) | `list` | Returns a list that contains the items in the original list merged with corresponding items from the individual arguments. |
+| [`zip_from(list: list)`](#zip_from) | `list` | The same as `list.zip()` except that instead of accepting an arbitrary list or arguments, it accepts a single list that should contain other lists. |
+| [`to_dict()`](#to_dict) | `dict` | Returns a number indexed dictionary representing the list. |
+| [`each(callback: function)`](#each) |  | Iterates over each element in the list, calling the provided callback function with the current element as an argument. |
+| [`map(callback: function)`](#map) | `list` | Creates a new list populated with the results of calling a provided function on every element in the calling list. |
+| [`filter(callback: function)`](#filter) | `list` | Creates a new list with all elements that pass the test implemented by the provided function. |
+| [`reduce(callback: function, initial)`](#reduce) | `any` | Applies a function against an accumulator and each element in the list (from left to right) to reduce it to a single value and returns the accumulated result of the callback function. |
+| [`some(callback: function)`](#some) | `boolean` | Tests whether at least one element in the list passes the test implemented by the provided function. |
+| [`every(callback: function)`](#every) | `boolean` | Tests whether all elements in the list pass the test implemented by the provided function. |
+| [`find(callback: function)`](#find) | `list` | Returns the value of the first element in the list that satisfies the provided testing function. |
+| [`find_index(callback: function)`](#find_index) | `list` | Returns the index of the first element in the list that satisfies the provided testing function. |
+| [`find_last(callback: function)`](#find_last) | `list` | Returns the value of the last element in the list that satisfies the provided testing function. |
+| [`find_last_index(callback: function)`](#find_last_index) | `list` | Returns the index of the last element in the list that satisfies the provided testing function. |
+| [`find_all(callback: function)`](#find_all) | `list` | Returns a new list containing all elements of the calling list that satisfy the provided testing function. |
+| [`partition(callback: function)`](#partition) | `list` | Returns an list containing two lists: the first with elements that satisfy the provided testing function, and the second with elements that do not satisfy the testing function. |
+| [`to_string()`](#to_string) | `string` | Returns the string representation of the list. |
 
 ## `length()`
 
-Returns the number of items in the list.
+```zuri,ignore
+length() -> number
+```
+
+Returns the number of items in the list. <br>
 
 For example:
 
-```zuri
+```zuri,ignore
 %> ['A', 'B', 'C'].length()
 3
 ```
 
-- **Returns** `number`
+**Returns** `number`
 
-## `append(value: any)`
+## `append()`
+
+```zuri,ignore
+append(value) -> list
+```
 
 Adds the given value _x_ to the end of the list.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1,2,3]
 %> a.append(4)
 %> a
 [1, 2, 3, 4]
 ```
 
-- **Parameter** `any` value
-- **Returns** `list`
+**Parameters**
+
+- `value` (`any`)
+
+**Returns** `list`
 
 ## `clear()`
 
-Removes all items from the list.
+```zuri,ignore
+clear()
+```
+
+Removes all items from the list.<br>
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1,2,3,4,5]
 %> a
 [1, 2, 3, 4, 5]
@@ -90,13 +107,16 @@ For example:
 
 ## `clone()`
 
-Returns a new list containing all items from the _list_. The
-new list is a shallow copy of the original list. This is
-equivalent to `list[,]`.
+```zuri,ignore
+clone() -> list
+```
+
+Returns a new list containing all items from the _list_. The new list is
+a shallow copy of the original list. This is equivalent to `list[,]`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1, 2, 3]
 %> var b = a.clone()
 %> a.append(4)
@@ -106,31 +126,42 @@ For example:
 [1, 2, 3]
 ```
 
-- **Returns** `list`
+**Returns** `list`
 
-## `count(value)`
+## `count()`
+
+```zuri,ignore
+count(value) -> number
+```
 
 Returns the number of times item _x_ occurs in the list.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [1, 2, 1, 3, 2, 1, 1].count(1)
 4
 ```
 
-- **Parameter** `any` value
-- **Returns** `number`
+**Parameters**
 
-## `extend(list: list)`
+- `value` (`any`)
 
-Updates the content of the _list_ by appending all the
-contents of list _x_ to the end of the original list in
-exact order. This is equivalent to `list + x`.
+**Returns** `number`
+
+## `extend()`
+
+```zuri,ignore
+extend(list: list) -> list
+```
+
+Updates the content of the _list_ by appending all the contents of list
+_x_ to the end of the original list in exact order. This is equivalent
+to `list + x`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1, 2, 3]
 %> var b = [4, 5, 6]
 %> a.extend(b)
@@ -140,18 +171,25 @@ For example:
 [4, 5, 6]
 ```
 
-- **Parameter** `list` list
-- **Returns** `list`
+**Parameters**
 
-## `index_of(value: any, start_index: ?int)`
+- `list` (`list`)
 
-Returns the zero-based index of the first occurrence of the
-value _x_ in the list starting from the given _start_index_
-or `-1` if the list does not contain the value _x_.
+**Returns** `list`
+
+## `index_of()`
+
+```zuri,ignore
+index_of(value, start_index: ?int) -> number
+```
+
+Returns the zero-based index of the first occurrence of the value _x_ in
+the list starting from the given _start_index_ or `-1` if the list does
+not contain the value _x_.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [1,2].index_of(3)
 -1
 %> [4,5,6,5].index_of(5)
@@ -162,22 +200,29 @@ For example:
 3
 ```
 
-- **Parameter** `any` value
-- **Parameter** `?int` start_index
-- **Returns** `number`
+**Parameters**
 
-## `insert(value: any, index: int)`
+- `value` (`any`)
+- `start_index` (`?int`)
 
-Inserts the item _x_ into the list at the specified _index_.
-By specifying an index of zero (`list.insert(x, 0)`), one
-can prepend the list and `list.insert(x, list.length())` is
-equivalent to `list.append(x)`. If the _index_ specified is
-greater than `list.length()`, the list will be padded with
-`nil` up till the index preceding the specified index.
+**Returns** `number`
+
+## `insert()`
+
+```zuri,ignore
+insert(value, index: int) -> list
+```
+
+Inserts the item _x_ into the list at the specified _index_. By
+specifying an index of zero (`list.insert(x, 0)`), one can prepend the
+list and `list.insert(x, list.length())` is equivalent to
+`list.append(x)`. If the _index_ specified is greater than
+`list.length()`, the list will be padded with `nil` up till the index
+preceding the specified index.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1,2,3]
 %> a.insert(4, 0)
 %> a
@@ -193,18 +238,24 @@ For example:
 [4, 1, 2, 6, 3, 5, nil, nil, nil, nil, nil, 7]
 ```
 
-- **Parameter** `any` value
-- **Parameter** `int` index
-- **Returns** `list`
+**Parameters**
+
+- `value` (`any`)
+- `index` (`int`)
+
+**Returns** `list`
 
 ## `pop()`
 
-Removes the last item in a list and returns the value of
-that item.
+```zuri,ignore
+pop() -> any
+```
+
+Removes the last item in a list and returns the value of that item.<br>
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [4, 5, 6]
 %> a.pop()
 6
@@ -212,27 +263,30 @@ For example:
 [4, 5]
 ```
 
-- **Returns** `any`
+**Returns** `any`
 
-## `shift(count: ?int)`
+## `shift()`
 
-Removed the specified count of items from the beginning of
-the list and returns it. If _count_ is not specified,
-_count_ defaults to 1. If one item is shifted, the method
-returns that item. If more than one item is shifted, the
-method returns a list containing the shifted items.
+```zuri,ignore
+shift(count: ?int) -> any
+```
+
+Removed the specified count of items from the beginning of the list and
+returns it. If _count_ is not specified, _count_ defaults to 1. If one
+item is shifted, the method returns that item. If more than one item is
+shifted, the method returns a list containing the shifted items.
 
 > The square brackets (`[]`) around the _`count: number`_ in
 > the method definition indicates that the parameter is
 > optional and does not mean you have to type the square
 > brackets.
 
-If the number of items required to be shifted exceeds the
-size of the list, the list is cleared and `nil` is returned.
+If the number of items required to be shifted exceeds the size of the
+list, the list is cleared and `nil` is returned.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
 %> a.shift()
 9
@@ -247,18 +301,25 @@ For example:
 []
 ```
 
-- **Parameter** `?int` count
-- **Returns** `any`
+**Parameters**
 
-## `remove_at(index: int)`
+- `count` (`?int`)
 
-Removes the item at the specified index in the list and
-returns it. If the index is less than `0` or greater than
-`list.length() - 1`, an Error is raised.
+**Returns** `any`
+
+## `remove_at()`
+
+```zuri,ignore
+remove_at(index: int) -> any
+```
+
+Removes the item at the specified index in the list and returns it. If
+the index is less than `0` or greater than `list.length() - 1`, an Error
+is raised.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1, 2, 3, 4, 5]
 %> a.remove_at(3)
 4
@@ -274,16 +335,23 @@ Unhandled Error: list index -1 out of range at remove_at()
     <repl>:1 -> @.script()
 ```
 
-- **Parameter** `int` index
-- **Returns** `any`
+**Parameters**
 
-## `remove(value: any)`
+- `index` (`int`)
+
+**Returns** `any`
+
+## `remove()`
+
+```zuri,ignore
+remove(value) -> any
+```
 
 Removes the first occurrence of item _x_ from the list.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = ['Kirk', 'Tasha', 'Emily', 'Kirk']
 %> a.remove('Kirk')
 %> a
@@ -292,42 +360,53 @@ For example:
 
 Notice that only the first occurrence of `Kirk` was removed.
 
-- **Parameter** `any` value
-- **Returns** `any`
+**Parameters**
+
+- `value` (`any`)
+
+**Returns** `any`
 
 ## `reverse()`
 
-Returns a new list containing the items in the original list
-in reverse order.
+```zuri,ignore
+reverse() -> list
+```
+
+Returns a new list containing the items in the original list in reverse
+order.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = ['apple', 'mango', 'banana', 'orange', 'peach']
 %> a.reverse()
 [peach, orange, banana, mango, apple]
 ```
 
-- **Returns** `list`
+**Returns** `list`
 
 ## `sort()`
 
-Sorts the items in the list in-place and returns the sorted
-list. Sorting in Lists follows are strict set of precedence
-based on the object type. The order for sorting is as
-follows in ascending orders:
+```zuri,ignore
+sort() -> list
+```
 
-`nil`, boolean, numbers, strings, ranges, lists,
-dictionaries, file, bytes, functions, classes and modules.
+Sorts the items in the list in-place and returns the sorted list.
+Sorting in Lists follows are strict set of precedence based on the
+object type. The order for sorting is as follows in ascending
+orders:<br>
 
-When the corresponding items in the list are of the same
-type, they are sorted based on their respective values
-according to the type. For example, the number `5` is less
-than `8` and as such will appear first in the sort.
+`nil`, boolean, numbers, strings, ranges, lists, dictionaries, file,
+bytes, functions, classes and modules.
+
+When the corresponding items in the list are of the same type, they are
+sorted based on their respective values according to the type. For
+example, the number `5` is less than `8` and as such will appear first
+in the sort.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a  = ['A', 5, false, nil, [21, 13, 46]]
 %> a.sort()
 %> a
@@ -339,35 +418,44 @@ For example:
 > turn, precedes the list in the result. Also, note that the
 > items of the inner list is sorted.
 
-- **Returns** `list`
+**Returns** `list`
 
-## `contains(value: any)`
+## `contains()`
 
-Returns `true` if the list contains the item _x_ or `false`
-otherwise.
+```zuri,ignore
+contains(value) -> boolean
+```
+
+Returns `true` if the list contains the item _x_ or `false` otherwise.
 
 For example:
 
-```zuri
+```zuri,ignore
 %>  ['dog', 'cat', 'wolf', 'tiger'].contains('cat')
 true
 %>  ['dog', 'cat', 'wolf', 'tiger'].contains('giraffe')
 false
 ```
 
-- **Parameter** `any` value
-- **Returns** `boolean`
+**Parameters**
 
-## `delete(start: int, end: int)`
+- `value` (`any`)
 
-Deletes a range of items from the list starting from the
-start to the end limit and returns the number of items
-removed. If the start and end are the same, this will be
-equivalent to `list.remove_at(start)`.
+**Returns** `boolean`
+
+## `delete()`
+
+```zuri,ignore
+delete(start: int, end: int) -> number
+```
+
+Deletes a range of items from the list starting from the start to the
+end limit and returns the number of items removed. If the start and end
+are the same, this will be equivalent to `list.remove_at(start)`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 %> a.delete(3, 6)
 4
@@ -379,63 +467,79 @@ For example:
 [1, 3, 8, 9]
 ```
 
-- **Parameter** `int` start
-- **Parameter** `int` end
-- **Returns** `number`
+**Parameters**
+
+- `start` (`int`)
+- `end` (`int`)
+
+**Returns** `number`
 
 ## `first()`
 
-Returns the first item in the list or `nil` if the list is
-empty.
+```zuri,ignore
+first() -> any
+```
+
+Returns the first item in the list or `nil` if the list is empty.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> ['c', 'd', 'a', 'b'].first()
 'c'
 ```
 
-- **Returns** `any`
+**Returns** `any`
 
 ## `last()`
 
-Returns the last item in the list or `nil` if the list is
-empty.
+```zuri,ignore
+last() -> any
+```
+
+Returns the last item in the list or `nil` if the list is empty.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> ['c', 'd', 'a', 'b'].last()
 'b'
 ```
 
-- **Returns** `any`
+**Returns** `any`
 
 ## `is_empty()`
+
+```zuri,ignore
+is_empty() -> boolean
+```
 
 Returns `true` if the list is empty or `false` otherwise.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [1, 2].is_empty()
 false
 %> [].is_empty()
 true
 ```
 
-- **Returns** `boolean`
+**Returns** `boolean`
 
-## `take(n: int)`
+## `take()`
 
-Returns a new list containing the first _n_ items in the
-list or a new copy of the list if _n_ greater than or equals
-to the `list.length()`. If `n < 0`, returns
-`list.take(list.length() - n)`.
+```zuri,ignore
+take(n: int) -> list
+```
+
+Returns a new list containing the first _n_ items in the list or a new
+copy of the list if _n_ greater than or equals to the `list.length()`.
+If `n < 0`, returns `list.take(list.length() - n)`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 %> a.take(4)
 [10, 11, 12, 13]
@@ -445,19 +549,25 @@ For example:
 [10, 11, 12, 13, 14, 15]
 ```
 
-- **Parameter** `int` n
-- **Returns** `list`
+**Parameters**
 
-## `get(index: int)`
+- `n` (`int`)
 
-Returns the value at the specified index in the list. If
-_index_ is outside the boundary of the list indexes
-(`0..(list.length() - 1)`), an Error is thrown. This method
-is equivalent to `list[index]`.
+**Returns** `list`
+
+## `get()`
+
+```zuri,ignore
+get(index: int) -> any
+```
+
+Returns the value at the specified index in the list. If _index_ is
+outside the boundary of the list indexes (`0..(list.length() - 1)`), an
+Error is thrown. This method is equivalent to `list[index]`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [13, 14, 15, 16].get(1)
 14
 %> [13, 14, 15, 16].get(6)
@@ -466,50 +576,63 @@ Unhandled Error: list index 6 out of range at get()
     <repl>:1 -> @.script()
 ```
 
-- **Parameter** `int` index
-- **Returns** `any`
+**Parameters**
+
+- `index` (`int`)
+
+**Returns** `any`
 
 ## `compact()`
 
-Returns a new list containing the items in the original list
-but with all `nil` values removed.
+```zuri,ignore
+compact() -> list
+```
+
+Returns a new list containing the items in the original list but with
+all `nil` values removed.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [21, nil, 14, 'age', nil, nil, [], 11].compact()
 [21, 14, age, [], 11]
 ```
 
-- **Returns** `list`
+**Returns** `list`
 
 ## `unique()`
 
-Returns a new list containing the unique values from the
-original list.
+```zuri,ignore
+unique() -> list
+```
+
+Returns a new list containing the unique values from the original list.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [1, 1, 3, 5].unique()
 [1, 3, 5]
 ```
 
-- **Returns** `list`
+**Returns** `list`
 
-## `zip(...)`
+## `zip()`
 
-Returns a list that contains the items in the original list
-merged with corresponding items from the individual
-arguments. This generates a list of length equal to the
-length of the original argument.
+```zuri,ignore
+zip(...lists: list) -> list
+```
 
-If the size of any of the arguments is less than the size of
-the original list, it's corresponding entry will be `nil`.
+Returns a list that contains the items in the original list merged with
+corresponding items from the individual arguments. This generates a list
+of length equal to the length of the original argument.
+
+If the size of any of the arguments is less than the size of the
+original list, it's corresponding entry will be `nil`.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> var a = [4, 5, 6]
 %> var b = [7, 8, 9]
 %> [1, 2, 3].zip(a, b)
@@ -526,302 +649,425 @@ For example:
 [[[1, 2], 4, 7], [[3], 5, 8]]
 ```
 
-- **Parameter** `...list` lists
-- **Returns** `list`
+**Parameters**
 
-## `zip_from(list: list)`
+- `lists` (`...list`)
 
-The same as `list.zip()` except that instead of accepting an
-arbitrary list or arguments, it accepts a single list that
-should contain other lists.
+**Returns** `list`
+
+## `zip_from()`
+
+```zuri,ignore
+zip_from(list: list) -> list
+```
+
+The same as `list.zip()` except that instead of accepting an arbitrary
+list or arguments, it accepts a single list that should contain other
+lists.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> [1, 2].zip_from([[3, 4]])
 [[1, 3], [2, 4]]
 ```
 
-- **Parameter** `list` list
-- **Returns** `list`
+**Parameters**
+
+- `list` (`list`)
+
+**Returns** `list`
 
 ## `to_dict()`
+
+```zuri,ignore
+to_dict() -> dict
+```
 
 Returns a number indexed dictionary representing the list.
 
 For example:
 
-```zuri
+```zuri,ignore
 %> ['English', 'French', 'Spanish'].to_dict()
 {0: English, 1: French, 2: Spanish}
 ```
 
-- **Returns** `dict`
+**Returns** `dict`
 
-## `each(callback: function)`
+## `each()`
 
-Iterates over each element in the list, calling the provided
-callback function with the current element as an argument.
+```zuri,ignore
+each(callback: function)
+```
 
-   element in the list.
+Iterates over each element in the list, calling the provided callback
+function with the current element as an argument.
+
 Example:
-```zuri
+
+```zuri,ignore
 ['A', 'B', 'C'].each(@(r) {
   echo r
 })
+
 # Output: A B C
 ```
+
 > The `each` method does not return a new list; it simply
 > executes the callback for each element. If you want to
 > create a new list based on the original, consider using
 > the `map` method instead.
 
-- **Parameter** `function` callback The function to execute for each
-- **Raises** `Error` if the callback is not a function.
+**Parameters**
 
-## `map(callback: function)`
+- `callback` (`function`) — The function to execute for each element in
+  the list.
 
-Creates a new list populated with the results of calling a
-provided function on every element in the calling list.
+**Raises** `Error` if the callback is not a function.
 
-   element in the list. It receives the current element and
-   its index as arguments.
+## `map()`
+
+```zuri,ignore
+map(callback: function) -> list
+```
+
+Creates a new list populated with the results of calling a provided
+function on every element in the calling list.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].map(@(x) {
   return x * 2
 })
+
 # Output: [2, 4, 6]
 ```
 
-- **Parameter** `function` callback The function to execute on each
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `filter(callback: function)`
+- `callback` (`function`) — The function to execute on each element in
+  the list. It receives the current element and its index as arguments.
 
-Creates a new list with all elements that pass the test
-implemented by the provided function.
+**Returns** `list`
 
-It returns a new list with the elements that pass the test.
-If no elements pass the test, an empty list will be
-returned.
+**Raises** `Error` if the callback is not a function.
 
-   of the list. It receives the current element and its
-   index as arguments.
+## `filter()`
+
+```zuri,ignore
+filter(callback: function) -> list
+```
+
+Creates a new list with all elements that pass the test implemented by
+the provided function.
+
+It returns a new list with the elements that pass the test. If no
+elements pass the test, an empty list will be returned.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].filter(@(x) {
   return x % 2 == 0
 })
+
 # Output: [2]
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `reduce(callback: function, initial: any)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Applies a function against an accumulator and each element
-in the list (from left to right) to reduce it to a single
-value and returns the accumulated result of the callback
-function.
+**Returns** `list`
 
-   element in the list. It receives the current element and
-   its index as arguments.
-   If no initial value is provided, the first element of the
-   list will be used as the initial accumulator, and the
-   iteration will start from the second element.
+**Raises** `Error` if the callback is not a function.
+
+## `reduce()`
+
+```zuri,ignore
+reduce(callback: function, initial) -> any
+```
+
+Applies a function against an accumulator and each element in the list
+(from left to right) to reduce it to a single value and returns the
+accumulated result of the callback function.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].reduce(@(acc, x) {
   return acc + x
 })
+
 # Output: 6
 ```
 
-- **Parameter** `function` callback The function to execute on each
-- **Raises** `Error` if the callback is not a function.
-- **Parameter** initial The initial value to use as the accumulator.
-- **Returns** `any`
+**Parameters**
 
-## `some(callback: function)`
+- `callback` (`function`) — The function to execute on each element in
+  the list. It receives the current element and its index as arguments.
+- `initial` — The initial value to use as the accumulator. If no initial
+  value is provided, the first element of the list will be used as the
+  initial accumulator, and the iteration will start from the second
+  element.
 
-Tests whether at least one element in the list passes the
-test implemented by the provided function.
+**Returns** `any`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `some()`
+
+```zuri,ignore
+some(callback: function) -> boolean
+```
+
+Tests whether at least one element in the list passes the test
+implemented by the provided function.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].some(@(x) {
   return x % 2 == 0
 })
+
 # Output: true
 ```
-The `some` method returns `true` if the callback function
-returns a truthy value for at least one element in the list.
-If the callback function returns a falsy value for all
-elements, `some` will return `false`. If the list is empty,
-`some` will return `false` by default.
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `boolean`
+The `some` method returns `true` if the callback function returns a
+truthy value for at least one element in the list. If the callback
+function returns a falsy value for all elements, `some` will return
+`false`. If the list is empty, `some` will return `false` by default.
 
-## `every(callback: function)`
+**Parameters**
 
-Tests whether all elements in the list pass the test
-implemented by the provided function.
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Returns** `boolean`
+
+**Raises** `Error` if the callback is not a function.
+
+## `every()`
+
+```zuri,ignore
+every(callback: function) -> boolean
+```
+
+Tests whether all elements in the list pass the test implemented by the
+provided function.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].every(@(x) {
   return x > 0
 })
+
 # Output: true
 ```
-The `every` method returns `true` if the callback function
-returns a truthy value for every element in the list. If the
-callback function returns a falsy value for any element,
-`every` will return `false`. If the list is empty, `every`
-will return `true` by default.
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `boolean`
+The `every` method returns `true` if the callback function returns a
+truthy value for every element in the list. If the callback function
+returns a falsy value for any element, `every` will return `false`. If
+the list is empty, `every` will return `true` by default.
 
-## `find(callback: function)`
+**Parameters**
 
-Returns the value of the first element in the list that
-satisfies the provided testing function. If no elements
-satisfy the testing function, `find` returns `nil`.
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Returns** `boolean`
+
+**Raises** `Error` if the callback is not a function.
+
+## `find()`
+
+```zuri,ignore
+find(callback: function) -> list
+```
+
+Returns the value of the first element in the list that satisfies the
+provided testing function. If no elements satisfy the testing function,
+`find` returns `nil`.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].find(@(x) {
   return x % 2 == 0
 })
+
 # Output: 2
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `find_index(callback: function)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Returns the index of the first element in the list that
-satisfies the provided testing function. If no elements
-satisfy the testing function, `find_index` returns `-1`.
+**Returns** `list`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `find_index()`
+
+```zuri,ignore
+find_index(callback: function) -> list
+```
+
+Returns the index of the first element in the list that satisfies the
+provided testing function. If no elements satisfy the testing function,
+`find_index` returns `-1`.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].find_index(@(x) {
   return x % 2 == 0
 })
+
 # Output: 1
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `find_last(callback: function)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Returns the value of the last element in the list that
-satisfies the provided testing function. If no elements
-satisfy the testing function, `find_last` returns `nil`.
+**Returns** `list`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `find_last()`
+
+```zuri,ignore
+find_last(callback: function) -> list
+```
+
+Returns the value of the last element in the list that satisfies the
+provided testing function. If no elements satisfy the testing function,
+`find_last` returns `nil`.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].find_last(@(x) {
   return x % 2 == 0
 })
+
 # Output: 2
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `find_last_index(callback: function)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Returns the index of the last element in the list that
-satisfies the provided testing function. If no elements
-satisfy the testing function, `find_last_index` returns
-`-1`.
+**Returns** `list`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `find_last_index()`
+
+```zuri,ignore
+find_last_index(callback: function) -> list
+```
+
+Returns the index of the last element in the list that satisfies the
+provided testing function. If no elements satisfy the testing function,
+`find_last_index` returns `-1`.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].find_last_index(@(x) {
   return x % 2 == 0
 })
+
 # Output: 1
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `find_all(callback: function)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Returns a new list containing all elements of the calling
-list that satisfy the provided testing function.
+**Returns** `list`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `find_all()`
+
+```zuri,ignore
+find_all(callback: function) -> list
+```
+
+Returns a new list containing all elements of the calling list that
+satisfy the provided testing function.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].find_all(@(x) {
   return x % 2 == 0
 })
+
 # Output: [2]
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
 
-## `partition(callback: function)`
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
 
-Returns an list containing two lists: the first with
-elements that satisfy the provided testing function, and the
-second with elements that do not satisfy the testing
-function.
+**Returns** `list`
 
-   of the list. It receives the current element and its
-   index as arguments.
+**Raises** `Error` if the callback is not a function.
+
+## `partition()`
+
+```zuri,ignore
+partition(callback: function) -> list
+```
+
+Returns an list containing two lists: the first with elements that
+satisfy the provided testing function, and the second with elements that
+do not satisfy the testing function.
+
 Example:
-```zuri
+
+```zuri,ignore
 echo [1, 2, 3].partition(@(x) {
   return x % 2 == 0
 })
+
 # Output: [[2], [1, 3]]
 ```
 
-- **Parameter** `function` callback The function to test each element
-- **Raises** `Error` if the callback is not a function.
-- **Returns** `list`
+**Parameters**
+
+- `callback` (`function`) — The function to test each element of the
+  list. It receives the current element and its index as arguments.
+
+**Returns** `list`
+
+**Raises** `Error` if the callback is not a function.
 
 ## `to_string()`
 
+```zuri,ignore
+to_string() -> string
+```
+
 Returns the string representation of the list.
 
-```zuri
+```zuri,ignore
 %> [1, 'two', 3].to_string()
 '[1, two, 3]'
 ```
 
-- **Returns** `string`
+**Returns** `string`

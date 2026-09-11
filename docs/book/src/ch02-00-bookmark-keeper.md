@@ -47,7 +47,7 @@ top level is just code, running from top to bottom.
 The `io` module has `readline()`, which prints a prompt and waits for the
 user to type a line:
 
-```zuri
+```zuri,ignore
 var title = io.readline('Title: ')
 echo 'You typed: ' + title
 ```
@@ -61,7 +61,7 @@ You typed: Zuri docs
 The value that comes back includes whatever the user typed, whitespace
 included, so we almost always follow it with `.trim()`:
 
-```zuri
+```zuri,ignore
 var title = io.readline('Title: ').trim()
 ```
 
@@ -85,7 +85,7 @@ Square brackets make a **list**, an ordered sequence. Curly braces make a
 dictionary. You read a dictionary's values with a dot, the same way you
 reach into a module:
 
-```zuri
+```zuri,ignore
 echo bookmark.title
 echo bookmark.tags
 ```
@@ -238,7 +238,7 @@ is the shorthand and it is what most Zuri code uses for a one-liner.
 There is a shorter form still. When the body is a single expression that
 you want returned, `=>` replaces the braces and the `return`:
 
-```zuri
+```zuri,ignore
 tags.split(',').map(@(t) => t.trim())
 ```
 
@@ -346,7 +346,7 @@ raises an error, and an unhandled error ends the program.
 
 The last piece is a loop that reads a command and dispatches on it:
 
-```zuri
+```zuri,ignore
 def main() {
   var bookmarks = load()
 
@@ -387,7 +387,7 @@ One branch runs, then the statement is over.
 
 <span class="filename">Filename: main.zu</span>
 
-```zuri
+```zuri,ignore
 import io
 import json
 

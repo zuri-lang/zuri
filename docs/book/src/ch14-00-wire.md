@@ -140,7 +140,7 @@ that control *whether* and *how many times* an element is rendered.
 For anything beyond a one-off snippet, templates live in files. Build
 a `Wire` instance, point it at a directory, and render by path:
 
-```zuri
+```zuri,ignore
 import wire
 
 var view = wire.wire()
@@ -171,7 +171,7 @@ in every other respect — the same directives, the same escaping, the
 same filters — and any `x-include` or `x-extend` inside the string
 still resolves against the configured root.
 
-```zuri
+```zuri,ignore
 echo view.render_string('<p>{{ greeting }}</p>', { greeting: 'Hi there' })
 ```
 
@@ -180,7 +180,7 @@ to `<source>`), which is worth passing when the string came from
 somewhere with its own identity — a database row, a file you already
 had open for another reason:
 
-```zuri
+```zuri,ignore
 view.render_string(row.body, { user }, 'cms:page:${row.id}')
 ```
 
@@ -197,7 +197,7 @@ convention; it is enforced by the loader on every single resolution,
 and [it matters for security](#the-template-root-is-a-sandbox), not
 just organization.
 
-```zuri
+```zuri,ignore
 view.set_root('./views')
 view.root()
 # '/home/you/project/views' — always the absolute path
@@ -206,7 +206,7 @@ view.root()
 The root does not have to exist yet. `create_root()` makes it, and
 reports whether it had to:
 
-```zuri
+```zuri,ignore
 if view.create_root() {
   echo 'Created a fresh views/ directory.'
 }
@@ -287,7 +287,7 @@ you say so:
 You can build the same value on the Zuri side and hand it to a
 template already marked as safe, with `wire.safe()`:
 
-```zuri
+```zuri,ignore
 import wire
 
 view.render_string('<div>{{ body }}</div>', {
@@ -1256,7 +1256,7 @@ the worst a hostile value can do here is fail to find a template.
 exists by that name. The value being filtered is always the first
 argument; anything the template passes after it follows:
 
-```zuri
+```zuri,ignore
 view.register_filter('excerpt', @(value, words) {
   var count = words ?? 25
   return ' '.join(value.split('/\\s+/').take(count)) + '…'
@@ -1282,7 +1282,7 @@ from that point on is responsible for what is inside it, exactly like
 `register_global()` makes a value readable from every template
 without it being passed to `render()` explicitly:
 
-```zuri
+```zuri,ignore
 view.register_global('site_name', 'Example Inc.')
 view.register_global('route', @(name) {
   return '/' + name
@@ -1304,7 +1304,7 @@ For the rare case the directives genuinely cannot express,
 `register_element()` claims an HTML tag name outright and hands every
 element of that name to a Zuri function instead of writing it out:
 
-```zuri
+```zuri,ignore
 view.register_element('icon', @(view, element) {
   var name = element.attributes.get('name', 'dot')
   return wire.safe('<svg class="icon"><use href="#${name}"></use></svg>')
@@ -1377,7 +1377,7 @@ That makes it a good fit for a startup-time check across a whole
 directory of templates, so a broken one is caught before the first
 request that would have hit it:
 
-```zuri
+```zuri,ignore
 for name in os.read_dir('./views', true) {
   view.compile(name)
 }

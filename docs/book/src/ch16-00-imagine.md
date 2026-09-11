@@ -71,7 +71,7 @@ anything outside the standard library.
 
 ### A First Image
 
-```zuri
+```zuri,ignore
 import imagine { Image }
 
 Image.open('photo.jpg')
@@ -111,7 +111,7 @@ all leave the original untouched and hand back a new one. Drawing,
 filters and compositing all modify the image you called them on and
 return it so the chain continues.
 
-```zuri
+```zuri,ignore
 var original = Image.open('photo.jpg')
 
 var small = original.thumbnail(200, 200)   # original is untouched
@@ -123,7 +123,7 @@ echo original.size()                       # still the full size, still colour
 That means a mixed chain reads correctly, and it means `clone()` is what
 you reach for when you want to keep an image before filtering it.
 
-```zuri
+```zuri,ignore
 var greyed = photo.clone().grayscale()     # photo keeps its colour
 ```
 
@@ -134,7 +134,7 @@ var greyed = photo.clone().grayscale()     # photo keeps its colour
 Anywhere a colour is expected, five spellings are accepted. These are
 all the same red:
 
-```zuri
+```zuri,ignore
 image.fill(Color(255, 0, 0))
 image.fill('#ff0000')
 image.fill('red')
@@ -225,7 +225,7 @@ WCAG asks for a ratio of at least 4.5 for normal text and 3 for large
 text, so `best_contrast()` is the quick way to pick a legible foreground
 for a colour you did not choose:
 
-```zuri
+```zuri,ignore
 var label = swatch.best_contrast('#ffffff', '#111111')
 
 card.text(20, 20, name, font, label)
@@ -235,7 +235,7 @@ card.text(20, 20, name, font, label)
 
 ### Opening an Image
 
-```zuri
+```zuri,ignore
 var photo = Image.open('photo.jpg')          # from a path
 var photo = Image.open(file('photo.jpg'))    # from an open file
 var photo = Image.decode(upload)             # from bytes in memory
@@ -248,7 +248,7 @@ file extension.
 
 `Image.decode()` takes options:
 
-```zuri
+```zuri,ignore
 Image.decode(upload, { format: 'png' })   # fail unless it really is a PNG
 Image.decode(raw, { orient: false })      # skip EXIF auto-rotation
 ```
@@ -264,7 +264,7 @@ An image costs four bytes per pixel once decoded, so a 6000x4000
 photograph occupies 96 MB in memory however small its file was. For
 anything arriving from outside the program, read the header first:
 
-```zuri
+```zuri,ignore
 import imagine
 import imagine { Image }
 
@@ -288,7 +288,7 @@ the format name.
 
 ### Saving
 
-```zuri
+```zuri,ignore
 photo.save('out.png')
 photo.save('out.jpg', { quality: 90 })
 photo.save('out.dat', { format: 'webp' })   # extension overridden
@@ -297,7 +297,7 @@ photo.save('out.dat', { format: 'webp' })   # extension overridden
 The format comes from the extension unless `format` says otherwise. To
 get the bytes instead of a file:
 
-```zuri
+```zuri,ignore
 var data = photo.encode('webp')
 var data = photo.to_png()
 var data = photo.to_jpeg(90)
@@ -339,7 +339,7 @@ smaller-than-PNG lossless format with alpha.
 
 Never assume; ask:
 
-```zuri
+```zuri,ignore
 var can = imagine.capabilities()
 
 echo can.decode      # every format this build can read
@@ -361,20 +361,20 @@ JPEG has no alpha channel, so transparency has to go somewhere on the
 way out. It is flattened against `background` rather than silently
 dropped, because dropping it turns transparent pixels black:
 
-```zuri
+```zuri,ignore
 logo.save('logo.jpg', { background: '#ffffff' })
 ```
 
 To see the result first, or to choose the colour once and keep it, do it
 explicitly:
 
-```zuri
+```zuri,ignore
 logo.flatten('#ffffff').save('logo.jpg')
 ```
 
 ### Data URLs
 
-```zuri
+```zuri,ignore
 var url = icon.to_data_url('png')
 # 'data:image/png;base64,iVBORw0...'
 ```
@@ -406,7 +406,7 @@ scaled up.
 differ in what they sacrifice — `cover()` loses part of the image,
 `contain()` adds bars:
 
-```zuri
+```zuri,ignore
 photo.cover(300, 300)                              # crops to a square
 photo.cover(300, 300, { anchor: TOP })             # keeps the top, crops the bottom
 photo.contain(300, 300, { background: 'white' })   # letterboxes instead
@@ -435,7 +435,7 @@ face is rarely in the bottom third.
 | `GAUSSIAN` | moderate | Deliberately soft; for noisy input, or before sharpening. |
 | `LANCZOS` | slowest | Thumbnails and any large reduction. The default. |
 
-```zuri
+```zuri,ignore
 photo.thumbnail(200, 200, LANCZOS)
 sprite.scale(4, NEAREST)             # keeps pixel art crisp
 ```
@@ -455,7 +455,7 @@ the fallback when that shows.
 
 ### Cropping, Padding and Trimming
 
-```zuri
+```zuri,ignore
 photo.crop(100, 50, 400, 300)      # x, y, width, height
 photo.pad(20)                      # 20 pixels on every side
 photo.pad(10, 20, 10, 20, 'white') # top, right, bottom, left, colour
@@ -477,7 +477,7 @@ because a "white" border from a lossy format is not exactly white.
 
 ### Rotating and Mirroring
 
-```zuri
+```zuri,ignore
 photo.rotate_90()                  # lossless
 photo.rotate_180()
 photo.rotate_270()
@@ -500,7 +500,7 @@ than rotating the pixels, so a photograph whose bytes are sideways is
 meant to be displayed upright. `Image.open()` and `Image.decode()`
 handle this for you.
 
-```zuri
+```zuri,ignore
 Image.open('photo.jpg')                       # upright
 Image.open('photo.jpg', { orient: false })    # exactly as stored
 ```
@@ -512,13 +512,13 @@ ones that scanners and some front-facing cameras produce.
 
 Filters change the image in place and return it, so they chain.
 
-```zuri
+```zuri,ignore
 photo.grayscale().contrast(15).sharpen(0.5)
 ```
 
 ### Tone and Exposure
 
-```zuri
+```zuri,ignore
 photo.brightness(20)         # -255 to 255, added to each channel
 photo.contrast(15)           # -100 to 100, around mid-grey
 photo.gamma(1.2)             # above 1 lifts midtones, below 1 lowers them
@@ -543,7 +543,7 @@ Note the difference between `posterize()` and `quantize()`:
 `posterize()` spaces its levels evenly, `quantize()` picks the colours
 to suit the image, so a photograph survives far fewer of them.
 
-```zuri
+```zuri,ignore
 photo.quantize(32)                # 32 well-chosen colours
 photo.quantize(16, true)          # ...with dithering
 ```
@@ -554,7 +554,7 @@ below.
 
 ### Colour
 
-```zuri
+```zuri,ignore
 photo.grayscale()
 photo.sepia()
 photo.saturate(1.4)               # 0 removes colour, 1 is unchanged
@@ -575,7 +575,7 @@ from `saturate(0)`, which keeps HSL lightness and makes both mid-grey.
 
 ### Blur, Sharpen and Detail
 
-```zuri
+```zuri,ignore
 photo.blur(3)                # Gaussian; the argument is its sigma
 photo.sharpen(0.8)
 photo.smooth()               # a cheap, harsher 3x3 average
@@ -605,7 +605,7 @@ numbers in it, and all three are available directly.
 **A lookup table** covers any per-channel tone curve. The table is built
 once whatever the image's size, then applied at memory speed.
 
-```zuri
+```zuri,ignore
 import imagine { filters }
 
 # A gentle S-curve: more contrast, but the highlights survive.
@@ -622,7 +622,7 @@ hue rotation, channel swaps, tinting. It is the 4x5 matrix SVG and CSS
 filters use, written row by row, with the last entry of each row a
 constant in 0-255 units.
 
-```zuri
+```zuri,ignore
 # Swap the red and blue channels.
 photo.apply_matrix([
   0, 0, 1, 0, 0,
@@ -635,7 +635,7 @@ photo.apply_matrix([
 Applying several matrices in a row is both slower and less accurate than
 combining them and applying the result once:
 
-```zuri
+```zuri,ignore
 var both = filters.combine_matrices(
   filters.grayscale_matrix(),
   filters.saturation_matrix(1.2)
@@ -647,7 +647,7 @@ photo.apply_matrix(both)
 **A convolution kernel** covers anything that reads a pixel's
 neighbours.
 
-```zuri
+```zuri,ignore
 photo.convolve([
   0, -1, 0,
   -1, 5, -1,
@@ -664,7 +664,7 @@ colour channels, which is right for a blur and wrong for anything whose
 weights do not sum to one. A Laplacian over a uniformly opaque image
 sums to zero, which would make the whole result invisible:
 
-```zuri
+```zuri,ignore
 photo.convolve(filters.edge_kernel(), { divisor: 1, keep_alpha: true })
 ```
 
@@ -689,7 +689,7 @@ Coordinates start at the top-left corner. Integer coordinates fall on
 pixel corners rather than centres, so a rectangle from (0, 0) to
 (10, 10) covers exactly the first ten pixels in each direction.
 
-```zuri
+```zuri,ignore
 image.pixel(x, y, color)                        # one pixel, blended
 image.line(x1, y1, x2, y2, color)
 image.rect(x, y, w, h, color)                   # outline
@@ -717,7 +717,7 @@ partly overlaps.
 
 ### Strokes and Anti-aliasing
 
-```zuri
+```zuri,ignore
 image.thickness(4)         # applies to every subsequent stroke
 image.antialias(false)     # hard edges
 ```
@@ -725,7 +725,7 @@ image.antialias(false)     # hard edges
 Both are settings on the image rather than per-call arguments, though a
 single call can override the thickness:
 
-```zuri
+```zuri,ignore
 image.line(0, 0, 100, 100, 'black', { thickness: 8 })
 ```
 
@@ -747,7 +747,7 @@ Stroke widths of 1, 3, 6 and 12:
 How an open stroke finishes at its two ends is a separate choice from
 its width:
 
-```zuri
+```zuri,ignore
 image.cap(CAP_ROUND)     # a half-disc. The default.
 image.cap(CAP_SQUARE)    # a square, reaching the same distance
 image.cap(CAP_BUTT)      # stops dead at the endpoint
@@ -766,7 +766,7 @@ same reach as round with a blunt finish.
 
 A single call can override the surface's setting:
 
-```zuri
+```zuri,ignore
 image.line(40, 200, 40, 40, '#334155', { thickness: 6, cap: CAP_BUTT })
 ```
 
@@ -780,7 +780,7 @@ scanline rasterizer, and every outline becomes the polygon around its
 stroke and goes through the same one. A shape not listed above can be
 drawn by supplying the points:
 
-```zuri
+```zuri,ignore
 image.fill_polygon([[10, 10], [90, 30], [50, 80]], '#4f46e5')
 image.polygon([[10, 10], [90, 30], [50, 80]], 'black')     # outline, closed
 image.polyline([[10, 10], [90, 30], [50, 80]], 'black')    # not closed
@@ -799,7 +799,7 @@ other convention, which leaves its middle empty.
 
 ### Filling Areas
 
-```zuri
+```zuri,ignore
 image.fill('#0f172a')          # every pixel, ignoring the clip
 image.clear()                  # every pixel to transparent
 image.flood_fill(x, y, color)
@@ -820,7 +820,7 @@ pixels; on a photograph or anything anti-aliased you will want more.
 
 ### Gradients
 
-```zuri
+```zuri,ignore
 image.linear_gradient(x1, y1, x2, y2, stops)
 image.radial_gradient(cx, cy, radius, stops)
 ```
@@ -830,7 +830,7 @@ second. Everything before that vector takes the first stop's colour and
 everything past it takes the last stop's, so a short vector across a
 large area gives a hard transition with flat bands on either side.
 
-```zuri
+```zuri,ignore
 # top to bottom
 image.linear_gradient(0, 0, 0, image.height(), ['#0f172a', '#334155'])
 
@@ -841,7 +841,7 @@ image.linear_gradient(0, 0, 400, 200, ['#4f46e5', '#f472b6', '#fbbf24'])
 Stops are either bare colours, spaced evenly, or `[offset, colour]`
 pairs with the offset running 0 to 1:
 
-```zuri
+```zuri,ignore
 image.linear_gradient(0, 0, 200, 0, [
   [0, 'black'],
   [0.25, 'red'],
@@ -854,7 +854,7 @@ image.linear_gradient(0, 0, 200, 0, [
 By default a gradient replaces what is there. Pass `{ blend: true }` to
 composite it instead, which is what makes overlays and vignettes work:
 
-```zuri
+```zuri,ignore
 # a vignette over an existing photograph
 photo.radial_gradient(
   photo.width() / 2,
@@ -881,7 +881,7 @@ left.
 
 ### Clipping
 
-```zuri
+```zuri,ignore
 image.clip(20, 20, 100, 100)
 image.fill_rect(0, 0, 500, 500, 'red')   # only the clip is painted
 image.clear_clip()
@@ -949,7 +949,7 @@ accepted, either works.
 
 ### Loading a Font
 
-```zuri
+```zuri,ignore
 import imagine { Font }
 
 var font = Font.load('assets/Inter.ttf', 24)
@@ -973,14 +973,14 @@ find. It raises `FontError` in that case, pointing at
 A `Font` is immutable and cheap to copy. `size()` returns the same face
 at another size, sharing the parsed data:
 
-```zuri
+```zuri,ignore
 var title = font.size(32)
 var body = font.size(14)
 ```
 
 ### Drawing Text
 
-```zuri
+```zuri,ignore
 image.text(20, 20, 'Hello', font, '#111111')
 ```
 
@@ -991,7 +991,7 @@ baseline instead.
 
 A `\n` starts a new line.
 
-```zuri
+```zuri,ignore
 card.text(24, 24, 'Quarterly report\n2026', title, '#111111', {
   align: ALIGN_CENTER,
   line_height: 1.4,
@@ -1009,7 +1009,7 @@ card.text(24, 24, 'Quarterly report\n2026', title, '#111111', {
 
 ### Measuring and Positioning
 
-```zuri
+```zuri,ignore
 var box = image.text_size('Hello', font)
 # { width: 58, height: 28, baseline: 22.3, lines: 1 }
 ```
@@ -1018,7 +1018,7 @@ Measuring costs a fraction of drawing, so it is the right way to lay
 text out before committing to it — centring, wrapping, or sizing a
 background to fit.
 
-```zuri
+```zuri,ignore
 var box = card.text_size(label, font)
 
 card.fill_rounded_rect(16, 16, box.width + 24, box.height + 16, 8, '#1e293b')
@@ -1027,14 +1027,14 @@ card.text(28, 24, label, font, 'white')
 
 To position by anchor instead of coordinates:
 
-```zuri
+```zuri,ignore
 card.place_text('SOLD OUT', font, 'white', CENTER)
 card.place_text('v2.1', font, '#94a3b8', BOTTOM_RIGHT, { margin: 12 })
 ```
 
 ### Wrapping
 
-```zuri
+```zuri,ignore
 var body = Font.load('assets/Inter.ttf', 16)
 
 page.text(40, 120, article, body, '#334155', { width: 520 })
@@ -1047,7 +1047,7 @@ gives the box it will actually occupy.
 To get the broken text itself — to store it, or to draw it in pieces —
 call `wrap()` on the font:
 
-```zuri
+```zuri,ignore
 var lines = body.wrap(article, 520).split('\n')
 
 echo '${lines.length()} lines'
@@ -1076,7 +1076,7 @@ be worse than one that says plainly it does not.
 
 ### Drawing One Image Onto Another
 
-```zuri
+```zuri,ignore
 photo.draw_image(logo, 20, 20)
 photo.draw_image(logo, 20, 20, { opacity: 0.6 })
 photo.place(logo, BOTTOM_RIGHT, { margin: 16, opacity: 0.5 })
@@ -1088,7 +1088,7 @@ Compositing an image onto itself works; it is copied first.
 
 ### Blend Modes
 
-```zuri
+```zuri,ignore
 photo.draw_image(texture, 0, 0, { blend: BLEND_MULTIPLY })
 ```
 
@@ -1116,7 +1116,7 @@ A red circle drawn onto a gradient under eight of the modes:
 
 ![darken, colour dodge, difference and soft light](imagine/images/blend-modes-2.png)
 
-```zuri
+```zuri,ignore
 var diff = before.clone().draw_image(after, 0, 0, { blend: BLEND_DIFFERENCE })
 ```
 
@@ -1126,7 +1126,7 @@ composite the layer.
 
 ### Masks
 
-```zuri
+```zuri,ignore
 var stencil = photo.layer()
 stencil.fill_circle(200, 200, 150, 'white')
 
@@ -1150,7 +1150,7 @@ composite out of layers is how you get effects that a single pass
 cannot, and it is the answer whenever you want a blend mode or an
 opacity applied to a group of operations rather than one:
 
-```zuri
+```zuri,ignore
 var glow = photo.layer()
 
 glow.fill_circle(200, 150, 80, '#fbbf24')
@@ -1163,7 +1163,7 @@ photo.draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.7 })
 
 ## Inspecting an Image
 
-```zuri
+```zuri,ignore
 photo.width()          # dimensions
 photo.height()
 photo.size()           # { width, height }
@@ -1186,7 +1186,7 @@ black and white points from the brightness histogram and stretches the
 range between them, ignoring a small fraction at each end so a handful
 of stray pixels cannot decide the result.
 
-```zuri
+```zuri,ignore
 photo.auto_levels()
 photo.auto_levels({ clip: 0.02, gamma: 1.1 })
 ```
@@ -1199,7 +1199,7 @@ you can see.
 image, most common first. The image is shrunk and reduced to a small
 palette first, so it costs about the same whatever the original size.
 
-```zuri
+```zuri,ignore
 var accent = photo.dominant_colors(1)[0]
 
 page.fill(accent.darken(40))       # a placeholder while the photo loads
@@ -1210,7 +1210,7 @@ page.fill(accent.darken(40))       # a placeholder while the photo loads
 **`difference()`** scores how far two images are apart, from 0
 (identical) to 1, which makes it usable as a rendering assertion:
 
-```zuri
+```zuri,ignore
 if rendered.difference(expected) > 0.01 {
   raise Exception('the rendering changed')
 }
@@ -1218,7 +1218,7 @@ if rendered.difference(expected) > 0.01 {
 
 ## Animation
 
-```zuri
+```zuri,ignore
 import imagine { Animation }
 
 var animation = Animation.open('loading.gif')
@@ -1236,7 +1236,7 @@ surface.
 
 Building and transforming:
 
-```zuri
+```zuri,ignore
 var frames = []
 
 iter var i = 0; i < 30; i++ {
@@ -1250,7 +1250,7 @@ Animation(frames, 40, 0).save('pulse.gif')     # 40ms per frame, loops forever
 
 ![an animated GIF of a growing, colour-shifting circle](imagine/images/animation.gif)
 
-```zuri
+```zuri,ignore
 animation
   .map(@(frame) {
     return frame.grayscale().blur(1)
@@ -1278,7 +1278,7 @@ canvas that each frame paints into.
 (not premultiplied) alpha, laid out row by row with no padding, so pixel
 `(x, y)` begins at byte `(y * width + x) * 4`.
 
-```zuri
+```zuri,ignore
 var buffer = image.pixels()
 var total = buffer.length()
 
@@ -1305,7 +1305,7 @@ def darken_edges(pixels: bytes, width: number, height: number) {
 `set_pixels()` takes a buffer back, which is how you save a copy before
 a destructive filter and restore it afterwards:
 
-```zuri
+```zuri,ignore
 var saved = image.pixels().clone()
 
 image.blur(8)
@@ -1350,7 +1350,7 @@ Two kinds of failure sit outside that hierarchy on purpose.
 types, so the check happens at the boundary and the message names the
 parameter:
 
-```zuri
+```zuri,ignore
 image.rotate('sideways')
 # TypeError: rotate() expects parameter 'degrees' (argument 1)
 #            to be a number, got string
@@ -1360,7 +1360,7 @@ image.rotate('sideways')
 [[colors]] reports for it and relabelling would lose the distinction
 between "not a colour" and "not a string":
 
-```zuri
+```zuri,ignore
 Color.hex('nonsense')        # ValueError, from colors
 Color.named('chartroose')    # ValueError, from colors
 Color.hex(42)                # TypeError, from the type declaration
@@ -1370,7 +1370,7 @@ A value of the right type but the wrong *range* is still an
 `ImageError` subclass, since that is a judgement this module makes
 rather than a type the runtime can check:
 
-```zuri
+```zuri,ignore
 Image(0, 100)                # BoundsError, not TypeError
 filters.gamma_lut(-1)        # ImageError
 ```
@@ -1483,7 +1483,7 @@ def card(title, subtitle) {
 
 **Serving a generated image over HTTP**
 
-```zuri
+```zuri,ignore
 import http
 import imagine { Image, Font, CENTER }
 import imagine.formats

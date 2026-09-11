@@ -230,13 +230,67 @@ otherwise have to catch.
 Annotate declarations for the reader and the tooling. Annotate parameters
 for the runtime.
 
-## Annotations and the JIT
+## When to Annotate
 
-Annotations are not only a correctness tool. The JIT compiler reads them.
-A parameter declared `number` is known to be a number inside the compiled
-body, which means the guard that would otherwise check it on every use is
-gone, and arithmetic on it compiles straight to machine instructions.
+Annotations are optional, and a program with none of them is perfectly
+ordinary Zuri. The question is where they earn their place.
 
-For a hot numeric loop, moving the work into a small annotated free
-function is worth measuring. [Chapter 18](ch18-00-performance.md) goes into
-the details.
+**Annotate a boundary.** A function that receives data from outside your
+program — a request handler, a file parser, a public function in a module
+other people import — is where a wrong type first arrives. An annotation
+there turns a confusing failure deep in the call stack into a clear one at
+the door:
+
+```zuri
+def parse_port(raw: string) {
+  var port = raw.to_number()
+
+  if port < 1 or port > 65535 {
+    raise ValueError('port out of range: ${raw}')
+  }
+
+  return port
+}
+
+catch {
+  parse_port(8080)
+} as e {
+  echo e.message
+}
+
+echo parse_port('8080')
+```
+
+```console
+parse_port() expects parameter 'raw' (argument 1) to be a string, got number
+8080
+```
+
+Note the division of labour there. The annotation handles *wrong type*, and
+the explicit check handles *wrong value*. An annotation can never do the
+second job, because `70000` is a perfectly good number.
+
+**Annotate to replace a manual check.** Any function that opens with
+`if !is_string(x) { raise TypeError(...) }` is spelling out by hand what an
+annotation says in one word, and the annotation produces a better message:
+
+```zuri
+def shout(text: string) {
+  return text.upper() + '!'
+}
+
+echo shout('hello')
+```
+
+```console
+HELLO!
+```
+
+**Leave internal helpers alone if you prefer.** A private function called
+from three places in the same file, all of which you can see, gains less.
+Annotate it if it documents something non-obvious; skip it if it does not.
+
+One thing an annotation is not: a substitute for validation. `text: string`
+guarantees you have a string, not that the string is a valid email address,
+a well-formed date or a non-empty name. The `validate` module covers that
+job, and [Chapter 13](ch13-00-stdlib-tour.md) introduces it.

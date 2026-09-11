@@ -35,7 +35,7 @@ def echo_server(port_channel) {
 
 <span class="filename">Filename: main.zu</span>
 
-```zuri
+```zuri,ignore
 import net
 import isolate
 import .server
@@ -60,13 +60,25 @@ task.join()
 echo: hello
 ```
 
-Binding to port `0` asks the operating system for a free port, and
-`local_address()` tells you which one you got. That is the right way to
-write a test, and the right way to run several servers in one process.
+Three things in that pair of files are doing real work.
 
-The `shutdown(net.Shutdown.WRITE)` matters. `read_as_string()` reads until
-the peer stops writing, so without a half-close the two ends wait for each
-other forever. `Shutdown` has `READ`, `WRITE` and `BOTH`.
+**The server lives in its own file.** It has to: `echo_server` refers to
+`net`, and a function that references an imported module cannot be spawned
+from the file that did the importing. In `server.zu`, `net` is resolved
+inside the isolate instead of being captured from the caller.
+[Chapter 11](ch11-00-isolates.md) covers the rule and the alternative.
+
+**Binding to port `0`** asks the operating system for a free port, and
+`local_address()` reports which one it gave. That is the right way to write
+a test, and the right way to run several servers in one process. The port
+travels back to the main program through the channel, because the main
+program cannot know it in advance.
+
+**`shutdown(net.Shutdown.WRITE)` is not optional here.**
+`read_as_string()` reads until the peer stops writing, so without a
+half-close from the client the server would still be waiting for more
+request while the client waits for a response — a deadlock that looks
+exactly like a hang. `Shutdown` has `READ`, `WRITE` and `BOTH`.
 
 ### Reading
 
@@ -88,7 +100,7 @@ loops until everything is out, and is what you want almost always.
 
 ### Options
 
-```zuri
+```zuri,ignore
 socket.set_read_timeout(5000)
 socket.set_write_timeout(5000)
 socket.set_nodelay(true)
@@ -131,10 +143,14 @@ echo a.receive_from(1024).to_string()
 
 ```console
 ping
-127.0.0.1:54611
+127.0.0.1:<port>
 ping
 pong
 ```
+
+The second line is written with a placeholder because the real one is not
+predictable: `bind('127.0.0.1:0')` asks the operating system for any free
+port, and it picks a different one every run.
 
 `receive_from(length)` gives you the datagram's bytes. To learn who sent
 it, `peek_from(length)` returns `{ data, address }` without consuming the
@@ -172,7 +188,7 @@ trust an `X-Forwarded-For` header.
 
 `net.tls` wraps an established TCP stream:
 
-```zuri
+```zuri,ignore
 import net
 import net.tls
 
@@ -206,11 +222,17 @@ right tool when you have thousands of mostly-idle connections and the wrong
 tool when you have a handful of busy ones, where an isolate per connection
 is simpler and faster.
 
-## HTTP
+## Above the Socket Layer
 
-### The Client
+Everything so far has been bytes on a socket. Most programs want a protocol
+on top of that, and the standard library brings two of them.
 
-```zuri
+**`http`** is a complete HTTP/1.1 and HTTP/2 client and server: routing,
+middleware, cookies, multipart uploads, static files, server-sent events
+and WebSockets. It is large enough to have its own chapter, and
+[Chapter 15](ch15-00-http.md) is it. The one-line version:
+
+```zuri,ignore
 import http
 
 var response = http.get('https://example.com')
@@ -219,181 +241,148 @@ echo response.status
 echo response.as_text()
 ```
 
-The module-level `get`, `post`, `put`, `patch`, `delete`, `head`,
-`options` and `trace` use a shared client. For anything more than a
-one-off, make your own with a base URL:
+**`net.tls`** wraps a `TcpStream` in TLS, as shown above, for protocols
+that are not HTTP — a mail client, a database driver, a custom binary
+protocol.
 
-```zuri
-var client = http.client('http://127.0.0.1:8080')
+A rough guide to which layer you want:
 
-var r = client.get('/tasks/7')
-echo r.status
-echo r.as_dict()
-```
-
-A client keeps connections alive between requests, so reusing one is
-meaningfully faster than calling the module functions in a loop.
-
-A response carries:
-
-| Member | What it is |
+| You are writing | Reach for |
 | --- | --- |
-| `status` | the numeric status code |
-| `headers` | a `Headers` object |
-| `body` | the raw `bytes` |
-| `as_text()` | the body decoded |
-| `as_dict()` | the body parsed as JSON |
-| `as_bytes()` | the body as `bytes` |
-| `is_ok()`, `is_redirect()`, `is_error()` | status class tests |
-| `raise_for_status()` | raise unless the status is a success |
+| a web API, or a client for one | `http` |
+| a browser-facing server | `http` |
+| a client for an existing non-HTTP protocol | `net.tcp`, plus `net.tls` if it is encrypted |
+| a protocol of your own design | `net.tcp` and `struct` |
+| discovery, telemetry, games | `net.udp` |
+| anything waiting on many sockets at once | `net.poll` |
 
-Posting JSON is just posting a dictionary:
+## A Worked Example
 
-```zuri
-var r = client.post('/tasks', { title: 'write chapter 12' })
-echo r.status
-echo r.as_dict()
+A length-prefixed request/response protocol of the kind `net` is for: each
+message is a four-byte big-endian length followed by that many bytes of
+JSON. This is the pattern behind most binary protocols, and it is worth
+writing once by hand.
+
+<span class="filename">Filename: framed.zu</span>
+
+```zuri,ignore
+import struct
+
+# Reads one frame, or returns nil once the peer has hung up.
+#
+# read_exact() raises rather than returning short when the stream ends
+# mid-read, and a clean disconnect between frames looks exactly like
+# that, so the end of the conversation arrives here as an error.
+def read_frame(stream) {
+  var header
+
+  catch {
+    header = stream.read_exact(4)
+  } as e {
+    return nil
+  }
+
+  var length = struct.unpack('N:size', header).size
+
+  return stream.read_exact(length).to_string()
+}
+
+def write_frame(stream, payload) {
+  stream.write_all(struct.pack('N', payload.length()))
+  stream.write_all(payload)
+}
 ```
 
-```console
-201
-{created: write chapter 12}
-```
+<span class="filename">Filename: server.zu</span>
 
-### The Server
+```zuri,ignore
+import net
+import json
+import .framed
 
-```zuri
-import http
+def serve(port_channel) {
+  var listener = net.TcpStream()
+  listener.bind('127.0.0.1:0')
 
-var server = http.server(8000, '127.0.0.1')
+  port_channel.send(listener.local_address())
 
-server.get('/', @(request, response) {
-  response.text('hello world')
-})
+  var client = listener.accept()
 
-server.get('/tasks/:id', @(request, response) {
-  response.json({ id: request.param('id') })
-})
+  while true {
+    var request = framed.read_frame(client)
 
-server.post('/tasks', @(request, response) {
-  response.json({ created: request.json_body().title }, 201)
-})
+    if request == nil {
+      break
+    }
 
-server.listen()
-```
+    var parsed = json.decode(request)
 
-`get`, `post`, `put`, `patch`, `delete`, `head` and `options` register a
-route. A path segment starting with `:` is a named parameter, read with
-`request.param()`. A trailing `*name` captures the rest of the path.
+    framed.write_frame(client, json.encode({ reply: parsed.message }))
+  }
 
-`listen()` binds and serves until the server is closed.
-
-### The Request
-
-| Member | What it is |
-| --- | --- |
-| `method`, `path`, `query_string`, `version` | the request line |
-| `headers` | a `Headers` object |
-| `body` | the raw `bytes` |
-| `param(name, fallback)` | a route parameter |
-| `query_param(name, fallback)` | a query-string parameter |
-| `cookie(name, fallback)` | a cookie |
-| `text()` | the body as a string |
-| `json_body()` | the body parsed as JSON |
-| `form()`, `files()` | a parsed form submission |
-| `client_ip(trust_proxy)` | the peer address |
-| `wants_json()`, `accepts(type)` | content negotiation |
-
-### The Response
-
-`text()`, `html()`, `json()`, `xml()`, `file()`, `download()` and
-`render()` each set a content type and a body. Every one takes an optional
-status:
-
-```zuri
-response.json({ error: 'not found' }, 404)
-```
-
-`render(path, variables)` renders a Wire template, which is what the
-capstone uses. `stream(handler)` streams a response body in chunks, and
-`redirect(location, status)` does what it says.
-
-Headers and cookies:
-
-```zuri
-response.header('X-Request-Id', id)
-response.set_cookie('session', token, { http_only: true, max_age: 3600 })
-response.cache_for(300)
-response.no_cache()
-```
-
-### Serving Across Cores
-
-`listen()` serves on one thread. `http.serve()` runs a pool of isolates,
-one per core by default:
-
-<span class="filename">Filename: app.zu</span>
-
-```zuri
-import http
-
-def setup(server) {
-  server.get('/', @(request, response) {
-    response.text('hello from a worker')
-  })
+  client.close()
+  listener.close()
 }
 ```
 
 <span class="filename">Filename: main.zu</span>
 
-```zuri
-import http
-import .app
+```zuri,ignore
+import net
+import json
+import isolate
+import .framed
+import .server
 
-http.serve(app.setup, { port: 8000, workers: 4 })
+var channel = isolate.channel(1)
+var task = isolate.spawn(server.serve, channel)
+
+var client = net.TcpStream()
+client.connect(channel.recv())
+client.set_read_timeout(2000)
+
+framed.write_frame(client, json.encode({ message: 'first' }))
+echo framed.read_frame(client)
+
+framed.write_frame(client, json.encode({ message: 'second' }))
+echo framed.read_frame(client)
+
+client.close()
+task.join()
 ```
 
-`setup` is called once inside each worker with that worker's own server.
-It must be a function defined in a module, for the same reason every
-spawned function must be: an isolate resolves a function by module binding.
-
-The options are `port`, `host`, `workers`, `backlog`, and
-`cert_chain`/`private_key` for TLS.
-
-### Serving Manually
-
-When you need the port before the first connection, or want to stop the
-loop from inside a handler, run the accept loop yourself:
-
-```zuri
-server.bind()
-echo server.address().to_string()
-
-while server.is_listening() {
-  var client
-
-  catch {
-    client = server.accept()
-  } as e
-
-  if e {
-    break
-  }
-
-  server.serve_connection(client)
-}
+```console
+{"reply":"first"}
+{"reply":"second"}
 ```
 
-That is exactly what `listen()` does, and it is what the tests in this
-repository use so a server and a client can talk inside one process.
+The framing is the whole point. TCP is a stream of bytes with no message
+boundaries in it: one `write_all()` may arrive as three reads, and three
+writes may arrive as one. `read_exact(4)` followed by `read_exact(length)`
+is what puts the boundaries back, and `read()` alone would not — it returns
+whatever has arrived, which is why the table above distinguishes the two.
 
-### The Rest of the Module
+The end of the conversation is the other thing worth studying.
+`read_exact()` **raises** when the stream ends before it has the bytes it
+was promised, and a peer that hangs up cleanly between frames produces
+exactly that. Catching it and returning `nil` is what turns "the connection
+closed" from a crash into the loop's normal exit.
 
-`http.middleware` has logging, CORS, compression, rate limiting and
-authentication. `http.websocket` upgrades a connection to a WebSocket.
-`http.sse` sends server-sent events. `http.proxy` has a reverse proxy and a
-load balancer. `http.files` serves a directory with conditional and range
-requests. `http.h2` is HTTP/2, negotiated over TLS automatically.
+Note also that both ends share `framed.zu`. A protocol implemented twice,
+once per end, is a protocol that will eventually disagree with itself.
 
-The capstone in [Chapter 20](ch20-00-task-board.md) puts routing,
-middleware, JSON, templates and static files together into one application.
+One last detail, easily missed: the reply key is `reply`, not `echo`.
+`echo` is a keyword, so it cannot be a bare dictionary key — `{ echo: x }`
+is a syntax error. Quote it as `{ 'echo': x }` if you need that exact
+name.
+
+## The Rest of the Module
+
+`net.poll` answers "which of these sockets can I read right now?" without a
+thread per socket, which is how you serve many connections from one
+isolate. `net.addr` and `net.ip` parse, format and classify addresses —
+`is_private()`, `is_loopback()`, `is_multicast()` and the rest — which is
+what you want before trusting an address a client sent you. `net.dtls` is
+TLS over UDP.
+
+[Appendix F](appendix-06-stdlib-index.md) lists every submodule.

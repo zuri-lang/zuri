@@ -5,7 +5,7 @@ JSON, and not one of them handles an error.
 
 <span class="filename">Filename: routes/api.zu</span>
 
-```zuri
+```zuri,ignore
 import ..models { TaskError }
 import ..storage { NotFoundError }
 

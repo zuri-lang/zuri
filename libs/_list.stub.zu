@@ -665,7 +665,7 @@ class list {
    * @param {...list} lists
    * @return {list}
    */
-  zip(...) {}
+  zip(...lists) {}
 
 
   /**

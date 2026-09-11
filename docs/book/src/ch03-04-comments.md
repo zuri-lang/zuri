@@ -60,12 +60,18 @@ default of every optional parameter, and state what happens at the edges:
 an empty input, a zero length, a value out of range. Anything a caller
 would otherwise have to discover by experiment belongs in the doc block.
 
+Doc blocks are not only for readers. Because the parser keeps them, a
+program can read them: `zuri.parse()` returns each one as a `DocBlock` node
+sitting immediately before the declaration it documents, which is enough to
+build a documentation generator in a few dozen lines.
+[Chapter 17](ch17-00-metaprogramming.md) shows how.
+
 ## Commenting Style
 
-Comments in this codebase explain **why**, not **what**. The code already
-says what it does:
+A comment earns its place by explaining **why**, not **what**. The code
+already says what it does:
 
-```zuri
+```zuri,ignore
 # Bad: restates the code.
 # Add one to the counter.
 counter++

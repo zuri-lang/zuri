@@ -6,7 +6,7 @@ middleware.
 
 <span class="filename">Filename: app.zu</span>
 
-```zuri
+```zuri,ignore
 import http
 import log
 import wire
@@ -101,7 +101,7 @@ that failed still gets logged, with the status the error handler chose.
 `http.middleware.logger()` is a ready-made request logger, and in a real
 application it is what you would reach for:
 
-```zuri
+```zuri,ignore
 import http.middleware
 
 server.use(middleware.logger())

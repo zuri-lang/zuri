@@ -1,18 +1,23 @@
 # The Zuri Programming Language
 
-*by the Zuri project*
+*by the Zuri Project*
 
-This book targets the Rust implementation of Zuri, the `zuri-rs` project
-this repository holds. Every program printed in these pages was run against
-that implementation while the chapter was being written, and the output
-shown is the output it produced.
+Zuri is a general-purpose programming language for writing programs that
+other people read. It is dynamically typed, object-oriented, and built
+around a small set of statements that behave the same way everywhere they
+appear.
 
-Zuri is a dynamically typed language with a strong opinion about
-readability. It has classes, closures, a module system that keeps
-namespaces honest, and a standard library that covers templating, HTTP/2,
-TLS, image manipulation, compression and real OS-thread concurrency without
-reaching for a single third-party package.
+A Zuri program is a file. Run it and the file's top level is the program;
+import it and the same file is a module. There is no build step, no
+project manifest, and no dependency to resolve before the first line runs.
 
-It also has a JIT compiler, so the loops you write get compiled to machine
-code once they run hot enough to be worth it. You will not think about that
-for most of this book. Chapter 18 is where we lift the hood.
+The standard library ships with the language, and it is large. Templating,
+HTTP/1.1 and HTTP/2, TLS, JSON, YAML, CSV, compression, cryptography,
+image decoding and drawing, HTML parsing, date arithmetic with the IANA
+time zone database, and OS-thread concurrency are all part of the
+installation. Every one of them is reachable with a bare `import`.
+
+This book teaches the language from the first line of code to a complete
+web application. It is written against the Rust implementation of Zuri.
+Every program printed in these pages was run against that implementation,
+and the output shown underneath each one is the output it produced.

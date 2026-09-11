@@ -1,14 +1,19 @@
 # A Tour of the Standard Library
 
-Zuri ships with more in the box than most languages this size. This chapter
-walks through what is there, grouped by what you would reach for it to do,
-with an example of each. It is not a reference;
-[Appendix F](appendix-06-stdlib-index.md) is the index, and the three
-largest modules get chapters of their own: [Wire](ch14-00-wire.md),
+The standard library is part of the installation. There is nothing to add
+to a manifest, no package manager to run, and no dependency to resolve;
+`import json` works in a file you created ten seconds ago.
+
+This chapter walks through what is there, grouped by the job you would
+reach for it to do, with a working example of each. It is a tour rather
+than a reference: [Appendix F](appendix-06-stdlib-index.md) is the index,
+every module carries doc blocks in `libs/`, and the three largest modules
+have chapters of their own — [Wire](ch14-00-wire.md),
 [HTTP](ch15-00-http.md) and [Imagine](ch16-00-imagine.md).
 
-Everything here is available with a bare `import`. There is no package
-manager involved, and no dependency to add.
+Read it once to learn what exists. The value of a tour like this is not
+remembering the details; it is recognising, six months from now, that the
+thing you are about to write by hand is already here.
 
 ## Data Formats
 
@@ -436,16 +441,15 @@ Almost every method returns an image, so operations chain.
 `Image.open(path)` decodes an existing file, with the format taken from the
 contents rather than the extension:
 
-```zuri
+```zuri,ignore
 Image.open('photo.jpg')
   .thumbnail(400, 400)
   .save('thumb.webp')
 ```
 
-The pixel loops inside it are ordinary Zuri, which the JIT compiles. See
-[Chapter 18](ch18-00-performance.md) for why the module puts its hot loops
-in typed free functions, and [Chapter 16](ch16-00-imagine.md) for the
-module itself.
+Decoding and encoding are native; everything between them — filters,
+drawing, colour conversion — is ordinary Zuri you can read in `libs/imagine`
+and extend. [Chapter 16](ch16-00-imagine.md) is the full treatment.
 
 ## The Language Itself
 

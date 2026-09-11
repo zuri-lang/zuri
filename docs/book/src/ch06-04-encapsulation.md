@@ -28,7 +28,7 @@ echo Box().add(1).add(2).count()
 
 Reaching in from outside does not compile:
 
-```zuri
+```zuri,ignore
 var b = Box()
 echo b._items
 ```
@@ -96,10 +96,10 @@ catch {
 undefined field 'nickname' on instance of 'Account'
 ```
 
-This is not a restriction the language apologises for. It is what lets
-every instance have a flat array of fields with a compile-time-known index
-per name, which is why a field read is an array index instead of a hash
-lookup, and why the JIT can inline one.
+The practical consequence is that a misspelled field name is an error at
+the point you write it, rather than a new field that silently shadows the
+one you meant. Every field a class has is declared in one place, and that
+place is `@new`.
 
 Static field **values** are mutable; the set of static fields is not.
 

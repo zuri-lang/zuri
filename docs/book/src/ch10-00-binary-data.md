@@ -44,7 +44,7 @@ echo b.last()
 echo b.get(2)
 echo b.index_of(3)
 echo b.to_list()
-echo b.to_string()
+echo 'Hi'.to_bytes().to_string()
 ```
 
 ```console
@@ -56,6 +56,7 @@ echo b.to_string()
 3
 2
 [1, 2, 3, 4, 5]
+Hi
 ```
 
 Indexing gives a **number**. Slicing gives `bytes`. `to_string()` decodes
@@ -100,18 +101,72 @@ echo bytes([1, 2, 3, 4, 5]).split(bytes([3]))
 
 ### Walking
 
-`bytes` is iterable, and `each()` works the same way it does on lists:
+A byte stream is iterable, and every form that works on a list works here.
+What you get out is always a **number** between 0 and 255, never a
+one-character string.
 
 ```zuri
-for x in bytes([7, 8]) {
-  echo x
+var b = bytes([72, 105])
+
+for value in b {
+  echo value
 }
 ```
 
 ```console
-7
-8
+72
+105
 ```
+
+Two variables give you the index first and the value second:
+
+```zuri
+var b = bytes([72, 105])
+
+for index, value in b {
+  echo '${index}: ${value}'
+}
+```
+
+```console
+0: 72
+1: 105
+```
+
+`iter` is the form to use when you are decoding a structure and the
+position drives the walk — reading a two-byte length, then skipping that
+many bytes, then reading the next field:
+
+```zuri
+var b = bytes([72, 105, 33])
+
+iter var i = 0; i < b.length(); i += 2 {
+  echo '${i}: ${b[i]}'
+}
+```
+
+```console
+0: 72
+2: 33
+```
+
+And `each()` takes a function, with the **value first and the index
+second** as everywhere else:
+
+```zuri
+bytes([72, 105]).each(@(value, index) {
+  echo '${index}=${value}'
+})
+```
+
+```console
+0=72
+1=105
+```
+
+When you want the characters rather than the numbers, convert first:
+`b.to_string()` decodes the whole stream as UTF-8, and `b.to_list()` gives
+you the numbers as an ordinary list.
 
 ## Binary Files
 

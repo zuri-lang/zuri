@@ -5011,7 +5011,9 @@ impl VM {
                 .names
                 .iter()
                 .filter_map(|(k, &idx)| {
-                  if !m.namespace.public[idx as usize].get() {
+                  if !m.namespace.public[idx as usize].get()
+                    || crate::vm::modules::is_module_intrinsic(k)
+                  {
                     return None;
                   }
                   Some((k.clone(), m.namespace.slots[idx as usize].get()))

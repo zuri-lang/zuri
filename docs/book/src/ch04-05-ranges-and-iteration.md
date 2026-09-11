@@ -114,10 +114,34 @@ That differs from iteration, which excludes the upper bound. When you want
 "would the loop visit this number", compare against `lower()` and `upper()`
 yourself.
 
-### `loop()`
+### Walking a Range
 
-`loop()` walks the range and calls a function for each value, honouring the
-step and the direction:
+`for` with one variable gives you the values, and with two it gives you
+the position first and the value second:
+
+```zuri
+for value in 3..6 {
+  echo value
+}
+
+for index, value in 3..6 {
+  echo '${index}: ${value}'
+}
+```
+
+```console
+3
+4
+5
+0: 3
+1: 4
+2: 5
+```
+
+The index counts from zero regardless of where the range starts, which is
+what makes it useful: `3..6` yields values 3, 4, 5 at positions 0, 1, 2.
+
+`loop()` is the callback form. It honours the step and the direction:
 
 ```zuri
 (25..18).loop(@(i) { print('${i} ') })
@@ -127,6 +151,24 @@ print('\n')
 ```console
 25 24 23 22 21 20 19 
 ```
+
+An `iter` loop needs no range at all — its three clauses already say
+everything a range says, and more, since the step can be any expression:
+
+```zuri
+iter var i = 3; i < 6; i++ {
+  echo i
+}
+```
+
+```console
+3
+4
+5
+```
+
+Use a range with `for` when the bounds are the interesting part, and `iter`
+when the stepping is.
 
 ## What Is Iterable
 
@@ -173,7 +215,7 @@ what [Chapter 6](ch06-03-decorated-methods.md) shows.
 
 Because the iterable is evaluated exactly once, this is safe:
 
-```zuri
+```zuri,ignore
 for line in read_the_whole_file() {
   echo line
 }

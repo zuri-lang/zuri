@@ -97,7 +97,7 @@ bites.
 
 <span class="filename">Filename: storage/index.zu</span>
 
-```zuri
+```zuri,ignore
 import os
 
 import ..config

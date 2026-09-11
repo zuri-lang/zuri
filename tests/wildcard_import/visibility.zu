@@ -90,6 +90,20 @@ assert raises(@() { echo chained.public_fn }),
   'a private wildcard-imported name must not transitively leak through a further @-exported wildcard re-import'
 ok('a private wildcard import does not transitively leak through a chained re-export')
 
+# ---------------------------------------------------------------------------
+# A module's own identity variables are not exports. A wildcard import
+# copies every public name out of the imported module, and `__file__`
+# used to ride along, so the importing file's `__file__` silently became
+# the imported file's path.
+# ---------------------------------------------------------------------------
+assert plain_importer.own_file().ends_with('plain_importer.zu'),
+  'a wildcard import must not overwrite the importing file\'s own __file__'
+assert plain_importer.own_root() == __root__,
+  'every module shares one __root__, and a wildcard import must not disturb it'
+assert __file__ == __root__,
+  'a file run directly is its own entry point, wildcard imports notwithstanding'
+ok('a wildcard import leaves __file__ and __root__ alone')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

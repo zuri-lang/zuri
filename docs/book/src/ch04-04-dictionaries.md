@@ -47,6 +47,51 @@ echo d
 {dynamic: 3}
 ```
 
+### Shorthand Keys
+
+When a key and the variable holding its value have the same name, write it
+once:
+
+```zuri
+var name = 'Ada'
+var age = 36
+
+echo { name, age }
+```
+
+```console
+{name: Ada, age: 36}
+```
+
+`{ name, age }` means exactly `{ name: name, age: age }`. This comes up
+constantly in functions that build a result out of locals they have just
+computed, and Zuri code uses the shorthand whenever the names line up.
+
+### Nesting
+
+A value may be another dictionary, or a list, to any depth. Access chains:
+
+```zuri
+var config = {
+  server: { host: 'localhost', port: 8080 },
+  tags: ['web', 'internal'],
+}
+
+echo config.server.host
+echo config['server']['port']
+echo config.tags[0]
+```
+
+```console
+localhost
+8080
+web
+```
+
+Dot and bracket access mix freely, because they are the same operation.
+Use the dot when the key is a fixed identifier and brackets when it is
+computed, contains punctuation, or is a number.
+
 ## Reading
 
 Dot and bracket access are the same operation:
@@ -167,6 +212,67 @@ Every callback here takes **value, then key**, the same order lists use.
 
 ## Walking
 
+Every form below visits the pairs in **insertion order**, which is the
+order they were first added, not the order they were last written to.
+
+### `for` With Two Variables, the Usual Form
+
+```zuri
+var user = { name: 'Ada', age: 36 }
+
+for key, value in user {
+  echo '${key} = ${value}'
+}
+```
+
+```console
+name = Ada
+age = 36
+```
+
+Key first, value second. This is what you want almost every time.
+
+### `for` With One Variable Gives You the Values
+
+```zuri
+var user = { name: 'Ada', age: 36 }
+
+for value in user {
+  echo value
+}
+```
+
+```console
+Ada
+36
+```
+
+This is worth stating plainly, because the equivalent loop in several other
+languages hands you the keys. In Zuri, one variable is always the value,
+whatever you are iterating.
+
+### `iter` Over the Keys, When You Need an Index
+
+```zuri
+var user = { name: 'Ada', age: 36 }
+var keys = user.keys()
+
+iter var i = 0; i < keys.length(); i++ {
+  echo '${i}. ${keys[i]} = ${user[keys[i]]}'
+}
+```
+
+```console
+0. name = Ada
+1. age = 36
+```
+
+A dictionary has no positional index of its own, so `iter` walks the key
+list instead. Reach for it when you need to number the output, or to look
+ahead to the next key.
+
+### `each()`, With a Function
+
 ```zuri
 var user = { name: 'Ada', age: 36 }
 
@@ -180,15 +286,31 @@ name -> Ada
 age -> 36
 ```
 
-Or with `for`, which gives you key first:
+The callback receives the **value first and the key second** — the reverse
+of `for`, matching every other `each()` in the language.
+
+### Walking Just One Side
 
 ```zuri
-for key, value in user {
-  echo '${key} = ${value}'
+var user = { name: 'Ada', age: 36 }
+
+for key in user.keys() {
+  echo key
 }
+
+echo user.values()
 ```
 
-Both walk in insertion order.
+```console
+name
+age
+[Ada, 36]
+```
+
+`keys()` and `values()` each return a plain list, so everything from
+[Lists](ch04-03-lists.md) applies: sort them, filter them, reduce them.
+Sorting `keys()` is how you get output in a stable order regardless of
+insertion.
 
 ## Converting
 
@@ -202,13 +324,34 @@ echo user.clone()
 
 ```console
 [[name, age], [Ada, 36]]
-Ada
+name
 {name: Ada, age: 36}
 ```
 
 `to_list()` gives you two parallel lists, keys then values, not a list of
 pairs. `find_key()` searches by value and returns the first key holding
 it.
+
+## Comparing Dictionaries
+
+`==` compares dictionaries by value, and **order is not part of the
+comparison**:
+
+```zuri
+echo { a: 1 } == { a: 1 }
+echo { a: 1 } == { a: 2 }
+echo { a: 1, b: 2 } == { b: 2, a: 1 }
+```
+
+```console
+true
+false
+true
+```
+
+A dictionary remembers its insertion order for iteration, but two
+dictionaries with the same pairs in different orders are equal. That is the
+opposite of lists, where order is the whole point.
 
 ## Dictionaries Are References
 
@@ -221,3 +364,74 @@ A dictionary is the right shape for data with a variable set of keys:
 configuration, a parsed JSON document, a set of HTTP headers. When the
 keys are fixed and there is behaviour attached to them, that is a class.
 [Chapter 6](ch06-00-classes.md) covers the difference.
+
+## A Worked Example
+
+Dictionaries are the natural shape for counting, grouping and indexing.
+This example does all three over a list of log lines: it counts how often
+each level appears, groups the messages under their level, and builds an
+index from a request id back to the line that mentioned it.
+
+```zuri
+var lines = [
+  'INFO  req=a1 started',
+  'WARN  req=a1 slow upstream',
+  'INFO  req=b2 started',
+  'ERROR req=b2 upstream refused',
+  'INFO  req=a1 finished',
+]
+
+var counts = {}
+var grouped = {}
+var by_request = {}
+
+for line in lines {
+  var parts = line.split(' ').filter(@(p) => p != '')
+  var level = parts[0]
+  var request = parts[1].replace('req=', '', false)
+  var message = ' '.join(parts[2, parts.length()])
+
+  counts[level] = counts.get(level, 0) + 1
+
+  if !grouped.contains(level) {
+    grouped[level] = []
+  }
+
+  grouped[level].append(message)
+
+  if !by_request.contains(request) {
+    by_request[request] = []
+  }
+
+  by_request[request].append(level)
+}
+
+echo counts
+echo grouped.ERROR
+echo by_request.a1
+echo by_request.get('zz', ['no such request'])
+```
+
+```console
+{INFO: 3, WARN: 1, ERROR: 1}
+[upstream refused]
+[INFO, WARN, INFO]
+[no such request]
+```
+
+Four habits in there are worth taking away.
+
+`counts.get(level, 0) + 1` is the counting idiom. `get()` with a fallback
+means you never have to check whether the key exists before adding to it.
+
+`if !grouped.contains(level) { grouped[level] = [] }` is the grouping
+idiom, and it has to be spelled out because `get()` would hand back a fresh
+default list each time rather than one you can keep appending to.
+
+`grouped.ERROR` and `by_request.a1` read keys with a dot, which works
+because both are valid identifiers. `by_request['b2']` would be needed if
+the key were computed or awkward.
+
+And the whole thing preserves order. `counts` came out `INFO`, `WARN`,
+`ERROR` — the order those levels were first seen, not alphabetical and not
+arbitrary.

@@ -1,0 +1,102 @@
+/**
+ * Pulls the runnable examples out of a page of the book.
+ *
+ * A fenced block opens with three backticks and a language. Only
+ * `zuri` blocks run, and only when they carry no `ignore` attribute
+ * and are not interactive transcripts. When a `console` block follows
+ * one immediately, its contents are that example's expected output.
+ */
+
+# One example: its source, the line the fence sits on, and the output
+# the book claims it produces (`nil` when the book shows none).
+class Example {
+
+  @new(line: number, source: string, expected) {
+    self.line = line
+    self.source = source
+    self.expected = expected
+  }
+}
+
+def _fence_info(line: string) {
+  var text = line.trim()
+
+  if !text.starts_with('```') {
+    return nil
+  }
+
+  return text[3, text.length()].trim()
+}
+
+# Every fenced block on the page, as `{ info, body, line }`.
+def _fences(source: string) {
+  var lines = source.split('\n')
+  var found = []
+  var i = 0
+
+  while i < lines.length() {
+    var info = _fence_info(lines[i])
+
+    if info == nil {
+      i++
+      continue
+    }
+
+    var start = i + 1
+    var end = start
+
+    while end < lines.length() and _fence_info(lines[end]) != '' {
+      end++
+    }
+
+    found.append({
+      info,
+      line: i + 1,
+      body: '${'\n'.join(lines[start, end])}\n',
+    })
+
+    i = end + 1
+  }
+
+  return found
+}
+
+# A `console` block showing a shell session documents a command rather
+# than a program's output, and is not an example's result.
+def _is_shell(body: string) {
+  return body.ltrim().starts_with('$')
+}
+
+# The stubs' examples are transcripts of an interactive session; they
+# are documentation of a dialogue, not a program to run.
+def _is_transcript(body: string) {
+  return body.ltrim().starts_with('%>')
+}
+
+def extract(source: string) {
+  var fences = _fences(source)
+  var examples = []
+
+  iter var i = 0; i < fences.length(); i++ {
+    var fence = fences[i]
+
+    if !fence.info.starts_with('zuri') or fence.info.contains('ignore') {
+      continue
+    }
+
+    if _is_transcript(fence.body) {
+      continue
+    }
+
+    var expected = nil
+    var next = i + 1 < fences.length() ? fences[i + 1] : nil
+
+    if next != nil and next.info == 'console' and !_is_shell(next.body) {
+      expected = next.body
+    }
+
+    examples.append(Example(fence.line, fence.body, expected))
+  }
+
+  return examples
+}

@@ -1,44 +1,49 @@
-# `bigint`
+# Bigint Methods
 
-26 methods. See [Bigints](ch04-02-numbers.md) for the guided introduction.
+Every method on the built-in `bigint` type, with its signature, what it
+returns, and the cases where it does something other than the obvious
+thing.
 
-| Method | Returns |
-| --- | --- |
-| [`to_string(radix)`](#to_string) | `string` |
-| [`to_number()`](#to_number) | `number` |
-| [`to_bool()`](#to_bool) | `boolean` |
-| [`to_bytes(order)`](#to_bytes) | `bytes` |
-| [`bin()`](#bin) | `string` |
-| [`hex()`](#hex) | `string` |
-| [`oct()`](#oct) | `string` |
-| [`abs()`](#abs) | `bigint` |
-| [`sign()`](#sign) | `number` |
-| [`max(other)`](#max) | `bigint` |
-| [`min(other)`](#min) | `bigint` |
-| [`pow(exponent)`](#pow) | `bigint` |
-| [`sqrt()`](#sqrt) | `bigint` |
-| [`cbrt()`](#cbrt) | `bigint` |
-| [`nth_root(n)`](#nth_root) | `bigint` |
-| [`gcd(other)`](#gcd) | `bigint` |
-| [`lcm(other)`](#lcm) | `bigint` |
-| [`modpow(exponent, modulus)`](#modpow) | `bigint` |
-| [`modinv(modulus)`](#modinv) | `bigint\|nil` |
-| [`bits()`](#bits) | `number` |
-| [`bit(index)`](#bit) | `boolean` |
-| [`set_bit(index, value)`](#set_bit) | `bigint` |
-| [`trailing_zeros()`](#trailing_zeros) | `number\|nil` |
-| [`is_zero()`](#is_zero) | `boolean` |
-| [`is_even()`](#is_even) | `boolean` |
-| [`is_odd()`](#is_odd) | `boolean` |
+| Method | Returns | Summary |
+| --- | --- | --- |
+| [`to_string(radix)`](#to_string) | `string` | Returns the decimal digits of the bigint, with a leading `-` when it is negative and no trailing `n`. |
+| [`to_number()`](#to_number) | `number` | Converts the bigint to a `number`. |
+| [`to_bool()`](#to_bool) | `boolean` | Converts the bigint to a boolean, following the same rule as `number.to_bool()`: zero and up are truthy, negatives are falsy. |
+| [`to_bytes(order)`](#to_bytes) | `bytes` | Returns the two's-complement byte representation, which carries the sign and so round-trips back to the same value. |
+| [`bin()`](#bin) | `string` | Returns the base-2 digits, equivalent to `to_string(2)`. |
+| [`hex()`](#hex) | `string` | Returns the base-16 digits in lowercase, equivalent to `to_string(16)`. |
+| [`oct()`](#oct) | `string` | Returns the base-8 digits, equivalent to `to_string(8)`. |
+| [`abs()`](#abs) | `bigint` | Returns the absolute value. |
+| [`sign()`](#sign) | `number` | Returns the sign as a plain `number`: `1` when positive, `-1` when negative and `0` for zero. |
+| [`max(other)`](#max) | `bigint` | Returns the larger of the two bigints. |
+| [`min(other)`](#min) | `bigint` | Returns the smaller of the two bigints. |
+| [`pow(exponent)`](#pow) | `bigint` | Raises the bigint to `exponent`, the method form of `**`. |
+| [`sqrt()`](#sqrt) | `bigint` | Returns the integer square root, truncated towards zero, so `145n.sqrt()` is `12n` rather than `12.04...`. |
+| [`cbrt()`](#cbrt) | `bigint` | Returns the integer cube root, truncated towards zero. |
+| [`nth_root(n)`](#nth_root) | `bigint` | Returns the integer `n`th root, truncated towards zero. |
+| [`gcd(other)`](#gcd) | `bigint` | Returns the greatest common divisor of the two bigints. |
+| [`lcm(other)`](#lcm) | `bigint` | Returns the least common multiple of the two bigints. |
+| [`modpow(exponent, modulus)`](#modpow) | `bigint` | Returns `(self ** exponent) % modulus` without ever building the full power, which is what makes it usable for the huge exponents cryptography needs. |
+| [`modinv(modulus)`](#modinv) | `bigint\|nil` | Returns the modular multiplicative inverse: the `x` solving `self * x == 1 (mod modulus)`. |
+| [`bits()`](#bits) | `number` | Returns how many bits the magnitude occupies, ignoring the sign. |
+| [`bit(index)`](#bit) | `boolean` | Returns whether the bit at `index` is set, counting from the least significant bit at index 0. |
+| [`set_bit(index, value)`](#set_bit) | `bigint` | Returns a new bigint with the bit at `index` set or cleared. |
+| [`trailing_zeros()`](#trailing_zeros) | `number\|nil` | Returns the count of least-significant zero bits, which is the largest power of two dividing the bigint. |
+| [`is_zero()`](#is_zero) | `boolean` | Returns whether the bigint is zero. |
+| [`is_even()`](#is_even) | `boolean` | Returns whether the bigint is even. |
+| [`is_odd()`](#is_odd) | `boolean` | Returns whether the bigint is odd. |
 
-## `to_string(radix)`
+## `to_string()`
 
-Returns the decimal digits of the bigint, with a leading `-`
-when it is negative and no trailing `n`. Pass `radix` to
-render in another base instead, using lowercase letters for
-digit values above nine.
+```zuri,ignore
+to_string(radix) -> string
+```
 
-```zuri
+Returns the decimal digits of the bigint, with a leading `-` when it is
+negative and no trailing `n`. Pass `radix` to render in another base
+instead, using lowercase letters for digit values above nine.
+
+```zuri,ignore
 %> (255n).to_string()
 '255'
 %> (255n).to_string(16)
@@ -47,38 +52,47 @@ digit values above nine.
 '-ff'
 ```
 
-   part of the repr, not the conversion; `to_string()` never
-   includes it.
-   Defaults to 10.
+**Parameters**
 
-- **Note** The `n` that `echo` and string interpolation show is
-- **Parameter** `number` radix - base to render in, from 2 to 36.
-- **Returns** `string`
-- **Raises** `RangeError` if `radix` is outside 2 to 36.
+- `radix` (`number`) — base to render in, from 2 to 36. Defaults to 10.
+
+**Returns** `string`
+
+**Raises** `RangeError` if `radix` is outside 2 to 36.
+
+> **Note:** The `n` that `echo` and string interpolation show is part of
+> the repr, not the conversion; `to_string()` never includes it.
 
 ## `to_number()`
 
+```zuri,ignore
+to_number() -> number
+```
+
 Converts the bigint to a `number`.
 
-```zuri
+```zuri,ignore
 %> (6n).to_number()
 6
 ```
 
-   the nearest double, and a value past the double range
-   becomes `inf` or `-inf` rather than wrapping or reading as
-   zero. Check `bits()` beforehand when that matters.
+**Returns** `number`
 
-- **Note** This is lossy for anything past `2^53`: the result is
-- **Returns** `number`
+> **Note:** This is lossy for anything past `2^53`: the result is the
+> nearest double, and a value past the double range becomes `inf` or
+> `-inf` rather than wrapping or reading as zero. Check `bits()`
+> beforehand when that matters.
 
 ## `to_bool()`
 
-Converts the bigint to a boolean, following the same rule as
-`number.to_bool()`: zero and up are truthy, negatives are
-falsy.
+```zuri,ignore
+to_bool() -> boolean
+```
 
-```zuri
+Converts the bigint to a boolean, following the same rule as
+`number.to_bool()`: zero and up are truthy, negatives are falsy.
+
+```zuri,ignore
 %> (5n).to_bool()
 true
 %> (0n).to_bool()
@@ -87,16 +101,20 @@ true
 false
 ```
 
-- **Returns** `boolean`
+**Returns** `boolean`
 
-## `to_bytes(order)`
+## `to_bytes()`
 
-Returns the two's-complement byte representation, which
-carries the sign and so round-trips back to the same value.
-The result is the shortest byte string that can hold it, and
-is never empty: zero is a single `0x00` byte.
+```zuri,ignore
+to_bytes(order) -> bytes
+```
 
-```zuri
+Returns the two's-complement byte representation, which carries the sign
+and so round-trips back to the same value. The result is the shortest
+byte string that can hold it, and is never empty: zero is a single
+`0x00` byte.
+
+```zuri,ignore
 %> (258n).to_bytes()
 (01 02)
 %> (258n).to_bytes('little')
@@ -105,333 +123,457 @@ is never empty: zero is a single `0x00` byte.
 (ff)
 ```
 
-   `'big'`.
-   `'little'`.
+**Parameters**
 
-- **Parameter** `string` order - `'big'` or `'little'`. Defaults to
-- **Returns** `bytes`
-- **Raises** `RangeError` if `order` is neither `'big'` nor
+- `order` (`string`) — `'big'` or `'little'`. Defaults to `'big'`.
+
+**Returns** `bytes`
+
+**Raises** `RangeError` if `order` is neither `'big'` nor `'little'`.
 
 ## `bin()`
 
+```zuri,ignore
+bin() -> string
+```
+
 Returns the base-2 digits, equivalent to `to_string(2)`.
 
-```zuri
+```zuri,ignore
 %> (255n).bin()
 '11111111'
 ```
 
-   bigint comes back with a leading `-` rather than as two's
-   complement. Use `to_bytes()` for the two's-complement
-   view.
+**Returns** `string`
 
-- **Note** This is the sign-and-magnitude form, so a negative
-- **Returns** `string`
+> **Note:** This is the sign-and-magnitude form, so a negative bigint
+> comes back with a leading `-` rather than as two's complement. Use
+> `to_bytes()` for the two's-complement view.
 
 ## `hex()`
 
-Returns the base-16 digits in lowercase, equivalent to
-`to_string(16)`.
+```zuri,ignore
+hex() -> string
+```
 
-```zuri
+Returns the base-16 digits in lowercase, equivalent to `to_string(16)`.
+
+```zuri,ignore
 %> (255n).hex()
 'ff'
 ```
 
-- **Returns** `string`
+**Returns** `string`
 
 ## `oct()`
 
+```zuri,ignore
+oct() -> string
+```
+
 Returns the base-8 digits, equivalent to `to_string(8)`.
 
-```zuri
+```zuri,ignore
 %> (255n).oct()
 '377'
 ```
 
-- **Returns** `string`
+**Returns** `string`
 
 ## `abs()`
 
+```zuri,ignore
+abs() -> bigint
+```
+
 Returns the absolute value.
 
-```zuri
+```zuri,ignore
 %> (-5n).abs()
 5n
 ```
 
-- **Returns** `bigint`
+**Returns** `bigint`
 
 ## `sign()`
 
-Returns the sign as a plain `number`: `1` when positive,
-`-1` when negative and `0` for zero.
+```zuri,ignore
+sign() -> number
+```
 
-```zuri
+Returns the sign as a plain `number`: `1` when positive, `-1` when
+negative and `0` for zero.
+
+```zuri,ignore
 %> (-9n).sign()
 -1
 %> (0n).sign()
 0
 ```
 
-- **Returns** `number`
+**Returns** `number`
 
-## `max(other)`
+## `max()`
+
+```zuri,ignore
+max(other) -> bigint
+```
 
 Returns the larger of the two bigints.
 
-```zuri
+```zuri,ignore
 %> (3n).max(7n)
 7n
 ```
 
-- **Parameter** `bigint` other
-- **Returns** `bigint`
-- **Raises** `TypeError` if `other` is not a bigint.
+**Parameters**
 
-## `min(other)`
+- `other` (`bigint`)
+
+**Returns** `bigint`
+
+**Raises** `TypeError` if `other` is not a bigint.
+
+## `min()`
+
+```zuri,ignore
+min(other) -> bigint
+```
 
 Returns the smaller of the two bigints.
 
-```zuri
+```zuri,ignore
 %> (3n).min(7n)
 3n
 ```
 
-- **Parameter** `bigint` other
-- **Returns** `bigint`
-- **Raises** `TypeError` if `other` is not a bigint.
+**Parameters**
 
-## `pow(exponent)`
+- `other` (`bigint`)
+
+**Returns** `bigint`
+
+**Raises** `TypeError` if `other` is not a bigint.
+
+## `pow()`
+
+```zuri,ignore
+pow(exponent) -> bigint
+```
 
 Raises the bigint to `exponent`, the method form of `**`.
 
-```zuri
+```zuri,ignore
 %> (2n).pow(100)
 1267650600228229401496703205376n
 ```
 
-   2^32 - 1. Negative exponents have no integral answer and
-   are rejected rather than truncated to zero.
-   too large.
+**Parameters**
 
-- **Parameter** `number|bigint` exponent - a integer from 0 to
-- **Returns** `bigint`
-- **Raises** `RangeError` if `exponent` is negative, fractional or
+- `exponent` (`number|bigint`) — a integer from 0 to 2^32 - 1. Negative
+  exponents have no integral answer and are rejected rather than truncated
+  to zero.
+
+**Returns** `bigint`
+
+**Raises** `RangeError` if `exponent` is negative, fractional or too
+large.
 
 ## `sqrt()`
+
+```zuri,ignore
+sqrt() -> bigint
+```
 
 Returns the integer square root, truncated towards zero, so
 `145n.sqrt()` is `12n` rather than `12.04...`.
 
-```zuri
+```zuri,ignore
 %> (144n).sqrt()
 12n
 %> (145n).sqrt()
 12n
 ```
 
-- **Returns** `bigint`
-- **Raises** `RangeError` if the bigint is negative.
+**Returns** `bigint`
+
+**Raises** `RangeError` if the bigint is negative.
 
 ## `cbrt()`
 
-Returns the integer cube root, truncated towards zero.
-Negatives are fine here, unlike `sqrt()`.
+```zuri,ignore
+cbrt() -> bigint
+```
 
-```zuri
+Returns the integer cube root, truncated towards zero. Negatives are
+fine here, unlike `sqrt()`.
+
+```zuri,ignore
 %> (-27n).cbrt()
 -3n
 ```
 
-- **Returns** `bigint`
+**Returns** `bigint`
 
-## `nth_root(n)`
+## `nth_root()`
+
+```zuri,ignore
+nth_root(n) -> bigint
+```
 
 Returns the integer `n`th root, truncated towards zero.
 
-```zuri
+```zuri,ignore
 %> (1000000n).nth_root(3)
 100n
 ```
 
-   2^32 - 1.
-   too large, or if `n` is even and the bigint is negative.
+**Parameters**
 
-- **Parameter** `number|bigint` n - a integer from 1 to
-- **Returns** `bigint`
-- **Raises** `RangeError` if `n` is zero, negative, fractional or
+- `n` (`number|bigint`) — a integer from 1 to 2^32 - 1.
 
-## `gcd(other)`
+**Returns** `bigint`
 
-Returns the greatest common divisor of the two bigints. The
-result is always non-negative regardless of either sign, and
-`0n.gcd(0n)` is `0n`.
+**Raises** `RangeError` if `n` is zero, negative, fractional or too
+large, or if `n` is even and the bigint is negative.
 
-```zuri
+## `gcd()`
+
+```zuri,ignore
+gcd(other) -> bigint
+```
+
+Returns the greatest common divisor of the two bigints. The result is
+always non-negative regardless of either sign, and `0n.gcd(0n)` is `0n`.
+
+```zuri,ignore
 %> (48n).gcd(18n)
 6n
 ```
 
-- **Parameter** `bigint` other
-- **Returns** `bigint`
-- **Raises** `TypeError` if `other` is not a bigint.
+**Parameters**
 
-## `lcm(other)`
+- `other` (`bigint`)
 
-Returns the least common multiple of the two bigints. The
-result is always non-negative, and is `0n` when either side
-is zero.
+**Returns** `bigint`
 
-```zuri
+**Raises** `TypeError` if `other` is not a bigint.
+
+## `lcm()`
+
+```zuri,ignore
+lcm(other) -> bigint
+```
+
+Returns the least common multiple of the two bigints. The result is
+always non-negative, and is `0n` when either side is zero.
+
+```zuri,ignore
 %> (48n).lcm(18n)
 144n
 ```
 
-- **Parameter** `bigint` other
-- **Returns** `bigint`
-- **Raises** `TypeError` if `other` is not a bigint.
+**Parameters**
 
-## `modpow(exponent, modulus)`
+- `other` (`bigint`)
 
-Returns `(self ** exponent) % modulus` without ever building
-the full power, which is what makes it usable for the huge
-exponents cryptography needs.
+**Returns** `bigint`
 
-```zuri
+**Raises** `TypeError` if `other` is not a bigint.
+
+## `modpow()`
+
+```zuri,ignore
+modpow(exponent, modulus) -> bigint
+```
+
+Returns `(self ** exponent) % modulus` without ever building the full
+power, which is what makes it usable for the huge exponents cryptography
+needs.
+
+```zuri,ignore
 %> (4n).modpow(13n, 497n)
 445n
 ```
 
-   result carries the sign of `modulus`, not of the receiver.
-   A negative `exponent` is allowed only when the receiver is
-   invertible modulo `modulus`.
-   is negative and no modular inverse exists.
+**Parameters**
 
-- **Note** The remainder is floored rather than truncated, so the
-- **Parameter** `bigint` exponent
-- **Parameter** `bigint` modulus - must not be zero.
-- **Returns** `bigint`
-- **Raises** `TypeError` if either argument is not a bigint.
-- **Raises** `RangeError` if `modulus` is zero, or if `exponent`
+- `exponent` (`bigint`)
+- `modulus` (`bigint`) — must not be zero.
 
-## `modinv(modulus)`
+**Returns** `bigint`
 
-Returns the modular multiplicative inverse: the `x` solving
-`self * x == 1 (mod modulus)`.
+**Raises** `TypeError` if either argument is not a bigint.
 
-```zuri
+**Raises** `RangeError` if `modulus` is zero, or if `exponent` is
+negative and no modular inverse exists.
+
+> **Note:** The remainder is floored rather than truncated, so the result
+> carries the sign of `modulus`, not of the receiver. A negative
+> `exponent` is allowed only when the receiver is invertible modulo
+> `modulus`.
+
+## `modinv()`
+
+```zuri,ignore
+modinv(modulus) -> bigint|nil
+```
+
+Returns the modular multiplicative inverse: the `x` solving `self * x ==
+1 (mod modulus)`.
+
+```zuri,ignore
 %> (3n).modinv(11n)
 4n
 %> (4n).modinv(8n)
 nil
 ```
 
-   `modulus` are not coprime, since having no inverse is an
-   ordinary answer and not a caller mistake. The result
-   carries the sign of `modulus`.
+**Parameters**
 
-- **Note** Returns `nil` rather than raising when the receiver and
-- **Parameter** `bigint` modulus - must not be zero.
-- **Returns** `bigint|nil`
-- **Raises** `TypeError` if `modulus` is not a bigint.
-- **Raises** `RangeError` if `modulus` is zero.
+- `modulus` (`bigint`) — must not be zero.
+
+**Returns** `bigint|nil`
+
+**Raises** `TypeError` if `modulus` is not a bigint.
+
+**Raises** `RangeError` if `modulus` is zero.
+
+> **Note:** Returns `nil` rather than raising when the receiver and
+> `modulus` are not coprime, since having no inverse is an ordinary answer
+> and not a caller mistake. The result carries the sign of `modulus`.
 
 ## `bits()`
 
-Returns how many bits the magnitude occupies, ignoring the
-sign. Zero occupies none.
+```zuri,ignore
+bits() -> number
+```
 
-```zuri
+Returns how many bits the magnitude occupies, ignoring the sign. Zero
+occupies none.
+
+```zuri,ignore
 %> (255n).bits()
 8
 %> (0n).bits()
 0
 ```
 
-- **Returns** `number`
+**Returns** `number`
 
-## `bit(index)`
+## `bit()`
 
-Returns whether the bit at `index` is set, counting from the
-least significant bit at index 0.
+```zuri,ignore
+bit(index) -> boolean
+```
 
-```zuri
+Returns whether the bit at `index` is set, counting from the least
+significant bit at index 0.
+
+```zuri,ignore
 %> (5n).bit(0)
 true
 %> (5n).bit(1)
 false
 ```
 
-   receiver reports `true` for every index above its
-   magnitude rather than running out of bits.
+**Parameters**
 
-- **Note** The bigint is read as two's complement, so a negative
-- **Parameter** `number` index - a non-negative integer.
-- **Returns** `boolean`
-- **Raises** `RangeError` if `index` is negative or fractional.
+- `index` (`number`) — a non-negative integer.
 
-## `set_bit(index, value)`
+**Returns** `boolean`
 
-Returns a new bigint with the bit at `index` set or cleared.
-The receiver is left untouched.
+**Raises** `RangeError` if `index` is negative or fractional.
 
-```zuri
+> **Note:** The bigint is read as two's complement, so a negative receiver
+> reports `true` for every index above its magnitude rather than running
+> out of bits.
+
+## `set_bit()`
+
+```zuri,ignore
+set_bit(index, value) -> bigint
+```
+
+Returns a new bigint with the bit at `index` set or cleared. The
+receiver is left untouched.
+
+```zuri,ignore
 %> (5n).set_bit(1, true)
 7n
 ```
 
-- **Parameter** `number` index - a non-negative integer.
-- **Parameter** `boolean` value
-- **Returns** `bigint`
-- **Raises** `RangeError` if `index` is negative or fractional.
+**Parameters**
+
+- `index` (`number`) — a non-negative integer.
+- `value` (`boolean`)
+
+**Returns** `bigint`
+
+**Raises** `RangeError` if `index` is negative or fractional.
 
 ## `trailing_zeros()`
 
-Returns the count of least-significant zero bits, which is
-the largest power of two dividing the bigint.
+```zuri,ignore
+trailing_zeros() -> number|nil
+```
 
-```zuri
+Returns the count of least-significant zero bits, which is the largest
+power of two dividing the bigint.
+
+```zuri,ignore
 %> (40n).trailing_zeros()
 3
 %> (0n).trailing_zeros()
 nil
 ```
 
-   and would otherwise have to report an arbitrary number.
+**Returns** `number|nil`
 
-- **Note** Returns `nil` for zero, which has no largest such power
-- **Returns** `number|nil`
+> **Note:** Returns `nil` for zero, which has no largest such power and
+> would otherwise have to report an arbitrary number.
 
 ## `is_zero()`
 
+```zuri,ignore
+is_zero() -> boolean
+```
+
 Returns whether the bigint is zero.
 
-```zuri
+```zuri,ignore
 %> (0n).is_zero()
 true
 ```
 
-- **Returns** `boolean`
+**Returns** `boolean`
 
 ## `is_even()`
 
+```zuri,ignore
+is_even() -> boolean
+```
+
 Returns whether the bigint is even. Zero is even.
 
-```zuri
+```zuri,ignore
 %> (4n).is_even()
 true
 ```
 
-- **Returns** `boolean`
+**Returns** `boolean`
 
 ## `is_odd()`
 
+```zuri,ignore
+is_odd() -> boolean
+```
+
 Returns whether the bigint is odd.
 
-```zuri
+```zuri,ignore
 %> (5n).is_odd()
 true
 ```
 
-- **Returns** `boolean`
+**Returns** `boolean`

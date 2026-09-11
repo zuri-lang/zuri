@@ -1,301 +1,488 @@
 # Appendix D: Built-in Functions
 
-These 28 functions are globals. Nothing has to be imported to reach them.
+These functions are available in every file with no import. They are the
+parts of the language that happen to be spelled as calls rather than as
+syntax.
 
-| Function | Returns |
-| --- | --- |
-| [`time()`](#time) | `number` |
-| [`sum(...values)`](#sum) | `number` |
-| [`bytes(x: number\|list)`](#bytes) | `bytes\|any` |
-| [`file(path: string, mode: ?string)`](#file) | `file` |
-| [`instance_of(x: any, y)`](#instance_of) | `boolean` |
-| [`typeof(x: any)`](#typeof) | `string` |
-| [`delprop(object: instance, name: string)`](#delprop) | `void` |
-| [`getprop(object: instance, name: string)`](#getprop) | `any\|nil` |
-| [`hasprop(object: instance, name: string)`](#hasprop) | `boolean` |
-| [`setprop(obj: instance, prop: string, value: any)`](#setprop) | `boolean` |
-| [`id(x: any)`](#id) | `number` |
-| [`print(...values)`](#print) | `void` |
-| [`rand(x: ?number, y: ?number)`](#rand) | `number` |
-| [`is_bigint(x: any)`](#is_bigint) | `boolean` |
-| [`is_bool(x: any)`](#is_bool) | `boolean` |
-| [`is_callable(x: any)`](#is_callable) | `boolean` |
-| [`is_class(x: any)`](#is_class) | `boolean` |
-| [`is_dict(x: any)`](#is_dict) | `boolean` |
-| [`is_function(x: any)`](#is_function) | `boolean` |
-| [`is_instance(x: any)`](#is_instance) | `boolean` |
-| [`is_int(x: any)`](#is_int) | `boolean` |
-| [`is_list(x: any)`](#is_list) | `boolean` |
-| [`is_number(x: any)`](#is_number) | `boolean` |
-| [`is_object(x: any)`](#is_object) | `boolean` |
-| [`is_string(x: any)`](#is_string) | `boolean` |
-| [`is_bytes(x: any)`](#is_bytes) | `boolean` |
-| [`is_file(x: any)`](#is_file) | `boolean` |
-| [`is_iterable(x: any)`](#is_iterable) | `boolean` |
+| Function | Returns | Summary |
+| --- | --- | --- |
+| [`time()`](#time) | `number` | Returns the current epoch time to the microseconds resolution. |
+| [`sum(...values: list)`](#sum) |  | Calculates the sum of all the elements passed as arguments. |
+| [`bytes(x: number\|list)`](#bytes) | `bytes\|any` | If x is a number, this function returns a new `bytes` object with length x having all its bytes set to `0x0`. |
+| [`file(path: string, mode: ?string)`](#file) | `file` | Returns an open file handle to the file specified in the path in the specified mode. |
+| [`instance_of(x, y)`](#instance_of) | `boolean` | Returns `true` if x is an instance of the given class y or `false` otherwise. |
+| [`typeof(x)`](#typeof) | `string` | Returns the type of the given value as a string. |
+| [`delprop(object: instance, name: string)`](#delprop) | `void` | Deletes the property name from the given instance of object. |
+| [`getprop(object: instance, name: string)`](#getprop) | `any\|nil` | Returns the value of the property name from the given instance of object. |
+| [`hasprop(object: instance, name: string)`](#hasprop) | `boolean` | Returns true if the property name exists in the given instance of object. |
+| [`setprop(obj: instance, prop: string, value)`](#setprop) | `boolean` | Sets the value of the object's property with the matching name to the given value. |
+| [`id(x)`](#id) | `number` | Returns the unique identifier of value x within the system. |
+| [`print(...values: list)`](#print) |  | Prints the given arguments to standard output. |
+| [`rand(x: ?number, y: ?number)`](#rand) | `number` | If no argument is given, returns a random number between 0 and 1. |
+| [`is_bigint(x)`](#is_bigint) | `boolean` | Returns `true` if x is a bigint or `false` otherwise. |
+| [`is_bool(x)`](#is_bool) | `boolean` | Returns `true` if x is a boolean or `false` otherwise. |
+| [`is_callable(x)`](#is_callable) | `boolean` | Returns `true` if x is a callable or `false` otherwise. |
+| [`is_class(x)`](#is_class) | `boolean` | Returns `true` if x is a class or `false` otherwise. |
+| [`is_dict(x)`](#is_dict) | `boolean` | Returns `true` if x is a dictionary or `false` otherwise. |
+| [`is_function(x)`](#is_function) | `boolean` | Returns `true` if x is a function or `false` otherwise. |
+| [`is_instance(x)`](#is_instance) | `boolean` | Returns `true` if x is an instance of any class or `false` otherwise. |
+| [`is_int(x)`](#is_int) | `boolean` | Returns `true` if x is an integer or `false` otherwise. |
+| [`is_list(x)`](#is_list) | `boolean` | Returns `true` if x is a list or `false` otherwise. |
+| [`is_number(x)`](#is_number) | `boolean` | Returns `true` if x is a number or `false` otherwise. |
+| [`is_object(x)`](#is_object) | `boolean` | Returns `true` if x is an object or `false` otherwise. |
+| [`is_string(x)`](#is_string) | `boolean` | Returns `true` if x is a string or `false` otherwise. |
+| [`is_bytes(x)`](#is_bytes) | `boolean` | Returns `true` if x is bytes or `false` otherwise. |
+| [`is_file(x)`](#is_file) | `boolean` | Returns `true` if x is a file or `false` otherwise. |
+| [`is_iterable(x)`](#is_iterable) | `boolean` | Returns `true` if x is an iterable object or `false` otherwise. |
 
 ## `time()`
 
+```zuri,ignore
+time() -> number
+```
+
 Returns the current epoch time to the microseconds resolution.
 
-The time is returned as a floating point number where the integer 
-part represents the number of seconds since the epoch and the 
-fractional part represents the microseconds.
+Example:
 
-```zuri-repl
+```zuri,ignore
 %> time()
 1686787200.123456
 ```
 
-- **Returns** `number`
+The time is returned as a floating point number where the integer part
+represents the number of seconds since the epoch and the fractional part
+represents the microseconds.
 
-## `sum(...values)`
+**Returns** `number`
 
-Calculates the sum of all the elements passed as arguments.
-Returns `0` when no argument is passed in.
+> **Note:** The epoch time is the number of seconds that have elapsed
+> since January 1, 1970 (midnight UTC/GMT).
+
+## `sum()`
+
+```zuri,ignore
+sum(...values: list)
+```
+
+Calculates the sum of all the elements passed as arguments. Returns `0`
+when no argument is passed in.
 
 Example:
 
-```zuri
+```zuri,ignore
 %> math.sum([1, 2, [3, 4, [5, 6]]])
 21
 ```
 
-- **Parameter** ...number values
-- **Returns** `number`
+**Parameters**
 
-## `bytes(x: number|list)`
+- `values` (`...number`)
 
-If x is a number, this function returns a new `bytes` object
-with length x having all its bytes set to `0x0`.
+**Returns** — number
 
-If x is a list, it returns a new `bytes` object whose contents
-are the bytes specified in the list.
+## `bytes()`
 
-   bytes which can be any number between 0 and 255.
+```zuri,ignore
+bytes(x: number|list) -> bytes|any
+```
 
-- **Note** If x is a list, then the list must only contain valid
-- **Parameter** `number|list` x The number or list to convert to bytes.
-- **Returns** `bytes|any`
+If x is a number, this function returns a new `bytes` object with length
+x having all its bytes set to `0x0`.
 
-## `file(path: string, mode: ?string)`
+If x is a list, it returns a new `bytes` object whose contents are the
+bytes specified in the list.
 
-Returns an open file handle to the file specified in the path
-in the specified mode. If the mode is not specified, the file
-will be opened in the read only mode.
+**Parameters**
 
-- **Parameter** `string` path The path to the file to open.
-- **Parameter** `?string` mode The mode to open the file in.
-- **Returns** `file`
+- `x` (`number|list`) — The number or list to convert to bytes.
 
-## `instance_of(x: any, y)`
+**Returns** `bytes|any`
 
-Returns `true` if x is an instance of the given class y or
-`false` otherwise.
+> **Note:** If x is a list, then the list must only contain valid bytes
+> which can be any number between 0 and 255.
 
-- **Parameter** `any` x The value to check.
-- **Parameter** `class` y The class to check for.
-- **Returns** `boolean`
+## `file()`
 
-## `typeof(x: any)`
+```zuri,ignore
+file(path: string, mode: ?string) -> file
+```
+
+Returns an open file handle to the file specified in the path in the
+specified mode. If the mode is not specified, the file will be opened in
+the read only mode.
+
+**Parameters**
+
+- `path` (`string`) — The path to the file to open.
+- `mode` (`?string`) — The mode to open the file in.
+
+**Returns** `file`
+
+## `instance_of()`
+
+```zuri,ignore
+instance_of(x, y) -> boolean
+```
+
+Returns `true` if x is an instance of the given class y or `false`
+otherwise.
+
+**Parameters**
+
+- `x` (`any`) — The value to check.
+- `y` (`class`) — The class to check for.
+
+**Returns** `boolean`
+
+## `typeof()`
+
+```zuri,ignore
+typeof(x) -> string
+```
 
 Returns the type of the given value as a string.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `string`
+**Parameters**
 
-## `delprop(object: instance, name: string)`
+- `x` (`any`) — The value to check.
+
+**Returns** `string`
+
+## `delprop()`
+
+```zuri,ignore
+delprop(object: instance, name: string) -> void
+```
 
 Deletes the property name from the given instance of object.
 
-   from.
+**Parameters**
 
-- **Parameter** `instance` object The instance to delete the property
-- **Parameter** `string` name The name of the property to delete.
-- **Returns** `void`
+- `object` (`instance`) — The instance to delete the property from.
+- `name` (`string`) — The name of the property to delete.
 
-## `getprop(object: instance, name: string)`
+**Returns** `void`
 
-Returns the value of the property name from the given instance
-of object. If the object has no such property, `nil` is
-returned.
+## `getprop()`
 
-   from.
+```zuri,ignore
+getprop(object: instance, name: string) -> any|nil
+```
 
-- **Parameter** `instance` object The instance to get the property
-- **Parameter** `string` name The name of the property to get.
-- **Returns** `any|nil`
+Returns the value of the property name from the given instance of
+object. If the object has no such property, `nil` is returned.
 
-## `hasprop(object: instance, name: string)`
+**Parameters**
 
-Returns true if the property name exists in the given instance
-of object. If the object has no such property, `false` is
-returned.
+- `object` (`instance`) — The instance to get the property from.
+- `name` (`string`) — The name of the property to get.
 
-   property.
+**Returns** `any|nil`
 
-- **Parameter** `instance` object The instance to check for the
-- **Parameter** `string` name The name of the property to check.
-- **Returns** `boolean`
+## `hasprop()`
 
-## `setprop(obj: instance, prop: string, value: any)`
+```zuri,ignore
+hasprop(object: instance, name: string) -> boolean
+```
 
-Sets the value of the object's property with the matching name
-to the given value. If the property already exists, it
-overwrites it and returns `true`, otherwise it returns
-`false`.
+Returns true if the property name exists in the given instance of
+object. If the object has no such property, `false` is returned.
 
-- **Parameter** `instance` obj The object to set the property of.
-- **Parameter** `string` prop The property to set.
-- **Parameter** `any` value The value to set the property to.
-- **Returns** `boolean`
+**Parameters**
 
-## `id(x: any)`
+- `object` (`instance`) — The instance to check for the property.
+- `name` (`string`) — The name of the property to check.
 
-Returns the unique identifier of value x within the system.
-This value is also equivalent to the current address of object
-x in memory.
+**Returns** `boolean`
 
-- **Parameter** `any` x The value to get the identifier of.
-- **Returns** `number`
+## `setprop()`
 
-## `print(...values)`
+```zuri,ignore
+setprop(obj: instance, prop: string, value) -> boolean
+```
+
+Sets the value of the object's property with the matching name to the
+given value. If the property already exists, it overwrites it and
+returns `true`, otherwise it returns `false`.
+
+**Parameters**
+
+- `obj` (`instance`) — The object to set the property of.
+- `prop` (`string`) — The property to set.
+- `value` (`any`) — The value to set the property to.
+
+**Returns** `boolean`
+
+## `id()`
+
+```zuri,ignore
+id(x) -> number
+```
+
+Returns the unique identifier of value x within the system. This value
+is also equivalent to the current address of object x in memory.
+
+**Parameters**
+
+- `x` (`any`) — The value to get the identifier of.
+
+**Returns** `number`
+
+## `print()`
+
+```zuri,ignore
+print(...values: list)
+```
 
 Prints the given arguments to standard output.
 
-Unlike `echo` (which always appends a newline and only ever
-prints one value), `print()` writes every argument
-back-to-back with no separator and no trailing newline. It
-also critically writes a `bytes` object as RAW bytes rather
-than its `Display` text. That raw-byte path is what lets a
-script stream binary output (e.g. a PBM/PNG image body one
+Unlike `echo` (which always appends a newline and only ever prints one
+value), `print()` writes every argument back-to-back with no separator
+and no trailing newline. It also critically writes a `bytes` object as
+RAW bytes rather than its `Display` text. That raw-byte path is what
+lets a script stream binary output (e.g. a PBM/PNG image body one
 scanline at a time).
 
-- **Note** In the REPL, it also appends a newline at the end.
-- **Parameter** ...vany values: Any number of arguments to print
-- **Returns** `void`
+**Parameters**
 
-## `rand(x: ?number, y: ?number)`
+- `...vany` — values: Any number of arguments to print
 
-If no argument is given, returns a random number between 0 and
-1. If x is given, returns a random number between 0 and x. If
-   y is given, returns a random number between x and y.
+**Returns** — void
 
-- **Parameter** `?number` x The lower bound of the random number.
-- **Parameter** `?number` y The upper bound of the random number.
-- **Returns** `number`
+> **Note:** In the REPL, it also appends a newline at the end.
 
-## `is_bigint(x: any)`
+## `rand()`
 
-Returns `true` if x is a bigint or `false` otherwise. A bigint is
-a distinct type from `number` created either with the `n`
-literal suffix (`123n`) or by an operation whose result overflows
-what a regular `number` can represent exactly. `is_number(x)` and
-`is_int(x)` are both `false` for a bigint even though it holds an
-integer value; check `is_bigint(x)` separately when a value might
-be either.
+```zuri,ignore
+rand(x: ?number, y: ?number) -> number
+```
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+If no argument is given, returns a random number between 0 and 1. If x
+is given, returns a random number between 0 and x. If y is given,
+returns a random number between x and y.
 
-## `is_bool(x: any)`
+**Parameters**
+
+- `x` (`?number`) — The lower bound of the random number.
+- `y` (`?number`) — The upper bound of the random number.
+
+**Returns** `number`
+
+## `is_bigint()`
+
+```zuri,ignore
+is_bigint(x) -> boolean
+```
+
+Returns `true` if x is a bigint or `false` otherwise. A bigint is a
+distinct type from `number` created either with the `n` literal suffix
+(`123n`) or by an operation whose result overflows what a regular
+`number` can represent exactly. `is_number(x)` and `is_int(x)` are both
+`false` for a bigint even though it holds an integer value; check
+`is_bigint(x)` separately when a value might be either.
+
+**Parameters**
+
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_bool()`
+
+```zuri,ignore
+is_bool(x) -> boolean
+```
 
 Returns `true` if x is a boolean or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_callable(x: any)`
+- `x` (`any`) — The value to check.
 
-Returns `true` if x is a callable or `false` otherwise.
-Callables includes classes, functions, methods and closures.
+**Returns** `boolean`
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+## `is_callable()`
 
-## `is_class(x: any)`
+```zuri,ignore
+is_callable(x) -> boolean
+```
+
+Returns `true` if x is a callable or `false` otherwise. Callables
+includes classes, functions, methods and closures.
+
+**Parameters**
+
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_class()`
+
+```zuri,ignore
+is_class(x) -> boolean
+```
 
 Returns `true` if x is a class or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_dict(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_dict()`
+
+```zuri,ignore
+is_dict(x) -> boolean
+```
 
 Returns `true` if x is a dictionary or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_function(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_function()`
+
+```zuri,ignore
+is_function(x) -> boolean
+```
 
 Returns `true` if x is a function or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_instance(x: any)`
+- `x` (`any`) — The value to check.
 
-Returns `true` if x is an instance of any class or `false`
-otherwise.
+**Returns** `boolean`
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+## `is_instance()`
 
-## `is_int(x: any)`
+```zuri,ignore
+is_instance(x) -> boolean
+```
+
+Returns `true` if x is an instance of any class or `false` otherwise.
+
+**Parameters**
+
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_int()`
+
+```zuri,ignore
+is_int(x) -> boolean
+```
 
 Returns `true` if x is an integer or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_list(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_list()`
+
+```zuri,ignore
+is_list(x) -> boolean
+```
 
 Returns `true` if x is a list or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_number(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_number()`
+
+```zuri,ignore
+is_number(x) -> boolean
+```
 
 Returns `true` if x is a number or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_object(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_object()`
+
+```zuri,ignore
+is_object(x) -> boolean
+```
 
 Returns `true` if x is an object or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_string(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_string()`
+
+```zuri,ignore
+is_string(x) -> boolean
+```
 
 Returns `true` if x is a string or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_bytes(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_bytes()`
+
+```zuri,ignore
+is_bytes(x) -> boolean
+```
 
 Returns `true` if x is bytes or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_file(x: any)`
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`
+
+## `is_file()`
+
+```zuri,ignore
+is_file(x) -> boolean
+```
 
 Returns `true` if x is a file or `false` otherwise.
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+**Parameters**
 
-## `is_iterable(x: any)`
+- `x` (`any`) — The value to check.
 
-Returns `true` if x is an iterable object or `false`
-otherwise. Iterables includes lists, dictionaries, strings,
-bytes, and instances of any class that defines both `@key()`
-and `@value()` decorator functions.
+**Returns** `boolean`
 
-- **Parameter** `any` x The value to check.
-- **Returns** `boolean`
+## `is_iterable()`
+
+```zuri,ignore
+is_iterable(x) -> boolean
+```
+
+Returns `true` if x is an iterable object or `false` otherwise.
+Iterables includes lists, dictionaries, strings, bytes, and instances of
+any class that defines both `@key()` and `@value()` decorator functions.
+
+**Parameters**
+
+- `x` (`any`) — The value to check.
+
+**Returns** `boolean`

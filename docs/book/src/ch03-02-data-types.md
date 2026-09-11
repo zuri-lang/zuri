@@ -64,8 +64,7 @@ echo 9007199254740993
 9007199254740992
 ```
 
-Numeric literals come in five flavours, and underscores may be used
-anywhere inside them for readability:
+Numeric literals come in five forms:
 
 ```zuri
 var decimal = 1_000_000
@@ -73,7 +72,17 @@ var binary = 0b1010          # 10
 var octal = 0c17             # 15
 var hexadecimal = 0xff       # 255
 var scientific = 6.02e23
+
+echo [decimal, binary, octal, hexadecimal, scientific]
 ```
+
+```console
+[1000000, 10, 15, 255, 602000000000000000000000]
+```
+
+Underscores are digit separators, and they are accepted in decimal literals
+only. `1_000_000` and `1_0.5_5` are fine; `0xdead_beef` and `0b1010_1010`
+are not. [Numbers](ch04-02-numbers.md) has the full rules.
 
 The special values behave the way the standard says:
 
@@ -92,7 +101,7 @@ NaN
 Every number carries methods, so mathematics reads left to right:
 
 ```zuri
-echo (2).sqrt()
+echo 2.sqrt()
 echo 16.log2()
 echo (-3).abs()
 echo 3.7.round()
@@ -109,9 +118,10 @@ echo 255.hex()
 ff
 ```
 
-The parentheses around `(2)` and `(-3)` are needed because `2.sqrt()` would
-start lexing a floating-point number at the dot. `3.7.round()` is fine
-because the first dot is already consumed by the literal.
+A literal takes a method directly; the parentheses around `(-3)` are there
+because a method call binds tighter than the minus sign, so `-3.abs()`
+would negate the result instead of the operand.
+[Numbers](ch04-02-numbers.md) covers the rule in full.
 
 ## `bigint`
 
@@ -158,7 +168,7 @@ Two of those rows deserve a second look.
 fallback. When a negative number is a legitimate result, compare it
 explicitly:
 
-```zuri
+```zuri,ignore
 var position = haystack.index_of(needle)
 
 if position == -1 {
@@ -169,7 +179,7 @@ if position == -1 {
 **An empty list is truthy.** `[]` and `{}` are objects, and objects are
 truthy. Use `is_empty()`:
 
-```zuri
+```zuri,ignore
 if items.is_empty() {
   echo 'nothing here'
 }
@@ -195,6 +205,10 @@ Calling any other method on `nil` raises a `TypeError`, which is usually
 exactly the error you wanted.
 
 ## `string`
+
+This is the short version. [Strings](ch04-01-strings.md) covers quoting,
+escapes, interpolation, concatenation, repetition and regular expressions
+in full.
 
 Strings are written in single or double quotes, with no difference in
 meaning:

@@ -12,8 +12,8 @@ $ cd zuri-rs
 $ cargo build --release
 ```
 
-The first build compiles a JIT backend and a fairly large set of native
-dependencies, so it takes a while. Subsequent builds are fast.
+The first build compiles a large set of native dependencies, so it takes
+a few minutes. Builds after that are incremental and quick.
 
 When it finishes you have an executable at `target/release/zuri`, and,
 sitting right next to it, a copy of the `libs/` directory. That pairing
@@ -65,7 +65,7 @@ That `%>` is the Zuri prompt. Type `.exit` to leave.
 
 ## A Debug Build, and Why You Might Want One
 
-Plain `cargo build` produces `target/debug/zuri`. It runs substantially
-slower, and it is the build to reach for when you are chasing an unexpected
-behavior, because it keeps the runtime assertions the optimised build
-strips out. For everything in this book, either build is fine.
+Plain `cargo build` produces `target/debug/zuri`. It keeps the runtime
+assertions that the optimised build strips out, which makes it the build to
+reach for when a program is doing something you did not expect. It runs
+more slowly in exchange. Either build runs everything in this book.

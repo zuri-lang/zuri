@@ -51,7 +51,7 @@ Use this when the natural name is long, or when it would collide.
 A path starting with `.` or `..` is resolved against the directory of the
 file doing the importing, and is never searched for anywhere else.
 
-```zuri
+```zuri,ignore
 import .helpers          # helpers.zu, next to this file
 import .models.user      # models/user.zu
 import ..shared.config   # up one directory, then shared/config.zu
@@ -69,14 +69,14 @@ that imports `a` does not see `b`'s contents through it.
 
 Prefix the path with `@` to re-export:
 
-```zuri
+```zuri,ignore
 import @.util { * }
 ```
 
 Now everything `util.zu` exposed is part of this module's public surface
 too. All three forms take the prefix:
 
-```zuri
+```zuri,ignore
 import @.module            # the module itself is re-exported
 import @.module { item }   # just that item
 import @.module { * }      # everything
@@ -87,7 +87,7 @@ private files:
 
 <span class="filename">Filename: pkg/index.zu</span>
 
-```zuri
+```zuri,ignore
 import @.util { * }
 import .sub.deep { deep_slug }
 
@@ -104,7 +104,7 @@ own use and stays private.
 A member whose name starts with `_` is private to its module and cannot be
 imported by name:
 
-```zuri
+```zuri,ignore
 import .pkg.util { _secret }
 ```
 
@@ -132,7 +132,7 @@ pkg/
     deep.zu
 ```
 
-```zuri
+```zuri,ignore
 import .pkg            # runs pkg/index.zu
 import .pkg.util       # runs pkg/util.zu
 import .pkg.sub.deep   # runs pkg/sub/deep.zu
@@ -172,7 +172,7 @@ from user libs
 A module's top level executes the first time it is imported, and never
 again. Every later import of the same file gets the same module object:
 
-```zuri
+```zuri,ignore
 import .once
 import .once as again
 import .once
@@ -197,7 +197,7 @@ partially built module rather than looping forever:
 
 <span class="filename">Filename: a.zu</span>
 
-```zuri
+```zuri,ignore
 import .b
 
 def from_a() {
@@ -209,7 +209,7 @@ echo 'a loaded'
 
 <span class="filename">Filename: b.zu</span>
 
-```zuri
+```zuri,ignore
 import .a
 
 echo 'b loaded'
@@ -274,7 +274,7 @@ $ zuri tool.zu
 running as a program: 5
 ```
 
-```zuri
+```zuri,ignore
 import .tool
 echo tool.add(10, 20)
 ```
@@ -288,30 +288,22 @@ runnable command-line program when launched directly. Put the argument
 parsing and the entry point behind that check, and everything else above
 it.
 
-### Wildcard Imports Overwrite Them
-
-`__file__` and `__root__` are ordinary module members, so `import x { * }`
-copies the imported module's pair over yours:
+These two names describe *which file this is*, so they are not exports. A
+wildcard import copies every public name out of the module it names, and
+`__file__` and `__root__` are deliberately excluded from that:
 
 ```zuri
-echo __file__
 import math { * }
-echo __file__
+
+echo __file__ == __root__
 ```
 
 ```console
-/path/to/main.zu
-/path/to/libs/math.zu
+true
 ```
 
-Read `__file__` into a variable of your own at the top of the file, above
-any wildcard import, and use that:
-
-```zuri
-var THIS_FILE = __file__
-
-import config { * }
-```
+That guarantee is what makes the `__root__ == __file__` check above
+reliable in every file, including one that wildcard-imports a sibling.
 
 ## Structuring a Project
 

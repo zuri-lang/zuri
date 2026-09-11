@@ -154,7 +154,7 @@ That one is a local, and it disappears when `outer` returns.
 A function must be declared before the line that calls it, at the top
 level:
 
-```zuri
+```zuri,ignore
 echo later()
 
 def later() {

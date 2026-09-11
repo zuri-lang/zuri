@@ -15,3 +15,15 @@ def use_internally() {
 def use_private_internally() {
   return _private_fn()
 }
+
+# `__file__` and `__root__` describe which file this is, so a wildcard
+# import must not overwrite them with the imported module's values.
+# When it does, `if __root__ == __file__` stops working in every file
+# that uses a wildcard import.
+def own_file() {
+  return __file__
+}
+
+def own_root() {
+  return __root__
+}

@@ -183,7 +183,7 @@ sealed; the values of static fields are not.
 Declaring the same method twice in one class does not silently keep the
 last one:
 
-```zuri
+```zuri,ignore
 class B {
   m() {}
   m() {}

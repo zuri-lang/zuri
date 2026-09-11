@@ -32,7 +32,7 @@ the rest of the code short.
 
 <span class="filename">Filename: models/index.zu</span>
 
-```zuri
+```zuri,ignore
 import @.task { * }
 ```
 
@@ -61,7 +61,7 @@ starts one:
 
 <span class="filename">Filename: index.zu</span>
 
-```zuri
+```zuri,ignore
 import log
 import os
 

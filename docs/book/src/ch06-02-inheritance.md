@@ -45,7 +45,7 @@ class has at most one parent.
 **`parent(args)`** calls the parent's constructor. Do it first in `@new`,
 before you set up anything of your own:
 
-```zuri
+```zuri,ignore
 class Circle < Shape {
   @new(radius) {
     parent('circle')
@@ -95,7 +95,7 @@ terms of a method the child supplies. `Shape.area()` raises
 `NotImplementedError`, so a subclass that forgets to override it says so
 clearly:
 
-```zuri
+```zuri,ignore
 catch {
   Shape('blob').area()
 } as e {
@@ -154,3 +154,110 @@ Inheritance chains cost nothing to walk at runtime. A method lookup on a
 class four levels deep is the same operation as one on a class with no
 parent, because every class's method table is complete at declaration time.
 Write the hierarchy the design wants.
+
+## What You Write Instead of an Interface
+
+Zuri has single inheritance and no interfaces, so the two patterns below do
+the jobs an interface would do elsewhere.
+
+**A base class that raises.** When a base class needs every subclass to
+supply a method, declare it and raise:
+
+```zuri
+class Shape {
+
+  @new(name: string) {
+    self.name = name
+  }
+
+  area() {
+    raise NotImplementedError('${self.name} must define area()')
+  }
+
+  describe() {
+    return '${self.name} has area ${self.area()}'
+  }
+}
+
+class Circle < Shape {
+
+  @new(radius: number) {
+    parent('circle')
+    self.radius = radius
+  }
+
+  area() {
+    return 3.141592653589793 * (self.radius ** 2)
+  }
+}
+
+class Blob < Shape {
+
+  @new() {
+    parent('blob')
+  }
+}
+
+echo Circle(2).describe()
+
+catch {
+  echo Blob().describe()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+circle has area 12.566370614359172
+NotImplementedError: blob must define area()
+```
+
+Those parentheses around `self.radius ** 2` are load-bearing. `**` sits at
+the same precedence level as `*` and associates left, so
+`3.14 * self.radius ** 2` would be `(3.14 * self.radius) ** 2` — a
+plausible-looking number that is wrong. When `**` shares an expression with
+`*` or `/`, parenthesise.
+
+`describe()` calls `self.area()`, and `self` is the actual instance, so the
+subclass's version runs. That is the whole of dynamic dispatch in Zuri:
+there is nothing to declare and nothing to mark virtual.
+
+**A parameter typed by the base class.** An annotation naming a class
+accepts any subclass of it, which is how you say "anything that is a
+Shape":
+
+```zuri,ignore
+def total_area(shapes: list) {
+  return shapes.reduce(@(sum, shape: Shape) => sum + shape.area(), 0)
+}
+```
+
+## Checking What Something Is
+
+`instance_of()` walks the whole chain, and `typeof()` reports the concrete
+class:
+
+```zuri
+class Shape {}
+class Circle < Shape {}
+class Square < Shape {}
+
+var c = Circle()
+
+echo instance_of(c, Circle)
+echo instance_of(c, Shape)
+echo instance_of(c, Square)
+echo typeof(c)
+```
+
+```console
+true
+true
+false
+Circle
+```
+
+`typeof()` on an instance gives the name of its concrete class, not the
+name of any base class it inherits from. Use `instance_of()` when the
+question is "does this behave like a Shape?", and `typeof()` when the
+question is "what exactly is this?".

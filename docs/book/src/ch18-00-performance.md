@@ -5,7 +5,8 @@ then compiles that piece to machine code with Cranelift and runs it there
 instead. The tiering happens on its own, on a background thread, with no
 annotations and no flags.
 
-Here is what that is worth, on a plain recursive Fibonacci:
+Here is what that is worth on a plain recursive Fibonacci, measured on one
+idle machine:
 
 ```zuri
 def fib(n) {
@@ -23,16 +24,16 @@ echo 'took ${((time() - start) * 1000).round()}ms'
 ```console
 $ zuri fib.zu
 196418
-took 96ms
+took 14ms
 
 $ ZURI_JIT=0 zuri fib.zu
 196418
-took 772ms
+took 47ms
 ```
 
-Eight times, for a function that does nothing but add and compare. You do
-not have to do anything to get that. The rest of this chapter is about the
-handful of cases where what you write decides whether you get it.
+Over three times, for a function that does nothing but add and compare, and
+you write nothing to get it. The rest of this chapter is about the handful
+of cases where what you write decides whether you get it.
 
 ## How Tiering Works
 
@@ -119,18 +120,44 @@ def guarded(n) {
     return 0
   }
 }
+
+def timed(label, work) {
+  var start = time()
+  work()
+  echo '${label}: ${((time() - start) * 1000).round()}ms'
+}
+
+timed('catch inside ', @() {
+  iter var r = 0; r < 2000; r++ {
+    with_catch(1000)
+  }
+})
+
+timed('catch outside', @() {
+  iter var r = 0; r < 2000; r++ {
+    guarded(1000)
+  }
+})
+
+timed('no catch     ', @() {
+  iter var r = 0; r < 2000; r++ {
+    without_catch(1000)
+  }
+})
 ```
 
 Two thousand rounds of a thousand iterations each:
 
-```console
-catch inside  : 1245ms
-catch outside : 18ms
-no catch      : 3ms
-```
+| Variant | Time |
+| --- | --- |
+| `catch` inside the hot function | 103ms |
+| `catch` around the call | 4ms |
+| no `catch` at all | 2ms |
 
-Seventy times, for moving one `catch` up a level. The fix is always the
-same: **put the loop in its own function and wrap the call, not the loop.**
+Twenty-five times, for moving one `catch` up a level. Note the second and
+third rows: wrapping the *call* costs essentially nothing, because the
+function doing the work is compiled either way. The fix is always the same:
+**put the loop in its own function and wrap the call, not the loop.**
 
 `raise` on its own is fine. A `raise` compiles to a bail-out back to the
 interpreter at that exact instruction, so a guard clause that never fires
@@ -162,10 +189,13 @@ def sum_typed(values: list) {
 
 Twenty thousand rounds over a thousand-element list:
 
-```console
-typed  : 212ms
-untyped: 310ms
-```
+| Variant | Time |
+| --- | --- |
+| `values: list` | 85ms |
+| no annotation | 150ms |
+
+Running them in both orders gives the same answer, which is the check that
+tells you it is the annotation and not the warm-up.
 
 Annotate the parameters of any function on a hot path. It costs one word
 per parameter and it documents the function at the same time.
@@ -253,7 +283,10 @@ what you hoped, and it never goes stale.
 
 ## Measuring Honestly
 
-Four rules, learned the hard way.
+Every number in this chapter is one measurement on one machine. Treat them
+as ratios rather than as figures to reproduce: yours will differ with your
+processor, your build and what else the machine is doing. Five rules make
+the difference between a measurement and a guess.
 
 **Warm up before you time.** The first few hundred iterations run
 interpreted, and if your benchmark is short, that is all you measured.
@@ -269,6 +302,44 @@ run, not before the build that precedes it.
 **Change one thing.** A "fix" that touches three sites has three possible
 explanations for its effect, and at least one of them is usually a
 regression hiding behind the other two.
+
+**Measure the real program.** A microbenchmark of one function tells you
+about that function in isolation, with a warm cache and no competing
+allocation. `ZURI_JIT_COVERAGE=1` on the actual workload tells you which
+function to look at in the first place, which is nearly always the more
+valuable answer.
+
+### Timing Something Yourself
+
+`time()` returns epoch seconds with microsecond resolution, so a timing
+harness is four lines:
+
+```zuri
+def timed(label, work) {
+  var start = time()
+  var result = work()
+
+  echo '${label}: ${((time() - start) * 1000).round()}ms'
+
+  return result
+}
+
+var squares = timed('build a list', @() {
+  var out = []
+
+  iter var i = 0; i < 200000; i++ {
+    out.append(i * i)
+  }
+
+  return out
+})
+
+echo squares.length()
+```
+
+The elapsed line will differ every run; the length will not. Print both, so
+a change in the second tells you the harness broke rather than the code
+getting faster.
 
 ## The Environment Variables
 

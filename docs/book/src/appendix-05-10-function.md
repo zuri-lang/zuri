@@ -1,10 +1,12 @@
-# `function`
+# Function Methods
 
-5 methods. See [Functions](ch05-00-functions.md) for the guided
-introduction.
+Every method carried by a callable value, with its signature, what it
+returns, and its edge cases. These apply to a named `def`, an anonymous
+function, a bound method, and a built-in native function alike.
 
-These apply to every callable value: a named `def`, an anonymous function,
-a bound method, and a built-in native function.
+Unlike the other pages in this appendix, this one is written by hand: the
+methods below live in the runtime rather than in a standard library stub,
+so there is no doc block to generate them from.
 
 | Method | Returns |
 | --- | --- |

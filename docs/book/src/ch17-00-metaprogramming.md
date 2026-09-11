@@ -205,10 +205,84 @@ AST walkers.
 
 Notice `AddImm` in that output. The compiler folded the constant `2` into
 the add instruction rather than loading it separately. Reading the bytecode
-is the most direct way to answer "did the compiler do what I hoped?", and
-it is exactly what the JIT chapter asks you to do.
+is the most direct way to answer "what did the compiler actually make of
+this?".
 
 `compile_file(path)` does the same for a file.
+
+## A Worked Example: A Documentation Extractor
+
+Here is the pattern the book's own reference appendices are built on. It
+takes source text and returns every documented function in it, pairing each
+declaration with the doc block above it.
+
+The key fact is that `zuri.parse()` keeps comments in the tree. A doc block
+comes back as its own `DocBlock` node, sitting as a sibling immediately
+before whatever it documents, so pairing them is a single pass with one
+variable of state:
+
+```zuri
+import zuri
+
+def documented_functions(text) {
+  var found = []
+  var pending = nil
+
+  for node in zuri.parse(text) {
+    if node.kind == 'DocBlock' {
+      pending = node.fields.text
+      continue
+    }
+
+    if node.kind == 'Function' and pending != nil {
+      var params = node.fields.parameters.map(@(p) => p.fields.name)
+
+      found.append({ name: node.fields.name, params, doc: pending })
+    }
+
+    # Anything else between a block and a declaration breaks the pairing.
+    pending = nil
+  }
+
+  return found
+}
+
+var source = "/**\n * Adds two numbers.\n */\ndef add(a: number, b: number) {\n  return a + b\n}\n\ndef undocumented(x) {\n  return x\n}\n"
+
+for fn in documented_functions(source) {
+  echo '${fn.name}(${', '.join(fn.params)})'
+  echo '  ' + fn.doc.split('\n')[1].trim().replace('* ', '', false)
+}
+```
+
+```console
+add(a, b)
+  Adds two numbers.
+```
+
+`undocumented` is absent from the output, because nothing set `pending`
+before it.
+
+Three things make this approach worth preferring over scanning the text
+yourself.
+
+**The parser knows what a declaration is.** A function named `def_handler`,
+a `def` inside a string literal, a doc block inside a block comment — all of
+them fool a text scan and none of them fool the parser.
+
+**Parameter names and types come from the real nodes.** A parameter's
+`type_hint` node carries its types and whether it is nullable, so a
+generated signature matches what the runtime will actually enforce rather
+than what the source happened to look like.
+
+**It cannot drift.** When the grammar gains something, the parser gains it
+too, and a tool built this way keeps working.
+
+What the parser does *not* do is interpret the doc block's contents. The
+`@param` and `@returns` conventions are a convention, not grammar, so the
+text inside a `DocBlock` node is yours to parse. That is the one piece you
+write yourself — and the place to be careful, since a tag's text may wrap
+onto the following line.
 
 ## What This Is Good For
 

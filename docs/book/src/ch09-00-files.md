@@ -30,7 +30,13 @@ write or call `open()`.
 ## Reading a Whole File
 
 ```zuri
+file('notes.txt', 'w').write('It works!')
+
 echo file('notes.txt').read()
+```
+
+```console
+It works!
 ```
 
 `read()` with no argument opens the file, reads all of it, and closes it
@@ -40,28 +46,68 @@ what you want most of the time.
 In text mode you get a string, decoded strictly as UTF-8. In binary mode
 you get `bytes`.
 
+### Reading in Chunks
+
 `read(length)` reads at most that many bytes and leaves the handle open, so
-you can call it again:
+you can call it again. This is how you process a file too large to hold in
+memory at once:
 
 ```zuri
-var handle = file('big.bin', 'rb')
+file('notes.txt', 'w').write('alpha\nbeta\ngamma\n')
+
+var handle = file('notes.txt')
 handle.open()
 
+var chunks = 0
+
 while true {
-  var chunk = handle.read(65536)
+  var chunk = handle.read(6)
 
   if chunk.is_empty() {
     break
   }
 
-  process(chunk)
+  chunks++
 }
 
 handle.close()
+
+echo chunks
 ```
 
-`gets(length)` is the same as `read()` except that it never opens or closes
-anything for you. Use it when you are managing the handle yourself.
+```console
+3
+```
+
+Six bytes at a time is a demonstration; in real code the chunk is tens of
+kilobytes. The shape is what matters: open once, read until you get an
+empty result, close once.
+
+Note that chunks fall wherever the byte count lands, not on line
+boundaries. A chunked reader that needs whole lines has to keep the tail of
+each chunk and join it to the front of the next.
+
+### Reading Lines
+
+For text you want line by line, the simplest form reads the file and splits
+it:
+
+```zuri
+file('notes.txt', 'w').write('alpha\nbeta\ngamma\n')
+
+for line in file('notes.txt').read().lines() {
+  echo '[${line}]'
+}
+```
+
+```console
+[alpha]
+[beta]
+[gamma]
+```
+
+`lines()` handles both `\n` and `\r\n`, and drops the trailing empty
+piece a final newline would otherwise produce.
 
 ## Writing
 
@@ -85,12 +131,19 @@ handle.write('first line\n')
 handle.write('second line\n')
 
 handle.close()
+
+echo file('notes.txt').read()
 ```
 
 ```console
 first line
 second line
+
 ```
+
+The explicit `open()` is what keeps the handle open across both writes.
+Without it, each `write()` would open, truncate, write and close, and only
+`second line` would survive.
 
 An already-open handle is written to where it stands, so the sequence above
 does exactly what it reads like.
@@ -114,7 +167,7 @@ handle.close()
 `seek(offset, whence)` takes `0` for the start of the file, `1` for the
 current position and `2` for the end. The `io` module names them:
 
-```zuri
+```zuri,ignore
 import io
 
 handle.seek(0, io.SEEK_SET)
@@ -137,14 +190,47 @@ echo handle.is_open()
 echo handle.is_closed()
 ```
 
-`stats()` returns a dictionary of metadata:
+`stats()` returns a dictionary of metadata about the file on disk:
 
 ```zuri
+file('notes.txt', 'w').write('alpha\nbeta\n')
+
 var info = file('notes.txt').stats()
 
 echo info.size
-echo info.is_file
+echo info.is_readable
+echo info.keys()
 ```
+
+```console
+11
+true
+[is_readable, is_writable, is_executable, is_symbolic, size, mode, dev, ino, nlink, uid, gid, mtime, atime, ctime, blocks, blksize]
+```
+
+`size` is in bytes. `mtime`, `atime` and `ctime` are epoch seconds, ready
+to hand to the `date` module. `mode` is the raw permission-and-type word,
+and the `stat` module is what turns it into an answer:
+
+```zuri
+import stat
+
+var info = file('notes.txt').stats()
+
+echo stat.S_ISREG(info.mode)
+echo stat.S_ISDIR(info.mode)
+echo stat.file_mode(info.mode)
+```
+
+```console
+true
+false
+-rw-rw-r--
+```
+
+`S_ISREG`, `S_ISDIR`, `S_ISLNK` and the rest of the family each answer one
+question about the kind of entry. `file_mode()` renders the permission bits
+the way `ls -l` does.
 
 ## Managing Files
 
@@ -163,7 +249,7 @@ modify)` and `symlink(target)`.
 `open()` is yours to close, and the cleanest way to guarantee it is a
 `catch` that closes on the way out:
 
-```zuri
+```zuri,ignore
 var handle = file(path, 'w')
 handle.open()
 
@@ -200,54 +286,79 @@ echo os.remove_dir('sub', true)
 
 ## Listing and Globbing
 
+Everything in this section works on a real tree, so build one first:
+
 ```zuri
-echo os.read_dir('r')
-echo os.read_dir('r', true)
+import os
+
+os.create_dir('tree/sub', nil, true)
+
+file('tree/top.txt', 'w').write('a')
+file('tree/sub/nested.txt', 'w').write('b')
+file('tree/sub/notes.md', 'w').write('c')
+```
+
+`read_dir()` lists one directory:
+
+```zuri
+echo os.read_dir('tree')
+echo os.read_dir('tree', true)
 ```
 
 ```console
-[., .., top.txt, inner]
-[., .., top.txt, inner, inner/nested.txt]
+[., .., top.txt, sub]
+[., .., top.txt, sub, sub/nested.txt, sub/notes.md]
 ```
 
-`read_dir()` includes `.` and `..`, and the recursive form returns nested
-entries as paths relative to the directory you asked about.
+Two things to notice. `.` and `..` are included, so a loop over the result
+almost always wants to skip them. And the recursive form returns nested
+entries as paths **relative to the directory you asked about**, not as bare
+names — which is what makes them usable directly.
 
 `glob()` is usually what you actually want:
 
 ```zuri
-echo os.glob('*.txt', 'sub')
-echo os.glob('**/*.txt', 'r')
+echo os.glob('*.txt', 'tree')
+echo os.glob('**/*.txt', 'tree')
 ```
 
 ```console
-[a.txt]
-[inner/nested.txt]
+[top.txt]
+[sub/nested.txt]
 ```
 
-`*` matches within one path segment and `**` matches across segments. The
+`*` matches within one path segment; `**` matches across segments. The
 second argument is the base directory, and results come back relative to
 it.
 
-`**/*.txt` means "in a subdirectory, a `.txt` file", so it does not match a
-file sitting directly in the base directory:
+Read those two results together, because the distinction catches people
+out. `*.txt` found the file at the top and not the nested one. `**/*.txt`
+found the nested one and **not** the top-level one, because `**/` means
+"in a subdirectory". Neither pattern finds both.
+
+To match at every depth, glob `**` and filter:
 
 ```zuri
-echo os.glob('*.txt', 'wc')
-echo os.glob('**/*.txt', 'wc')
-echo os.glob('**', 'wc')
+echo os.glob('**', 'tree')
+echo os.glob('**', 'tree').filter(@(p) => p.ends_with('.txt'))
 ```
 
 ```console
-[a.txt]
-[sub/b.txt]
-[a.txt, sub, sub/b.txt]
+[top.txt, sub, sub/nested.txt, sub/notes.md]
+[top.txt, sub/nested.txt]
 ```
 
-To walk a whole tree, glob `**` and filter:
+`**` on its own matches every entry at every depth, directories included,
+which is why the filter is doing real work in the second line.
+
+Clean up when you are done:
 
 ```zuri
-os.glob('**', root).filter(@(p) => p.ends_with('.txt'))
+echo os.remove_dir('tree', true)
+```
+
+```console
+true
 ```
 
 ## Paths
@@ -328,7 +439,7 @@ project root.
 
 ## A Worked Example
 
-Counting words across every text file in a directory tree:
+Counting words across every text file in a directory tree, start to finish:
 
 ```zuri
 import os
@@ -355,15 +466,41 @@ def word_count(root) {
   return counts
 }
 
+os.create_dir('wc/sub', nil, true)
+
+file('wc/a.txt', 'w').write('Hello world, hello!')
+file('wc/sub/b.txt', 'w').write('World of Zuri.')
+file('wc/sub/skip.md', 'w').write('not counted')
+
 echo word_count('wc')
+
+os.remove_dir('wc', true)
 ```
 
 ```console
 {hello: 2, world: 2, of: 1, zuri: 1}
 ```
 
-Three things in that function are worth pointing at. `glob()` gives paths
-relative to the root, so they have to be joined back onto it.
-`split('/\W+/')` uses a regular expression, which is why punctuation does
-not end up in the keys. And `counts.get(word, 0)` supplies the default that
-makes the increment work on a key that is not there yet.
+Four things in that function are worth pointing at.
+
+`glob('**', root)` returns paths **relative to the root**, so they have to
+be joined back onto it before they can be opened. Forgetting that join is
+the most common mistake in code that globs.
+
+The `.md` file is absent from the result because `text_files()` filtered it
+out, which is the filter doing the job `**` alone cannot.
+
+`split('/\W+/')` is a regular expression, which is why punctuation does not
+end up in the keys — `world,` and `hello!` became `world` and `hello`. A
+plain `split(' ')` would have kept both.
+
+And `counts.get(word, 0) + 1` supplies the starting value for a key that
+does not exist yet. Without the fallback, the first sighting of every word
+would raise.
+
+## Where to Go Next
+
+Binary files, byte streams and the `io` module's in-memory files are
+[Chapter 10](ch10-00-binary-data.md). Reading a file over the network is
+[Chapter 12](ch12-00-networking.md). The complete list of methods a file
+handle carries is [Appendix E](appendix-05-09-file.md).

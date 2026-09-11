@@ -1,12 +1,11 @@
 # Appendix F: The Standard Library Index
 
-Every module, what it is for, and where the book covers it. All of them are
-reachable with a bare `import`, with no package manager and no dependency
-to add.
+Every module in the standard library, what it is for, and where the book
+covers it. All of them are reachable with a bare `import`, with no package
+manager and no dependency to add.
 
-Each module's source lives in `libs/`, and every public function in it
-carries a doc block with its parameters, defaults and edge cases. Reading
-`libs/set.zu` is a faster way to learn `set` than any summary.
+Each module's source is in `libs/`, and every public function in it carries
+a doc block stating its parameters, its defaults and its edge cases.
 
 ## Data and Serialisation
 
@@ -87,51 +86,192 @@ carries a doc block with its parameters, defaults and edge cases. Reading
 | `zuri` | lexing, parsing, compiling and runtime reflection | [17](ch17-00-metaprogramming.md) |
 | `math` | the mathematical constants | [4](ch04-02-numbers.md) |
 
-## Submodules
+## Packages and Their Submodules
 
-Several of these are packages, and their parts can be imported directly:
+Most of the larger modules are packages: a directory whose `index.zu`
+re-exports what its parts make public. `import http` reaches almost all of
+`http` without naming a submodule. Import a submodule directly when you
+want only that part of it, or when a name would otherwise collide.
 
-```text
-compress.deflate  compress.zlib    compress.gzip     compress.zstd
-compress.lz4      compress.bzip2   compress.brotli   compress.tar
-compress.zip      compress.checksum
+### `array`
 
-net.tcp    net.udp    net.tls    net.dtls   net.ip    net.addr   net.poll
+One module per element width, each exporting a single class.
 
-http.status  http.headers  http.cookies  http.router   http.server
-http.client  http.files    http.stream   http.body     http.multipart
-http.middleware  http.proxy  http.sse    http.websocket  http.h2
+| Submodule | Class | Element |
+| --- | --- | --- |
+| `array.int8` | `Int8Array` | signed 8-bit |
+| `array.uint8` | `UInt8Array` | unsigned 8-bit |
+| `array.int16` | `Int16Array` | signed 16-bit |
+| `array.uint16` | `UInt16Array` | unsigned 16-bit |
+| `array.int32` | `Int32Array` | signed 32-bit |
+| `array.uint32` | `UInt32Array` | unsigned 32-bit |
+| `array.int64` | `Int64Array` | signed 64-bit |
+| `array.uint64` | `UInt64Array` | unsigned 64-bit |
+| `array.float` | `FloatArray` | 32-bit float |
+| `array.double` | `DoubleArray` | 64-bit float |
 
-os.env  os.path  os.fs  os.process  os.system  os.tempfile
+### `compress`
 
-io.tty  io.bytesio
+| Submodule | What it is for |
+| --- | --- |
+| `compress.deflate` | raw DEFLATE streams |
+| `compress.zlib` | DEFLATE with a zlib header |
+| `compress.gzip` | DEFLATE with a gzip header and trailer |
+| `compress.zstd` | Zstandard, levels 1 to 22 |
+| `compress.lz4` | LZ4, block and frame formats |
+| `compress.bzip2` | bzip2 |
+| `compress.brotli` | Brotli |
+| `compress.tar` | reading and writing TAR archives |
+| `compress.zip` | reading and writing ZIP archives |
+| `compress.checksum` | CRC32, CRC32C, Adler-32 |
 
-isolate.channel  isolate.broadcast
+### `html`
 
-zuri.token  zuri.ast  zuri.compile  zuri.reflect
+| Submodule | What it is for |
+| --- | --- |
+| `html.tokenizer` | the WHATWG tokenizer: text in, tokens out |
+| `html.parser` | tree construction: tokens in, a document out |
+| `html.node` | the document tree and everything you can do to it |
+| `html.selector` | finding nodes with CSS selectors |
+| `html.serialize` | writing a document back out, minified or pretty |
+| `html.entities` | named character references, both directions |
+| `html.elements` | the element tables tree construction consults |
+| `html.namespaces` | the five namespace URIs the parser deals in |
 
-log.level  log.transport  log.console  log.file  log.dispatch  log.logger
+### `http`
 
-validate.rule  validate.rules  validate.schema  validate.validator
+| Submodule | What it is for |
+| --- | --- |
+| `http.client` | `HttpClient`, the request side |
+| `http.server` | `HttpServer`, the listening side |
+| `http.worker` | serving across several isolates |
+| `http.router` | matching a method and path to a handler |
+| `http.middleware` | CORS, access logging, security headers, and the rest |
+| `http.request` | the request object handlers receive |
+| `http.response` | the response object handlers return |
+| `http.headers` | `Headers`, with the field-name rules of RFC 9110 |
+| `http.cookies` | `Cookie` and `CookieJar` |
+| `http.body` | reading and writing message bodies |
+| `http.multipart` | `multipart/form-data`, including file uploads |
+| `http.files` | serving files from disk, with ranges and caching |
+| `http.stream` | chunked and streaming transfers |
+| `http.sse` | server-sent events |
+| `http.websocket` | the WebSocket protocol |
+| `http.proxy` | forwarding requests to another server |
+| `http.negotiate` | parsing `Accept`-style headers |
+| `http.status` | the IANA status codes and their reason phrases |
+| `http.h1` | the HTTP/1.1 wire format |
+| `http.errors` | the module's error hierarchy |
 
-html.parser  html.tokenizer  html.node  html.selector  html.serialize
-html.entities  html.elements  html.namespaces
+### `imagine`
 
-wire.compile  wire.render  wire.loader  wire.filters  wire.expression
+| Submodule | What it is for |
+| --- | --- |
+| `imagine.image` | `Image`, the pixel buffer everything else operates on |
+| `imagine.canvas` | drawing: lines, shapes, fills, text |
+| `imagine.color` | `Color`, and conversion between colour spaces |
+| `imagine.filters` | blur, sharpen, convolution, and the rest |
+| `imagine.font` | loading and measuring fonts |
+| `imagine.strokefont` | the built-in stroke font, with no file to load |
+| `imagine.formats` | decoding and encoding PNG, JPEG, GIF, WebP and more |
+| `imagine.animation` | multi-frame images |
+| `imagine.constants` | the named constants the module understands |
+| `imagine.errors` | the module's error hierarchy |
 
-imagine.image  imagine.canvas  imagine.color  imagine.filters
-imagine.font   imagine.formats imagine.animation
+### `io`
 
-array.int8  array.uint8  array.int16  array.uint16  array.int32
-array.uint32 array.int64 array.uint64 array.float   array.double
+| Submodule | What it is for |
+| --- | --- |
+| `io.bytesio` | `BytesIO`, a file-shaped object backed by memory |
+| `io.tty` | terminal control: raw mode, size, cursor |
 
-jwt.core  jwt.signer  jwt.verifier  jwt.token  jwt.jwks  jwt.codec
-```
+### `isolate`
 
-A package's `index.zu` re-exports what its parts make public, so
-`import http` reaches most of `http`'s surface without naming a submodule.
-Import a submodule when you want only that part, or when the name would
-otherwise collide.
+| Submodule | What it is for |
+| --- | --- |
+| `isolate.channel` | bounded multi-producer, multi-consumer queues |
+| `isolate.broadcast` | one-to-many publish and subscribe |
+| `isolate.error` | `IsolateError` |
+
+### `jwt`
+
+| Submodule | What it is for |
+| --- | --- |
+| `jwt.core` | `encode()`, `decode()`, `sign()`, `verify()` |
+| `jwt.signer` | `Signer`, a reusable configured signer |
+| `jwt.verifier` | `Verifier`, a reusable configured verifier |
+| `jwt.token` | the `Token` object a complete decode returns |
+| `jwt.jwks` | resolving a signing key from a JSON Web Key Set |
+| `jwt.codec` | algorithm identifiers and the low-level encoding |
+| `jwt.errors` | the module's error hierarchy |
+
+### `log`
+
+| Submodule | What it is for |
+| --- | --- |
+| `log.logger` | the module-level `info()`, `warn()`, `error()` and friends |
+| `log.level` | the `LogLevel` enum and the default level |
+| `log.transport` | `Transport`, the base class every sink extends |
+| `log.console` | `ConsoleTransport`, the default |
+| `log.file` | `FileTransport`, with size-based rotation |
+| `log.dispatch` | configuring which transports receive what |
+
+### `net`
+
+| Submodule | What it is for |
+| --- | --- |
+| `net.tcp` | `TcpSocket` and `TcpStream` |
+| `net.udp` | `UdpSocket` |
+| `net.tls` | TLS over a TCP stream |
+| `net.dtls` | DTLS over a UDP socket |
+| `net.ip` | parsing, formatting and classifying IP addresses |
+| `net.addr` | `SocketAddrV4` and `SocketAddrV6` |
+| `net.poll` | asking which of a set of sockets is ready |
+
+### `os`
+
+| Submodule | What it is for |
+| --- | --- |
+| `os.path` | joining, resolving and comparing path strings |
+| `os.fs` | directories, permissions, symlinks, globbing |
+| `os.env` | reading, writing and listing environment variables |
+| `os.process` | process identity, subprocesses, signals |
+| `os.system` | facts about the process, the runtime and the machine |
+| `os.tempfile` | the temporary directory, and scratch files in it |
+
+### `validate`
+
+| Submodule | What it is for |
+| --- | --- |
+| `validate.validators` | the one-line entry points, one per rule |
+| `validate.validator` | `Validator`, the fluent builder |
+| `validate.schema` | `Schema`, validating a whole dictionary at once |
+| `validate.rule` | `Rule`, the base class custom rules extend |
+| `validate.rules` | every built-in rule |
+
+### `wire`
+
+| Submodule | What it is for |
+| --- | --- |
+| `wire.compile` | turning a parsed template into an instruction tree |
+| `wire.render` | walking a compiled template and writing the page |
+| `wire.expression` | the language between `{{` and `}}` |
+| `wire.filters` | the filters every template starts with |
+| `wire.escape` | context-aware escaping |
+| `wire.loader` | resolving the path in an `x-include` |
+| `wire.normalize` | rewriting the pseudo elements before parsing |
+| `wire.values` | how a template reads the values it is given |
+| `wire.constants` | the directive names Wire reserves |
+| `wire.errors` | the module's errors, and the locations they carry |
+
+### `zuri`
+
+| Submodule | What it is for |
+| --- | --- |
+| `zuri.token` | `tokenize()`, and the `Token` type it returns |
+| `zuri.ast` | `parse()`, and the `Node` type it returns |
+| `zuri.compile` | `compile()`, and the `Instr` type it returns |
+| `zuri.reflect` | inspecting a live function, class, module or instance |
 
 ## Shadowing a Module
 

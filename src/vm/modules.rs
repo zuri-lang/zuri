@@ -226,6 +226,16 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
   Ok(module_val)
 }
 
+/// The names `seed_module_vars` writes into every module. They
+/// describe *which file this is*, so they are per-module identity
+/// rather than API, and a wildcard import must never carry them from
+/// the imported module into the importing one. Letting `__file__`
+/// travel breaks `if __root__ == __file__`, which is how a file
+/// serves as both an importable module and an entry point.
+pub fn is_module_intrinsic(name: &str) -> bool {
+  matches!(name, "__file__" | "__root__")
+}
+
 /// `__file__` is this module's own canonical path; `__root__` is
 /// whatever the VM was told the application's entry file is (see
 /// `VM::set_root_path`); identical across every module loaded

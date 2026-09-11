@@ -189,3 +189,62 @@ false
 
 Two separately written functions are never equal, even with identical
 bodies.
+
+## A Worked Example
+
+Closures are at their most useful when a function needs to remember
+something between calls without that something becoming a global. Here is a
+rate limiter: it hands back a function that answers "may I do this now?",
+and keeps its own tally where nothing else can reach it.
+
+```zuri
+def make_limiter(max_per_window: number) {
+  var used = 0
+
+  return {
+    allow: @() {
+      if used >= max_per_window {
+        return false
+      }
+
+      used++
+      return true
+    },
+
+    remaining: @() => max_per_window - used,
+
+    reset: @() {
+      used = 0
+    },
+  }
+}
+
+var limiter = make_limiter(2)
+var allow = limiter.allow
+var remaining = limiter.remaining
+var reset = limiter.reset
+
+echo allow()
+echo allow()
+echo allow()
+echo remaining()
+
+reset()
+echo allow()
+```
+
+```console
+true
+true
+false
+0
+true
+```
+
+Three separate functions share one `used`, because all three closed over
+the same variable in the same call to `make_limiter`. A second call to
+`make_limiter` would produce a second, independent trio.
+
+This is the closest Zuri gets to a private field without a class, and it is
+worth knowing for exactly that reason: there is no way for a caller to read
+or write `used` except through the three functions you gave them.
