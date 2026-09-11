@@ -17,3 +17,10 @@ needs_int() expects parameter 'x' (argument 1) to be an int, got number
 needs_bool() expects parameter 'x' (argument 1) to be a bool, got number
 caught a ValueError
 needs_test_class() expects parameter 'x' (argument 1) to be a TestClass, got instance
+10n
+needs_bigint() expects parameter 'x' (argument 1) to be a bigint, got number
+nil
+2n
+3n
+3
+bigint_or_number() expects parameter 'x' (argument 1) to be a bigint or a number, got string

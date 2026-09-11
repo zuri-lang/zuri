@@ -469,6 +469,7 @@ impl<'a> Parser<'a> {
         "bool" => Type::Bool,
         "int" => Type::Int,
         "number" => Type::Number,
+        "bigint" => Type::BigInt,
         "string" => Type::String,
         "bytes" => Type::Bytes,
         "list" => Type::List,

@@ -60,6 +60,22 @@
  *
  * `is_number()` and `is_int()` are both `false` for a bigint even
  * though it holds an integer value; use `is_bigint()`.
+ *
+ * `bigint` is also a parameter type annotation, and it follows the
+ * same no-mixing rule the operators do. A parameter typed `bigint`
+ * rejects a plain number, and one typed `number` rejects a bigint:
+ *
+ * ```zuri
+ * def scale(n: bigint, factor: number) {
+ *   return n * factor.to_bigint()
+ * }
+ *
+ * scale(2n, 50)   # 100n
+ * scale(2, 50)    # TypeError: parameter 'n' must be a bigint
+ * ```
+ *
+ * Annotate `bigint|number` where a function genuinely accepts
+ * either, and convert inside it.
  */
 
 

@@ -9,7 +9,7 @@ template.
 
 Under the hood, a Wire template is compiled once — not re-interpreted
 on every render — into a small instruction tree, using the exact same
-[WHATWG-conformant parser](/docs/html.md) that backs the `html` module.
+[WHATWG-conformant parser](ch13-00-stdlib-tour.md#html) that backs the `html` module.
 That has a consequence worth knowing up front: Wire understands your
 markup as *structure*, not as text. It knows that one interpolation
 sits inside a paragraph, another inside an `href`, and a third inside a
@@ -113,7 +113,7 @@ designer who has never seen Zuri and they can still read it: it is
 HTML, with some attributes they can look up. It also means every Wire
 template validates as HTML5, can be opened directly in a browser to
 check its structure, and can be run through the [`html`
-module](/docs/html.md)'s own tools (`html.format()`, a linter, a
+module](ch13-00-stdlib-tour.md#html)'s own tools (`html.format()`, a linter, a
 selector query) without anything special-casing Wire's own syntax.
 
 ### Your First Template
@@ -602,7 +602,7 @@ more than one argument.
 
 | Filter | What it does |
 | --- | --- |
-| `date(format?)` | Formats a `date.Date`, a Unix timestamp, or a parseable date string, using [the same format directives as `Date.format()`](/docs/date.md). Defaults to `'Y-m-d H:i:s'`. |
+| `date(format?)` | Formats a `date.Date`, a Unix timestamp, or a parseable date string, using [the same format directives as `Date.format()`](ch13-00-stdlib-tour.md#date). Defaults to `'Y-m-d H:i:s'`. |
 
 ```wire
 <time datetime="{{ post.published_at|date('Y-m-d') }}">
@@ -1509,6 +1509,6 @@ before the template is parsed:
 </extend>
 ```
 
-Further reading: the [`html` module](/docs/html.md) that Wire's parser
-and serializer are built on, and the [`date` module](/docs/date.md)
+Further reading: the [`html` module](ch13-00-stdlib-tour.md#html) that Wire's parser
+and serializer are built on, and the [`date` module](ch13-00-stdlib-tour.md#date)
 for the format directives the `date` filter accepts.

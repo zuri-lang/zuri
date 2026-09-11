@@ -1,0 +1,265 @@
+# Validation and the Domain Model
+
+Every rule about what a task is lives in one class. Nothing above it
+re-checks a title, and nothing below it stores a task that broke a rule.
+
+<span class="filename">Filename: models/task.zu</span>
+
+```zuri
+import date
+import uuid
+
+import ..config
+
+/**
+ * Raised when a task cannot be built from the data given.
+ */
+class TaskError < Error {
+  @new(message, field) {
+    parent(message)
+
+    self.type = 'TaskError'
+    self.field = field
+  }
+}
+```
+
+`TaskError` carries a `field` as well as a message. That one extra value is
+what lets the API answer `{"error": "...", "field": "title"}`, which is
+what lets a form highlight the input that is wrong. A custom error class
+exists precisely so it can carry more than a string.
+
+## The Class
+
+```zuri
+/**
+ * A single task on the board.
+ */
+class Task {
+
+  /** The task's stable identifier, a UUID v7 so ids sort by age. */
+  var id
+
+  /** One line describing the work. Required, at most 120 characters. */
+  var title
+
+  /** Free-form detail. Optional, defaults to an empty string. */
+  var notes = ''
+
+  /** Which column the task sits in. One of `config.COLUMNS`. */
+  var column = 'todo'
+
+  /** Unix timestamp, in seconds, of when the task was created. */
+  var created_at
+
+  /**
+   * @param string title
+   * @param ?dict options: `notes`, `column`, `id`, `created_at`
+   * @throws TaskError if the title is empty, too long, or the column
+   *    is not one this board has.
+   */
+  @new(title, options) {
+    options = options or {}
+
+    self.id = options.get('id', nil) or uuid.v7()
+    self.title = _clean_title(title)
+    self.notes = options.get('notes', nil) or ''
+    self.column = _clean_column(options.get('column', nil) or 'todo')
+    self.created_at = options.get('created_at', nil) or time()
+  }
+```
+
+Every field is declared with `var` and documented, even the ones the
+constructor fills in. Classes are sealed, so the list is the whole truth
+about what a task holds, and writing it out means the next reader gets that
+truth without reading the constructor.
+
+The constructor takes a required `title` and an options dictionary for
+everything else. That shape is worth copying: a positional argument for the
+thing that is always there, and named options for the rest, so a call site
+never reads `Task('x', nil, nil, 'todo', nil)`.
+
+`uuid.v7()` rather than `v4()`, because v7 embeds a timestamp, so ids sort
+by age. When your identifier is going to end up as a key in something
+ordered, that is free value.
+
+## Mutation
+
+```zuri
+  /**
+   * Moves the task to another column.
+   *
+   * @param string column
+   * @returns Task: this task, so calls chain.
+   * @throws TaskError if the column is not one this board has.
+   */
+  move_to(column) {
+    self.column = _clean_column(column)
+    return self
+  }
+
+  /**
+   * Applies a partial update. Only the keys present in `changes` are
+   * touched; anything absent keeps its current value.
+   *
+   * @param dict changes: any of `title`, `notes`, `column`
+   * @returns Task: this task, so calls chain.
+   * @throws TaskError on an invalid title or column.
+   */
+  update(changes) {
+    if changes.contains('title') {
+      self.title = _clean_title(changes.title)
+    }
+
+    if changes.contains('notes') {
+      self.notes = changes.notes or ''
+    }
+
+    if changes.contains('column') {
+      self.column = _clean_column(changes.column)
+    }
+
+    return self
+  }
+```
+
+`update()` uses `contains()` rather than truthiness. That is the whole
+difference between a partial update that works and one that does not: a
+`PATCH` body of `{"notes": ""}` means "clear the notes", and
+`if changes.notes` would read that as "no change requested".
+
+Both return `self`, so `board.get(id).move_to('done')` reads as one thought.
+
+## Conversion
+
+```zuri
+  /**
+   * The task as a plain dictionary, which is what the store writes
+   * and what `from_dict()` reads back.
+   */
+  to_dict() {
+    return {
+      id: self.id,
+      title: self.title,
+      notes: self.notes,
+      column: self.column,
+      created_at: self.created_at,
+    }
+  }
+
+  /**
+   * The same dictionary, plus the derived fields a template or an API
+   * client wants and should not have to compute.
+   */
+  to_view() {
+    var view = self.to_dict()
+
+    view.set('created_on', date.from_time(self.created_at).format('M j, Y'))
+    view.set('is_done', self.column == 'done')
+
+    return view
+  }
+
+  /**
+   * What `json.encode()` uses, so a Task can be handed straight to a
+   * JSON response with no conversion at the call site.
+   */
+  @to_json() {
+    return self.to_dict()
+  }
+
+  to_string() {
+    return 'Task(${self.id}, ${self.column}, ${self.title})'
+  }
+}
+```
+
+Two representations, on purpose. `to_dict()` is what gets stored, and it
+holds exactly what `from_dict()` needs to rebuild the task. `to_view()` is
+what gets displayed, and it adds things that are derived rather than
+stored: a formatted date, a boolean the template can branch on.
+
+Keeping them apart means a change to the display format never changes the
+file format.
+
+`@to_json()` means a `Task` can be passed straight to `response.json()`.
+`to_string()` means `echo` through it during debugging shows something
+useful.
+
+## Rebuilding and the Rules
+
+```zuri
+/**
+ * Rebuilds a task from the dictionary `to_dict()` produced.
+ *
+ * @param dict data
+ * @returns Task
+ * @throws TaskError if the stored data is not a valid task.
+ */
+def from_dict(data: dict) {
+  return Task(data.get('title', nil), {
+    id: data.get('id', nil),
+    notes: data.get('notes', nil),
+    column: data.get('column', nil),
+    created_at: data.get('created_at', nil),
+  })
+}
+
+def _clean_title(title) {
+  if !is_string(title) {
+    raise TaskError('a task needs a title', 'title')
+  }
+
+  var cleaned = title.trim()
+
+  if cleaned.is_empty() {
+    raise TaskError('a task needs a title', 'title')
+  }
+
+  if cleaned.length() > 120 {
+    raise TaskError('a title must be 120 characters or fewer', 'title')
+  }
+
+  return cleaned
+}
+
+def _clean_column(column) {
+  if !config.COLUMNS.contains(column) {
+    raise TaskError(
+      'unknown column "${column}", expected one of ' + ', '.join(config.COLUMNS),
+      'column'
+    )
+  }
+
+  return column
+}
+```
+
+`from_dict()` goes through the same constructor as everything else, so a
+hand-edited `board.json` with an invalid column is rejected on load rather
+than becoming a task nothing can render.
+
+The two `_clean_` helpers are private to the module. They are where every
+rule lives, and they are called from exactly two places each: the
+constructor and `update()`. There is no path into a `Task` that skips them.
+
+## Why Not the `validate` Module?
+
+Zuri has a schema validator, and for a form with fifteen fields it is
+exactly right:
+
+```zuri
+import validate
+
+var schema = validate.schema({
+  title: validate.required().string().max_length(120),
+  column: validate.required().string(),
+})
+```
+
+Here the rules are three lines of Zuri that also normalise (the `trim()`),
+produce a domain error with a `field` on it, and live next to the data they
+constrain. A schema would be a second place to look.
+
+Use `validate` when the shape of the input is the problem. Use methods on
+the class when the rules are part of what the thing *is*.

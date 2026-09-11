@@ -1,0 +1,16 @@
+[book]
+title = "The Zuri Programming Language"
+authors = ["The Zuri Project"]
+description = "An introduction to Zuri, from your first line of code to a full-stack web application."
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/zuri-lang/zuri-rs"
+edit-url-template = "https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/{path}"
+mathjax-support = false
+
+[output.html.fold]
+enable = true
+level = 1

@@ -3,14 +3,14 @@
 /**
  * figures.zu
  *
- * Generates every image in `docs/imagine.md`.
+ * Generates every image in the book's `imagine` chapter.
  *
  * Each figure here is the output of the code the documentation shows
  * beside it, so the two cannot drift apart: change the module, re-run
  * this, and the pictures follow. Run it from the repository root:
  *
  * ```
- * zuri docs/imagine/figures.zu
+ * zuri docs/book/src/imagine/figures.zu
  * ```
  *
  * A system font is needed for the figures with text in them. Nothing
@@ -20,7 +20,7 @@
 import imagine { * }
 import imagine.filters
 
-var OUT = 'docs/imagine/images'
+var OUT = 'docs/book/src/imagine/images'
 
 var INK = '#0f172a'
 var PAPER = '#f8fafc'

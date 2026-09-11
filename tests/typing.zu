@@ -107,3 +107,37 @@ catch {
 } as e {
   echo e.message
 }
+/* `bigint` is a builtin type name, not a class name, so an annotated
+ * parameter accepts a bigint and rejects a plain number; the two never
+ * mix implicitly anywhere else either. */
+def needs_bigint(x: bigint) {
+  echo x
+}
+
+needs_bigint(10n)
+
+catch {
+  needs_bigint(10)
+} as e {
+  echo e.message
+}
+
+def optional_bigint(x: ?bigint) {
+  echo x
+}
+
+optional_bigint()
+optional_bigint(2n)
+
+def bigint_or_number(x: bigint|number) {
+  echo x
+}
+
+bigint_or_number(3n)
+bigint_or_number(3)
+
+catch {
+  bigint_or_number('3')
+} as e {
+  echo e.message
+}

@@ -1,0 +1,480 @@
+# A Tour of the Standard Library
+
+Zuri ships with more in the box than most languages this size. This chapter
+walks through what is there, grouped by what you would reach for it to do,
+with an example of each. It is not a reference;
+[Appendix F](appendix-06-stdlib-index.md) is the index, and the three
+largest modules get chapters of their own: [Wire](ch14-00-wire.md),
+[HTTP](ch15-00-http.md) and [Imagine](ch16-00-imagine.md).
+
+Everything here is available with a bare `import`. There is no package
+manager involved, and no dependency to add.
+
+## Data Formats
+
+### `json`
+
+```zuri
+import json
+
+var data = { name: 'Ada', langs: ['zuri', 'rust'], active: true }
+
+echo json.encode(data)
+echo json.decode('{"a":1}').a
+echo json.encode({ name: 'Ada' }, false)
+```
+
+```console
+{"name":"Ada","langs":["zuri","rust"],"active":true}
+1
+{
+  "name": "Ada"
+}
+```
+
+`encode(value, compact, max_depth)` defaults to compact. `parse(path)`
+reads and decodes a file; `dump(value, file)` writes one. A class that
+defines `@to_json()` controls its own encoding.
+
+### `yaml`
+
+```zuri
+import yaml
+
+echo yaml.parse('name: zuri\ntags:\n  - fast\n  - small')
+```
+
+```console
+{name: zuri, tags: [fast, small]}
+```
+
+Anchors, aliases, tags, multi-document streams and block scalars are all
+supported.
+
+### `csv`
+
+```zuri
+import csv
+
+echo csv.parse('a,b\n1,2')
+```
+
+```console
+[[a, b], [1, 2]]
+```
+
+`Reader` and `Writer` stream large files, `Dialect` configures separators
+and quoting, and `sniff_dialect()` guesses from a sample.
+
+### `struct`
+
+Binary layouts. Covered in [Chapter 10](ch10-00-binary-data.md).
+
+### `base64`, `convert`
+
+```zuri
+import convert
+
+echo convert.bytes_to_hex(bytes([255, 0]))
+echo convert.to_base(255, 16)
+echo convert.from_base('ff', 16)
+```
+
+```console
+ff00
+ff
+255
+```
+
+`convert` handles every base-to-base conversion you would otherwise write
+by hand, plus hex, binary, octal and unicode helpers.
+
+## Text and Markup
+
+### `html`
+
+A WHATWG-conformant parser, a real DOM, and CSS selectors:
+
+```zuri
+import html
+
+var doc = html.parse('<ul><li class="a">one</li><li>two</li></ul>')
+
+echo doc.query_selector('li.a').text_content()
+echo doc.query_selector_all('li').length()
+```
+
+```console
+one
+2
+```
+
+The DOM supports traversal, mutation and serialisation, which makes it a
+scraper, a templating backend and a sanitiser in one module.
+
+### `wire`
+
+Templating, with directives expressed as HTML attributes rather than a
+second syntax layered over your markup:
+
+```zuri
+import wire
+
+echo wire.render_string('<p x-text="msg"></p>', { msg: 'hi' })
+```
+
+```console
+<p>hi</p>
+```
+
+Everything is escaped by default, and escaped correctly for where it sits:
+a value in an attribute, in a URL and in a `<script>` block are three
+different escapes, and Wire knows which is which because it parses your
+template as structure rather than text.
+
+[Chapter 14](ch14-00-wire.md) is the full treatment.
+
+### `url`
+
+```zuri
+import url
+
+var parsed = url.parse('https://user@example.com:8443/a/b?q=1#top')
+
+echo parsed.host
+echo parsed.port
+echo parsed.get_param('q')
+```
+
+```console
+example.com
+8443
+1
+```
+
+`encode()`, `decode()` and `parse_query()` handle percent-encoding.
+
+### `mime`
+
+```zuri
+import mime
+
+echo mime.detect_from_name('a.png')
+```
+
+```console
+image/png
+```
+
+`detect(file)` sniffs content rather than trusting the extension, which is
+the check you want on an upload.
+
+### `colors`
+
+ANSI colour for terminal output, with true-colour, 256-colour and 16-colour
+conversion so the same code degrades on a limited terminal.
+
+## Time
+
+### `date`
+
+```zuri
+import date
+
+var d = date.date(2026, 9, 11, 8, 30, 0)
+
+echo d.format('Y-m-d H:i:s')
+echo d.format('l, jS F Y')
+echo date.parse('2026-09-11').format('Y-m-d')
+```
+
+```console
+2026-09-11 08:30:00
+Friday, 11th September 2026
+2026-09-11
+```
+
+The format codes are single letters: `Y` four-digit year, `m` zero-padded
+month, `d` zero-padded day, `H` 24-hour, `i` minutes, `s` seconds, `l`
+weekday name, `F` month name, `jS` day with an ordinal suffix.
+
+`localtime()` and `gmtime()` give the current time, `from_time(seconds)`
+converts a Unix timestamp, and the module carries a real IANA time zone
+database, so `from_timezone('Europe/London', ...)` does the right thing
+across a daylight-saving boundary.
+
+## Cryptography and Identity
+
+### `hash`
+
+Digests and HMACs. Covered in [Chapter 10](ch10-00-binary-data.md).
+
+### `bcrypt`
+
+Password hashing, which is a different problem from digesting:
+
+```zuri
+import bcrypt
+
+var stored = bcrypt.hash('secret')
+
+echo bcrypt.compare('secret', stored)
+echo bcrypt.get_rounds(stored)
+```
+
+```console
+true
+10
+```
+
+Use this for passwords and `hash` for everything else. `needs_rehash()`
+tells you when a stored hash was made with a lower cost than you now
+require.
+
+### `crypto`
+
+RSA signing and HKDF key derivation.
+
+### `uuid`
+
+```zuri
+import uuid
+
+echo uuid.v4().length()
+echo uuid.is_valid(uuid.v7())
+```
+
+```console
+36
+true
+```
+
+Versions 1, 3, 4, 5, 6, 7 and 8 are all there. `v4` is the random one you
+usually want; `v7` is time-ordered, which makes it a better database key.
+
+### `jwt`
+
+Signing, verifying and decoding JSON Web Tokens, with a JWKS client for
+rotating keys.
+
+## Validation and Structure
+
+### `validate`
+
+A fluent schema builder:
+
+```zuri
+import validate
+
+var schema = validate.schema({
+  name: validate.required().string().max_length(10),
+  age: validate.required().integer().min(0),
+})
+
+echo schema.check({ name: 'Ada', age: 36 })
+echo schema.check({ name: 'a name that is far too long', age: 200.5 })
+```
+
+```console
+{valid: true, errors: []}
+{valid: false, errors: [{field: name, message: The name field must not exceed 10 characters.}, {field: age, message: The age field must be an integer.}]}
+```
+
+`check_or_raise()` raises instead of returning. `extend()`, `only()` and
+`except()` build one schema from another, which is how a create schema and
+an update schema stay in sync.
+
+### `types`
+
+Coercion with checking: `types.int(value)`, `types.string(value)` and the
+rest convert and raise rather than guessing.
+
+### `set`
+
+```zuri
+import set
+
+var s = set.set([1, 2, 2, 3])
+echo s.length()
+```
+
+```console
+3
+```
+
+Union, intersection, difference and subset tests, with insertion order
+preserved.
+
+### `enum`
+
+```zuri
+import enum
+
+var Color = enum.enum(['RED', 'GREEN'])
+echo Color.RED
+```
+
+```console
+0
+```
+
+Pass a dictionary instead of a list to choose the values yourself.
+
+### `array`
+
+Typed, fixed-width numeric arrays: `Int8Array` through `Uint64Array`, plus
+`FloatArray` and `DoubleArray`. They store values in their declared width
+rather than as doubles, which matters for memory and for talking to binary
+formats.
+
+```zuri
+import array
+
+var ints = array.Int32Array([1, 2, 3])
+echo ints.length()
+```
+
+```console
+3
+```
+
+## The System
+
+### `os`
+
+Processes, the filesystem, paths and the environment. Covered in
+[Chapter 9](ch09-00-files.md).
+
+`os.exec(command)` runs a shell command and gives you its output.
+`os.spawn(command, args, options)` starts a process you can talk to.
+`os.on_signal(name, handler)` installs a signal handler.
+
+### `io`
+
+Standard streams, terminal control and in-memory files:
+
+```zuri
+import io
+
+var name = io.readline('Your name: ')
+var secret = io.readline('Password: ', true)
+
+echo io.stdout.is_tty()
+```
+
+`io.TTY` puts the terminal into raw mode, reads single keypresses and moves
+the cursor, which is what an interactive program needs. `io.BytesIO` is the
+in-memory file from [Chapter 10](ch10-00-binary-data.md).
+
+### `stat`
+
+The `S_IS*` predicates over a mode word from `file().stats()`.
+
+### `args`
+
+A command-line parser with subcommands, typed options, automatic
+`--help` and wrapped terminal output.
+
+### `log`
+
+```zuri
+import log
+
+log.info('server started')
+log.error('connection refused')
+```
+
+A `Logger` binds structured fields, a `child()` logger inherits them, and
+transports send records to the console, a file or somewhere you write
+yourself.
+
+### `isolate`
+
+Concurrency. Covered in [Chapter 11](ch11-00-isolates.md).
+
+## The Network
+
+### `net`
+
+TCP, UDP, TLS, DTLS, addresses and polling. Covered in
+[Chapter 12](ch12-00-networking.md).
+
+### `http`
+
+Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
+WebSockets, server-sent events, multipart uploads, static files and a
+reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
+fully in [Chapter 15](ch15-00-http.md), and used throughout
+[Chapter 20](ch20-00-task-board.md).
+
+## Compression
+
+### `compress`
+
+`deflate`, `zlib`, `gzip`, `zstd`, `lz4`, `bzip2` and `brotli`, plus `tar`
+and `zip` archives and `checksum` for CRC32 and Adler-32. Covered in
+[Chapter 10](ch10-00-binary-data.md).
+
+## Graphics
+
+### `imagine`
+
+Image creation and manipulation on an RGBA buffer: drawing primitives,
+text with a built-in stroke font, filters, colour-space conversion, and
+reading and writing the common formats.
+
+```zuri
+import imagine { Image }
+
+Image(400, 200, '#0f172a')
+  .fill_circle(200, 100, 70, '#38bdf8')
+  .circle(200, 100, 70, 'white', { thickness: 3 })
+  .save('badge.png')
+```
+
+Almost every method returns an image, so operations chain.
+`Image.open(path)` decodes an existing file, with the format taken from the
+contents rather than the extension:
+
+```zuri
+Image.open('photo.jpg')
+  .thumbnail(400, 400)
+  .save('thumb.webp')
+```
+
+The pixel loops inside it are ordinary Zuri, which the JIT compiles. See
+[Chapter 18](ch18-00-performance.md) for why the module puts its hot loops
+in typed free functions, and [Chapter 16](ch16-00-imagine.md) for the
+module itself.
+
+## The Language Itself
+
+### `zuri`
+
+Lexing, parsing, compiling and reflection, all reachable from Zuri code:
+
+```zuri
+import zuri
+
+echo zuri.tokenize('var x = 1').length() > 0
+echo zuri.reflect.kind([1])
+```
+
+```console
+true
+list
+```
+
+[Chapter 17](ch17-00-metaprogramming.md) is the full treatment.
+
+### `math`
+
+The constants. Everything else is a method on `number`; see
+[Chapter 4](ch04-02-numbers.md).
+
+## Finding the Rest
+
+Every module's source is in `libs/`, and every public function in it
+carries a doc block with its parameters, its defaults and its edge cases.
+Reading `libs/set.zu` is a faster way to learn `set` than any summary, and
+the standard library is written to be read.

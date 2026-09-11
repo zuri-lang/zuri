@@ -1,0 +1,71 @@
+# Installation
+
+Zuri is built from source with Rust's package manager, Cargo. If you do not
+have Rust installed, get it from [rustup.rs](https://rustup.rs); it takes a
+minute and installs `cargo` for you.
+
+## Building
+
+```console
+$ git clone https://github.com/zuri-lang/zuri-rs
+$ cd zuri-rs
+$ cargo build --release
+```
+
+The first build compiles a JIT backend and a fairly large set of native
+dependencies, so it takes a while. Subsequent builds are fast.
+
+When it finishes you have an executable at `target/release/zuri`, and,
+sitting right next to it, a copy of the `libs/` directory. That pairing
+matters: the standard library is written mostly in Zuri itself, and the
+runtime finds it by looking for a `libs` directory beside the executable.
+Move the binary somewhere without `libs`, and `import os` will stop
+working.
+
+## Putting `zuri` on Your PATH
+
+The simplest arrangement is to keep the binary and its `libs` together and
+symlink to the binary:
+
+```console
+$ sudo ln -s "$PWD/target/release/zuri" /usr/local/bin/zuri
+```
+
+A symlink is resolved before the runtime looks for `libs`, so this works.
+Copying just the binary does not.
+
+If you want the library somewhere else entirely, set `ZURI_ROOT` to the
+directory that *contains* `libs`:
+
+```console
+$ export ZURI_ROOT=/opt/zuri
+$ ls /opt/zuri
+libs
+```
+
+`ZURI_ROOT` wins over the executable-adjacent lookup, which makes it handy
+when you are hacking on the standard library itself and want a build to
+pick up your edits immediately:
+
+```console
+$ ZURI_ROOT=$PWD ./target/debug/zuri myscript.zu
+```
+
+## Checking the Install
+
+```console
+$ zuri
+Zuri 0.1.0 (running on ZuriVM 0.1.0), REPL/Interactive mode = ON
+Build No. => 2026-09-10 23:19:10 UTC
+Type ".exit" to quit, ".help" for help or ".credits" for more information
+%>
+```
+
+That `%>` is the Zuri prompt. Type `.exit` to leave.
+
+## A Debug Build, and Why You Might Want One
+
+Plain `cargo build` produces `target/debug/zuri`. It runs substantially
+slower, and it is the build to reach for when you are chasing an unexpected
+behavior, because it keeps the runtime assertions the optimised build
+strips out. For everything in this book, either build is fine.
