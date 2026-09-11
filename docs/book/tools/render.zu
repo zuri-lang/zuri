@@ -102,6 +102,13 @@ def reflow(lines: list) {
   }
 
   flush()
+
+  # A doc block whose own fence was never closed would otherwise emit an
+  # unterminated fence, swallowing every heading after it on the page.
+  if in_fence {
+    out.append('```')
+  }
+
   return out
 }
 
@@ -277,6 +284,32 @@ def _escape(text: string) {
   return text.replace('/\|/', '\\|')
 }
 
+# Stub prose links to its own overview, which is not part of the generated
+# reference: a bare `#section` anchor would resolve to nothing, and a
+# `./page` path to a site the stubs were written for. Point both at the
+# book page that carries the same narrative.
+var _STUB_LINKS = {
+  './dictionaries': 'ch04-04-dictionaries.md',
+  './lists': 'ch04-03-lists.md',
+  './strings': 'ch04-01-strings.md',
+  './numbers': 'ch04-02-numbers.md',
+  './ranges': 'ch04-05-ranges-and-iteration.md',
+  './bytes': 'ch10-00-binary-data.md',
+  './files': 'ch09-00-files.md',
+}
+
+def _relink(lines: list, chapter: string) {
+  return lines.map(@(line) {
+    var fixed = line.replace('](#', '](${chapter}#', false)
+
+    for target, page in _STUB_LINKS {
+      fixed = fixed.replace('](${target})', '](${page})', false)
+    }
+
+    return fixed
+  })
+}
+
 def render_type_page(spec, members: list) {
   var out = []
 
@@ -300,7 +333,7 @@ def render_type_page(spec, members: list) {
   out.append('')
 
   for member in members {
-    for line in render_member(member, '') {
+    for line in _relink(render_member(member, ''), spec.chapter) {
       out.append(line)
     }
 

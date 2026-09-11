@@ -179,39 +179,266 @@ echo isolate.map(square, [1, 2, 3, 4, 5])
 `wait_all(tasks, timeout)` waits for every task; `wait_any(tasks, timeout)`
 returns as soon as one finishes.
 
-## Checking Without Waiting
+## The Lifecycle of a Task
+
+A spawned task moves through exactly two states, and four methods let you
+ask about it without blocking.
+
+```zuri,ignore
+import isolate
+import .work
+
+var task = isolate.spawn(work.slow, 3)
+
+echo task.try_join()
+echo task.is_done()
+echo task.status()
+
+echo task.join()
+echo task.status()
+```
+
+```console
+nil
+false
+pending
+finished
+done
+```
+
+| Method | Answers | Blocks? |
+| --- | --- | --- |
+| `join(timeout)` | the result | yes |
+| `try_join()` | the result, or `nil` if not ready | no |
+| `is_done()` | whether it has finished | no |
+| `status()` | `'pending'` or `'done'` | no |
+| `name()` | the name it was given, or `nil` | no |
+
+`try_join()` returning `nil` is ambiguous when the task's own result could
+be `nil`; pair it with `is_done()` when that matters.
+
+`join()` may be called more than once. It is not a one-shot: the second
+call returns the same value immediately.
+
+### Naming a Task
+
+`spawn()` leaves a task anonymous. `spawn_named()` gives it a name that
+shows up in diagnostics:
+
+```zuri,ignore
+var named = isolate.spawn_named('importer', work.quick, 5)
+var plain = isolate.spawn(work.quick, 5)
+
+echo named.name()
+echo plain.name()
+```
+
+```console
+importer
+nil
+```
+
+Name anything long-running. A stuck program is far easier to diagnose when
+the task can say what it is.
+
+## Timeouts Are in Seconds
+
+**Every timeout in the `isolate` module is measured in seconds**, and it
+takes a fraction:
 
 ```zuri
 import isolate
 
-def slow_sum(n) {
-  var total = 0
+var empty = isolate.channel(1)
+var start = time()
 
-  iter var i = 0; i < n; i++ {
-    total += i
-  }
-
-  return total
+catch {
+  empty.recv(0.3)
+} as e {
+  echo '${e.type} after about ${((time() - start) * 10).round() * 100}ms'
 }
-
-var task = isolate.spawn(slow_sum, 100)
-
-echo task.join()
-echo task.status()
-echo task.is_done()
 ```
 
 ```console
-4950
-done
+IsolateTimeoutError after about 300ms
+```
+
+This applies to `join()`, `send()`, `recv()`, `select()`, `wait_any()`,
+`wait_all()` and `shutdown()` alike.
+
+It is worth stating loudly because **the `net` module uses milliseconds**
+for its own timeouts. `socket.set_read_timeout(5000)` is five seconds;
+`channel.recv(5000)` is an hour and twenty minutes. The two modules are
+easy to use in one program, and the mistake is silent — a timeout that
+never fires simply looks like a hang.
+
+Omitting the timeout means "wait forever", which is the right default when
+the other side is code you control and the wrong one when it is not.
+
+## Cancellation Is Cooperative
+
+`cancel()` **requests** that a task stop. It does not kill anything.
+
+What happens next depends on what the task is doing:
+
+**Blocked in a channel operation, a `join()`, a `wait_*` or a `select()`** —
+the call is interrupted within roughly 50ms and raises
+`IsolateCancelledError`.
+
+**Running ordinary code** — nothing is interrupted. The task's own function
+must notice and return:
+
+```zuri,ignore
+import isolate
+
+def slow(seconds) {
+  var start = time()
+
+  while time() - start < seconds {
+    if isolate.is_cancelled() {
+      return 'stopped early'
+    }
+  }
+
+  return 'ran to completion'
+}
+```
+
+`isolate.is_cancelled()` is the module-level function a worker calls about
+itself. `task.is_cancelled()` is the method the *spawner* calls to ask
+whether it requested cancellation — and it answers `true` from the moment
+`cancel()` was called, whether or not the task noticed:
+
+```zuri,ignore
+var task = isolate.spawn(work.slow, 3)
+
+task.cancel()
+
+echo task.join()
+echo task.is_cancelled()
+```
+
+```console
+ran to completion
 true
 ```
 
-`status()` is `pending` before the work finishes and `done` after.
-`try_join()` returns the result if it is ready and `nil` if it is not, so a
-loop can do something else while waiting. `cancel()` requests cancellation,
-and `is_cancelled()` is what a long-running worker polls so it can stop
-cooperatively — nothing is killed from outside.
+That output is not a contradiction. The worker in this example does not
+poll, so it finished normally; `is_cancelled()` reports the request, not
+the outcome. A loop with no cancellation check is a loop that cannot be
+stopped.
+
+Put the check where the loop turns over, and make it cheap. Checking once
+per iteration of an outer loop is usually enough; checking inside the
+innermost arithmetic is not worth it.
+
+## What Can Cross, and What It Costs
+
+Arguments in, results out, and channel traffic all cross the same way:
+**everything is copied**. There is no sharing and no reference that
+survives the boundary.
+
+### The Copy Is Faithful
+
+A copy is not a shallow snapshot. Cycles survive, shared identity inside
+one payload survives, and a class instance arrives as an instance of the
+same class with its methods intact:
+
+```zuri
+import isolate
+
+class Point {
+
+  @new(x) {
+    self.x = x
+  }
+
+  doubled() {
+    return self.x * 2
+  }
+}
+
+def identity(value) {
+  return value
+}
+
+# A list that contains itself.
+var cyclic = [1]
+cyclic.append(cyclic)
+
+# Two slots holding one list.
+var shared = [1]
+var pair = [shared, shared]
+
+echo isolate.spawn(identity, Point(3)).join().doubled()
+echo typeof(isolate.spawn(identity, cyclic).join())
+
+var back = isolate.spawn(identity, pair).join()
+back[0].append(2)
+
+echo back[1].length()
+```
+
+```console
+6
+list
+2
+```
+
+The last line is the one to notice. `pair` held the same list twice, and on
+the other side it still does: appending through `back[0]` is visible
+through `back[1]`. The copy preserved the *shape* of the sharing, not just
+the values.
+
+### What Cannot Cross
+
+A handful of things are tied to the isolate that made them, and sending one
+raises rather than silently producing something broken:
+
+```zuri
+import isolate
+
+def identity(value) {
+  return value
+}
+
+catch {
+  isolate.spawn(identity, file('notes.txt'))
+} as e {
+  echo e.message.lines()[0]
+}
+```
+
+```console
+cannot send a file across isolates; only nil, bool, number, string, bytes, bigint, range, list, dict, instance, class, bound method, function, and native-pointer values can cross
+```
+
+The message lists what *can* cross, which is the more useful half. Files
+and modules are the two you will meet; both are handles onto something the
+receiving isolate has no access to.
+
+That is also the real reason behind the spawn rule above: a function
+referencing an imported name carries the module with it, and a module
+cannot cross.
+
+### The Cost Model
+
+Spawning is cheap. A task is a small descriptor holding the callee and a
+snapshot of its arguments, pushed onto a queue the pool drains, so queueing
+a hundred thousand of them is reasonable.
+
+What is not free is the copy. Handing an isolate a large list copies the
+whole list, once per spawn. When a worker needs a lot of data, give it a
+*description* of the work — a path, a range of indices, a query — and let
+it do its own reading:
+
+```zuri,ignore
+# Copies the file's contents into every worker.
+isolate.map(work.process, files.map(@(p) => file(p).read()))
+
+# Copies a short path into every worker instead.
+isolate.map(work.read_and_process, files)
+```
 
 ## Errors Cross the Boundary
 
@@ -306,7 +533,49 @@ growing the queue without limit.
 | `is_closed()` | whether it has been closed |
 | `length()` | how many values are waiting |
 
-Sending on a closed channel raises. Closing one twice does not.
+Every one of those behaviours is observable from a single isolate, which
+makes a channel easy to reason about before you introduce a second one:
+
+```zuri
+import isolate
+
+var c = isolate.channel(2)
+
+c.send('a')
+c.send('b')
+
+echo c.length()
+echo c.try_recv()
+
+c.close()
+
+echo c.is_closed()
+echo c.recv()
+echo c.recv()
+
+catch {
+  c.send('z')
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+2
+a
+true
+b
+nil
+IsolateError: cannot send on a closed channel
+```
+
+Read the last four lines together. After `close()`, the queue still
+**drains**: `recv()` returned the buffered `b` before it started returning
+`nil`. A closed, drained channel returns `nil` forever rather than raising,
+and only `send()` raises.
+
+Closing twice is harmless. `try_recv()` on an empty channel returns `nil`
+immediately and never blocks.
 
 ## Selecting Across Channels
 
@@ -332,7 +601,9 @@ from c2
 
 It returns `[channel, value]`, so you can tell where the value came from by
 comparing the first element against the channels you passed in. The second
-argument is a timeout in milliseconds; on a timeout you get `nil`.
+argument is a timeout in **seconds**, like every other timeout in this
+module — see [Timeouts Are in Seconds](#timeouts-are-in-seconds), because
+it is the opposite of what the `net` module does.
 
 This is the shape for a consumer fed by more than one producer — work on
 one channel, shutdown signals on another — without polling either.
@@ -365,17 +636,136 @@ tick
 2
 ```
 
-`subscribe()` hands back an ordinary `Channel`, so everything in the table
-above applies to it. `unsubscribe(channel)` drops one, and a subscriber
-that stops reading applies backpressure to the whole bus once its own
-buffer fills.
+`subscribe()` hands back an ordinary `Channel`, so everything in the
+channel table applies to it: `recv()`, `try_recv()`, `length()`, and the
+same backpressure.
 
-Use a channel when the work should be done once by whoever is free. Use a
-broadcast when every consumer needs to see every event.
+### A Subscriber Only Sees What Comes After It
+
+There is no replay. A subscriber that arrives late has missed everything
+sent before it subscribed:
+
+```zuri
+import isolate
+
+var bus = isolate.broadcast(4)
+var early = bus.subscribe()
+
+bus.send('first')
+
+var late = bus.subscribe()
+
+bus.send('second')
+
+echo 'early: ${early.recv()}, ${early.recv()}'
+echo 'late: ${late.try_recv()}'
+```
+
+```console
+early: first, second
+late: second
+```
+
+This matters when subscribers are set up concurrently with the producer.
+Subscribe everything *before* anything is sent, or accept that a consumer
+starting later begins mid-stream.
+
+### Unsubscribing, and Sending Into the Void
+
+`unsubscribe(channel)` drops one subscriber. Sending with none at all is
+not an error — the value is simply discarded:
+
+```zuri
+import isolate
+
+var bus = isolate.broadcast(4)
+var sub = bus.subscribe()
+
+bus.unsubscribe(sub)
+
+echo bus.subscriber_count()
+echo bus.send('nobody is listening')
+echo sub.try_recv()
+```
+
+```console
+0
+nil
+nil
+```
+
+A dropped subscriber stops receiving new values immediately, and its
+channel keeps whatever was already queued in it:
+
+```zuri
+import isolate
+
+var bus = isolate.broadcast(4)
+var sub = bus.subscribe()
+
+bus.send('queued before unsubscribe')
+bus.unsubscribe(sub)
+
+echo sub.try_recv()
+```
+
+```console
+queued before unsubscribe
+```
+
+So unsubscribing is not a way to discard what a consumer has not read yet;
+it only stops the flow.
+
+### Closing
+
+`close()` closes the bus and every channel it handed out. Subscribers drain
+what they have and then receive `nil`; `send()` raises:
+
+```zuri
+import isolate
+
+var bus = isolate.broadcast(4)
+var sub = bus.subscribe()
+
+bus.close()
+
+echo bus.is_closed()
+echo sub.try_recv()
+
+catch {
+  bus.send('too late')
+} as e {
+  echo e.type
+}
+```
+
+```console
+true
+nil
+IsolateError
+```
+
+### Backpressure Applies Per Subscriber
+
+The capacity you give `broadcast()` is the capacity of *each* subscriber's
+channel. A subscriber that stops reading fills its own buffer, and once it
+is full the bus blocks on `send()` — one slow consumer holds up the
+producer and therefore everyone.
+
+When a slow consumer must not be allowed to do that, give the bus a larger
+capacity, or have that consumer read into its own queue and fall behind on
+its own time.
+
+### Channel or Broadcast?
+
+Use a **channel** when the work should be done once, by whichever worker is
+free. Use a **broadcast** when every consumer needs to see every event.
+Shutdown signals, configuration changes and progress events are broadcasts;
+jobs are channels.
 
 ## Scopes
 
-A scope owns its children and will not return until all of them have
+A scope owns its children and does not return until all of them have
 finished:
 
 ```zuri
@@ -399,24 +789,178 @@ echo result
 [9, 16]
 ```
 
-If any child fails, the scope raises rather than letting the failure vanish
-into a task nobody joined. That is the real reason to use it: a bare
-`spawn()` whose result is never joined will swallow its own error in
-silence.
+`scope(body)` calls `body` with a scope object, waits for everything
+spawned through it, and returns whatever the body returned.
 
-Reach for `scope()` whenever a piece of work fans out and must be complete
-before the next step begins.
+### It Waits Whether or Not You Join
+
+Joining inside the body is how you collect results. It is not how the
+waiting happens — that is the scope's job either way:
+
+```zuri
+import isolate
+
+def square(n) {
+  return n * n
+}
+
+echo isolate.scope(@(s) {
+  s.spawn(square, 3)
+  s.spawn_named('four', square, 4)
+
+  return s.children().length()
+})
+```
+
+```console
+2
+```
+
+Neither child was joined, and the scope still did not return until both had
+finished. `children()` gives you the `Isolate` objects in spawn order, and
+`s.spawn_named()` works exactly like the module-level one.
+
+### A Failure Stops the Group
+
+This is the real reason to use a scope. A bare `spawn()` whose result is
+never joined swallows its own error in silence; a scope raises:
+
+```zuri
+import isolate
+
+def ok(n) {
+  return n
+}
+
+def boom() {
+  raise ValueError('worker failed')
+}
+
+catch {
+  isolate.scope(@(s) {
+    s.spawn(ok, 1)
+    s.spawn(boom)
+
+    return 'never returned'
+  })
+} as e {
+  echo '${e.type}: ${e.message.lines()[0]}'
+}
+```
+
+```console
+IsolateError: ValueError: worker failed
+```
+
+The body's return value is discarded when a child failed, and the failure
+comes out of `scope()` itself. Reach for a scope whenever a piece of work
+fans out and must be complete — and correct — before the next step begins.
+
+## Waiting on Several Tasks
+
+Three helpers cover the shapes that come up, and they return different
+things:
+
+```zuri
+import isolate
+
+def square(n) {
+  return n * n
+}
+
+var tasks = [1, 2, 3].map(@(n) => isolate.spawn(square, n))
+
+echo isolate.wait_all(tasks)
+echo typeof(isolate.wait_any([isolate.spawn(square, 9)]))
+echo isolate.map(square, [4, 5])
+```
+
+```console
+[1, 4, 9]
+Isolate
+[16, 25]
+```
+
+**`wait_all(tasks, timeout)`** returns the **results**, in the order the
+tasks were given, not the order they finished.
+
+**`wait_any(tasks, timeout)`** returns the **`Isolate`** that finished
+first, not its result — you still call `join()` on it. That is what lets
+you tell *which* one won.
+
+**`map(fn, items, timeout)`** spawns one task per item and collects the
+results, which is `wait_all` with the spawning done for you.
+
+All three raise `IsolateTimeoutError` if the timeout passes, and all three
+propagate a worker's failure:
+
+```zuri
+import isolate
+
+def halve(n) {
+  if n == 0 {
+    raise ValueError('cannot halve zero')
+  }
+
+  return n / 2
+}
+
+echo isolate.map(halve, [2, 4, 6])
+
+catch {
+  isolate.map(halve, [2, 0, 6])
+} as e {
+  echo '${e.type}: ${e.message.lines()[0]}'
+}
+```
+
+```console
+[1, 2, 3]
+IsolateError: ValueError: cannot halve zero
+```
+
+The whole call fails on the first failing element. When individual failures
+are acceptable, spawn and join yourself with a `catch` around each `join()`,
+as the worked example below does.
+
+## Isolates Can Spawn Isolates
+
+There is no restriction on nesting. A worker may spawn its own tasks and
+join them, and they run on the same pool:
+
+<span class="filename">Filename: work.zu</span>
+
+```zuri,ignore
+import isolate
+
+def double(n) {
+  return n * 2
+}
+
+def nested(n) {
+  return isolate.spawn(double, n).join()
+}
+```
+
+```console
+$ zuri main.zu
+6
+```
+
+This is worth knowing mostly as a warning, which the next section covers:
+nested tasks that block on each other are the fastest way to exhaust the
+pool.
 
 ## The Pool
 
-Isolates run on a fixed pool of OS threads, sized to the machine's core
-count by default:
+Isolates do not each get a thread of their own. They run on a fixed pool of
+OS threads, sized to the machine's core count by default:
 
 ```zuri
 import isolate
 
 echo isolate.cpu_count() > 0
-echo isolate.pool_size() > 0
+echo isolate.pool_size() == isolate.cpu_count()
 ```
 
 ```console
@@ -424,35 +968,91 @@ true
 true
 ```
 
-`configure(threads)` changes the size, and it has to be called **before the
-first spawn**; the pool is fixed once it exists:
+### Sizing It
 
-```zuri,ignore
-isolate.configure(16)
+`configure(threads)` changes the size, and it only works **before the pool
+exists** — which is to say, before the first spawn. It reports whether it
+did anything:
+
+```zuri
+import isolate
+
+echo isolate.configure(7)
+echo isolate.pool_size()
 ```
 
-That matters more than it sounds. If your program runs servers, worker
-pools and clients that talk to each other inside one process, a pool sized
-to your core count can deadlock: every thread ends up blocked waiting on
-work that has no free thread to run on. A starved pool looks like a hang,
-not an error. Size the pool for the number of tasks that will be **blocked
-at once**, not for the number of cores.
+```console
+true
+7
+```
 
-`active_count()`, `queued_count()`, `is_shutdown()` and `shutdown(timeout)`
-manage it at runtime.
+Call it after a spawn and it returns `false` and changes nothing. It does
+not raise, so a `configure()` buried below some initialisation that already
+spawned will silently do nothing — put it at the very top of the entry
+file.
 
-## Task Density
+### Why the Size Matters More Than It Looks
 
-A spawned task is not a thread. It is a small descriptor holding the callee
-and a snapshot of its arguments, pushed onto a queue that the pool drains.
-Queueing a hundred thousand tasks is a reasonable thing to do; what grows
-with the work is whatever the arguments themselves have to carry across the
-boundary, since every one of them is copied.
+A pool sized to your core count can **deadlock**, and the failure looks
+like a hang rather than an error.
 
-That is the cost model to keep in mind. Spawning is cheap. Handing an
-isolate a large list is not, because the list is copied. When a worker needs
-a lot of data, it is usually better to hand it a *description* of the work —
-a path, a range of indices, a query — and let it do its own reading.
+The mechanism: a task that blocks — on `join()`, on `recv()`, on a socket
+read — occupies its thread while it waits. If every thread is occupied by a
+task waiting for work that has no free thread to run on, nothing can ever
+progress.
+
+That happens most easily with three patterns:
+
+- a server and a client that talk to each other in one process;
+- nested spawns where the parent joins the child;
+- a pipeline with more stages than threads.
+
+**Size the pool for the number of tasks that will be blocked at once, not
+for the number of cores.** Threads that are blocked are not competing for
+CPU, so over-provisioning costs little; under-provisioning costs
+everything.
+
+### Watching It
+
+```zuri
+import isolate
+
+echo isolate.active_count() >= 0
+echo isolate.queued_count() >= 0
+echo isolate.is_shutdown()
+```
+
+```console
+true
+true
+false
+```
+
+`active_count()` is how many tasks are running; `queued_count()` is how
+many are waiting for a thread. A queued count that only grows is the
+signature of a starved pool.
+
+`shutdown(timeout)` drains the pool and stops it. Most programs never call
+it; it is there for a long-lived process that wants to release its threads
+without exiting.
+
+## The Errors
+
+Three error types come out of this module, and they mean different things:
+
+| Error | Raised when |
+| --- | --- |
+| `IsolateError` | a worker raised, or an operation is invalid — sending on a closed channel |
+| `IsolateTimeoutError` | a timeout passed before the operation completed |
+| `IsolateCancelledError` | a blocking call was interrupted by `cancel()` |
+
+All three inherit from `Error`, so `catch` on its own catches every one and
+`instance_of()` sorts them.
+
+The distinction matters because they call for different responses. A
+timeout usually means retry or give up. A cancellation means shut down
+quietly. An `IsolateError` carrying a worker's failure means something in
+your own code went wrong, and the message names it.
 
 ## A Worked Example
 

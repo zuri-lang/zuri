@@ -62,6 +62,178 @@ Hi
 Indexing gives a **number**. Slicing gives `bytes`. `to_string()` decodes
 as UTF-8, `to_list()` gives numbers.
 
+### Slicing
+
+`b[a, b]` takes the bytes from `a` up to but **not including** `b`, and
+returns a new byte stream:
+
+```zuri
+var b = bytes([10, 20, 30, 40, 50])
+
+echo b[1, 3]
+echo b[, 3]
+echo b[3, ]
+echo b[-2, ]
+```
+
+```console
+(14 1e)
+(0a 14 1e)
+(28 32)
+(28 32)
+```
+
+The rules are exactly the list's. Either bound may be omitted: `b[, n]`
+starts at the beginning and `b[n, ]` runs to the end. Negative bounds count
+back from the end, so `b[-2, ]` is the last two bytes.
+
+Note the difference between an index and a slice, because for `bytes` the
+two return **different types**:
+
+```zuri
+var b = bytes([10, 20, 30])
+
+echo b[0]
+echo typeof(b[0])
+echo b[0, 1]
+echo typeof(b[0, 1])
+```
+
+```console
+10
+number
+(0a)
+bytes
+```
+
+One index gives you the numeric value of that byte. A slice of length one
+gives you a byte stream containing it. Reaching for `b[0]` when you meant
+`b[0, 1]` is the most common slip here, and it shows up as a `number` where
+a `bytes` was expected rather than as an error at the slicing site.
+
+#### Bounds Are Checked
+
+A slice that runs past the end raises rather than returning what it can:
+
+```zuri
+var b = bytes([10, 20, 30, 40, 50])
+
+catch {
+  echo b[1, 99]
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+RangeError: slice bounds 1..99 out of range (length 5)
+```
+
+`length()` itself is always a legal upper bound, because the bound is
+exclusive, and an empty slice is legal rather than an error:
+
+```zuri
+var b = bytes([10, 20, 30, 40, 50])
+
+echo b[0, b.length()]
+echo b[2, 2]
+echo b[2, 2].is_empty()
+```
+
+```console
+(0a 14 1e 28 32)
+()
+true
+```
+
+An empty byte stream prints as `()`.
+
+#### A Slice Is a Copy
+
+Slicing allocates a new stream, so writing through one does not disturb the
+original:
+
+```zuri
+var original = bytes([10, 20, 30])
+var part = original[0, 2]
+
+part[0] = 99
+
+echo original
+echo part
+```
+
+```console
+(0a 14 1e)
+(63 14)
+```
+
+That matters when you are parsing a buffer. Pulling a header out with
+`frame[0, 4]` gives you something you can modify freely, and the frame you
+are still reading from is untouched. It also means slicing in a loop copies
+every time, so a parser that walks a large buffer should carry an offset
+and slice once per field rather than re-slicing the remainder each step.
+
+#### Slice, Then Decode
+
+The common shape when a buffer holds text with a known extent:
+
+```zuri
+var b = bytes([72, 101, 108, 108, 111, 33])
+
+echo b[0, 5].to_string()
+echo b.to_string()
+```
+
+```console
+Hello
+Hello!
+```
+
+`to_string()` decodes the whole stream it is called on, so the slice is
+what limits the extent. Slicing on a byte boundary in the middle of a
+multi-byte character produces a stream that is not valid UTF-8; decode
+whole units, or keep the tail for the next read.
+
+#### There Is No Slice Assignment
+
+A slice can be read but not written to:
+
+```zuri,ignore
+var b = bytes([10, 20, 30])
+
+b[0, 2] = bytes([1, 1])
+```
+
+```console
+SyntaxError: invalid assignment target
+```
+
+Assign to one index at a time, or rebuild the stream with `extend()`. A
+single index does accept assignment, and the value has to be a real byte:
+
+```zuri
+var b = bytes([72, 101, 108, 108, 111, 33])
+
+b[0] = 74
+
+echo b.to_string()
+
+catch {
+  b[1] = 300
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+```
+
+```console
+Jello!
+NumericError: bytes element must be an integer in 0..=255, got 300
+```
+
+Note the difference from `bytes([300])`, which wraps rather than raising.
+Construction is lenient; assignment is not.
+
 ### Writing
 
 ```zuri

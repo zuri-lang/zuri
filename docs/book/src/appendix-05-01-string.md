@@ -676,9 +676,9 @@ If the string _str_ is a regular string, this method returns `true` if
 the _string_ contains a substring _str_. Otherwise, it returns `false`.
 
 If the string _str_ contains a valid [regular
-expression](#regular-expressions) (we'll get to that shortly below), it
+expression](ch04-01-strings.md#regular-expressions) (we'll get to that shortly below), it
 returns `false` if a match for the regex _str_ cannot be found in the
-string. Otherwise, it returns a [dictionary](./dictionaries) containing
+string. Otherwise, it returns a [dictionary](ch04-04-dictionaries.md) containing
 all first matching substring.
 
 If the _offset_ argument is specified, it becomes the offset in the
@@ -711,7 +711,7 @@ matches(reg: string) -> dictionary
 
 Returns a dictionary containing every match of the given regular
 expression _reg_ in the source string. If no match is found, an empty
-[dictionary](./dictionaries) is returned.
+[dictionary](ch04-04-dictionaries.md) is returned.
 
 If the _offset_ argument is specified, it becomes the offset in the
 _string_ at which to start matching.

@@ -276,7 +276,12 @@ catch {
 handle.close()
 ```
 
-Closing twice is safe, so the simpler form is usually fine:
+### The Bare `as e` Form Does It Once
+
+The version above repeats `handle.close()`, once in the handler and once
+after the statement, because those are two different paths out. The third
+shape of `catch` — **`as e` with no handler block** — collapses them into
+one:
 
 ```zuri,ignore
 var handle = file(path, 'w')
@@ -291,6 +296,43 @@ if e {
   raise e
 }
 ```
+
+The difference is the missing `{ ... }` after `as e`, and it changes the
+control flow rather than just the layout. With no handler there is nothing
+to jump into, so a raise inside the block is **recorded in `e` and
+execution simply continues on the next line**. Both paths — the one that
+raised and the one that did not — now run the same trailing code:
+
+```console
+  fallthrough: closing
+  fallthrough: re-raising
+  caught: disk full
+```
+
+That gives you `close()` written once, running unconditionally, followed by
+an explicit decision about whether to re-raise. It is the closest thing
+Zuri has to `finally`, and it is assembled out of the ordinary pieces
+rather than being a separate construct:
+
+| Line | Job |
+| --- | --- |
+| `catch { ... } as e` | run it, record any failure, do not jump |
+| `handle.close()` | the cleanup, on every path |
+| `if e { raise e }` | pass the failure on, unchanged |
+
+Two things to be deliberate about.
+
+**`e` is `nil` when nothing went wrong**, which is what makes
+`if e { raise e }` the whole of the decision. On the success path the
+cleanup runs and the function carries on normally.
+
+**Re-raising `e` itself keeps the original stack trace**, pointing at the
+line that actually failed rather than at the `raise` you just wrote. Wrap
+it in a new error only when you have something to add, as
+[Nesting and Re-raising](#nesting-and-re-raising) shows.
+
+Use the handler form when the failure needs handling. Use this form when it
+needs only cleaning up after.
 
 ## `return` Inside `catch`
 

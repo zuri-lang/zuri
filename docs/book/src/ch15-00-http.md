@@ -107,6 +107,92 @@ Two things are already true of that server that are worth noticing:
 headers a `GET` would have produced and no body, because that is what
 HEAD means.
 
+> Blocks in this chapter that list several calls together — three ways to
+> save, four filters, a family of methods — are **reference listings**, not
+> programs. They show the shape of each call rather than a sequence you
+> could run, and several would conflict if pasted into one file. Anything
+> presented as a complete program on this page runs as written.
+
+## A Round Trip You Can Run
+
+Most examples in this chapter call a host that does not exist, or start a
+server that never returns — neither of which you can paste into a terminal
+and watch. This one you can. It runs a real server on a real port and makes
+real requests against it, in two files.
+
+The server goes in its own file, because a function that references an
+imported module cannot be spawned from the file that imported it. See
+[Concurrency with Isolates](ch11-00-isolates.md) for the rule.
+
+<span class="filename">Filename: service.zu</span>
+
+```zuri,ignore
+import http
+
+def serve(port_channel) {
+  var server = http.server(0, '127.0.0.1')
+
+  server.get('/health', @(request, response) {
+    response.json({ status: 'ok' })
+  })
+
+  server.post('/echo', @(request, response) {
+    response.json({ heard: request.json_body().message }, 201)
+  })
+
+  # Bind first so the port is known, hand it back, then serve.
+  server.bind()
+  port_channel.send(server.socket.local_address().port())
+  server.listen()
+}
+```
+
+<span class="filename">Filename: main.zu</span>
+
+```zuri,ignore
+import http
+import isolate
+import .service
+
+var channel = isolate.channel(1)
+var task = isolate.spawn(service.serve, channel)
+var port = channel.recv()
+
+var api = http.client('http://127.0.0.1:${port}')
+
+echo api.get('/health').as_dict()
+echo api.post('/echo', { message: 'hello' }).status
+
+task.cancel()
+```
+
+```console
+$ zuri main.zu
+{status: ok}
+201
+```
+
+Four details in there are worth carrying into your own code.
+
+**Port `0` asks the operating system for a free port.** `listen()` would
+bind for you, but then nobody could ask which port it got, so the example
+calls `bind()` explicitly, reads the bound address, and only then starts
+accepting. That is the pattern for any test or any process running more
+than one server.
+
+**The port travels over a channel.** The client cannot know it in advance,
+and the two halves are in different isolates with separate heaps, so a
+shared variable is not an option.
+
+**`request.json_body()` parses the request body**, and
+`response.json(value, status)` writes the response. The names are not
+symmetrical because they are doing different jobs: one decodes what
+arrived, the other encodes and sets a status.
+
+**`task.cancel()` ends it.** `listen()` runs until the server is closed, so
+without that the program would never exit.
+
+
 ## Making Requests
 
 ### The Shared Client

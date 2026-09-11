@@ -69,10 +69,20 @@ A path starting with `.` or `..` is resolved against the directory of the
 file doing the importing, and is never searched for anywhere else.
 
 ```zuri,ignore
-import .helpers          # helpers.zu, next to this file
-import .models.user      # models/user.zu
-import ..shared.config   # up one directory, then shared/config.zu
+import .helpers          # next to this file
+import .models.user      # models/ next to this file, then user
+import ..shared.config   # up one directory, then shared/, then config
 ```
+
+Each segment resolves the same way a bare name does: `name.zu` is tried
+first, then `name/index.zu`. So `import .helpers` finds either
+`helpers.zu` or `helpers/index.zu`, and `import .models.user` finds
+`models/user.zu` or `models/user/index.zu`, with `models` itself being a
+directory either way.
+
+Which one it finds is invisible at the import site, and that is what lets a
+module grow into a package: split `helpers.zu` into `helpers/index.zu` plus
+some siblings, and every `import .helpers` keeps working untouched.
 
 Inside a package, a sibling is always `import .sibling`, never the full
 path from the project root. Writing `import myapp.models.user` from inside
@@ -266,7 +276,19 @@ import os
 var templates = os.join_paths(os.dir_name(__file__), 'templates')
 ```
 
-Neither is defined in the REPL.
+In the REPL both are defined, with placeholder values standing in for the
+file that does not exist:
+
+```zuri
+%> __file__
+@.repl
+%> __root__
+@.repl.root
+```
+
+They differ from each other there, so the `__root__ == __file__` check
+below is `false` at the prompt — a REPL session is never the entry point of
+a program.
 
 ### Running as a Program, Importing as a Module
 

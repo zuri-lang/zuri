@@ -67,11 +67,40 @@ anything outside the standard library.
 - [Performance and Memory](#performance-and-memory)
 - [Recipes](#recipes)
 
+> Blocks in this chapter that list several calls together — three ways to
+> save, four filters, a family of methods — are **reference listings**, not
+> programs. They show the shape of each call rather than a sequence you
+> could run, and several would conflict if pasted into one file. Anything
+> presented as a complete program on this page runs as written.
+
+## Following Along
+
+Most examples below operate on a file called `photo.jpg`. Use your own, or
+make one — the module can draw its own test subject:
+
+```zuri
+import imagine { Image }
+
+Image(320, 240, '#1e3a5f')
+  .fill_circle(220, 70, 40, '#ffd166')
+  .fill_rect(0, 170, 320, 70, '#2a9d8f')
+  .fill_polygon([[40, 170], [110, 80], [180, 170]], '#264653')
+  .save('photo.jpg')
+
+echo Image.open('photo.jpg').size()
+```
+
+```console
+{width: 320, height: 240}
+```
+
+Everything from here on assumes that file exists in the working directory.
+
 ## Introduction
 
 ### A First Image
 
-```zuri,ignore
+```zuri
 import imagine { Image }
 
 Image.open('photo.jpg')
@@ -111,7 +140,7 @@ all leave the original untouched and hand back a new one. Drawing,
 filters and compositing all modify the image you called them on and
 return it so the chain continues.
 
-```zuri,ignore
+```zuri
 var original = Image.open('photo.jpg')
 
 var small = original.thumbnail(200, 200)   # original is untouched
@@ -339,13 +368,24 @@ smaller-than-PNG lossless format with alpha.
 
 Never assume; ask:
 
-```zuri,ignore
+```zuri
+import imagine
+
 var can = imagine.capabilities()
 
-echo can.decode      # every format this build can read
-echo can.encode      # every format it can write
-echo can.animated    # every format it can read as an animation
+echo can.decode.contains('png')
+echo can.encode.contains('webp')
+echo can.animated.contains('gif')
 ```
+
+```console
+true
+true
+true
+```
+
+`decode`, `encode` and `animated` are each a list of format names, so
+`contains()` answers the question you actually have.
 
 ### Encoding Options
 
@@ -500,7 +540,7 @@ than rotating the pixels, so a photograph whose bytes are sideways is
 meant to be displayed upright. `Image.open()` and `Image.decode()`
 handle this for you.
 
-```zuri,ignore
+```zuri
 Image.open('photo.jpg')                       # upright
 Image.open('photo.jpg', { orient: false })    # exactly as stored
 ```

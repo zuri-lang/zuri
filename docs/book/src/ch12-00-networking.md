@@ -108,9 +108,12 @@ socket.set_non_blocking(true)
 socket.set_ttl(64)
 ```
 
-Timeouts are milliseconds. **Set a read timeout on anything that talks to
-the network.** A socket with no timeout and a peer that never answers is a
-thread that never comes back.
+Timeouts here are **milliseconds**, which is the opposite of the `isolate`
+module's seconds — easy to mix up in a program that uses both.
+
+**Set a read timeout on anything that talks to the network.** A socket
+with no timeout and a peer that never answers is a thread that never
+comes back.
 
 `set_nodelay(true)` disables Nagle's algorithm, which is what you want for
 a request/response protocol where latency matters more than packet count.

@@ -31,7 +31,7 @@ thing.
 | [`set_times(atime: number, mtime: number)`](#set_times) | `boolean` | Sets the last access time and last modified time of the file. |
 | [`seek(offset: number, seek_type: int)`](#seek) | `boolean` | Sets the position of a file reader or writer in a file. |
 | [`tell()`](#tell) | `number` | Returns the current position of the reader/writer in a file. |
-| [`mode()`](#mode) |  | Returns the mode in which the current file was opened. |
+| [`mode()`](#mode) | `string` | Returns the mode in which the current file was opened. |
 | [`name()`](#name) | `string` | Returns the name of the current file. |
 
 ## `file()`
@@ -558,7 +558,7 @@ true
 ## `mode()`
 
 ```zuri,ignore
-mode()
+mode() -> string
 ```
 
 Returns the mode in which the current file was opened.<br>
@@ -568,8 +568,9 @@ For example:
 ```zuri,ignore
 %> file('sample.txt').mode()
 'r'
+```
 
-@return {string}
+**Returns** `string`
 
 ## `name()`
 
@@ -582,7 +583,8 @@ Returns the name of the current file.<br>
 For example:
 
 ```zuri,ignore
-%> file('./sample.txt').name() 'sample.txt'
+%> file('./sample.txt').name()
+'sample.txt'
 ```
 
 **Returns** `string`

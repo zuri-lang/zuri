@@ -76,10 +76,26 @@ Two rules the existing text follows:
 `console` block is what the program actually printed, not what it ought to
 print. When you change behaviour, re-run the examples that cover it.
 
-A block tagged ```` ```zuri,ignore ```` is exempt, and there are only three
-reasons to tag one: it deliberately shows an error, it is one file of a
-multi-file program, or it blocks forever (a server, a prompt). Everything
-else must run.
+A block tagged ```` ```zuri,ignore ```` is exempt, and there are only four
+reasons to tag one:
+
+- it deliberately shows an error;
+- it is one file of a multi-file program;
+- it blocks forever — a server, a prompt;
+- it needs something that is not there and cannot be: a remote host, an
+  uploaded file, a licensed font. A block that only needs a *local* file
+  does not qualify — create the file in an earlier block on the same page,
+  as the Imagine chapter does with `photo.jpg`;
+- it is a **catalogue**: several alternative calls listed together to show
+  a family of methods, which is not a program and could not run as one.
+  The reference chapters are full of these, and each is introduced by prose
+  saying so.
+
+Everything else must run. A tag is a statement that the example cannot be
+checked, not a way to avoid checking it.
+
+`zuri docs/book/tools/verify.zu` reports the count it ran. When that number
+falls after a change, a block was tagged rather than fixed.
 
 That rule is enforced, not just stated. This runs every example in the book
 and compares what it printed against the `console` block beneath it:

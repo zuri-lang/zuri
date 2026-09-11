@@ -59,7 +59,7 @@ true
 
 - **Returns** `bool`
 
-## `call(...args)`
+## `call()`
 
 Calls the function with the given arguments and returns its result. The
 same as calling it directly; useful when the function is held in a variable

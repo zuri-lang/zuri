@@ -97,6 +97,30 @@ Type '.exit' to exit the REPL session
 Ctrl+C is how you abandon a half-typed line: the line is discarded and you
 start again on a fresh prompt.
 
+## Syntax Highlighting
+
+On a terminal, the REPL colours what you type as you type it. Keywords are
+highlighted and everything else is left plain, so a misspelled `retrun` or
+`whiel` stands out before you press Enter — it simply does not change
+colour.
+
+The highlighting understands string literals. A keyword inside quotes is
+text, not a keyword, and is left uncoloured:
+
+```zuri
+%> var note = 'return it later'
+```
+
+`return` there stays plain, because it is part of the string.
+
+Alongside it, a greyed-out suggestion appears to the right of the cursor
+when what you have typed so far matches something earlier in your history.
+Press the right arrow to accept it.
+
+Both are terminal features. Piping input to `zuri` or redirecting its
+output produces plain text, so a session captured to a file has no escape
+codes in it.
+
 ## The Other Dot Commands
 
 **`.help`** reminds you that Tab offers completions.

@@ -552,7 +552,8 @@ class file {
    * ```zuri-repl
    * %> file('sample.txt').mode()
    * 'r'
-   * 
+   * ```
+   *
    * @return {string}
    */
   mode() {}
@@ -564,7 +565,8 @@ class file {
    * For example:
    * 
    * ```zuri-repl
-   * %> file('./sample.txt').name() 'sample.txt'
+   * %> file('./sample.txt').name()
+   * 'sample.txt'
    * ```
    * 
    * @return {string}
