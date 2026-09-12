@@ -232,11 +232,10 @@ fn assemble_site() -> Result<PathBuf, String> {
 }
 
 fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
-  std::fs::create_dir_all(to)
-    .map_err(|e| format!("could not create {}: {e}", to.display()))?;
+  std::fs::create_dir_all(to).map_err(|e| format!("could not create {}: {e}", to.display()))?;
 
-  let entries = std::fs::read_dir(from)
-    .map_err(|e| format!("could not read {}: {e}", from.display()))?;
+  let entries =
+    std::fs::read_dir(from).map_err(|e| format!("could not read {}: {e}", from.display()))?;
 
   for entry in entries {
     let entry = entry.map_err(|e| format!("could not read {}: {e}", from.display()))?;
