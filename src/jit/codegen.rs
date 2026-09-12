@@ -77,7 +77,6 @@ const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
 /// own address (`frames_ptr + index * CALL_FRAME_SIZE`): see
 /// `vm::CALL_FRAME_*_OFFSET`'s own docs.
 const CALL_FRAME_FUNCTION_OFFSET: i32 = vm::CALL_FRAME_FUNCTION_OFFSET as i32;
-const CALL_FRAME_CLOSURE_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_OFFSET as i32;
 const CALL_FRAME_CLOSURE_VAL_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_VAL_OFFSET as i32;
 const CALL_FRAME_IP_OFFSET: i32 = vm::CALL_FRAME_IP_OFFSET as i32;
 const CALL_FRAME_BASE_OFFSET: i32 = vm::CALL_FRAME_BASE_OFFSET as i32;
@@ -2941,21 +2940,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     callee_num_registers: u8,
     dst: u8,
     new_base: IrValue,
-    closure_ptr: IrValue,
     closure_val: IrValue,
     slow_block: Block,
   ) {
     let (depth, frames_len) = self.emit_call_checks(new_base, callee_num_registers, slow_block);
     let proto_c = self.u64c(proto_bits);
-    self.emit_frame_construction(
-      proto_c,
-      dst,
-      new_base,
-      closure_ptr,
-      closure_val,
-      depth,
-      frames_len,
-    );
+    self.emit_frame_construction(proto_c, dst, new_base, closure_val, depth, frames_len);
   }
 
   /// The actual `CallFrame` construction + `frames`/`jit_call_depth`
@@ -2970,7 +2960,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     proto_bits: IrValue,
     dst: u8,
     new_base: IrValue,
-    closure_ptr: IrValue,
     closure_val: IrValue,
     depth: IrValue,
     frames_len: IrValue,
@@ -2986,22 +2975,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .store(flags, proto_bits, frame_addr, CALL_FRAME_FUNCTION_OFFSET);
-    // `CallFrame::closure` is a `*const ObjClosure`, so it has to point
-    // at the variant's payload, not at the `Obj` the tagged value names.
-    // `obj_ptr` hands back the `Obj` base (offset 0 is the tag byte, which
-    // is exactly what the callers' own `obj_tag` guards need), so the
-    // payload offset has to go back on here. Interpreted frame pushes
-    // store `&ObjClosure` directly and never see the difference; a frame
-    // built here only reveals it once the interpreter takes the frame
-    // over after a deopt and reads an upvalue through it.
-    let payload_off = self.i64c(object::obj_payload_offset() as i64);
-    let closure_payload = self.fb.ins().iadd(closure_ptr, payload_off);
-    self.fb.ins().store(
-      flags,
-      closure_payload,
-      frame_addr,
-      CALL_FRAME_CLOSURE_OFFSET,
-    );
     self.fb.ins().store(
       flags,
       closure_val,
@@ -3352,16 +3325,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &[vm, base, func_i, field_count_c],
     );
     let closure_c = self.u64c(ctor_bits);
-    let closure_ptr = self.obj_ptr(closure_c);
-    self.emit_frame_construction(
-      proto_c,
-      dst,
-      new_base,
-      closure_ptr,
-      closure_c,
-      depth,
-      frames_len,
-    );
+    self.emit_frame_construction(proto_c, dst, new_base, closure_c, depth, frames_len);
     entry
   }
 
@@ -4065,7 +4029,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // branches with no unconditional call ahead of the split to have
     // already flushed both.
     let proto_bits = self.proto as *const ObjFunction as u64;
-    let closure_ptr = self.obj_ptr(closure_bits);
     let slow_block = self.fb.create_block();
     let fast_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -4075,7 +4038,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.proto.num_registers,
       dst,
       new_base,
-      closure_ptr,
       closure_bits,
       slow_block,
     );
@@ -5393,15 +5355,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let callee_num_regs = self.fb.ins().uextend(types::I64, callee_num_regs8);
     let (depth, frames_len) = self.emit_call_checks_dyn(new_base, callee_num_regs, slow_block);
 
-    self.emit_frame_construction(
-      proto_ptr,
-      dst,
-      new_base,
-      closure_ptr,
-      callee_val,
-      depth,
-      frames_len,
-    );
+    self.emit_frame_construction(proto_ptr, dst, new_base, callee_val, depth, frames_len);
     self.fb.ins().jump(direct_call_block, &[]);
 
     self.fb.switch_to_block(direct_call_block);
@@ -5510,13 +5464,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     // Fully-inline path: see `emit_inline_frame_push`'s own docs.
-    let closure_ptr = self.obj_ptr(callee_val);
     self.emit_inline_frame_push(
       proto_ptr as u64,
       callee.num_registers,
       dst,
       new_base,
-      closure_ptr,
       callee_val,
       slow_block,
     );
@@ -5734,13 +5686,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     } else {
       // Fully-inline path: see `emit_inline_frame_push`'s own docs.
       let proto_bits = self.proto as *const ObjFunction as u64;
-      let closure_ptr = self.obj_ptr(closure_bits);
       self.emit_inline_frame_push(
         proto_bits,
         self.proto.num_registers,
         dst,
         new_base,
-        closure_ptr,
         closure_bits,
         slow_block,
       );
@@ -6996,15 +6946,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
     let callee_num_regs = self.fb.ins().uextend(types::I64, callee_num_regs8);
     let (depth, frames_len) = self.emit_call_checks_dyn(new_base, callee_num_regs, miss_block);
-    self.emit_frame_construction(
-      proto_ptr,
-      dst,
-      new_base,
-      closure_ptr,
-      method_bits,
-      depth,
-      frames_len,
-    );
+    self.emit_frame_construction(proto_ptr, dst, new_base, method_bits, depth, frames_len);
 
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let sig = self.entry_sig_ref();

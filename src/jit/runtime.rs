@@ -862,7 +862,7 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
     return 0;
   };
   let new_base = base + func_reg as usize + 1;
-  vm.setup_closure_call(callee, closure, proto, new_base, num_args as u8, dst as u8);
+  vm.setup_closure_call(callee, proto, new_base, num_args as u8, dst as u8);
   vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   unsafe { *(closure_out as *mut u64) = callee.to_bits() };
@@ -957,14 +957,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // `Instr::Invoke`'s own doc comment in chunk.rs, and
   // `VM::invoke_prebound_inner`'s identical convention.
   let new_base = base + obj as usize + 1;
-  vm.setup_closure_call(
-    method,
-    closure,
-    proto,
-    new_base,
-    1 + num_args as u8,
-    dst as u8,
-  );
+  vm.setup_closure_call(method, proto, new_base, 1 + num_args as u8, dst as u8);
   vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   unsafe { *(closure_out as *mut u64) = method.to_bits() };
@@ -1218,14 +1211,7 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
   let callee = Value::from_bits(callee_bits);
   let closure = callee.as_closure();
   let proto = closure.function.as_func();
-  vm.setup_closure_call(
-    callee,
-    closure,
-    proto,
-    new_base as usize,
-    num_args as u8,
-    dst as u8,
-  );
+  vm.setup_closure_call(callee, proto, new_base as usize, num_args as u8, dst as u8);
   vm.mark_top_frame_compiled();
   vm.jit_depth_enter();
   1

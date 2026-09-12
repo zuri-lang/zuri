@@ -440,10 +440,13 @@ struct CallFrame {
   /// The closure instance this frame is executing, for GetUpval/SetUpval/
   /// Closure. Distinct from `function` (the shared prototype) the same way
   /// `ObjClosure` differs from `ObjFunction`.
-  closure: *const ObjClosure,
-  /// Same closure as `closure` but as the tagged `Value` the GC root scan
-  /// walks. `function`/`closure` stay raw pointers so hot dispatch skips
-  /// the tag check on every fetch.
+  ///
+  /// Held as the tagged `Value` the GC root scan walks, and nothing else.
+  /// A raw `*const ObjClosure` cached alongside it used to save the mask
+  /// on each fetch; it cost a store on every frame a JIT call pushed, and
+  /// keeping the two in agreement was its own hazard, since the payload of
+  /// an `Obj::Closure` does not start where the `Obj` does. `run_until`
+  /// resolves it once per frame instead.
   closure_val: Value,
   ip: usize,
   /// Index into `VM::registers` where this frame's register window starts.
@@ -472,7 +475,6 @@ struct CallFrame {
 /// `CALL_FRAME_SIZE`) is what the same code multiplies a frame-stack
 /// index by to get a byte address.
 pub(crate) const CALL_FRAME_FUNCTION_OFFSET: usize = std::mem::offset_of!(CallFrame, function);
-pub(crate) const CALL_FRAME_CLOSURE_OFFSET: usize = std::mem::offset_of!(CallFrame, closure);
 pub(crate) const CALL_FRAME_CLOSURE_VAL_OFFSET: usize =
   std::mem::offset_of!(CallFrame, closure_val);
 pub(crate) const CALL_FRAME_IP_OFFSET: usize = std::mem::offset_of!(CallFrame, ip);
@@ -498,7 +500,6 @@ mod frame_stack_tests {
   fn call_frame_offsets_match_real_frame() {
     let frame = CallFrame {
       function: 0x1000 as *const ObjFunction,
-      closure: 0x2000 as *const ObjClosure,
       closure_val: Value::number(7.0),
       ip: 11,
       base: 22,
@@ -511,10 +512,6 @@ mod frame_stack_tests {
       assert_eq!(
         *((base_addr + CALL_FRAME_FUNCTION_OFFSET) as *const *const ObjFunction),
         frame.function
-      );
-      assert_eq!(
-        *((base_addr + CALL_FRAME_CLOSURE_OFFSET) as *const *const ObjClosure),
-        frame.closure
       );
       assert_eq!(
         (*((base_addr + CALL_FRAME_CLOSURE_VAL_OFFSET) as *const Value)).as_number(),
@@ -553,7 +550,6 @@ mod frame_stack_tests {
     for i in 0..300usize {
       let frame = CallFrame {
         function: std::ptr::null(),
-        closure: std::ptr::null(),
         closure_val: Value::number(i as f64),
         ip: i,
         base: i,
@@ -1356,7 +1352,6 @@ impl VM {
     self.sync_regs_ptr_cache();
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
-      closure: closure as *const ObjClosure,
       closure_val: main,
       ip: 0,
       base: 0,
@@ -1419,7 +1414,6 @@ impl VM {
     let stop_depth = self.frames.len();
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
-      closure: closure as *const ObjClosure,
       closure_val: callee,
       ip: 0,
       base: new_base,
@@ -2941,7 +2935,6 @@ impl VM {
   pub(crate) fn setup_closure_call(
     &mut self,
     closure_val: Value,
-    closure: &ObjClosure,
     proto: &ObjFunction,
     new_base: usize,
     num_args: u8,
@@ -2969,17 +2962,10 @@ impl VM {
       && num_args == proto.arity
       && self.registers.len() >= new_base + proto.num_registers as usize
     {
-      self.push_frame_fast(closure_val, closure, proto, new_base, dst_in_caller);
+      self.push_frame_fast(closure_val, proto, new_base, dst_in_caller);
       return;
     }
-    self.setup_closure_call_slow(
-      closure_val,
-      closure,
-      proto,
-      new_base,
-      num_args,
-      dst_in_caller,
-    );
+    self.setup_closure_call_slow(closure_val, proto, new_base, num_args, dst_in_caller);
   }
 
   /// `setup_closure_call`'s fast path: arguments are already in place and
@@ -2988,14 +2974,12 @@ impl VM {
   fn push_frame_fast(
     &mut self,
     closure_val: Value,
-    closure: &ObjClosure,
     proto: &ObjFunction,
     new_base: usize,
     dst_in_caller: u8,
   ) {
     self.frames.push(CallFrame {
       function: proto as *const ObjFunction,
-      closure: closure as *const ObjClosure,
       closure_val,
       ip: 0,
       base: new_base,
@@ -3013,7 +2997,6 @@ impl VM {
   fn setup_closure_call_slow(
     &mut self,
     closure_val: Value,
-    closure: &ObjClosure,
     proto: &ObjFunction,
     new_base: usize,
     num_args: u8,
@@ -3042,7 +3025,7 @@ impl VM {
       self.registers[new_base + required as usize] = list_val;
     }
 
-    self.push_frame_fast(closure_val, closure, proto, new_base, dst_in_caller);
+    self.push_frame_fast(closure_val, proto, new_base, dst_in_caller);
   }
 
   pub(crate) fn call_native(
@@ -3307,7 +3290,7 @@ impl VM {
     }
     self.registers[new_base] = instance;
 
-    self.setup_closure_call(ctor, closure, proto, new_base, num_args + 1, dst);
+    self.setup_closure_call(ctor, proto, new_base, num_args + 1, dst);
     self.jit_depth_enter();
     // Pinned rather than kept in a local: the constructor body is
     // arbitrary Zuri code that may collect, and this is the value the call
@@ -3363,8 +3346,7 @@ impl VM {
     }
     self.registers[new_base] = instance;
 
-    let closure = ctor.as_closure();
-    self.setup_closure_call(ctor, closure, proto, new_base, num_args + 1, dst);
+    self.setup_closure_call(ctor, proto, new_base, num_args + 1, dst);
     self.jit_depth_enter();
     self.gc_pins.push(instance);
   }
@@ -3493,7 +3475,7 @@ impl VM {
         let callee_closure = callee.as_closure();
         let callee_fn = callee_closure.function.as_func();
         let new_base = base + func_reg as usize + 1;
-        self.setup_closure_call(callee, callee_closure, callee_fn, new_base, num_args, dst);
+        self.setup_closure_call(callee, callee_fn, new_base, num_args, dst);
         if sync {
           // No flat interpreter loop is waiting for this frame; run it
           // to completion right now, same as call_value does for a
@@ -3592,14 +3574,7 @@ impl VM {
     // 1 + num_args: the receiver already duplicated into recv_reg + 1
     // occupies the callee's register 0 ("self"), ahead of the user
     // arguments.
-    self.setup_closure_call(
-      callee,
-      callee_closure,
-      callee_fn,
-      new_base,
-      1 + num_args,
-      dst,
-    );
+    self.setup_closure_call(callee, callee_fn, new_base, 1 + num_args, dst);
     if sync {
       let stop_depth = self.frames.len() - 1;
       let ret = self.run_frame(stop_depth, callee_fn, callee)?;
@@ -3809,24 +3784,24 @@ impl VM {
     let mut frame_idx = self.frames.len() - 1;
     let mut base = self.frames[frame_idx].base;
     let mut func_ptr = self.frames[frame_idx].function;
-    let mut closure_ptr = self.frames[frame_idx].closure;
+    let mut closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
     let mut ip = self.frames[frame_idx].ip;
 
     'dispatch: loop {
       if self.heap.needs_major_gc() {
         self.collect_garbage();
-        closure_ptr = self.frames[frame_idx].closure;
+        closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
       } else if self.heap.needs_minor_gc() {
         self.collect_minor();
         // func_ptr never needs this: ObjFunction always allocates old-
-        // generation, so it never moves. closure_ptr has no such guarantee
-        //; ObjClosure is an ordinary young allocation, the same hazard
-        // ensure_stable_for_compiled_entry exists to prevent for compiled
-        // code's closure_param. The interpreter just re-derives it on
-        // every safepoint instead of needing it pinned for a whole
-        // invocation; cheap, and collect_minor already relocated it via
-        // the per-frame loop that keeps self.frames[..].closure in sync.
-        closure_ptr = self.frames[frame_idx].closure;
+        // generation, so it never moves. The closure has no such
+        // guarantee: an ObjClosure is an ordinary young allocation, so a
+        // collection can relocate it mid-invocation. The interpreter
+        // re-derives the pointer from the frame's own closure_val on
+        // every safepoint rather than needing it pinned for a whole
+        // invocation; cheap, and the collection has already rewritten
+        // that root by the time this runs.
+        closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
       }
 
       // Same safepoint the GC checks above use, for the same reason:
@@ -3847,7 +3822,7 @@ impl VM {
             // silently doing nothing.
             self.deliver_signal(idx)?;
           }
-          closure_ptr = self.frames[frame_idx].closure;
+          closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
         }
       }
 
@@ -4132,7 +4107,7 @@ impl VM {
                     let caller = &self.frames[frame_idx];
                     base = caller.base;
                     func_ptr = caller.function;
-                    closure_ptr = caller.closure;
+                    closure_ptr = caller.closure_val.as_closure() as *const ObjClosure;
                     ip = caller.ip;
                     self.set_reg(base, dst_in_caller, ret);
                     continue 'dispatch;
@@ -4171,7 +4146,7 @@ impl VM {
             let f = &self.frames[frame_idx];
             base = f.base;
             func_ptr = f.function;
-            closure_ptr = f.closure;
+            closure_ptr = f.closure_val.as_closure() as *const ObjClosure;
             ip = f.ip;
           },
           Instr::Return { src } => {
@@ -4185,7 +4160,7 @@ impl VM {
             let caller = &self.frames[frame_idx];
             base = caller.base;
             func_ptr = caller.function;
-            closure_ptr = caller.closure;
+            closure_ptr = caller.closure_val.as_closure() as *const ObjClosure;
             ip = caller.ip;
             self.set_reg(base, finished.dst_in_caller, ret);
           },
@@ -4793,7 +4768,7 @@ impl VM {
             let f = &self.frames[frame_idx];
             base = f.base;
             func_ptr = f.function;
-            closure_ptr = f.closure;
+            closure_ptr = f.closure_val.as_closure() as *const ObjClosure;
             ip = f.ip;
           },
 
@@ -4861,7 +4836,7 @@ impl VM {
             let f = &self.frames[frame_idx];
             base = f.base;
             func_ptr = f.function;
-            closure_ptr = f.closure;
+            closure_ptr = f.closure_val.as_closure() as *const ObjClosure;
             ip = f.ip;
           },
           Instr::CallSuperCtor {
@@ -4895,7 +4870,7 @@ impl VM {
             let f = &self.frames[frame_idx];
             base = f.base;
             func_ptr = f.function;
-            closure_ptr = f.closure;
+            closure_ptr = f.closure_val.as_closure() as *const ObjClosure;
             ip = f.ip;
           },
 
@@ -5669,12 +5644,11 @@ impl VM {
     }
     for frame in &mut self.frames {
       if Self::forward_slot(&mut self.heap, &mut frame.closure_val, &mut worklist) {
-        // function/closure are raw pointers cached from closure_val at
-        // frame-push time for hot-path speed; relocating what
-        // closure_val points at invalidates them too, so they need the
-        // same re-derivation a fresh frame push would do.
+        // `function` is a raw pointer cached from closure_val at frame-push
+        // time for hot-path speed; relocating what closure_val points at
+        // invalidates it too, so it needs the same re-derivation a fresh
+        // frame push would do.
         let closure = frame.closure_val.as_closure();
-        frame.closure = closure as *const ObjClosure;
         frame.function = closure.function.as_func() as *const ObjFunction;
       }
     }
@@ -6132,7 +6106,7 @@ impl VM {
       frame_idx,
       base: f.base,
       func_ptr: f.function,
-      closure_ptr: f.closure,
+      closure_ptr: f.closure_val.as_closure() as *const ObjClosure,
       ip: f.ip,
     }
   }
