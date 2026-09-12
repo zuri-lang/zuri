@@ -720,51 +720,16 @@ fn ppid_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(sysinfo::ppid() as f64))
 }
 
-#[cfg(unix)]
 fn kill_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);
   enforce_arg_type!(ctx, 0, ArgType::Number);
   enforce_arg_type!(ctx, 1, ArgType::Number);
-  let pid = ctx.args[0].as_number() as libc::pid_t;
-  let signal = ctx.args[1].as_number() as libc::c_int;
-  let ret = unsafe { libc::kill(pid, signal) };
-  if ret != 0 {
-    return Err(format!(
-      "could not signal process {}: {}",
-      pid,
-      std::io::Error::last_os_error()
-    ));
-  }
+
+  let pid = ctx.args[0].as_number() as i64;
+  let signal = ctx.args[1].as_number() as i32;
+
+  os_process::kill_pid(pid, signal)?;
   Ok(Value::bool(true))
-}
-
-#[cfg(windows)]
-fn kill_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 2);
-  enforce_arg_type!(ctx, 0, ArgType::Number);
-  let pid = ctx.args[0].as_number() as u32;
-
-  use windows_sys::Win32::Foundation::CloseHandle;
-  use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
-
-  unsafe {
-    let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-    if handle.is_null() {
-      return Err(format!("could not open process {}", pid));
-    }
-    let ok = TerminateProcess(handle, 1);
-    CloseHandle(handle);
-    if ok == 0 {
-      return Err(format!("could not terminate process {}", pid));
-    }
-  }
-  Ok(Value::bool(true))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn kill_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 2);
-  Err("kill() is not supported on this platform".to_string())
 }
 
 fn on_signal_fn(ctx: &mut ZuriContext) -> Result<Value, String> {

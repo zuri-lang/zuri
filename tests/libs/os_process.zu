@@ -124,28 +124,47 @@ assert os.kill(os.pid(), 0) == true,
   'kill() with signal 0 must succeed against this process\'s own pid without actually sending anything'
 ok('kill() with signal 0 can probe that a process exists without disturbing it')
 
+var probed = true
+
+catch {
+  # Above every pid either platform hands out, so nothing is behind it.
+  os.kill(2147483646, 0)
+} as e {
+  probed = false
+}
+
+assert !probed, 'probing a pid that names no process must raise rather than report success'
+ok('kill() with signal 0 reports a process that is not there')
+
 # ---------------------------------------------------------------------------
 # on_signal()
 # ---------------------------------------------------------------------------
-var signaled = false
+# Windows has no way to send a signal to a process id at all, so there
+# is nothing to deliver here and nothing to wait for. Registering the
+# handler still works there, and still gets checked.
+if os.platform != 'windows' {
+  var signaled = false
 
-# `return true` is what claims the signal. Without it the callback
-# declines, the signal falls through to its default action, and this
-# test process is killed by the `os.kill()` below; see `on_signal()`'s
-# own docs, and `tests/libs/os_signal.zu` for that contract's own
-# coverage.
-os.on_signal('INT', @() {
-  signaled = true
-  return true
-})
-os.kill(os.pid(), 2)
+  # `return true` is what claims the signal. Without it the callback
+  # declines, the signal falls through to its default action, and this
+  # test process is killed by the `os.kill()` below.
+  os.on_signal('INT', @() {
+    signaled = true
+    return true
+  })
+  os.kill(os.pid(), 2)
 
-var spins = 0
-while !signaled and spins < 50000000 {
-  spins++
+  var spins = 0
+  while !signaled and spins < 50000000 {
+    spins++
+  }
+  assert signaled, 'a registered on_signal() callback must run once the signal actually arrives'
+  ok('on_signal() delivers a callback when the process receives the signal')
+} else {
+  assert os.on_signal('INT', @() { return true }) == true,
+    'on_signal() must still register a handler on a platform that cannot deliver to a pid'
+  ok('on_signal() registers a handler')
 }
-assert signaled, 'a registered on_signal() callback must run once the signal actually arrives'
-ok('on_signal() delivers a callback when the process receives the signal')
 
 # ===========================================================================
 # Final summary

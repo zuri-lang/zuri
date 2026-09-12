@@ -318,7 +318,10 @@ def _drain(state) {
  *   port: 3000,
  *   on_ready: @(address, stop) {
  *     echo 'listening on ${address}'
- *     os.on_signal('SIGINT', @(signal) { stop() })
+ *     os.on_signal('INT', @() {
+ *       stop()
+ *       return true
+ *     })
  *   },
  * })
  * ```

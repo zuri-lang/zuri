@@ -2011,8 +2011,14 @@ http.serve(app.setup, {
   port: 3000,
   on_ready: @(address, stop) {
     echo 'listening on ${address}'
-    os.on_signal('SIGINT', @(signal) { stop() })
-    os.on_signal('SIGTERM', @(signal) { stop() })
+    os.on_signal('INT', @() {
+      stop()
+      return true
+    })
+    os.on_signal('TERM', @() {
+      stop()
+      return true
+    })
   },
 })
 ```

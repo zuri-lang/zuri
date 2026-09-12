@@ -88,6 +88,9 @@
  * Return a truthy value instead to swallow the signal and keep
  * running.
  *
+ * Windows has no signals. A callback registered there runs for console
+ * events like Ctrl+C, and never for anything `kill()` sends.
+ *
  * ## The machine
  *
  * ```zuri

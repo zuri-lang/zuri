@@ -170,6 +170,129 @@ pub fn exit_code_of(status: std::process::ExitStatus) -> i32 {
   -1
 }
 
+/// What `kill()` sends when the caller doesn't say. `SIGTERM`, which
+/// is what the `kill(1)` command defaults to as well.
+pub const DEFAULT_SIGNAL: i32 = 15;
+
+/// The two things a signal number can mean on a platform that has no
+/// signals.
+///
+/// Windows can do exactly two of the things `kill(2)` does: report
+/// whether a process exists and can be opened, and end it. What it has
+/// no counterpart for is the part that makes a signal a signal, namely
+/// the target receiving a number and deciding for itself what to do
+/// about it. The only delivery mechanism Windows offers,
+/// `GenerateConsoleCtrlEvent`, addresses a console process group rather
+/// than a process, and refuses to target a specific group with
+/// `CTRL_C_EVENT` at all, so there is nothing to build a faithful
+/// `kill(pid, SIGINT)` out of.
+///
+/// So the numbers divide into the ones that can be honoured exactly and
+/// the ones that cannot be honoured at all, and the second kind raises
+/// rather than quietly terminating instead. Asking to interrupt a
+/// process means wanting it to get the chance to clean up; killing it
+/// outright is a different outcome, not a near-enough one, and a caller
+/// who would rather have the kill can ask for that by number.
+#[cfg(windows)]
+pub enum WindowsAction {
+  /// Signal 0, the "does this exist and may I touch it" probe. Ends
+  /// nothing.
+  Probe,
+  /// `SIGKILL` or `SIGTERM`: end the process, with the exit status a
+  /// Unix caller would have seen for it.
+  Terminate(u32),
+}
+
+/// Maps a Unix signal number onto what Windows can actually do about
+/// it, or explains why it can't.
+#[cfg(windows)]
+pub fn windows_action(signal: i32) -> Result<WindowsAction, String> {
+  const SIGKILL: i32 = 9;
+
+  match signal {
+    0 => Ok(WindowsAction::Probe),
+    // `128 + signal` is the status a Unix shell reports for a process
+    // killed by that signal, and a child that really was signalled
+    // reports it here too. Using it means a script reading an exit code
+    // sees one number rather than one per platform.
+    SIGKILL | DEFAULT_SIGNAL => Ok(WindowsAction::Terminate(128 + signal as u32)),
+    other => Err(format!(
+      "signal {} cannot be delivered on Windows, which has no way to signal a process by id. \
+       Only 0 (test that the process exists), 9 and 15 (terminate it) are supported here",
+      other
+    )),
+  }
+}
+
+/// Sends `signal` to the process with id `pid`.
+///
+/// On Windows only two numbers mean anything, and every other one is
+/// refused rather than quietly turned into a kill.
+pub fn kill_pid(pid: i64, signal: i32) -> Result<(), String> {
+  #[cfg(unix)]
+  {
+    let ret = unsafe { libc::kill(pid as libc::pid_t, signal) };
+    if ret != 0 {
+      return Err(format!(
+        "could not signal process {}: {}",
+        pid,
+        std::io::Error::last_os_error()
+      ));
+    }
+    Ok(())
+  }
+
+  #[cfg(windows)]
+  {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+      OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess,
+    };
+
+    let action = windows_action(signal)?;
+
+    // Asked for no more rights than the action needs: a probe that
+    // demanded `PROCESS_TERMINATE` would report "no such process" for
+    // any process this one is merely not allowed to kill.
+    let access = match action {
+      WindowsAction::Probe => PROCESS_QUERY_LIMITED_INFORMATION,
+      WindowsAction::Terminate(_) => PROCESS_TERMINATE,
+    };
+
+    unsafe {
+      let handle = OpenProcess(access, 0, pid as u32);
+      if handle.is_null() {
+        return Err(format!(
+          "could not signal process {}: {}",
+          pid,
+          std::io::Error::last_os_error()
+        ));
+      }
+
+      // Formatted before `CloseHandle`, which would otherwise be the
+      // last call to set the thread's error code.
+      let result = match action {
+        WindowsAction::Probe => Ok(()),
+        WindowsAction::Terminate(status) if TerminateProcess(handle, status) == 0 => Err(format!(
+          "could not terminate process {}: {}",
+          pid,
+          std::io::Error::last_os_error()
+        )),
+        WindowsAction::Terminate(_) => Ok(()),
+      };
+
+      CloseHandle(handle);
+      result
+    }
+  }
+
+  #[cfg(not(any(unix, windows)))]
+  {
+    let _ = (pid, signal);
+    Err("kill() is not supported on this platform".to_string())
+  }
+}
+
 impl Process {
   pub fn spawn(program: &str, args: &[String], opts: &SpawnOptions) -> Result<Process, String> {
     let mut cmd = Command::new(program);
@@ -274,18 +397,45 @@ impl Process {
 
   #[cfg(unix)]
   pub fn kill(&mut self, signal: Option<i32>) -> Result<(), String> {
-    let sig = signal.unwrap_or(libc::SIGTERM);
+    let sig = signal.unwrap_or(DEFAULT_SIGNAL);
     let ret = unsafe { libc::kill(self.child.id() as libc::pid_t, sig) };
     if ret != 0 {
-      return Err("could not signal the process".to_string());
+      return Err(format!(
+        "could not signal the process: {}",
+        std::io::Error::last_os_error()
+      ));
     }
     Ok(())
   }
 
-  #[cfg(not(unix))]
+  #[cfg(windows)]
   pub fn kill(&mut self, signal: Option<i32>) -> Result<(), String> {
-    // No selective signal delivery outside Unix; any requested signal
-    // number is ignored and the process is just terminated outright.
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Threading::TerminateProcess;
+
+    match windows_action(signal.unwrap_or(DEFAULT_SIGNAL))? {
+      // Holding a `Child` is itself the answer: its handle keeps the
+      // process record alive even after the process exits, so there is
+      // nothing to go and ask.
+      WindowsAction::Probe => Ok(()),
+      WindowsAction::Terminate(status) => {
+        // Through the child's own handle rather than its id. A pid can
+        // be reused the moment the process behind it goes away; a
+        // handle we are holding cannot.
+        let handle = self.child.as_raw_handle() as _;
+        if unsafe { TerminateProcess(handle, status) } == 0 {
+          return Err(format!(
+            "could not terminate the process: {}",
+            std::io::Error::last_os_error()
+          ));
+        }
+        Ok(())
+      },
+    }
+  }
+
+  #[cfg(not(any(unix, windows)))]
+  pub fn kill(&mut self, signal: Option<i32>) -> Result<(), String> {
     let _ = signal;
     self.child.kill().map_err(|e| e.to_string())
   }

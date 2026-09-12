@@ -229,6 +229,20 @@ fn install_platform(name: &str, _idx: usize) -> Result<(), String> {
   Ok(())
 }
 
+/// The console control event each trappable name maps to on Windows.
+///
+/// Console events are the whole of what can be trapped there, because
+/// they are the whole of what Windows delivers: there is no mechanism
+/// for one process to raise something at another by id. So a handler
+/// installed here hears Ctrl+C, Ctrl+Break and the console closing,
+/// and nothing a caller of `kill()` does.
+///
+/// `CTRL_CLOSE_EVENT` standing in for `TERM` is the one inexact
+/// mapping. It is the closest thing to "shut down gracefully" the
+/// platform has, but the console is going away regardless: the system
+/// allows the handler a few seconds and then ends the process whatever
+/// it returned, so a `TERM` callback cannot decline on Windows the way
+/// it can on Unix.
 #[cfg(windows)]
 fn windows_ctrl_type(name: &str) -> Option<u32> {
   match name {

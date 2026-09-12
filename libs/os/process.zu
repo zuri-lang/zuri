@@ -78,10 +78,11 @@ def pid() {
 /**
  * The current process's parent's id.
  *
- * @note on platforms without a direct way to ask for this
- *    (currently none Zuri targets, but see the Windows
- *    implementation notes in the native layer), this returns `0`
- *    rather than raising.
+ * @note Windows has no call that asks for this directly. It is
+ *    answered there by searching a snapshot of the running processes
+ *    for this one and reading the parent recorded against it, which
+ *    yields `0` rather than raising if the snapshot cannot be taken
+ *    or this process is not in it.
  * @returns int
  */
 def ppid() {
@@ -91,21 +92,45 @@ def ppid() {
 /**
  * Sends `signal` to the process identified by `pid`.
  *
- * @note on Windows, which has no concept of selectively signaling
- *    a process, `signal` is ignored and the process is simply
- *    terminated outright.
+ * Signal `0` sends nothing. It runs the same existence and permission
+ * checks every other signal does and then stops, which makes it the
+ * way to ask whether a process is still running and still yours to
+ * signal:
+ *
+ * ```zuri
+ * var alive = true
+ *
+ * catch {
+ *   os.kill(os.pid(), 0)
+ * } as e {
+ *   alive = false
+ * }
+ *
+ * echo alive  # true
+ * ```
+ *
+ * @note Windows has no way to signal a process by id, so it accepts
+ *    only the numbers it can carry out exactly: `0` to test for the
+ *    process, and `9` or `15` to end it. Every other number raises
+ *    there rather than ending the process anyway, because ending a
+ *    process outright is a different outcome from asking it to stop,
+ *    not a near-enough one. A process ended this way never runs its
+ *    own `on_signal()` callback and gets no chance to clean up. Its
+ *    exit status is `128 + signal`, the same number a Unix caller
+ *    would have read for it.
  * @param int pid
  * @param ?int signal: Default `15` (`SIGTERM`), matching the
  *    `kill(1)` command's own default.
  * @returns bool
  * @raises Error if `pid` doesn't name a process this one has
- *    permission to signal.
+ *    permission to signal, or if `signal` is one this platform
+ *    cannot carry out.
  */
 def kill(pid: int, signal: ?int) {
   if signal == nil {
     signal = 15
   }
-  
+
   return _os.kill(pid, signal)
 }
 
@@ -156,9 +181,25 @@ def kill(pid: int, signal: ?int) {
  *
  * Supported signal names are `'INT'` (Ctrl+C), `'TERM'`, `'HUP'`
  * (Unix only), and `'BREAK'` (Windows only); names are matched
- * case-insensitively. Registering a new callback for a name that
- * already has one replaces it: there's no stacking of multiple
- * handlers for the same signal.
+ * case-insensitively, and carry no `SIG` prefix. Registering a new
+ * callback for a name that already has one replaces it: there's no
+ * stacking of multiple handlers for the same signal.
+ *
+ * ### On Windows
+ *
+ * Windows has no signals. A callback registered here becomes a console
+ * control handler, so it runs for console events and nothing else:
+ * `'INT'` for Ctrl+C, `'BREAK'` for Ctrl+Break, and `'TERM'` for the
+ * console window being closed. Nothing another process does with
+ * `kill()` ever reaches it, including this process calling `kill()`
+ * on its own id.
+ *
+ * `'TERM'` is weaker there than it looks. The console is closing
+ * either way, so Windows allows the callback a few seconds and then
+ * ends the process regardless of what it returned: a truthy return
+ * cannot keep the program running, the way it can for a real
+ * `SIGTERM`. Treat `'TERM'` on Windows as a short window to flush
+ * what matters, not as a signal you can decline.
  *
  * @note only takes effect for the main thread's own execution;
  *    code running inside an `isolate` worker isn't affected by a
@@ -268,11 +309,14 @@ class Process {
   /**
    * Sends `signal` to this child process.
    *
-   * @note on Windows, `signal` is ignored and the process is
-   *    simply terminated outright, the same as the free `kill()`
-   *    function.
+   * @note Windows accepts only the numbers it can carry out exactly,
+   *    the same three the free `kill()` function takes there: `0`,
+   *    `9` and `15`. Anything else raises. Signal `0` is a no-op on
+   *    a child, since holding this handle is already proof the
+   *    process exists.
    * @param ?int signal: Default `15` (`SIGTERM`).
    * @returns bool
+   * @raises Error if `signal` is one this platform cannot carry out.
    */
   kill(signal: ?int) {
     if signal == nil {
