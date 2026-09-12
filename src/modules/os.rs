@@ -6,6 +6,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use crate::builtins::enforce::{ArgType, enforce_method_arg_count, enforce_method_arg_type};
+use crate::builtins::file as builtin_file;
 use crate::modules::isolate_util::pool;
 use crate::modules::os_util::{process as os_process, signal as os_signal, sysinfo};
 use crate::modules::{BuiltinModuleDef, native};
@@ -432,36 +433,8 @@ fn chmod_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let path = ctx.args[0].as_str().to_string();
   let mode = ctx.args[1].as_number() as u32;
 
-  #[cfg(unix)]
-  {
-    use std::os::unix::fs::PermissionsExt;
-    match fs::set_permissions(&path, fs::Permissions::from_mode(mode)) {
-      Ok(()) => Ok(Value::bool(true)),
-      Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
-    }
-  }
-  #[cfg(windows)]
-  {
-    // Windows has no Unix-style permission bits. Best-effort: map the
-    // owner-write bit (0o200) to the read-only attribute.
-    let readonly = (mode & 0o200) == 0;
-    match fs::metadata(&path) {
-      Ok(metadata) => {
-        let mut permissions = metadata.permissions();
-        permissions.set_readonly(readonly);
-        match fs::set_permissions(&path, permissions) {
-          Ok(()) => Ok(Value::bool(true)),
-          Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
-        }
-      },
-      Err(e) => Err(format!("could not chmod '{}': {}", path, e)),
-    }
-  }
-  #[cfg(not(any(unix, windows)))]
-  {
-    let _ = mode;
-    Err("chmod() is only supported on Unix and Windows platforms".to_string())
-  }
+  builtin_file::set_mode(&path, mode)?;
+  Ok(Value::bool(true))
 }
 
 fn isdir(ctx: &mut ZuriContext) -> Result<Value, String> {

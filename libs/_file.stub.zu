@@ -333,6 +333,17 @@ class file {
    * blksize: 4096}
    * ```
    *
+   * Every key above is present on every platform, so reading `size` or
+   * `mtime` needs no check of which one you are on.
+   *
+   * @note Windows keeps a different set of facts about a file, and the
+   *    ones it has no answer for read as `0`: `dev`, `ino`, `uid` and
+   *    `gid`, with `nlink` always `1`. `mode` is assembled from the
+   *    file's type and its read-only attribute, so it carries the
+   *    right file-type bits and either `0o444` or `0o666`, widened by
+   *    `0o111` for a directory or a name `PATHEXT` says the shell
+   *    would run. `ctime` is the file's creation time there, Windows
+   *    having no equivalent of a Unix inode-change time.
    * @return {dict}
    */
   stats() {}
@@ -349,6 +360,12 @@ class file {
    * true
    * ```
    *
+   * @note Windows decides at creation time whether a link stands for a
+   *    file or a directory, so the original is inspected first; one
+   *    pointing at something that does not exist yet is made as a file
+   *    link. Creating any symbolic link there is privileged, and fails
+   *    unless the machine is in developer mode or the process is
+   *    elevated.
    * @return {boolean}
    */
   symlink() {}
@@ -474,6 +491,10 @@ class file {
    * true
    * ```
    *
+   * @note Windows stores one read-only attribute where Unix stores
+   *    nine permission bits, so the owner-write bit decides it and the
+   *    rest are dropped: `0o755` and `0o700` are the same instruction
+   *    there. A mode with no owner-write bit marks the file read-only.
    * @param {int} mode
    * @return {boolean}
    */

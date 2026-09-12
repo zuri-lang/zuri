@@ -305,61 +305,45 @@ fn flush(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn stats(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  #[cfg(unix)]
-  {
-    use std::os::unix::fs::MetadataExt;
-    let path = with_file_mut(ctx.args[0], |fh| fh.path.clone());
-    let link_meta = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
-    let is_symbolic = link_meta.file_type().is_symlink();
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    let mode = meta.mode();
+  let path = with_file_mut(ctx.args[0], |fh| fh.path.clone());
+  let stats = stats_of(&path)?;
 
-    let entries: Vec<(&str, Value)> = vec![
-      ("is_readable", Value::bool(mode & 0o444 != 0)),
-      ("is_writable", Value::bool(mode & 0o222 != 0)),
-      ("is_executable", Value::bool(mode & 0o111 != 0)),
-      ("is_symbolic", Value::bool(is_symbolic)),
-      ("size", Value::number(meta.size() as f64)),
-      ("mode", Value::number(mode as f64)),
-      ("dev", Value::number(meta.dev() as f64)),
-      ("ino", Value::number(meta.ino() as f64)),
-      ("nlink", Value::number(meta.nlink() as f64)),
-      ("uid", Value::number(meta.uid() as f64)),
-      ("gid", Value::number(meta.gid() as f64)),
-      ("mtime", Value::number(meta.mtime() as f64)),
-      ("atime", Value::number(meta.atime() as f64)),
-      ("ctime", Value::number(meta.ctime() as f64)),
-      ("blocks", Value::number(meta.blocks() as f64)),
-      ("blksize", Value::number(meta.blksize() as f64)),
-    ];
+  let entries: Vec<(&str, Value)> = vec![
+    ("is_readable", Value::bool(stats.is_readable)),
+    ("is_writable", Value::bool(stats.is_writable)),
+    ("is_executable", Value::bool(stats.is_executable)),
+    ("is_symbolic", Value::bool(stats.is_symbolic)),
+    ("size", Value::number(stats.size as f64)),
+    ("mode", Value::number(stats.mode as f64)),
+    ("dev", Value::number(stats.dev as f64)),
+    ("ino", Value::number(stats.ino as f64)),
+    ("nlink", Value::number(stats.nlink as f64)),
+    ("uid", Value::number(stats.uid as f64)),
+    ("gid", Value::number(stats.gid as f64)),
+    ("mtime", Value::number(stats.mtime as f64)),
+    ("atime", Value::number(stats.atime as f64)),
+    ("ctime", Value::number(stats.ctime as f64)),
+    ("blocks", Value::number(stats.blocks as f64)),
+    ("blksize", Value::number(stats.blksize as f64)),
+  ];
 
-    let pairs: Vec<(Value, Value)> = entries
-      .into_iter()
-      .map(|(k, v)| (ctx.vm.heap_mut().alloc_string(k), v))
-      .collect();
+  let pairs: Vec<(Value, Value)> = entries
+    .into_iter()
+    .map(|(k, v)| (ctx.vm.heap_mut().alloc_string(k), v))
+    .collect();
 
-    Ok(ctx.vm.heap_mut().alloc_dict(pairs))
-  }
-  #[cfg(not(unix))]
-  {
-    Err("stats() is only supported on Unix platforms".to_string())
-  }
+  Ok(ctx.vm.heap_mut().alloc_dict(pairs))
 }
 
 fn symlink(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::String);
-  #[cfg(unix)]
-  {
-    let original = with_file_mut(ctx.args[0], |fh| fh.path.clone());
-    let target = ctx.args[1].as_str().to_string();
-    std::os::unix::fs::symlink(&original, &target).map_err(|e| e.to_string())?;
-    Ok(Value::bool(true))
-  }
-  #[cfg(not(unix))]
-  {
-    Err("symlink() is only supported on Unix platforms".to_string())
-  }
+
+  let original = with_file_mut(ctx.args[0], |fh| fh.path.clone());
+  let target = ctx.args[1].as_str().to_string();
+
+  create_symlink(&original, &target)?;
+  Ok(Value::bool(true))
 }
 
 fn delete(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -425,19 +409,12 @@ fn truncate(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn chmod(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
-  #[cfg(unix)]
-  {
-    use std::os::unix::fs::PermissionsExt;
-    let mode = ctx.args[1].as_number() as u32;
-    let p = with_file_mut(ctx.args[0], |fh| fh.path.clone());
-    let perms = std::fs::Permissions::from_mode(mode);
-    std::fs::set_permissions(&p, perms).map_err(|e| e.to_string())?;
-    Ok(Value::bool(true))
-  }
-  #[cfg(not(unix))]
-  {
-    Err("chmod() is only supported on Unix platforms".to_string())
-  }
+
+  let mode = ctx.args[1].as_number() as u32;
+  let path = with_file_mut(ctx.args[0], |fh| fh.path.clone());
+
+  set_mode(&path, mode)?;
+  Ok(Value::bool(true))
 }
 
 /// `-1` for either argument means "leave that timestamp unchanged",
@@ -525,4 +502,294 @@ fn name(ctx: &mut ZuriContext) -> Result<Value, String> {
     .map(|s| s.to_string_lossy().into_owned())
     .unwrap_or_else(|| p.clone());
   Ok(ctx.vm.heap_mut().alloc_string(n))
+}
+
+// Platform-shaped filesystem facts
+//
+// Zuri's model of a file is the Unix one, because that is what the
+// language exposes: `stats()` hands back a mode, `chmod()` takes one,
+// and library code reads permission bits out of both. Windows keeps a
+// different set of facts about a file, so the job below is to answer
+// the Unix questions from the Windows answers, once, in a way every
+// caller shares.
+//
+// Deliberately not the other way round. Refusing to answer on Windows
+// (which is what these operations used to do) pushes the platform
+// check out into library code written in Zuri, where it multiplies:
+// `compress`, `http`, `log`, `wire` and `os.fs` all read a file's
+// stats, and none of them want to know what OS they are on.
+
+/// A file's metadata, in the shape `file.stats()` reports it.
+///
+/// Every field is present on every platform. The ones Windows has no
+/// answer for are zero rather than absent, so a caller reading
+/// `stats.size` or `stats.mtime` needs no platform check to do it.
+pub struct Stats {
+  pub is_readable: bool,
+  pub is_writable: bool,
+  pub is_executable: bool,
+  pub is_symbolic: bool,
+  pub size: u64,
+  pub mode: u32,
+  pub dev: u64,
+  pub ino: u64,
+  pub nlink: u64,
+  pub uid: u32,
+  pub gid: u32,
+  pub mtime: i64,
+  pub atime: i64,
+  pub ctime: i64,
+  pub blocks: u64,
+  pub blksize: u64,
+}
+
+/// The file-type bits of a Unix mode, which callers do read: the ZIP
+/// writer in `compress` puts the whole mode into an entry's external
+/// attributes, and a Unix extractor that finds no type bits there
+/// declines to restore permissions at all.
+///
+/// Only needed where a mode has to be assembled by hand; a real Unix
+/// mode arrives with these already in it. `S_IFLNK` is deliberately
+/// absent: nothing here ever resolves to a link, so no mode carries it.
+#[cfg(not(unix))]
+const S_IFREG: u32 = 0o100000;
+#[cfg(not(unix))]
+const S_IFDIR: u32 = 0o040000;
+
+#[cfg(unix)]
+pub fn stats_of(path: &str) -> Result<Stats, String> {
+  use std::os::unix::fs::MetadataExt;
+
+  let link_meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+  let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+  let mode = meta.mode();
+
+  Ok(Stats {
+    is_readable: mode & 0o444 != 0,
+    is_writable: mode & 0o222 != 0,
+    is_executable: mode & 0o111 != 0,
+    is_symbolic: link_meta.file_type().is_symlink(),
+    size: meta.size(),
+    mode,
+    dev: meta.dev(),
+    ino: meta.ino(),
+    nlink: meta.nlink(),
+    uid: meta.uid(),
+    gid: meta.gid(),
+    mtime: meta.mtime(),
+    atime: meta.atime(),
+    ctime: meta.ctime(),
+    blocks: meta.blocks(),
+    blksize: meta.blksize(),
+  })
+}
+
+/// Windows records a file's times as 100-nanosecond ticks since the
+/// start of 1601. Everything above this layer speaks Unix seconds.
+#[cfg(windows)]
+fn filetime_to_unix(ticks: u64) -> i64 {
+  /// Seconds between 1601-01-01 and 1970-01-01.
+  const EPOCH_DIFFERENCE: i64 = 11_644_473_600;
+
+  (ticks / 10_000_000) as i64 - EPOCH_DIFFERENCE
+}
+
+/// Whether Windows would run this path as a program.
+///
+/// There is no execute permission to read, so the question is decided
+/// the way the shell decides it: by extension, against `PATHEXT`. The
+/// machine's own setting is what answers it, rather than a list kept
+/// here, because that variable is precisely the list of extensions the
+/// shell will run and it is the user's to change.
+///
+/// Worth knowing what this excludes. An `.msi` launches when opened,
+/// but it is a package that `msiexec` reads rather than a program the
+/// shell runs, so it is absent from `PATHEXT` and reads as
+/// non-executable here. The same goes for `.ps1`: PowerShell runs one,
+/// `cmd` does not. Both become executable the moment a machine adds
+/// them to its own `PATHEXT`, which is the point of reading it.
+#[cfg(windows)]
+fn is_executable_name(path: &str) -> bool {
+  /// What `cmd` falls back to with no `PATHEXT` set, which is a
+  /// shorter list than the value Windows normally puts in the
+  /// environment. The longer one is irrelevant here: if the variable
+  /// exists at all, it is read instead of this.
+  const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+  let Some(extension) = std::path::Path::new(path)
+    .extension()
+    .and_then(|e| e.to_str())
+  else {
+    return false;
+  };
+
+  std::env::var("PATHEXT")
+    .unwrap_or_else(|_| DEFAULT_PATHEXT.to_string())
+    .split(';')
+    .any(|listed| {
+      listed
+        .trim()
+        .trim_start_matches('.')
+        .eq_ignore_ascii_case(extension)
+    })
+}
+
+#[cfg(windows)]
+pub fn stats_of(path: &str) -> Result<Stats, String> {
+  use std::os::windows::fs::MetadataExt;
+
+  let link_meta = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+  let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+
+  let is_symbolic = link_meta.file_type().is_symlink();
+  let writable = !meta.permissions().readonly();
+  let executable = meta.is_dir() || is_executable_name(path);
+
+  // Windows grants read access to anything it will hand you metadata
+  // for, so the only permission that really varies is write. The mode
+  // is assembled from that plus the file's type, which is as close to a
+  // Unix mode as the platform's own facts reach.
+  let mut mode = 0o444;
+  if writable {
+    mode |= 0o222;
+  }
+  if executable {
+    mode |= 0o111;
+  }
+  // The type bits describe what the path resolves to, not whether it
+  // was reached through a link, because `metadata` followed the link to
+  // get here and Unix reports it the same way: a symlink to a file
+  // stats as a regular file, and `is_symbolic` alone carries the fact
+  // that a link was involved. `S_IFLNK` never appears in a mode from
+  // here, on either platform.
+  mode |= if meta.is_dir() { S_IFDIR } else { S_IFREG };
+
+  let size = meta.file_size();
+
+  Ok(Stats {
+    is_readable: true,
+    is_writable: writable,
+    is_executable: executable,
+    is_symbolic,
+    size,
+    mode,
+    // No stable way to read a volume serial or file index through
+    // `Metadata`, and Windows has no owner or group in the Unix sense.
+    dev: 0,
+    ino: 0,
+    nlink: 1,
+    uid: 0,
+    gid: 0,
+    mtime: filetime_to_unix(meta.last_write_time()),
+    atime: filetime_to_unix(meta.last_access_time()),
+    // Unix `ctime` is the inode-change time and Windows records a
+    // creation time instead. Creation is the nearer of the two to what
+    // a caller reading `ctime` is usually after.
+    ctime: filetime_to_unix(meta.creation_time()),
+    // Reported the way a Unix filesystem would for a file this size,
+    // rather than left at zero: callers multiply `blocks` by 512 to
+    // estimate space used, and zero makes every file look empty.
+    blocks: size.div_ceil(512),
+    blksize: 4096,
+  })
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn stats_of(path: &str) -> Result<Stats, String> {
+  let meta = std::fs::metadata(path).map_err(|e| e.to_string())?;
+  let writable = !meta.permissions().readonly();
+
+  let mut mode = 0o444;
+  if writable {
+    mode |= 0o222;
+  }
+  mode |= if meta.is_dir() { S_IFDIR } else { S_IFREG };
+
+  Ok(Stats {
+    is_readable: true,
+    is_writable: writable,
+    is_executable: meta.is_dir(),
+    is_symbolic: false,
+    size: meta.len(),
+    mode,
+    dev: 0,
+    ino: 0,
+    nlink: 1,
+    uid: 0,
+    gid: 0,
+    mtime: 0,
+    atime: 0,
+    ctime: 0,
+    blocks: meta.len().div_ceil(512),
+    blksize: 4096,
+  })
+}
+
+/// Applies a Unix mode to `path`.
+///
+/// Windows has one writable bit where Unix has nine permission bits, so
+/// the owner-write bit decides it and the rest are dropped. That loses
+/// information, but it is the only part of a mode the platform can
+/// actually store, and refusing the call outright would break every
+/// archive extractor that restores permissions as it writes.
+pub fn set_mode(path: &str, mode: u32) -> Result<(), String> {
+  #[cfg(unix)]
+  {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+      .map_err(|e| format!("could not chmod '{}': {}", path, e))
+  }
+
+  #[cfg(not(unix))]
+  {
+    let metadata =
+      std::fs::metadata(path).map_err(|e| format!("could not chmod '{}': {}", path, e))?;
+    let mut permissions = metadata.permissions();
+    permissions.set_readonly(mode & 0o200 == 0);
+
+    std::fs::set_permissions(path, permissions)
+      .map_err(|e| format!("could not chmod '{}': {}", path, e))
+  }
+}
+
+/// Creates a symbolic link at `target` pointing to `original`.
+///
+/// Windows needs to know at creation time whether the link stands for
+/// a file or a directory, so `original` is inspected first; a link to
+/// something that isn't there yet is made as a file link, which is the
+/// commoner case by a distance.
+pub fn create_symlink(original: &str, target: &str) -> Result<(), String> {
+  #[cfg(unix)]
+  {
+    std::os::unix::fs::symlink(original, target).map_err(|e| e.to_string())
+  }
+
+  #[cfg(windows)]
+  {
+    let directory = std::fs::metadata(original)
+      .map(|m| m.is_dir())
+      .unwrap_or(false);
+
+    let result = match directory {
+      true => std::os::windows::fs::symlink_dir(original, target),
+      false => std::os::windows::fs::symlink_file(original, target),
+    };
+
+    result.map_err(|e| {
+      // Creating one is a privileged operation unless the machine is in
+      // developer mode, and the bare OS message doesn't say so.
+      format!(
+        "could not create a symbolic link at '{}': {}. Creating symbolic links on Windows \
+         requires developer mode or an elevated process",
+        target, e
+      )
+    })
+  }
+
+  #[cfg(not(any(unix, windows)))]
+  {
+    let _ = (original, target);
+    Err("symlink() is not supported on this platform".to_string())
+  }
 }

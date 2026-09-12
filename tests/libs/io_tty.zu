@@ -13,6 +13,7 @@
  */
 
 import io
+import os
 
 var _passed = 0
 
@@ -115,11 +116,23 @@ var real_flags = [
 for value in real_flags {
   assert is_number(value), 'every termios flag constant must be a real number, not nil or a dead placeholder'
 }
-assert io.TTY.CSIZE == (io.TTY.CS5 | io.TTY.CS6 | io.TTY.CS7 | io.TTY.CS8),
-  'CSIZE must be exactly the union of all four character-size bits, on any platform'
-assert io.TTY.CS8 != io.TTY.CS5 and io.TTY.CS8 != io.TTY.CS7,
-  'the four character-size constants must actually be distinct bit patterns'
-ok('the platform-sourced termios flag constants are real, distinct, and internally consistent')
+
+# Windows has no termios at all. These constants exist there only so
+# that `import io` finishes loading and code naming them still runs,
+# and every one of them is zero because none of them stands for
+# anything the platform can act on.
+if os.platform == 'windows' {
+  for value in real_flags {
+    assert value == 0, 'a termios flag must read as zero on a platform with no termios'
+  }
+  ok('the termios flag constants are all zero where termios does not exist')
+} else {
+  assert io.TTY.CSIZE == (io.TTY.CS5 | io.TTY.CS6 | io.TTY.CS7 | io.TTY.CS8),
+    'CSIZE must be exactly the union of all four character-size bits'
+  assert io.TTY.CS8 != io.TTY.CS5 and io.TTY.CS8 != io.TTY.CS7,
+    'the four character-size constants must actually be distinct bit patterns'
+  ok('the platform-sourced termios flag constants are real, distinct, and internally consistent')
+}
 
 var cc_indices = [
   io.TTY.VEOF, io.TTY.VEOL, io.TTY.VERASE, io.TTY.VKILL, io.TTY.VINTR,

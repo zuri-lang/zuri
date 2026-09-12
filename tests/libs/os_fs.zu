@@ -9,6 +9,7 @@
  */
 
 import os
+import stat
 
 var _passed = 0
 
@@ -86,6 +87,19 @@ assert os.readlink(link) == renamed, 'readlink() must return the link\'s target'
 assert raises(@() { os.readlink(renamed) }),
   'readlink() on a non-symlink path must raise'
 ok('is_symlink()/readlink() correctly identify and resolve a symbolic link')
+
+# stats() follows the link, so the type bits in the mode describe what
+# the link points at. Only `is_symbolic` says a link was involved, and
+# that split has to read the same way on every platform.
+var link_stats = file(link).stats()
+
+assert link_stats.is_symbolic == true,
+  'stats() must report is_symbolic for a path reached through a symlink'
+assert stat.S_ISREG(link_stats.mode),
+  'stats() follows the link, so the mode must describe the target: a regular file'
+assert !stat.S_ISLNK(link_stats.mode),
+  'a mode from stats() must never carry S_IFLNK, since the link was already followed'
+ok('stats() through a symlink describes the target and flags the link separately')
 
 # ---------------------------------------------------------------------------
 # which()
