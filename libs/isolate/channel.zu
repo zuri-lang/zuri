@@ -46,7 +46,7 @@
  *
  * ## Multiplexing with `select()`
  *
- * The `select()` function allows a isolate to wait on multiple
+ * The `select()` function allows an isolate to wait on multiple
  * channels simultaneously. It blocks until at least one channel
  * is ready to deliver a value (or is closed), returning a pair
  * `[ready_channel, value]`.

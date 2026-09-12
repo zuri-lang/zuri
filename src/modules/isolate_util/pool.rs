@@ -1,6 +1,6 @@
 //! The isolate pool: a small, configurable number of persistent
 //! isolate OS threads, each owning its own totally independent `VM`/
-//! `Heap` ("isolate"). A isolate is a task queued onto this pool; a
+//! `Heap` ("isolate"). An isolate is a task queued onto this pool; a
 //! channel is a plain thread-safe queue of already-`capture`d
 //! messages. Nothing here ever shares a `Value`, a heap pointer, or
 //! compiled bytecode between threads: see `transfer` for what
@@ -25,7 +25,7 @@ use super::transfer::{self, TransferGraph};
 /// SOME OTHER thread held this exact lock (never expected in ordinary
 /// operation, but possible if a bug elsewhere manages to panic while
 /// touching shared pool/channel/isolate state directly, as opposed
-/// to inside a isolate's own isolated VM: see `isolate_loop`'s own
+/// to inside an isolate's own isolated VM: see `isolate_loop`'s own
 /// docs on why THAT kind of panic is handled separately) doesn't
 /// cascade into every future access panicking too. The guarded data
 /// here is always a plain queue/slot/flag with no invariant that a
@@ -94,7 +94,7 @@ pub fn pool_size() -> usize {
   pool().size
 }
 
-/// Isolates actively being run by a isolate RIGHT NOW; doesn't
+/// Isolates actively being run by an isolate RIGHT NOW; doesn't
 /// include ones still waiting in the queue. Starts the pool if it
 /// hasn't already (there's nothing running on a pool that was never
 /// started).
@@ -102,7 +102,7 @@ pub fn active_count() -> usize {
   pool().running.load(Ordering::Acquire)
 }
 
-/// Isolates queued but not yet picked up by a isolate. Starts the
+/// Isolates queued but not yet picked up by an isolate. Starts the
 /// pool if it hasn't already.
 pub fn queued_count() -> usize {
   lock(&pool().queue).len()
@@ -137,7 +137,7 @@ struct IsolatePool {
   /// decremented once a task's `finish()` has actually run (success,
   /// ordinary failure, or a caught panic all count).
   in_flight: AtomicUsize,
-  /// Isolates a isolate has actually picked up and is currently
+  /// Isolates an isolate has actually picked up and is currently
   /// running; the subset of `in_flight` that isn't still sitting in
   /// `queue`. Purely for introspection (`active_count()`).
   running: AtomicUsize,
@@ -234,7 +234,7 @@ impl IsolatePool {
   }
 }
 
-/// A isolate panic is always caught by `catch_unwind` in `isolate_loop`
+/// An isolate panic is always caught by `catch_unwind` in `isolate_loop`
 /// and surfaced to Zuri as an ordinary `IsolateError`; it was
 /// never actually a crash. Printing Rust's own default "thread ...
 /// panicked at ..." notice for one anyway would look exactly like an
@@ -269,7 +269,7 @@ struct Task {
   state: Arc<IsolateState>,
 }
 
-/// A isolate thread's own isolate: one `VM`/`Heap`, built once and
+/// An isolate thread's own isolate: one `VM`/`Heap`, built once and
 /// reused for every task this thread ever picks up; loading a
 /// task's home (see `transfer::Home`) is cached per-isolate, so only
 /// the very first task from a given module/entry script pays to
@@ -358,7 +358,7 @@ thread_local! {
   /// no explicit handle passed in, the same way each isolate's own
   /// isolate needs no explicit parameter either. Set/cleared around
   /// each task in `isolate_loop`; `None` between tasks and on any
-  /// thread that isn't a isolate isolate at all.
+  /// thread that isn't an isolate isolate at all.
   static CURRENT_ISOLATE: RefCell<Option<Arc<IsolateState>>> = const { RefCell::new(None) };
 }
 
@@ -370,7 +370,7 @@ pub fn is_current_cancelled() -> bool {
   CURRENT_ISOLATE.with(|c| c.borrow().as_ref().is_some_and(|s| s.is_cancelled()))
 }
 
-/// Whether this thread is currently running a isolate at all;
+/// Whether this thread is currently running an isolate at all;
 /// distinct from `is_current_cancelled`, which is `false` both when
 /// there's no current isolate AND when there is one but it hasn't
 /// been cancelled. The blocking primitives below need to tell those
@@ -381,7 +381,7 @@ fn in_isolate_context() -> bool {
   CURRENT_ISOLATE.with(|c| c.borrow().is_some())
 }
 
-/// How often a blocking wait inside a isolate re-checks whether ITS
+/// How often a blocking wait inside an isolate re-checks whether ITS
 /// OWN isolate (the caller, not whatever it's waiting on) has been
 /// cancelled. `cancel()` itself wakes `wait_any`/`wait_all`/`select`
 /// immediately (they already sit on `wake_gate`), but `join`/`send`/
@@ -722,7 +722,7 @@ pub struct IsolateState {
   /// Set by `cancel()`, read by `is_current_cancelled()` from inside
   /// the isolate's own execution; purely COOPERATIVE, same as
   /// every other language's cancellation token: nothing here stops
-  /// already-running code on its own. A isolate that never checks
+  /// already-running code on its own. An isolate that never checks
   /// simply runs to completion regardless of this flag.
   cancelled: AtomicBool,
   /// Set once, at `spawn()` time, by whoever used `spawn_named()`
@@ -870,6 +870,17 @@ impl IsolateState {
     self.status.load(Ordering::Acquire) != STATUS_PENDING
   }
 
+  /// Marks the outcome as seen without reading it, so dropping this
+  /// state reports nothing.
+  ///
+  /// For a caller that is abandoning an isolate on purpose rather than
+  /// forgetting about it: `map()` returns as soon as one call fails and
+  /// never looks at the rest, and a batch that had two failures in it
+  /// would otherwise warn about the one nobody asked for.
+  pub fn mark_observed(&self) {
+    self.observed.store(true, Ordering::Relaxed);
+  }
+
   /// Like `try_join`, but never marks the outcome "observed"; pure
   /// introspection for `Isolate.status()`.
   pub fn peek(&self) -> JoinOutcome {
@@ -885,7 +896,7 @@ impl IsolateState {
 }
 
 impl Drop for IsolateState {
-  /// A isolate's failure doesn't otherwise go anywhere unless
+  /// An isolate's failure doesn't otherwise go anywhere unless
   /// something calls `join()`/`try_join()` on it; exactly like a
   /// plain `std::thread` whose `JoinHandle` is dropped without ever
   /// being joined, an uncaught error or a caught panic inside a
@@ -907,7 +918,7 @@ impl Drop for IsolateState {
           name, message
         ),
         None => eprintln!(
-          "warning: a isolate failed but its result was never checked \
+          "warning: an isolate failed but its result was never checked \
            (no join()/try_join() was called before its handle was dropped): {}",
           message
         ),

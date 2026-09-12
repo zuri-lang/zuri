@@ -7,8 +7,8 @@
  */
 
 /**
- * Raised when a isolate's function raises an uncaught error, a
- * `Channel` operation fails, or a value cannot cross a isolate
+ * Raised when an isolate's function raises an uncaught error, a
+ * `Channel` operation fails, or a value cannot cross an isolate
  * boundary.
  */
 class IsolateError < Error {

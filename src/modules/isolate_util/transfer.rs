@@ -1,5 +1,5 @@
 //! Heap-independent snapshot of a Zuri value; the only thing that
-//! ever crosses a isolate spawn/join or channel send/recv.
+//! ever crosses an isolate spawn/join or channel send/recv.
 //!
 //! Every isolate (isolate thread) owns its own private `VM`/`Heap`,
 //! and this VM's object model was never built to be touched from more
@@ -33,7 +33,7 @@
 //! `"<moved>"`, unusable on the source side from then on) and wraps it
 //! in a `PtrSlot`; an `Arc<Mutex<Option<...>>>`; rather than moving
 //! it in directly, specifically so `TransferValue`/`TransferGraph` can
-//! stay plain `Clone` (needed so a isolate's `.join()` result stays
+//! stay plain `Clone` (needed so an isolate's `.join()` result stays
 //! freely re-readable, same as any other value). Cloning a `PtrSlot`
 //! only clones the `Arc`; the payload underneath is still consumed at
 //! most once, by whichever `materialize` call reaches it first --
@@ -70,11 +70,11 @@ type PtrSlot = Arc<Mutex<Option<(&'static str, Box<dyn Any + Send>)>>>;
 /// general (see `CapturedFunction` for the other strategy, which has
 /// no such restriction). A module's top level is expected to be
 /// side-effect-light (declarations, mostly) and is only ever run once
-/// and cached; exactly what re-resolving it on a isolate isolate
+/// and cached; exactly what re-resolving it on an isolate isolate
 /// needs. The entry script has no such expectation: it's the
 /// program's own real, imperative top-level logic, which commonly
 /// includes the very `isolate.spawn`/`.join()` calls that would
-/// trigger this resolution in the first place. Bootstrapping a isolate
+/// trigger this resolution in the first place. Bootstrapping an isolate
 /// by re-running it would re-run those calls too; recursively
 /// spawning more work and, for a script that blocks on `.join()` at
 /// its own top level (extremely common), deadlocking the isolate
@@ -452,7 +452,7 @@ fn capture_value(
     // synchronized (`Mutex`+`Condvar`) specifically so it CAN be used
     // concurrently from both sides at once; that's the entire point
     // of a channel. Cloning the `Arc` (never moving/taking it) is what
-    // lets the very channel a isolate was just handed still be sent
+    // lets the very channel an isolate was just handed still be sent
     // on/received from by the code that spawned it.
     let handle = v
       .as_ptr_cell()
@@ -575,7 +575,7 @@ fn capture_closure(
   // exported) import in the same file; e.g. `import _isolate` is
   // just a local of the file's own top-level scope, so any nested
   // function referencing it captures it as an upvalue; and a
-  // `Module`/`ModuleBinding` value can never itself cross a isolate
+  // `Module`/`ModuleBinding` value can never itself cross an isolate
   // boundary. Gating this on an empty upvalue list would reject
   // exactly that ordinary case, forcing it down the STRUCTURAL path
   // below where it genuinely does need to move that upvalue and
@@ -845,7 +845,7 @@ fn capture_class(
 ///
 /// Statics are mutable, shared, per-class state on the source side;
 /// captured as a one-time SNAPSHOT here, same as an upvalue or a
-/// root global. Once a class crosses into a isolate, its statics
+/// root global. Once a class crosses into an isolate, its statics
 /// there are independent: neither side's later mutations are visible
 /// to the other. There's no other sound option in a shared-nothing
 /// model: see this module's own top-level docs.
@@ -1142,7 +1142,7 @@ fn materialize_ref(
       let Some((type_name, payload)) = taken else {
         return Err(
           "this native resource was already consumed by an earlier read \
-          ; a isolate result or channel message containing a native \
+          ; an isolate result or channel message containing a native \
            pointer can only be materialized once, by whichever join()/\
            recv() reaches it first"
             .to_string(),

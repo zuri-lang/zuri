@@ -5,7 +5,7 @@
 //! each with its own fully independent `VM`/`Heap`; this VM's object
 //! model (raw heap pointers, non-atomic inline caches, a `thread_local!`
 //! GC remembered set) was never built to be shared across threads, so
-//! nothing here shares one. A isolate's arguments and return value
+//! nothing here shares one. An isolate's arguments and return value
 //! cross thread boundaries as a heap-independent snapshot instead (see
 //! `isolate_util::transfer`), and its spawn target is looked up by
 //! name against a freshly-loaded copy of its own defining module/entry
@@ -323,6 +323,14 @@ fn map_batch(ctx: &mut ZuriContext) -> Result<Value, String> {
             ctx.vm.pin_values([val]);
           },
           pool::JoinOutcome::Err(msg) => {
+            // One failure ends the whole call, so nothing looks at the
+            // results still to come. They are being abandoned on
+            // purpose, which is not the mistake the unobserved-failure
+            // warning exists to catch, so say so before they drop.
+            for other in &states {
+              other.mark_observed();
+            }
+
             ctx.vm.unpin(pin_mark);
             let value = ctx.vm.heap_mut().alloc_string(msg);
             return Ok(status_pair(ctx.vm, "error", value));
@@ -432,7 +440,7 @@ fn is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
 /// Backs the ambient `isolate.is_cancelled()`; checks the isolate
 /// the CALLING isolate thread is currently running, found via
 /// `pool::is_current_cancelled()`'s thread-local rather than a handle
-/// argument. Outside a isolate thread it's always `false`.
+/// argument. Outside an isolate thread it's always `false`.
 fn current_is_cancelled(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
   Ok(Value::bool(pool::is_current_cancelled()))

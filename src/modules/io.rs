@@ -1,7 +1,6 @@
 //! `io` builtin module: `stdin`/`stdout`/`stderr` file objects
 //! wrapping the process's own standard streams, `readline(...)`, etc.
 
-#[cfg(unix)]
 use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 
@@ -345,21 +344,21 @@ fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
 }
 
 /// Backs `libs/io/tty.zu`'s `TTY` class: raw termios access, terminal
-/// size, and a TTY-level flush, all keyed off a real file descriptor
+/// size, and a TTY-level flush, all keyed off a real stream
 /// (`stdin`/`stdout`/`stderr`, or any other file the caller opened
-/// against a terminal device). Unix-only, matching this file's own
-/// `read_secure_line` split: there's no portable termios/ioctl
-/// equivalent to fall back to on other platforms, so every function
-/// here just reports "not supported" there instead of pretending to
-/// work.
+/// against a terminal device).
+///
+/// Split by what each platform can actually answer rather than by
+/// platform. Raw mode and terminal size exist on Windows too, reached
+/// through the console API instead of termios, so those work on both.
+/// `tcgetattr`/`tcsetattr` do not: they trade in termios flag words,
+/// which a console has no representation for, and inventing values to
+/// hand back would let a caller believe it had set something.
 mod tty {
   use crate::enforce_arg_count;
-  #[cfg(unix)]
-  use crate::enforce_arg_range;
   use crate::vm::object::ZuriContext;
   use crate::vm::value::Value;
 
-  #[cfg(unix)]
   use std::cell::RefCell;
   #[cfg(unix)]
   use std::os::unix::io::AsRawFd;
@@ -403,7 +402,7 @@ mod tty {
     // there is no "normalized vs. raw" distinction left to make; the
     // one and only value this ever returns already IS the exact
     // kernel-reported state.
-    enforce_arg_range!(ctx, 1, 2);
+    crate::enforce_arg_range!(ctx, 1, 2);
     let fd = fd_of(ctx, 0)?;
 
     let mut termios: libc::termios = unsafe { std::mem::zeroed() };
@@ -689,14 +688,26 @@ mod tty {
     Ok(ctx.heap().alloc_dict(dict_pairs))
   }
 
+  /// Terminal attributes are a termios interface, and a platform
+  /// without termios has no set of flag words to report. Named
+  /// precisely rather than as "TTY control", which does work here:
+  /// raw mode and terminal size are both available.
   #[cfg(not(unix))]
   pub fn tcgetattr(_ctx: &mut ZuriContext) -> Result<Value, String> {
-    Err("TTY control is not supported on this platform".to_string())
+    Err(
+      "terminal attributes are not available on this platform; \
+       use set_raw()/exit_raw() for raw mode"
+        .to_string(),
+    )
   }
 
   #[cfg(not(unix))]
   pub fn tcsetattr(_ctx: &mut ZuriContext) -> Result<Value, String> {
-    Err("TTY control is not supported on this platform".to_string())
+    Err(
+      "terminal attributes are not available on this platform; \
+       use set_raw()/exit_raw() for raw mode"
+        .to_string(),
+    )
   }
 
   #[cfg(windows)]

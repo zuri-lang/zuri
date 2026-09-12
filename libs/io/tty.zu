@@ -534,10 +534,15 @@ class TTY {
   }
 
   /**
-   * Returns the attribute of the current tty session The
-   * returned attributes is a dict containing the TTY_ flags
+   * Returns the attributes of the current tty session. The returned
+   * value is a dict keyed by the TTY_ group constants.
    *
+   * @note Unix only. Termios flag words have no console equivalent, so
+   *    this raises on Windows. `set_raw()` and `exit_raw()` cover what
+   *    attributes are usually reached for and work on both.
    * @returns dict
+   * @raises Error on a platform without termios, or if the stream has
+   *    no terminal behind it.
    */
   get_attr() {
     return _io.TTY.tcgetattr(self.std)
@@ -555,9 +560,16 @@ class TTY {
    * > above) - one can safely omit any of the TTY_ groups listed
    * > above and Zuri will fill in the default values as it exists.
    * > - This flags will be merged and not overwritten
+   *
+   * @note Unix only, for the same reason `get_attr()` is: there is no
+   *    console representation of a termios flag word to apply, and
+   *    accepting one would mean reporting success for a change that
+   *    never happened.
    * @param number option
    * @param dict attr
    * @returns bool
+   * @raises Error on a platform without termios, or if the stream has
+   *    no terminal behind it.
    */
   set_attr(option: int, attrs: dict) {
     return _io.TTY.tcsetattr(self.std, option, attrs)
@@ -617,7 +629,11 @@ class TTY {
    *   device.
    * - `rows`: the number of text rows that fit into the TTY device.
    *
+   * Works on Windows as well as Unix.
+   *
    * @returns dict
+   * @raises Error if the stream has no terminal behind it, which is
+   *    what a redirected or captured stream is.
    */
   get_size() {
     var size = _io.TTY.getsize(self.std)

@@ -54,8 +54,28 @@ jobs:
       # works the same on all three.
       - name: Test
         env:
-          RUST_BACKTRACE: 0
+          RUST_BACKTRACE: full
         run: cargo test --locked --test zuri
+
+      # A fixture killed by a signal produces no Rust backtrace and no
+      # Zuri stack trace, so an exit status is the whole of what a
+      # failing run says about it. macOS writes a real report for the
+      # process that died, naming the faulting thread and its stack;
+      # that report lives on a runner that is destroyed the moment this
+      # job ends, so it has to be read out here or not at all.
+      - name: Crash reports
+        if: failure() && runner.os == 'macOS'
+        run: |
+          shopt -s nullglob
+          reports=(~/Library/Logs/DiagnosticReports/*.ips)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "no crash reports were written"
+            exit 0
+          fi
+          for report in "${reports[@]}"; do
+            echo "===== $report"
+            cat "$report"
+          done
 
   format:
     name: format

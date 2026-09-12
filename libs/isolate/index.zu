@@ -96,7 +96,7 @@
  * races on heap objects are fundamentally impossible,
  * eliminating the need for mutex locks or synchronized wrappers
  * around user data structures. - **Snapshot Closure Semantics**:
- * When a closure is passed to a isolate, its captured local
+ * When a closure is passed to an isolate, its captured local
  * variables and referenced global definitions are snapshot at
  * dispatch time. The isolate receives an isolated clone of the
  * captured state; subsequent mutations performed by the caller
@@ -173,7 +173,7 @@
  * Isolate Recycling**: In the rare event of an unrecoverable
  * isolate panic, the affected isolate thread is safely retired
  * and replaced with a fresh isolate, maintaining full pool
- * capacity. - **Un-Joined Failure Diagnostics**: If a isolate
+ * capacity. - **Un-Joined Failure Diagnostics**: If an isolate
  * fails and its handle is dropped without being joined, a
  * diagnostic warning is emitted to ensure errors are never
  * silently swallowed.
@@ -183,9 +183,9 @@
  * Applications can cancel running or queued isolates via
  * `Isolate.cancel()`.
  *
- * - **Preemptive Blocking Interruption**: If a isolate is
+ * - **Preemptive Blocking Interruption**: If an isolate is
  * blocked on a channel operation (`Channel.send()`,
- * `Channel.recv()`), a isolate join (`Isolate.join()`), or a
+ * `Channel.recv()`), an isolate join (`Isolate.join()`), or a
  * multiplexer (`select()`, `wait_any()`, `wait_all()`),
  * `cancel()` interrupts the blocking call promptly with a
  * `IsolateCancelledError`. - **Cooperative Compute Polling**:
@@ -289,7 +289,7 @@ import @.channel { Channel, channel, select }
 import @.broadcast { Broadcast, broadcast }
 
 /**
- * A handle to a isolate, returned by `spawn()`.
+ * A handle to an isolate, returned by `spawn()`.
  */
 class Isolate {
   var _ptr
@@ -327,7 +327,7 @@ class Isolate {
   }
 
   /**
-   * Requests that the isolate stop. Has no effect on a isolate
+   * Requests that the isolate stop. Has no effect on an isolate
    * that has already finished.
    *
    * If the isolate is currently blocked in `Channel.send()`/
@@ -364,7 +364,7 @@ class Isolate {
    * Returns the isolate's result, or `nil` if it has not
    * finished yet. Does not block.
    *
-   * @note a isolate that returns `nil` is indistinguishable from
+   * @note an isolate that returns `nil` is indistinguishable from
    *    one still running. Use `is_done()` to tell them apart.
    * @returns any
    * @raises IsolateError if the isolate's function raised an
@@ -432,7 +432,7 @@ class Isolate {
  * @returns Isolate
  * @raises TypeError if `fn` is not callable
  * @raises IsolateError if `fn` is a native function or class,
- *    `fn`/`args` cannot cross a isolate boundary, or the pool
+ *    `fn`/`args` cannot cross an isolate boundary, or the pool
  *    has been `shutdown()`
  */
 def _do_spawn(fn, args, name) {
@@ -460,7 +460,7 @@ def spawn(fn: function, ...args) {
  * @returns Isolate
  * @raises TypeError if `fn` is not callable
  * @raises IsolateError if `fn` is a native function or class,
- *    `fn`/`args` cannot cross a isolate boundary, or the pool
+ *    `fn`/`args` cannot cross an isolate boundary, or the pool
  *    has been `shutdown()`
  */
 def spawn_named(name: string, fn: function, ...args) {
@@ -511,7 +511,7 @@ def spawn_named(name: string, fn: function, ...args) {
  *
  * catch {
  *   isolate.scope(def(s) {
- *     # Spawn a isolate that fails quickly
+ *     # Spawn an isolate that fails quickly
  *     s.spawn(def() {
  *       raise "critical error in child"
  *     })
@@ -760,7 +760,7 @@ def shutdown(timeout: ?number) {
 }
 
 /**
- * @returns int: isolates a isolate is actively running right
+ * @returns int: isolates an isolate is actively running right
  *    now. Does not include ones still `queued_count()`.
  */
 def active_count() {
@@ -856,7 +856,7 @@ def wait_all(isolates: list, timeout: ?number) {
 /**
  * Runs `fn` once per item in `items`, in parallel across the
  * isolate pool, and returns the results in the same order as
- * `items`. Equivalent to spawning a isolate per item and passing
+ * `items`. Equivalent to spawning an isolate per item and passing
  * the handles to `wait_all()`.
  *
  * @param function fn: a closure, bound method, or class method.
@@ -894,7 +894,7 @@ def map(fn: function, items: list, timeout: ?number) {
  * periodically by long-running or looping isolate code so it can
  * return early.
  *
- * Calling this outside a isolate (from the main script, or from
+ * Calling this outside an isolate (from the main script, or from
  * another thread) always returns `false`.
  *
  * @returns bool
