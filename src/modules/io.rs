@@ -283,11 +283,11 @@ fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
 /// here just reports "not supported" there instead of pretending to
 /// work.
 mod tty {
-  use crate::vm::object::ZuriContext;
-  use crate::vm::value::Value;
   use crate::enforce_arg_count;
   #[cfg(unix)]
   use crate::enforce_arg_range;
+  use crate::vm::object::ZuriContext;
+  use crate::vm::value::Value;
 
   #[cfg(unix)]
   use std::cell::RefCell;

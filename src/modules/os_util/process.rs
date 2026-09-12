@@ -139,6 +139,37 @@ pub struct Process {
   stderr: Option<Drain>,
 }
 
+/// The number to report for a finished child.
+///
+/// A process killed by a signal has no exit code of its own: on Unix
+/// `ExitStatus::code()` is `None` for it, and the convention every
+/// shell follows is 128 plus the signal number. Reporting `-1` instead
+/// throws that away, and makes a child killed by SIGINT look identical
+/// to one that could not be run at all.
+///
+/// It matters through a shell too, not only for a direct child.
+/// `os.exec()` goes through `sh -c`, and the shells disagree: dash
+/// translates a signal death into 128 + signum and exits normally,
+/// while bash re-raises the signal and dies of it, so the same command
+/// yields a code on Linux and nothing on macOS. Reading the signal
+/// here makes both report the same thing.
+pub fn exit_code_of(status: std::process::ExitStatus) -> i32 {
+  if let Some(code) = status.code() {
+    return code;
+  }
+
+  #[cfg(unix)]
+  {
+    use std::os::unix::process::ExitStatusExt;
+
+    if let Some(signal) = status.signal() {
+      return 128 + signal;
+    }
+  }
+
+  -1
+}
+
 impl Process {
   pub fn spawn(program: &str, args: &[String], opts: &SpawnOptions) -> Result<Process, String> {
     let mut cmd = Command::new(program);
@@ -212,7 +243,7 @@ impl Process {
 
   pub fn try_wait(&mut self) -> Result<Option<i32>, String> {
     match self.child.try_wait() {
-      Ok(Some(status)) => Ok(Some(status.code().unwrap_or(-1))),
+      Ok(Some(status)) => Ok(Some(exit_code_of(status))),
       Ok(None) => Ok(None),
       Err(e) => Err(e.to_string()),
     }
@@ -226,7 +257,7 @@ impl Process {
   pub fn wait(&mut self, timeout_ms: Option<u64>) -> Result<Option<i32>, String> {
     let Some(ms) = timeout_ms else {
       let status = self.child.wait().map_err(|e| e.to_string())?;
-      return Ok(Some(status.code().unwrap_or(-1)));
+      return Ok(Some(exit_code_of(status)));
     };
 
     let deadline = Instant::now() + Duration::from_millis(ms);

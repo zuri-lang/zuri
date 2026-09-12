@@ -38,8 +38,16 @@ jobs:
 
       # The conformance suite. `build.rs` copies `libs/` next to the
       # binary, so the standard library is found without any env set.
+      #
+      # The backtrace is set through `env:` rather than as a `VAR=value`
+      # prefix on the command: Windows runners use PowerShell, which
+      # reads that prefix as the name of a command to run and fails
+      # before cargo is ever reached. `env:` is applied by the runner
+      # itself, so it works the same on all three.
       - name: Test
-        run: RUST_BACKTRACE=full cargo test --locked --test zuri
+        env:
+          RUST_BACKTRACE: full
+        run: cargo test --locked --test zuri
 
   format:
     name: format

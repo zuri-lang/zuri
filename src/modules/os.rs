@@ -192,7 +192,7 @@ fn exec(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   match output {
     Ok(out) => {
-      let code = out.status.code().unwrap_or(-1) as f64;
+      let code = os_process::exit_code_of(out.status) as f64;
       let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
       if !out.stderr.is_empty() {
         if !text.is_empty() {
