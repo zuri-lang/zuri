@@ -16,7 +16,7 @@
 //! prompt rather than a "command not found".
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 /// One rendered book: where its source lives, where mdBook puts the
@@ -98,6 +98,7 @@ fn main() -> ExitCode {
 
   let result = match command {
     "build" => build(rest),
+    "site" => assemble_site().map(|path| println!("assembled {}", path.display())),
     "serve" => serve(rest),
     "clean" => clean(),
     "generate" => generate_all(rest),
@@ -106,7 +107,7 @@ fn main() -> ExitCode {
       Ok(())
     },
     other => Err(format!(
-      "unknown command '{other}'; expected build, serve, generate or clean"
+      "unknown command '{other}'; expected build, serve, generate, site or clean"
     )),
   };
 
@@ -123,20 +124,25 @@ fn print_help() {
   println!(
     "Builds and serves the Zuri documentation.
 
-  cargo build-docs              render both books into target/
+  cargo build-docs              render both books and assemble the site
   cargo run-docs                serve the book with live reload
   cargo run-docs -- reference   serve the library reference instead
   cargo run-docs -- -p 4000     serve on a different port
   cargo docs generate           write the generated pages, render nothing
+  cargo docs site               assemble target/site from what is built
   cargo clean-docs              remove the rendered output
-  cargo docs <command>          any of build, serve, generate, clean, help
+  cargo docs <command>          any of build, serve, generate, site, clean
 
 The book is markdown under docs/book/src and reads fine unrendered.
 
 The standard library reference is not kept in the repository at all: it
 is generated from the doc blocks in libs/ every time, so a page and the
 doc block it came from can never disagree. Building or serving it
-writes docs/reference/src first."
+writes docs/reference/src first.
+
+`build` finishes by assembling target/site: the landing page from
+docs/site with both rendered books beneath it. That directory is the
+whole website, and is what gets published."
   );
 }
 
@@ -150,12 +156,98 @@ fn build(args: &[String]) -> Result<(), String> {
     vec![select(args)?.0]
   };
 
+  // Naming one book means that book alone, and assembling a site from
+  // a half-built set would publish a broken one.
+  let whole = args.is_empty();
+
   for doc in chosen {
     install_highlighter(doc)?;
     generate(doc)?;
 
     println!("building {}", doc.name);
     run_mdbook(doc, &["build", &dir_string(doc)])?;
+  }
+
+  if whole {
+    let site = assemble_site()?;
+    println!("assembled {}", site.display());
+  }
+
+  Ok(())
+}
+
+/// Lays the whole website out under `target/site`.
+///
+/// The landing page is ordinary source in `docs/site`, edited and read
+/// like any other file in the repository; this only copies it into
+/// place and puts the rendered books beneath it, at the paths its links
+/// already point to:
+///
+/// ```text
+/// target/site/index.html     from docs/site
+/// target/site/book/          from target/book
+/// target/site/reference/     from target/reference/html
+/// ```
+///
+/// Assembling here rather than in CI means the site can be opened
+/// locally exactly as it will be served, and that the workflow has
+/// nothing to do but publish the directory.
+fn assemble_site() -> Result<PathBuf, String> {
+  let root = crate_root();
+  let source = root.join("docs").join("site");
+  let site = root.join("target").join("site");
+
+  if !source.is_dir() {
+    return Err(format!("no landing page at {}", source.display()));
+  }
+
+  // Rebuilt from scratch, so a page deleted from `docs/site` does not
+  // linger in the output and get published again.
+  if site.exists() {
+    std::fs::remove_dir_all(&site)
+      .map_err(|e| format!("could not clear {}: {e}", site.display()))?;
+  }
+
+  copy_tree(&source, &site)?;
+
+  for doc in &DOCS {
+    let rendered = match doc.generator {
+      // A generated book keeps its pages beside its HTML under
+      // `target/<name>`, and only the HTML belongs in the site.
+      Some(_) => root.join("target").join(doc.out).join("html"),
+      None => root.join("target").join(doc.out),
+    };
+
+    if !rendered.join("index.html").is_file() {
+      return Err(format!(
+        "the {} has not been rendered; run `cargo build-docs` first",
+        doc.name
+      ));
+    }
+
+    copy_tree(&rendered, &site.join(doc.name))?;
+  }
+
+  Ok(site)
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
+  std::fs::create_dir_all(to)
+    .map_err(|e| format!("could not create {}: {e}", to.display()))?;
+
+  let entries = std::fs::read_dir(from)
+    .map_err(|e| format!("could not read {}: {e}", from.display()))?;
+
+  for entry in entries {
+    let entry = entry.map_err(|e| format!("could not read {}: {e}", from.display()))?;
+    let target = to.join(entry.file_name());
+
+    if entry.path().is_dir() {
+      copy_tree(&entry.path(), &target)?;
+    } else {
+      std::fs::copy(entry.path(), &target)
+        .map_err(|e| format!("could not copy {}: {e}", entry.path().display()))?;
+    }
   }
 
   Ok(())
@@ -287,6 +379,15 @@ fn generate_all(args: &[String]) -> Result<(), String> {
 
 fn clean() -> Result<(), String> {
   let mut removed = 0;
+  let assembled = crate_root().join("target").join("site");
+
+  if assembled.exists() {
+    std::fs::remove_dir_all(&assembled)
+      .map_err(|e| format!("could not remove {}: {e}", assembled.display()))?;
+
+    println!("removed {}", assembled.display());
+    removed += 1;
+  }
 
   for doc in &DOCS {
     let rendered = crate_root().join("target").join(doc.out);

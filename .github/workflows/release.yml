@@ -1,0 +1,189 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (must already exist)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --locked --profile release --target ${{ matrix.target }}
+
+      # The binary alone is not a working install: at startup it looks
+      # for `libs` beside itself (or at $ZURI_ROOT), and without it no
+      # `import` resolves. `build.rs` has already put a copy next to the
+      # binary, and that copy is what ships.
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.tag }}"
+            version="${version#v}"
+          fi
+
+          name="zuri-${version}-${{ matrix.target }}"
+          out="target/${{ matrix.target }}/release"
+          staged="dist/${name}"
+
+          mkdir -p "${staged}"
+
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            cp "${out}/zuri.exe" "${staged}/"
+          else
+            cp "${out}/zuri" "${staged}/"
+          fi
+
+          cp -r "${out}/libs" "${staged}/libs"
+          cp LICENSE README.md "${staged}/"
+
+          cd dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "${name}.zip" "${name}" > /dev/null
+          else
+            tar czf "${name}.tar.gz" "${name}"
+          fi
+
+          echo "ASSET=dist/${name}.${{ matrix.archive }}" >> "$GITHUB_ENV"
+
+      # A checksum beside each archive, so a download can be verified
+      # without trusting the transfer.
+      - name: Checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          file="$(basename "${ASSET}")"
+          if command -v sha256sum > /dev/null; then
+            sha256sum "${file}" > "${file}.sha256"
+          else
+            shasum -a 256 "${file}" > "${file}.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      # The full history, because the notes are the commits since the
+      # tag before this one.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write the release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          previous="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+
+          {
+            if [ -n "${previous}" ]; then
+              echo "## Changes since ${previous}"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "${previous}..${tag}"
+              echo
+            else
+              echo "## Changes"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "${tag}"
+              echo
+            fi
+
+            echo
+            echo "## Installing"
+            echo
+            echo "Unpack the archive for your platform and put \`zuri\` on your"
+            echo "\`PATH\`. Keep the \`libs\` directory beside it: that is the"
+            echo "standard library, and the runtime looks for it there."
+            echo
+            echo "Verify a download against its \`.sha256\` before running it."
+          } > NOTES.release.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Zuri ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: NOTES.release.md
+          # GitHub's own "what changed" list is appended under the notes
+          # written above, so contributors and pull requests are credited
+          # without hand-maintaining a changelog.
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+          fail_on_unmatched_files: true
+
+  # Whatever went out needs documentation that matches it, so the site
+  # is republished from the released code. It runs only once the release
+  # itself is up, so a failed build never republishes the site.
+  documentation:
+    name: documentation
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/docs.yml

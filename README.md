@@ -1,56 +1,181 @@
-# zuri-rs
+# Zuri
 
-This project is a Just-In-Time (JIT) compiler for the [Zuri](https://github.com/zuri-lang/zuri) programming language. This project aims to provide a faster runtime for Zuri programs while remaining 100% backwards-compartible with the C implementation and will become the defacto implementation when it becomes stable enough.
+**One language, one binary, the entire development lifecycle.**
 
-This project will also support more operating systems and more processor architectures compared to the C implementation.
+Stop learning an entire constellation of third-party tools just to build
+on the web.
+
+## Philosophy
+
+Software creation has become buried beneath endless layers of glue code,
+external configs and shifting package ecosystems. Zuri brings the focus
+back to writing software: one cohesive platform, one documentation site,
+and zero framework fatigue.
+
+## The Ecosystem Tax
+
+When you pick up a modern language, you do not just learn that language.
+
+To serve a single web page or persist a record, you must research,
+evaluate and configure dozens of disconnected third-party libraries. You
+learn a package manager. You choose an HTTP framework, select an ORM,
+find a validation library, wire up a template engine, pick a test
+runner. Every piece comes from a different author, follows conflicting
+conventions, and keeps its own documentation in its own shape.
+
+You spend twenty percent of your time learning core concepts and eighty
+percent wrestling with arbitrary tool churn.
+
+**Zuri removes that tax.** The runtime, the server, the data layer and
+the utility toolchain were designed together and speak the same
+conceptual dialect. When you learn Zuri, you already know the stack.
+
+## Everything Speaks the Same Dialect
+
+This is a whole application. Every import below is in the box: nothing
+was installed, nothing was resolved, nothing was configured.
+
+```zuri
+import http
+import validate
+import log
+
+var signups = validate.schema({
+  name: validate.required().string().max_length(60),
+  email: validate.required().string().email(),
+})
+
+var server = http.server(3000)
+
+server.post('/signup', @(request, response) {
+  var body = request.json_body() or {}
+  var checked = signups.check(body)
+
+  if !checked.valid {
+    return response.json({ errors: checked.errors }, 422)
+  }
+
+  log.info('signed up ${body.email}')
+  response.json({ ok: true }, 201)
+})
+
+server.listen()
+```
+
+There is no `package.json`, no lockfile, no vendor directory. There is
+one binary and the library that ships beside it.
+
+Every module in it was built by the same hands:
+
+| | |
+| --- | --- |
+| **The web** | `http` (server, client, HTTP/2, WebSocket), `wire` (templates), `html`, `url`, `mime` |
+| **Networking** | `net` (TCP, UDP, TLS, DTLS, addresses, polling) |
+| **Data** | `json`, `yaml`, `csv`, `struct`, `base64`, `convert` |
+| **Correctness** | `validate`, `types`, `enum` |
+| **Security** | `crypto`, `hash`, `bcrypt`, `jwt`, `uuid` |
+| **The machine** | `os`, `io`, `args`, `log`, `date` |
+| **Concurrency** | `isolate` (real OS threads, separate heaps, message passing) |
+| **Numbers** | `math`, `stat`, `array`, `set` |
+| **Archives** | `compress` (gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip) |
+| **Images** | `imagine` (decode, draw, filter, encode) |
+| **Itself** | `zuri` (the lexer, parser, compiler and reflection, as a library) |
+
+Because every one of them was designed together, moving between a
+database query, a hash and an HTTP response costs you no mental
+friction. The naming is the same. The error types are the same. The
+documentation is one book.
+
+## Language Design
+
+Zuri takes the expressive, familiar syntax of modern dynamic languages
+and adds deliberate structural controls. It is dynamically typed, and it
+declines to be vague.
+
+**A function cannot be quietly redefined.**
+
+```console
+SyntaxError: multiple declaration for function 'greet' found
+```
+
+**A declared parameter type is enforced at the call**, not documented
+and hoped for.
+
+```console
+TypeError: twice() expects parameter 'n' (argument 1) to be a number, got string
+```
+
+**Classes are sealed.** The fields a class declares are the fields it
+has, so a typo is an error rather than a new attribute.
+
+```console
+PropertyError: undefined field 'y' on instance of 'Point'
+```
+
+**A leading underscore is private, and the compiler enforces it** across
+a module boundary. Not a convention, not a linting rule: an attempt does
+not compile.
+
+```console
+SyntaxError: Cannot import private items from module
+```
+
+The point of each is the same. The things that are hard to see when
+reading code are the things the language refuses to let you get wrong.
+
+## Under the Hood
+
+A register-based virtual machine, a Cranelift JIT with on-stack
+replacement, and a generational garbage collector.
 
 ## Documentation
 
-[`docs/`](docs) holds everything written about the language, and [the book](docs/book/src/SUMMARY.md) is the main text. Read it on GitHub as it is, or render it locally:
+[`docs/`](docs) holds everything written about the language.
+
+- [**The Zuri Programming Language**](docs/book/src/SUMMARY.md) is the
+  main text: twenty chapters from installing it to a full-stack web
+  application, plus appendices covering the keywords, the operators and
+  every method on every built-in type.
+- **The Zuri Standard Library** is the reference: every module, every
+  public name, generated from the library's own doc blocks so a page and
+  the code it describes can never disagree.
+
+Read the book on GitHub as it is, or render either locally:
 
 ```console
-$ cargo run-docs
+$ cargo run-docs                # the book
+$ cargo run-docs -- reference   # the standard library
 ```
 
 ## Roadmap
 
-- [x] 100% compatibility with the original Zuri language
-- [x] Just-In-Time compiler
-- [ ] Package manager
-- [ ] Self-Hosted repository server
-- [ ] C and Rust compartible FFI Interop
+On the way, in the order it matters:
 
+- [ ] **A data layer**, so that persisting a record never means reaching
+      outside the language.
+- [ ] **A package manager**, for the code that is genuinely
+      third-party. A complete standard library is not an argument
+      against sharing.
+- [ ] **A self-hosted repository server** to serve it.
+- [ ] **A test runner.** `assert` is a built-in; a runner that finds,
+      groups and reports on tests is not.
+- [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
+- [ ] **C and Rust compatible FFI interop.**
+
+Already here:
+
+- [x] The language, complete and self-hosting enough to parse, compile
+      and reflect on itself
+- [x] A Just-In-Time compiler
+- [x] A standard library covering the whole stack bar the data layer
+- [x] Two books, one of them generated from the library itself
 
 ## AI Involvement
 
-AI writes code. This is year 2026, and that's no longer a fact that can be denied. However, how competent it is at that is debatable, and how competent I am at using it to write code efficiently is even a much more debatable topic as I myself would score my AI skills well below 5/100. I'm terrible at it, and there's no hiding that. I just almost never was able to make it achieve my goal. That's a fact that's very obvious from the commit history.
-
-The involvement of AI in this project is a topic I believe must be clearly documented as it will serve as a precursor to two important decisions to contributing code to this repository I'll be getting to shortly.
-
-After the addition of the preliminary JIT work from an earlier rudimentary attempt at the JIT in the predecessor repository, I decided to enlist the help of `Claude Sonnet/Opus 5` in the project to fine-tune the JIT into a first class JIT system as the old system was very far from where I wanted it to be (which was exactly why I discarded the old project). 
-
-Starting from commit `eed08e1` to `1f45d18`, I struggled to make Claude Sonnet/Opus 5 make significant fixes that will help the JIT performance significantly. However, with each passing commit, the performance of the JIT system continued to degrade even worse than my original implementation in many cases. Every recommendation from Claude Sonnet/Opus 5 which promised significant performance benefits did the opposite -- They degraded performance (yeah and the `--` hell everywhere was beginning to get on my nerves, so here's me teaching Claude Sonnet/Opus 5 how to use it correctly; that is if it ever cared to read the README.md or its own CLAUDE.md at all despite many explicit instructions).
-
-At that point, I downgraded Claude Sonnet/Opus 5 involvement to simply documenting code (because that's the part of software development I find tedious -- Yes, I am that lazy. Just check the older versions of Zuri which was formerly called Blade Programming Language).
-
-Starting from commit `6d31444`, I enlisted Claude Sonnet 5 this time (I don't have any money to waste any more at this point) to clean up Claude's own mess that it created from earlier works where it bastardized my repository with ridiculous comments and standard library documentations that would make any human reader feel like throwing up. For this simple task, it failed woefully! However, because I'm that lazy, obviously AI generated documentation was better than no documentation so I kept it in that capacity.
-
-After commit `2917496`, I hit a real mental blocker so I enslisted the help of `Claude Opus 5` this time again with a really laid out prompt. So starting from commit `bcf1dbd` to `1007c4d`, I upgraded AI to coding tasks again. My experience, not much different from the earlier version. However, this time, it seemed to follow my instructions much more worse and literally added to my mental block. At this point, I just gave up on it. Went to the kitchen to make myself some good noodles and uninstalled Claude Code altogether. But after a good plate of noodles, I installed it back. So I kept using it up until commit `488d3b2`.
-
-> I literarly have three commits where I vented my frustruaion. Commit `d91bc4b9` with message `I don't even know how we got here` and `767dee2` with message `i don't know what to call this state, but it feels like time wasted on claude sonnet 5 which ended up making my code extremely more complex for not even up to 1% performance boost`, and `9e37e3c` with message `some multihour claude session to optimize the JIT that ended up at a performance exactly where I left it and in some cases slower`.
-> If you understand this codebase enough and want to get a good laugh, just check out those commits. It was like someone was paying Claude to do exactly opposite of what I asked of it. They sank performance so bad, it was 1.5x, 1.01x, and 3x slower than my original implementation respectively.
-
-After this issue, Claude became permanently relegated to a planning, documentation and tests writing agent.
-
-Which brings us to one important rule which I'm going to iterate here and in the contributing secion at the risk of sounding like a broken record:
-
-> **IMPORTANT!**
-> 
-> If you're contributing code that has AI footprint, ensure to:
-> 1. Before starting your change, run all of the benchmarks under an identified and controlled system load and take note of the performance.
-> 2. Run the tests and ensure no regression using the command `cargo test --test zuri`.
-> 3. Run all the benchmarks again under similar load after your changes to ensure that none of the benchmarks regressed.
+AI wrote code in this repository, and how much, where, and how well it
+went are documented rather than glossed over. **[AI.md](AI.md)** is that
+account, and it ends in a rule that contributors are held to.
 
 ## License
 
-This project shares the same license as [Zuri](https://github.com/zuri-lang/zuri).
+BSD 2-Clause. See [LICENSE](LICENSE).

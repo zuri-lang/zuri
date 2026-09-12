@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Zuri &mdash; one language, one binary, the entire development lifecycle</title>
+    <meta name="description" content="Zuri is a dynamic language whose runtime, server, data layer and toolchain were designed together. Stop learning a constellation of third-party tools just to build on the web.">
+    <link rel="stylesheet" href="style.css">
+  </head>
+
+  <body>
+    <header class="hero">
+      <p class="mark">Zuri</p>
+
+      <h1>One language, one binary,<br>the entire development lifecycle.</h1>
+
+      <p class="lede">
+        Stop learning an entire constellation of third-party tools just
+        to build on the web.
+      </p>
+
+      <nav class="actions">
+        <a class="primary" href="book/index.html">Read the book</a>
+        <a class="secondary" href="reference/index.html">Standard library reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="prose philosophy">
+        <h2>Philosophy</h2>
+
+        <p>
+          Software creation has become buried beneath endless layers of
+          glue code, external configs and shifting package ecosystems.
+          Zuri brings the focus back to writing software: one cohesive
+          platform, one documentation site, and zero framework fatigue.
+        </p>
+      </section>
+
+      <section class="prose">
+        <h2>The ecosystem tax</h2>
+
+        <p>
+          When you pick up a modern language, you do not just learn that
+          language.
+        </p>
+
+        <p>
+          To serve a single web page or persist a record, you must
+          research, evaluate and configure dozens of disconnected
+          third-party libraries. You learn a package manager. You choose
+          an HTTP framework, select an ORM, find a validation library,
+          wire up a template engine, pick a test runner. Every piece
+          comes from a different author, follows conflicting
+          conventions, and keeps its own documentation in its own shape.
+        </p>
+
+        <p class="pull">
+          You spend twenty percent of your time learning core concepts
+          and eighty percent wrestling with arbitrary tool churn.
+        </p>
+
+        <p>
+          Zuri removes that tax. The runtime, the server, the data layer
+          and the utility toolchain were designed together and speak the
+          same conceptual dialect. When you learn Zuri, you already know
+          the stack.
+        </p>
+      </section>
+
+      <section class="prose">
+        <h2>Everything speaks the same dialect</h2>
+
+        <p>
+          This is a whole application. Every import is in the box:
+          nothing was installed, nothing resolved, nothing configured.
+        </p>
+
+        <pre><code><span class="k">import</span> http
+<span class="k">import</span> validate
+<span class="k">import</span> log
+
+<span class="k">var</span> signups = validate.<span class="f">schema</span>({
+  name: validate.<span class="f">required</span>().<span class="f">string</span>().<span class="f">max_length</span>(<span class="n">60</span>),
+  email: validate.<span class="f">required</span>().<span class="f">string</span>().<span class="f">email</span>(),
+})
+
+<span class="k">var</span> server = http.<span class="f">server</span>(<span class="n">3000</span>)
+
+server.<span class="f">post</span>(<span class="s">'/signup'</span>, <span class="k">@</span>(request, response) {
+  <span class="k">var</span> body = request.<span class="f">json_body</span>() <span class="k">or</span> {}
+  <span class="k">var</span> checked = signups.<span class="f">check</span>(body)
+
+  <span class="k">if</span> !checked.valid {
+    <span class="k">return</span> response.<span class="f">json</span>({ errors: checked.errors }, <span class="n">422</span>)
+  }
+
+  log.<span class="f">info</span>(<span class="s">'signed up ${body.email}'</span>)
+  response.<span class="f">json</span>({ ok: <span class="k">true</span> }, <span class="n">201</span>)
+})
+
+server.<span class="f">listen</span>()</code></pre>
+
+        <p>
+          No <code>package.json</code>, no lockfile, no vendor
+          directory. One binary and the library that ships beside it.
+        </p>
+      </section>
+
+      <section class="prose">
+        <h2>Built by the same hands</h2>
+
+        <dl class="modules">
+          <div><dt>The web</dt><dd><code>http</code> <code>wire</code> <code>html</code> <code>url</code> <code>mime</code></dd></div>
+          <div><dt>Networking</dt><dd><code>net</code> &mdash; TCP, UDP, TLS, DTLS, polling</dd></div>
+          <div><dt>Data</dt><dd><code>json</code> <code>yaml</code> <code>csv</code> <code>struct</code> <code>base64</code> <code>convert</code></dd></div>
+          <div><dt>Correctness</dt><dd><code>validate</code> <code>types</code> <code>enum</code></dd></div>
+          <div><dt>Security</dt><dd><code>crypto</code> <code>hash</code> <code>bcrypt</code> <code>jwt</code> <code>uuid</code></dd></div>
+          <div><dt>The machine</dt><dd><code>os</code> <code>io</code> <code>args</code> <code>log</code> <code>date</code></dd></div>
+          <div><dt>Concurrency</dt><dd><code>isolate</code> &mdash; real threads, separate heaps</dd></div>
+          <div><dt>Numbers</dt><dd><code>math</code> <code>stat</code> <code>array</code> <code>set</code></dd></div>
+          <div><dt>Archives</dt><dd><code>compress</code> &mdash; nine codecs and containers</dd></div>
+          <div><dt>Images</dt><dd><code>imagine</code> &mdash; decode, draw, filter, encode</dd></div>
+          <div><dt>Itself</dt><dd><code>zuri</code> &mdash; lexer, parser, compiler, reflection</dd></div>
+        </dl>
+
+        <p>
+          Moving between a database query, a hash and an HTTP response
+          costs no mental friction. The naming is the same. The error
+          types are the same. The documentation is one book.
+        </p>
+      </section>
+
+      <section class="prose">
+        <h2>Expressive, and not vague</h2>
+
+        <p>
+          Zuri takes the familiar syntax of modern dynamic languages and
+          adds deliberate structural controls. The things that are hard
+          to see when reading code are the things it refuses to let you
+          get wrong.
+        </p>
+
+        <ul class="controls">
+          <li>
+            <strong>A function cannot be quietly redefined.</strong>
+            <code class="err">SyntaxError: multiple declaration for function 'greet' found</code>
+          </li>
+          <li>
+            <strong>A declared parameter type is enforced at the call.</strong>
+            <code class="err">TypeError: twice() expects parameter 'n' (argument 1) to be a number, got string</code>
+          </li>
+          <li>
+            <strong>Classes are sealed.</strong>
+            <code class="err">PropertyError: undefined field 'y' on instance of 'Point'</code>
+          </li>
+          <li>
+            <strong>A leading underscore is private, and the compiler enforces it.</strong>
+            <code class="err">SyntaxError: Cannot import private items from module</code>
+          </li>
+        </ul>
+      </section>
+
+      <section class="shelf">
+        <a class="card" href="book/index.html">
+          <h3>The Zuri Programming Language</h3>
+          <p>
+            Twenty chapters, from installing it to a full-stack web
+            application, plus appendices covering the keywords, the
+            operators and every method on every built-in type.
+          </p>
+          <span class="go">Start reading</span>
+        </a>
+
+        <a class="card" href="reference/index.html">
+          <h3>The Zuri Standard Library</h3>
+          <p>
+            Every module and every public name, generated from the
+            library's own doc blocks, so a page and the code it
+            describes can never disagree.
+          </p>
+          <span class="go">Look something up</span>
+        </a>
+      </section>
+    </main>
+
+    <footer>
+      <a href="https://github.com/zuri-lang/zuri-rs">Source on GitHub</a>
+    </footer>
+  </body>
+</html>

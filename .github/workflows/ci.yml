@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main, jit]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel a run that a newer push has already superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Build
+        run: cargo build --locked
+
+      # The conformance suite. `build.rs` copies `libs/` next to the
+      # binary, so the standard library is found without any env set.
+      - name: Test
+        run: cargo test --locked --test zuri
+
+  format:
+    name: format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - run: cargo fmt --all --check
+
+  documentation:
+    name: documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+
+      # The reference's pages are generated rather than committed, so
+      # they have to exist before anything can be checked against them.
+      # This needs no mdBook: it writes markdown and stops.
+      - name: Build and generate the reference
+        run: |
+          cargo build --locked
+          cargo docs generate
+
+      # A defect in a doc block in `libs/` becomes a defect in both
+      # books, so the blocks are checked at their source.
+      - name: Audit the library's doc blocks
+        run: ./target/debug/zuri docs/tools/audit.zu
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
+
+      - name: Check every link and anchor
+        run: ./target/debug/zuri docs/tools/links.zu
+        env:
+          ZURI_ROOT: ${{ github.workspace }}
+
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+
+      - name: Build and generate the reference
+        run: |
+          cargo build --locked
+          cargo docs generate
+
+      # Every runnable example in both books is run and its output
+      # compared against what the page claims it prints. This is the
+      # slow one, which is why it is its own job.
+      - name: Run every example
+        run: ./target/debug/zuri docs/tools/verify.zu
+        env:
+          ZURI_ROOT: ${{ github.workspace }}

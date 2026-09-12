@@ -7,6 +7,7 @@ Zuri programs that generate and check them.
 | --- | --- |
 | [`book/`](book) | **The Zuri Programming Language**, the narrative text |
 | [`reference/`](reference) | **The Zuri Standard Library**: one `book.toml`, generated from `libs/` |
+| [`site/`](site) | the landing page the two books sit under |
 | [`tools/`](tools) | the generators, the audit, the verifier, the link checker |
 
 ## The Book
@@ -121,7 +122,23 @@ To render the HTML without serving it:
 $ cargo build-docs
 ```
 
-Output lands in `target/book` and `target/reference/html`.
+Output lands in `target/book` and `target/reference/html`, and
+`build-docs` then assembles the whole website under `target/site`:
+
+```text
+target/site/index.html     the landing page, from docs/site
+target/site/book/          the book
+target/site/reference/     the standard library reference
+```
+
+That directory is the site exactly as it is served, so it can be opened
+locally before it is published. The landing page is ordinary HTML and
+CSS in [`site/`](site), edited like any other file here; to lay the site
+out again after changing it, without re-rendering either book:
+
+```console
+$ cargo docs site
+```
 
 Both commands need [mdBook](https://rust-lang.github.io/mdBook). If it is
 not installed they offer to install it for you, and nothing is installed

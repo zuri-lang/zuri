@@ -1,0 +1,79 @@
+name: Documentation
+
+# Two ways in, and neither is a push: publishing the site is a decision,
+# not a side effect of merging.
+#
+#   workflow_dispatch  by hand, from the Actions tab
+#   workflow_call      by the release workflow, once a release is out
+#
+# Called from a tag, `actions/checkout` takes the caller's ref, so the
+# site published alongside a release is built from the code released.
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+
+      - uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: 'latest'
+
+      # The `zuri` binary has to exist before the docs tool runs: the
+      # reference's pages are written by a Zuri program, and the tool
+      # invokes the interpreter sitting beside it.
+      - name: Build the interpreter
+        run: cargo build --locked
+
+      # One command does the lot: it writes the reference's pages from
+      # the doc blocks in `libs/`, copies the shared theme into each
+      # book, renders both with mdBook, and lays the finished website
+      # out under `target/site` with the landing page from `docs/site`
+      # over the top.
+      - name: Build the site
+        run: cargo build-docs
+
+      # Only what the build assembled is published, and only rendered
+      # HTML ever reaches it: the reference's markdown stays behind in
+      # `target/reference/src`.
+      - name: Check the site
+        run: |
+          set -euo pipefail
+
+          test -f target/site/index.html
+          test -f target/site/book/index.html
+          test -f target/site/reference/index.html
+
+          if find target/site -name '*.md' | grep -q .; then
+            echo "markdown reached the site; only rendered HTML should" >&2
+            exit 1
+          fi
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/site
+          # The site is fully regenerated each time, so the branch holds
+          # the current render rather than an accumulation of old ones.
+          force_orphan: true
+          commit_message: 'docs: publish ${{ github.sha }}'

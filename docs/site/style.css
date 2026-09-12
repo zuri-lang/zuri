@@ -1,0 +1,348 @@
+/* The landing page. Both books bring their own stylesheet; this covers
+   only the page they sit under. */
+
+:root {
+  color-scheme: light dark;
+
+  --paper: #f6f1ea;
+  --ink: #16120f;
+  --muted: rgba(22, 18, 15, 0.68);
+  --faint: rgba(22, 18, 15, 0.5);
+  --edge: rgba(22, 18, 15, 0.13);
+  --raised: rgba(255, 255, 255, 0.6);
+  --slab: #221d19;
+  --slab-ink: #ece5db;
+  --accent: #e8551f;
+
+  --keyword: #ff8a5c;
+  --string: #7fd6c4;
+  --number: #f2a03d;
+  --call: #9ec5ff;
+
+  --measure: 34rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14110f;
+    --ink: #f6f1ea;
+    --muted: rgba(246, 241, 234, 0.68);
+    --faint: rgba(246, 241, 234, 0.5);
+    --edge: rgba(246, 241, 234, 0.14);
+    --raised: rgba(255, 255, 255, 0.04);
+    --slab: #0d0b0a;
+    --accent: #f2a03d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.7 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* --- hero ------------------------------------------------------------ */
+
+.hero {
+  padding: 5rem 1.5rem 4rem;
+  text-align: center;
+  border-bottom: 1px solid var(--edge);
+}
+
+.mark {
+  margin: 0 0 1.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.hero h1 {
+  margin: 0 auto 1.25rem;
+  max-width: 20ch;
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.lede {
+  margin: 0 auto;
+  max-width: 38ch;
+  color: var(--muted);
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+}
+
+.actions {
+  margin-top: 2.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.actions a {
+  padding: 0.8rem 1.6rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.actions a:hover {
+  transform: translateY(-1px);
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.secondary {
+  border-color: var(--edge);
+  color: var(--ink);
+}
+
+.secondary:hover {
+  border-color: var(--accent);
+}
+
+/* --- prose ----------------------------------------------------------- */
+
+main {
+  padding: 0 1.5rem;
+}
+
+.prose {
+  max-width: var(--measure);
+  margin: 4.5rem auto;
+}
+
+.prose h2 {
+  margin: 0 0 1.25rem;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.prose p {
+  margin: 0 0 1.15rem;
+  color: var(--muted);
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.philosophy p {
+  color: var(--ink);
+  font-size: 1.1rem;
+}
+
+/* The one sentence on the page that should stop a skimmer. */
+.pull {
+  margin: 1.75rem 0;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--accent);
+  color: var(--ink) !important;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.prose > p > code {
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  font-size: 0.9em;
+}
+
+/* --- the sample ------------------------------------------------------ */
+
+/* Wider than the prose it sits in: code wants the room, and breaking a
+   line of it to fit a measure meant for sentences helps nobody. */
+pre {
+  margin: 1.75rem calc(50% - 50vw);
+  padding: 1.75rem max(1.5rem, calc(50vw - 27rem));
+  background: var(--slab);
+  color: var(--slab-ink);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+
+@media (min-width: 60rem) {
+  pre {
+    margin-inline: -3rem;
+    padding-inline: 3rem;
+    border-radius: 12px;
+  }
+}
+
+pre .k { color: var(--keyword); }
+pre .s { color: var(--string); }
+pre .n { color: var(--number); }
+pre .f { color: var(--call); }
+
+/* --- the module list ------------------------------------------------- */
+
+.modules {
+  margin: 0 0 1.5rem;
+  display: grid;
+  gap: 0;
+}
+
+.modules > div {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--edge);
+}
+
+.modules > div:last-child {
+  border-bottom: 1px solid var(--edge);
+}
+
+.modules dt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding-top: 0.15rem;
+}
+
+.modules dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.modules code {
+  color: var(--ink);
+  font-size: 0.87em;
+}
+
+@media (max-width: 34rem) {
+  .modules > div {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+/* --- the structural controls ----------------------------------------- */
+
+.controls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.controls li {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.controls strong {
+  font-weight: 600;
+}
+
+/* Real compiler output, so it is set as the terminal would set it. */
+.err {
+  display: block;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  background: var(--raised);
+  color: var(--accent);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* --- the two books --------------------------------------------------- */
+
+.shelf {
+  max-width: 52rem;
+  margin: 5rem auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.75rem;
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  background: var(--raised);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.card:hover,
+.card:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.01em;
+}
+
+.card p {
+  margin: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.go {
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.go::after {
+  content: " \2192";
+}
+
+/* --- footer ---------------------------------------------------------- */
+
+footer {
+  padding: 3rem 1.5rem 4rem;
+  text-align: center;
+  border-top: 1px solid var(--edge);
+  font-size: 0.9rem;
+}
+
+footer a {
+  color: var(--faint);
+  text-decoration: none;
+  border-bottom: 1px solid var(--edge);
+}
+
+footer a:hover {
+  color: var(--ink);
+}
