@@ -58,6 +58,22 @@ fn run_fixture(zu_path_str: &str) {
   // carriage return on purpose, so dropping them costs no coverage.
   let actual = actual.replace("\r\n", "\n");
   let expected = expected.replace("\r\n", "\n");
+
+  // Separators go the same way, for the same reason.
+  //
+  // A fixture spells every path after `@@ROOT` with a forward slash,
+  // but `@@ROOT` expands to whatever `canonicalize` produced, which on
+  // Windows is a native path (`\\?\D:\a\zuri-rs`). The expected text
+  // therefore ends up mixing both, while the runtime's own diagnostics
+  // use native separators throughout, and the two differ on nothing but
+  // the slashes. No `.out` file in the suite contains a backslash for
+  // any other purpose, so on Windows every one of them is a separator
+  // and normalising them masks nothing.
+  #[cfg(windows)]
+  let actual = actual.replace('\\', "/");
+  #[cfg(windows)]
+  let expected = expected.replace('\\', "/");
+
   let actual = actual.trim_end_matches(['\n', '\r']);
   let expected = expected.trim_end_matches(['\n', '\r']);
   assert_eq!(
