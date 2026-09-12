@@ -64,6 +64,47 @@ assert recursive.contains('nested') and recursive.contains(os.join_paths('nested
   'read_dir(recursive: true) must also list nested entries'
 ok('read_dir() with recursive: true descends into subdirectories')
 
+# Entries come back sorted by name regardless of the order they were
+# created in, and a directory's contents stay attached to it. The
+# `order` and `order.d` pair is the case that matters: sorting the
+# finished list of paths instead of each directory's own entries would
+# compare '.' against '/' and scatter the subtree.
+var ordered = os.join_paths(root, 'order')
+var ordered_sibling = os.join_paths(root, 'order.d')
+
+os.create_dir(ordered)
+os.create_dir(ordered_sibling)
+
+file(os.join_paths(root, 'zeta.txt'), 'w').write('z')
+file(os.join_paths(root, 'alpha.txt'), 'w').write('a')
+file(os.join_paths(ordered, 'inner.txt'), 'w').write('i')
+file(os.join_paths(ordered_sibling, 'x.txt'), 'w').write('x')
+
+assert os.read_dir(root, false) == [
+  '.', '..', 'alpha.txt', 'order', 'order.d', 'sub', 'zeta.txt',
+], 'read_dir() must return entries sorted by name after . and ..'
+ok('read_dir() returns entries sorted by name, not in creation order')
+
+assert os.read_dir(root, true) == [
+  '.', '..',
+  'alpha.txt',
+  'order',
+  os.join_paths('order', 'inner.txt'),
+  'order.d',
+  os.join_paths('order.d', 'x.txt'),
+  'sub',
+  os.join_paths('sub', 'a.txt'),
+  os.join_paths('sub', 'nested'),
+  os.join_paths('sub', 'nested', 'b.txt'),
+  'zeta.txt',
+], 'read_dir(recursive: true) must sort each level and keep subtrees intact'
+ok('read_dir() sorts within every level and keeps a subtree together')
+
+assert os.glob('**', root) == os.read_dir(root, true).filter(
+  @(entry) => entry != '.' and entry != '..',
+), 'glob() must inherit the walk order of read_dir()'
+ok('glob() returns matches in read_dir() order')
+
 # ---------------------------------------------------------------------------
 # rename()
 # ---------------------------------------------------------------------------

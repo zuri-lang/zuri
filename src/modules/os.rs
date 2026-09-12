@@ -374,9 +374,11 @@ fn createdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   }
 }
 
-/// Flat listing (plus the synthetic `.`/`..` entries the doc example
-/// shows); when `recursive` is set, nested entries are appended
-/// depth-first after their own containing directory's siblings.
+/// Flat listing (plus the synthetic `.`/`..` entries that always lead);
+/// when `recursive` is set, a directory's own contents follow immediately
+/// after it, depth-first. Siblings are sorted by name at every level, so
+/// the result does not depend on what order the filesystem happened to
+/// hand its entries back in.
 fn readdir(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 2);
   enforce_arg_type!(ctx, 0, ArgType::String);
@@ -407,18 +409,31 @@ fn collect_dir_entries_inner(
   recursive: bool,
   out: &mut Vec<String>,
 ) -> std::io::Result<()> {
+  // Sorting has to happen per directory rather than over the finished
+  // list, because the recursive form interleaves a directory's contents
+  // with its siblings. Sorting the whole thing afterwards would compare
+  // the separator against the characters around it and pull entries out
+  // of the subtree they belong to.
+  let mut entries = Vec::new();
   for entry in fs::read_dir(dir)? {
     let entry = entry?;
-    let name = entry.file_name();
+    // file_type() does not follow symlinks, so a symlinked directory is
+    // listed but never descended into. That is what keeps a link pointing
+    // back up its own tree from looping forever.
+    let is_dir = recursive && entry.file_type()?.is_dir();
+    entries.push((entry.file_name(), entry.path(), is_dir));
+  }
+  entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
 
+  for (name, path, is_dir) in entries {
     // Build the relative path from the original directory
     let rel_path = prefix.join(&name);
     out.push(rel_path.to_string_lossy().into_owned());
 
-    if recursive && entry.file_type()?.is_dir() {
+    if is_dir {
       // Guard against infinite recursion into . and ..
       if name != "." && name != ".." {
-        collect_dir_entries_inner(&entry.path(), &rel_path, recursive, out)?;
+        collect_dir_entries_inner(&path, &rel_path, recursive, out)?;
       }
     }
   }

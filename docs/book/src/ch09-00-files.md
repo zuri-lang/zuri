@@ -303,8 +303,8 @@ file('tree/sub/notes.md', 'w').write('c')
 `read_dir()` lists one directory:
 
 ```zuri
-echo os.read_dir('tree').sort()
-echo os.read_dir('tree', true).sort()
+echo os.read_dir('tree')
+echo os.read_dir('tree', true)
 ```
 
 ```console
@@ -315,9 +315,9 @@ echo os.read_dir('tree', true).sort()
 Three things to notice. `.` and `..` are included, so a loop over the result
 almost always wants to skip them. The recursive form returns nested entries
 as paths **relative to the directory you asked about**, not as bare names,
-which is what makes them usable directly. And the order is whatever the
-filesystem gives back, which is not alphabetical and not creation order, so
-sort the result yourself whenever the order matters.
+which is what makes them usable directly. And entries come back sorted by
+name, with a directory's contents following immediately after it, so the
+listing reads the same on every machine and filesystem.
 
 `glob()` is usually what you actually want:
 
@@ -348,12 +348,14 @@ echo os.glob('**', 'tree').filter(@(p) => p.ends_with('.txt'))
 ```
 
 ```console
-[top.txt, sub, sub/nested.txt, sub/notes.md]
-[top.txt, sub/nested.txt]
+[sub, sub/nested.txt, sub/notes.md, top.txt]
+[sub/nested.txt, top.txt]
 ```
 
 `**` on its own matches every entry at every depth, directories included,
-which is why the filter is doing real work in the second line.
+which is why the filter is doing real work in the second line. `glob()`
+walks with `read_dir()` underneath, so matches arrive in that same sorted
+order.
 
 Clean up when you are done:
 

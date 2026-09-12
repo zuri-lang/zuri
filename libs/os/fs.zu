@@ -105,19 +105,29 @@ def create_dir(path: string, permission: ?int, recursive: ?bool) {
 }
 
 /**
- * Scans the given directory and returns a list of all matched
- * files.
+ * Scans the given directory and returns a list of the names it
+ * contains, sorted by name, led by `.` and `..`.
  *
  * Example,
  *
  * ```zuri-repl
  * %> os.read_dir('./tests')
- * [., .., myprogram.zu, single_thread.zu, test.zu, buggy.zu]
+ * [., .., buggy.zu, myprogram.zu, single_thread.zu, test.zu]
  * ```
  *
- * When the recursive argument is set to `true`, the function
- * returns all matched files as well files in sub-directories
- * within the path.
+ * When the recursive argument is set to `true`, sub-directories
+ * are descended into as well, and their contents come back as
+ * paths relative to `path` rather than as bare names. A
+ * directory's contents follow immediately after the directory
+ * itself, and entries are sorted by name within every level:
+ *
+ * ```zuri-repl
+ * %> os.read_dir('./tests', true)
+ * [., .., buggy.zu, data, data/input.csv, test.zu]
+ * ```
+ *
+ * A symbolic link to a directory is listed but not descended
+ * into, whether or not it points somewhere inside `path`.
  *
  * @note `.` indicates current directory and can be used as
  *    argument to _os.read_dir_ as well.
@@ -125,7 +135,7 @@ def create_dir(path: string, permission: ?int, recursive: ?bool) {
  *    argument to _os.read_dir_ as well.
  *
  * @param string path
- * @param ?bool recursive
+ * @param ?bool recursive: Default is `false`.
  * @returns list[string]
  */
 def read_dir(path: string, recursive: ?bool) {
@@ -393,10 +403,14 @@ def _glob_to_regex(pattern) {
  *
  * ```zuri-repl
  * %> os.glob('*.zu')
- * ['main.zu', 'helper.zu']
+ * ['helper.zu', 'main.zu']
  * %> os.glob('lib?.zu')
  * ['libc.zu', 'libz.zu']
  * ```
+ *
+ * Matches are returned in the order `read_dir()` walks the tree,
+ * which means sorted by name within each directory, with a
+ * directory's own matches following it.
  *
  * @param string pattern
  * @param ?string base_path: Default is the current working
