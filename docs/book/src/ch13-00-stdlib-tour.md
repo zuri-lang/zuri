@@ -441,6 +441,7 @@ renderer for it:
 import stat
 
 file('notes.txt', 'w').write('x')
+file('notes.txt').chmod(0c644)
 
 var info = file('notes.txt').stats()
 
@@ -452,7 +453,7 @@ echo stat.file_mode(info.mode)
 ```console
 true
 false
--rw-rw-r--
+-rw-r--r--
 ```
 
 `S_ISREG`, `S_ISDIR`, `S_ISLNK`, `S_ISCHR`, `S_ISBLK`, `S_ISFIFO` and

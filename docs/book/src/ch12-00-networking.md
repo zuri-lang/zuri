@@ -173,15 +173,26 @@ import net
 var address = net.SocketAddr.parse('127.0.0.1:8080')
 
 echo address.to_string()
-echo net.resolve('localhost:80').map(@(a) => a.to_string())
 ```
 
 ```console
 127.0.0.1:8080
-[127.0.0.1:80]
 ```
 
-`resolve()` returns a list, because a name can have several addresses.
+`resolve()` turns a name into addresses:
+
+```zuri,ignore
+echo net.resolve('localhost:80').map(@(a) => a.to_string())
+```
+
+```console
+[[::1]:80, 127.0.0.1:80]
+```
+
+It returns a list because a name can have several addresses, and what comes
+back depends on the machine: a host with IPv6 configured answers for both
+families, one without gives only `[127.0.0.1:80]`. Never assume a position
+in that list, and never assume a family.
 
 `net.ip` has `IpAddress`, `Ipv4Address` and `Ipv6Address` for parsing,
 comparing and classifying addresses, which is what you want before you

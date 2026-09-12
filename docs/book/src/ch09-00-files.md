@@ -215,6 +215,8 @@ and the `stat` module is what turns it into an answer:
 ```zuri
 import stat
 
+file('notes.txt').chmod(0c644)
+
 var info = file('notes.txt').stats()
 
 echo stat.S_ISREG(info.mode)
@@ -225,7 +227,7 @@ echo stat.file_mode(info.mode)
 ```console
 true
 false
--rw-rw-r--
+-rw-r--r--
 ```
 
 `S_ISREG`, `S_ISDIR`, `S_ISLNK` and the rest of the family each answer one
@@ -301,19 +303,21 @@ file('tree/sub/notes.md', 'w').write('c')
 `read_dir()` lists one directory:
 
 ```zuri
-echo os.read_dir('tree')
-echo os.read_dir('tree', true)
+echo os.read_dir('tree').sort()
+echo os.read_dir('tree', true).sort()
 ```
 
 ```console
-[., .., top.txt, sub]
-[., .., top.txt, sub, sub/nested.txt, sub/notes.md]
+[., .., sub, top.txt]
+[., .., sub, sub/nested.txt, sub/notes.md, top.txt]
 ```
 
-Two things to notice. `.` and `..` are included, so a loop over the result
-almost always wants to skip them. And the recursive form returns nested
-entries as paths **relative to the directory you asked about**, not as bare
-names — which is what makes them usable directly.
+Three things to notice. `.` and `..` are included, so a loop over the result
+almost always wants to skip them. The recursive form returns nested entries
+as paths **relative to the directory you asked about**, not as bare names,
+which is what makes them usable directly. And the order is whatever the
+filesystem gives back, which is not alphabetical and not creation order, so
+sort the result yourself whenever the order matters.
 
 `glob()` is usually what you actually want:
 
