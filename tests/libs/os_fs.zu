@@ -132,10 +132,19 @@ ok('glob() "?" matches a single character')
 # ---------------------------------------------------------------------------
 # umask(): query-only mode must round-trip without side effects
 # ---------------------------------------------------------------------------
-var before = os.umask()
-var after = os.umask()
-assert before == after, 'umask() called twice with no argument must report the same value both times'
-ok('umask() with no argument queries without changing anything')
+# A file-creation mask is a Unix idea with nothing behind it on
+# Windows, where umask() is documented to raise. Both halves of that
+# contract get checked, one per platform.
+if os.platform == 'windows' {
+  assert raises(@() { os.umask() }),
+    'umask() must raise on a platform that has no file-creation mask'
+  ok('umask() raises where no file-creation mask exists')
+} else {
+  var before = os.umask()
+  var after = os.umask()
+  assert before == after, 'umask() called twice with no argument must report the same value both times'
+  ok('umask() with no argument queries without changing anything')
+}
 
 os.remove_dir(root, true)
 assert !os.dir_exists(root), 'remove_dir(recursive: true) must remove the directory and everything in it'

@@ -43,6 +43,14 @@ assert !io.stdout.is_tty(), 'stdout in this harness is always a captured pipe, n
 assert !io.stderr.is_tty(), 'stderr in this harness is always a captured pipe, never a real terminal'
 ok('is_tty() correctly reports false for a non-tty stream')
 
+# Being a file handle is not the same as being an open one, and a
+# stream that the platform never attached anything to fails only when
+# something tries to write to it. An empty write reaches exactly that
+# check without putting anything in the test's own output.
+assert io.stdout.write('') == true, 'stdout must be open for writing'
+assert io.stderr.write('') == true, 'stderr must be open for writing'
+ok('stdout and stderr are attached to something that accepts writes')
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

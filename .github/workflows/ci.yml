@@ -39,14 +39,22 @@ jobs:
       # The conformance suite. `build.rs` copies `libs/` next to the
       # binary, so the standard library is found without any env set.
       #
-      # The backtrace is set through `env:` rather than as a `VAR=value`
-      # prefix on the command: Windows runners use PowerShell, which
-      # reads that prefix as the name of a command to run and fails
-      # before cargo is ever reached. `env:` is applied by the runner
-      # itself, so it works the same on all three.
+      # No backtrace on purpose. A fixture that fails does so because
+      # the Zuri program inside it raised, and the panic already
+      # carries that program's error, its source line and its own stack
+      # trace. A Rust backtrace on top of that is three dozen frames of
+      # the test harness calling itself, and with a few fixtures
+      # failing at once it buries the list of which ones failed under
+      # more output than a run log will hold.
+      #
+      # Set through `env:` rather than as a `VAR=value` prefix on the
+      # command: Windows runners use PowerShell, which reads that
+      # prefix as the name of a command to run and fails before cargo
+      # is ever reached. `env:` is applied by the runner itself, so it
+      # works the same on all three.
       - name: Test
         env:
-          RUST_BACKTRACE: full
+          RUST_BACKTRACE: 0
         run: cargo test --locked --test zuri
 
   format:

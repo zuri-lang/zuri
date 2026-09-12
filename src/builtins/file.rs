@@ -513,11 +513,10 @@ fn name(ctx: &mut ZuriContext) -> Result<Value, String> {
 // the Unix questions from the Windows answers, once, in a way every
 // caller shares.
 //
-// Deliberately not the other way round. Refusing to answer on Windows
-// (which is what these operations used to do) pushes the platform
-// check out into library code written in Zuri, where it multiplies:
-// `compress`, `http`, `log`, `wire` and `os.fs` all read a file's
-// stats, and none of them want to know what OS they are on.
+// The mapping belongs here and not in Zuri. `compress`, `http`, `log`,
+// `wire` and `os.fs` all read a file's stats, and none of them want to
+// know what OS they are on; an operation that refused to answer here
+// would put that question in all five.
 
 /// A file's metadata, in the shape `file.stats()` reports it.
 ///

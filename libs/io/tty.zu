@@ -14,6 +14,7 @@
 # io.TTY implementation
 
 import _io
+import _os
 
 # The current platform's real termios bit/index values, read once from
 # native code rather than a per-flag native call each; see the note
@@ -24,6 +25,16 @@ const _flag_table = _io.TTY.flags()
 /**
  * class TTY is an interface to TTY terminals this class contains
  * definitions to control TTY terminals
+ *
+ * Termios flag words are a Unix concept, so `get_attr()` and
+ * `set_attr()` raise on Windows and every flag constant below reads as
+ * `0` there. What those two are usually wanted for is not Unix-only,
+ * though: `set_raw()` and `exit_raw()` work on both, Windows reaching
+ * its console mode directly instead of through the flags.
+ *
+ * `exit_raw()` and `flush()` never raise on any platform. Each reports
+ * whether it had anything to do, so cleanup code can call them without
+ * first establishing what state the terminal was in.
  */
 class TTY {
 
@@ -548,20 +559,29 @@ class TTY {
    * @param dict attr
    * @returns bool
    */
-  set_attr(option, attrs) {
-    if !is_int(option)
-      raise TypeError('integer expected as first argument, ${typeof(option)} given')
-    if !is_dict(attrs)
-      raise TypeError('dictionary expected as second argument, ${typeof(attrs)} given')
+  set_attr(option: int, attrs: dict) {
     return _io.TTY.tcsetattr(self.std, option, attrs)
   }
 
   /**
-   * Sets the current tty to raw mode.
+   * Sets the current tty to raw mode: input arrives a keystroke at a
+   * time, nothing is echoed back, and Ctrl+C reaches the program as a
+   * keystroke rather than being turned into a signal first.
+   *
+   * Works on Windows as well as Unix.
    *
    * @returns bool
+   * @raises Error if the stream has no terminal behind it, which is
+   *    what a redirected or captured stream is.
    */
   set_raw() {
+    # A console's mode is set as one value rather than as the termios
+    # flag words the rest of this class trades in, so Windows cannot be
+    # driven through get/set_attr and has its own native instead.
+    if _os.platform == 'windows' {
+      return _io.TTY.set_raw(self.std)
+    }
+
     var new_attr = _io.TTY.tcgetattr(self.std, false)
 
     new_attr[TTY.TTY_IFLAG] &= ~(TTY.IGNBRK | TTY.BRKINT | TTY.PARMRK | TTY.ISTRIP | TTY.INLCR | TTY.IGNCR | TTY.ICRNL | TTY.IXON)
@@ -574,7 +594,14 @@ class TTY {
   }
 
   /**
-   * Disables the raw mode flags on the current tty.
+   * Disables the raw mode flags on the current tty, putting it back
+   * the way `set_raw()` found it.
+   *
+   * Never raises, so it is safe to call on a cleanup path without
+   * knowing whether raw mode was ever entered. The return value says
+   * whether anything was actually restored: `false` for a stream this
+   * TTY never put into raw mode, and `false` on Windows, which has no
+   * raw mode to leave.
    *
    * @returns bool
    */
@@ -602,9 +629,20 @@ class TTY {
   }
 
   /**
-   * Flushes the standard output and standard error interface
+   * Discards whatever is still queued on this TTY's stream, both
+   * input that has been typed but not yet read and output that has
+   * been written but not yet sent.
+   *
+   * Note that this throws that data away rather than writing it out,
+   * which is the opposite of what `file.flush()` does.
+   *
+   * Never raises. The return value says whether anything was
+   * discarded: `false` for a stream with no terminal behind it, and
+   * `false` on Windows, which keeps no such queue.
+   *
+   * @returns bool
    */
   flush() {
-    _io.TTY.flush(self.std)
+    return _io.TTY.flush(self.std)
   }
 }

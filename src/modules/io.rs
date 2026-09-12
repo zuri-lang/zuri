@@ -57,6 +57,17 @@ fn build_tty_submodule(vm: &mut VM) -> Value {
     ("flush", native(vm, "flush", 1, false, tty::flush)),
     ("flags", native(vm, "flags", 0, false, tty::flags)),
   ];
+  // Only Windows gets this one. A console's mode is set wholesale
+  // rather than as termios flag words, so `TTY.set_raw()` cannot build
+  // it out of the pieces it uses everywhere else and calls this
+  // instead; on Unix it has no reason to exist.
+  #[cfg(windows)]
+  let members = {
+    let mut members = members;
+    members.push(("set_raw", native(vm, "set_raw", 1, false, tty::set_raw)));
+    members
+  };
+
   for (name, value) in members {
     module_val.as_module_mut().namespace.set(name, value);
     write_barrier(module_val.as_obj());
@@ -95,7 +106,66 @@ fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
   }
 }
 
-#[cfg(not(unix))]
+/// The Windows half, reaching the same three streams through
+/// `GetStdHandle` rather than through descriptor numbers.
+///
+/// Duplicated for the reason the Unix side calls `dup`: the
+/// `FileHandle` owns whatever it is given and closes it when dropped,
+/// and closing the process's real stdout would take the stream away
+/// from everything else still writing to it.
+#[cfg(windows)]
+fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
+  use std::os::windows::io::FromRawHandle;
+  use windows_sys::Win32::Foundation::{
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, INVALID_HANDLE_VALUE,
+  };
+  use windows_sys::Win32::System::Console::{
+    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+  };
+  use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+  let stream = match fd {
+    0 => STD_INPUT_HANDLE,
+    1 => STD_OUTPUT_HANDLE,
+    _ => STD_ERROR_HANDLE,
+  };
+
+  let handle = unsafe {
+    let original = GetStdHandle(stream);
+    // A process with no console at all, or one started with a stream
+    // closed, has nothing to hand back here.
+    if original.is_null() || original == INVALID_HANDLE_VALUE {
+      None
+    } else {
+      let process = GetCurrentProcess();
+      let mut copy = std::ptr::null_mut();
+      let duplicated = DuplicateHandle(
+        process,
+        original,
+        process,
+        &mut copy,
+        0,
+        0,
+        DUPLICATE_SAME_ACCESS,
+      );
+
+      match duplicated {
+        0 => None,
+        _ => Some(File::from_raw_handle(copy as _)),
+      }
+    }
+  };
+
+  FileHandle {
+    path: path.to_string(),
+    mode: mode.to_string(),
+    binary: mode.to_lowercase().contains('b'),
+    is_stream: true,
+    handle,
+  }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn std_file(_fd: i32, path: &str, mode: &str) -> FileHandle {
   FileHandle {
     path: path.to_string(),
@@ -629,14 +699,118 @@ mod tty {
     Err("TTY control is not supported on this platform".to_string())
   }
 
-  #[cfg(not(unix))]
-  pub fn exit_raw(_ctx: &mut ZuriContext) -> Result<Value, String> {
-    Err("TTY control is not supported on this platform".to_string())
+  #[cfg(windows)]
+  thread_local! {
+    /// The console mode each stream had before `set_raw` first changed
+    /// it, so `exit_raw` can put it back exactly. Keyed on the raw
+    /// handle for the same reason the Unix cache keys on the raw fd:
+    /// it outlives any particular Zuri `Value` and survives a GC move.
+    static ORIGINAL_MODE: RefCell<rustc_hash::FxHashMap<isize, u32>> =
+      RefCell::new(rustc_hash::FxHashMap::default());
   }
 
+  #[cfg(windows)]
+  fn handle_of(ctx: &ZuriContext, idx: usize) -> Result<isize, String> {
+    use std::os::windows::io::AsRawHandle;
+
+    let v = *ctx
+      .args
+      .get(idx)
+      .ok_or_else(|| "expected a file argument".to_string())?;
+    if !v.is_file() {
+      return Err(format!("expected a file, got {}", v.type_name()));
+    }
+    let cell = v.as_file_cell();
+    let borrowed = cell.borrow();
+    let file = borrowed
+      .handle
+      .as_ref()
+      .ok_or_else(|| "file is closed".to_string())?;
+    Ok(file.as_raw_handle() as isize)
+  }
+
+  /// Puts a Windows console into raw mode.
+  ///
+  /// The console equivalent of the termios dance `TTY.set_raw()` does
+  /// on Unix: clearing `ENABLE_LINE_INPUT` stops the console holding
+  /// input back until Return, `ENABLE_ECHO_INPUT` stops it printing
+  /// what was typed, and `ENABLE_PROCESSED_INPUT` stops it turning
+  /// Ctrl+C into a signal before the program ever sees the keystroke.
+  /// A console has all three on when it is created, so the default
+  /// state is the cooked one, exactly as on Unix.
+  #[cfg(windows)]
+  pub fn set_raw(ctx: &mut ZuriContext) -> Result<Value, String> {
+    use windows_sys::Win32::System::Console::{
+      ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, GetConsoleMode, SetConsoleMode,
+    };
+
+    enforce_arg_count!(ctx, 1);
+    let handle = handle_of(ctx, 0)?;
+
+    let mut mode = 0u32;
+    if unsafe { GetConsoleMode(handle as _, &mut mode) } == 0 {
+      return Err(format!(
+        "cannot enter raw mode: this stream is not a console: {}",
+        std::io::Error::last_os_error()
+      ));
+    }
+
+    // Only the FIRST call records anything, so repeated `set_raw()`
+    // calls still restore to the state before any of them.
+    ORIGINAL_MODE.with(|cache| {
+      cache.borrow_mut().entry(handle).or_insert(mode);
+    });
+
+    let raw = mode & !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+    if unsafe { SetConsoleMode(handle as _, raw) } == 0 {
+      return Err(format!(
+        "cannot enter raw mode: {}",
+        std::io::Error::last_os_error()
+      ));
+    }
+
+    Ok(Value::bool(true))
+  }
+
+  /// Puts the console mode back the way `set_raw` found it.
+  ///
+  /// Returns whether there was anything to restore, and never raises,
+  /// so a cleanup path can call it without knowing whether raw mode
+  /// was ever entered.
+  #[cfg(windows)]
+  pub fn exit_raw(ctx: &mut ZuriContext) -> Result<Value, String> {
+    use windows_sys::Win32::System::Console::SetConsoleMode;
+
+    enforce_arg_count!(ctx, 1);
+    let Ok(handle) = handle_of(ctx, 0) else {
+      return Ok(Value::bool(false));
+    };
+
+    let saved = ORIGINAL_MODE.with(|cache| cache.borrow_mut().remove(&handle));
+    match saved {
+      Some(mode) => Ok(Value::bool(
+        unsafe { SetConsoleMode(handle as _, mode) } != 0,
+      )),
+      None => Ok(Value::bool(false)),
+    }
+  }
+
+  /// Reports that nothing was restored, rather than refusing. Nothing
+  /// here can enter raw mode, so nothing ever needs leaving.
+  #[cfg(not(any(unix, windows)))]
+  pub fn exit_raw(_ctx: &mut ZuriContext) -> Result<Value, String> {
+    Ok(Value::bool(false))
+  }
+
+  /// Reports that nothing was discarded, rather than refusing.
+  ///
+  /// Same contract as `exit_raw` above: the Unix side returns whether
+  /// `tcflush` worked, `false` for a stream with no terminal behind it,
+  /// and never raises. There is no terminal queue to discard here, so
+  /// the answer is `false`.
   #[cfg(not(unix))]
   pub fn flush(_ctx: &mut ZuriContext) -> Result<Value, String> {
-    Err("TTY control is not supported on this platform".to_string())
+    Ok(Value::bool(false))
   }
 
   /// Unlike the other TTY natives, this one can't just return an
