@@ -369,7 +369,7 @@ class StaticFiles {
       resolved = os.real_path(candidate)
     }
 
-    if resolved != self.root and !resolved.starts_with(self.root + '/') {
+    if !os.path_contains(self.root, resolved) {
       return nil
     }
 

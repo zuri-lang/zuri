@@ -68,9 +68,14 @@ ok('dir_name() and base_name() split a path into parent and leaf')
 # ---------------------------------------------------------------------------
 # relative_path()
 # ---------------------------------------------------------------------------
-assert os.relative_path('/a/b', '/a/b/c/d') == 'c/d',
+# The result comes back in the platform's own spelling, so that
+# joining it onto the base again produces a path with one kind of
+# separator rather than a mixture.
+var sep = os.path_separator
+
+assert os.relative_path('/a/b', '/a/b/c/d') == 'c' + sep + 'd',
   'relative_path() must express a descendant path without leading ".."'
-assert os.relative_path('/a/b/c', '/a/x') == '../../x',
+assert os.relative_path('/a/b/c', '/a/x') == '..' + sep + '..' + sep + 'x',
   'relative_path() must walk back up with ".." for a divergent path'
 assert os.relative_path('/a/b', '/a/b') == '.',
   'relative_path() from a path to itself must be "."'

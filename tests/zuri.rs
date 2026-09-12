@@ -17,10 +17,14 @@ use std::process::Command;
 fn run_fixture(zu_path_str: &str) {
   let manifest_dir = env!("CARGO_MANIFEST_DIR");
   let bin = env!("CARGO_BIN_EXE_zuri");
-  let root = fs::canonicalize(manifest_dir)
-    .expect("crate root should be canonicalizable")
-    .display()
-    .to_string();
+  // Through the same helper the runtime itself uses, so both sides
+  // spell a canonical path identically. Windows' own canonical form
+  // carries a `\\?\` prefix that the runtime strips before any of it
+  // reaches a diagnostic; expanding `@@ROOT` with the unstripped form
+  // would leave the expected text disagreeing with the actual on
+  // nothing but that prefix.
+  let root = zuri::builtins::file::canonical_path(manifest_dir)
+    .expect("crate root should be canonicalizable");
 
   let out_path_str = format!(
     "{}.out",
@@ -62,13 +66,12 @@ fn run_fixture(zu_path_str: &str) {
   // Separators go the same way, for the same reason.
   //
   // A fixture spells every path after `@@ROOT` with a forward slash,
-  // but `@@ROOT` expands to whatever `canonicalize` produced, which on
-  // Windows is a native path (`\\?\D:\a\zuri-rs`). The expected text
-  // therefore ends up mixing both, while the runtime's own diagnostics
-  // use native separators throughout, and the two differ on nothing but
-  // the slashes. No `.out` file in the suite contains a backslash for
-  // any other purpose, so on Windows every one of them is a separator
-  // and normalising them masks nothing.
+  // but `@@ROOT` expands to a native path, so the expected text ends up
+  // mixing both while the runtime's own diagnostics use native
+  // separators throughout. The two then differ on nothing but the
+  // slashes. No `.out` file in the suite contains a backslash for any
+  // other purpose, so on Windows every one of them is a separator and
+  // normalising them masks nothing.
   #[cfg(windows)]
   let actual = actual.replace('\\', "/");
   #[cfg(windows)]

@@ -219,7 +219,7 @@ def relative_path(base: string, target: string) {
     parts.append(target_segments[i])
   }
 
-  return parts.is_empty() ? '.' : '/'.join(parts)
+  return parts.is_empty() ? '.' : _sep.join(parts)
 }
 
 /**

@@ -159,6 +159,19 @@ def _octdec(v) {
  * the list of files in a TAR archive, you need to make use of
  * the class API.
  */
+# Drops a trailing path separator before a path is joined onto or
+# tested. Windows accepts either slash, so both go there; on Unix a
+# backslash is an ordinary character in a filename and has to stay.
+def _without_trailing_separator(path) {
+  var trimmed = path.rtrim('/')
+
+  if os.platform == 'windows' {
+    trimmed = trimmed.rtrim('\\')
+  }
+
+  return trimmed
+}
+
 class Tar {
 
   var _file
@@ -302,9 +315,9 @@ class Tar {
     if !is_string(outdir)
       raise Error('output directory required as first argument')
 
-    outdir = outdir.rtrim('/')
+    outdir = _without_trailing_separator(outdir)
     if !os.dir_exists(outdir) {
-      if !os.create_dir(outdir)
+      if !os.create_dir(outdir, nil, true)
         raise TarIOError('could not create directory "${outdir}"')
     }
 
@@ -329,9 +342,11 @@ class Tar {
 
       # create output directory
       var output = os.join_paths(outdir, header.filename)
-      var directory = (is_dir ? output : os.dir_name(output)).rtrim('/')
+      var directory = _without_trailing_separator(is_dir ? output : os.dir_name(output))
       if !os.dir_exists(directory) {
-        os.create_dir(directory)
+        # Recursively: an archive is not obliged to carry an entry for
+        # every directory before the files inside it.
+        os.create_dir(directory, nil, true)
       }
 
       # extract data
