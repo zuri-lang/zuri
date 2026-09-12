@@ -256,8 +256,9 @@ class ZipItem {
       return false
     }
 
-    if !os.dir_exists(final_dir)
-      os.create_dir(final_dir)
+    if !os.dir_exists(final_dir) {
+      os.create_dir(final_dir, nil, true)
+    }
 
     if self.data {
       if !file(path, 'wb').write(self.data) {

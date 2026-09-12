@@ -319,14 +319,25 @@ def which(name: string) {
   var path_list_sep = _os.platform == 'windows' ? ';' : ':'
   var directories = get_env('PATH', '').split(path_list_sep)
 
+  # A command is named without its extension on Windows: `sh` on the
+  # PATH is `sh.exe` on disk, and the shell finds it by trying each
+  # PATHEXT suffix in turn. The bare name is tried first, so a name
+  # given with its extension already attached still resolves.
+  var suffixes = ['']
+  if _os.platform == 'windows' {
+    suffixes.extend(get_env('PATHEXT', _default_pathext).split(';'))
+  }
+
   for dir in directories {
     if dir == '' {
       continue
     }
 
-    var candidate = join_paths(dir, name)
-    if _is_executable(candidate) {
-      return candidate
+    for suffix in suffixes {
+      var candidate = join_paths(dir, name + suffix.trim())
+      if _is_executable(candidate) {
+        return candidate
+      }
     }
   }
 

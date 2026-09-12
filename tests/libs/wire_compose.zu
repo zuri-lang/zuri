@@ -34,6 +34,7 @@ def raises(fn) {
 }
 
 var root = os.create_temp_dir('wire_test')
+echo '=== COMPOSE ROOT: ${root} ==='
 var view = wire.wire({ root })
 
 def write(path, source) {

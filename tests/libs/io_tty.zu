@@ -96,12 +96,21 @@ ok('exit_raw()/flush() are safe no-ops against a non-tty stream')
 # tcgetattr()/tcsetattr() trade in; not OS values at all, so they're
 # fixed regardless of platform. TCSANOW/TCSADRAIN/TCSAFLUSH ARE real OS
 # values (also read from native code now, same as everything else here),
-# but happen to be 0/1/2 on every POSIX platform this build targets.
+# and happen to be 0/1/2 on every POSIX platform this build targets.
+# They are all zero where termios does not exist, since there is no
+# value to read.
 assert io.TTY.TTY_IFLAG == 0 and io.TTY.TTY_OFLAG == 1 and io.TTY.TTY_CFLAG == 2
   and io.TTY.TTY_LFLAG == 3 and io.TTY.TTY_ISPEED == 4 and io.TTY.TTY_OSPEED == 5
   and io.TTY.TTY_CC == 6, 'the TTY_* group indices are Zuri''s own protocol, fixed on every platform'
-assert io.TTY.TCSANOW == 0 and io.TTY.TCSADRAIN == 1 and io.TTY.TCSAFLUSH == 2,
-  'TCSANOW/TCSADRAIN/TCSAFLUSH must match this platform''s real termios values'
+
+if os.platform == 'windows' {
+  assert io.TTY.TCSANOW == 0 and io.TTY.TCSADRAIN == 0 and io.TTY.TCSAFLUSH == 0,
+    'the TCSA options must read as zero on a platform with no termios'
+} else {
+  assert io.TTY.TCSANOW == 0 and io.TTY.TCSADRAIN == 1 and io.TTY.TCSAFLUSH == 2,
+    'TCSANOW/TCSADRAIN/TCSAFLUSH must match this platform''s real termios values'
+}
+
 ok('the TTY_* group indices and TCSA option constants are correct')
 
 var real_flags = [

@@ -104,8 +104,14 @@ ok('stats() through a symlink describes the target and flags the link separately
 # ---------------------------------------------------------------------------
 # which()
 # ---------------------------------------------------------------------------
-var sh = os.which('sh')
-assert sh != nil and file(sh).exists(), 'which("sh") must find a real executable on PATH'
+# Something the platform is guaranteed to ship, since this is testing
+# which() rather than which tools happen to be installed. `sh` is Unix
+# userland and is not on Windows at all; `cmd` is its counterpart there.
+var shell = os.platform == 'windows' ? 'cmd' : 'sh'
+var found = os.which(shell)
+
+assert found != nil and file(found).exists(),
+  'which("${shell}") must find a real executable on PATH'
 assert os.which('zuri-definitely-not-a-real-command-xyz') == nil,
   'which() of a nonexistent command must return nil'
 ok('which() finds a real executable on PATH and returns nil for one that does not exist')

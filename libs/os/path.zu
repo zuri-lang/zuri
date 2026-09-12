@@ -18,6 +18,12 @@ import _os
 # can't collide with `system.zu`'s own public `path_separator`.
 var _sep = _os.path_separator
 
+# Windows accepts either slash as a separator, so a path can arrive
+# with a mix of both and every one of them has to be recognised. Unix
+# has only the one: a backslash there is an ordinary character in a
+# filename and must never be treated as a separator.
+var _alt_sep = _os.platform == 'windows' ? '/' : nil
+
 /**
  * Concatenates the given paths together into a format that is
  * valid on the current operating system.
@@ -40,6 +46,10 @@ def join_paths(...paths) {
     }
 
     arg = arg.trim()
+
+    if _alt_sep != nil {
+      arg = arg.replace(_alt_sep, _sep, false)
+    }
 
     if arg {
       result = result.rtrim(_sep)

@@ -16,6 +16,14 @@ def ok(label) {
   echo '  [PASS] ' + label
 }
 
+# A child ends its last line with whatever terminator the platform
+# uses, and Windows uses two characters where Unix uses one. trim()
+# removes a single named character per call, so stripping a line ending
+# portably takes one call for each.
+def line(text) {
+  return text.rtrim('\n').rtrim('\r')
+}
+
 echo '═══════════════════════════════════════════════════════'
 echo '  os module: process test suite'
 echo '═══════════════════════════════════════════════════════'
@@ -35,7 +43,7 @@ ok('ppid() returns a non-negative value')
 # ---------------------------------------------------------------------------
 var result = os.exec('echo', 'hello from exec')
 assert result.exit_code == 0, 'exec() of a successful command must report exit_code 0'
-assert result.output.trim('\n') == 'hello from exec', 'exec() must capture the command\'s stdout'
+assert line(result.output) == 'hello from exec', 'exec() must capture the command\'s stdout'
 ok('exec() runs a command and captures its exit code and output')
 
 var failed = os.exec('exit', '7')
@@ -46,7 +54,7 @@ ok('exec() reports a non-zero exit code for a failing command')
 # spawn(): basic run to completion
 # ---------------------------------------------------------------------------
 var p1 = os.spawn('echo', ['spawned', 'output'])
-assert p1.read_stdout().to_string().trim('\n') == 'spawned output',
+assert line(p1.read_stdout().to_string()) == 'spawned output',
   'Process.read_stdout() must return what the child wrote to stdout'
 assert p1.wait() == 0, 'Process.wait() must return the child\'s exit code'
 ok('spawn() runs a command and read_stdout()/wait() report its output and exit code')
@@ -66,8 +74,8 @@ ok('spawn() with stdin: \'pipe\' lets the caller write to the child and read its
 # spawn(): separate stdout/stderr streams
 # ---------------------------------------------------------------------------
 var p3 = os.spawn('sh', ['-c', 'echo to-stdout; echo to-stderr 1>&2'])
-var out3 = p3.read_stdout().to_string().trim('\n')
-var err3 = p3.read_stderr().to_string().trim('\n')
+var out3 = line(p3.read_stdout().to_string())
+var err3 = line(p3.read_stderr().to_string())
 p3.wait()
 assert out3 == 'to-stdout', 'read_stdout() must not include anything written to stderr'
 assert err3 == 'to-stderr', 'read_stderr() must not include anything written to stdout'
@@ -78,7 +86,7 @@ ok('spawn() keeps stdout and stderr as independent streams')
 # ---------------------------------------------------------------------------
 var scratch = os.create_temp_dir('zuri-os-process-')
 var p4 = os.spawn('sh', ['-c', 'pwd'], { cwd: scratch })
-var cwd_out = p4.read_stdout().to_string().trim('\n')
+var cwd_out = line(p4.read_stdout().to_string())
 p4.wait()
 
 # Both sides resolved before comparing. `pwd` in a child reports the
@@ -90,7 +98,7 @@ assert os.real_path(cwd_out) == os.real_path(scratch),
 ok('spawn() options.cwd changes the child\'s working directory')
 
 var p5 = os.spawn('sh', ['-c', 'echo $ZURI_TEST_SPAWN_VAR'], { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } })
-var env_out = p5.read_stdout().to_string().trim('\n')
+var env_out = line(p5.read_stdout().to_string())
 p5.wait()
 assert env_out == 'from-env-option', 'spawn() with an env option must set that variable in the child'
 ok('spawn() options.env sets an extra environment variable for the child')

@@ -44,10 +44,29 @@ jobs:
       # PowerShell, which reads that prefix as the name of a command to
       # run and fails before cargo is ever reached. `env:` is applied
       # by the runner itself, so it works the same on all three.
+      # Run through bash on every runner, Windows included, so the
+      # pipeline below behaves the same way everywhere: PowerShell's
+      # own pipeline would report tee's exit status rather than
+      # cargo's, and a failing suite would read as a passing step.
       - name: Test
+        shell: bash
         env:
           RUST_BACKTRACE: full
-        run: cargo test --locked --test zuri
+        run: |
+          set -o pipefail
+          cargo test --locked --test zuri 2>&1 | tee test-output.txt
+
+      # The whole log, kept as a file. A run with several failing
+      # fixtures produces more output than the web view will show, and
+      # the part that gets dropped is the middle, where each failure
+      # explains itself. The artifact has all of it.
+      - name: Upload the test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-${{ matrix.os }}
+          path: test-output.txt
+          retention-days: 7
 
       # A fixture killed by a signal produces no Rust backtrace and no
       # Zuri stack trace, so an exit status is the whole of what a
