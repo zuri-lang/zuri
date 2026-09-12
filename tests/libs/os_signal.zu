@@ -35,7 +35,19 @@
  * to its default action and would terminate this test process; that
  * contract gets its own coverage at the end, in a child process where
  * dying is the expected result.
+ *
+ * Unix only, and not merely because it fails elsewhere. Windows has no
+ * way to send a signal to a pid: `SetConsoleCtrlHandler` only ever
+ * hears from `GenerateConsoleCtrlEvent`, which addresses a console
+ * process group rather than a process, so neither half of what this
+ * file does has a counterpart there. `os.kill()` on Windows terminates
+ * outright instead of signalling, which would kill this process rather
+ * than deliver anything to it. The safepoint being tested is the same
+ * code on both platforms; there is just no way to make it fire from
+ * Windows.
  */
+
+# @platform: unix
 
 import os
 

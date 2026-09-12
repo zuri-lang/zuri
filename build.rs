@@ -307,17 +307,58 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
       "run_fixture"
     };
     code.push_str(&format!(
-      "#[test]\nfn {test_name}() {{ {runner}({:?}); }}\n\n",
+      "{}#[test]\nfn {test_name}() {{ {runner}({:?}); }}\n\n",
+      platform_gate(zu_path),
       zu_path.display().to_string()
     ));
   }
 
   fs::write(&dest, code).expect("failed to write generated test file");
 
-  // Structural changes (a fixture added or removed) need the test list
-  // regenerated; content changes to an existing .zu/.out don't, since
-  // `run_fixture` reads both fresh at test-run time, not build time.
+  // Cargo walks a watched directory, so this covers both a fixture
+  // being added or removed and an existing one having its `@platform`
+  // line changed. Nothing else about a fixture's contents matters
+  // here: `run_fixture` reads the `.zu` and `.out` fresh at test-run
+  // time, not build time.
   println!("cargo:rerun-if-changed={}", tests_dir.display());
+}
+
+/// The `#[cfg]` attribute, if any, that a fixture's `@platform` line
+/// asks for.
+///
+/// A fixture restricts itself with a `# @platform: unix` line in its
+/// header, and that becomes a `#[cfg(unix)]` on its generated test.
+/// This is for a fixture whose subject genuinely has no counterpart on
+/// the other platform, not for one that merely fails there: signal
+/// delivery to a pid, for instance, is a Unix concept with no Windows
+/// equivalent to test against, so the fixture is skipped rather than
+/// rewritten into something that no longer covers what it was written
+/// for.
+///
+/// Only the header is searched, so the marker cannot be matched by
+/// accident inside a string literal further down.
+fn platform_gate(path: &Path) -> String {
+  const HEADER_LINES: usize = 80;
+
+  let Ok(source) = fs::read_to_string(path) else {
+    return String::new();
+  };
+
+  for line in source.lines().take(HEADER_LINES) {
+    let Some(platform) = line.trim().strip_prefix("# @platform:") else {
+      continue;
+    };
+    return match platform.trim() {
+      "unix" => "#[cfg(unix)]\n".to_string(),
+      "windows" => "#[cfg(windows)]\n".to_string(),
+      other => panic!(
+        "{}: unknown @platform '{other}'; expected 'unix' or 'windows'",
+        path.display()
+      ),
+    };
+  }
+
+  String::new()
 }
 
 /// Walks `dir` looking for `.zu` fixtures with a matching `.out`,
