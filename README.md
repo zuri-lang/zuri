@@ -147,6 +147,17 @@ $ cargo run-docs                # the book
 $ cargo run-docs -- reference   # the standard library
 ```
 
+## Editor Support
+
+Syntax highlighting, from the same hands as everything else.
+
+- **[Open VSX](https://open-vsx.org/extension/zuri-lang/zuri-vscode)** —
+  the current build. This is the one to install: VS Codium, Cursor,
+  Windsurf, Gitpod and Eclipse Theia all pull from here.
+- **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=zuri-lang.zuri-vscode)**
+  — the same extension for VS Code itself, and it trails the Open VSX
+  build.
+
 ## Roadmap
 
 On the way, in the order it matters:

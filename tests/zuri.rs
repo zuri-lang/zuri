@@ -50,8 +50,16 @@ fn run_fixture(zu_path_str: &str) {
   // Both sides went through a `$(...)` command substitution in the
   // original script, which strips ALL trailing newlines; match that
   // so a lone trailing-newline difference isn't a false failure.
-  let actual = actual.trim_end_matches('\n');
-  let expected = expected.trim_end_matches('\n');
+  //
+  // Carriage returns go too. A `.gitattributes` rule keeps the `.out`
+  // files LF on every platform, but a checkout made with a different
+  // git configuration would otherwise fail every golden-output test on
+  // a line ending that was never in the repository. No fixture holds a
+  // carriage return on purpose, so dropping them costs no coverage.
+  let actual = actual.replace("\r\n", "\n");
+  let expected = expected.replace("\r\n", "\n");
+  let actual = actual.trim_end_matches(['\n', '\r']);
+  let expected = expected.trim_end_matches(['\n', '\r']);
   assert_eq!(
     actual, expected,
     "\n{zu_path_str}\n--- expected ---\n{expected}\n--- actual ---\n{actual}\n"

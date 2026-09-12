@@ -1,0 +1,32 @@
+# Line endings.
+#
+# The conformance suite compares a fixture's output against its `.out`
+# file byte for byte. Without a rule here, git rewrites LF to CRLF when
+# checking out on Windows, so every golden-output test fails on a line
+# ending that was never in the repository. No fixture contains a
+# carriage return on purpose, so LF everywhere is safe as well as
+# correct.
+#
+# `text=auto eol=lf` normalises on commit and checks out with LF on
+# every platform, Windows included.
+* text=auto eol=lf
+
+# Images the book renders, which must not be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.avif binary
+*.qoi binary
+
+# Inert until Zuri is accepted into github-linguist.
+#
+# The attribute is `linguist-language`, not `language`, and its value is
+# looked up in Linguist's own `languages.yml`. A name that is not in
+# that file is ignored, so there is no way to force `.zu` to show as
+# Zuri from here: the name has to exist upstream first. Written in the
+# correct form so it starts working the day it does.
+*.zu linguist-language=Zuri linguist-detectable=true
+

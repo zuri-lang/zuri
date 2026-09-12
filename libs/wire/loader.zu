@@ -52,7 +52,12 @@ class Loader {
    * @constructor
    */
   @new(root: string, extension: ?string) {
-    self.root = os.abs_path(root)
+    # Resolved, not merely made absolute. A template that exists is
+    # checked for being inside this root after its own links have been
+    # followed, so a root that is itself behind a link would place every
+    # template outside itself and none would ever load. macOS puts every
+    # temporary directory behind exactly such a link.
+    self.root = _canonical(os.abs_path(root))
 
     self.extension = DEFAULT_EXTENSION
     if extension != nil {
