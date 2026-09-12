@@ -62,7 +62,11 @@ fn select(args: &[String]) -> Result<(&'static Doc, Vec<String>), String> {
   let mut rest = Vec::new();
 
   for arg in args {
-    if arg.starts_with('-') || rest.last().is_some_and(|last: &String| last == "-p" || last == "--port") {
+    if arg.starts_with('-')
+      || rest
+        .last()
+        .is_some_and(|last: &String| last == "-p" || last == "--port")
+    {
       rest.push(arg.clone());
       continue;
     }
@@ -209,7 +213,10 @@ fn generate(doc: &Doc) -> Result<(), String> {
     .map_err(|e| format!("could not run {}: {e}", zuri.display()))?;
 
   if !status.success() {
-    eprintln!("warning: the {} generator reported problems above", doc.name);
+    eprintln!(
+      "warning: the {} generator reported problems above",
+      doc.name
+    );
   }
 
   Ok(())
@@ -223,8 +230,8 @@ fn generate(doc: &Doc) -> Result<(), String> {
 /// reference with a different version of the language than the one
 /// being worked on.
 fn zuri_binary() -> Result<PathBuf, String> {
-  let exe = std::env::current_exe()
-    .map_err(|e| format!("could not locate this executable: {e}"))?;
+  let exe =
+    std::env::current_exe().map_err(|e| format!("could not locate this executable: {e}"))?;
 
   let candidate = exe.with_file_name(if cfg!(windows) { "zuri.exe" } else { "zuri" });
 
@@ -252,7 +259,13 @@ fn serve(args: &[String]) -> Result<(), String> {
 
   run_mdbook(
     doc,
-    &["serve", &dir_string(doc), "--port", &port.to_string(), "--open"],
+    &[
+      "serve",
+      &dir_string(doc),
+      "--port",
+      &port.to_string(),
+      "--open",
+    ],
   )
 }
 

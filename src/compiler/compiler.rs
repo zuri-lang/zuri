@@ -639,7 +639,10 @@ impl<'a> Compiler<'a> {
           token,
         );
       } else {
-        self.cur_mut().declared_functions.push((name.clone(), depth));
+        self
+          .cur_mut()
+          .declared_functions
+          .push((name.clone(), depth));
       }
     }
 

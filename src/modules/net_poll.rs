@@ -52,10 +52,10 @@
 
 use crate::builtins::enforce::ArgType;
 use crate::modules::{BuiltinModuleDef, native};
-use crate::{enforce_arg_count, enforce_arg_type};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
+use crate::{enforce_arg_count, enforce_arg_type};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_net_poll",

@@ -288,7 +288,12 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let pairs: Vec<(Value, Value)> = kept
     .into_iter()
-    .map(|i| (ctx.vm.pinned(mark + 2 + 2 * i), ctx.vm.pinned(mark + 3 + 2 * i)))
+    .map(|i| {
+      (
+        ctx.vm.pinned(mark + 2 + 2 * i),
+        ctx.vm.pinned(mark + 3 + 2 * i),
+      )
+    })
     .collect();
   ctx.vm.unpin(mark);
   Ok(ctx.vm.heap_mut().alloc_dict(pairs))

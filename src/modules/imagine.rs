@@ -59,9 +59,7 @@ use crate::modules::{BuiltinModuleDef, native};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
-use crate::{
-  enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of_opt,
-};
+use crate::{enforce_arg_count, enforce_arg_range, enforce_arg_type, enforce_arg_type_any_of_opt};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_imagine",
@@ -77,11 +75,23 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     // codecs
     ("probe", native(vm, "probe", 1, false, probe)),
     ("decode", native(vm, "decode", 1, true, decode)),
-    ("decode_frames", native(vm, "decode_frames", 1, true, decode_frames)),
+    (
+      "decode_frames",
+      native(vm, "decode_frames", 1, true, decode_frames),
+    ),
     ("encode", native(vm, "encode", 5, false, encode)),
-    ("encode_frames", native(vm, "encode_frames", 3, false, encode_frames)),
-    ("orientation", native(vm, "orientation", 1, false, orientation)),
-    ("capabilities", native(vm, "capabilities", 0, false, capabilities)),
+    (
+      "encode_frames",
+      native(vm, "encode_frames", 3, false, encode_frames),
+    ),
+    (
+      "orientation",
+      native(vm, "orientation", 1, false, orientation),
+    ),
+    (
+      "capabilities",
+      native(vm, "capabilities", 0, false, capabilities),
+    ),
     // geometry
     ("resize", native(vm, "resize", 6, false, resize)),
     ("rotate", native(vm, "rotate", 5, false, rotate)),
@@ -90,17 +100,29 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("crop", native(vm, "crop", 7, false, crop)),
     // pixel kernels
     ("apply_lut", native(vm, "apply_lut", 5, false, apply_lut)),
-    ("apply_matrix", native(vm, "apply_matrix", 2, false, apply_matrix)),
+    (
+      "apply_matrix",
+      native(vm, "apply_matrix", 2, false, apply_matrix),
+    ),
     ("convolve", native(vm, "convolve", 8, false, convolve)),
     ("blur", native(vm, "blur", 4, false, blur)),
     ("composite", native(vm, "composite", 10, false, composite)),
     ("quantize", native(vm, "quantize", 5, false, quantize)),
-    ("premultiply", native(vm, "premultiply", 2, false, premultiply)),
+    (
+      "premultiply",
+      native(vm, "premultiply", 2, false, premultiply),
+    ),
     // text
     ("font_load", native(vm, "font_load", 1, false, font_load)),
     ("font_info", native(vm, "font_info", 2, false, font_info)),
-    ("measure_text", native(vm, "measure_text", 4, false, measure_text)),
-    ("render_text", native(vm, "render_text", 4, false, render_text)),
+    (
+      "measure_text",
+      native(vm, "measure_text", 4, false, measure_text),
+    ),
+    (
+      "render_text",
+      native(vm, "render_text", 4, false, render_text),
+    ),
   ]
 }
 
@@ -134,7 +156,6 @@ fn make_dict(ctx: &mut ZuriContext, pairs: Vec<(&str, Value)>) -> Value {
   ctx.heap().alloc_dict(entries)
 }
 
-
 /// Allocates a list of strings. See `make_dict` on why no pinning.
 fn alloc_string_list(ctx: &mut ZuriContext, names: &[&str]) -> Value {
   let items: Vec<Value> = names
@@ -154,7 +175,10 @@ fn num(ctx: &ZuriContext, index: usize) -> f64 {
 fn dim(ctx: &ZuriContext, index: usize, what: &str) -> Result<u32, String> {
   let raw = num(ctx, index);
   if !raw.is_finite() || raw < 0.0 || raw > u32::MAX as f64 {
-    return Err(format!("{}() got an out-of-range {}: {}", ctx.name, what, raw));
+    return Err(format!(
+      "{}() got an out-of-range {}: {}",
+      ctx.name, what, raw
+    ));
   }
   Ok(raw as u32)
 }
@@ -179,8 +203,12 @@ fn check_buffer(name: &str, len: usize, width: u32, height: u32) -> Result<(), S
 
 /// Turn an RGBA buffer into an `image` view without copying it twice.
 fn to_image(name: &str, data: Vec<u8>, width: u32, height: u32) -> Result<RgbaImage, String> {
-  RgbaImage::from_raw(width, height, data)
-    .ok_or_else(|| format!("{}(): pixel buffer does not match {}x{}", name, width, height))
+  RgbaImage::from_raw(width, height, data).ok_or_else(|| {
+    format!(
+      "{}(): pixel buffer does not match {}x{}",
+      name, width, height
+    )
+  })
 }
 
 /// Optional dict lookup by string key.
@@ -415,8 +443,7 @@ fn decode_frames(ctx: &mut ZuriContext) -> Result<Value, String> {
   let frames = ctx.args[0].with_bytes(|data| -> Result<Vec<(Vec<u8>, u32, u32, f64)>, String> {
     let format = match explicit {
       Some(format) => format,
-      None => image::guess_format(data)
-        .map_err(|e| format!("decode_frames(): {}", e))?,
+      None => image::guess_format(data).map_err(|e| format!("decode_frames(): {}", e))?,
     };
 
     let collected = match format {
@@ -621,8 +648,8 @@ fn encode(ctx: &mut ZuriContext) -> Result<Value, String> {
   let name = ctx.args[3].as_str().to_lowercase();
   let options = ctx.args[4];
 
-  let format = format_from_name(&name)
-    .ok_or_else(|| format!("encode(): unknown format '{}'", name))?;
+  let format =
+    format_from_name(&name).ok_or_else(|| format!("encode(): unknown format '{}'", name))?;
 
   if width == 0 || height == 0 {
     return Err("encode(): cannot encode an image with a zero dimension".to_string());
@@ -956,11 +983,7 @@ fn rotate_free(source: &RgbaImage, degrees: f64, background: [u8; 4]) -> RgbaIma
   let new_width = (width * cos.abs() + height * sin.abs()).ceil().max(1.0);
   let new_height = (width * sin.abs() + height * cos.abs()).ceil().max(1.0);
 
-  let mut out = RgbaImage::from_pixel(
-    new_width as u32,
-    new_height as u32,
-    image::Rgba(background),
-  );
+  let mut out = RgbaImage::from_pixel(new_width as u32, new_height as u32, image::Rgba(background));
 
   let source_cx = width / 2.0;
   let source_cy = height / 2.0;
@@ -1035,9 +1058,7 @@ fn sample_bilinear(source: &RgbaImage, sx: f64, sy: f64) -> Option<[u8; 4]> {
 
   // Everything sampled was outside the image, so this destination
   // pixel keeps the background rather than a black transparent one.
-  if out[3] == 0
-    && (x0 < -1 || y0 < -1 || x0 > width || y0 > height)
-  {
+  if out[3] == 0 && (x0 < -1 || y0 < -1 || x0 > width || y0 > height) {
     return None;
   }
 
@@ -1068,7 +1089,11 @@ fn flip(ctx: &mut ZuriContext) -> Result<Value, String> {
     let mut out = vec![0u8; pixels.len()];
 
     for y in 0..height as usize {
-      let source_y = if mode >= 2 { height as usize - 1 - y } else { y };
+      let source_y = if mode >= 2 {
+        height as usize - 1 - y
+      } else {
+        y
+      };
       let source_row = &pixels[source_y * stride..source_y * stride + stride];
       let dest_row = &mut out[y * stride..y * stride + stride];
 
@@ -1952,8 +1977,8 @@ fn composite_buffer(
         let blended = (1.0 - dest_alpha) * source_value
           + dest_alpha * blend_channel(mode, backdrop, source_value);
 
-        let value = (source_alpha * blended + dest_alpha * backdrop * (1.0 - source_alpha))
-          / out_alpha;
+        let value =
+          (source_alpha * blended + dest_alpha * backdrop * (1.0 - source_alpha)) / out_alpha;
         dest[dbase + channel] = (value * 255.0).clamp(0.0, 255.0).round() as u8;
       }
 
@@ -2123,7 +2148,11 @@ fn font_load(ctx: &mut ZuriContext) -> Result<Value, String> {
     .map(|n| n.to_string())
     .unwrap_or_else(|| "unnamed".to_string());
 
-  Ok(ctx.heap().alloc_ptr(FONT_TAG, FontFace { font: parsed, name }))
+  Ok(
+    ctx
+      .heap()
+      .alloc_ptr(FONT_TAG, FontFace { font: parsed, name }),
+  )
 }
 
 /// Runs `f` against the face behind a `Ptr` argument.
@@ -2164,10 +2193,7 @@ fn font_info(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let size = text_size(num(ctx, 1))?;
   let (name, metrics) = with_font(ctx, 0, |face| {
-    (
-      face.name.clone(),
-      face.font.horizontal_line_metrics(size),
-    )
+    (face.name.clone(), face.font.horizontal_line_metrics(size))
   })?;
 
   let metrics = metrics.ok_or_else(|| {
@@ -2252,7 +2278,10 @@ fn lay_out(face: &FontFace, text: &str, size: f32, options: &TextOptions) -> Vec
 
     for character in raw.chars() {
       if let Some(left) = previous {
-        width += face.font.horizontal_kern(left, character, size).unwrap_or(0.0);
+        width += face
+          .font
+          .horizontal_kern(left, character, size)
+          .unwrap_or(0.0);
         width += options.tracking;
       }
       width += face.font.metrics(character, size).advance_width;
@@ -2270,7 +2299,12 @@ fn lay_out(face: &FontFace, text: &str, size: f32, options: &TextOptions) -> Vec
 
 /// Total pixel size of a laid-out block, and the baseline of its first
 /// line measured from the top.
-fn block_size(face: &FontFace, size: f32, lines: &[LaidLine], options: &TextOptions) -> (f32, f32, f32) {
+fn block_size(
+  face: &FontFace,
+  size: f32,
+  lines: &[LaidLine],
+  options: &TextOptions,
+) -> (f32, f32, f32) {
   let metrics = face.font.horizontal_line_metrics(size);
   let (ascent, natural) = match metrics {
     Some(m) => (m.ascent, m.new_line_size),
@@ -2392,7 +2426,10 @@ fn render_block(
 
     for character in line.text.chars() {
       if let Some(left) = previous {
-        pen += face.font.horizontal_kern(left, character, size).unwrap_or(0.0);
+        pen += face
+          .font
+          .horizontal_kern(left, character, size)
+          .unwrap_or(0.0);
         pen += options.tracking;
       }
 

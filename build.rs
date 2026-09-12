@@ -106,7 +106,10 @@ fn build_book(manifest_dir: &str, name: &str, stamp_name: &str, generated: bool)
   // The book keeps its pages beside `book.toml`; the reference's are
   // generated under `target/`, which is where its `src` setting points.
   let src_dir = match generated {
-    true => Path::new(manifest_dir).join("target").join(name).join("src"),
+    true => Path::new(manifest_dir)
+      .join("target")
+      .join(name)
+      .join("src"),
     false => book_dir.join("src"),
   };
 
@@ -138,16 +141,17 @@ fn build_book(manifest_dir: &str, name: &str, stamp_name: &str, generated: bool)
   // the generator from here is not an option: it needs the `zuri`
   // binary, which this script runs before linking.
   if !src_dir.join("SUMMARY.md").is_file() {
-    println!(
-      "cargo:warning=the {name} has no pages yet; run `cargo build-docs` to generate them"
-    );
+    println!("cargo:warning=the {name} has no pages yet; run `cargo build-docs` to generate them");
     return;
   }
 
   let newest = newest_mtime(&src_dir).max(file_mtime(&manifest));
   let stamp = Path::new(&env::var("OUT_DIR").unwrap()).join(stamp_name);
   let rendered = match generated {
-    true => Path::new(manifest_dir).join("target").join(name).join("html"),
+    true => Path::new(manifest_dir)
+      .join("target")
+      .join(name)
+      .join("html"),
     false => Path::new(manifest_dir).join("target").join(name),
   };
 

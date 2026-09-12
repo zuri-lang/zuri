@@ -5819,10 +5819,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let tag = self.obj_tag(ptr);
     let tag_list = self.i64c(object::OBJ_TAG_LIST as i64);
     let is_list = self.fb.ins().icmp(IntCC::Equal, tag, tag_list);
-    self
-      .fb
-      .ins()
-      .brif(is_list, ok_block, &[], deopt_block, &[]);
+    self.fb.ins().brif(is_list, ok_block, &[], deopt_block, &[]);
 
     self.fb.switch_to_block(deopt_block);
     self.emit_deopt(ip);

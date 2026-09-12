@@ -1647,9 +1647,7 @@ impl VM {
         let s = v.as_str();
         if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, s) {
           let resolved = self.read_resolved(proto.globals_module, is_root, slot);
-          if resolved.is_obj()
-            && unsafe { matches!(&*resolved.as_obj(), Obj::List(_)) }
-          {
+          if resolved.is_obj() && unsafe { matches!(&*resolved.as_obj(), Obj::List(_)) } {
             out.insert(s.to_string());
           }
         }
