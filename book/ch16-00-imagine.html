@@ -1,0 +1,1474 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Imagine: Images - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d06c3974.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-259e9395.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch16-00-imagine.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="imagine"><a class="header" href="#imagine">Imagine</a></h1>
+<p>The <code>imagine</code> module is Zuri’s image library: decoding, drawing,
+transforming and encoding raster images.</p>
+<p>It covers the whole path an image takes through a program. A photograph
+arrives as an upload, gets checked, oriented, resized and sharpened, has
+a watermark composited onto it, and goes back out as a WebP. A chart is
+built from nothing but shapes and text. An avatar is cropped to a
+square, rounded off, and cached as a data URL. None of that needs
+anything outside the standard library.</p>
+<blockquote>
+<p>Every image on this page is the output of the code beside it,
+produced by <a href="imagine/figures.zu"><code>docs/book/src/imagine/figures.zu</code></a>. Re-run
+that script and the figures follow whatever the module actually does.</p>
+</blockquote>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#a-first-image">A First Image</a></li>
+<li><a href="#copying-and-mutation">Copying and Mutation</a></li>
+</ul>
+</li>
+<li><a href="#colours">Colours</a>
+<ul>
+<li><a href="#writing-a-colour">Writing a Colour</a></li>
+<li><a href="#the-color-class">The Color Class</a></li>
+<li><a href="#colour-spaces">Colour Spaces</a></li>
+<li><a href="#contrast-and-accessibility">Contrast and Accessibility</a></li>
+</ul>
+</li>
+<li><a href="#loading-and-saving">Loading and Saving</a>
+<ul>
+<li><a href="#opening-an-image">Opening an Image</a></li>
+<li><a href="#checking-before-decoding">Checking Before Decoding</a></li>
+<li><a href="#saving">Saving</a></li>
+<li><a href="#format-reference">Format Reference</a></li>
+<li><a href="#encoding-options">Encoding Options</a></li>
+<li><a href="#data-urls">Data URLs</a></li>
+</ul>
+</li>
+<li><a href="#resizing-and-reshaping">Resizing and Reshaping</a>
+<ul>
+<li><a href="#choosing-a-resize">Choosing a Resize</a></li>
+<li><a href="#resampling-filters">Resampling Filters</a></li>
+<li><a href="#cropping-padding-and-trimming">Cropping, Padding and Trimming</a></li>
+<li><a href="#rotating-and-mirroring">Rotating and Mirroring</a></li>
+<li><a href="#exif-orientation">EXIF Orientation</a></li>
+</ul>
+</li>
+<li><a href="#filters">Filters</a>
+<ul>
+<li><a href="#tone-and-exposure">Tone and Exposure</a></li>
+<li><a href="#colour">Colour</a></li>
+<li><a href="#blur-sharpen-and-detail">Blur, Sharpen and Detail</a></li>
+<li><a href="#writing-your-own-filter">Writing Your Own Filter</a></li>
+</ul>
+</li>
+<li><a href="#drawing">Drawing</a>
+<ul>
+<li><a href="#shapes">Shapes</a></li>
+<li><a href="#strokes-and-anti-aliasing">Strokes and Anti-aliasing</a></li>
+<li><a href="#line-caps">Line Caps</a></li>
+<li><a href="#paths-and-polygons">Paths and Polygons</a></li>
+<li><a href="#filling-areas">Filling Areas</a></li>
+<li><a href="#gradients">Gradients</a></li>
+<li><a href="#clipping">Clipping</a></li>
+</ul>
+</li>
+<li><a href="#text">Text</a>
+<ul>
+<li><a href="#the-built-in-font">The Built-in Font</a></li>
+<li><a href="#loading-a-font">Loading a Font</a></li>
+<li><a href="#drawing-text">Drawing Text</a></li>
+<li><a href="#measuring-and-positioning">Measuring and Positioning</a></li>
+<li><a href="#wrapping">Wrapping</a></li>
+<li><a href="#what-text-layout-does-not-do">What Text Layout Does Not Do</a></li>
+</ul>
+</li>
+<li><a href="#compositing">Compositing</a>
+<ul>
+<li><a href="#drawing-one-image-onto-another">Drawing One Image Onto Another</a></li>
+<li><a href="#blend-modes">Blend Modes</a></li>
+<li><a href="#masks">Masks</a></li>
+<li><a href="#layers">Layers</a></li>
+</ul>
+</li>
+<li><a href="#inspecting-an-image">Inspecting an Image</a></li>
+<li><a href="#animation">Animation</a></li>
+<li><a href="#working-with-pixels-directly">Working With Pixels Directly</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#performance-and-memory">Performance and Memory</a></li>
+<li><a href="#recipes">Recipes</a></li>
+</ul>
+<blockquote>
+<p>Blocks in this chapter that list several calls together — three ways to
+save, four filters, a family of methods — are <strong>reference listings</strong>, not
+programs. They show the shape of each call rather than a sequence you
+could run, and several would conflict if pasted into one file. Anything
+presented as a complete program on this page runs as written.</p>
+</blockquote>
+<h2 id="following-along"><a class="header" href="#following-along">Following Along</a></h2>
+<p>Most examples below operate on a file called <code>photo.jpg</code>. Use your own, or
+make one — the module can draw its own test subject:</p>
+<pre><code class="language-zuri">import imagine { Image }
+
+Image(320, 240, '#1e3a5f')
+  .fill_circle(220, 70, 40, '#ffd166')
+  .fill_rect(0, 170, 320, 70, '#2a9d8f')
+  .fill_polygon([[40, 170], [110, 80], [180, 170]], '#264653')
+  .save('photo.jpg')
+
+echo Image.open('photo.jpg').size()
+</code></pre>
+<pre><code class="language-console">{width: 320, height: 240}
+</code></pre>
+<p>Everything from here on assumes that file exists in the working directory.</p>
+<h2 id="introduction"><a class="header" href="#introduction">Introduction</a></h2>
+<h3 id="a-first-image"><a class="header" href="#a-first-image">A First Image</a></h3>
+<pre><code class="language-zuri">import imagine { Image }
+
+Image.open('photo.jpg')
+  .thumbnail(400, 400)
+  .save('thumb.webp')
+</code></pre>
+<p>Three lines: decode, shrink, encode. The format on the way in comes
+from the file’s contents, and the format on the way out comes from the
+extension you saved it as.</p>
+<p>Building an image from scratch works the same way.</p>
+<pre><code class="language-zuri">import imagine { Image, Color }
+
+Image(400, 200, '#0f172a')
+  .fill_circle(200, 100, 70, '#38bdf8')
+  .circle(200, 100, 70, 'white', { thickness: 3 })
+  .save('badge.png')
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/first-image.png" alt="A dark rectangle with a cyan circle outlined in white"><span class="img-wrapper"><img src="imagine/images/first-image.png" alt="A dark rectangle with a cyan circle outlined in white"></span></label></p>
+<p>Almost every method returns an image, so operations chain.</p>
+<h3 id="copying-and-mutation"><a class="header" href="#copying-and-mutation">Copying and Mutation</a></h3>
+<p>There is one rule in this module that is worth learning before anything
+else, because everything else follows from it:</p>
+<blockquote>
+<p><strong>Operations that change the image’s size return a new image.
+Everything else changes the image in place.</strong></p>
+</blockquote>
+<p><code>resize()</code>, <code>crop()</code>, <code>rotate()</code>, <code>flip()</code>, <code>transpose()</code> and <code>pad()</code>
+all leave the original untouched and hand back a new one. Drawing,
+filters and compositing all modify the image you called them on and
+return it so the chain continues.</p>
+<pre><code class="language-zuri">var original = Image.open('photo.jpg')
+
+var small = original.thumbnail(200, 200)   # original is untouched
+small.grayscale()                          # small is now grey
+
+echo original.size()                       # still the full size, still colour
+</code></pre>
+<p>That means a mixed chain reads correctly, and it means <code>clone()</code> is what
+you reach for when you want to keep an image before filtering it.</p>
+<pre><code class="language-zuri ignore">var greyed = photo.clone().grayscale()     # photo keeps its colour
+</code></pre>
+<h2 id="colours"><a class="header" href="#colours">Colours</a></h2>
+<h3 id="writing-a-colour"><a class="header" href="#writing-a-colour">Writing a Colour</a></h3>
+<p>Anywhere a colour is expected, five spellings are accepted. These are
+all the same red:</p>
+<pre><code class="language-zuri ignore">image.fill(Color(255, 0, 0))
+image.fill('#ff0000')
+image.fill('red')
+image.fill(0xFF0000FF)
+image.fill([255, 0, 0])
+</code></pre>
+<p>Hexadecimal strings take all four CSS lengths, with or without the
+leading <code>#</code>: <code>#f00</code>, <code>#f00c</code>, <code>#ff0000</code>, <code>#ff0000cc</code>. Names are the full
+CSS Color Level 4 list, matched ignoring case, spaces and hyphens, so
+<code>'Dark Sea Green'</code> and <code>'darkseagreen'</code> are the same colour.</p>
+<p>Alpha runs 0 (transparent) to 255 (opaque), as in CSS and PNG.</p>
+<h3 id="the-color-class"><a class="header" href="#the-color-class">The Color Class</a></h3>
+<p><code>Color</code> is an immutable value type. Every method that would change one
+returns a new colour, so a colour held in a variable is safe to pass
+around.</p>
+<pre><code class="language-zuri">import imagine { Color }
+
+var brand = Color.hex('#4f46e5')
+
+brand.r                    # 79
+brand.to_hex()             # '#4f46e5'
+brand.to_packed()          # 0x4F46E5FF
+
+brand.with_alpha(128)      # half transparent
+brand.fade(0.5)            # halves whatever alpha it already had
+brand.lighten(20)          # 20 percentage points of HSL lightness
+brand.darken(20)
+brand.saturate(15)
+brand.desaturate(15)
+brand.rotate_hue(180)
+brand.mix('white', 0.25)   # a quarter of the way to white
+brand.invert()
+brand.to_grayscale()
+</code></pre>
+<p><code>over()</code> flattens a translucent colour against a background, which is
+what happens when it is drawn onto something solid:</p>
+<pre><code class="language-zuri">Color(255, 0, 0, 128).over('white')    # '#ff7f7f'
+</code></pre>
+<h3 id="colour-spaces"><a class="header" href="#colour-spaces">Colour Spaces</a></h3>
+<p>Conversions come from the <a href="#"><code>colors</code></a> module, so the conventions are
+the same ones it and CSS use: hue in degrees, everything else in
+percentage points from 0 to 100.</p>
+<pre><code class="language-zuri">Color.hsl(240, 100, 50)            # '#0000ff'
+Color.hsv(120, 100, 100)           # '#00ff00'
+Color.hwb(0, 0, 0)                 # '#ff0000'
+Color.cmyk(0, 100, 100, 0)         # '#ff0000'
+Color.lab(40.7, 50.6, -79.1)       # perceptually uniform
+Color.xyz(0.2, 0.15, 0.7)
+
+brand.to_hsl()      # { h: 243.4, s: 75.4, l: 58.6, a: 255 }
+brand.to_hsv()
+brand.to_hwb()
+brand.to_cmyk()
+brand.to_lab()
+brand.to_xyz()
+</code></pre>
+<p>Lab is the right space for interpolating between two colours when the
+intermediate steps need to look evenly spaced to the eye. CMYK here is
+the naive conversion with no output profile, so it is right for
+generating colours and wrong for predicting a printing press.</p>
+<h3 id="contrast-and-accessibility"><a class="header" href="#contrast-and-accessibility">Contrast and Accessibility</a></h3>
+<pre><code class="language-zuri">var background = Color.hex('#1e293b')
+
+background.luminance()                  # 0 to 1, WCAG relative luminance
+background.contrast_ratio('#ffffff')    # 1 to 21
+background.is_dark()                    # true
+background.best_contrast()              # white, since the background is dark
+</code></pre>
+<p>WCAG asks for a ratio of at least 4.5 for normal text and 3 for large
+text, so <code>best_contrast()</code> is the quick way to pick a legible foreground
+for a colour you did not choose:</p>
+<pre><code class="language-zuri ignore">var label = swatch.best_contrast('#ffffff', '#111111')
+
+card.text(20, 20, name, font, label)
+</code></pre>
+<h2 id="loading-and-saving"><a class="header" href="#loading-and-saving">Loading and Saving</a></h2>
+<h3 id="opening-an-image"><a class="header" href="#opening-an-image">Opening an Image</a></h3>
+<pre><code class="language-zuri ignore">var photo = Image.open('photo.jpg')          # from a path
+var photo = Image.open(file('photo.jpg'))    # from an open file
+var photo = Image.decode(upload)             # from bytes in memory
+</code></pre>
+<p>The format is detected from the contents rather than the name, so a
+mislabelled file still opens. When the contents cannot be identified —
+TGA carries no signature of its own — <code>Image.open()</code> falls back to the
+file extension.</p>
+<p><code>Image.decode()</code> takes options:</p>
+<pre><code class="language-zuri ignore">Image.decode(upload, { format: 'png' })   # fail unless it really is a PNG
+Image.decode(raw, { orient: false })      # skip EXIF auto-rotation
+</code></pre>
+<p>Naming the format explicitly is worth doing when you already know it
+from a <code>Content-Type</code> or an extension: a file claiming to be a PNG that
+is really something else then fails loudly instead of being decoded as
+whatever it actually is.</p>
+<h3 id="checking-before-decoding"><a class="header" href="#checking-before-decoding">Checking Before Decoding</a></h3>
+<p>An image costs four bytes per pixel once decoded, so a 6000x4000
+photograph occupies 96 MB in memory however small its file was. For
+anything arriving from outside the program, read the header first:</p>
+<pre><code class="language-zuri ignore">import imagine
+import imagine { Image }
+
+var header = imagine.probe(upload)
+
+if header == nil {
+  raise Exception('that is not an image')
+}
+
+if header.width * header.height &gt; 40000000 {
+  raise Exception('image is too large')
+}
+
+var photo = imagine.decode(upload)
+</code></pre>
+<p><code>probe()</code> returns <code>{format, width, height}</code> or <code>nil</code>. It reads only the
+header, which costs microseconds where decoding the same file costs tens
+of milliseconds. <code>imagine.detect()</code> is the same check when you only want
+the format name.</p>
+<h3 id="saving"><a class="header" href="#saving">Saving</a></h3>
+<pre><code class="language-zuri ignore">photo.save('out.png')
+photo.save('out.jpg', { quality: 90 })
+photo.save('out.dat', { format: 'webp' })   # extension overridden
+</code></pre>
+<p>The format comes from the extension unless <code>format</code> says otherwise. To
+get the bytes instead of a file:</p>
+<pre><code class="language-zuri ignore">var data = photo.encode('webp')
+var data = photo.to_png()
+var data = photo.to_jpeg(90)
+</code></pre>
+<p><code>encode()</code> with no format uses whatever the image was decoded from,
+falling back to PNG for an image built in memory.</p>
+<h3 id="format-reference"><a class="header" href="#format-reference">Format Reference</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Format</th><th>Read</th><th>Write</th><th>Alpha</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td>PNG</td><td>yes</td><td>yes</td><td>yes</td><td>Lossless. The safe default.</td></tr>
+<tr><td>JPEG</td><td>yes</td><td>yes</td><td>no</td><td>Lossy. Photographs only.</td></tr>
+<tr><td>WebP</td><td>yes</td><td>yes</td><td>yes</td><td><strong>Written lossless</strong>, so smaller than PNG but larger than a lossy WebP.</td></tr>
+<tr><td>AVIF</td><td>no</td><td>yes</td><td>yes</td><td>Smallest files, slowest to encode.</td></tr>
+<tr><td>GIF</td><td>yes</td><td>yes</td><td>1-bit</td><td>256 colours. The only animated format that can be written.</td></tr>
+<tr><td>BMP</td><td>yes</td><td>yes</td><td>yes</td><td>Uncompressed and enormous.</td></tr>
+<tr><td>TIFF</td><td>yes</td><td>yes</td><td>yes</td><td>Common in printing and scanning.</td></tr>
+<tr><td>TGA</td><td>yes</td><td>yes</td><td>yes</td><td>No signature; needs an extension or an explicit format.</td></tr>
+<tr><td>QOI</td><td>yes</td><td>yes</td><td>yes</td><td>Lossless, several times faster than PNG.</td></tr>
+<tr><td>ICO</td><td>yes</td><td>yes</td><td>yes</td><td>Icon container.</td></tr>
+<tr><td>PNM</td><td>yes</td><td>yes</td><td>no</td><td>Trivially simple, trivially large.</td></tr>
+<tr><td>WBMP</td><td>yes</td><td>yes</td><td>no</td><td>One bit per pixel.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Three entries need explaining.</p>
+<p><strong>AVIF is write-only</strong>: opening one raises <code>DecodeError</code>.</p>
+<p><strong>TGA has no magic number</strong>, so it can only be identified by its file
+extension or by naming the format outright.</p>
+<p><strong>WebP is written losslessly.</strong> Reading handles both lossy and lossless
+WebP, but the encoder here only writes lossless, so <code>quality</code> has no
+effect on it and a photograph saved as WebP will be larger than one
+saved by a tool that can write lossy WebP. For a photograph where size
+matters, JPEG or AVIF is the better target; WebP here is a
+smaller-than-PNG lossless format with alpha.</p>
+<p>Never assume; ask:</p>
+<pre><code class="language-zuri">import imagine
+
+var can = imagine.capabilities()
+
+echo can.decode.contains('png')
+echo can.encode.contains('webp')
+echo can.animated.contains('gif')
+</code></pre>
+<pre><code class="language-console">true
+true
+true
+</code></pre>
+<p><code>decode</code>, <code>encode</code> and <code>animated</code> are each a list of format names, so
+<code>contains()</code> answers the question you actually have.</p>
+<h3 id="encoding-options"><a class="header" href="#encoding-options">Encoding Options</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Formats</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>quality</code></td><td>JPEG, AVIF</td><td>1 to 100. Defaults to 85 for JPEG, 80 for AVIF.</td></tr>
+<tr><td><code>compression</code></td><td>PNG</td><td><code>'fast'</code>, <code>'default'</code> or <code>'best'</code>. All lossless.</td></tr>
+<tr><td><code>speed</code></td><td>AVIF, GIF</td><td>AVIF 1-10, lower is slower and smaller. GIF 1-30, lower is slower and picks better colours; 15 by default.</td></tr>
+<tr><td><code>background</code></td><td>JPEG</td><td>What transparent pixels are flattened against. Defaults to white.</td></tr>
+<tr><td><code>threshold</code></td><td>WBMP</td><td>The brightness cut, 0 to 255.</td></tr>
+</tbody>
+</table>
+</div>
+<p>JPEG has no alpha channel, so transparency has to go somewhere on the
+way out. It is flattened against <code>background</code> rather than silently
+dropped, because dropping it turns transparent pixels black:</p>
+<pre><code class="language-zuri ignore">logo.save('logo.jpg', { background: '#ffffff' })
+</code></pre>
+<p>To see the result first, or to choose the colour once and keep it, do it
+explicitly:</p>
+<pre><code class="language-zuri ignore">logo.flatten('#ffffff').save('logo.jpg')
+</code></pre>
+<h3 id="data-urls"><a class="header" href="#data-urls">Data URLs</a></h3>
+<pre><code class="language-zuri ignore">var url = icon.to_data_url('png')
+# 'data:image/png;base64,iVBORw0...'
+</code></pre>
+<p>Base64 costs a third more bytes than the raw image, so this suits icons
+and small graphics rather than photographs.</p>
+<h2 id="resizing-and-reshaping"><a class="header" href="#resizing-and-reshaping">Resizing and Reshaping</a></h2>
+<h3 id="choosing-a-resize"><a class="header" href="#choosing-a-resize">Choosing a Resize</a></h3>
+<p>There are six, and picking the right one is most of the work:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Aspect ratio</th><th>Enlarges?</th><th>Result</th></tr>
+</thead>
+<tbody>
+<tr><td><code>resize(w, h)</code></td><td>not kept</td><td>yes</td><td>exactly <code>w x h</code>, possibly distorted</td></tr>
+<tr><td><code>scale(factor)</code></td><td>kept</td><td>yes</td><td>the same image, scaled</td></tr>
+<tr><td><code>thumbnail(w, h)</code></td><td>kept</td><td><strong>no</strong></td><td>fits inside the box</td></tr>
+<tr><td><code>fit(w, h)</code></td><td>kept</td><td>yes</td><td>fits inside the box</td></tr>
+<tr><td><code>cover(w, h)</code></td><td>kept</td><td>yes</td><td>fills the box, cropping the overflow</td></tr>
+<tr><td><code>contain(w, h)</code></td><td>kept</td><td>yes</td><td>fits the box, padding the remainder</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>thumbnail()</code> is the one you usually want for thumbnails, and the
+refusal to enlarge is the reason: scaling a small image up to fill a
+thumbnail box only makes it blurry. Use <code>fit()</code> when you do want it
+scaled up.</p>
+<p><code>cover()</code> and <code>contain()</code> both produce exactly the size asked for. They
+differ in what they sacrifice — <code>cover()</code> loses part of the image,
+<code>contain()</code> adds bars:</p>
+<pre><code class="language-zuri ignore">photo.cover(300, 300)                              # crops to a square
+photo.cover(300, 300, { anchor: TOP })             # keeps the top, crops the bottom
+photo.contain(300, 300, { background: 'white' })   # letterboxes instead
+</code></pre>
+<p>The same 320x180 image asked for a 120x120 result four ways:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/resize-modes.png" alt="thumbnail, cover, contain and resize compared"><span class="img-wrapper"><img src="imagine/images/resize-modes.png" alt="thumbnail, cover, contain and resize compared"></span></label></p>
+<p><code>thumbnail()</code> keeps the proportions and does not fill the box.
+<code>cover()</code> fills it and loses the sides. <code>contain()</code> fills it and adds
+bars. <code>resize()</code> fills it by distorting the picture.</p>
+<p>The anchors are <code>TOP_LEFT</code>, <code>TOP</code>, <code>TOP_RIGHT</code>, <code>LEFT</code>, <code>CENTER</code>,
+<code>RIGHT</code>, <code>BOTTOM_LEFT</code>, <code>BOTTOM</code> and <code>BOTTOM_RIGHT</code>. <code>CENTER</code> is the
+default, and <code>TOP</code> is what you want for photographs of people, where the
+face is rarely in the bottom third.</p>
+<h3 id="resampling-filters"><a class="header" href="#resampling-filters">Resampling Filters</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>Speed</th><th>Use</th></tr>
+</thead>
+<tbody>
+<tr><td><code>NEAREST</code></td><td>fastest</td><td>Pixel art, QR codes, anything whose edges must stay hard.</td></tr>
+<tr><td><code>BILINEAR</code></td><td>fast</td><td>When speed matters more than sharpness.</td></tr>
+<tr><td><code>BICUBIC</code></td><td>moderate</td><td>A good default for photographs.</td></tr>
+<tr><td><code>GAUSSIAN</code></td><td>moderate</td><td>Deliberately soft; for noisy input, or before sharpening.</td></tr>
+<tr><td><code>LANCZOS</code></td><td>slowest</td><td>Thumbnails and any large reduction. The default.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri ignore">photo.thumbnail(200, 200, LANCZOS)
+sprite.scale(4, NEAREST)             # keeps pixel art crisp
+</code></pre>
+<p>A 16x16 sprite enlarged seven times over, so the differences are
+visible at all:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/resample-filters.png" alt="the four resampling filters compared on an enlarged sprite"><span class="img-wrapper"><img src="imagine/images/resample-filters.png" alt="the four resampling filters compared on an enlarged sprite"></span></label></p>
+<p>This is the case where <code>NEAREST</code> is right and everything else is
+wrong. Shrinking a photograph inverts that judgement entirely.</p>
+<p><code>LANCZOS</code> is the default because most resizing is shrinking, and that is
+where it earns its cost. It can produce faint ringing next to very
+high-contrast edges, which is the price of its sharpness; <code>BICUBIC</code> is
+the fallback when that shows.</p>
+<h3 id="cropping-padding-and-trimming"><a class="header" href="#cropping-padding-and-trimming">Cropping, Padding and Trimming</a></h3>
+<pre><code class="language-zuri ignore">photo.crop(100, 50, 400, 300)      # x, y, width, height
+photo.pad(20)                      # 20 pixels on every side
+photo.pad(10, 20, 10, 20, 'white') # top, right, bottom, left, colour
+photo.trim()                       # remove a uniform border
+photo.trim({ tolerance: 8 })       # allow for JPEG noise in the border
+</code></pre>
+<p><code>crop()</code> requires its rectangle to fit inside the image and raises
+<code>BoundsError</code> otherwise. Clamping a crop that runs off the edge would
+hand back different dimensions than were asked for, which is a worse
+surprise than an error. Pad first when the region really is meant to
+extend past the edge.</p>
+<p><code>trim()</code> takes the border colour from the top-left pixel unless you name
+one. Scanned documents and screenshots almost always want a tolerance,
+because a “white” border from a lossy format is not exactly white.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/trim.png" alt="a small shape on a large background, then trimmed to it"><span class="img-wrapper"><img src="imagine/images/trim.png" alt="a small shape on a large background, then trimmed to it"></span></label></p>
+<h3 id="rotating-and-mirroring"><a class="header" href="#rotating-and-mirroring">Rotating and Mirroring</a></h3>
+<pre><code class="language-zuri ignore">photo.rotate_90()                  # lossless
+photo.rotate_180()
+photo.rotate_270()
+photo.rotate(37, 'white')          # resamples, grows the canvas
+
+photo.flip_horizontal()
+photo.flip_vertical()
+photo.flip(FLIP_BOTH)
+photo.transpose()                  # reflect across the main diagonal
+</code></pre>
+<p>Quarter turns are exact: every pixel is moved, none is resampled. Any
+other angle interpolates, and grows the canvas to hold the rotated
+corners with <code>background</code> filling the gaps.</p>
+<h3 id="exif-orientation"><a class="header" href="#exif-orientation">EXIF Orientation</a></h3>
+<p>Phone cameras usually store the sensor’s orientation in the file rather
+than rotating the pixels, so a photograph whose bytes are sideways is
+meant to be displayed upright. <code>Image.open()</code> and <code>Image.decode()</code>
+handle this for you.</p>
+<pre><code class="language-zuri">Image.open('photo.jpg')                       # upright
+Image.open('photo.jpg', { orient: false })    # exactly as stored
+</code></pre>
+<p>All eight orientation values are handled, including the four mirrored
+ones that scanners and some front-facing cameras produce.</p>
+<h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<p>Filters change the image in place and return it, so they chain.</p>
+<pre><code class="language-zuri ignore">photo.grayscale().contrast(15).sharpen(0.5)
+</code></pre>
+<h3 id="tone-and-exposure"><a class="header" href="#tone-and-exposure">Tone and Exposure</a></h3>
+<pre><code class="language-zuri ignore">photo.brightness(20)         # -255 to 255, added to each channel
+photo.contrast(15)           # -100 to 100, around mid-grey
+photo.gamma(1.2)             # above 1 lifts midtones, below 1 lowers them
+photo.levels(20, 235)        # stretch this input range to full scale
+photo.levels(20, 235, 1.1)   # ...with a midtone curve
+photo.threshold(128)         # every pixel to black or white
+photo.posterize(6)           # six evenly spaced steps per channel
+photo.invert()               # a photographic negative
+photo.opacity(0.5)           # scale the alpha channel
+</code></pre>
+<p><code>levels()</code> is the single most useful correction for a flat or
+washed-out photograph. Everything at or below the black point becomes
+black, everything at or above the white point becomes white, and the
+range between is stretched to fill the scale.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-tone.png" alt="brightness, contrast and gamma applied to one image"><span class="img-wrapper"><img src="imagine/images/filters-tone.png" alt="brightness, contrast and gamma applied to one image"></span></label></p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-tone-2.png" alt="levels, posterize, threshold and invert applied to one image"><span class="img-wrapper"><img src="imagine/images/filters-tone-2.png" alt="levels, posterize, threshold and invert applied to one image"></span></label></p>
+<p>Note the difference between <code>posterize()</code> and <code>quantize()</code>:
+<code>posterize()</code> spaces its levels evenly, <code>quantize()</code> picks the colours
+to suit the image, so a photograph survives far fewer of them.</p>
+<pre><code class="language-zuri ignore">photo.quantize(32)                # 32 well-chosen colours
+photo.quantize(16, true)          # ...with dithering
+</code></pre>
+<p><code>auto_levels()</code> does the same job as <code>levels()</code> without being told
+where the endpoints are; it is shown alongside the detail filters
+below.</p>
+<h3 id="colour"><a class="header" href="#colour">Colour</a></h3>
+<pre><code class="language-zuri ignore">photo.grayscale()
+photo.sepia()
+photo.saturate(1.4)               # 0 removes colour, 1 is unchanged
+photo.hue_rotate(45)
+photo.tint('#ff8800', 0.3)        # blend a flat colour in
+photo.colorize('#4f46e5')         # monochrome in one colour
+photo.duotone('#1e1b4b', '#fbbf24')
+photo.flatten('white')            # composite over a colour, drop alpha
+</code></pre>
+<p><code>grayscale()</code> weights the channels for perceived brightness, so a bright
+yellow comes out light and a deep blue comes out dark. That is different
+from <code>saturate(0)</code>, which keeps HSL lightness and makes both mid-grey.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-color.png" alt="grayscale, sepia, saturate and hue rotation"><span class="img-wrapper"><img src="imagine/images/filters-color.png" alt="grayscale, sepia, saturate and hue rotation"></span></label></p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-color-2.png" alt="duotone, tint, colorize and a dithered eight-colour quantization"><span class="img-wrapper"><img src="imagine/images/filters-color-2.png" alt="duotone, tint, colorize and a dithered eight-colour quantization"></span></label></p>
+<h3 id="blur-sharpen-and-detail"><a class="header" href="#blur-sharpen-and-detail">Blur, Sharpen and Detail</a></h3>
+<pre><code class="language-zuri ignore">photo.blur(3)                # Gaussian; the argument is its sigma
+photo.sharpen(0.8)
+photo.smooth()               # a cheap, harsher 3x3 average
+photo.emboss()
+photo.edges()
+photo.mean_removal()
+photo.pixelate(12)
+</code></pre>
+<p><code>blur()</code> is a true separable Gaussian, so a large radius costs linearly
+rather than quadratically. Its argument is the standard deviation: about
+two thirds of each pixel’s contribution falls within that distance, and
+the visible spread is roughly three times it.</p>
+<p>Alpha is premultiplied for the duration of a blur, so blurring a shape
+on a transparent background does not drag a dark halo into its edge.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-detail.png" alt="blur, sharpen, edge detection and emboss"><span class="img-wrapper"><img src="imagine/images/filters-detail.png" alt="blur, sharpen, edge detection and emboss"></span></label></p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/filters-detail-2.png" alt="pixelate, smooth, mean removal and automatic levels"><span class="img-wrapper"><img src="imagine/images/filters-detail-2.png" alt="pixelate, smooth, mean removal and automatic levels"></span></label></p>
+<h3 id="writing-your-own-filter"><a class="header" href="#writing-your-own-filter">Writing Your Own Filter</a></h3>
+<p>Nearly every filter above is one of three primitives with different
+numbers in it, and all three are available directly.</p>
+<p><strong>A lookup table</strong> covers any per-channel tone curve. The table is built
+once whatever the image’s size, then applied at memory speed.</p>
+<pre><code class="language-zuri ignore">import imagine { filters }
+
+# A gentle S-curve: more contrast, but the highlights survive.
+var curve = filters.build_lut(@(value) {
+  var t = value / 255
+  return 255 * t * t * (3 - 2 * t)
+})
+
+photo.apply_lut(curve, curve, curve, nil)   # nil leaves alpha alone
+</code></pre>
+<p><strong>A colour matrix</strong> covers anything that mixes channels — saturation,
+hue rotation, channel swaps, tinting. It is the 4x5 matrix SVG and CSS
+filters use, written row by row, with the last entry of each row a
+constant in 0-255 units.</p>
+<pre><code class="language-zuri ignore"># Swap the red and blue channels.
+photo.apply_matrix([
+  0, 0, 1, 0, 0,
+  0, 1, 0, 0, 0,
+  1, 0, 0, 0, 0,
+  0, 0, 0, 1, 0,
+])
+</code></pre>
+<p>Applying several matrices in a row is both slower and less accurate than
+combining them and applying the result once:</p>
+<pre><code class="language-zuri ignore">var both = filters.combine_matrices(
+  filters.grayscale_matrix(),
+  filters.saturation_matrix(1.2)
+)
+
+photo.apply_matrix(both)
+</code></pre>
+<p><strong>A convolution kernel</strong> covers anything that reads a pixel’s
+neighbours.</p>
+<pre><code class="language-zuri ignore">photo.convolve([
+  0, -1, 0,
+  -1, 5, -1,
+  0, -1, 0,
+])
+</code></pre>
+<p>The kernel must be square with an odd side. The default divisor of 0
+means “divide by the kernel’s own sum”, which is what nearly every
+published kernel expects.</p>
+<p>One trap is worth knowing. Alpha goes through the kernel along with the
+colour channels, which is right for a blur and wrong for anything whose
+weights do not sum to one. A Laplacian over a uniformly opaque image
+sums to zero, which would make the whole result invisible:</p>
+<pre><code class="language-zuri ignore">photo.convolve(filters.edge_kernel(), { divisor: 1, keep_alpha: true })
+</code></pre>
+<p>The built-in <code>edges()</code>, <code>emboss()</code>, <code>sharpen()</code> and <code>mean_removal()</code>
+already do this.</p>
+<p>The S-curve and the channel-swap matrix from this section, run against
+the same picture:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/custom-filters.png" alt="an original image beside an S-curve LUT and a channel-swap matrix"><span class="img-wrapper"><img src="imagine/images/custom-filters.png" alt="an original image beside an S-curve LUT and a channel-swap matrix"></span></label></p>
+<p><code>edge</code> controls what happens off the image’s border: <code>EDGE_CLAMP</code> (the
+default) repeats the nearest edge pixel, <code>EDGE_TRANSPARENT</code> treats the
+outside as empty, and <code>EDGE_WRAP</code> wraps to the opposite side for images
+meant to tile.</p>
+<h2 id="drawing"><a class="header" href="#drawing">Drawing</a></h2>
+<h3 id="shapes"><a class="header" href="#shapes">Shapes</a></h3>
+<p>Coordinates start at the top-left corner. Integer coordinates fall on
+pixel corners rather than centres, so a rectangle from (0, 0) to
+(10, 10) covers exactly the first ten pixels in each direction.</p>
+<pre><code class="language-zuri ignore">image.pixel(x, y, color)                        # one pixel, blended
+image.line(x1, y1, x2, y2, color)
+image.rect(x, y, w, h, color)                   # outline
+image.fill_rect(x, y, w, h, color)
+image.rounded_rect(x, y, w, h, radius, color)
+image.fill_rounded_rect(x, y, w, h, radius, color)
+image.circle(cx, cy, r, color)
+image.fill_circle(cx, cy, r, color)
+image.ellipse(cx, cy, rx, ry, color)
+image.fill_ellipse(cx, cy, rx, ry, color)
+image.arc(cx, cy, rx, ry, start, end, color)
+image.pie(cx, cy, rx, ry, start, end, color)    # closed through the centre
+image.chord(cx, cy, rx, ry, start, end, color)  # closed along the chord
+image.bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color)
+</code></pre>
+<p>Angles are in degrees, measured clockwise from three o’clock, matching
+the direction the y axis runs.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/shapes.png" alt="lines, rectangles, ellipses, arcs, a pie slice, a polygon and a bezier"><span class="img-wrapper"><img src="imagine/images/shapes.png" alt="lines, rectangles, ellipses, arcs, a pie slice, a polygon and a bezier"></span></label></p>
+<p>Drawing outside the image is never an error; anything that falls outside
+is clipped away. That is what makes it safe to draw a shape that only
+partly overlaps.</p>
+<h3 id="strokes-and-anti-aliasing"><a class="header" href="#strokes-and-anti-aliasing">Strokes and Anti-aliasing</a></h3>
+<pre><code class="language-zuri ignore">image.thickness(4)         # applies to every subsequent stroke
+image.antialias(false)     # hard edges
+</code></pre>
+<p>Both are settings on the image rather than per-call arguments, though a
+single call can override the thickness:</p>
+<pre><code class="language-zuri ignore">image.line(0, 0, 100, 100, 'black', { thickness: 8 })
+</code></pre>
+<p>Strokes are centred on the path, so a thickness of 4 puts 2 pixels on
+each side. Joints and the ends of an open path are rounded.</p>
+<p>Anti-aliasing is on by default. Turn it off for output that has to be
+pixel-exact — barcodes, QR codes, anything that will be thresholded
+afterwards.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/antialias.png" alt="the same circle and line drawn with anti-aliasing off and on"><span class="img-wrapper"><img src="imagine/images/antialias.png" alt="the same circle and line drawn with anti-aliasing off and on"></span></label></p>
+<p>Stroke widths of 1, 3, 6 and 12:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/strokes.png" alt="four vertical lines of increasing thickness"><span class="img-wrapper"><img src="imagine/images/strokes.png" alt="four vertical lines of increasing thickness"></span></label></p>
+<h3 id="line-caps"><a class="header" href="#line-caps">Line Caps</a></h3>
+<p>How an open stroke finishes at its two ends is a separate choice from
+its width:</p>
+<pre><code class="language-zuri ignore">image.cap(CAP_ROUND)     # a half-disc. The default.
+image.cap(CAP_SQUARE)    # a square, reaching the same distance
+image.cap(CAP_BUTT)      # stops dead at the endpoint
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/caps.png" alt="the same line drawn with butt, round and square caps, with its endpoints marked"><span class="img-wrapper"><img src="imagine/images/caps.png" alt="the same line drawn with butt, round and square caps, with its endpoints marked"></span></label></p>
+<p>The red marks are the exact coordinates the line was given. A round or
+square cap reaches half the stroke’s width past them; a butt cap does
+not.</p>
+<p><code>CAP_BUTT</code> is the one to reach for whenever the coordinates have to
+mean exactly what they say — segments meeting end to end, a scale bar
+of a known length, the pieces of a dashed line. <code>CAP_SQUARE</code> gives the
+same reach as round with a blunt finish.</p>
+<p>A single call can override the surface’s setting:</p>
+<pre><code class="language-zuri ignore">image.line(40, 200, 40, 40, '#334155', { thickness: 6, cap: CAP_BUTT })
+</code></pre>
+<p>Joins <em>between</em> a path’s segments are always round, and closed outlines
+have no ends, so neither is affected by this.</p>
+<h3 id="paths-and-polygons"><a class="header" href="#paths-and-polygons">Paths and Polygons</a></h3>
+<p>Every filled shape in this module becomes a polygon and goes through one
+scanline rasterizer, and every outline becomes the polygon around its
+stroke and goes through the same one. A shape not listed above can be
+drawn by supplying the points:</p>
+<pre><code class="language-zuri ignore">image.fill_polygon([[10, 10], [90, 30], [50, 80]], '#4f46e5')
+image.polygon([[10, 10], [90, 30], [50, 80]], 'black')     # outline, closed
+image.polyline([[10, 10], [90, 30], [50, 80]], 'black')    # not closed
+</code></pre>
+<p>Points may be a list of <code>[x, y]</code> pairs or a flat list of alternating
+values; both read naturally depending on where the points came from.
+The outline is closed for you, so the last point does not need to repeat
+the first.</p>
+<p>Self-intersecting outlines are filled by the non-zero winding rule,
+which fills a five-pointed star solid. Pass <code>{ even_odd: true }</code> for the
+other convention, which leaves its middle empty.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/winding.png" alt="a solid star and a hollow one, from identical points"><span class="img-wrapper"><img src="imagine/images/winding.png" alt="a solid star and a hollow one, from identical points"></span></label></p>
+<h3 id="filling-areas"><a class="header" href="#filling-areas">Filling Areas</a></h3>
+<pre><code class="language-zuri ignore">image.fill('#0f172a')          # every pixel, ignoring the clip
+image.clear()                  # every pixel to transparent
+image.flood_fill(x, y, color)
+image.flood_fill(x, y, color, 12)   # with a tolerance
+</code></pre>
+<p>Gradients get <a href="#gradients">their own section</a> below.</p>
+<p><code>fill()</code> replaces rather than blends, so filling with a transparent
+colour empties the image instead of leaving it unchanged.</p>
+<p>Flood fill spreads four-connected — up, down, left and right, but not
+diagonally — through pixels within <code>tolerance</code> of the colour at the
+starting point. A tolerance of 0 spreads only through exactly equal
+pixels; on a photograph or anything anti-aliased you will want more.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/flood-fill.png" alt="two flood fills stopped by a drawn barrier"><span class="img-wrapper"><img src="imagine/images/flood-fill.png" alt="two flood fills stopped by a drawn barrier"></span></label></p>
+<h3 id="gradients"><a class="header" href="#gradients">Gradients</a></h3>
+<pre><code class="language-zuri ignore">image.linear_gradient(x1, y1, x2, y2, stops)
+image.radial_gradient(cx, cy, radius, stops)
+</code></pre>
+<p>A linear gradient runs along the vector from the first point to the
+second. Everything before that vector takes the first stop’s colour and
+everything past it takes the last stop’s, so a short vector across a
+large area gives a hard transition with flat bands on either side.</p>
+<pre><code class="language-zuri ignore"># top to bottom
+image.linear_gradient(0, 0, 0, image.height(), ['#0f172a', '#334155'])
+
+# diagonal, three colours
+image.linear_gradient(0, 0, 400, 200, ['#4f46e5', '#f472b6', '#fbbf24'])
+</code></pre>
+<p>Stops are either bare colours, spaced evenly, or <code>[offset, colour]</code>
+pairs with the offset running 0 to 1:</p>
+<pre><code class="language-zuri ignore">image.linear_gradient(0, 0, 200, 0, [
+  [0, 'black'],
+  [0.25, 'red'],
+  [1, 'white'],
+])
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/gradient-linear.png" alt="two linear gradients, one evenly spaced and one with explicit offsets"><span class="img-wrapper"><img src="imagine/images/gradient-linear.png" alt="two linear gradients, one evenly spaced and one with explicit offsets"></span></label></p>
+<p>By default a gradient replaces what is there. Pass <code>{ blend: true }</code> to
+composite it instead, which is what makes overlays and vignettes work:</p>
+<pre><code class="language-zuri ignore"># a vignette over an existing photograph
+photo.radial_gradient(
+  photo.width() / 2,
+  photo.height() / 2,
+  photo.width() * 0.7,
+  [[0, Color(0, 0, 0, 0)], [1, Color(0, 0, 0, 180)]],
+  { blend: true }
+)
+
+# a caption scrim along the bottom
+photo.linear_gradient(0, photo.height() - 120, 0, photo.height(), [
+  Color(0, 0, 0, 0),
+  Color(0, 0, 0, 200),
+], { blend: true })
+</code></pre>
+<p><code>{ rect: {x, y, width, height} }</code> confines the fill to a rectangle
+instead of covering the whole surface.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/gradient-radial.png" alt="an image, the same image with a radial vignette, and with a linear scrim"><span class="img-wrapper"><img src="imagine/images/gradient-radial.png" alt="an image, the same image with a radial vignette, and with a linear scrim"></span></label></p>
+<p>Both of those are the snippets above, run against the picture on the
+left.</p>
+<h3 id="clipping"><a class="header" href="#clipping">Clipping</a></h3>
+<pre><code class="language-zuri ignore">image.clip(20, 20, 100, 100)
+image.fill_rect(0, 0, 500, 500, 'red')   # only the clip is painted
+image.clear_clip()
+</code></pre>
+<p>A clip confines every drawing operation until it is cleared. It does not
+affect reading: <code>get_pixel()</code> sees the whole image either way.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/clipping.png" alt="two circles drawn through a rectangular clip, with the clip outlined"><span class="img-wrapper"><img src="imagine/images/clipping.png" alt="two circles drawn through a rectangular clip, with the clip outlined"></span></label></p>
+<h2 id="text"><a class="header" href="#text">Text</a></h2>
+<h3 id="the-built-in-font"><a class="header" href="#the-built-in-font">The Built-in Font</a></h3>
+<p><code>imagine</code> ships no font file, so everything in the next section
+depends on what is installed on the machine and can fail. One font
+always works:</p>
+<pre><code class="language-zuri">import imagine { Image, StrokeFont }
+
+Image(300, 70, 'white')
+  .text(16, 20, 'Always available', StrokeFont(28), '#0f172a')
+  .save('label.png')
+</code></pre>
+<p><code>Font.builtin(size)</code> is the same thing under a name you will find from
+<code>Font</code>.</p>
+<p>It is not a font file. Every glyph is defined as geometry — centre-line
+strokes rather than filled outlines — in
+<a href="https://github.com/zuri-lang/zuri-rs/blob/main/libs/imagine/strokefont.zu"><code>libs/imagine/strokefont.zu</code></a>, and
+drawn through the same anti-aliased rasterizer as everything else. So
+it scales cleanly to any size, and its weight is a parameter rather
+than part of the design:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/builtin-weights.png" alt="the built-in font at four weights"><span class="img-wrapper"><img src="imagine/images/builtin-weights.png" alt="the built-in font at four weights"></span></label></p>
+<pre><code class="language-zuri">StrokeFont(24)              # regular
+StrokeFont(24).weight(0.13) # bold
+StrokeFont(24).weight(0.05) # light
+</code></pre>
+<p>Here is the whole thing:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/builtin-specimen.png" alt="a specimen of the built-in font: uppercase, lowercase, digits and punctuation"><span class="img-wrapper"><img src="imagine/images/builtin-specimen.png" alt="a specimen of the built-in font: uppercase, lowercase, digits and punctuation"></span></label></p>
+<p><strong>What it is for.</strong> Labels, chart axes, watermarks, diagrams,
+placeholder text, and any output that has to work on a machine with no
+fonts installed. The look is geometric and single-weight, closer to a
+technical drawing than to a typeface, because that is what centre-line
+strokes give you honestly.</p>
+<p><strong>What it is not for.</strong> Body text, headlines, or anything where the
+shapes themselves matter. Load a real font for those.</p>
+<p><strong>Coverage</strong> is printable ASCII, from space through <code>~</code>. Anything else
+draws the empty box a font uses for a glyph it does not have, so text
+in another script comes out visibly missing rather than silently blank.</p>
+<p>A <code>StrokeFont</code> has the same interface as a <code>Font</code> — <code>size()</code>,
+<code>metrics()</code>, <code>measure()</code>, <code>render()</code>, <code>wrap()</code> — so anywhere a font is
+accepted, either works.</p>
+<h3 id="loading-a-font"><a class="header" href="#loading-a-font">Loading a Font</a></h3>
+<pre><code class="language-zuri ignore">import imagine { Font }
+
+var font = Font.load('assets/Inter.ttf', 24)
+var font = Font.from_bytes(embedded_font, 24)
+var font = Font.system('DejaVu Sans', 24)
+var font = Font.sans(24)
+</code></pre>
+<p><code>Font.load()</code> reads a TrueType or OpenType file and caches the parsed
+face by path, so loading the same file twice in one process parses it
+once. <code>Font.system()</code> searches the platform’s font directories by family
+name, matching ignoring case, spaces and hyphens.</p>
+<p><code>Font.sans()</code> finds whichever common sans-serif font is installed. It is
+a convenience for scripts and tests, not something to rely on for output
+that must look the same everywhere: which font it lands on depends on
+the machine, and a container image with no fonts installed has none to
+find. It raises <code>FontError</code> in that case, pointing at
+<code>Font.builtin()</code>, which never depends on what is installed.</p>
+<p>A <code>Font</code> is immutable and cheap to copy. <code>size()</code> returns the same face
+at another size, sharing the parsed data:</p>
+<pre><code class="language-zuri ignore">var title = font.size(32)
+var body = font.size(14)
+</code></pre>
+<h3 id="drawing-text"><a class="header" href="#drawing-text">Drawing Text</a></h3>
+<pre><code class="language-zuri ignore">image.text(20, 20, 'Hello', font, '#111111')
+</code></pre>
+<p><code>x</code> and <code>y</code> are the top-left corner of the text’s box, not its baseline,
+because the corner is what you know when placing text in a layout. Pass
+<code>{ baseline: true }</code> when you want <code>y</code> to mean the first line’s
+baseline instead.</p>
+<p>A <code>\n</code> starts a new line.</p>
+<pre><code class="language-zuri ignore">card.text(24, 24, 'Quarterly report\n2026', title, '#111111', {
+  align: ALIGN_CENTER,
+  line_height: 1.4,
+  tracking: 0.5,
+})
+</code></pre>
+<p><code>align</code> positions the lines against each other, not against the image.
+<code>line_height</code> is a multiplier on the font’s own recommended spacing, and
+<code>tracking</code> adds pixels between characters.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/text.png" alt="headline and body text drawn onto an image"><span class="img-wrapper"><img src="imagine/images/text.png" alt="headline and body text drawn onto an image"></span></label></p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/text-align.png" alt="the same three lines under left, centre and right alignment"><span class="img-wrapper"><img src="imagine/images/text-align.png" alt="the same three lines under left, centre and right alignment"></span></label></p>
+<h3 id="measuring-and-positioning"><a class="header" href="#measuring-and-positioning">Measuring and Positioning</a></h3>
+<pre><code class="language-zuri ignore">var box = image.text_size('Hello', font)
+# { width: 58, height: 28, baseline: 22.3, lines: 1 }
+</code></pre>
+<p>Measuring costs a fraction of drawing, so it is the right way to lay
+text out before committing to it — centring, wrapping, or sizing a
+background to fit.</p>
+<pre><code class="language-zuri ignore">var box = card.text_size(label, font)
+
+card.fill_rounded_rect(16, 16, box.width + 24, box.height + 16, 8, '#1e293b')
+card.text(28, 24, label, font, 'white')
+</code></pre>
+<p>To position by anchor instead of coordinates:</p>
+<pre><code class="language-zuri ignore">card.place_text('SOLD OUT', font, 'white', CENTER)
+card.place_text('v2.1', font, '#94a3b8', BOTTOM_RIGHT, { margin: 12 })
+</code></pre>
+<h3 id="wrapping"><a class="header" href="#wrapping">Wrapping</a></h3>
+<pre><code class="language-zuri ignore">var body = Font.load('assets/Inter.ttf', 16)
+
+page.text(40, 120, article, body, '#334155', { width: 520 })
+</code></pre>
+<p>The <code>width</code> option wraps the text to that many pixels before drawing
+it. <code>text_size()</code> takes the same option, so measuring wrapped text
+gives the box it will actually occupy.</p>
+<p>To get the broken text itself — to store it, or to draw it in pieces —
+call <code>wrap()</code> on the font:</p>
+<pre><code class="language-zuri ignore">var lines = body.wrap(article, 520).split('\n')
+
+echo '${lines.length()} lines'
+</code></pre>
+<p>Newlines already in the text are kept as paragraph breaks, and runs of
+spaces are collapsed. Words are kept whole where they can be; a single
+word too long for the width is broken between characters rather than
+allowed to overflow, since text spilling out of an image cannot be
+scrolled to.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/text-wrap.png" alt="the same paragraph wrapped to two different widths"><span class="img-wrapper"><img src="imagine/images/text-wrap.png" alt="the same paragraph wrapped to two different widths"></span></label></p>
+<h3 id="what-text-layout-does-not-do"><a class="header" href="#what-text-layout-does-not-do">What Text Layout Does Not Do</a></h3>
+<p>Glyphs are positioned by advance width with kerning applied. That covers
+Latin, Greek, Cyrillic and anything else written left to right without
+contextual shaping.</p>
+<p>It does not do complex shaping. Arabic letters will not join, Indic
+clusters will not reorder, and ligatures are not substituted. Those need
+a shaping engine, and a standard library that pretended to do them would
+be worse than one that says plainly it does not.</p>
+<h2 id="compositing"><a class="header" href="#compositing">Compositing</a></h2>
+<h3 id="drawing-one-image-onto-another"><a class="header" href="#drawing-one-image-onto-another">Drawing One Image Onto Another</a></h3>
+<pre><code class="language-zuri ignore">photo.draw_image(logo, 20, 20)
+photo.draw_image(logo, 20, 20, { opacity: 0.6 })
+photo.place(logo, BOTTOM_RIGHT, { margin: 16, opacity: 0.5 })
+</code></pre>
+<p>The source is clipped to the destination, and its position may be
+negative, so a sprite hanging off the top-left corner draws correctly.
+Compositing an image onto itself works; it is copied first.</p>
+<h3 id="blend-modes"><a class="header" href="#blend-modes">Blend Modes</a></h3>
+<pre><code class="language-zuri ignore">photo.draw_image(texture, 0, 0, { blend: BLEND_MULTIPLY })
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td><code>BLEND_NORMAL</code></td><td>Ordinary alpha compositing. The default.</td></tr>
+<tr><td><code>BLEND_MULTIPLY</code></td><td>Never lighter than either input. Shadows.</td></tr>
+<tr><td><code>BLEND_SCREEN</code></td><td>Never darker than either input. Glows.</td></tr>
+<tr><td><code>BLEND_OVERLAY</code></td><td>Multiply in the shadows, screen in the highlights.</td></tr>
+<tr><td><code>BLEND_DARKEN</code> / <code>BLEND_LIGHTEN</code></td><td>Keep the darker or lighter channel.</td></tr>
+<tr><td><code>BLEND_COLOR_DODGE</code> / <code>BLEND_COLOR_BURN</code></td><td>Strong brighten or darken.</td></tr>
+<tr><td><code>BLEND_HARD_LIGHT</code> / <code>BLEND_SOFT_LIGHT</code></td><td>Overlay with the roles swapped; and a gentler version.</td></tr>
+<tr><td><code>BLEND_DIFFERENCE</code> / <code>BLEND_EXCLUSION</code></td><td>Absolute difference; and a lower-contrast variant.</td></tr>
+<tr><td><code>BLEND_ADD</code> / <code>BLEND_SUBTRACT</code></td><td>Add or subtract, clamped.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The formulas are the ones in the CSS compositing specification, which is
+also what every image editor implements.</p>
+<p><code>BLEND_DIFFERENCE</code> makes a quick visual diff: identical images blended
+this way come out black.</p>
+<p>A red circle drawn onto a gradient under eight of the modes:</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/blend-modes.png" alt="normal, multiply, screen and overlay"><span class="img-wrapper"><img src="imagine/images/blend-modes.png" alt="normal, multiply, screen and overlay"></span></label></p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/blend-modes-2.png" alt="darken, colour dodge, difference and soft light"><span class="img-wrapper"><img src="imagine/images/blend-modes-2.png" alt="darken, colour dodge, difference and soft light"></span></label></p>
+<pre><code class="language-zuri ignore">var diff = before.clone().draw_image(after, 0, 0, { blend: BLEND_DIFFERENCE })
+</code></pre>
+<p>Drawing operations — lines, shapes, text — always use ordinary alpha
+compositing. To draw a shape under a blend mode, draw it on a layer and
+composite the layer.</p>
+<h3 id="masks"><a class="header" href="#masks">Masks</a></h3>
+<pre><code class="language-zuri ignore">var stencil = photo.layer()
+stencil.fill_circle(200, 200, 150, 'white')
+
+photo.mask(stencil)     # everything outside the circle becomes transparent
+</code></pre>
+<p>Each pixel keeps its colour and takes its transparency from the mask:
+opaque white shows the image through fully, black or transparent hides
+it, and greys give partial transparency. The mask’s own alpha counts, so
+a shape drawn on a transparent background works as a mask without being
+filled in first.</p>
+<p>The mask must be the same size as the image.</p>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/mask.png" alt="an image, a circular mask, and the masked result"><span class="img-wrapper"><img src="imagine/images/mask.png" alt="an image, a circular mask, and the masked result"></span></label></p>
+<h3 id="layers"><a class="header" href="#layers">Layers</a></h3>
+<p><code>layer()</code> gives a transparent image of the same size. Building a
+composite out of layers is how you get effects that a single pass
+cannot, and it is the answer whenever you want a blend mode or an
+opacity applied to a group of operations rather than one:</p>
+<pre><code class="language-zuri ignore">var glow = photo.layer()
+
+glow.fill_circle(200, 150, 80, '#fbbf24')
+glow.blur(30)
+
+photo.draw_image(glow, 0, 0, { blend: BLEND_SCREEN, opacity: 0.7 })
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/layers-glow.png" alt="an image before and after a blurred glow layer is screened in"><span class="img-wrapper"><img src="imagine/images/layers-glow.png" alt="an image before and after a blurred glow layer is screened in"></span></label></p>
+<h2 id="inspecting-an-image"><a class="header" href="#inspecting-an-image">Inspecting an Image</a></h2>
+<pre><code class="language-zuri ignore">photo.width()          # dimensions
+photo.height()
+photo.size()           # { width, height }
+photo.bounds()         # { x: 0, y: 0, width, height }
+photo.format()         # what it was decoded from, or nil
+photo.is_opaque()      # walks the alpha channel
+photo.info()           # all of the above, plus a pixel count
+</code></pre>
+<p>Beyond the shape, four methods read what is actually in the image.</p>
+<p><strong><code>histogram()</code></strong> counts how many pixels hold each value, as four
+256-entry lists: <code>red</code>, <code>green</code>, <code>blue</code> and <code>luma</code>. Fully transparent
+pixels are skipped, since their colour is not visible. A histogram is
+what tells you an image is underexposed (everything bunched at the low
+end), flat (bunched in the middle), or clipped (a spike at 0 or 255).</p>
+<p><strong><code>auto_levels()</code></strong> is the automatic form of <code>levels()</code>: it finds the
+black and white points from the brightness histogram and stretches the
+range between them, ignoring a small fraction at each end so a handful
+of stray pixels cannot decide the result.</p>
+<pre><code class="language-zuri ignore">photo.auto_levels()
+photo.auto_levels({ clip: 0.02, gamma: 1.1 })
+</code></pre>
+<p><strong><code>average_color()</code></strong> returns the mean colour, weighting each pixel by
+its alpha so a mostly transparent image reports the colour of the part
+you can see.</p>
+<p><strong><code>dominant_colors()</code></strong> returns the colours occupying the most of the
+image, most common first. The image is shrunk and reduced to a small
+palette first, so it costs about the same whatever the original size.</p>
+<pre><code class="language-zuri ignore">var accent = photo.dominant_colors(1)[0]
+
+page.fill(accent.darken(40))       # a placeholder while the photo loads
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/dominant-colors.png" alt="an image beside the five colours occupying most of it"><span class="img-wrapper"><img src="imagine/images/dominant-colors.png" alt="an image beside the five colours occupying most of it"></span></label></p>
+<p><strong><code>difference()</code></strong> scores how far two images are apart, from 0
+(identical) to 1, which makes it usable as a rendering assertion:</p>
+<pre><code class="language-zuri ignore">if rendered.difference(expected) &gt; 0.01 {
+  raise Exception('the rendering changed')
+}
+</code></pre>
+<h2 id="animation"><a class="header" href="#animation">Animation</a></h2>
+<pre><code class="language-zuri ignore">import imagine { Animation }
+
+var animation = Animation.open('loading.gif')
+
+animation.length()      # frame count
+animation.duration()    # milliseconds for one pass
+animation.frame(0)      # one frame, as an Image
+animation.frames()      # the live list
+</code></pre>
+<p>Frames come back already composited against whatever preceded them, so
+frame 5 can be used on its own without replaying the first four. The
+disposal and transparency rules an animated GIF is built from never
+surface.</p>
+<p>Building and transforming:</p>
+<pre><code class="language-zuri ignore">var frames = []
+
+iter var i = 0; i &lt; 30; i++ {
+  var frame = Image(200, 200, 'black')
+  frame.fill_circle(100, 100, i * 3, '#38bdf8')
+  frames.append(frame)
+}
+
+Animation(frames, 40, 0).save('pulse.gif')     # 40ms per frame, loops forever
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/animation.gif" alt="an animated GIF of a growing, colour-shifting circle"><span class="img-wrapper"><img src="imagine/images/animation.gif" alt="an animated GIF of a growing, colour-shifting circle"></span></label></p>
+<pre><code class="language-zuri ignore">animation
+  .map(@(frame) {
+    return frame.grayscale().blur(1)
+  })
+  .repeat(3)
+  .save('out.gif')
+</code></pre>
+<p><code>map()</code> copies each frame before the function sees it, so a filter chain
+works directly as the body and the original animation is left alone.
+That copy is why <code>map()</code> costs as much memory again as the animation
+itself; to filter in place, walk <code>frames()</code> and change each image
+directly.</p>
+<p>Animated GIF and animated WebP can both be read, and only GIF can be
+written. A still image decodes as a one-frame animation rather than an
+error, so code handling both does not need to branch.</p>
+<p>Every frame must be the same size, since animated formats have one
+canvas that each frame paints into.</p>
+<h2 id="working-with-pixels-directly"><a class="header" href="#working-with-pixels-directly">Working With Pixels Directly</a></h2>
+<p><code>pixels()</code> hands back the live buffer. It is 8-bit RGBA with straight
+(not premultiplied) alpha, laid out row by row with no padding, so pixel
+<code>(x, y)</code> begins at byte <code>(y * width + x) * 4</code>.</p>
+<pre><code class="language-zuri ignore">var buffer = image.pixels()
+var total = buffer.length()
+
+iter var at = 0; at &lt; total; at += 4 {
+  buffer[at] = 255 - buffer[at]        # invert red only
+}
+</code></pre>
+<p>This is deliberate, and it is much faster than a method call per pixel,
+so an operation this module does not provide can still be written
+efficiently in Zuri. Annotating a function’s parameters pays off here:</p>
+<pre><code class="language-zuri">def darken_edges(pixels: bytes, width: number, height: number) {
+  iter var y = 0; y &lt; height; y++ {
+    iter var x = 0; x &lt; width; x++ {
+      var at = (y * width + x) * 4
+      # ...
+    }
+  }
+}
+</code></pre>
+<p><code>set_pixels()</code> takes a buffer back, which is how you save a copy before
+a destructive filter and restore it afterwards:</p>
+<pre><code class="language-zuri ignore">var saved = image.pixels().clone()
+
+image.blur(8)
+image.set_pixels(saved)     # back where it started
+</code></pre>
+<p><code>Image.from_pixels()</code> builds an image around a buffer that came from
+somewhere else entirely.</p>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>Failures fall into two groups. An argument of the wrong <em>type</em> raises
+<code>TypeError</code>, from the parameter’s own type declaration. Everything else
+descends from <code>ImageError</code>, so one catch covers it:</p>
+<pre><code class="language-zuri">import imagine { Image, ImageError, DecodeError }
+
+catch {
+  var photo = Image.open(path)
+} as e {
+  if instance_of(e, DecodeError) {
+    echo 'not a readable image'
+  } else {
+    echo 'something else went wrong: ${e.message}'
+  }
+}
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Error</th><th>Raised when</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ImageError</code></td><td>The base class. Also raised directly for bad arguments.</td></tr>
+<tr><td><code>DecodeError</code></td><td>The data is not an image, is a format this build cannot read, or is truncated.</td></tr>
+<tr><td><code>EncodeError</code></td><td>The image cannot be written in the requested format.</td></tr>
+<tr><td><code>FormatError</code></td><td>A format name or file extension is not one this module knows.</td></tr>
+<tr><td><code>BoundsError</code></td><td>A rectangle, crop or resize falls outside the image, or a dimension is below 1.</td></tr>
+<tr><td><code>FontError</code></td><td>A font cannot be parsed, found, or laid out with.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Two kinds of failure sit outside that hierarchy on purpose.</p>
+<p><strong>Wrong argument type raises <code>TypeError</code>.</strong> Parameters declare their
+types, so the check happens at the boundary and the message names the
+parameter:</p>
+<pre><code class="language-zuri ignore">image.rotate('sideways')
+# TypeError: rotate() expects parameter 'degrees' (argument 1)
+#            to be a number, got string
+</code></pre>
+<p><strong>A malformed colour raises <code>ValueError</code></strong>, because that is what
+[[colors]] reports for it and relabelling would lose the distinction
+between “not a colour” and “not a string”:</p>
+<pre><code class="language-zuri ignore">Color.hex('nonsense')        # ValueError, from colors
+Color.named('chartroose')    # ValueError, from colors
+Color.hex(42)                # TypeError, from the type declaration
+</code></pre>
+<p>A value of the right type but the wrong <em>range</em> is still an
+<code>ImageError</code> subclass, since that is a judgement this module makes
+rather than a type the runtime can check:</p>
+<pre><code class="language-zuri ignore">Image(0, 100)                # BoundsError, not TypeError
+filters.gamma_lut(-1)        # ImageError
+</code></pre>
+<p><code>DecodeError</code> is the one to always be ready for, since anything arriving
+from outside the program can raise it.</p>
+<p>Drawing operations do not raise <code>BoundsError</code>. A line running off the
+edge of the canvas is clipped, which is what every drawing API does; it
+is only the operations that must return an image of an exact size that
+have no sensible way to continue.</p>
+<h2 id="performance-and-memory"><a class="header" href="#performance-and-memory">Performance and Memory</a></h2>
+<p>Four bytes per pixel, always. A 6000x4000 photograph is 96 MB decoded
+however small its file was, and a 100-frame 500x500 animation is 100 MB.
+<code>probe()</code> before decoding anything whose size you do not control.</p>
+<p>Some rough guidance on what costs what:</p>
+<ul>
+<li><strong>Decoding and encoding</strong> dominate almost every pipeline. PNG at
+<code>'best'</code> compression is several times slower than at <code>'default'</code> for a
+few percent of size; AVIF is slower still.</li>
+<li><strong>Resizing</strong> costs roughly in proportion to the <em>output</em> size, so
+shrinking is cheap and enlarging is not. <code>LANCZOS</code> costs a few times
+<code>NEAREST</code>.</li>
+<li><strong>Blur</strong> is linear in its radius, not quadratic, because it is
+separable. A 3x3 <code>convolve()</code> is cheaper than <code>blur(1)</code>, but by
+<code>blur(5)</code> the Gaussian has won by a wide margin.</li>
+<li><strong>Lookup tables and colour matrices</strong> are memory-bound and about as
+fast as touching every pixel can be. Chain as many as you like, but
+combine matrices with <code>combine_matrices()</code> rather than applying them
+one at a time — that is both faster and more accurate, since the
+intermediate result is never rounded back to 8 bits.</li>
+<li><strong>Drawing</strong> costs in proportion to the area covered, and
+anti-aliasing samples each pixel row four times over. Turning it off
+is a real saving on very large fills.</li>
+</ul>
+<p>Resize before filtering whenever the result is going to be smaller
+anyway. Filtering a 24-megapixel photograph and then shrinking it to a
+thumbnail does the same visual work at forty times the cost.</p>
+<h2 id="recipes"><a class="header" href="#recipes">Recipes</a></h2>
+<p><strong>A thumbnail pipeline for uploads</strong></p>
+<pre><code class="language-zuri">import imagine
+import imagine { Image, DecodeError, LANCZOS, TOP }
+
+def make_thumbnail(upload) {
+  var header = imagine.probe(upload)
+
+  if header == nil {
+    raise DecodeError('not an image')
+  }
+
+  if header.width * header.height &gt; 50000000 {
+    raise DecodeError('image too large')
+  }
+
+  return Image.decode(upload)
+    .cover(400, 400, { anchor: TOP, filter: LANCZOS })
+    .sharpen(0.4)
+    .encode('webp')
+}
+</code></pre>
+<p><strong>A rounded avatar with a border</strong></p>
+<pre><code class="language-zuri">import imagine { Image }
+
+def avatar(source, size) {
+  var photo = Image.decode(source).cover(size, size)
+
+  var stencil = photo.layer()
+  stencil.fill_circle(size / 2, size / 2, size / 2 - 2, 'white')
+  photo.mask(stencil)
+
+  photo.circle(size / 2, size / 2, size / 2 - 2, '#e2e8f0', { thickness: 3 })
+
+  return photo
+}
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/recipe-avatar.png" alt="a photograph cropped to a circle with a pale ring around it"><span class="img-wrapper"><img src="imagine/images/recipe-avatar.png" alt="a photograph cropped to a circle with a pale ring around it"></span></label></p>
+<p><strong>A social card</strong></p>
+<pre><code class="language-zuri">import imagine { Image, Font, Color, ALIGN_LEFT }
+
+def card(title, subtitle) {
+  var image = Image(1200, 630, '#0f172a')
+  var heading = Font.load('assets/Inter-Bold.ttf', 64)
+  var body = heading.size(30)
+
+  image.fill_rect(0, 0, 1200, 8, '#38bdf8')
+
+  var box = image.text_size(title, heading, { align: ALIGN_LEFT })
+  image.text(80, 200, title, heading, 'white', { align: ALIGN_LEFT })
+  image.text(80, 200 + box.height + 24, subtitle, body, '#94a3b8')
+
+  return image.to_png()
+}
+</code></pre>
+<p><label class="checkbox-label"><input class="checkbox-img" type="checkbox"><img src="imagine/images/recipe-card.png" alt="a dark social card with a cyan rule, a headline and a subtitle"><span class="img-wrapper"><img src="imagine/images/recipe-card.png" alt="a dark social card with a cyan rule, a headline and a subtitle"></span></label></p>
+<p><strong>Serving a generated image over HTTP</strong></p>
+<pre><code class="language-zuri ignore">import http
+import imagine { Image, Font, CENTER }
+import imagine.formats
+
+var server = http.server(8000)
+var font = Font.load('assets/Inter.ttf', 20)
+
+server.get('/badge/{label}', @(request, response) {
+  var image = Image(220, 60, '#1e293b')
+
+  image.fill_rounded_rect(0, 0, 220, 60, 8, '#334155')
+  image.place_text(request.param('label'), font, 'white', CENTER)
+
+  response.content_type(formats.mime_for('png'))
+  response.cache_for(86400)
+  response.write(image.to_png())
+})
+
+server.listen()
+</code></pre>
+<p><strong>Comparing two images</strong></p>
+<pre><code class="language-zuri">import imagine { BLEND_DIFFERENCE }
+
+def differs(a, b) {
+  if a.size() != b.size() {
+    return true
+  }
+
+  var diff = a.clone().draw_image(b, 0, 0, { blend: BLEND_DIFFERENCE })
+  var pixels = diff.pixels()
+  var total = pixels.length()
+
+  iter var at = 0; at &lt; total; at += 4 {
+    if pixels[at] &gt; 8 or pixels[at + 1] &gt; 8 or pixels[at + 2] &gt; 8 {
+      return true
+    }
+  }
+
+  return false
+}
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch15-00-http.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch17-00-metaprogramming.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch15-00-http.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch17-00-metaprogramming.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

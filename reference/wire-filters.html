@@ -1,0 +1,828 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>wire.filters - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d4f5727e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8c5b994b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="wirefilters"><a class="header" href="#wirefilters"><code>wire.filters</code></a></h1>
+<pre><code class="language-zuri ignore">import wire
+</code></pre>
+<blockquote>
+<p><code>wire</code> exposes this as <code>wire.filters</code>, so <code>import wire</code> is enough and
+the names are called as <code>wire.filters.*</code>. <code>import wire.filters</code> reaches
+the same definitions directly.</p>
+</blockquote>
+<p>The filters every Wire template starts with.</p>
+<p>A filter takes the value on the left of the <code>|</code> as its first argument
+and whatever the template passed as the rest, so the one written
+<code>price|round(2)</code> is called as <code>round(price, 2)</code>. An argument a template
+leaves out arrives as <code>nil</code>, which is why nearly every filter here
+states its default in its own doc block rather than insisting the
+template spell it out.</p>
+<p><code>Wire.register_filter()</code> adds to this set and can replace anything in
+it, so an application that wants <code>date</code> to mean its own thing is free to
+say so.</p>
+<h2 id="on-escaping"><a class="header" href="#on-escaping">On escaping</a></h2>
+<p>Almost every filter here returns a plain string, which Wire then escapes
+for wherever it is going. The three that return markup instead are
+<code>raw</code>, <code>nl2br</code> and <code>json_script</code>, and each of them says so and says what
+it does about the text it was given. A filter that returns markup built
+out of untrusted input is how a template engine becomes a security hole,
+so the two that build markup escape their input first.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="builtin"><a class="header" href="#builtin"><code>BUILTIN</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.BUILTIN = {...}
+</code></pre>
+<p>Every filter Wire starts with, keyed by the name a template calls it by.</p>
+<p>Two of them are spelled differently here than the function is: Zuri
+already has <code>escape</code> and <code>default</code> on other things, so the functions
+carry longer names and the template-facing names live here.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="raw"><a class="header" href="#raw"><code>raw()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.raw(value)
+</code></pre>
+<p>Marks a value as markup so Wire writes it out without escaping it.</p>
+<p>This is the only way to get live HTML out of a variable, and it is a
+promise that the value is safe where it lands. Applying it to anything a
+user supplied is a cross-site scripting hole; applying it to markup your
+own code built is exactly what it is for.</p>
+<pre><code class="language-wire">&lt;div class="body"&gt;{{ article.rendered_html|raw }}&lt;/div&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Safe</p>
+<h3 id="escape_value"><a class="header" href="#escape_value"><code>escape_value()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.escape_value(value, context)
+</code></pre>
+<p>Escapes a value for a context other than the one it is being written
+into, or escapes a value that was already marked safe.</p>
+<p>Wire escapes for the right context on its own, so this is only needed
+when a value has to carry escaping it would not otherwise get: a URL
+built into an ordinary attribute, say, or markup that reached the
+template as <code>Safe</code> but should be shown rather than rendered.</p>
+<p><em>context</em> is <code>'text'</code>, <code>'attribute'</code>, <code>'url'</code>, <code>'script'</code> or <code>'style'</code>
+and defaults to <code>'text'</code>.</p>
+<pre><code class="language-wire">&lt;code&gt;{{ snippet|escape }}&lt;/code&gt;
+&lt;a data-target="{{ link|escape('url') }}"&gt;go&lt;/a&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>context</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Safe</p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>context</em> is not one Wire knows.</p>
+<h3 id="upper"><a class="header" href="#upper"><code>upper()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.upper(value) -&gt; string
+</code></pre>
+<p>The value in upper case.</p>
+<pre><code class="language-wire">{{ code|upper }}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="lower"><a class="header" href="#lower"><code>lower()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.lower(value) -&gt; string
+</code></pre>
+<p>The value in lower case.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="title"><a class="header" href="#title"><code>title()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.title(value) -&gt; string
+</code></pre>
+<p>The value with the first letter of every word in upper case and the rest
+in lower case.</p>
+<p>Words are separated by whitespace, so <code>o'brien</code> becomes <code>O'brien</code> rather
+than <code>O'Brien</code>. Names are harder than a filter can be.</p>
+<pre><code class="language-wire">{{ 'jane IS here'|title }}   {# Jane Is Here #}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="capitalize"><a class="header" href="#capitalize"><code>capitalize()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.capitalize(value) -&gt; string
+</code></pre>
+<p>The value with its first letter in upper case and the rest left alone.</p>
+<p>Unlike <code>title</code> this touches nothing but the first character, which is
+what a sentence wants.</p>
+<pre><code class="language-wire">{{ 'hello THERE'|capitalize }}   {# Hello THERE #}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="trim"><a class="header" href="#trim"><code>trim()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.trim(value) -&gt; string
+</code></pre>
+<p>The value with leading and trailing whitespace removed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="truncate"><a class="header" href="#truncate"><code>truncate()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.truncate(value, length, suffix) -&gt; string
+</code></pre>
+<p>The value cut down to <em>length</em> characters, with <em>suffix</em> put on the end
+when anything was actually cut.</p>
+<p><em>length</em> counts the characters kept, not including the suffix. <em>suffix</em>
+defaults to a single ellipsis. A value already short enough is returned
+untouched, suffix and all left off.</p>
+<pre><code class="language-wire">{{ article.summary|truncate(80) }}
+{{ article.summary|truncate(80, ' [more]') }}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>length</code> (<code>number</code>)</li>
+<li><code>suffix</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>length</em> is missing or negative.</p>
+<h3 id="replace"><a class="header" href="#replace"><code>replace()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.replace(value, search, replacement) -&gt; string
+</code></pre>
+<p>The value with every occurrence of <em>search</em> replaced by <em>replacement</em>.</p>
+<p><em>search</em> is matched literally, never as a regular expression, so a value
+full of punctuation cannot turn into a pattern by accident.
+<em>replacement</em> defaults to an empty string, which makes <code>|replace(',')</code> a
+way to strip something out.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>search</code> (<code>string</code>)</li>
+<li><code>replacement</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>search</em> is missing or empty.</p>
+<h3 id="lpad"><a class="header" href="#lpad"><code>lpad()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.lpad(value, width, fill) -&gt; string
+</code></pre>
+<p>The value padded on the left with <em>fill</em> until it is <em>width</em> characters
+long.</p>
+<p><em>fill</em> defaults to a space. A value already at least <em>width</em> long is
+returned untouched.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>fill</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>width</em> is missing or not a number.</p>
+<h3 id="rpad"><a class="header" href="#rpad"><code>rpad()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.rpad(value, width, fill) -&gt; string
+</code></pre>
+<p>The value padded on the right with <em>fill</em> until it is <em>width</em> characters
+long.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>fill</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>width</em> is missing or not a number.</p>
+<h3 id="repeat"><a class="header" href="#repeat"><code>repeat()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.repeat(value, count) -&gt; string
+</code></pre>
+<p>The value repeated <em>count</em> times.</p>
+<p>A <em>count</em> of zero gives an empty string.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>count</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>count</em> is missing or negative.</p>
+<h3 id="nl2br"><a class="header" href="#nl2br"><code>nl2br()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.nl2br(value)
+</code></pre>
+<p>The value with its line breaks turned into <code>&lt;br&gt;</code> elements.</p>
+<p>The text is escaped first and the result is marked as markup, so this is
+safe on anything a user typed. Both <code>\n</code> and <code>\r\n</code> count as a line
+break.</p>
+<pre><code class="language-wire">&lt;p&gt;{{ comment.body|nl2br }}&lt;/p&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Safe</p>
+<h3 id="strip_tags"><a class="header" href="#strip_tags"><code>strip_tags()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.strip_tags(value) -&gt; string
+</code></pre>
+<p>The value with every HTML tag removed, leaving only its text.</p>
+<p>The markup is really parsed rather than pattern-matched away, so <code>&lt;p title="a&gt;b"&gt;x&lt;/p&gt;</code>
+gives <code>x</code> and not <code>b"&gt;x</code>. The result is plain text and is escaped like
+anything else when it is written out.</p>
+<pre><code class="language-wire">&lt;meta name="description" content="{{ article.body|strip_tags|truncate(150) }}"&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="slug"><a class="header" href="#slug"><code>slug()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.slug(value) -&gt; string
+</code></pre>
+<p>The value as a lowercase, hyphen separated slug.</p>
+<p>Runs of anything that is not a letter or a digit become a single hyphen,
+and hyphens at either end are trimmed. Non-ASCII letters are kept, so a
+slug can still be readable in a language that needs them.</p>
+<pre><code class="language-wire">&lt;a href="/posts/{{ post.title|slug }}"&gt;{{ post.title }}&lt;/a&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="url_encode"><a class="header" href="#url_encode"><code>url_encode()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.url_encode(value) -&gt; string
+</code></pre>
+<p>The value percent encoded for use inside a URL.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="json"><a class="header" href="#json"><code>json()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.json(value) -&gt; string
+</code></pre>
+<p>The value as JSON.</p>
+<p>The result is plain text, so writing it into a page escapes it like
+anything else. Inside a <code>&lt;script&gt;</code> Wire already encodes every
+interpolation as JSON, which makes this filter unnecessary there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="json_script"><a class="header" href="#json_script"><code>json_script()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.json_script(value, id)
+</code></pre>
+<p>The value as JSON wrapped in a <code>&lt;script type="application/json"&gt;</code>
+element, ready to be read back by a script on the page.</p>
+<p><em>id</em> becomes the element’s id so the script can find it, and defaults to
+leaving the id off. This is the safe way to hand data to the browser:
+the JSON never touches an executable context, so no value in it can
+become code.</p>
+<pre><code class="language-wire">{{ initial_state|json_script('state') }}
+&lt;script&gt;
+  var state = JSON.parse(document.getElementById('state').textContent)
+&lt;/script&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>id</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Safe</p>
+<h3 id="abs"><a class="header" href="#abs"><code>abs()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.abs(value) -&gt; number
+</code></pre>
+<p>The value without its sign.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="round"><a class="header" href="#round"><code>round()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.round(value, places) -&gt; number
+</code></pre>
+<p>The value rounded to <em>places</em> decimal places.</p>
+<p><em>places</em> defaults to <code>0</code>, which rounds to a whole number. Halves round
+away from zero, so <code>2.5</code> becomes <code>3</code> and <code>-2.5</code> becomes <code>-3</code>.</p>
+<pre><code class="language-wire">{{ order.total|round(2) }}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>places</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="floor"><a class="header" href="#floor"><code>floor()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.floor(value) -&gt; number
+</code></pre>
+<p>The largest whole number at or below the value.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="ceil"><a class="header" href="#ceil"><code>ceil()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.ceil(value) -&gt; number
+</code></pre>
+<p>The smallest whole number at or above the value.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="number_format"><a class="header" href="#number_format"><code>number_format()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.number_format(value, places, point, separator) -&gt; string
+</code></pre>
+<p>The value written out with thousands separated and a fixed number of
+decimal places.</p>
+<p><em>places</em> defaults to <code>0</code>, <em>point</em> to <code>'.'</code> and <em>separator</em> to <code>','</code>,
+which is the convention most of the English speaking world uses. Passing
+the other two the other way round gives the European one.</p>
+<pre><code class="language-wire">{{ 1234567.891|number_format(2) }}          {# 1,234,567.89 #}
+{{ 1234567.891|number_format(2, ',', '.') }} {# 1.234.567,89 #}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>places</code> (<code>?number</code>)</li>
+<li><code>point</code> (<code>?string</code>)</li>
+<li><code>separator</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="filesize"><a class="header" href="#filesize"><code>filesize()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.filesize(value, binary) -&gt; string
+</code></pre>
+<p>A byte count written the way a person reads it.</p>
+<p><em>binary</em> chooses the units: left out or <code>false</code> gives the decimal ones a
+disk is sold in (kB of 1000 bytes), <code>true</code> gives the binary ones memory
+is measured in (KiB of 1024). Values below a kilobyte are written as a
+plain count of bytes.</p>
+<pre><code class="language-wire">{{ upload.size|filesize }}        {# 1.4 MB  #}
+{{ upload.size|filesize(true) }}  {# 1.3 MiB #}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>binary</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a number.</p>
+<h3 id="length"><a class="header" href="#length"><code>length()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.length(value) -&gt; number
+</code></pre>
+<p>How many entries the value has.</p>
+<p>Works on a string, a list, a dictionary or a byte string. <code>nil</code> has a
+length of zero rather than being an error, so <code>x-if="items|length"</code>
+reads correctly for a variable that was never supplied.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not something with a length.</p>
+<h3 id="first"><a class="header" href="#first"><code>first()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.first(value) -&gt; any
+</code></pre>
+<p>The first entry, or <code>nil</code> when there is none.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value cannot be indexed.</p>
+<h3 id="last"><a class="header" href="#last"><code>last()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.last(value) -&gt; any
+</code></pre>
+<p>The last entry, or <code>nil</code> when there is none.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value cannot be indexed.</p>
+<h3 id="join"><a class="header" href="#join"><code>join()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.join(value, glue) -&gt; string
+</code></pre>
+<p>The entries joined into one string with <em>glue</em> between them.</p>
+<p><em>glue</em> defaults to an empty string. Each entry is rendered the way it
+would be if it were written on its own, so a list of numbers joins
+without any ceremony.</p>
+<pre><code class="language-wire">{{ tags|join(', ') }}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>glue</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a sequence.</p>
+<h3 id="sort"><a class="header" href="#sort"><code>sort()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.sort(value, key) -&gt; list
+</code></pre>
+<p>The entries in ascending order.</p>
+<p><em>key</em> names a field to sort by, for a list of dictionaries or instances;
+leaving it out sorts the entries themselves. Sorting is stable, and the
+original is not changed.</p>
+<pre><code class="language-wire">&lt;li x-for="users|sort('name')" x-value="user"&gt;{{ user.name }}&lt;/li&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>key</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a sequence.</p>
+<h3 id="reverse"><a class="header" href="#reverse"><code>reverse()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.reverse(value) -&gt; any
+</code></pre>
+<p>The entries in the opposite order, or a string backwards.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a sequence.</p>
+<h3 id="unique"><a class="header" href="#unique"><code>unique()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.unique(value) -&gt; list
+</code></pre>
+<p>The entries with later duplicates removed, keeping the first of each.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a sequence.</p>
+<h3 id="keys"><a class="header" href="#keys"><code>keys()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.keys(value) -&gt; list
+</code></pre>
+<p>A dictionary’s keys, in insertion order.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a dictionary.</p>
+<h3 id="values"><a class="header" href="#values"><code>values()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.values(value) -&gt; list
+</code></pre>
+<p>A dictionary’s values, in insertion order.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a dictionary.</p>
+<h3 id="slice"><a class="header" href="#slice"><code>slice()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.slice(value, start, end) -&gt; any
+</code></pre>
+<p>The entries from <em>start</em> up to but not including <em>end</em>.</p>
+<p><em>end</em> defaults to the end of the sequence. A negative position counts
+back from the end, and a range that falls outside the sequence gives
+back whatever part of it does overlap rather than raising.</p>
+<pre><code class="language-wire">&lt;li x-for="posts|slice(0, 5)" x-value="post"&gt;{{ post.title }}&lt;/li&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>start</code> (<code>number</code>)</li>
+<li><code>end</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not a sequence.</p>
+<h3 id="sum"><a class="header" href="#sum"><code>sum()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.sum(value, key) -&gt; number
+</code></pre>
+<p>The entries added together.</p>
+<p><em>key</em> names a field to add up, for a list of dictionaries or instances.
+An empty sequence sums to <code>0</code>.</p>
+<pre><code class="language-wire">&lt;p&gt;Total: {{ items|sum('price')|number_format(2) }}&lt;/p&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>key</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when an entry is not a number.</p>
+<h3 id="split"><a class="header" href="#split"><code>split()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.split(value, separator) -&gt; list
+</code></pre>
+<p>The value split into a list on <em>separator</em>.</p>
+<p><em>separator</em> is matched literally and defaults to whitespace, which
+splits on any run of it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>separator</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h3 id="default_to"><a class="header" href="#default_to"><code>default_to()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.default_to(value, fallback) -&gt; any
+</code></pre>
+<p><em>fallback</em> when the value is falsy, otherwise the value.</p>
+<p>Falsy here is Wire’s falsy: <code>nil</code>, <code>false</code>, zero, an empty string and an
+empty collection. A negative number is not falsy and is kept. Use <code>??</code>
+in an expression when only a missing value should fall back and a zero
+should stand.</p>
+<pre><code class="language-wire">&lt;p&gt;{{ user.nickname|default('friend') }}&lt;/p&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>fallback</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="empty"><a class="header" href="#empty"><code>empty()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.empty(value) -&gt; bool
+</code></pre>
+<p>Whether the value has nothing in it.</p>
+<p><code>nil</code> is empty, an empty string and an empty collection are empty, and a
+number never is. That last part is what separates this from plain
+falsiness: <code>0|empty</code> is <code>false</code> where <code>0</code> on its own is falsy.</p>
+<pre><code class="language-wire">&lt;p x-if="results|empty"&gt;Nothing found.&lt;/p&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="is"><a class="header" href="#is"><code>is()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.is(value, expected) -&gt; bool
+</code></pre>
+<p>Whether the value equals <em>expected</em>.</p>
+<p>Kept from the first version of Wire, where it was the only way to
+compare anything. <code>x-if="status == 'active'"</code> says the same thing and
+reads better, so prefer that in new templates.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>expected</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="not"><a class="header" href="#not"><code>not()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.not(value, expected) -&gt; bool
+</code></pre>
+<p>Whether the value differs from <em>expected</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>expected</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="date"><a class="header" href="#date"><code>date()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.filters.date(value, format) -&gt; string
+</code></pre>
+<p>A date written out with the given <em>format</em>.</p>
+<p>The value may be a <code>date.Date</code>, a Unix timestamp in seconds, or a string
+in any of the formats <code>date.parse()</code> understands. <em>format</em> uses the same
+directives as <code>Date.format()</code> and defaults to <code>'Y-m-d H:i:s'</code>.</p>
+<pre><code class="language-wire">&lt;time datetime="{{ post.created|date('Y-m-d') }}"&gt;
+  {{ post.created|date('jS F Y') }}
+&lt;/time&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>format</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when the value is not something Wire can read as
+a date.</p>
+<hr>
+<p><small>2026, Richard Ore and The Zuri Contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="wire-expression.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="wire-loader.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="wire-expression.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="wire-loader.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

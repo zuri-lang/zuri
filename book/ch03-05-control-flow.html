@@ -1,0 +1,607 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Control Flow - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d06c3974.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-259e9395.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch03-05-control-flow.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="control-flow"><a class="header" href="#control-flow">Control Flow</a></h1>
+<p>Control flow is how a program decides what to run next: run this only when
+that is true, run this until that stops being true, run this once for every
+item in a collection. Zuri has seven statements for it, and this section
+covers all of them.</p>
+<h2 id="blocks-and-single-statements"><a class="header" href="#blocks-and-single-statements">Blocks and Single Statements</a></h2>
+<p>Every control-flow statement takes a <strong>body</strong>. A body is either a block in
+braces, or a single statement:</p>
+<pre><code class="language-zuri">var ready = true
+
+if ready {
+  echo 'launching'
+}
+
+if ready echo 'launching again'
+</code></pre>
+<pre><code class="language-console">launching
+launching again
+</code></pre>
+<p>Both forms are the language. <code>if</code>, <code>else</code>, <code>while</code>, <code>do</code>, <code>for</code>, and a
+<code>when</code> branch inside <code>using</code> all accept either one.</p>
+<p><code>iter</code> is the exception. Its body must be a block, because the semicolons
+in its header would otherwise be ambiguous with the statement that follows:</p>
+<pre><code class="language-zuri ignore">iter var i = 0; i &lt; 3; i++ echo i
+</code></pre>
+<pre><code class="language-console">SyntaxError: Expected '{' at the start of iter body.
+</code></pre>
+<blockquote>
+<p>The standard library and the examples in this book brace every body
+except a short <code>when</code> branch. Braces make a one-line body easy to extend
+into a three-line one later, and they keep the shape of a nested
+statement obvious at a glance. It is a convention, not a rule — write
+whichever form reads better in the code you are writing.</p>
+</blockquote>
+<h2 id="if--else"><a class="header" href="#if--else"><code>if</code> / <code>else</code></a></h2>
+<pre><code class="language-zuri">var score = 73
+
+if score &gt;= 90 {
+  echo 'A'
+} else if score &gt;= 70 {
+  echo 'B'
+} else {
+  echo 'C'
+}
+</code></pre>
+<pre><code class="language-console">B
+</code></pre>
+<p>There is no <code>elif</code>; <code>else if</code> is two keywords, and it works because the
+body of an <code>else</code> can itself be an <code>if</code> statement.</p>
+<p>The condition is any expression at all, and it is judged by <strong>truthiness</strong>
+rather than by being a <code>bool</code>:</p>
+<pre><code class="language-zuri">var name = ''
+
+if name {
+  echo 'have a name'
+} else {
+  echo 'no name'
+}
+</code></pre>
+<pre><code class="language-console">no name
+</code></pre>
+<p>That is convenient and it is also where most bugs in new Zuri code come
+from, because the falsy set includes every negative number. Re-read the
+table in <a href="ch03-02-data-types.html">Data Types</a> before you write <code>if count</code>
+or <code>if position</code>.</p>
+<h2 id="the-conditional-expression"><a class="header" href="#the-conditional-expression">The Conditional Expression</a></h2>
+<p><code>? :</code> is the expression form of <code>if</code>. It chooses between two values rather
+than between two statements:</p>
+<pre><code class="language-zuri">var age = 20
+var status = age &gt;= 18 ? 'adult' : 'minor'
+
+echo status
+</code></pre>
+<pre><code class="language-console">adult
+</code></pre>
+<p>It nests, and it can span several lines. The rule when breaking it across
+lines is that <code>?</code> and <code>:</code> <strong>end</strong> a line rather than beginning one:</p>
+<pre><code class="language-zuri">var n = 7
+
+var size = n &gt; 100 ?
+  'large' :
+  n &gt; 5 ?
+    'medium' :
+    'small'
+
+echo size
+</code></pre>
+<pre><code class="language-console">medium
+</code></pre>
+<p>Starting a line with <code>?</code> or <code>:</code> does not parse.</p>
+<p>Use <code>? :</code> when you are producing a value and <code>if</code> when you are performing
+an action. A conditional expression whose branches are both side effects is
+harder to read than the <code>if</code> it replaced.</p>
+<h2 id="while"><a class="header" href="#while"><code>while</code></a></h2>
+<p><code>while</code> tests before each pass, so a body may run zero times:</p>
+<pre><code class="language-zuri">var n = 0
+
+while n &lt; 3 {
+  echo 'while ${n}'
+  n++
+}
+</code></pre>
+<pre><code class="language-console">while 0
+while 1
+while 2
+</code></pre>
+<h2 id="do--while"><a class="header" href="#do--while"><code>do</code> / <code>while</code></a></h2>
+<p><code>do</code> runs the body once and <em>then</em> tests, so the body always runs at least
+once. Reach for it when the test depends on something the body produces:</p>
+<pre><code class="language-zuri">var m = 10
+
+do {
+  echo 'do ${m}'
+  m++
+} while m &lt; 3
+</code></pre>
+<pre><code class="language-console">do 10
+</code></pre>
+<p>The condition was false from the very start, and the body still ran.</p>
+<h2 id="iter"><a class="header" href="#iter"><code>iter</code></a></h2>
+<p><code>iter</code> is the counting loop. Its header has three clauses separated by
+semicolons: an initialiser, a condition, and an update.</p>
+<pre><code class="language-zuri">iter var i = 0; i &lt; 3; i++ {
+  echo 'iter ${i}'
+}
+</code></pre>
+<pre><code class="language-console">iter 0
+iter 1
+iter 2
+</code></pre>
+<p>The initialiser runs once. The condition is tested before every pass. The
+update runs after every pass. A variable declared in the initialiser
+belongs to the loop and does not exist after it.</p>
+<p>Every clause is optional:</p>
+<pre><code class="language-zuri">var k = 0
+
+iter ; k &lt; 2; {
+  echo 'bare ${k}'
+  k++
+}
+</code></pre>
+<pre><code class="language-console">bare 0
+bare 1
+</code></pre>
+<p><code>iter ; ; { ... }</code> loops forever, though <code>while true</code> says it more plainly.</p>
+<p>The header may be spread over several lines, which is worth doing when the
+condition is long:</p>
+<pre><code class="language-zuri">iter var i = 1;
+  i &lt;= 3;
+  i++
+{
+  echo i
+}
+</code></pre>
+<pre><code class="language-console">1
+2
+3
+</code></pre>
+<h2 id="for--in"><a class="header" href="#for--in"><code>for</code> / <code>in</code></a></h2>
+<p><code>for</code> walks an iterable: a list, a dictionary, a string, a range, a byte
+stream, or any class that implements the iterator protocol.</p>
+<p>With one variable you get the <strong>value</strong>:</p>
+<pre><code class="language-zuri">for ch in 'hey' {
+  echo ch
+}
+</code></pre>
+<pre><code class="language-console">h
+e
+y
+</code></pre>
+<p>With two, you get the <strong>key first and the value second</strong>:</p>
+<pre><code class="language-zuri">for index, value in ['a', 'b'] {
+  echo '${index} ${value}'
+}
+
+for key, value in { x: 1, y: 2 } {
+  echo '${key}=${value}'
+}
+</code></pre>
+<pre><code class="language-console">0 a
+1 b
+x=1
+y=2
+</code></pre>
+<p>For a list the key is the index, for a dictionary it is the key, and for a
+string it is the character position. Dictionaries iterate in insertion
+order, and so does everything else with an order to preserve.</p>
+<p>Ranges are exclusive at the top:</p>
+<pre><code class="language-zuri">for i in 0..3 {
+  echo i
+}
+</code></pre>
+<pre><code class="language-console">0
+1
+2
+</code></pre>
+<p>The iterable expression is evaluated exactly <strong>once</strong>, before the first
+pass. Calling a function in that position calls it once, not once per
+element:</p>
+<pre><code class="language-zuri">def source() {
+  echo 'source() called'
+  return [1, 2, 3]
+}
+
+for n in source() {
+  echo n
+}
+</code></pre>
+<pre><code class="language-console">source() called
+1
+2
+3
+</code></pre>
+<p><a href="ch06-03-decorated-methods.html">Chapter 6</a> shows how to make your own class
+work with <code>for</code> by defining <code>@key()</code> and <code>@value()</code>.</p>
+<h2 id="break-and-continue"><a class="header" href="#break-and-continue"><code>break</code> and <code>continue</code></a></h2>
+<p><code>continue</code> skips to the next pass, and <code>break</code> leaves the loop entirely:</p>
+<pre><code class="language-zuri">iter var i = 0; i &lt; 5; i++ {
+  if i == 1 {
+    continue
+  }
+
+  if i == 3 {
+    break
+  }
+
+  echo i
+}
+</code></pre>
+<pre><code class="language-console">0
+2
+</code></pre>
+<p>Both apply to the innermost enclosing loop, and there are no loop labels.
+To leave a nested loop you either carry a flag:</p>
+<pre><code class="language-zuri">var found = false
+
+iter var i = 1; i &lt; 4; i++ {
+  iter var j = 1; j &lt; 4; j++ {
+    if i * j == 4 {
+      echo 'found ${i} x ${j}'
+      found = true
+      break
+    }
+  }
+
+  if found {
+    break
+  }
+}
+</code></pre>
+<pre><code class="language-console">found 2 x 2
+</code></pre>
+<p>or, more often, put the nested loop in a function and <code>return</code> out of it:</p>
+<pre><code class="language-zuri">def first_product(target) {
+  iter var i = 1; i &lt; 4; i++ {
+    iter var j = 1; j &lt; 4; j++ {
+      if i * j == target {
+        return [i, j]
+      }
+    }
+  }
+
+  return nil
+}
+
+echo first_product(4)
+echo first_product(99)
+</code></pre>
+<pre><code class="language-console">[2, 2]
+nil
+</code></pre>
+<p>The second version says what it is looking for in its name, and it has no
+flag to keep in sync. Prefer it.</p>
+<h2 id="using--when"><a class="header" href="#using--when"><code>using</code> / <code>when</code></a></h2>
+<p><code>using</code> compares one subject against several candidate values:</p>
+<pre><code class="language-zuri">var grade = 'B'
+
+using grade {
+  when 'A' echo 'excellent'
+  when 'B', 'C' echo 'good'
+  default echo 'try again'
+}
+</code></pre>
+<pre><code class="language-console">good
+</code></pre>
+<p>Several values on one <code>when</code> are alternatives, not a sequence: this <code>when</code>
+matches <code>'B'</code> <strong>or</strong> <code>'C'</code>. The first branch that matches runs, and then the
+statement is over — there is no fall-through, and no <code>break</code> to remember.</p>
+<p>Matching uses the same equality as <code>==</code>, which means <code>using</code> works on
+numbers, strings and booleans, and compares instances by identity.</p>
+<p><code>default</code> is optional. When nothing matches and there is no <code>default</code>,
+nothing happens:</p>
+<pre><code class="language-zuri">using 99 {
+  when 1 echo 'one'
+}
+
+echo 'nothing ran, and that is not an error'
+</code></pre>
+<pre><code class="language-console">nothing ran, and that is not an error
+</code></pre>
+<p>A <code>when</code> branch takes a block when it needs one:</p>
+<pre><code class="language-zuri">var command = 'q'
+
+using command {
+  when 'a' echo 'adding'
+  when 'q' {
+    echo 'saving'
+    echo 'goodbye'
+  }
+  default echo 'unknown command'
+}
+</code></pre>
+<pre><code class="language-console">saving
+goodbye
+</code></pre>
+<p><code>using</code> is the right shape whenever you are dispatching on one value to
+many outcomes. A chain of <code>else if</code> comparing the same variable over and
+over is the same thing written longer.</p>
+<h2 id="assert"><a class="header" href="#assert"><code>assert</code></a></h2>
+<p><code>assert</code> checks a condition and raises an <code>AssertError</code> when it is false:</p>
+<pre><code class="language-zuri">var items = [1]
+
+assert 1 + 1 == 2
+assert items.length() == 1, 'list should have one item'
+
+echo 'both assertions held'
+</code></pre>
+<pre><code class="language-console">both assertions held
+</code></pre>
+<p>The optional second argument is the message the error carries:</p>
+<pre><code class="language-zuri ignore">assert 1 == 2, 'arithmetic is broken'
+</code></pre>
+<pre><code class="language-console">Unhandled AssertError: arithmetic is broken
+</code></pre>
+<p>Assertions state what you believe is already true. They are for conditions
+that should be impossible, not for checking input that might legitimately
+be wrong — raise a <code>ValueError</code> for that.
+<a href="ch07-00-error-handling.html">Chapter 7</a> draws the line in detail.</p>
+<h2 id="return"><a class="header" href="#return"><code>return</code></a></h2>
+<p><code>return</code> leaves the current function, with a value if you give it one and
+<code>nil</code> if you do not:</p>
+<pre><code class="language-zuri">def classify(n) {
+  if n &lt; 0 {
+    return 'negative'
+  }
+
+  if n == 0 {
+    return 'zero'
+  }
+
+  return 'positive'
+}
+
+echo classify(-5)
+echo classify(0)
+echo classify(3)
+</code></pre>
+<pre><code class="language-console">negative
+zero
+positive
+</code></pre>
+<p>A function that reaches its closing brace without a <code>return</code> yields <code>nil</code>.
+There are no implicit returns; the last expression in a body is not its
+value.</p>
+<p><code>return</code> is only legal inside a function. At the top level of a script it
+is a syntax error, because there is nothing to return from.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch03-04-comments.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch04-00-collections.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch03-04-comments.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch04-00-collections.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

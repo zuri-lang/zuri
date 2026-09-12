@@ -1,0 +1,798 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>imagine.canvas - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d4f5727e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8c5b994b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="imaginecanvas"><a class="header" href="#imaginecanvas"><code>imagine.canvas</code></a></h1>
+<pre><code class="language-zuri ignore">import imagine.canvas
+</code></pre>
+<blockquote>
+<p><code>imagine</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>imagine.canvas.*</code> needs <code>import imagine.canvas</code>.</p>
+</blockquote>
+<p><code>Canvas</code>: the drawing surface. Every shape the module can draw is a
+method on it.</p>
+<p>A canvas wraps an <code>Image</code>’s pixel buffer rather than copying it, so
+drawing goes straight into the image being built. The shape methods
+share three primitives underneath (span fill, blend, and stroke), which
+is why a new shape rarely needs new native code.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="canvas"><a class="header" href="#canvas"><code>Canvas</code></a></h3>
+<pre><code class="language-zuri ignore">class imagine.Canvas
+</code></pre>
+<p>A mutable RGBA pixel surface and everything that draws onto one.</p>
+<p><code>Canvas</code> is the lower half of <code>Image</code>: it owns the pixel buffer and
+knows how to put colour into it, but nothing about files, formats or
+resizing. It is separate mostly so the drawing code can be read on its
+own, and it is rarely worth using directly; <code>Image</code> inherits all of
+this.</p>
+<h5 id="how-drawing-works-here"><a class="header" href="#how-drawing-works-here">How drawing works here</a></h5>
+<p>Every filled shape becomes a polygon and goes through one scanline
+rasterizer, and every stroked shape becomes the polygon outlining its
+stroke and goes through the same one. That means anti-aliasing, clipping
+and the fill rule are implemented once rather than once per primitive,
+and a shape this module does not offer can be drawn by handing
+<code>fill_polygon()</code> the points for it.</p>
+<h5 id="coordinates"><a class="header" href="#coordinates">Coordinates</a></h5>
+<p>The origin is the top-left corner. Integer coordinates fall on pixel
+corners, not centres, so a rectangle from (0, 0) to (10, 10) covers
+exactly the first ten pixels in each direction with no half-covered
+edge. Fractional coordinates are meaningful and are what anti-aliasing
+acts on.</p>
+<p>Drawing outside the surface is not an error. Anything that falls outside
+is clipped away, which is what makes it safe to draw a shape that only
+partly overlaps the image.</p>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas(pixels: bytes, width: number, height: number)
+</code></pre>
+<p>Wraps an existing pixel buffer.</p>
+<p>The buffer is taken as-is and not copied, so the caller must not keep
+writing to it independently. <code>Image</code> is the supported way to get a
+<code>Canvas</code>; this constructor exists for code that already has pixels from
+somewhere else.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>pixels</code> (<code>bytes</code>) — <code>width * height * 4</code> bytes of RGBA.</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+</ul>
+<h4 id="canvaswidth"><a class="header" href="#canvaswidth"><code>Canvas.width()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.width() -&gt; number
+</code></pre>
+<p>The width in pixels.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="canvasheight"><a class="header" href="#canvasheight"><code>Canvas.height()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.height() -&gt; number
+</code></pre>
+<p>The height in pixels.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="canvaspixels"><a class="header" href="#canvaspixels"><code>Canvas.pixels()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.pixels() -&gt; bytes
+</code></pre>
+<p>The raw RGBA pixel buffer.</p>
+<p>This is the live buffer, not a copy: writing to it changes the image.
+Pixel <code>(x, y)</code> starts at byte <code>(y * width + x) * 4</code> and runs red, green,
+blue, alpha, with alpha straight rather than premultiplied.</p>
+<p>Handing this out is deliberate. Reading and writing bytes directly is
+far faster than a method call per pixel, so an operation this module
+does not provide can still be written efficiently in Zuri.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="canvasset_pixels"><a class="header" href="#canvasset_pixels"><code>Canvas.set_pixels()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.set_pixels(pixels: bytes)
+</code></pre>
+<p>Replaces the surface’s pixels with another buffer.</p>
+<p>The buffer must hold exactly <code>width * height * 4</code> bytes, and is adopted
+rather than copied, so whatever produced it must not keep writing to it
+afterwards.</p>
+<p>The pair to <code>pixels()</code>: that one hands the buffer out so an operation
+this module does not provide can be written directly, and this one takes
+a buffer back. Saving a copy before a destructive filter and restoring
+it afterwards is the usual reason to want it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>pixels</code> (<code>bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>ImageError</code> When the buffer is the wrong size.</p>
+<h4 id="canvasclip"><a class="header" href="#canvasclip"><code>Canvas.clip()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.clip(x, y, width, height)
+</code></pre>
+<p>Restricts every subsequent drawing operation to a rectangle.</p>
+<p>The rectangle is intersected with the surface, so a clip larger than the
+image is the same as no clip. Passing no arguments, or calling
+<code>clear_clip()</code>, removes it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasclear_clip"><a class="header" href="#canvasclear_clip"><code>Canvas.clear_clip()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.clear_clip()
+</code></pre>
+<p>Removes any clipping rectangle.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasget_clip"><a class="header" href="#canvasget_clip"><code>Canvas.get_clip()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.get_clip() -&gt; ?dict
+</code></pre>
+<p>The current clipping rectangle as <code>{x, y, width, height}</code>, or <code>nil</code> when
+there isn’t one.</p>
+<p><strong>Returns</strong> <code>?dict</code></p>
+<h4 id="canvasantialias"><a class="header" href="#canvasantialias"><code>Canvas.antialias()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.antialias(enabled)
+</code></pre>
+<p>Turns anti-aliasing on or off for subsequent drawing.</p>
+<p>On by default. Turning it off makes every edge hard, which is faster and
+is what you want for pixel-exact output such as barcodes, or when
+drawing into a mask that will be thresholded anyway.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>enabled</code> (<code>bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasthickness"><a class="header" href="#canvasthickness"><code>Canvas.thickness()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.thickness(thickness: number)
+</code></pre>
+<p>Sets the stroke width in pixels for lines and outlines.</p>
+<p>Strokes are centred on the path, so a thickness of 4 puts 2 pixels on
+each side. The default is 1.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>thickness</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvascap"><a class="header" href="#canvascap"><code>Canvas.cap()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.cap(style)
+</code></pre>
+<p>Sets how the two ends of an open stroke are finished.</p>
+<p><code>CAP_ROUND</code> (the default) ends in a half-disc, <code>CAP_SQUARE</code> in a square,
+and both reach half the stroke’s width past the endpoint. <code>CAP_BUTT</code>
+stops exactly at it.</p>
+<p>Reach for <code>CAP_BUTT</code> when the coordinates have to mean exactly what they
+say: segments meeting end to end, a scale bar of a known length, the
+pieces of a dashed line. The joins between a path’s segments are always
+round and are not affected by this.</p>
+<pre><code class="language-zuri ignore">chart.cap(CAP_BUTT).thickness(6)
+chart.line(40, 200, 40, 40, '#334155')
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>style</code> (<code>string</code>) — <code>CAP_BUTT</code>, <code>CAP_ROUND</code> or <code>CAP_SQUARE</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasget_cap"><a class="header" href="#canvasget_cap"><code>Canvas.get_cap()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.get_cap() -&gt; string
+</code></pre>
+<p>The line cap in force.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="canvasget_pixel"><a class="header" href="#canvasget_pixel"><code>Canvas.get_pixel()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.get_pixel(x, y)
+</code></pre>
+<p>Returns the colour at a pixel, or <code>nil</code> when the coordinates fall
+outside the image.</p>
+<p>Clipping does not apply; a clip restricts what is written, not what can
+be read.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ?Color</p>
+<h4 id="canvasset_pixel"><a class="header" href="#canvasset_pixel"><code>Canvas.set_pixel()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.set_pixel(x, y, color)
+</code></pre>
+<p>Replaces the colour at a pixel, ignoring whatever was there.</p>
+<p>This overwrites rather than blends, so drawing a half-transparent colour
+leaves a half-transparent pixel instead of compositing it over the old
+one. Use <code>blend_pixel()</code> for the compositing version, which is what
+every other drawing method uses.</p>
+<p>Coordinates outside the image or outside the clip are ignored.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaspixel"><a class="header" href="#canvaspixel"><code>Canvas.pixel()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.pixel(x, y, color)
+</code></pre>
+<p>Draws one pixel, compositing it over whatever is already there.</p>
+<p>The single-pixel member of the drawing family, alongside <code>line()</code> and
+<code>rect()</code>. It is the same operation as <code>blend_pixel()</code>, under the name
+that reads correctly in a chain of drawing calls.</p>
+<p>Coordinates outside the image or outside the clip are ignored.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasblend_pixel"><a class="header" href="#canvasblend_pixel"><code>Canvas.blend_pixel()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.blend_pixel(x, y, color)
+</code></pre>
+<p>Composites a colour over the pixel already there, the way every drawing
+operation does.</p>
+<p>Coordinates outside the image or outside the clip are ignored.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill_polygon"><a class="header" href="#canvasfill_polygon"><code>Canvas.fill_polygon()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill_polygon(points, color, options)
+</code></pre>
+<p>Fills a polygon.</p>
+<p>The points are a flat list of alternating x and y values, or a list of
+<code>[x, y]</code> pairs; both are accepted because both read naturally depending
+on where the points came from. The outline is closed automatically, so
+the last point does not need to repeat the first.</p>
+<p>Self-intersecting outlines are filled by the non-zero winding rule by
+default, which is what fills a five-pointed star solid. Pass <code>{ even_odd: true }</code>
+for the other convention, which leaves the middle of that star empty.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>points</code> (<code>list</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>even_odd</code> (bool).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaspolygon"><a class="header" href="#canvaspolygon"><code>Canvas.polygon()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.polygon(points, color, options)
+</code></pre>
+<p>Draws a polygon’s outline, closing it back to the first point.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>points</code> (<code>list</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaspolyline"><a class="header" href="#canvaspolyline"><code>Canvas.polyline()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.polyline(points, color, options)
+</code></pre>
+<p>Draws a connected run of line segments without closing it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>points</code> (<code>list</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasline"><a class="header" href="#canvasline"><code>Canvas.line()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.line(x1, y1, x2, y2, color, options)
+</code></pre>
+<p>Draws a straight line between two points.</p>
+<p>The line is <code>thickness()</code> pixels wide, centred on the path, and
+anti-aliased unless that has been turned off.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x1</code> (<code>number</code>)</li>
+<li><code>y1</code> (<code>number</code>)</li>
+<li><code>x2</code> (<code>number</code>)</li>
+<li><code>y2</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasrect"><a class="header" href="#canvasrect"><code>Canvas.rect()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.rect(x, y, width, height, color, options)
+</code></pre>
+<p>Draws the outline of a rectangle.</p>
+<p>The stroke is centred on the rectangle’s edge, so half of a thick
+outline falls inside it and half outside.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill_rect"><a class="header" href="#canvasfill_rect"><code>Canvas.fill_rect()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill_rect(x, y, width, height, color)
+</code></pre>
+<p>Fills a rectangle.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasrounded_rect"><a class="header" href="#canvasrounded_rect"><code>Canvas.rounded_rect()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.rounded_rect(x, y, width, height, radius, color, options)
+</code></pre>
+<p>Draws the outline of a rectangle with rounded corners.</p>
+<p>A radius larger than half the shorter side is reduced to fit, so a very
+large radius gives a stadium shape rather than a broken one.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>radius</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill_rounded_rect"><a class="header" href="#canvasfill_rounded_rect"><code>Canvas.fill_rounded_rect()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill_rounded_rect(x, y, width, height, radius, color)
+</code></pre>
+<p>Fills a rectangle with rounded corners.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>radius</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvascircle"><a class="header" href="#canvascircle"><code>Canvas.circle()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.circle(cx, cy, radius, color, options)
+</code></pre>
+<p>Draws the outline of a circle.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>) — The centre’s x coordinate.</li>
+<li><code>cy</code> (<code>number</code>) — The centre’s y coordinate.</li>
+<li><code>radius</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill_circle"><a class="header" href="#canvasfill_circle"><code>Canvas.fill_circle()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill_circle(cx, cy, radius, color)
+</code></pre>
+<p>Fills a circle.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>)</li>
+<li><code>cy</code> (<code>number</code>)</li>
+<li><code>radius</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasellipse"><a class="header" href="#canvasellipse"><code>Canvas.ellipse()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.ellipse(cx, cy, rx, ry, color, options)
+</code></pre>
+<p>Draws the outline of an ellipse.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>) — The centre’s x coordinate.</li>
+<li><code>cy</code> (<code>number</code>) — The centre’s y coordinate.</li>
+<li><code>rx</code> (<code>number</code>) — The horizontal radius.</li>
+<li><code>ry</code> (<code>number</code>) — The vertical radius.</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill_ellipse"><a class="header" href="#canvasfill_ellipse"><code>Canvas.fill_ellipse()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill_ellipse(cx, cy, rx, ry, color)
+</code></pre>
+<p>Fills an ellipse.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>)</li>
+<li><code>cy</code> (<code>number</code>)</li>
+<li><code>rx</code> (<code>number</code>)</li>
+<li><code>ry</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasarc"><a class="header" href="#canvasarc"><code>Canvas.arc()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.arc(cx, cy, rx, ry, start, end, color, options)
+</code></pre>
+<p>Draws an elliptical arc.</p>
+<p>Angles are in degrees, measured clockwise from three o’clock, matching
+the direction the y axis runs. An end angle below the start angle sweeps
+the long way round.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>)</li>
+<li><code>cy</code> (<code>number</code>)</li>
+<li><code>rx</code> (<code>number</code>)</li>
+<li><code>ry</code> (<code>number</code>)</li>
+<li><code>start</code> (<code>number</code>) — The starting angle in degrees.</li>
+<li><code>end</code> (<code>number</code>) — The ending angle in degrees.</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaspie"><a class="header" href="#canvaspie"><code>Canvas.pie()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.pie(cx, cy, rx, ry, start, end, color)
+</code></pre>
+<p>Fills a pie slice: an arc closed back through the centre.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>)</li>
+<li><code>cy</code> (<code>number</code>)</li>
+<li><code>rx</code> (<code>number</code>)</li>
+<li><code>ry</code> (<code>number</code>)</li>
+<li><code>start</code> (<code>number</code>) — The starting angle in degrees.</li>
+<li><code>end</code> (<code>number</code>) — The ending angle in degrees.</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaschord"><a class="header" href="#canvaschord"><code>Canvas.chord()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.chord(cx, cy, rx, ry, start, end, color)
+</code></pre>
+<p>Fills the region between an arc and its chord.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>)</li>
+<li><code>cy</code> (<code>number</code>)</li>
+<li><code>rx</code> (<code>number</code>)</li>
+<li><code>ry</code> (<code>number</code>)</li>
+<li><code>start</code> (<code>number</code>)</li>
+<li><code>end</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasbezier"><a class="header" href="#canvasbezier"><code>Canvas.bezier()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.bezier(x1, y1, cx1, cy1, cx2, cy2, x2, y2, color, options)
+</code></pre>
+<p>Draws a cubic Bezier curve through four control points.</p>
+<p>The curve starts at the first point, ends at the fourth, and is pulled
+toward the two in between without passing through them.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x1</code> (<code>number</code>)</li>
+<li><code>y1</code> (<code>number</code>)</li>
+<li><code>cx1</code> (<code>number</code>) — The first control point’s x coordinate.</li>
+<li><code>cy1</code> (<code>number</code>)</li>
+<li><code>cx2</code> (<code>number</code>) — The second control point’s x coordinate.</li>
+<li><code>cy2</code> (<code>number</code>)</li>
+<li><code>x2</code> (<code>number</code>)</li>
+<li><code>y2</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>thickness</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasfill"><a class="header" href="#canvasfill"><code>Canvas.fill()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.fill(color)
+</code></pre>
+<p>Paints every pixel of the surface, ignoring the clip and whatever was
+there before.</p>
+<p>This is a replace, not a blend: filling with a transparent colour
+empties the image rather than leaving it unchanged.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasclear"><a class="header" href="#canvasclear"><code>Canvas.clear()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.clear()
+</code></pre>
+<p>Clears the surface to fully transparent.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasflood_fill"><a class="header" href="#canvasflood_fill"><code>Canvas.flood_fill()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.flood_fill(x, y, color, tolerance)
+</code></pre>
+<p>Flood fills the connected region of similar colour containing <code>(x, y)</code>.</p>
+<p>Similarity is measured against the colour that was at the starting
+point, as the largest difference across the four channels. <code>tolerance</code>
+is that difference in 0-255 units, so 0 spreads only through exactly
+equal pixels and 255 fills everything.</p>
+<p>Filling is four-connected: it spreads up, down, left and right, but not
+diagonally, so a one-pixel diagonal line holds it back. The fill is
+never anti-aliased.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>tolerance</code> (<code>?number</code>) — Default: 0.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvaslinear_gradient"><a class="header" href="#canvaslinear_gradient"><code>Canvas.linear_gradient()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.linear_gradient(x1, y1, x2, y2, stops, options)
+</code></pre>
+<p>Fills a rectangle with a linear gradient running between two points.</p>
+<p>The gradient’s direction and length are the vector from <code>(x1, y1)</code> to
+<code>(x2, y2)</code>. Everything before the first point takes the first stop’s
+colour and everything past the second takes the last stop’s, so a short
+vector across a large area gives a hard transition with flat bands on
+either side.</p>
+<pre><code class="language-zuri ignore"># top to bottom, dark to light
+image.linear_gradient(0, 0, 0, image.height(), ['#0f172a', '#334155'])
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x1</code> (<code>number</code>)</li>
+<li><code>y1</code> (<code>number</code>)</li>
+<li><code>x2</code> (<code>number</code>)</li>
+<li><code>y2</code> (<code>number</code>)</li>
+<li><code>stops</code> (<code>list</code>) — Colours, or <code>[offset, colour]</code> pairs with the
+offset from 0 to 1.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>rect</code> (a <code>{x, y, width, height}</code> to confine the
+fill to, default the whole surface), <code>blend</code> (bool, default false:
+composite over what is there rather than replacing it).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasradial_gradient"><a class="header" href="#canvasradial_gradient"><code>Canvas.radial_gradient()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.radial_gradient(cx, cy, radius, stops, options)
+</code></pre>
+<p>Fills a rectangle with a radial gradient spreading from a centre.</p>
+<pre><code class="language-zuri ignore"># a soft vignette
+image.radial_gradient(cx, cy, radius, [
+  [0, Color(0, 0, 0, 0)],
+  [1, Color(0, 0, 0, 180)],
+], { blend: true })
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>cx</code> (<code>number</code>) — The centre’s x coordinate.</li>
+<li><code>cy</code> (<code>number</code>) — The centre’s y coordinate.</li>
+<li><code>radius</code> (<code>number</code>) — Where the last stop lands.</li>
+<li><code>stops</code> (<code>list</code>) — Colours, or <code>[offset, colour]</code> pairs.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>rect</code>, <code>blend</code>. The same as
+<code>linear_gradient()</code>.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="canvasdraw_mask"><a class="header" href="#canvasdraw_mask"><code>Canvas.draw_mask()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Canvas.draw_mask(mask: bytes, mask_width, mask_height, x, y, color)
+</code></pre>
+<p>Paints a colour through an 8-bit coverage mask.</p>
+<p>The mask is one byte per pixel, 0 for nothing and 255 for full coverage,
+laid out row-major with no padding. Coverage scales the colour’s alpha,
+so this is how anti-aliased text and any externally rasterized shape
+reach the surface.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mask</code> (<code>bytes</code>)</li>
+<li><code>mask_width</code> (<code>number</code>)</li>
+<li><code>mask_height</code> (<code>number</code>)</li>
+<li><code>x</code> (<code>number</code>) — Where the mask’s top-left corner lands.</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="imagine-animation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="imagine-color.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="imagine-animation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="imagine-color.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

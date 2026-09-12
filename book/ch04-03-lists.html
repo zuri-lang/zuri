@@ -1,0 +1,813 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Lists - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d06c3974.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-259e9395.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch04-03-lists.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="lists"><a class="header" href="#lists">Lists</a></h1>
+<p>A list is an ordered, growable sequence. It holds values of any type,
+including other lists, and it grows and shrinks as you work with it.</p>
+<pre><code class="language-zuri">var items = [3, 1, 4, 1, 5]
+var mixed = [1, 'two', [3], { four: 4 }]
+var empty = []
+
+echo items.length()
+echo mixed[3].four
+echo empty.is_empty()
+</code></pre>
+<pre><code class="language-console">5
+4
+true
+</code></pre>
+<p>Lists carry 39 methods, and they fall into six groups: reading, searching,
+adding and removing, ordering, transforming, and walking. This section
+takes them in that order. The one distinction to keep in mind throughout
+is whether a method <strong>mutates</strong> the list you called it on or returns a new
+one, because Zuri’s lists do both and the method names do not tell you
+which.</p>
+<h2 id="reading"><a class="header" href="#reading">Reading</a></h2>
+<pre><code class="language-zuri">var l = [3, 1, 4, 1, 5]
+
+echo l.length()
+echo l.is_empty()
+echo l[0]
+echo l[-1]
+echo l.first()
+echo l.last()
+echo l[1, 3]
+</code></pre>
+<pre><code class="language-console">5
+false
+3
+5
+3
+5
+[1, 4]
+</code></pre>
+<h3 id="indexing"><a class="header" href="#indexing">Indexing</a></h3>
+<p>An index counts from zero, and a negative index counts back from the end:</p>
+<pre><code class="language-zuri">var l = ['a', 'b', 'c', 'd']
+
+echo l[0]
+echo l[3]
+echo l[-1]
+echo l[-4]
+</code></pre>
+<pre><code class="language-console">a
+d
+d
+a
+</code></pre>
+<p><code>l[-1]</code> is the last element, which saves writing <code>l[l.length() - 1]</code>
+everywhere.</p>
+<p>Indexing out of range raises rather than returning <code>nil</code>:</p>
+<pre><code class="language-zuri">var l = [1, 2, 3]
+
+catch {
+  echo l[99]
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">index 99 out of bounds (length 3)
+</code></pre>
+<p><code>get()</code> is the form that can fall back, but <strong>only when you give it
+something to fall back to</strong>. <code>get(i)</code> with one argument raises exactly like
+<code>l[i]</code> does:</p>
+<pre><code class="language-zuri">var l = [1, 2, 3]
+
+echo l.get(1)
+echo l.get(99, 'missing')
+
+catch {
+  echo l.get(99)
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">2
+missing
+list index 99 out of range at get()
+</code></pre>
+<h3 id="slicing"><a class="header" href="#slicing">Slicing</a></h3>
+<p><code>l[a, b]</code> takes the elements from <code>a</code> up to but <strong>not including</strong> <code>b</code>, and
+gives you a new list:</p>
+<pre><code class="language-zuri">var l = [1, 2, 3, 4, 5]
+
+echo l[1, 3]
+echo l[, 3]
+echo l[3, ]
+echo l[-2, ]
+</code></pre>
+<pre><code class="language-console">[2, 3]
+[1, 2, 3]
+[4, 5]
+[4, 5]
+</code></pre>
+<p>Either bound may be left out: <code>l[, b]</code> starts at the beginning and <code>l[a, ]</code>
+runs to the end. Negative bounds count from the end, just as an index does.</p>
+<p>A slice checks its bounds, exactly as an index does. Running past the end
+raises rather than returning what it can:</p>
+<pre><code class="language-zuri">catch {
+  echo [1, 2, 3][1, 99]
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">slice bounds 1..99 out of range (length 3)
+</code></pre>
+<p>The one bound that is always legal is <code>length()</code> itself, since a slice’s
+upper bound is exclusive. <code>l[0, l.length()]</code> is the whole list, and
+<code>l[3, 3]</code> on a three-element list is empty rather than an error.</p>
+<pre><code class="language-zuri">var l = [1, 2, 3]
+
+echo l[0, l.length()]
+echo l[3, 3]
+</code></pre>
+<pre><code class="language-console">[1, 2, 3]
+[]
+</code></pre>
+<p>This same rule governs string slicing, which is why
+<a href="ch04-01-strings.html">Strings</a> uses <code>s[split_at + 1, s.length()]</code> rather
+than a large number to mean “the rest”.</p>
+<p>A slice is a copy. Changing one does not touch the other:</p>
+<pre><code class="language-zuri">var original = [1, 2, 3]
+var part = original[0, 2]
+
+part[0] = 99
+
+echo original
+echo part
+</code></pre>
+<pre><code class="language-console">[1, 2, 3]
+[99, 2]
+</code></pre>
+<h3 id="nested-lists"><a class="header" href="#nested-lists">Nested Lists</a></h3>
+<p>A list holds lists, and indexes chain:</p>
+<pre><code class="language-zuri">var grid = [[1, 2], [3, 4], [5, 6]]
+
+echo grid[1]
+echo grid[1][0]
+echo grid.length()
+echo grid[1].length()
+</code></pre>
+<pre><code class="language-console">[3, 4]
+3
+3
+2
+</code></pre>
+<p><code>grid.length()</code> counts rows, not elements. There is no two-dimensional
+index; <code>grid[1, 0]</code> is a <em>slice</em> from row one to row zero, which is empty.</p>
+<h2 id="combining-lists"><a class="header" href="#combining-lists">Combining Lists</a></h2>
+<h3 id="concatenation-with-"><a class="header" href="#concatenation-with-">Concatenation with <code>+</code></a></h3>
+<p><code>+</code> joins two lists into a new one, leaving both operands alone:</p>
+<pre><code class="language-zuri">var a = [1, 2]
+var b = [3]
+
+echo a + b
+echo a
+echo b
+</code></pre>
+<pre><code class="language-console">[1, 2, 3]
+[1, 2]
+[3]
+</code></pre>
+<p>That is the difference between <code>+</code> and <code>extend()</code>: <code>a + b</code> builds a third
+list, while <code>a.extend(b)</code> modifies <code>a</code> in place and returns it. Use <code>+</code>
+when you want to keep the originals, and <code>extend()</code> when you are
+accumulating.</p>
+<h3 id="repetition-with-"><a class="header" href="#repetition-with-">Repetition with <code>*</code></a></h3>
+<p><code>*</code> repeats a list a whole number of times:</p>
+<pre><code class="language-zuri">echo [1, 2] * 3
+echo [0] * 5
+</code></pre>
+<pre><code class="language-console">[1, 2, 1, 2, 1, 2]
+[0, 0, 0, 0, 0]
+</code></pre>
+<p><code>[0] * 5</code> is the idiom for a fixed-size list of a starting value, and it is
+worth knowing before you write the loop.</p>
+<p>The count behaves exactly as it does for strings: zero and any negative
+number both produce an empty list, and a fractional count is truncated.</p>
+<pre><code class="language-zuri">echo [1] * 0
+echo [1] * -3
+</code></pre>
+<pre><code class="language-console">[]
+[]
+</code></pre>
+<p>There is one trap. Repetition copies the <em>elements</em>, and when an element is
+itself a list, all the copies are the same list:</p>
+<pre><code class="language-zuri">var grid = [[0, 0]] * 3
+
+grid[0][0] = 9
+
+echo grid
+</code></pre>
+<pre><code class="language-console">[[9, 0], [9, 0], [9, 0]]
+</code></pre>
+<p>One assignment changed every row, because there is only one row. Build
+nested structure with a loop, or with <code>map()</code>:</p>
+<pre><code class="language-zuri">var grid = 0..3.to_list().map(@(i) =&gt; [0, 0])
+
+grid[0][0] = 9
+
+echo grid
+</code></pre>
+<pre><code class="language-console">[[9, 0], [0, 0], [0, 0]]
+</code></pre>
+<h2 id="comparing-lists"><a class="header" href="#comparing-lists">Comparing Lists</a></h2>
+<p><code>==</code> compares lists by value, element by element, however deeply they
+nest:</p>
+<pre><code class="language-zuri">echo [1, 2] == [1, 2]
+echo [1, [2, 3]] == [1, [2, 3]]
+echo [1, 2] == [2, 1]
+echo [1, 2] == [1, 2, 3]
+</code></pre>
+<pre><code class="language-console">true
+true
+false
+false
+</code></pre>
+<p>Order matters and length matters. To compare two lists as <em>sets</em>, sort
+copies of them first, or use the <code>set</code> module from
+<a href="ch13-00-stdlib-tour.html">Chapter 13</a>.</p>
+<h2 id="searching"><a class="header" href="#searching">Searching</a></h2>
+<pre><code class="language-zuri">var l = [3, 1, 4, 1, 5]
+
+echo l.contains(4)
+echo l.index_of(1)
+echo l.count(1)
+</code></pre>
+<pre><code class="language-console">true
+1
+2
+</code></pre>
+<p><code>index_of()</code> gives <code>-1</code> when the value is absent. <code>last_index_of()</code>
+searches from the other end:</p>
+<pre><code class="language-zuri">var l = [3, 1, 4, 1, 5]
+
+echo l.index_of(1)
+echo l.last_index_of(1)
+echo l.last_index_of(1, 2)
+echo l.last_index_of(9)
+</code></pre>
+<pre><code class="language-console">1
+3
+1
+-1
+</code></pre>
+<p>Both take a second argument bounding <em>where a match may sit</em>, so the
+pair splits the list at one index: <code>index_of(x, n)</code> finds the first
+match at or after <code>n</code>, <code>last_index_of(x, n)</code> the last one at or before
+it. Both compare by value, so a list of dictionaries can be searched
+with a dictionary literal.</p>
+<h2 id="adding-and-removing"><a class="header" href="#adding-and-removing">Adding and Removing</a></h2>
+<p>These mutate the list in place:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td><code>append(v)</code></td><td>add to the end</td></tr>
+<tr><td><code>insert(v, at)</code></td><td>insert at a position</td></tr>
+<tr><td><code>extend(other)</code></td><td>append every element of another list</td></tr>
+<tr><td><code>pop()</code></td><td>remove and return the last element</td></tr>
+<tr><td><code>shift()</code></td><td>remove and return the first element</td></tr>
+<tr><td><code>remove(v)</code></td><td>remove the first element equal to <code>v</code></td></tr>
+<tr><td><code>remove_at(i)</code></td><td>remove by position</td></tr>
+<tr><td><code>delete(from, to)</code></td><td>remove an inclusive range, return how many went</td></tr>
+<tr><td><code>clear()</code></td><td>empty it</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri">var l = [3, 1, 4]
+
+l.insert(9, 1)
+echo l
+echo l.shift()
+echo l
+</code></pre>
+<pre><code class="language-console">[3, 9, 1, 4]
+3
+[9, 1, 4]
+</code></pre>
+<pre><code class="language-zuri">var l = [1, 2, 3, 4, 5]
+echo l.delete(1, 3)
+echo l
+</code></pre>
+<pre><code class="language-console">3
+[1, 5]
+</code></pre>
+<p>Note that <code>delete()</code> takes a <strong>from</strong> and a <strong>to</strong>, both inclusive, and
+returns the number of elements removed rather than the list.</p>
+<h2 id="ordering"><a class="header" href="#ordering">Ordering</a></h2>
+<pre><code class="language-zuri">var l = [3, 1, 2]
+
+echo l.sort()
+echo l
+echo l.reverse()
+echo l
+</code></pre>
+<pre><code class="language-console">[1, 2, 3]
+[1, 2, 3]
+[3, 2, 1]
+[1, 2, 3]
+</code></pre>
+<p>Look closely at those two. <strong><code>sort()</code> mutates and returns the list.
+<code>reverse()</code> returns a new list and leaves the original alone.</strong> That
+asymmetry is the single most common source of list bugs in Zuri code.</p>
+<p><code>sort()</code> takes no comparator. To sort by a computed key, decorate, sort,
+and undecorate:</p>
+<pre><code class="language-zuri">var people = [{ name: 'Ada', age: 36 }, { name: 'Bob', age: 24 }]
+
+var by_age = people
+  .map(@(p) =&gt; [p.age, p.name])
+  .sort()
+  .map(@(pair) =&gt; pair[1])
+
+echo by_age
+</code></pre>
+<pre><code class="language-console">[Bob, Ada]
+</code></pre>
+<h2 id="transforming"><a class="header" href="#transforming">Transforming</a></h2>
+<p>Every one of these returns a new list and leaves the receiver untouched:</p>
+<pre><code class="language-zuri">var l = [1, 2, 3, 4]
+
+echo l.map(@(x) =&gt; x * 2)
+echo l.filter(@(x) =&gt; x &gt; 2)
+echo l.unique()
+echo l.compact()
+echo l.take(2)
+echo l.clone()
+</code></pre>
+<pre><code class="language-console">[2, 4, 6, 8]
+[3, 4]
+[1, 2, 3, 4]
+[1, 2, 3, 4]
+[1, 2]
+[1, 2, 3, 4]
+</code></pre>
+<p><code>compact()</code> drops <code>nil</code> entries:</p>
+<pre><code class="language-zuri">echo [1, nil, 2, nil].compact()
+</code></pre>
+<pre><code class="language-console">[1, 2]
+</code></pre>
+<p><code>reduce()</code> folds the list down to one value. With no initial value it
+starts from the first element:</p>
+<pre><code class="language-zuri">echo [1, 2, 3].reduce(@(acc, x) =&gt; acc + x)
+echo [1, 2, 3].reduce(@(acc, x) =&gt; acc + x, 100)
+</code></pre>
+<pre><code class="language-console">6
+106
+</code></pre>
+<p><code>partition()</code> splits in one pass, matches first:</p>
+<pre><code class="language-zuri">echo [1, 2, 3, 4].partition(@(x) =&gt; x % 2 == 0)
+</code></pre>
+<pre><code class="language-console">[[2, 4], [1, 3]]
+</code></pre>
+<h2 id="finding"><a class="header" href="#finding">Finding</a></h2>
+<pre><code class="language-zuri">var l = [1, 2, 3]
+
+echo l.find(@(x) =&gt; x &gt; 1)
+echo l.find_index(@(x) =&gt; x &gt; 1)
+echo l.find_last(@(x) =&gt; x &gt; 1)
+echo l.find_last_index(@(x) =&gt; x &gt; 1)
+echo l.find_all(@(x) =&gt; x &gt; 1)
+</code></pre>
+<pre><code class="language-console">2
+1
+3
+2
+[2, 3]
+</code></pre>
+<h2 id="asking-about-every-element"><a class="header" href="#asking-about-every-element">Asking About Every Element</a></h2>
+<pre><code class="language-zuri">echo [1, 2, 3].every(@(x) =&gt; x &gt; 0)
+echo [1, 2, 3].some(@(x) =&gt; x &gt; 2)
+</code></pre>
+<pre><code class="language-console">true
+true
+</code></pre>
+<p><code>some()</code> stops at the first match; <code>every()</code> stops at the first failure.</p>
+<h2 id="walking"><a class="header" href="#walking">Walking</a></h2>
+<p>There are four ways to visit every element, and they are not
+interchangeable. Pick by what you need in the body.</p>
+<h3 id="for-when-you-want-the-values"><a class="header" href="#for-when-you-want-the-values"><code>for</code>, When You Want the Values</a></h3>
+<pre><code class="language-zuri">for value in ['a', 'b', 'c'] {
+  echo value
+}
+</code></pre>
+<pre><code class="language-console">a
+b
+c
+</code></pre>
+<p>This is the default. Reach for it whenever the position does not matter.</p>
+<h3 id="for-with-two-variables-when-you-want-the-index-too"><a class="header" href="#for-with-two-variables-when-you-want-the-index-too"><code>for</code> With Two Variables, When You Want the Index Too</a></h3>
+<pre><code class="language-zuri">for index, value in ['a', 'b', 'c'] {
+  echo '${index}: ${value}'
+}
+</code></pre>
+<pre><code class="language-console">0: a
+1: b
+2: c
+</code></pre>
+<p>With two variables you get the <strong>key first and the value second</strong>, and for
+a list the key is the index. No call to <code>length()</code>, no manual counter.</p>
+<h3 id="iter-when-you-need-control-of-the-position"><a class="header" href="#iter-when-you-need-control-of-the-position"><code>iter</code>, When You Need Control of the Position</a></h3>
+<pre><code class="language-zuri">var items = ['a', 'b', 'c']
+
+iter var i = 0; i &lt; items.length(); i++ {
+  echo '${i}: ${items[i]}'
+}
+</code></pre>
+<pre><code class="language-console">0: a
+1: b
+2: c
+</code></pre>
+<p><code>iter</code> costs more typing and earns it only when the traversal is not one
+step forward per pass: walking backwards, walking in twos, comparing an
+element with its neighbour, or advancing the index from inside the body.</p>
+<pre><code class="language-zuri">var items = ['a', 'b', 'c', 'd']
+
+iter var i = items.length() - 1; i &gt;= 0; i-- {
+  echo items[i]
+}
+
+iter var i = 0; i &lt; items.length(); i += 2 {
+  echo items[i]
+}
+</code></pre>
+<pre><code class="language-console">d
+c
+b
+a
+a
+c
+</code></pre>
+<h3 id="each-when-you-have-a-function-already"><a class="header" href="#each-when-you-have-a-function-already"><code>each()</code>, When You Have a Function Already</a></h3>
+<pre><code class="language-zuri">[10, 20].each(@(value, index) {
+  echo '${index}: ${value}'
+})
+</code></pre>
+<pre><code class="language-console">0: 10
+1: 20
+</code></pre>
+<p><code>each()</code> takes a function, which makes it the one that composes: it chains
+onto a <code>map()</code> or a <code>filter()</code> without a temporary variable, and it accepts
+a function you already have by name.</p>
+<p>Watch the argument order. <strong><code>each()</code> hands the callback the value first and
+the index second</strong>, which is the opposite of <code>for</code>. Every list callback in
+this chapter follows the same rule — <code>map</code>, <code>filter</code>, <code>find</code>, <code>some</code>,
+<code>every</code> all take <code>(value, index)</code> — so it is one thing to remember rather
+than several. <code>for</code> is a loop over key-value pairs; <code>each</code> is a callback
+over values that happens to tell you where it is.</p>
+<p><code>break</code> and <code>continue</code> work inside <code>for</code> and <code>iter</code>. They do not exist
+inside an <code>each()</code> callback; <code>return</code> there ends that one call, not the
+walk. When you need to stop early, use a loop, or <code>find()</code> / <code>some()</code>,
+which stop on their own.</p>
+<h2 id="combining"><a class="header" href="#combining">Combining</a></h2>
+<pre><code class="language-zuri">echo ['a', 'b'].zip([1, 2])
+echo [1, 2, 3].zip_from([[4, 5, 6]])
+</code></pre>
+<pre><code class="language-console">[[a, 1], [b, 2]]
+[[1, 4], [2, 5], [3, 6]]
+</code></pre>
+<p><code>zip()</code> pairs with one other list. <code>zip_from()</code> takes a list of lists and
+zips across all of them at once.</p>
+<h2 id="lists-are-references"><a class="header" href="#lists-are-references">Lists Are References</a></h2>
+<p>Assigning a list does not copy it:</p>
+<pre><code class="language-zuri">var a = [1, 2]
+var b = a
+b.append(3)
+echo a
+</code></pre>
+<pre><code class="language-console">[1, 2, 3]
+</code></pre>
+<p>Use <code>clone()</code> when you need an independent copy. The clone is shallow:
+nested lists inside it are still shared.</p>
+<pre><code class="language-zuri">var original = [[1, 2], 3]
+var copy = original.clone()
+
+copy[1] = 99
+copy[0].append(4)
+
+echo original
+echo copy
+</code></pre>
+<pre><code class="language-console">[[1, 2, 4], 3]
+[[1, 2, 4], 99]
+</code></pre>
+<p>Replacing the top-level <code>3</code> affected only the copy. Appending to the
+<em>nested</em> list affected both, because both lists point at the same inner
+list. When you need a deep copy, copy the levels you care about yourself.</p>
+<h2 id="mutating-or-not-the-summary"><a class="header" href="#mutating-or-not-the-summary">Mutating or Not: The Summary</a></h2>
+<p>This is the table to come back to.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mutates the receiver</th><th>Returns a new list</th></tr>
+</thead>
+<tbody>
+<tr><td><code>append</code>, <code>insert</code>, <code>extend</code></td><td><code>map</code>, <code>filter</code>, <code>find_all</code></td></tr>
+<tr><td><code>pop</code>, <code>shift</code>, <code>remove</code>, <code>remove_at</code></td><td><code>unique</code>, <code>compact</code>, <code>take</code></td></tr>
+<tr><td><code>delete</code>, <code>clear</code></td><td><code>reverse</code>, <code>clone</code>, <code>zip</code>, <code>zip_from</code></td></tr>
+<tr><td><code>sort</code></td><td><code>partition</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>sort()</code> is the one that catches people out: it is in the left column, and
+it also returns the list, so <code>var sorted = items.sort()</code> leaves <code>items</code>
+sorted too. If you need both orders, clone first:</p>
+<pre><code class="language-zuri">var items = [3, 1, 2]
+var sorted = items.clone().sort()
+
+echo items
+echo sorted
+</code></pre>
+<pre><code class="language-console">[3, 1, 2]
+[1, 2, 3]
+</code></pre>
+<h2 id="a-worked-example"><a class="header" href="#a-worked-example">A Worked Example</a></h2>
+<p>A tiny report generator: take a list of records, drop the incomplete ones,
+group what is left, and print a summary. It uses <code>filter</code>, <code>map</code>,
+<code>reduce</code>, <code>sort</code> and <code>each</code> together, which is how they usually show up.</p>
+<pre><code class="language-zuri">var sales = [
+  { region: 'north', amount: 120 },
+  { region: 'south', amount: 80 },
+  { region: 'north', amount: 45 },
+  { region: 'east', amount: nil },
+  { region: 'south', amount: 200 },
+]
+
+def totals_by_region(records) {
+  var totals = {}
+
+  records
+    .filter(@(r) =&gt; r.amount != nil)
+    .each(@(r) {
+      totals[r.region] = totals.get(r.region, 0) + r.amount
+    })
+
+  return totals
+}
+
+var totals = totals_by_region(sales)
+var grand = totals.values().reduce(@(acc, n) =&gt; acc + n, 0)
+
+totals
+  .to_list()[0]
+  .sort()
+  .each(@(region) {
+    echo '${region.rpad(6)} ${totals[region]}'
+  })
+
+echo 'total  ${grand}'
+</code></pre>
+<pre><code class="language-console">north  165
+south  280
+total  445
+</code></pre>
+<p><code>east</code> is absent from the report, not present with a zero, because its one
+record was filtered out before any accumulating happened and nothing ever
+created the key. That is usually what you want from a report; when it is
+not, seed the dictionary with every region first.</p>
+<p>Two other details are worth pulling out. <code>totals.get(r.region, 0)</code> supplies
+a starting value for a key that does not exist yet, which is what turns a
+dictionary into an accumulator. And <code>totals.to_list()[0]</code> takes the keys —
+<code>to_list()</code> returns keys and values as two parallel lists — which are then
+sorted so the report comes out in a stable order rather than in whatever
+order the records happened to arrive.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch04-02-numbers.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch04-04-dictionaries.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch04-02-numbers.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch04-04-dictionaries.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

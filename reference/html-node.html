@@ -1,0 +1,1251 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>html.node - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d4f5727e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8c5b994b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="htmlnode"><a class="header" href="#htmlnode"><code>html.node</code></a></h1>
+<pre><code class="language-zuri ignore">import html
+</code></pre>
+<blockquote>
+<p>Everything here is re-exported by <code>html</code>, so <code>import html</code> is enough and
+the names are called as <code>html.*</code>. Importing <code>html.node</code> on its own works
+too and reaches the same definitions.</p>
+</blockquote>
+<p>The document tree that <code>html.parse()</code> produces, and everything you can
+do with it: walking it, querying it, reading and changing attributes and
+content, and serializing any part of it back to markup.</p>
+<p>The shape follows the DOM closely enough that the names are familiar,
+without pretending to be a browser. Where this module departs from the
+DOM it does so deliberately and says why in the relevant doc block; the
+two differences worth knowing up front are:</p>
+<ul>
+<li><code>children</code> holds <strong>every</strong> child node (elements, text and
+comments alike), which is what the DOM calls <code>childNodes</code>. Use
+<code>child_elements()</code> when you only want elements.</li>
+<li>There are no property setters in Zuri, so every DOM property that
+can be written is a pair of methods: <code>text_content()</code> reads and
+<code>set_text_content()</code> writes.</li>
+</ul>
+<pre><code class="language-zuri ignore">import html
+
+var doc = html.parse('&lt;ul&gt;&lt;li class="a"&gt;One&lt;li class="a"&gt;Two&lt;/ul&gt;')
+
+for item in doc.query_selector_all('li.a') {
+  echo item.text_content()
+}
+</code></pre>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="node_element"><a class="header" href="#node_element"><code>NODE_ELEMENT</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_ELEMENT = 1
+</code></pre>
+<p>Node type of an <code>Element</code>.</p>
+<h3 id="node_text"><a class="header" href="#node_text"><code>NODE_TEXT</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_TEXT = 3
+</code></pre>
+<p>Node type of a <code>Text</code> node.</p>
+<h3 id="node_comment"><a class="header" href="#node_comment"><code>NODE_COMMENT</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_COMMENT = 8
+</code></pre>
+<p>Node type of a <code>Comment</code>.</p>
+<h3 id="node_document"><a class="header" href="#node_document"><code>NODE_DOCUMENT</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_DOCUMENT = 9
+</code></pre>
+<p>Node type of a <code>Document</code>.</p>
+<h3 id="node_document_type"><a class="header" href="#node_document_type"><code>NODE_DOCUMENT_TYPE</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_DOCUMENT_TYPE = 10
+</code></pre>
+<p>Node type of a <code>DocumentType</code> (the <code>&lt;!DOCTYPE ...&gt;</code> node).</p>
+<h3 id="node_document_fragment"><a class="header" href="#node_document_fragment"><code>NODE_DOCUMENT_FRAGMENT</code></a></h3>
+<pre><code class="language-zuri ignore">html.NODE_DOCUMENT_FRAGMENT = 11
+</code></pre>
+<p>Node type of a <code>DocumentFragment</code>, including the fragment that holds a
+<code>&lt;template&gt;</code> element’s content.</p>
+<h3 id="void_elements"><a class="header" href="#void_elements"><code>VOID_ELEMENTS</code></a></h3>
+<pre><code class="language-zuri ignore">html.VOID_ELEMENTS = [...]
+</code></pre>
+<p>The HTML elements that are written without a closing tag and can hold no
+content. Serializing one of these emits <code>&lt;br&gt;</code> and nothing else, and any
+child it somehow acquired is not written out, because markup that cannot
+be read back is worse than markup that loses it.</p>
+<p>This is the list the fragment serialization algorithm uses, which is
+wider than the standard’s modern “void elements” list: it also covers
+<code>basefont</code>, <code>bgsound</code>, <code>frame</code>, <code>keygen</code> and <code>param</code>, five legacy
+elements that were dropped from the authoring list but still take no end
+tag and still turn up in real documents.</p>
+<h3 id="raw_text_elements"><a class="header" href="#raw_text_elements"><code>RAW_TEXT_ELEMENTS</code></a></h3>
+<pre><code class="language-zuri ignore">html.RAW_TEXT_ELEMENTS = [...]
+</code></pre>
+<p>Elements whose text children are markup, not content: their text is
+written out byte for byte and never escaped, because escaping it would
+change what a stylesheet or a script means.</p>
+<p>The serialization algorithm also lists <code>noscript</code> here, but only when
+the scripting flag is enabled. This module parses with scripting
+disabled by default, and in that mode a <code>&lt;noscript&gt;</code> holds real elements
+rather than text, so leaving it out is right for the default and safe
+for the other case: the worst that happens to a document parsed with
+<code>scripting: true</code> is that its <code>&lt;noscript&gt;</code> text comes back escaped,
+whereas including it would let hand-built text inside a <code>&lt;noscript&gt;</code>
+serialize into live markup.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="hierarchyerror"><a class="header" href="#hierarchyerror"><code>HierarchyError</code></a></h3>
+<pre><code class="language-zuri ignore">class html.HierarchyError &lt; Error
+</code></pre>
+<p>Raised when a tree mutation would produce a structure that cannot exist,
+such as inserting a node before something that is not a child of the
+target, or making a node its own ancestor.</p>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.HierarchyError(message)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>message</code> (<code>string</code>)</li>
+</ul>
+<h3 id="node"><a class="header" href="#node"><code>Node</code></a></h3>
+<pre><code class="language-zuri ignore">class html.Node
+</code></pre>
+<p>The base class every node in a parsed document inherits from.</p>
+<p>You never construct a <code>Node</code> directly; parsing produces <code>Document</code>,
+<code>Element</code>, <code>Text</code>, <code>Comment</code> and <code>DocumentType</code> instances, and this
+class is where the behaviour they share lives.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>node_type</code></td><td></td><td>One of the <code>NODE_*</code> constants in this module, identifying which subclass this node actually is.</td></tr>
+<tr><td><code>parent_node</code></td><td></td><td>The node this one hangs off, or <code>nil</code> for a <code>Document</code> and for any node that has been detached.</td></tr>
+<tr><td><code>children</code></td><td></td><td>Every child of this node in document order: elements, text nodes and comments together.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.Node(node_type: number)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>node_type</code> (<code>number</code>)</li>
+</ul>
+<h4 id="nodeis_element"><a class="header" href="#nodeis_element"><code>Node.is_element()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_element() -&gt; bool
+</code></pre>
+<p>True when this node is an <code>Element</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_text"><a class="header" href="#nodeis_text"><code>Node.is_text()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_text() -&gt; bool
+</code></pre>
+<p>True when this node is a <code>Text</code> node.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_comment"><a class="header" href="#nodeis_comment"><code>Node.is_comment()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_comment() -&gt; bool
+</code></pre>
+<p>True when this node is a <code>Comment</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_document"><a class="header" href="#nodeis_document"><code>Node.is_document()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_document() -&gt; bool
+</code></pre>
+<p>True when this node is a <code>Document</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_doctype"><a class="header" href="#nodeis_doctype"><code>Node.is_doctype()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_doctype() -&gt; bool
+</code></pre>
+<p>True when this node is a <code>DocumentType</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodeis_fragment"><a class="header" href="#nodeis_fragment"><code>Node.is_fragment()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.is_fragment() -&gt; bool
+</code></pre>
+<p>True when this node is a <code>DocumentFragment</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodefirst_child"><a class="header" href="#nodefirst_child"><code>Node.first_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.first_child()
+</code></pre>
+<p>The first child of this node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> — ?Node</p>
+<h4 id="nodelast_child"><a class="header" href="#nodelast_child"><code>Node.last_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.last_child()
+</code></pre>
+<p>The last child of this node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> — ?Node</p>
+<h4 id="nodeindex_in_parent"><a class="header" href="#nodeindex_in_parent"><code>Node.index_in_parent()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.index_in_parent() -&gt; number
+</code></pre>
+<p>Position of this node among its parent’s children, or <code>-1</code> when it has
+no parent.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="nodenext_sibling"><a class="header" href="#nodenext_sibling"><code>Node.next_sibling()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.next_sibling()
+</code></pre>
+<p>The node immediately after this one under the same parent, or <code>nil</code> when
+this is the last child or has no parent.</p>
+<p><strong>Returns</strong> — ?Node</p>
+<h4 id="nodeprevious_sibling"><a class="header" href="#nodeprevious_sibling"><code>Node.previous_sibling()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.previous_sibling()
+</code></pre>
+<p>The node immediately before this one under the same parent, or <code>nil</code>
+when this is the first child or has no parent.</p>
+<p><strong>Returns</strong> — ?Node</p>
+<h4 id="nodenext_element_sibling"><a class="header" href="#nodenext_element_sibling"><code>Node.next_element_sibling()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.next_element_sibling()
+</code></pre>
+<p>The next sibling that is an element, skipping over text and comments, or
+<code>nil</code> when there is none.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="nodeprevious_element_sibling"><a class="header" href="#nodeprevious_element_sibling"><code>Node.previous_element_sibling()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.previous_element_sibling()
+</code></pre>
+<p>The previous sibling that is an element, skipping over text and
+comments, or <code>nil</code> when there is none.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="nodechild_elements"><a class="header" href="#nodechild_elements"><code>Node.child_elements()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.child_elements() -&gt; list
+</code></pre>
+<p>This node’s children that are elements, in document order.</p>
+<p>A fresh list is returned on every call, so changing it does not change
+the tree.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodefirst_element_child"><a class="header" href="#nodefirst_element_child"><code>Node.first_element_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.first_element_child()
+</code></pre>
+<p>The first child that is an element, or <code>nil</code>.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="nodelast_element_child"><a class="header" href="#nodelast_element_child"><code>Node.last_element_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.last_element_child()
+</code></pre>
+<p>The last child that is an element, or <code>nil</code>.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="noderoot"><a class="header" href="#noderoot"><code>Node.root()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.root()
+</code></pre>
+<p>The topmost node reachable by following <code>parent_node</code>, which for a
+parsed document is the <code>Document</code> itself and for a detached subtree is
+that subtree’s own root.</p>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodehas_ancestor"><a class="header" href="#nodehas_ancestor"><code>Node.has_ancestor()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.has_ancestor(other: instance) -&gt; bool
+</code></pre>
+<p>True when <em>other</em> is this node or one of its ancestors.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code> — other</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="nodedescendants"><a class="header" href="#nodedescendants"><code>Node.descendants()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.descendants() -&gt; list
+</code></pre>
+<p>Every node beneath this one, in document order, not including this node
+itself.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodewalk"><a class="header" href="#nodewalk"><code>Node.walk()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.walk(callback: function)
+</code></pre>
+<p>Calls <em>callback</em> once for every node beneath this one, in document
+order. The node is passed as the only argument.</p>
+<p>Returning <code>false</code> from the callback prunes that node’s subtree; any
+other return value (including <code>nil</code>) keeps walking. The walk reads
+<code>children</code> as it goes, so do not restructure the tree from inside the
+callback.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>)</li>
+</ul>
+<h4 id="nodeappend_child"><a class="header" href="#nodeappend_child"><code>Node.append_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.append_child(node: instance)
+</code></pre>
+<p>Adds <em>node</em> as this node’s last child, detaching it from wherever it
+currently lives first. Returns <em>node</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code> — node</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>node</em> is this node or one of its
+ancestors, which would make the tree cyclic.</p>
+<h4 id="nodeinsert_before"><a class="header" href="#nodeinsert_before"><code>Node.insert_before()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.insert_before(node: instance, reference: ?instance)
+</code></pre>
+<p>Inserts <em>node</em> immediately before <em>reference</em>, which must be a child of
+this node. Passing <code>nil</code> for <em>reference</em> appends. Returns <em>node</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code> — node</li>
+<li><code>?Node</code> — reference</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>reference</em> is not a child of this
+node, or when the insertion would make the tree cyclic.</p>
+<h4 id="noderemove_child"><a class="header" href="#noderemove_child"><code>Node.remove_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.remove_child(node: instance)
+</code></pre>
+<p>Removes <em>node</em> from this node’s children and returns it. The removed
+node keeps its own children; only its link to this parent is broken.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code> — node</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>node</em> is not a child of this node.</p>
+<h4 id="nodereplace_child"><a class="header" href="#nodereplace_child"><code>Node.replace_child()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.replace_child(replacement: instance, existing: instance)
+</code></pre>
+<p>Puts <em>replacement</em> where <em>existing</em> currently sits and returns
+<em>existing</em>, now detached.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code> — replacement</li>
+<li><code>Node</code> — existing</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when <em>existing</em> is not a child of this node,
+or when the replacement would make the tree cyclic.</p>
+<h4 id="nodedetach"><a class="header" href="#nodedetach"><code>Node.detach()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.detach()
+</code></pre>
+<p>Removes this node from its parent, if it has one. Returns this node so
+calls can be chained.</p>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodeclear_children"><a class="header" href="#nodeclear_children"><code>Node.clear_children()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.clear_children()
+</code></pre>
+<p>Removes every child of this node. The children are detached but
+otherwise untouched.</p>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodetext_content"><a class="header" href="#nodetext_content"><code>Node.text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.text_content() -&gt; string
+</code></pre>
+<p>The concatenated text of every <code>Text</code> node beneath this one, in document
+order. Comments and doctypes contribute nothing.</p>
+<p><code>Text</code> and <code>Comment</code> override this to return their own data.</p>
+<p>Unlike the browser DOM, a <code>Document</code> answers this the same way an
+element does rather than returning nothing; being told the text of a
+document you just parsed is far more useful than being told <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_text_content"><a class="header" href="#nodeset_text_content"><code>Node.set_text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.set_text_content(value: string)
+</code></pre>
+<p>Replaces every child of this node with a single <code>Text</code> node holding
+<em>value</em>. Passing an empty string just empties the node, matching the
+DOM.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodeinner_html"><a class="header" href="#nodeinner_html"><code>Node.inner_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.inner_html() -&gt; string
+</code></pre>
+<p>The markup of this node’s children, serialized the way the HTML fragment
+serialization algorithm specifies.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_inner_html"><a class="header" href="#nodeset_inner_html"><code>Node.set_inner_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.set_inner_html(source: string)
+</code></pre>
+<p>Parses <em>source</em> as HTML in the context of this node and replaces all of
+its children with the result.</p>
+<p>The parse runs the fragment parsing algorithm with this node as the
+context element, so <code>source</code> is interpreted exactly as it would be had
+it appeared inside this element in the original document. That matters:
+<code>'&lt;td&gt;x'</code> keeps its cell inside a <code>&lt;tr&gt;</code> and loses it anywhere else,
+which is what a browser does too.</p>
+<p>Nothing is executed and nothing is fetched; <code>&lt;script&gt;</code> content becomes
+an inert text node.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodeouter_html"><a class="header" href="#nodeouter_html"><code>Node.outer_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.outer_html() -&gt; string
+</code></pre>
+<p>The markup of this node including its own tags.</p>
+<p>For a <code>Document</code> this is the whole document; for a <code>Text</code> node it is the
+escaped text; for a <code>Comment</code> it is <code>&lt;!--...--&gt;</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="nodeset_outer_html"><a class="header" href="#nodeset_outer_html"><code>Node.set_outer_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.set_outer_html(source: string) -&gt; list
+</code></pre>
+<p>Parses <em>source</em> as HTML in the context of this node’s parent and puts
+the result where this node currently sits.</p>
+<p>Returns the list of nodes that replaced this one, which may be empty
+when <em>source</em> produces nothing. This node is detached either way.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>HierarchyError</code> when this node has no parent, since there
+would be nowhere to put the result.</p>
+<h4 id="nodeserialize_into"><a class="header" href="#nodeserialize_into"><code>Node.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.serialize_into(out: list)
+</code></pre>
+<p>Appends this node’s markup to <em>out</em>, a list of string pieces the caller
+is expected to <code>join()</code>.</p>
+<p><code>outer_html()</code> is the friendly form of this and is what you normally
+want. Reach for this one when you are writing a large document out in
+pieces and would rather not build the whole string in memory first.</p>
+<p>Every node class overrides it; the base implementation writes nothing.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h4 id="nodeclone_node"><a class="header" href="#nodeclone_node"><code>Node.clone_node()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.clone_node(deep: ?bool)
+</code></pre>
+<p>A deep or shallow copy of this node, detached from any parent.</p>
+<p>The copy is shallow by default, matching the DOM: you get the node
+itself with its attributes but with no children. Pass <code>true</code> for <em>deep</em>
+to copy the whole subtree.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>deep</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Node</p>
+<h4 id="nodeget_element_by_id"><a class="header" href="#nodeget_element_by_id"><code>Node.get_element_by_id()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.get_element_by_id(value: string)
+</code></pre>
+<p>The first element beneath this node whose <code>id</code> attribute is <em>value</em>, or
+<code>nil</code> when there is none.</p>
+<p>Ids are compared exactly, including case: HTML does not fold the case of
+id values even though it folds tag names.</p>
+<p>A document with duplicate ids is malformed but perfectly parseable, and
+this returns the first one in document order, which is what browsers
+settled on.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="nodeget_elements_by_class_name"><a class="header" href="#nodeget_elements_by_class_name"><code>Node.get_elements_by_class_name()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.get_elements_by_class_name(names) -&gt; list
+</code></pre>
+<p>Every element beneath this node carrying all of the classes in <em>names</em>,
+in document order.</p>
+<p><em>names</em> may be a single class name, several separated by whitespace, or
+a list of names; in every form an element must carry <em>all</em> of them to
+match. Class names are compared exactly, including case. An empty
+<em>names</em> matches nothing.</p>
+<pre><code class="language-zuri-repl">%&gt; doc.get_elements_by_class_name('warning')
+%&gt; doc.get_elements_by_class_name('warning sticky')
+%&gt; doc.get_elements_by_class_name(['warning', 'sticky'])
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>string|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodeget_elements_by_tag_name"><a class="header" href="#nodeget_elements_by_tag_name"><code>Node.get_elements_by_tag_name()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.get_elements_by_tag_name(name: string) -&gt; list
+</code></pre>
+<p>Every element beneath this node whose tag name is <em>name</em>, in document
+order.</p>
+<p>The comparison folds ASCII case, so <code>'DIV'</code> and <code>'div'</code> find the same
+elements. Passing <code>'*'</code> returns every element.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="nodequery_selector"><a class="header" href="#nodequery_selector"><code>Node.query_selector()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.query_selector(query: string)
+</code></pre>
+<p>The first element beneath this node matching the CSS selector <em>query</em>,
+in document order, or <code>nil</code> when nothing matches.</p>
+<p>The supported selector syntax is described in <code>html.selector</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ?Element</p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="nodequery_selector_all"><a class="header" href="#nodequery_selector_all"><code>Node.query_selector_all()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.query_selector_all(query: string) -&gt; list
+</code></pre>
+<p>Every element beneath this node matching the CSS selector <em>query</em>, in
+document order.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="nodeto_string"><a class="header" href="#nodeto_string"><code>Node.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Node.to_string() -&gt; string
+</code></pre>
+<p>Renders this node as markup, the same as <code>outer_html()</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="text"><a class="header" href="#text"><code>Text</code></a></h3>
+<pre><code class="language-zuri ignore">class html.Text &lt; Node
+</code></pre>
+<p>A run of character data in the tree.</p>
+<p>The parser merges adjacent characters into as few <code>Text</code> nodes as the
+tree construction algorithm allows, so a paragraph of prose is normally
+one node rather than one per character.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-1"><a class="header" href="#fields-1">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>data</code></td><td></td><td>The characters this node holds, already decoded: character references were resolved during parsing, so <code>data</code>…</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-2"><a class="header" href="#constructor-2">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.Text(data: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string</code>)</li>
+</ul>
+<h4 id="texttext_content"><a class="header" href="#texttext_content"><code>Text.text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Text.text_content() -&gt; string
+</code></pre>
+<p>The characters this node holds.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="textset_text_content"><a class="header" href="#textset_text_content"><code>Text.set_text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Text.set_text_content(value: string)
+</code></pre>
+<p>Replaces this node’s characters with <em>value</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Text</p>
+<h4 id="textappend_data"><a class="header" href="#textappend_data"><code>Text.append_data()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Text.append_data(value: string)
+</code></pre>
+<p>Appends <em>value</em> to this node’s characters.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Text</p>
+<h4 id="textserialize_into"><a class="header" href="#textserialize_into"><code>Text.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Text.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="comment"><a class="header" href="#comment"><code>Comment</code></a></h3>
+<pre><code class="language-zuri ignore">class html.Comment &lt; Node
+</code></pre>
+<p>An HTML comment.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-2"><a class="header" href="#fields-2">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>data</code></td><td></td><td>The text between <code>&lt;!--</code> and <code>--&gt;</code>, exactly as it appeared.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-3"><a class="header" href="#constructor-3">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.Comment(data: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string</code>)</li>
+</ul>
+<h4 id="commenttext_content"><a class="header" href="#commenttext_content"><code>Comment.text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Comment.text_content() -&gt; string
+</code></pre>
+<p>The comment’s text.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="commentset_text_content"><a class="header" href="#commentset_text_content"><code>Comment.set_text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Comment.set_text_content(value: string)
+</code></pre>
+<p>Replaces the comment’s text with <em>value</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Comment</p>
+<h4 id="commentserialize_into"><a class="header" href="#commentserialize_into"><code>Comment.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Comment.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="documenttype"><a class="header" href="#documenttype"><code>DocumentType</code></a></h3>
+<pre><code class="language-zuri ignore">class html.DocumentType &lt; Node
+</code></pre>
+<p>The <code>&lt;!DOCTYPE ...&gt;</code> node at the top of a document.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-3"><a class="header" href="#fields-3">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td></td><td>The doctype’s name, lowercased by the tokenizer.</td></tr>
+<tr><td><code>public_id</code></td><td></td><td>The public identifier, or an empty string when the doctype has none.</td></tr>
+<tr><td><code>system_id</code></td><td></td><td>The system identifier, or an empty string when the doctype has none.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-4"><a class="header" href="#constructor-4">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.DocumentType(name: string, public_id: ?string, system_id: ?string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>public_id</code> (<code>?string</code>)</li>
+<li><code>system_id</code> (<code>?string</code>)</li>
+</ul>
+<h4 id="documenttypetext_content"><a class="header" href="#documenttypetext_content"><code>DocumentType.text_content()</code></a></h4>
+<pre><code class="language-zuri ignore">html.DocumentType.text_content() -&gt; string
+</code></pre>
+<p>A doctype contains no text, so this is always an empty string.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="documenttypeserialize_into"><a class="header" href="#documenttypeserialize_into"><code>DocumentType.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.DocumentType.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="documentfragment"><a class="header" href="#documentfragment"><code>DocumentFragment</code></a></h3>
+<pre><code class="language-zuri ignore">class html.DocumentFragment &lt; Node
+</code></pre>
+<p>A parentless container for a run of nodes.</p>
+<p>Fragment parsing produces one of these, and every <code>&lt;template&gt;</code> element
+owns one holding its content.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-5"><a class="header" href="#constructor-5">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.DocumentFragment()
+</code></pre>
+<h4 id="documentfragmentserialize_into"><a class="header" href="#documentfragmentserialize_into"><code>DocumentFragment.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.DocumentFragment.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="document"><a class="header" href="#document"><code>Document</code></a></h3>
+<pre><code class="language-zuri ignore">class html.Document &lt; Node
+</code></pre>
+<p>A whole parsed document.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-4"><a class="header" href="#fields-4">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>mode</code></td><td></td><td>Which quirks mode the doctype (or the lack of one) put this document in: <code>'no-quirks'</code>, <code>'limited-quirks'</code> or…</td></tr>
+<tr><td><code>errors</code></td><td></td><td>Every parse error the tokenizer and tree builder raised, in the order they happened.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-6"><a class="header" href="#constructor-6">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.Document()
+</code></pre>
+<h4 id="documentdocument_element"><a class="header" href="#documentdocument_element"><code>Document.document_element()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.document_element()
+</code></pre>
+<p>The document’s root element, normally <code>&lt;html&gt;</code>, or <code>nil</code> for an empty
+document.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="documentdoctype"><a class="header" href="#documentdoctype"><code>Document.doctype()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.doctype()
+</code></pre>
+<p>The document’s <code>&lt;!DOCTYPE&gt;</code> node, or <code>nil</code> when it has none.</p>
+<p><strong>Returns</strong> — ?DocumentType</p>
+<h4 id="documenthead"><a class="header" href="#documenthead"><code>Document.head()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.head()
+</code></pre>
+<p>The document’s <code>&lt;head&gt;</code> element, or <code>nil</code>.</p>
+<p>The tree construction algorithm always creates one when parsing a whole
+document, even for input with no <code>&lt;head&gt;</code> tag in it, so this only
+returns <code>nil</code> for a document that was built by hand.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="documentbody"><a class="header" href="#documentbody"><code>Document.body()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.body()
+</code></pre>
+<p>The document’s <code>&lt;body&gt;</code> element, or the <code>&lt;frameset&gt;</code> that stands in for
+it in a frameset document, or <code>nil</code> when there is neither.</p>
+<p><strong>Returns</strong> — ?Element</p>
+<h4 id="documenttitle"><a class="header" href="#documenttitle"><code>Document.title()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.title() -&gt; string
+</code></pre>
+<p>The text of the document’s <code>&lt;title&gt;</code> element, with leading and trailing
+whitespace removed, or an empty string when there is no title.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="documentserialize_into"><a class="header" href="#documentserialize_into"><code>Document.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Document.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h3 id="classlist"><a class="header" href="#classlist"><code>ClassList</code></a></h3>
+<pre><code class="language-zuri ignore">class html.ClassList
+</code></pre>
+<p>A live view of one element’s <code>class</code> attribute.</p>
+<p>Every method reads and writes the attribute itself, so a <code>class_list</code>
+never goes stale and two of them taken from the same element always
+agree.</p>
+<pre><code class="language-zuri-repl">%&gt; var el = doc.query_selector('div')
+%&gt; el.class_list().add('active')
+%&gt; el.class_list().contains('active')
+true
+%&gt; el.get_attribute('class')
+'active'
+</code></pre>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-5"><a class="header" href="#fields-5">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>element</code></td><td></td><td>The element this list reads from and writes to.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-7"><a class="header" href="#constructor-7">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.ClassList(element)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Element</code> — element</li>
+</ul>
+<h4 id="classlistto_list"><a class="header" href="#classlistto_list"><code>ClassList.to_list()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.to_list() -&gt; list
+</code></pre>
+<p>The class names currently on the element, in source order, with
+duplicates removed.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="classlistlength"><a class="header" href="#classlistlength"><code>ClassList.length()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.length() -&gt; number
+</code></pre>
+<p>How many distinct classes the element carries.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="classlistcontains"><a class="header" href="#classlistcontains"><code>ClassList.contains()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.contains(name: string) -&gt; bool
+</code></pre>
+<p>True when the element carries <em>name</em>. The comparison is exact: HTML
+class names are case-sensitive in standards mode.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="classlistadd"><a class="header" href="#classlistadd"><code>ClassList.add()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.add(...names: list)
+</code></pre>
+<p>Adds every name given to the element’s class attribute, ignoring any it
+already has. Returns the list so calls can be chained.</p>
+<p>An empty name, or one containing whitespace, is rejected: those cannot
+be written to a class attribute without changing what it means.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>...string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ClassList</p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlistremove"><a class="header" href="#classlistremove"><code>ClassList.remove()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.remove(...names: list)
+</code></pre>
+<p>Removes every name given from the element’s class attribute, ignoring
+any it does not have. Returns the list.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>...string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ClassList</p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlisttoggle"><a class="header" href="#classlisttoggle"><code>ClassList.toggle()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.toggle(name: string, force: ?bool) -&gt; bool
+</code></pre>
+<p>Adds <em>name</em> when the element does not have it and removes it when it
+does, then returns <code>true</code> when the class is present afterwards.</p>
+<p>Passing <em>force</em> turns this into an unconditional add (<code>true</code>) or remove
+(<code>false</code>), which is handy when the desired state is already in a
+variable.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>force</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<p><strong>Raises</strong> <code>ArgumentError</code></p>
+<h4 id="classlistto_string"><a class="header" href="#classlistto_string"><code>ClassList.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">html.ClassList.to_string() -&gt; string
+</code></pre>
+<p>The class attribute’s value as it would be written out.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="element"><a class="header" href="#element"><code>Element</code></a></h3>
+<pre><code class="language-zuri ignore">class html.Element &lt; Node
+</code></pre>
+<p>An element in the tree.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="fields-6"><a class="header" href="#fields-6">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tag_name</code></td><td></td><td>The element’s tag name.</td></tr>
+<tr><td><code>namespace</code></td><td></td><td>The namespace this element lives in: one of <code>HTML_NAMESPACE</code>, <code>SVG_NAMESPACE</code> or <code>MATHML_NAMESPACE</code>.</td></tr>
+<tr><td><code>attributes</code></td><td></td><td>The element’s attributes, in source order, as a dictionary of name to value.</td></tr>
+<tr><td><code>attribute_namespaces</code></td><td></td><td>Namespace URIs for the few attributes that have one, keyed by the same qualified name used in <code>attributes</code>.</td></tr>
+<tr><td><code>source_line</code></td><td></td><td>The line in the source where this element’s start tag began, counting from 1, or <code>0</code> for an element that was…</td></tr>
+<tr><td><code>source_column</code></td><td></td><td>The column in the source where this element’s start tag began, counting from 1, or <code>0</code> for an element that…</td></tr>
+<tr><td><code>content</code></td><td></td><td>For a <code>&lt;template&gt;</code> element, the <code>DocumentFragment</code> holding its content.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-8"><a class="header" href="#constructor-8">Constructor</a></h4>
+<pre><code class="language-zuri ignore">html.Element(tag_name: string, namespace: ?string, attributes: ?dict)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>tag_name</code> (<code>string</code>)</li>
+<li><code>namespace</code> (<code>?string</code>)</li>
+<li><code>attributes</code> (<code>?dict</code>)</li>
+</ul>
+<h4 id="elementis_html"><a class="header" href="#elementis_html"><code>Element.is_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.is_html() -&gt; bool
+</code></pre>
+<p>True when this is an HTML element, as opposed to one inside an <code>&lt;svg&gt;</code>
+or <code>&lt;math&gt;</code> subtree.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementis_void"><a class="header" href="#elementis_void"><code>Element.is_void()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.is_void() -&gt; bool
+</code></pre>
+<p>True when this element is one of the HTML void elements, which have no
+closing tag and can hold no content.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementget_attribute"><a class="header" href="#elementget_attribute"><code>Element.get_attribute()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.get_attribute(name: string) -&gt; ?string
+</code></pre>
+<p>The value of the attribute <em>name</em>, or <code>nil</code> when the element does not
+carry it.</p>
+<p>The lookup folds ASCII case for HTML elements, so
+<code>get_attribute('HREF')</code> and <code>get_attribute('href')</code> are the same
+question. For foreign elements the name is matched exactly, because SVG
+really does distinguish <code>viewBox</code> from <code>viewbox</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="elementhas_attribute"><a class="header" href="#elementhas_attribute"><code>Element.has_attribute()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.has_attribute(name: string) -&gt; bool
+</code></pre>
+<p>True when the element carries the attribute <em>name</em>, whatever its value.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementset_attribute"><a class="header" href="#elementset_attribute"><code>Element.set_attribute()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.set_attribute(name: string, value: string)
+</code></pre>
+<p>Sets the attribute <em>name</em> to <em>value</em>, replacing any existing value and
+leaving the attribute’s position among the others unchanged. A new
+attribute is appended after the existing ones.</p>
+<p>Pass an empty string for a valueless attribute such as <code>disabled</code>; there
+is no separate “no value” state.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Element</p>
+<p><strong>Raises</strong> <code>ArgumentError</code> when <em>name</em> is empty or contains a character
+that cannot appear in an attribute name.</p>
+<h4 id="elementremove_attribute"><a class="header" href="#elementremove_attribute"><code>Element.remove_attribute()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.remove_attribute(name: string) -&gt; bool
+</code></pre>
+<p>Removes the attribute <em>name</em> and returns <code>true</code> when it was actually
+there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="elementattribute_names"><a class="header" href="#elementattribute_names"><code>Element.attribute_names()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.attribute_names() -&gt; list
+</code></pre>
+<p>The attribute names this element carries, in source order.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="elementattribute_namespace"><a class="header" href="#elementattribute_namespace"><code>Element.attribute_namespace()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.attribute_namespace(name: string) -&gt; ?string
+</code></pre>
+<p>The namespace URI of the attribute <em>name</em>, or <code>nil</code> when it has none.
+Only foreign content produces namespaced attributes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="elementset_attribute_namespace"><a class="header" href="#elementset_attribute_namespace"><code>Element.set_attribute_namespace()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.set_attribute_namespace(name: string, uri: string)
+</code></pre>
+<p>Records that the attribute <em>name</em> belongs to <em>uri</em>. Called by the parser
+while adjusting foreign attributes; there is no reason to call it by
+hand.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>uri</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Element</p>
+<h4 id="elementid"><a class="header" href="#elementid"><code>Element.id()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.id() -&gt; string
+</code></pre>
+<p>The element’s <code>id</code>, or an empty string when it has none.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementclass_name"><a class="header" href="#elementclass_name"><code>Element.class_name()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.class_name() -&gt; string
+</code></pre>
+<p>The element’s <code>class</code> attribute verbatim, or an empty string.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementclass_names"><a class="header" href="#elementclass_names"><code>Element.class_names()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.class_names() -&gt; list
+</code></pre>
+<p>The element’s classes as a list, in source order and without duplicates.
+An element with no <code>class</code> attribute gives an empty list.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="elementclass_list"><a class="header" href="#elementclass_list"><code>Element.class_list()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.class_list()
+</code></pre>
+<p>A <code>ClassList</code> view of this element’s <code>class</code> attribute, for adding,
+removing and toggling classes.</p>
+<p>A fresh view is returned on every call; because it reads and writes the
+attribute directly there is no state to keep, and two views of the same
+element behave identically.</p>
+<p><strong>Returns</strong> — ClassList</p>
+<h4 id="elementmatches"><a class="header" href="#elementmatches"><code>Element.matches()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.matches(query: string) -&gt; bool
+</code></pre>
+<p>True when this element matches the CSS selector <em>query</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="elementclosest"><a class="header" href="#elementclosest"><code>Element.closest()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.closest(query: string)
+</code></pre>
+<p>This element, or its nearest ancestor, matching the CSS selector
+<em>query</em>: or <code>nil</code> when neither this element nor any ancestor does.</p>
+<p>The search starts at the element itself, which is what makes
+<code>el.closest('div')</code> return <code>el</code> when <code>el</code> is a <code>div</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>query</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ?Element</p>
+<p><strong>Raises</strong> <code>SelectorError</code> when <em>query</em> is not valid.</p>
+<h4 id="elementserialize_into"><a class="header" href="#elementserialize_into"><code>Element.serialize_into()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.serialize_into(out: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>out</code> (<code>list</code>)</li>
+</ul>
+<h4 id="elementinner_html"><a class="header" href="#elementinner_html"><code>Element.inner_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.inner_html() -&gt; string
+</code></pre>
+<p>The markup of this element’s children.</p>
+<p>A <code>&lt;template&gt;</code> answers with its content fragment rather than with its
+own children, which are always empty. That matches the DOM, and it is
+the only way the question has a useful answer for a template.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="elementset_inner_html"><a class="header" href="#elementset_inner_html"><code>Element.set_inner_html()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.set_inner_html(source: string)
+</code></pre>
+<p>Parses <em>source</em> and replaces this element’s children with the result.</p>
+<p>For a <code>&lt;template&gt;</code> the result goes into the content fragment, matching
+where <code>inner_html()</code> reads from.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Element</p>
+<h4 id="elementclone_node"><a class="header" href="#elementclone_node"><code>Element.clone_node()</code></a></h4>
+<pre><code class="language-zuri ignore">html.Element.clone_node(deep: ?bool)
+</code></pre>
+<p>A deep or shallow copy of this element. Deep-cloning a <code>&lt;template&gt;</code> also
+copies its content fragment, which is otherwise not part of the
+element’s children.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>deep</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Element</p>
+<hr>
+<p><small>2026, Richard Ore and The Zuri Contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="html-namespaces.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="html-parser.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="html-namespaces.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="html-parser.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

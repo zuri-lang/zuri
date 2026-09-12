@@ -1,0 +1,472 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>html - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d4f5727e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8c5b994b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="html"><a class="header" href="#html"><code>html</code></a></h1>
+<pre><code class="language-zuri ignore">import html
+</code></pre>
+<p>A complete HTML5 parser, DOM and serializer, following the <a href="https://html.spec.whatwg.org/multipage/">WHATWG HTML
+Living Standard</a>.</p>
+<p>Parse a page, walk it, query it with CSS selectors, change it, and write
+it back out. Nothing here fetches anything over the network and nothing
+here executes a script; <code>&lt;script&gt;</code> content is inert text and always will
+be.</p>
+<hr>
+<h2 id="quick-start"><a class="header" href="#quick-start">Quick start</a></h2>
+<pre><code class="language-zuri ignore">import html
+
+var doc = html.parse('
+  &lt;article&gt;
+    &lt;h1 id="title"&gt;Zuri&lt;/h1&gt;
+    &lt;ul class="links"&gt;
+      &lt;li&gt;&lt;a href="/docs"&gt;Docs&lt;/a&gt;
+      &lt;li&gt;&lt;a href="/spec"&gt;Spec&lt;/a&gt;
+    &lt;/ul&gt;
+  &lt;/article&gt;
+')
+
+echo doc.get_element_by_id('title').text_content()
+
+for link in doc.query_selector_all('ul.links a') {
+  echo '${link.text_content()} -&gt; ${link.get_attribute("href")}'
+}
+</code></pre>
+<p>Notice that neither <code>&lt;li&gt;</code> is closed and there is no <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>
+or <code>&lt;body&gt;</code> anywhere. That is fine: the standard defines a tree for
+every possible input, and this module builds it. Parsing never raises on
+malformed markup.</p>
+<hr>
+<h2 id="finding-things"><a class="header" href="#finding-things">Finding things</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Finds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>get_element_by_id(id)</code></td><td>the first element with that id</td></tr>
+<tr><td><code>get_elements_by_class_name(c)</code></td><td>every element with those classes</td></tr>
+<tr><td><code>get_elements_by_tag_name(t)</code></td><td>every element with that tag</td></tr>
+<tr><td><code>query_selector(sel)</code></td><td>the first CSS match</td></tr>
+<tr><td><code>query_selector_all(sel)</code></td><td>every CSS match</td></tr>
+<tr><td><code>element.matches(sel)</code></td><td>whether this element matches</td></tr>
+<tr><td><code>element.closest(sel)</code></td><td>this element or its nearest matching ancestor</td></tr>
+</tbody>
+</table>
+</div>
+<p>The selector syntax is a deliberately bounded subset: type, <code>*</code>, <code>#id</code>,
+<code>.class</code>, <code>[attr]</code>, <code>[attr="value"]</code>, the combinators <code>&gt;</code>, <code>+</code> and <code>~</code>,
+descendant combination by whitespace, <code>:first-child</code>, <code>:last-child</code>,
+<code>:nth-child()</code>, and comma-separated lists of all of those. Anything
+outside it raises a <code>SelectorError</code> rather than silently matching
+nothing.</p>
+<hr>
+<h2 id="changing-things"><a class="header" href="#changing-things">Changing things</a></h2>
+<pre><code class="language-zuri ignore">import html
+
+var doc = html.parse('&lt;div class="box"&gt;&lt;p&gt;old&lt;/p&gt;&lt;/div&gt;')
+var box = doc.query_selector('.box')
+
+box.set_attribute('data-seen', 'yes')
+box.class_list().add('active')
+box.set_inner_html('&lt;p&gt;new&lt;/p&gt;')
+
+echo box.outer_html()
+# &lt;div class="box active" data-seen="yes"&gt;&lt;p&gt;new&lt;/p&gt;&lt;/div&gt;
+</code></pre>
+<p>Zuri has no property setters, so every writable DOM property is a pair
+of methods: <code>text_content()</code> reads and <code>set_text_content()</code> writes, and
+likewise for <code>inner_html</code> and <code>outer_html</code>.</p>
+<hr>
+<h2 id="writing-it-back-out"><a class="header" href="#writing-it-back-out">Writing it back out</a></h2>
+<p><code>outer_html()</code> round-trips a node exactly. When you want the output
+shaped for a particular audience, <code>minify()</code> strips what a browser does
+not need and <code>format()</code> indents for a human:</p>
+<p>A string is parsed as a whole document, so <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code> and
+<code>&lt;body&gt;</code> show up in the output the way a browser would produce them.
+Pass <code>{ fragment: true }</code> when the input is a fragment and you want just
+that fragment back:</p>
+<pre><code class="language-zuri-repl">%&gt; import html
+%&gt; html.minify('&lt;p&gt;  a   b  &lt;/p&gt;\\n&lt;p&gt;c&lt;/p&gt;', { fragment: true })
+'&lt;p&gt;a b&lt;/p&gt;&lt;p&gt;c&lt;/p&gt;'
+%&gt; echo html.format('&lt;ul&gt;&lt;li&gt;a&lt;li&gt;b&lt;/ul&gt;', { fragment: true })
+&lt;ul&gt;
+  &lt;li&gt;a&lt;/li&gt;
+  &lt;li&gt;b&lt;/li&gt;
+&lt;/ul&gt;
+</code></pre>
+<hr>
+<h2 id="escaping"><a class="header" href="#escaping">Escaping</a></h2>
+<p><code>encode()</code> makes text safe to embed and <code>decode()</code> resolves character
+references. Decoding knows all 2231 named references, not a shortlist:</p>
+<pre><code class="language-zuri-repl">%&gt; import html
+%&gt; html.encode('&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;')
+'&amp;lt;b&amp;gt;Tom &amp;amp; Jerry&amp;lt;/b&amp;gt;'
+%&gt; html.decode('caf&amp;eacute; &amp;#8212; &amp;#x2603;')
+'café: ☃'
+</code></pre>
+<hr>
+<h2 id="encoding"><a class="header" href="#encoding">Encoding</a></h2>
+<p>Input is UTF-8 text that has already been decoded, which is what a Zuri
+string always is. There is no charset sniffing, no byte order mark
+handling and no <code>&lt;meta charset&gt;</code> processing: if you are reading bytes
+off a socket, decode them before they get here.</p>
+<hr>
+<h2 id="parse-errors"><a class="header" href="#parse-errors">Parse errors</a></h2>
+<p>HTML has no fatal errors, so a parse always succeeds. Every conformance
+problem the standard defines is collected instead:</p>
+<pre><code class="language-zuri-repl">%&gt; import html
+%&gt; var doc = html.parse('&lt;p&gt;&lt;b&gt;x&lt;/p&gt;')
+%&gt; for e in doc.errors { echo e.to_string() }
+missing-doctype at 1:1
+unexpected-end-tag at 1:8
+</code></pre>
+<p>Each entry carries the standard’s own error name, so you can look it up,
+plus the line and column where it was noticed.</p>
+<h2 id="the-html-api"><a class="header" href="#the-html-api">The <code>html</code> API</a></h2>
+<p>Every public name in <code>html</code>, wherever it is declared. Each links to the
+page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="html-node.html#classlist"><code>html.ClassList</code></a></td><td>class</td><td>A live view of one element’s <code>class</code> attribute.</td></tr>
+<tr><td><a href="html-node.html#comment"><code>html.Comment</code></a></td><td>class</td><td>An HTML comment.</td></tr>
+<tr><td><a href="html-node.html#document"><code>html.Document</code></a></td><td>class</td><td>A whole parsed document.</td></tr>
+<tr><td><a href="html-node.html#documentfragment"><code>html.DocumentFragment</code></a></td><td>class</td><td>A parentless container for a run of nodes.</td></tr>
+<tr><td><a href="html-node.html#documenttype"><code>html.DocumentType</code></a></td><td>class</td><td>The <code>&lt;!DOCTYPE ...&gt;</code> node at the top of a document.</td></tr>
+<tr><td><a href="html-node.html#element"><code>html.Element</code></a></td><td>class</td><td>An element in the tree.</td></tr>
+<tr><td><a href="html-namespaces.html#html_namespace"><code>html.HTML_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI of ordinary HTML elements.</td></tr>
+<tr><td><a href="html-node.html#hierarchyerror"><code>html.HierarchyError</code></a></td><td>class</td><td>Raised when a tree mutation would produce a structure that cannot exist, such as inserting a node before…</td></tr>
+<tr><td><a href="html-namespaces.html#mathml_namespace"><code>html.MATHML_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI of elements inside a <code>&lt;math&gt;</code> subtree.</td></tr>
+<tr><td><a href="html-node.html#node_comment"><code>html.NODE_COMMENT</code></a></td><td>constant</td><td>Node type of a <code>Comment</code>.</td></tr>
+<tr><td><a href="html-node.html#node_document"><code>html.NODE_DOCUMENT</code></a></td><td>constant</td><td>Node type of a <code>Document</code>.</td></tr>
+<tr><td><a href="html-node.html#node_document_fragment"><code>html.NODE_DOCUMENT_FRAGMENT</code></a></td><td>constant</td><td>Node type of a <code>DocumentFragment</code>, including the fragment that holds a <code>&lt;template&gt;</code> element’s content.</td></tr>
+<tr><td><a href="html-node.html#node_document_type"><code>html.NODE_DOCUMENT_TYPE</code></a></td><td>constant</td><td>Node type of a <code>DocumentType</code> (the <code>&lt;!DOCTYPE ...&gt;</code> node).</td></tr>
+<tr><td><a href="html-node.html#node_element"><code>html.NODE_ELEMENT</code></a></td><td>constant</td><td>Node type of an <code>Element</code>.</td></tr>
+<tr><td><a href="html-node.html#node_text"><code>html.NODE_TEXT</code></a></td><td>constant</td><td>Node type of a <code>Text</code> node.</td></tr>
+<tr><td><a href="html-node.html#node"><code>html.Node</code></a></td><td>class</td><td>The base class every node in a parsed document inherits from.</td></tr>
+<tr><td><a href="html-tokenizer.html#parseerror"><code>html.ParseError</code></a></td><td>class</td><td>A parse error raised while tokenizing or building the tree.</td></tr>
+<tr><td><a href="html-node.html#raw_text_elements"><code>html.RAW_TEXT_ELEMENTS</code></a></td><td>constant</td><td>Elements whose text children are markup, not content: their text is written out byte for byte and never…</td></tr>
+<tr><td><a href="html-namespaces.html#svg_namespace"><code>html.SVG_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI of elements inside an <code>&lt;svg&gt;</code> subtree.</td></tr>
+<tr><td><a href="html-selector.html#selector"><code>html.Selector</code></a></td><td>class</td><td>A compiled selector list: <code>h1, h2</code> is one of these holding two <code>ComplexSelector</code> instances.</td></tr>
+<tr><td><a href="html-selector.html#selectorerror"><code>html.SelectorError</code></a></td><td>class</td><td>Raised when a selector cannot be parsed, or uses syntax this module deliberately does not support.</td></tr>
+<tr><td><a href="html-node.html#text"><code>html.Text</code></a></td><td>class</td><td>A run of character data in the tree.</td></tr>
+<tr><td><a href="html-tokenizer.html#token"><code>html.Token</code></a></td><td>class</td><td>One token from the tokenizer.</td></tr>
+<tr><td><a href="html-tokenizer.html#tokenizer"><code>html.Tokenizer</code></a></td><td>class</td><td>Turns markup into tokens, one call to <code>next_token()</code> at a time.</td></tr>
+<tr><td><a href="html-parser.html#treebuilder"><code>html.TreeBuilder</code></a></td><td>class</td><td>Builds a document tree from a token stream.</td></tr>
+<tr><td><a href="html-node.html#void_elements"><code>html.VOID_ELEMENTS</code></a></td><td>constant</td><td>The HTML elements that are written without a closing tag and can hold no content.</td></tr>
+<tr><td><a href="html-namespaces.html#xlink_namespace"><code>html.XLINK_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI used by the <code>xlink:</code> attribute prefix in SVG.</td></tr>
+<tr><td><a href="html-namespaces.html#xmlns_namespace"><code>html.XMLNS_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI used by the <code>xmlns</code> and <code>xmlns:xlink</code> attributes.</td></tr>
+<tr><td><a href="html-namespaces.html#xml_namespace"><code>html.XML_NAMESPACE</code></a></td><td>constant</td><td>Namespace URI used by the <code>xml:</code> attribute prefix.</td></tr>
+<tr><td><a href="html-selector.html#compile"><code>html.compile</code></a></td><td>function</td><td>Compiles <em>source</em> into a reusable <code>Selector</code>.</td></tr>
+<tr><td><a href="html-entities.html#decode"><code>html.decode</code></a></td><td>function</td><td>Decodes every character reference in <em>text</em> and returns the result.</td></tr>
+<tr><td><a href="html-elements.html#foreign_attributes"><code>html.elements.FOREIGN_ATTRIBUTES</code></a></td><td>constant</td><td>Attributes in foreign content that belong to a namespace, mapping the lowercase name the tokenizer produced…</td></tr>
+<tr><td><a href="html-elements.html#foreign_breakout_tags"><code>html.elements.FOREIGN_BREAKOUT_TAGS</code></a></td><td>constant</td><td>Start tags that are always a mistake inside foreign content and that break out of it, closing SVG or MathML…</td></tr>
+<tr><td><a href="html-elements.html#formatting_elements"><code>html.elements.FORMATTING_ELEMENTS</code></a></td><td>constant</td><td>The formatting elements: the ones the adoption agency algorithm reopens across a badly nested boundary, so…</td></tr>
+<tr><td><a href="html-elements.html#html4_transitional_prefixes"><code>html.elements.HTML4_TRANSITIONAL_PREFIXES</code></a></td><td>constant</td><td>Public identifier prefixes whose mode depends on whether the doctype also carries a system identifier: quirks…</td></tr>
+<tr><td><a href="html-elements.html#implied_end_tags"><code>html.elements.IMPLIED_END_TAGS</code></a></td><td>constant</td><td>Elements whose end tag is implied by the start of a sibling, so that <code>&lt;li&gt;a&lt;li&gt;b</code> produces two list items…</td></tr>
+<tr><td><a href="html-elements.html#limited_quirks_public_prefixes"><code>html.elements.LIMITED_QUIRKS_PUBLIC_PREFIXES</code></a></td><td>constant</td><td>Public identifier prefixes that always mean limited-quirks mode.</td></tr>
+<tr><td><a href="html-elements.html#mathml_attributes"><code>html.elements.MATHML_ATTRIBUTES</code></a></td><td>constant</td><td>The one MathML attribute whose case the tokenizer destroys.</td></tr>
+<tr><td><a href="html-elements.html#mathml_text_integration_points"><code>html.elements.MATHML_TEXT_INTEGRATION_POINTS</code></a></td><td>constant</td><td>The MathML elements whose children are parsed as HTML rather than as MathML.</td></tr>
+<tr><td><a href="html-elements.html#quirks_public_exact"><code>html.elements.QUIRKS_PUBLIC_EXACT</code></a></td><td>constant</td><td>The two public identifiers that put a document in quirks mode on an exact match rather than a prefix match,…</td></tr>
+<tr><td><a href="html-elements.html#quirks_public_prefixes"><code>html.elements.QUIRKS_PUBLIC_PREFIXES</code></a></td><td>constant</td><td>Public identifier prefixes that put a document in quirks mode, in lowercase for case-insensitive comparison.</td></tr>
+<tr><td><a href="html-elements.html#quirks_system_id"><code>html.elements.QUIRKS_SYSTEM_ID</code></a></td><td>constant</td><td>The system identifier that alone puts a document in quirks mode, in lowercase.</td></tr>
+<tr><td><a href="html-elements.html#scope_html"><code>html.elements.SCOPE_HTML</code></a></td><td>constant</td><td>The HTML elements that make up the “in scope” barrier every scope check shares.</td></tr>
+<tr><td><a href="html-elements.html#special_html"><code>html.elements.SPECIAL_HTML</code></a></td><td>constant</td><td>The HTML elements the standard calls “special”: the ones a list item or definition term stops searching past,…</td></tr>
+<tr><td><a href="html-elements.html#special_mathml"><code>html.elements.SPECIAL_MATHML</code></a></td><td>constant</td><td>The MathML elements that count as special.</td></tr>
+<tr><td><a href="html-elements.html#special_svg"><code>html.elements.SPECIAL_SVG</code></a></td><td>constant</td><td>The SVG elements that count as special.</td></tr>
+<tr><td><a href="html-elements.html#svg_attributes"><code>html.elements.SVG_ATTRIBUTES</code></a></td><td>constant</td><td>SVG attribute names the tokenizer lowercased and that have to be put back, keyed by the lowercase form.</td></tr>
+<tr><td><a href="html-elements.html#svg_html_integration_points"><code>html.elements.SVG_HTML_INTEGRATION_POINTS</code></a></td><td>constant</td><td>The SVG elements whose children are parsed as HTML rather than as SVG.</td></tr>
+<tr><td><a href="html-elements.html#svg_tag_names"><code>html.elements.SVG_TAG_NAMES</code></a></td><td>constant</td><td>SVG tag names the tokenizer lowercased and that have to be put back, keyed by the lowercase form.</td></tr>
+<tr><td><a href="html-elements.html#thorough_implied_end_tags"><code>html.elements.THOROUGH_IMPLIED_END_TAGS</code></a></td><td>constant</td><td>Everything in <code>IMPLIED_END_TAGS</code> plus the elements only closed when the standard says to generate implied end…</td></tr>
+<tr><td><a href="html-elements.html#adjust_mathml_attributes"><code>html.elements.adjust_mathml_attributes</code></a></td><td>function</td><td>Repairs the case of MathML attribute names in <em>attributes</em> and returns a new dictionary.</td></tr>
+<tr><td><a href="html-elements.html#adjust_svg_attributes"><code>html.elements.adjust_svg_attributes</code></a></td><td>function</td><td>Repairs the case of SVG attribute names in <em>attributes</em> and returns a new dictionary.</td></tr>
+<tr><td><a href="html-elements.html#adjust_svg_tag_name"><code>html.elements.adjust_svg_tag_name</code></a></td><td>function</td><td>The correctly cased SVG tag name for the lowercase <em>name</em> the tokenizer produced, or <em>name</em> itself when it…</td></tr>
+<tr><td><a href="html-elements.html#doctype_mode"><code>html.elements.doctype_mode</code></a></td><td>function</td><td>Which quirks mode a doctype puts a document in.</td></tr>
+<tr><td><a href="html-elements.html#is_html_integration_point"><code>html.elements.is_html_integration_point</code></a></td><td>function</td><td>True when <em>element</em> is an HTML integration point.</td></tr>
+<tr><td><a href="html-elements.html#is_mathml_text_integration_point"><code>html.elements.is_mathml_text_integration_point</code></a></td><td>function</td><td>True when <em>element</em> is a MathML text integration point, meaning its children are parsed as HTML.</td></tr>
+<tr><td><a href="html-elements.html#is_special"><code>html.elements.is_special</code></a></td><td>function</td><td>True when the element <em>name</em> in namespace <em>namespace</em> is one of the standard’s special elements.</td></tr>
+<tr><td><a href="html-entities.html#encode"><code>html.encode</code></a></td><td>function</td><td>Escapes <em>text</em> so that it can be embedded in an HTML document without being reinterpreted as markup.</td></tr>
+<tr><td><a href="html-entities.html#no_break_space"><code>html.entities.NO_BREAK_SPACE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="html-entities.html#replacement_character"><code>html.entities.REPLACEMENT_CHARACTER</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="html-entities.html#code_point_to_string"><code>html.entities.code_point_to_string</code></a></td><td>function</td><td>Applies the standard’s “numeric character reference end state” rules to a raw code point and returns the…</td></tr>
+<tr><td><a href="html-entities.html#consume_reference"><code>html.entities.consume_reference</code></a></td><td>function</td><td>Consumes a character reference from <em>chars</em> beginning at the ampersand at index <em>start</em>.</td></tr>
+<tr><td><a href="html-entities.html#is_ascii_alphanumeric"><code>html.entities.is_ascii_alphanumeric</code></a></td><td>function</td><td>Returns true when <em>c</em> is one of <code>0-9</code>, <code>A-Z</code> or <code>a-z</code>.</td></tr>
+<tr><td><a href="html-entities.html#is_ascii_digit"><code>html.entities.is_ascii_digit</code></a></td><td>function</td><td>Returns true when <em>c</em> is an ASCII decimal digit.</td></tr>
+<tr><td><a href="html-entities.html#is_ascii_hex_digit"><code>html.entities.is_ascii_hex_digit</code></a></td><td>function</td><td>Returns true when <em>c</em> is an ASCII hexadecimal digit, in either case.</td></tr>
+<tr><td><a href="html-entities.html#escape_attribute"><code>html.escape_attribute</code></a></td><td>function</td><td>Escapes <em>value</em> the way the HTML fragment serialization algorithm requires for a double-quoted attribute…</td></tr>
+<tr><td><a href="html-entities.html#escape_text"><code>html.escape_text</code></a></td><td>function</td><td>Escapes <em>text</em> the way the HTML fragment serialization algorithm requires for element content.</td></tr>
+<tr><td><a href="html-serialize.html#format"><code>html.format</code></a></td><td>function</td><td>Renders <em>source</em> as indented, readable HTML.</td></tr>
+<tr><td><a href="html-serialize.html#minify"><code>html.minify</code></a></td><td>function</td><td>Removes the markup a browser does not need and returns the result.</td></tr>
+<tr><td><a href="html-parser.html#parse"><code>html.parse</code></a></td><td>function</td><td>Parses <em>source</em> as a complete HTML document.</td></tr>
+<tr><td><a href="html-parser.html#parse_file"><code>html.parse_file</code></a></td><td>function</td><td>Reads the file at <em>path</em> and parses it as HTML.</td></tr>
+<tr><td><a href="html-parser.html#parse_fragment"><code>html.parse_fragment</code></a></td><td>function</td><td>Parses <em>source</em> as a fragment, as though it had been written inside <em>context</em>.</td></tr>
+<tr><td><a href="html-parser.html#formattingentry"><code>html.parser.FormattingEntry</code></a></td><td>class</td><td>One entry in the list of active formatting elements.</td></tr>
+<tr><td><a href="html-selector.html#attributetest"><code>html.selector.AttributeTest</code></a></td><td>class</td><td>One <code>name</code>/<code>=value</code> test from a <code>[...]</code> block.</td></tr>
+<tr><td><a href="html-selector.html#complexselector"><code>html.selector.ComplexSelector</code></a></td><td>class</td><td>One selector from a comma-separated list: a chain of compounds joined by combinators, such as <code>ul &gt; li + li</code>.</td></tr>
+<tr><td><a href="html-selector.html#compoundselector"><code>html.selector.CompoundSelector</code></a></td><td>class</td><td>A run of simple selectors with nothing between them, such as <code>div#main.active[data-x]:first-child</code>.</td></tr>
+<tr><td><a href="html-selector.html#pseudotest"><code>html.selector.PseudoTest</code></a></td><td>class</td><td>One <code>:pseudo</code> or <code>:pseudo(...)</code> test.</td></tr>
+<tr><td><a href="html-serialize.html#inline_elements"><code>html.serialize.INLINE_ELEMENTS</code></a></td><td>constant</td><td>Elements that flow inside a line of text rather than starting a new block.</td></tr>
+<tr><td><a href="html-serialize.html#preserve_whitespace"><code>html.serialize.PRESERVE_WHITESPACE</code></a></td><td>constant</td><td>Elements whose text content is significant to the last character.</td></tr>
+<tr><td><a href="html-tokenizer.html#tokenize"><code>html.tokenize</code></a></td><td>function</td><td>Tokenizes <em>source</em> and returns every token, ending with the <code>eof</code> token.</td></tr>
+<tr><td><a href="html-tokenizer.html#rawtext_elements"><code>html.tokenizer.RAWTEXT_ELEMENTS</code></a></td><td>constant</td><td>Tag names whose content is text with neither markup nor character references.</td></tr>
+<tr><td><a href="html-tokenizer.html#rcdata_elements"><code>html.tokenizer.RCDATA_ELEMENTS</code></a></td><td>constant</td><td>Tag names whose content is text with character references but no markup.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="html-elements.html"><code>html.elements</code></a></td><td><code>html.elements.*</code></td><td>The element tables the tree construction algorithm consults on almost every token: which elements are…</td></tr>
+<tr><td><a href="html-entities.html"><code>html.entities</code></a></td><td><code>html.entities.*</code></td><td>Character reference handling for HTML: turning text into something safe to drop into a document (<code>encode()</code>),…</td></tr>
+<tr><td><a href="html-namespaces.html"><code>html.namespaces</code></a></td><td><code>html.*</code></td><td>The five namespace URIs the HTML parser deals in.</td></tr>
+<tr><td><a href="html-node.html"><code>html.node</code></a></td><td><code>html.*</code></td><td>The document tree that <code>html.parse()</code> produces, and everything you can do with it: walking it, querying it,…</td></tr>
+<tr><td><a href="html-parser.html"><code>html.parser</code></a></td><td><code>html.parser.*</code></td><td>The HTML tree construction stage: the half of the parser that takes the tokenizer’s stream and decides what…</td></tr>
+<tr><td><a href="html-selector.html"><code>html.selector</code></a></td><td><code>html.selector.*</code></td><td>A small, deliberately bounded CSS selector engine: enough to find things in a parsed document, and no more.</td></tr>
+<tr><td><a href="html-serialize.html"><code>html.serialize</code></a></td><td><code>html.serialize.*</code></td><td>Writing a document back out, shaped for whoever has to read it next: <code>minify()</code> for a browser, <code>format()</code> for…</td></tr>
+<tr><td><a href="html-tokenizer.html"><code>html.tokenizer</code></a></td><td><code>html.tokenizer.*</code></td><td>The HTML tokenizer from the WHATWG HTML Living Standard: the stage that turns a string of markup into a…</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<p><small>2026, Richard Ore and The Zuri Contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="zuri-token.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="html-elements.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="zuri-token.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="html-elements.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

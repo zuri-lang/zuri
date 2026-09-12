@@ -1,0 +1,792 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>imagine.color - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d4f5727e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-8c5b994b.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="imaginecolor"><a class="header" href="#imaginecolor"><code>imagine.color</code></a></h1>
+<pre><code class="language-zuri ignore">import imagine
+</code></pre>
+<blockquote>
+<p>Everything here is re-exported by <code>imagine</code>, so <code>import imagine</code> is
+enough and the names are called as <code>imagine.*</code>. Importing
+<code>imagine.color</code> on its own works too and reaches the same definitions.</p>
+</blockquote>
+<p><code>Color</code>: one RGBA colour, and the conversions between the ways of naming
+one.</p>
+<p>It reads and writes hex, RGB, HSL and HSV, blends against another
+colour, and reports its own luminance. The named constants are the
+handful worth not spelling out every time.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="transparent"><a class="header" href="#transparent"><code>TRANSPARENT</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.TRANSPARENT
+</code></pre>
+<h3 id="black"><a class="header" href="#black"><code>BLACK</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.BLACK: Color
+</code></pre>
+<p>Opaque black.</p>
+<h3 id="white"><a class="header" href="#white"><code>WHITE</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.WHITE: Color
+</code></pre>
+<p>Opaque white.</p>
+<h3 id="gray"><a class="header" href="#gray"><code>GRAY</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.GRAY: Color
+</code></pre>
+<p>Opaque mid grey.</p>
+<h3 id="red"><a class="header" href="#red"><code>RED</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.RED: Color
+</code></pre>
+<p>Opaque pure red.</p>
+<h3 id="green"><a class="header" href="#green"><code>GREEN</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.GREEN: Color
+</code></pre>
+<p>Opaque pure green.</p>
+<p>This is the additive primary, not CSS’s <code>green</code>, which is half as
+bright. <code>Color.named('green')</code> gives that one.</p>
+<h3 id="blue"><a class="header" href="#blue"><code>BLUE</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.BLUE: Color
+</code></pre>
+<p>Opaque pure blue.</p>
+<h3 id="yellow"><a class="header" href="#yellow"><code>YELLOW</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.YELLOW: Color
+</code></pre>
+<p>Opaque yellow.</p>
+<h3 id="cyan"><a class="header" href="#cyan"><code>CYAN</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.CYAN: Color
+</code></pre>
+<p>Opaque cyan.</p>
+<h3 id="magenta"><a class="header" href="#magenta"><code>MAGENTA</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.MAGENTA: Color
+</code></pre>
+<p>Opaque magenta.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="color"><a class="header" href="#color"><code>Color</code></a></h3>
+<pre><code class="language-zuri ignore">class imagine.Color
+</code></pre>
+<p>An 8-bit RGBA colour.</p>
+<p>Alpha runs 0 (fully transparent) to 255 (fully opaque), the same
+convention as CSS, PNG and every modern image format. Colours are
+immutable: every method that would change one returns a new <code>Color</code>, so
+a colour held in a variable is safe to pass around and reuse.</p>
+<pre><code class="language-zuri ignore">import imagine { Color }
+
+var red = Color(255, 0, 0)
+var glass = red.with_alpha(128)
+var brand = Color.hex('#4f46e5')
+</code></pre>
+<h5 id="relationship-to-the-colors-module"><a class="header" href="#relationship-to-the-colors-module">Relationship to the <code>colors</code> module</a></h5>
+<p>The colour space conversions here are the standard library’s, from
+[[colors]]; <code>Color</code> is the value type that carries a result around and
+puts it into a pixel buffer. Anything <code>colors</code> can do to a hexadecimal
+string can be done to a <code>Color</code> by way of <code>to_hex()</code> and <code>Color.hex()</code>.</p>
+<p>Three conventions follow from that and are worth knowing:</p>
+<ul>
+<li>
+<p>Hue is in degrees and saturation, lightness and value are in
+percentage points (0-100), exactly as in <code>colors</code> and in CSS.
+They are not 0-1 ratios.</p>
+</li>
+<li>
+<p><code>to_hex()</code> returns a leading <code>#</code>, because that is the form you
+paste into a stylesheet. <code>colors</code> returns the bare form. Both are
+accepted everywhere either is.</p>
+</li>
+<li>
+<p>A malformed hexadecimal colour or an unknown colour name raises
+<code>ValueError</code>, which is what <code>colors</code> reports for them, rather than
+this module’s own <code>ImageError</code>. An argument of the wrong type
+raises <code>TypeError</code> from the declaration it failed.</p>
+</li>
+<li>
+<p><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</p>
+</li>
+<li>
+<p><strong>serializable</strong> — has a <code>@to_json()</code>, so it can be handed straight to
+<code>json.encode()</code></p>
+</li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>r</code></td><td><code>number</code></td><td>The red channel, 0-255.</td></tr>
+<tr><td><code>g</code></td><td><code>number</code></td><td>The green channel, 0-255.</td></tr>
+<tr><td><code>b</code></td><td><code>number</code></td><td>The blue channel, 0-255.</td></tr>
+<tr><td><code>a</code></td><td><code>number</code></td><td>The alpha channel, 0 (transparent) to 255 (opaque).</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">imagine.Color(r, g, b, a)
+</code></pre>
+<p>Creates a colour from its channels.</p>
+<p>Values outside 0-255 are clamped rather than rejected, and fractional
+values are rounded.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>number</code>) — The red channel.</li>
+<li><code>g</code> (<code>number</code>) — The green channel.</li>
+<li><code>b</code> (<code>number</code>) — The blue channel.</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel - Default: 255 (opaque).</li>
+</ul>
+<h4 id="colorrgb"><a class="header" href="#colorrgb"><code>Color.rgb()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.rgb(r, g, b)
+</code></pre>
+<p>Creates an opaque colour from red, green and blue channels.</p>
+<p>The same as calling the constructor with three arguments; it exists so a
+call site that also uses <code>Color.hsl()</code> or <code>Color.lab()</code> can name the
+space it is working in.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>number</code>)</li>
+<li><code>g</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorrgba"><a class="header" href="#colorrgba"><code>Color.rgba()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.rgba(r, g, b, a)
+</code></pre>
+<p>Creates a colour from red, green, blue and alpha channels.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>number</code>)</li>
+<li><code>g</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+<li><code>a</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorgray"><a class="header" href="#colorgray"><code>Color.gray()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.gray(value, a)
+</code></pre>
+<p>Creates a shade of grey.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>number</code>) — The brightness, 0 (black) to 255 (white).</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorpacked"><a class="header" href="#colorpacked"><code>Color.packed()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.packed(value: number)
+</code></pre>
+<p>Creates a colour from a packed <code>0xRRGGBBAA</code> integer.</p>
+<p>Alpha is in the least significant byte, which is the layout
+<code>to_packed()</code> produces and the one this module passes around internally.</p>
+<pre><code class="language-zuri-repl">%&gt; Color.packed(0xFF0000FF).to_hex()
+'#ff0000'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorhex"><a class="header" href="#colorhex"><code>Color.hex()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.hex(spec)
+</code></pre>
+<p>Creates a colour from a CSS-style hexadecimal string.</p>
+<p>All four CSS lengths are accepted, with or without the leading <code>#</code>, in
+either case: <code>#rgb</code>, <code>#rgba</code>, <code>#rrggbb</code> and <code>#rrggbbaa</code>. The short forms
+double each digit, so <code>#f0a</code> is <code>#ff00aa</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>spec</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<p><strong>Raises</strong> <code>ValueError</code> When <em>spec</em> is not a hexadecimal colour.</p>
+<h4 id="colornamed"><a class="header" href="#colornamed"><code>Color.named()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.named(name)
+</code></pre>
+<p>Looks up one of the CSS named colours.</p>
+<p>Matching ignores case, spaces, hyphens and underscores, so <code>'Dark Sea Green'</code>
+and <code>'darkseagreen'</code> are the same colour. The full CSS Color Level 4
+list is available, including both spellings of the greys and
+<code>transparent</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<p><strong>Raises</strong> <code>ValueError</code> When <em>name</em> is not a CSS colour name.</p>
+<h4 id="colorhsl"><a class="header" href="#colorhsl"><code>Color.hsl()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.hsl(h, s, l, a)
+</code></pre>
+<p>Creates a colour from hue, saturation and lightness.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>) — The hue in degrees. Wraps, so 400 is the same as 40.</li>
+<li><code>s</code> (<code>number</code>) — The saturation in percentage points, 0-100.</li>
+<li><code>l</code> (<code>number</code>) — The lightness in percentage points, 0 (black) to 100
+(white).</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorhsv"><a class="header" href="#colorhsv"><code>Color.hsv()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.hsv(h, s, v, a)
+</code></pre>
+<p>Creates a colour from hue, saturation and value (also called HSB).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>) — The hue in degrees.</li>
+<li><code>s</code> (<code>number</code>) — The saturation in percentage points, 0-100.</li>
+<li><code>v</code> (<code>number</code>) — The value in percentage points, 0-100.</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorhwb"><a class="header" href="#colorhwb"><code>Color.hwb()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.hwb(h, w, b, a)
+</code></pre>
+<p>Creates a colour from hue, whiteness and blackness.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>) — The hue in degrees.</li>
+<li><code>w</code> (<code>number</code>) — The whiteness in percentage points, 0-100.</li>
+<li><code>b</code> (<code>number</code>) — The blackness in percentage points, 0-100.</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorcmyk"><a class="header" href="#colorcmyk"><code>Color.cmyk()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.cmyk(c, m, y, k, a)
+</code></pre>
+<p>Creates a colour from cyan, magenta, yellow and key components.</p>
+<p>This is the naive conversion, not a colour-managed one: it takes no
+account of an output profile, so it is right for generating colours and
+wrong for predicting what a printing press will do.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>c</code> (<code>number</code>) — 0-100.</li>
+<li><code>m</code> (<code>number</code>) — 0-100.</li>
+<li><code>y</code> (<code>number</code>) — 0-100.</li>
+<li><code>k</code> (<code>number</code>) — 0-100.</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorxyz"><a class="header" href="#colorxyz"><code>Color.xyz()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.xyz(x, y, z, a)
+</code></pre>
+<p>Creates a colour from CIE XYZ tristimulus values, against the D65 white
+point.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>z</code> (<code>number</code>)</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorlab"><a class="header" href="#colorlab"><code>Color.lab()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.lab(l, a_star, b_star, a)
+</code></pre>
+<p>Creates a colour from CIE L<em>a</em>b*, against the D65 white point.</p>
+<p>Lab is perceptually uniform, which makes it the right space for
+interpolating between two colours when the intermediate steps need to
+look evenly spaced.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>l</code> (<code>number</code>) — Lightness, 0-100.</li>
+<li><code>a_star</code> (<code>number</code>) — The green-red axis.</li>
+<li><code>b_star</code> (<code>number</code>) — The blue-yellow axis.</li>
+<li><code>a</code> (<code>?number</code>) — The alpha channel, 0-255 - Default: 255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorparse"><a class="header" href="#colorparse"><code>Color.parse()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.parse(value)
+</code></pre>
+<p>Turns whatever a caller passed into a <code>Color</code>.</p>
+<p>Every drawing method calls this on its colour argument, so a colour can
+be written the shortest way that reads clearly at the call site.
+Accepted forms:</p>
+<ul>
+<li>a <code>Color</code>, returned unchanged</li>
+<li>a hexadecimal string, <code>'#4f46e5'</code> or <code>'4f46e5'</code></li>
+<li>a CSS colour name, <code>'rebeccapurple'</code></li>
+<li>a packed <code>0xRRGGBBAA</code> number</li>
+<li>a list of 3 or 4 channels, <code>[255, 0, 0]</code></li>
+</ul>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number|list</code> — value</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<p><strong>Raises</strong> <code>ImageError</code> When <em>value</em> is not a colour in any of those
+forms.</p>
+<h4 id="colorto_packed"><a class="header" href="#colorto_packed"><code>Color.to_packed()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_packed() -&gt; number
+</code></pre>
+<p>Returns the colour as a packed <code>0xRRGGBBAA</code> integer.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="colorto_hex"><a class="header" href="#colorto_hex"><code>Color.to_hex()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_hex(always_alpha) -&gt; string
+</code></pre>
+<p>Returns the colour as a hexadecimal string with a leading <code>#</code>.</p>
+<p>The alpha digits are included only when the colour is not fully opaque,
+unless <code>always_alpha</code> asks for them, so the common case reads as the
+familiar six digits.</p>
+<pre><code class="language-zuri-repl">%&gt; Color(255, 0, 0).to_hex()
+'#ff0000'
+%&gt; Color(255, 0, 0, 128).to_hex()
+'#ff000080'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>always_alpha</code> (<code>?bool</code>) — Always emit the alpha digits - Default:
+false.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="colorto_hsl"><a class="header" href="#colorto_hsl"><code>Color.to_hsl()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_hsl() -&gt; dict
+</code></pre>
+<p>Returns the colour in HSL, as a dictionary holding <code>h</code> (degrees), <code>s</code>
+and <code>l</code> (percentage points) and <code>a</code> (0-255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_hsv"><a class="header" href="#colorto_hsv"><code>Color.to_hsv()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_hsv() -&gt; dict
+</code></pre>
+<p>Returns the colour in HSV, as a dictionary holding <code>h</code> (degrees), <code>s</code>
+and <code>v</code> (percentage points) and <code>a</code> (0-255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_hwb"><a class="header" href="#colorto_hwb"><code>Color.to_hwb()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_hwb() -&gt; dict
+</code></pre>
+<p>Returns the colour in HWB, as a dictionary holding <code>h</code> (degrees), <code>w</code>
+and <code>b</code> (percentage points) and <code>a</code> (0-255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_cmyk"><a class="header" href="#colorto_cmyk"><code>Color.to_cmyk()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_cmyk() -&gt; dict
+</code></pre>
+<p>Returns the colour in CMYK, as a dictionary holding <code>c</code>, <code>m</code>, <code>y</code> and
+<code>k</code> (percentage points) and <code>a</code> (0-255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_xyz"><a class="header" href="#colorto_xyz"><code>Color.to_xyz()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_xyz() -&gt; dict
+</code></pre>
+<p>Returns the colour in CIE XYZ, as a dictionary holding <code>x</code>, <code>y</code>, <code>z</code> and
+<code>a</code> (0-255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_lab"><a class="header" href="#colorto_lab"><code>Color.to_lab()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_lab() -&gt; dict
+</code></pre>
+<p>Returns the colour in CIE L<em>a</em>b*, as a dictionary holding <code>l</code>, <code>a_star</code>,
+<code>b_star</code> and <code>a</code> (0-255).</p>
+<p>The axes are named <code>a_star</code> and <code>b_star</code> rather than <code>a</code> and <code>b</code> so
+neither collides with the alpha channel.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorwith_alpha"><a class="header" href="#colorwith_alpha"><code>Color.with_alpha()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.with_alpha(a)
+</code></pre>
+<p>Returns a copy of the colour with a different alpha channel.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>a</code> (<code>number</code>) — The new alpha, 0-255.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorfade"><a class="header" href="#colorfade"><code>Color.fade()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.fade(factor)
+</code></pre>
+<p>Returns a copy of the colour with its alpha scaled by a factor.</p>
+<p>A factor of 0.5 halves whatever opacity the colour already had, rather
+than setting it to half opaque, so fading an already translucent colour
+behaves the way stacking two layers would.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>factor</code> (<code>number</code>) — 0 (transparent) to 1 (unchanged).</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorlighten"><a class="header" href="#colorlighten"><code>Color.lighten()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.lighten(amount)
+</code></pre>
+<p>Returns a lighter version of the colour, keeping its hue.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — Percentage points of HSL lightness to add,
+0-100.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colordarken"><a class="header" href="#colordarken"><code>Color.darken()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.darken(amount)
+</code></pre>
+<p>Returns a darker version of the colour, keeping its hue.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — Percentage points of HSL lightness to remove,
+0-100.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorsaturate"><a class="header" href="#colorsaturate"><code>Color.saturate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.saturate(amount)
+</code></pre>
+<p>Returns a more saturated version of the colour.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — Percentage points of HSL saturation to add,
+0-100.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colordesaturate"><a class="header" href="#colordesaturate"><code>Color.desaturate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.desaturate(amount)
+</code></pre>
+<p>Returns a less saturated version of the colour.</p>
+<p>An amount of 100 removes all colour, which is not the same as
+<code>to_grayscale()</code>: this keeps HSL lightness, that one weights the
+channels for perceived brightness.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — Percentage points of HSL saturation to remove,
+0-100.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorrotate_hue"><a class="header" href="#colorrotate_hue"><code>Color.rotate_hue()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.rotate_hue(degrees)
+</code></pre>
+<p>Returns the colour rotated around the hue wheel.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>degrees</code> (<code>number</code>) — How far to rotate. Negative rotates backwards.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colormix"><a class="header" href="#colormix"><code>Color.mix()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.mix(other, t)
+</code></pre>
+<p>Returns a linear blend of this colour and another.</p>
+<p>All four channels are interpolated, alpha included, so mixing a
+transparent colour in also makes the result more transparent.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number|list</code> — other: The colour to blend toward.</li>
+<li><code>t</code> (<code>number</code>) — 0 returns this colour, 1 returns <em>other</em>.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorover"><a class="header" href="#colorover"><code>Color.over()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.over(backdrop)
+</code></pre>
+<p>Composites this colour over an opaque backdrop and returns the flattened
+result.</p>
+<p>This is what happens when a translucent colour is drawn onto a solid
+background, and it is how a colour has to be resolved before writing it
+to a format with no alpha channel, such as JPEG.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number|list</code> — backdrop</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorluminance"><a class="header" href="#colorluminance"><code>Color.luminance()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.luminance() -&gt; number
+</code></pre>
+<p>Returns the relative luminance of the colour, 0 (black) to 1 (white), as
+defined by WCAG 2.</p>
+<p>The alpha channel is ignored: luminance is a property of the colour
+itself, and a translucent colour’s apparent brightness depends on
+whatever is behind it. Composite with <code>over()</code> first if that matters.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="colorcontrast_ratio"><a class="header" href="#colorcontrast_ratio"><code>Color.contrast_ratio()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.contrast_ratio(other) -&gt; number
+</code></pre>
+<p>Returns the WCAG 2 contrast ratio between this colour and another, from
+1 (identical) to 21 (black against white).</p>
+<p>Text is generally held to need a ratio of at least 4.5 against its
+background, or 3 at large sizes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number|list</code> — other</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="coloris_dark"><a class="header" href="#coloris_dark"><code>Color.is_dark()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.is_dark() -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> when the colour is dark enough that light text reads
+better on it than dark text.</p>
+<p>The threshold is the luminance at which contrast against white overtakes
+contrast against black.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="coloris_light"><a class="header" href="#coloris_light"><code>Color.is_light()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.is_light() -&gt; bool
+</code></pre>
+<p>The opposite of <code>is_dark()</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="colorbest_contrast"><a class="header" href="#colorbest_contrast"><code>Color.best_contrast()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.best_contrast(light, dark)
+</code></pre>
+<p>Returns whichever of two colours reads better on top of this one.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?Color|string</code> — light: The colour to use on a dark background -
+Default: white.</li>
+<li><code>?Color|string</code> — dark: The colour to use on a light background -
+Default: black.</li>
+</ul>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorto_grayscale"><a class="header" href="#colorto_grayscale"><code>Color.to_grayscale()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_grayscale()
+</code></pre>
+<p>Returns the grey with the same perceived brightness as this colour,
+keeping its alpha.</p>
+<p>This uses the Rec. 601 luma weights, which is what image editors mean by
+“greyscale” and what <code>Image.grayscale()</code> applies. It is deliberately not
+[[colors.grayscale]], which sets HSL saturation to zero and so keeps a
+bright yellow as bright as a dark blue.</p>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorinvert"><a class="header" href="#colorinvert"><code>Color.invert()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.invert()
+</code></pre>
+<p>Returns the colour with its red, green and blue channels inverted.</p>
+<p>Alpha is left alone, since inverting it would turn a visible colour
+invisible rather than changing how it looks.</p>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="colorequals"><a class="header" href="#colorequals"><code>Color.equals()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.equals(other) -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> when both colours have identical channels.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="colorto_list"><a class="header" href="#colorto_list"><code>Color.to_list()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_list() -&gt; list
+</code></pre>
+<p>Returns the colour as a list of its four channels.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="colorto_dict"><a class="header" href="#colorto_dict"><code>Color.to_dict()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_dict() -&gt; dict
+</code></pre>
+<p>Returns the colour as a dictionary holding <code>r</code>, <code>g</code>, <code>b</code> and <code>a</code>.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="colorto_string"><a class="header" href="#colorto_string"><code>Color.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Color.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="imagine-canvas.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="imagine-constants.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="imagine-canvas.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="imagine-constants.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

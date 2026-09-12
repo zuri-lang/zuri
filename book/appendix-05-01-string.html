@@ -1,0 +1,1009 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>String Methods - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d06c3974.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-259e9395.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/appendix-05-01-string.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="string-methods"><a class="header" href="#string-methods">String Methods</a></h1>
+<p>Every method on the built-in <code>string</code> type, with its signature, what it
+returns, and the cases where it does something other than the obvious
+thing.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Returns</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#length"><code>length()</code></a></td><td><code>number</code></td><td>Returns the length of a string.</td></tr>
+<tr><td><a href="#upper"><code>upper()</code></a></td><td><code>string</code></td><td>Returns a copy of the string with all the cased characters converted to uppercase.</td></tr>
+<tr><td><a href="#lower"><code>lower()</code></a></td><td><code>string</code></td><td>Return a copy of the string with all the cased characters converted to lowercase.</td></tr>
+<tr><td><a href="#is_alpha"><code>is_alpha()</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if all the characters in the string are all alphabets and the string is not empty., otherwise returns <code>false</code>.</td></tr>
+<tr><td><a href="#is_alnum"><code>is_alnum()</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if all the characters in the string are either alphabets or numbers and the string is not empty, otherwise returns <code>false</code>.</td></tr>
+<tr><td><a href="#is_number"><code>is_number()</code></a></td><td></td><td>Returns <code>true</code> if all the characters in the string are all digits and the string is not empty, otherwise returns <code>false</code>.</td></tr>
+<tr><td><a href="#is_lower"><code>is_lower()</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if at least one character in the string is cased, all cased characters are lower cased and the string is not empty.</td></tr>
+<tr><td><a href="#is_upper"><code>is_upper()</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if at least one character in the string is cased, all cased characters are upper cased and the string is not empty.</td></tr>
+<tr><td><a href="#is_space"><code>is_space()</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if there are only whitespace characters in the string and the string is not empty.</td></tr>
+<tr><td><a href="#ord"><code>ord()</code></a></td><td><code>number</code></td><td>Returns the Unicode code point of the string, which must be exactly one character long.</td></tr>
+<tr><td><a href="#trim"><code>trim(chr: ?string)</code></a></td><td><code>string</code></td><td>Returns a copy of the string with the given character (<em><code>chr</code></em>) removed if it appears at the start or end of the string.</td></tr>
+<tr><td><a href="#ltrim"><code>ltrim(chr: ?string)</code></a></td><td><code>string</code></td><td>Similar to the <code>trim()</code> method, except that this method only removes characters at the beginning of the string.</td></tr>
+<tr><td><a href="#rtrim"><code>rtrim(chr: ?string)</code></a></td><td><code>string</code></td><td>Similar to the <code>trim()</code> method, except that this method only removes characters at the end of the string.</td></tr>
+<tr><td><a href="#join"><code>join(string: string)</code></a></td><td><code>string</code></td><td>Returns a string which is a concatenation of the items in the iterable using the <em>string</em> as the separator.</td></tr>
+<tr><td><a href="#split"><code>split(delimiter: string)</code></a></td><td><code>list</code></td><td>Returns a list of words or characters in a string after separating the content of the string at every point where the <em>delimiter</em> is found.</td></tr>
+<tr><td><a href="#index_of"><code>index_of(str: string, start_index: ?number)</code></a></td><td><code>number</code></td><td>Returns the index position of the first occurrence of the string <em><code>str</code></em> in the string <em><code>string</code></em>.</td></tr>
+<tr><td><a href="#last_index_of"><code>last_index_of(str: string, end_index: ?number)</code></a></td><td><code>number</code></td><td>Returns the index position of the last occurrence of the string <em><code>str</code></em> in the string <em><code>string</code></em>, searching from the end.</td></tr>
+<tr><td><a href="#starts_with"><code>starts_with(str: string)</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if the string begins with the string or character specified in <em>str</em>, otherwise it returns <code>false</code>.</td></tr>
+<tr><td><a href="#ends_with"><code>ends_with(str: string)</code></a></td><td><code>boolean</code></td><td>Returns <code>true</code> if the string ends with the string or character specified in <em>str</em>, otherwise it returns <code>false</code>.</td></tr>
+<tr><td><a href="#count"><code>count(str: string)</code></a></td><td><code>number</code></td><td>Returns the number of non-overlapping occurrences of the substring <em>str</em> in the string.</td></tr>
+<tr><td><a href="#to_number"><code>to_number()</code></a></td><td><code>number</code></td><td>Returns the first numeric value contained in the string if any exists or <code>0</code> if the string contains no numeric value.</td></tr>
+<tr><td><a href="#to_list"><code>to_list()</code></a></td><td><code>list</code></td><td>Returns a list whose elements consists of every character contained in the string in order of appearance.</td></tr>
+<tr><td><a href="#to_bytes"><code>to_bytes()</code></a></td><td><code>bytes</code></td><td>Returns the content of the string as a stream of <code>bytes</code>.</td></tr>
+<tr><td><a href="#lpad"><code>lpad(width: number, fill: ?string)</code></a></td><td><code>string</code></td><td>Returns the string left justified in a string of length <em>width</em>.</td></tr>
+<tr><td><a href="#rpad"><code>rpad(width: number, fill: ?string)</code></a></td><td><code>string</code></td><td>Returns the string right justified in a string of length <em>width</em>.</td></tr>
+<tr><td><a href="#match"><code>match(str: string)</code></a></td><td><code>boolean|dictionary</code></td><td>If the string <em>str</em> is a regular string, this method returns <code>true</code> if the <em>string</em> contains a substring <em>str</em>.</td></tr>
+<tr><td><a href="#matches"><code>matches(reg: string)</code></a></td><td><code>dictionary</code></td><td>Returns a dictionary containing every match of the given regular expression <em>reg</em> in the source string.</td></tr>
+<tr><td><a href="#replace"><code>replace(str: string, replacement: string, use_regex: ?bool)</code></a></td><td><code>string</code></td><td>Returns a copy of the string with all occurrences or matches of <em>str</em> replaced by the <em>replacement</em> string.</td></tr>
+<tr><td><a href="#replace_with"><code>replace_with(regex: string, callback: function)</code></a></td><td><code>string</code></td><td>Returns a copy of the string with all occurrences or matches of <em>regex</em> replaced with the result of the function <em>callback</em> which is invoked only if and after a match has occurred.</td></tr>
+<tr><td><a href="#ascii"><code>ascii()</code></a></td><td><code>string</code></td><td>Reinterprets the string as a raw byte view: each byte of its UTF-8 encoding becomes its own character (a codepoint between <code>0</code> and <code>255</code>, i.e.</td></tr>
+<tr><td><a href="#case_fold"><code>case_fold()</code></a></td><td><code>string</code></td><td>Returns a copy of the string case-folded for case-insensitive comparison, using full Unicode case folding rather than plain lowercasing.</td></tr>
+<tr><td><a href="#compare"><code>compare(other: string)</code></a></td><td><code>number</code></td><td>Compares the string with another string.</td></tr>
+<tr><td><a href="#is_empty"><code>is_empty()</code></a></td><td><code>boolean</code></td><td>Returns true if the string is empty, false otherwise.</td></tr>
+<tr><td><a href="#contains"><code>contains(str: string)</code></a></td><td><code>boolean</code></td><td>Returns true if the string contains the specified substring, false otherwise.</td></tr>
+<tr><td><a href="#lines"><code>lines()</code></a></td><td><code>list</code></td><td>Returns the lines of the string as an list as it would be if split on newline characters.</td></tr>
+<tr><td><a href="#each_line"><code>each_line(callback: function)</code></a></td><td><code>void</code></td><td>Iterates over each line of the string, calling the provided callback function with the line and its index.</td></tr>
+<tr><td><a href="#each"><code>each(callback: function)</code></a></td><td><code>void</code></td><td>Iterates over each character of the string, calling the provided callback function with the character and its index.</td></tr>
+<tr><td><a href="#capitalize"><code>capitalize()</code></a></td><td><code>string</code></td><td>Returns a new string with the first character capitalized and the rest in lowercase.</td></tr>
+<tr><td><a href="#title"><code>title()</code></a></td><td><code>string</code></td><td>Returns a new string with each word capitalized.</td></tr>
+<tr><td><a href="#to_string"><code>to_string()</code></a></td><td><code>string</code></td><td>Returns the string itself.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="length"><a class="header" href="#length"><code>length()</code></a></h2>
+<pre><code class="language-zuri ignore">length() -&gt; number
+</code></pre>
+<p>Returns the length of a string. Note that this method is UTF-8
+compatible and will return the UTF-8 length for the string if the string
+contains UTF-8 characters whether written directly or via the <code>\u</code> or
+<code>\U</code> escapes.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'This is a pretty long string'.length()
+28
+%&gt; 'उनका एक समय'.length()
+11
+%&gt; 'This text mixes English and 粵語'.length()
+30
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="upper"><a class="header" href="#upper"><code>upper()</code></a></h2>
+<pre><code class="language-zuri ignore">upper() -&gt; string
+</code></pre>
+<p>Returns a copy of the string with all the cased characters converted to
+uppercase. Note that the result of this method may return <code>false</code> when
+tested with <code>is_upper()</code> of the <em>string</em> contains Unicode characters
+that are not case folded.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'zuri'.upper()
+'ZURI'
+</code></pre>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="lower"><a class="header" href="#lower"><code>lower()</code></a></h2>
+<pre><code class="language-zuri ignore">lower() -&gt; string
+</code></pre>
+<p>Return a copy of the string with all the cased characters converted to
+lowercase.<br></p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'Zuri Is Bae'.lower()
+'zuri is bae'
+</code></pre>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="is_alpha"><a class="header" href="#is_alpha"><code>is_alpha()</code></a></h2>
+<pre><code class="language-zuri ignore">is_alpha() -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if all the characters in the string are all alphabets and
+the string is not empty., otherwise returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'abracadabra'.is_alpha()
+true
+%&gt; 'my tooth aches'.is_alpha()
+false
+%&gt; ''.is_alpha()
+false
+</code></pre>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_alnum"><a class="header" href="#is_alnum"><code>is_alnum()</code></a></h2>
+<pre><code class="language-zuri ignore">is_alnum() -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if all the characters in the string are either alphabets
+or numbers and the string is not empty, otherwise returns <code>false</code>. This
+method is the same as <code>string.is_alpha() or string.is_number()</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '3Idiots'.is_alnum()
+true
+%&gt; 'Three Idiots'.is_alnum()
+false
+%&gt; '3 Idiots'.is_alnum()
+false
+%&gt; '3'.is_alnum()
+true
+%&gt; 'idiots'.is_alnum()
+true
+%&gt; ''.is_alnum()
+false
+</code></pre>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_number"><a class="header" href="#is_number"><code>is_number()</code></a></h2>
+<pre><code class="language-zuri ignore">is_number()
+</code></pre>
+<p>Returns <code>true</code> if all the characters in the string are all digits and
+the string is not empty, otherwise returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '123.5'.is_number()
+false
+%&gt; '1970'.is_number()
+true
+%&gt; '1980s'.is_number()
+false
+</code></pre>
+<h2 id="is_lower"><a class="header" href="#is_lower"><code>is_lower()</code></a></h2>
+<pre><code class="language-zuri ignore">is_lower() -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if at least one character in the string is cased, all
+cased characters are lower cased and the string is not empty. Otherwise,
+it returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'all'.is_lower()
+true
+%&gt; 'all...123'.is_lower()
+true
+%&gt; 'All...123'.is_lower()
+false
+%&gt; ''.is_lower()
+false
+</code></pre>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_upper"><a class="header" href="#is_upper"><code>is_upper()</code></a></h2>
+<pre><code class="language-zuri ignore">is_upper() -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if at least one character in the string is cased, all
+cased characters are upper cased and the string is not empty. Otherwise,
+it returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'ALL'.is_upper()
+true
+%&gt; 'ALL...123'.is_upper()
+true
+%&gt; 'All...123'.is_upper()
+false
+%&gt; ''.is_upper()
+false
+</code></pre>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="is_space"><a class="header" href="#is_space"><code>is_space()</code></a></h2>
+<pre><code class="language-zuri ignore">is_space() -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if there are only whitespace characters in the string and
+the string is not empty. Otherwise, it returns empty.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '.     '.is_space()
+false
+%&gt; '\r\n'.is_space()
+true
+%&gt; '\t  '.is_space()
+true
+</code></pre>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="ord"><a class="header" href="#ord"><code>ord()</code></a></h2>
+<pre><code class="language-zuri ignore">ord() -&gt; number
+</code></pre>
+<p>Returns the Unicode code point of the string, which must be exactly one
+character long.</p>
+<pre><code class="language-zuri-repl">%&gt; 'A'.ord()
+65
+%&gt; 'AB'.ord()
+Unhandled Error: ord() must be called on a single character, got AB
+StackTrace:
+  &lt;repl&gt;:1 -&gt; @.script()
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the string is not exactly one character long.</p>
+<h2 id="trim"><a class="header" href="#trim"><code>trim()</code></a></h2>
+<pre><code class="language-zuri ignore">trim(chr: ?string) -&gt; string
+</code></pre>
+<p>Returns a copy of the string with the given character (<em><code>chr</code></em>) removed
+if it appears at the start or end of the string. If <em><code>chr</code></em> is not
+given, it defaults to a space (<code>' '</code>). All matching leading and trailing
+characters are removed until a character that doesn’t match is
+encountered. If no match is found, a copy of the original string is
+returned.</p>
+<blockquote>
+<p>The square brackets (<code>[]</code>) around the <em><code>chr: char</code></em> in the
+method definition indicates that the parameter is optional
+and does not mean you have to type the square brackets.</p>
+</blockquote>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '  example  '.trim()
+'example'
+%&gt; '  example  '.trim('e')
+'  example  '
+%&gt; 'example'.trim('e')
+'xampl'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chr</code> (<code>?char</code>) — The character to trim (Default = ’ ’).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="ltrim"><a class="header" href="#ltrim"><code>ltrim()</code></a></h2>
+<pre><code class="language-zuri ignore">ltrim(chr: ?string) -&gt; string
+</code></pre>
+<p>Similar to the <code>trim()</code> method, except that this method only removes
+characters at the beginning of the string.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '  example  '.ltrim()
+'example  '
+%&gt; 'example'.ltrim('e')
+'xample'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chr</code> (<code>?char</code>) — The character to trim (Default = ’ ’).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="rtrim"><a class="header" href="#rtrim"><code>rtrim()</code></a></h2>
+<pre><code class="language-zuri ignore">rtrim(chr: ?string) -&gt; string
+</code></pre>
+<p>Similar to the <code>trim()</code> method, except that this method only removes
+characters at the end of the string.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '  example  '.rtrim()
+'  example'
+%&gt; 'example'.rtrim('e')
+'exampl'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>chr</code> (<code>?char</code>) — The character to trim (Default = ’ ’).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="join"><a class="header" href="#join"><code>join()</code></a></h2>
+<pre><code class="language-zuri ignore">join(string: string) -&gt; string
+</code></pre>
+<p>Returns a string which is a concatenation of the items in the iterable
+using the <em>string</em> as the separator. If the iterable contains just one
+item or the <em>string</em> is empty, the original element is returned. If the
+<em>iterable</em> contains non-string items, the items are converted to their
+string representation before joining.</p>
+<p><code>Bytes</code> are the only non supported iterables.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; ','.join(['ok', 1, true])
+'ok,1,true'
+%&gt; '--'.join('name')
+'n--a--m--e'
+%&gt; ','.join('a')
+'a'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>string</code> (<code>string</code>) — The string to join the items in the iterable.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="split"><a class="header" href="#split"><code>split()</code></a></h2>
+<pre><code class="language-zuri ignore">split(delimiter: string) -&gt; list
+</code></pre>
+<p>Returns a list of words or characters in a string after separating the
+content of the string at every point where the <em>delimiter</em> is found.</p>
+<p>If the <em>delimiter</em> is an empty string, the resultant list will contain
+the individual characters of the string in the order in which they
+appear in the original string. Consecutive delimiters are not grouped
+together and are deemed to delimit empty strings. Splitting an empty
+string with a specified separator returns an empty list.</p>
+<p>This method has full UTF-8 support.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'name'.split('')
+[n, a, m, e]
+%&gt; '1&lt;&gt;2&lt;&gt;3'.split('&lt;&gt;')
+[1, , 2, , 3]
+%&gt; '1,2,3'.split(',')
+[1, 2, 3]
+%&gt; ''.split(',')
+[]
+%&gt; '地点'.split('')
+[地, 点]
+%&gt; 'who is in the garden'.split('/\s/')
+[who, is, in, the, garden]
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>delimiter</code> (<code>string</code>) — The delimiter to use the split the string.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="index_of"><a class="header" href="#index_of"><code>index_of()</code></a></h2>
+<pre><code class="language-zuri ignore">index_of(str: string, start_index: ?number) -&gt; number
+</code></pre>
+<p>Returns the index position of the first occurrence of the string <em><code>str</code></em>
+in the string <em><code>string</code></em>. If the <em>str</em> cannot be found anywhere in
+<em>string</em>, it returns -1. If the <code>start_index</code> parameter is given, it
+will start scanning from the given index.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'hello, world'.index_of(' ')
+6
+%&gt; 'hello, world'.index_of('e')
+1
+%&gt; 'hello, world'.index_of('q')
+-1
+%&gt; 'hello, world'.index_of('o')
+4
+%&gt; 'hello, world'.index_of('o', 5)  # next index of `o` starting from index 5.
+8
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+<li><code>start_index</code> (<code>?number</code>) — The index to start the search from.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="last_index_of"><a class="header" href="#last_index_of"><code>last_index_of()</code></a></h2>
+<pre><code class="language-zuri ignore">last_index_of(str: string, end_index: ?number) -&gt; number
+</code></pre>
+<p>Returns the index position of the last occurrence of the string <em><code>str</code></em>
+in the string <em><code>string</code></em>, searching from the end. If <em>str</em> cannot be
+found anywhere in <em>string</em>, it returns -1.</p>
+<p>If the <code>end_index</code> parameter is given, only a match that <em>begins</em> at or
+before that index counts. That is the same thing <code>index_of()</code>’s own
+second parameter bounds, so for any index <code>n</code>, <code>index_of(str, n)</code> and
+<code>last_index_of(str, n)</code> are the first and last matches of the two halves
+<code>n</code> splits the string into.</p>
+<p>An empty <em>str</em> returns -1, matching <code>index_of()</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'hello, world'.last_index_of('o')
+8
+%&gt; 'hello, world'.last_index_of('l')
+10
+%&gt; 'hello, world'.last_index_of('q')
+-1
+%&gt; 'hello, world'.last_index_of('o', 7)  # last `o` starting at or before index 7.
+4
+</code></pre>
+<p>Splitting a path on its final separator is the usual reason to reach for
+it:</p>
+<pre><code class="language-zuri-repl">%&gt; var path = 'a/b/c'
+%&gt; path.last_index_of('/')
+3
+%&gt; path[path.last_index_of('/') + 1, path.length()]
+'c'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+<li><code>end_index</code> (<code>?number</code>) — The highest index a match may start at.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="starts_with"><a class="header" href="#starts_with"><code>starts_with()</code></a></h2>
+<pre><code class="language-zuri ignore">starts_with(str: string) -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if the string begins with the string or character
+specified in <em>str</em>, otherwise it returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'hello, world'.starts_with('hello')
+true
+%&gt; 'hello, world'.starts_with('hellios')
+false
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="ends_with"><a class="header" href="#ends_with"><code>ends_with()</code></a></h2>
+<pre><code class="language-zuri ignore">ends_with(str: string) -&gt; boolean
+</code></pre>
+<p>Returns <code>true</code> if the string ends with the string or character specified
+in <em>str</em>, otherwise it returns <code>false</code>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'gumtree'.ends_with('tree')
+true
+%&gt; 'gumtree'.ends_with('mree')
+false
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="count"><a class="header" href="#count"><code>count()</code></a></h2>
+<pre><code class="language-zuri ignore">count(str: string) -&gt; number
+</code></pre>
+<p>Returns the number of non-overlapping occurrences of the substring <em>str</em>
+in the string.</p>
+<p><em>For those coming from Python who may consider this method similar to
+Python’s own, this method differs in that it does not allow specifying a
+start and end region for the operation. Zuri considers this unnecessary
+as the same can be accomplished by slicing the string.</em></p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'Hallelujah'.count('l')
+3
+%&gt; 'ding dong'.count('ng')
+2
+%&gt; 'ding dong'[2,7].count('ng') # setting region to search for counts - 'ng do'
+1
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="to_number"><a class="header" href="#to_number"><code>to_number()</code></a></h2>
+<pre><code class="language-zuri ignore">to_number() -&gt; number
+</code></pre>
+<p>Returns the first numeric value contained in the string if any exists or
+<code>0</code> if the string contains no numeric value. Floating numbers that have
+the same value as their integer counterparts will return the integer
+value.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '123.0 hell'.to_number()
+123
+%&gt; '427 and 12'.to_number()
+427
+%&gt; '96.3 of 31'.to_number()
+96.3
+%&gt; 'error'.to_number()
+0
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h2 id="to_list"><a class="header" href="#to_list"><code>to_list()</code></a></h2>
+<pre><code class="language-zuri ignore">to_list() -&gt; list
+</code></pre>
+<p>Returns a list whose elements consists of every character contained in
+the string in order of appearance. Characters that repeat in the string
+will have different entries in the same index as they appear in the
+string.<br></p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'Zuri'.to_list()
+[B, l, a, d, e]
+%&gt; 'Plantation'.to_list()
+[P, l, a, n, t, a, t, i, o, n]
+</code></pre>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="to_bytes"><a class="header" href="#to_bytes"><code>to_bytes()</code></a></h2>
+<pre><code class="language-zuri ignore">to_bytes() -&gt; bytes
+</code></pre>
+<p>Returns the content of the string as a stream of <code>bytes</code>.</p>
+<blockquote>
+<p>The Zuri REPL <em>may</em> truncate long bytes data when printing
+to console/terminal.</p>
+</blockquote>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'Zuri'.to_bytes()
+(42 6c 61 64 65)
+%&gt; 'Plantation'.to_bytes()
+(50 6c 61 6e 74 61 74 69 6f 6e)
+</code></pre>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h2 id="lpad"><a class="header" href="#lpad"><code>lpad()</code></a></h2>
+<pre><code class="language-zuri ignore">lpad(width: number, fill: ?string) -&gt; string
+</code></pre>
+<p>Returns the string left justified in a string of length <em>width</em>. Padding
+is done using the specified character <em>fill</em> if given of a space (<code>' '</code>)
+if a <em>fill</em> is not specified. The original string is returned if width
+is less than <em><code>string.length()</code></em>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'cat'.lpad(5)
+'  cat'
+%&gt; 'cat'.lpad(5, '-')
+'--cat'
+%&gt; 'cat'.lpad(2, '-')
+'cat'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — The length of the string after padding.</li>
+<li><code>fill</code> (<code>?string</code>) — The character to use for padding.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="rpad"><a class="header" href="#rpad"><code>rpad()</code></a></h2>
+<pre><code class="language-zuri ignore">rpad(width: number, fill: ?string) -&gt; string
+</code></pre>
+<p>Returns the string right justified in a string of length <em>width</em>.
+Padding is done using the specified character <em>fill</em> if given of a space
+(<code>' '</code>) if a <em>fill</em> is not specified. The original string is returned if
+width is less than <em><code>string.length()</code></em>.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'Hmm'.rpad(6)
+'Hmm   '
+%&gt; 'Hmm'.rpad(6, '.')
+'Hmm...'
+%&gt; 'Hmm'.rpad(3, '.')
+'Hmm'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — The length of the string after padding.</li>
+<li><code>fill</code> (<code>?string</code>) — The character to use for padding.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="match"><a class="header" href="#match"><code>match()</code></a></h2>
+<pre><code class="language-zuri ignore">match(str: string) -&gt; boolean|dictionary
+</code></pre>
+<p>If the string <em>str</em> is a regular string, this method returns <code>true</code> if
+the <em>string</em> contains a substring <em>str</em>. Otherwise, it returns <code>false</code>.</p>
+<p>If the string <em>str</em> contains a valid <a href="ch04-01-strings.html#regular-expressions">regular
+expression</a> (we’ll get to that shortly below), it
+returns <code>false</code> if a match for the regex <em>str</em> cannot be found in the
+string. Otherwise, it returns a <a href="ch04-04-dictionaries.html">dictionary</a> containing
+all first matching substring.</p>
+<p>If the <em>offset</em> argument is specified, it becomes the offset in the
+<em>string</em> at which to start matching.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'gorilla'.match('go')      # regular string match
+true
+%&gt; 'gorilla'.match('gox')     # regular string non-match
+false
+%&gt; 'gorilla'.match('/?gox/')  # regular expression match
+{0: go}
+%&gt; 'gorilla'.match('/gox\d/') # regular expression non-match
+false
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to match.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean|dictionary</code></p>
+<h2 id="matches"><a class="header" href="#matches"><code>matches()</code></a></h2>
+<pre><code class="language-zuri ignore">matches(reg: string) -&gt; dictionary
+</code></pre>
+<p>Returns a dictionary containing every match of the given regular
+expression <em>reg</em> in the source string. If no match is found, an empty
+<a href="ch04-04-dictionaries.html">dictionary</a> is returned.</p>
+<p>If the <em>offset</em> argument is specified, it becomes the offset in the
+<em>string</em> at which to start matching.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; '123 dollars'.matches('/[a-z]+|\d+/')
+{0: [123, dollars]}
+%&gt; 'who is in the garden'.matches('/\w+/')
+{0: [who, is, in, the, garden]}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>reg</code> (<code>string</code>) — The regular expression to match.</li>
+</ul>
+<p><strong>Returns</strong> <code>dictionary</code></p>
+<h2 id="replace"><a class="header" href="#replace"><code>replace()</code></a></h2>
+<pre><code class="language-zuri ignore">replace(str: string, replacement: string, use_regex: ?bool) -&gt; string
+</code></pre>
+<p>Returns a copy of the string with all occurrences or matches of <em>str</em>
+replaced by the <em>replacement</em> string.</p>
+<p>In the <em>replacement</em> string, if <em>str</em> is a regular expression, then
+capture groups can be referenced using the syntax <code>$index</code>. Taking as an
+example, capture group <code>0</code> contains the entire match and can be used in
+the <em>replacement</em> string as <code>$0</code>.</p>
+<blockquote>
+<p>To escape the <code>$</code> sign in the <em>replacement</em> string, use
+the double backslashes (<code>\\</code>).</p>
+</blockquote>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; 'lady friend'.replace('d', 'z')  # non-regex
+'lazy frienz'
+%&gt; 'John is 26 years old'.replace('/(\d+)/', '1$1') # regex example
+'John is 126 years old'
+%&gt; 'John is 26 years old'.replace('/(\d+)/', '1\\$2')
+'John is 1$2 years old'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The string to match.</li>
+<li><code>replacement</code> (<code>string</code>) — The replacement string.</li>
+<li><code>use_regex</code> (<code>?bool</code>) — Whether to use the regular expression or the
+string string as the match string (default = true).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> When the third parameter <em><code>use_regex</code></em> is set to false, <em>str</em>
+will never be treated as a regular expression even if it contains a
+valid regular expression.</p>
+</blockquote>
+<h2 id="replace_with"><a class="header" href="#replace_with"><code>replace_with()</code></a></h2>
+<pre><code class="language-zuri ignore">replace_with(regex: string, callback: function) -&gt; string
+</code></pre>
+<p>Returns a copy of the string with all occurrences or matches of <em>regex</em>
+replaced with the result of the function <em>callback</em> which is invoked
+only if and after a match has occurred.</p>
+<p>The callback function is defined as follows:</p>
+<pre><code class="language-zuri ignore">def replacer(match, p1, p2, /* …, */ pN, offset, string) {
+  return replacement
+}
+</code></pre>
+<p>The arguments to the function are as follows:</p>
+<ul>
+<li>
+<p><code>match</code>: The matched substring. (Corresponds to <code>$0</code>.)</p>
+</li>
+<li>
+<p><code>p1, p2, …, pN</code>: The nth string found by a capture group
+(including named capturing groups) corresponds to <code>$1</code>, <code>$2</code>, etc. For
+example, if the pattern is <code>/(\a+)(\b+)/</code>, then <code>p1</code> is the match for
+<code>\a+</code>, and <code>p2</code> is the match for <code>\b+</code>. If the group is part of a
+disjunction (e.g. <code>"abc".replace_with('/(a)|(b)/', replacer)</code>), the
+unmatched alternative will be <code>nil</code>.</p>
+</li>
+<li>
+<p><code>offset</code>: The offset of the matched substring within the
+whole string being examined. For example, if the whole string was
+<code>'abcd'</code>, and the matched substring was <code>'bc'</code>, then this argument will
+be <code>1</code>.</p>
+</li>
+<li>
+<p><code>string</code>: The whole string being examined.</p>
+</li>
+</ul>
+<p>The exact number of arguments depends on how many capture groups are
+contained in the regex.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; echo 'name'.replace_with('/m/', @(match, offset) {
+..   return match + '-'
+.. })
+'nam-e'
+</code></pre>
+<p>Below is another example that uses a capture group:</p>
+<pre><code class="language-zuri-repl">%&gt; var text = 'all is well'
+%&gt; 
+%&gt; echo text.replace_with('/([a-z]+)/', @(match, val) {
+..   if val == 'is' return 'is not'
+..   return 'will be'
+.. })
+'will be is not will be'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>regex</code> (<code>string</code>) — The regular expression to match.</li>
+<li><code>callback</code> (<code>function</code>) — The callback function to invoke for each
+match.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="ascii"><a class="header" href="#ascii"><code>ascii()</code></a></h2>
+<pre><code class="language-zuri ignore">ascii() -&gt; string
+</code></pre>
+<p>Reinterprets the string as a raw byte view: each byte of its UTF-8
+encoding becomes its own character (a codepoint between <code>0</code> and <code>255</code>,
+i.e. a Latin-1-style one-byte-per-character mapping), rather than the
+decoded sequence of Unicode characters that <code>length()</code>, <code>each()</code>, and
+indexing otherwise operate on.</p>
+<p>The result is still a valid string (every codepoint between <code>0</code> and
+<code>255</code> is valid UTF-8), so it can be used anywhere a normal string can.
+It just no longer round-trips back through the original multi-byte
+characters if the string had any, and its <code>length()</code> now reports the
+original BYTE count of the string rather than its original CHARACTER
+count.</p>
+<p>This is meant for the rare case where code needs to walk a string
+byte-for-byte instead of character-by-character, e.g. one that
+originated from a byte stream where the bytes were never meant to be
+decoded as Unicode at all.</p>
+<pre><code class="language-zuri-repl">%&gt; 'café'.length()
+4
+%&gt; 'café'.ascii().length()
+5
+</code></pre>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="case_fold"><a class="header" href="#case_fold"><code>case_fold()</code></a></h2>
+<pre><code class="language-zuri ignore">case_fold() -&gt; string
+</code></pre>
+<p>Returns a copy of the string case-folded for case-insensitive
+comparison, using full Unicode case folding rather than plain
+lowercasing. This matters for characters whose fold is not just their
+lowercase form: for example, the German <code>ß</code> folds to <code>ss</code>.</p>
+<p>Two strings that are considered equal ignoring case will always produce
+identical output from <code>case_fold()</code>, which makes it the correct method
+to use for case-insensitive comparisons; <code>lower()</code> is not a substitute
+for it.</p>
+<pre><code class="language-zuri-repl">%&gt; 'HELLO World'.case_fold()
+'hello world'
+%&gt; 'Straße'.case_fold()
+'strasse'
+</code></pre>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="compare"><a class="header" href="#compare"><code>compare()</code></a></h2>
+<pre><code class="language-zuri ignore">compare(other: string) -&gt; number
+</code></pre>
+<p>Compares the string with another string.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>string</code>) — The other string to compare with.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code> — A negative number if the string is less than the
+other string. - Zero if the strings are equal. - A positive number if
+the string is greater than the other string.</p>
+<p><strong>Raises</strong> <code>Error</code> if the other string is not a string.</p>
+<h2 id="is_empty"><a class="header" href="#is_empty"><code>is_empty()</code></a></h2>
+<pre><code class="language-zuri ignore">is_empty() -&gt; boolean
+</code></pre>
+<p>Returns true if the string is empty, false otherwise.</p>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="contains"><a class="header" href="#contains"><code>contains()</code></a></h2>
+<pre><code class="language-zuri ignore">contains(str: string) -&gt; boolean
+</code></pre>
+<p>Returns true if the string contains the specified substring, false
+otherwise.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>str</code> (<code>string</code>) — The substring to search for.</li>
+</ul>
+<p><strong>Returns</strong> <code>boolean</code></p>
+<h2 id="lines"><a class="header" href="#lines"><code>lines()</code></a></h2>
+<pre><code class="language-zuri ignore">lines() -&gt; list
+</code></pre>
+<p>Returns the lines of the string as an list as it would be if split on
+newline characters.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h2 id="each_line"><a class="header" href="#each_line"><code>each_line()</code></a></h2>
+<pre><code class="language-zuri ignore">each_line(callback: function) -&gt; void
+</code></pre>
+<p>Iterates over each line of the string, calling the provided callback
+function with the line and its index.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>) — A function that takes two arguments: the
+line and its index.</li>
+</ul>
+<p><strong>Returns</strong> <code>void</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the callback is not a function.</p>
+<h2 id="each"><a class="header" href="#each"><code>each()</code></a></h2>
+<pre><code class="language-zuri ignore">each(callback: function) -&gt; void
+</code></pre>
+<p>Iterates over each character of the string, calling the provided
+callback function with the character and its index.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>) — A function that takes two arguments: the
+character and its index.</li>
+</ul>
+<p><strong>Returns</strong> <code>void</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the callback is not a function.</p>
+<h2 id="capitalize"><a class="header" href="#capitalize"><code>capitalize()</code></a></h2>
+<pre><code class="language-zuri ignore">capitalize() -&gt; string
+</code></pre>
+<p>Returns a new string with the first character capitalized and the rest
+in lowercase.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="title"><a class="header" href="#title"><code>title()</code></a></h2>
+<pre><code class="language-zuri ignore">title() -&gt; string
+</code></pre>
+<p>Returns a new string with each word capitalized.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="to_string"><a class="header" href="#to_string"><code>to_string()</code></a></h2>
+<pre><code class="language-zuri ignore">to_string() -&gt; string
+</code></pre>
+<p>Returns the string itself.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="appendix-05-type-methods.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="appendix-05-02-number.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="appendix-05-type-methods.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="appendix-05-02-number.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,1521 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Wire: Templating - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-d06c3974.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-259e9395.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch14-00-wire.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="wire"><a class="header" href="#wire">Wire</a></h1>
+<p>Wire is Zuri’s built-in templating engine. Unlike most templating
+languages, Wire does not invent its own syntax on top of your markup.
+Every Wire feature is powered by attributes on ordinary HTML elements,
+which means anything a designer already knows about HTML transfers
+directly, and every valid HTML5 document is already a valid Wire
+template.</p>
+<p>Under the hood, a Wire template is compiled once — not re-interpreted
+on every render — into a small instruction tree, using the exact same
+<a href="ch13-00-stdlib-tour.html#html">WHATWG-conformant parser</a> that backs the <code>html</code> module.
+That has a consequence worth knowing up front: Wire understands your
+markup as <em>structure</em>, not as text. It knows that one interpolation
+sits inside a paragraph, another inside an <code>href</code>, and a third inside a
+<code>&lt;script&gt;</code> tag, and it escapes each one correctly for where it actually
+is. A value handed to a template can never turn into new markup by
+accident — that has to be requested explicitly, and Wire makes you say
+so out loud.</p>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#wire-and-blade">Wire and Blade</a></li>
+<li><a href="#your-first-template">Your First Template</a></li>
+</ul>
+</li>
+<li><a href="#rendering-templates">Rendering Templates</a>
+<ul>
+<li><a href="#templates-from-files">Templates From Files</a></li>
+<li><a href="#templates-from-strings">Templates From Strings</a></li>
+<li><a href="#the-template-root">The Template Root</a></li>
+</ul>
+</li>
+<li><a href="#displaying-data">Displaying Data</a>
+<ul>
+<li><a href="#escaping-data">Escaping Data</a></li>
+<li><a href="#rendering-raw-markup">Rendering Raw Markup</a></li>
+<li><a href="#wire-and-javascript-frameworks">Wire and JavaScript Frameworks</a></li>
+</ul>
+</li>
+<li><a href="#the-expression-language">The Expression Language</a>
+<ul>
+<li><a href="#literals">Literals</a></li>
+<li><a href="#looking-up-values">Looking Up Values</a></li>
+<li><a href="#operators">Operators</a></li>
+<li><a href="#truthiness">Truthiness</a></li>
+<li><a href="#calling-functions">Calling Functions</a></li>
+</ul>
+</li>
+<li><a href="#filters">Filters</a>
+<ul>
+<li><a href="#chaining-filters">Chaining Filters</a></li>
+<li><a href="#the--argument-shorthand">The <code>=</code> Argument Shorthand</a></li>
+<li><a href="#available-filters">Available Filters</a></li>
+<li><a href="#writing-your-own-filter">Writing Your Own Filter</a></li>
+</ul>
+</li>
+<li><a href="#conditionals">Conditionals</a>
+<ul>
+<li><a href="#x-if-x-elif-and-x-else"><code>x-if</code>, <code>x-elif</code>, and <code>x-else</code></a></li>
+<li><a href="#x-not"><code>x-not</code></a></li>
+</ul>
+</li>
+<li><a href="#loops">Loops</a>
+<ul>
+<li><a href="#the-loop-variable">The <code>loop</code> Variable</a></li>
+<li><a href="#nesting-loops">Nesting Loops</a></li>
+<li><a href="#looping-without-a-wrapper-element">Looping Without a Wrapper Element</a></li>
+</ul>
+</li>
+<li><a href="#content-and-attributes">Content and Attributes</a>
+<ul>
+<li><a href="#x-text"><code>x-text</code></a></li>
+<li><a href="#x-html"><code>x-html</code></a></li>
+<li><a href="#x-attr"><code>x-attr</code></a></li>
+</ul>
+</li>
+<li><a href="#comments">Comments</a></li>
+<li><a href="#including-templates">Including Templates</a>
+<ul>
+<li><a href="#passing-data-to-an-include">Passing Data to an Include</a></li>
+<li><a href="#includes-as-components">Includes as Components</a></li>
+<li><a href="#computed-include-paths">Computed Include Paths</a></li>
+</ul>
+</li>
+<li><a href="#template-inheritance">Template Inheritance</a>
+<ul>
+<li><a href="#defining-a-layout">Defining a Layout</a></li>
+<li><a href="#extending-a-layout">Extending a Layout</a></li>
+<li><a href="#default-slot-content">Default Slot Content</a></li>
+<li><a href="#x-super"><code>x-super</code></a></li>
+<li><a href="#multi-level-inheritance">Multi-Level Inheritance</a></li>
+<li><a href="#overriding-a-definition">Overriding a Definition</a></li>
+</ul>
+</li>
+<li><a href="#security">Security</a>
+<ul>
+<li><a href="#why-everything-is-escaped-by-default">Why Everything Is Escaped by Default</a></li>
+<li><a href="#urls-are-checked-not-just-escaped">URLs Are Checked, Not Just Escaped</a></li>
+<li><a href="#scripts-and-stylesheets">Scripts and Stylesheets</a></li>
+<li><a href="#the-template-root-is-a-sandbox">The Template Root Is a Sandbox</a></li>
+</ul>
+</li>
+<li><a href="#extending-wire">Extending Wire</a>
+<ul>
+<li><a href="#custom-filters">Custom Filters</a></li>
+<li><a href="#globals">Globals</a></li>
+<li><a href="#custom-elements">Custom Elements</a></li>
+</ul>
+</li>
+<li><a href="#configuration">Configuration</a></li>
+<li><a href="#compiling-and-caching">Compiling and Caching</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#full-directive-reference">Full Directive Reference</a></li>
+<li><a href="#cheat-sheet">Cheat Sheet</a></li>
+</ul>
+<h2 id="introduction"><a class="header" href="#introduction">Introduction</a></h2>
+<h3 id="wire-and-blade"><a class="header" href="#wire-and-blade">Wire and Blade</a></h3>
+<p>If you have used Laravel’s Blade, PHP’s own answer to templating, a lot
+of Wire will feel familiar in spirit even though the syntax is
+different. Both engines compile templates rather than interpret them
+on every request, both let you extend a base layout and override named
+sections of it, and both escape everything by default so that printing
+a user’s name can never become a way for that user to run script in
+someone else’s browser.</p>
+<p>Where Wire departs from Blade is in how it expresses control flow.
+Blade adds its own directive syntax on top of plain text
+(<code>@if</code>, <code>@foreach</code>, <code>{{ }}</code>) that a template author has to learn as a
+second language layered over HTML. Wire instead expresses everything
+as attributes on the HTML you were already going to write:</p>
+<pre><code class="language-html">{{-- Blade --}}
+@if ($user-&gt;isAdmin())
+    &lt;p&gt;Welcome back, administrator.&lt;/p&gt;
+@endif
+</code></pre>
+<pre><code class="language-html">{{-- Wire --}}
+&lt;p x-if="user.is_admin"&gt;Welcome back, administrator.&lt;/p&gt;
+</code></pre>
+<p>The practical benefit is that a Wire template can be handed to a
+designer who has never seen Zuri and they can still read it: it is
+HTML, with some attributes they can look up. It also means every Wire
+template validates as HTML5, can be opened directly in a browser to
+check its structure, and can be run through the <a href="ch13-00-stdlib-tour.html#html"><code>html</code>
+module</a>’s own tools (<code>html.format()</code>, a linter, a
+selector query) without anything special-casing Wire’s own syntax.</p>
+<h3 id="your-first-template"><a class="header" href="#your-first-template">Your First Template</a></h3>
+<p>Here is the smallest possible Wire template, rendered from a string:</p>
+<pre><code class="language-zuri">import wire
+
+echo wire.render_string('&lt;p&gt;Hello {{ name }}&lt;/p&gt;', { name: 'Ada' })
+# &lt;p&gt;Hello Ada&lt;/p&gt;
+</code></pre>
+<p><code>{{ name }}</code> is an interpolation: it evaluates the expression <code>name</code>
+against the variables you supplied and writes the result into the
+page, escaped for wherever it landed. Everything else in this guide is
+built out of that one idea, plus a handful of <code>x-</code> prefixed attributes
+that control <em>whether</em> and <em>how many times</em> an element is rendered.</p>
+<h2 id="rendering-templates"><a class="header" href="#rendering-templates">Rendering Templates</a></h2>
+<h3 id="templates-from-files"><a class="header" href="#templates-from-files">Templates From Files</a></h3>
+<p>For anything beyond a one-off snippet, templates live in files. Build
+a <code>Wire</code> instance, point it at a directory, and render by path:</p>
+<pre><code class="language-zuri ignore">import wire
+
+var view = wire.wire()
+view.set_root('./views')
+
+echo view.render('pages/home', { user, posts })
+</code></pre>
+<p><code>render()</code>’s first argument is a path relative to the root. The
+<code>.html</code> extension is added automatically when the path as written
+names no file, so <code>'pages/home'</code> finds <code>pages/home.html</code>; a path that
+already carries an extension (<code>'pages/home.wire'</code>) is tried exactly as
+given first. <code>set_extension()</code> changes what gets tried when none is
+given.</p>
+<blockquote>
+<p><strong>Note</strong>
+A <code>Wire</code> instance is meant to be built once, configured, and reused
+for the life of your program — typically at startup, alongside
+however you already configure the rest of your application.
+Rendering does not mutate it, so it is safe to render from several
+places at once.</p>
+</blockquote>
+<h3 id="templates-from-strings"><a class="header" href="#templates-from-strings">Templates From Strings</a></h3>
+<p><code>render_string()</code> renders a template given directly as a string,
+without touching the filesystem. It behaves identically to <code>render()</code>
+in every other respect — the same directives, the same escaping, the
+same filters — and any <code>x-include</code> or <code>x-extend</code> inside the string
+still resolves against the configured root.</p>
+<pre><code class="language-zuri ignore">echo view.render_string('&lt;p&gt;{{ greeting }}&lt;/p&gt;', { greeting: 'Hi there' })
+</code></pre>
+<p>The third argument names the source for error messages (it defaults
+to <code>&lt;source&gt;</code>), which is worth passing when the string came from
+somewhere with its own identity — a database row, a file you already
+had open for another reason:</p>
+<pre><code class="language-zuri ignore">view.render_string(row.body, { user }, 'cms:page:${row.id}')
+</code></pre>
+<p><code>render_string()</code> is not cached, since there is no file path to key a
+cache entry on. Reach for <code>render()</code> for anything rendered more than
+once.</p>
+<h3 id="the-template-root"><a class="header" href="#the-template-root">The Template Root</a></h3>
+<p>Every path — the one passed to <code>render()</code>, and the one written in
+every <code>x-include</code> and <code>x-extend</code> in every template — resolves <em>inside</em>
+the configured root directory, and nowhere else. This is not a
+convention; it is enforced by the loader on every single resolution,
+and <a href="#the-template-root-is-a-sandbox">it matters for security</a>, not
+just organization.</p>
+<pre><code class="language-zuri ignore">view.set_root('./views')
+view.root()
+# '/home/you/project/views' — always the absolute path
+</code></pre>
+<p>The root does not have to exist yet. <code>create_root()</code> makes it, and
+reports whether it had to:</p>
+<pre><code class="language-zuri ignore">if view.create_root() {
+  echo 'Created a fresh views/ directory.'
+}
+</code></pre>
+<p>Wire never creates this directory on its own initiative — a typo in a
+root path should read as “template not found,” not silently produce
+an empty folder somewhere unexpected.</p>
+<h2 id="displaying-data"><a class="header" href="#displaying-data">Displaying Data</a></h2>
+<p>You have already seen the basic form. <code>{{ expression }}</code> evaluates
+whatever is between the braces and writes the result into the page:</p>
+<pre><code class="language-html">&lt;h1&gt;{{ post.title }}&lt;/h1&gt;
+&lt;p&gt;By {{ post.author.name }}&lt;/p&gt;
+</code></pre>
+<p><code>expression</code> is not limited to a bare variable name — it is a full
+expression, covered in its own section below — so all of the following
+are valid:</p>
+<pre><code class="language-html">&lt;p&gt;{{ post.views &gt; 1000 ? 'Popular' : 'New' }}&lt;/p&gt;
+&lt;p&gt;{{ post.tags|join(', ') }}&lt;/p&gt;
+&lt;p&gt;{{ user.nickname ?? user.name }}&lt;/p&gt;
+</code></pre>
+<h3 id="escaping-data"><a class="header" href="#escaping-data">Escaping Data</a></h3>
+<p>Every interpolation is escaped for the specific place it lands, and
+this cannot be turned off from inside a template. If <code>name</code> holds
+<code>&lt;b&gt;Ada&lt;/b&gt;</code>:</p>
+<pre><code class="language-html">&lt;p&gt;Hello {{ name }}&lt;/p&gt;
+</code></pre>
+<p>renders as:</p>
+<pre><code class="language-html">&lt;p&gt;Hello &amp;lt;b&amp;gt;Ada&amp;lt;/b&amp;gt;&lt;/p&gt;
+</code></pre>
+<p>which is exactly what you want when <code>name</code> came from a form field, a
+database column, or anywhere else outside your own control. Wire is
+not guessing at this — because it compiles a real parsed document
+rather than gluing strings together, it always knows precisely which
+kind of place an interpolation sits in, and it applies the escaping
+that place needs:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Where the interpolation is</th><th>What happens</th></tr>
+</thead>
+<tbody>
+<tr><td>Text between tags</td><td><code>&amp;</code>, <code>&lt;</code>, <code>&gt;</code> become entities</td></tr>
+<tr><td>An ordinary attribute (<code>title</code>, <code>alt</code>, <code>data-*</code>, …)</td><td><code>&amp;</code> and <code>"</code> become entities</td></tr>
+<tr><td><code>href</code>, <code>src</code>, <code>action</code>, and other URL attributes</td><td>the value’s URL scheme is checked too</td></tr>
+<tr><td><code>&lt;script&gt;</code>, or an <code>on*</code> event handler attribute</td><td>the value is encoded as JSON</td></tr>
+<tr><td><code>&lt;style&gt;</code></td><td>anything outside a CSS-safe set is dropped</td></tr>
+</tbody>
+</table>
+</div>
+<p>That is a materially stronger guarantee than “the special characters
+got replaced”: a value dropped into an <code>href</code> cannot smuggle in a
+<code>javascript:</code> scheme, and a value dropped into a <code>&lt;script&gt;</code> block
+cannot break out of its string literal, close the tag early, or open a
+comment — even though none of those things are <code>&lt;</code>, <code>&gt;</code>, or <code>&amp;</code>.</p>
+<h3 id="rendering-raw-markup"><a class="header" href="#rendering-raw-markup">Rendering Raw Markup</a></h3>
+<p>Escaping everything by default is right, but sometimes you genuinely
+have markup — the output of another render, a snippet you built and
+trust — and you want it written out as markup. The <code>raw</code> filter is how
+you say so:</p>
+<pre><code class="language-html">&lt;div class="article-body"&gt;{{ post.rendered_html|raw }}&lt;/div&gt;
+</code></pre>
+<p>You can build the same value on the Zuri side and hand it to a
+template already marked as safe, with <code>wire.safe()</code>:</p>
+<pre><code class="language-zuri ignore">import wire
+
+view.render_string('&lt;div&gt;{{ body }}&lt;/div&gt;', {
+  body: wire.safe('&lt;em&gt;already-trusted markup&lt;/em&gt;'),
+})
+</code></pre>
+<blockquote>
+<p><strong>Warning</strong>
+<code>raw</code> and <code>wire.safe()</code> are a promise that the value is safe to write
+unescaped at the place it lands. Applying either to anything a user
+submitted — a comment, a bio, a search query — reopens exactly the
+cross-site scripting hole the rest of Wire exists to close. Only
+reach for them on markup your own code produced.</p>
+</blockquote>
+<p>If you need to render markup as text on purpose — showing someone a
+literal <code>&lt;script&gt;</code> tag in a code sample, say — that is what plain
+interpolation already does; there is nothing extra to opt into.</p>
+<h3 id="wire-and-javascript-frameworks"><a class="header" href="#wire-and-javascript-frameworks">Wire and JavaScript Frameworks</a></h3>
+<p>Wire uses <code>{{ }}</code> for interpolation, the same delimiter many
+JavaScript templating libraries (Vue, Angular, Handlebars, Mustache)
+use for their own. If a Wire template also contains inline script that
+a browser-side framework is meant to interpret, escape the braces with
+a leading <code>%</code> so Wire leaves them alone:</p>
+<pre><code class="language-html">&lt;div id="app"&gt;
+  &lt;p&gt;{{ user.name }}&lt;/p&gt;          {{-- rendered by Wire, server-side --}}
+  &lt;p&gt;%{{ message }}&lt;/p&gt;           {{-- left as literal {{ message }}, for Vue --}}
+&lt;/div&gt;
+</code></pre>
+<p><code>%{{</code> renders as the literal text <code>{{</code>, and <code>%{!</code> does the same for
+<a href="#calling-functions">template function calls</a>. If you find yourself
+escaping braces constantly because most of a template belongs to a
+client-side framework, it may be worth keeping that section in its own
+file and serving it untouched rather than through Wire at all.</p>
+<h2 id="the-expression-language"><a class="header" href="#the-expression-language">The Expression Language</a></h2>
+<p>Everything between <code>{{</code> and <code>}}</code> — and everything given to <code>x-if</code>,
+<code>x-for</code>, <code>x-attr</code>, and the rest of the directives below — is written in
+Wire’s own small expression language. It is deliberately not a full
+embedded copy of Zuri: there is no assignment, no way to declare
+anything, and no way to reach a global variable. A template describes
+a page; the logic that decides what the page contains belongs in the
+code that calls <code>render()</code>, not in the template itself.</p>
+<h3 id="literals"><a class="header" href="#literals">Literals</a></h3>
+<pre><code class="language-html">{{ 42 }}            {{-- a number --}}
+{{ 3.14 }}           {{-- a decimal --}}
+{{ 'a string' }}     {{-- single quotes --}}
+{{ "a string" }}     {{-- or double, interchangeably --}}
+{{ true }}           {{-- true / false / nil --}}
+{{ [1, 2, 3] }}      {{-- a list literal --}}
+{{ { id: 1, name } }} {{-- a dict literal; { name } is short for { name: name } --}}
+{{ 0..pages }}       {{-- a range, exactly as Zuri writes one --}}
+</code></pre>
+<h3 id="looking-up-values"><a class="header" href="#looking-up-values">Looking Up Values</a></h3>
+<pre><code class="language-html">{{ user.name }}                 {{-- a dotted lookup --}}
+{{ user.address.city }}         {{-- chains as deep as you like --}}
+{{ items.0 }}                   {{-- a numeric key reads a list position --}}
+{{ items[index] }}              {{-- a computed index --}}
+{{ items[-1] }}                 {{-- negative counts from the end --}}
+{{ items.length }}               {{-- a collection answers `length` by name --}}
+</code></pre>
+<p>Reading a variable that was never supplied gives <code>nil</code> rather than
+raising, and reading a key off <code>nil</code> gives <code>nil</code> too. That is what
+makes an optional value safe to reach through without a guard in front
+of it:</p>
+<pre><code class="language-html">{{ user.profile.avatar_url }}
+</code></pre>
+<p>renders as nothing at all if <code>user</code> has no <code>profile</code>, instead of
+failing three levels down. Reach for <a href="#conditionals"><code>x-if</code></a> when the
+difference between “empty” and “genuinely missing” matters to what you
+show.</p>
+<blockquote>
+<p><strong>Note</strong>
+A name starting with an underscore can never be read from a
+template, the same way Zuri treats <code>_field</code> as private. If you find
+yourself wanting to read one, expose a public accessor from Zuri
+instead.</p>
+</blockquote>
+<h3 id="operators"><a class="header" href="#operators">Operators</a></h3>
+<pre><code class="language-html">{{ price * quantity }}
+{{ subtotal + tax }}
+{{ stock - reserved }}
+{{ total / count }}
+{{ index % 2 }}
+
+{{ a == b }}   {{ a != b }}
+{{ a &lt; b }}    {{ a &lt;= b }}
+{{ a &gt; b }}    {{ a &gt;= b }}
+
+{{ 'admin' in user.roles }}
+{{ 'admin' not in user.roles }}
+
+{{ is_admin and is_active }}
+{{ is_admin &amp;&amp; is_active }}      {{-- &amp;&amp; is the same as `and` --}}
+{{ is_guest or is_banned }}
+{{ is_guest || is_banned }}       {{-- || is the same as `or` --}}
+{{ !is_active }}
+{{ not is_active }}               {{-- ! is the same as `not` --}}
+
+{{ stock &gt; 0 ? 'In stock' : 'Sold out' }}
+{{ nickname ?? name }}
+</code></pre>
+<p>A string on either side of <code>+</code> concatenates rather than raising:</p>
+<pre><code class="language-html">{{ 'Hello, ' + user.name }}
+</code></pre>
+<p><code>??</code> and <code>or</code> look similar but answer different questions, and mixing
+them up is the single most common Wire mistake:</p>
+<ul>
+<li><code>??</code> asks “was this ever supplied?” and only falls back on <code>nil</code>.</li>
+<li><code>or</code> asks “is this worth showing?” using <a href="#truthiness">Wire’s own
+truthiness</a>, and falls back on anything falsy — <code>nil</code>,
+<code>false</code>, an empty string, an empty collection, or the number <code>0</code>.</li>
+</ul>
+<pre><code class="language-html">{{ discount ?? 0 }}   {{-- a missing discount becomes 0 --}}
+{{ discount or 0 }}   {{-- a discount that IS 0 also becomes 0, harmlessly here --}}
+
+{{ stock_count ?? 'unknown' }}  {{-- 0 in stock still shows as 0 --}}
+{{ stock_count or 'unknown' }}  {{-- 0 in stock is treated the same as never supplied --}}
+</code></pre>
+<p>Use <code>??</code> whenever zero is a legitimate value you want to keep, and
+<code>or</code> whenever you only want to show something when there is genuinely
+something to show.</p>
+<h3 id="truthiness"><a class="header" href="#truthiness">Truthiness</a></h3>
+<p><code>x-if</code>, <code>x-not</code>, <code>and</code>/<code>or</code>, <code>!</code>/<code>not</code>, and <code>? :</code> all use Wire’s own
+notion of truthy and falsy, which is not quite the same as Zuri’s own
+rules and is deliberately friendlier for template authoring:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Value</th><th>Wire</th></tr>
+</thead>
+<tbody>
+<tr><td><code>nil</code>, <code>false</code></td><td>falsy</td></tr>
+<tr><td><code>0</code></td><td>falsy</td></tr>
+<tr><td>any other number, <strong>including negative ones</strong></td><td>truthy</td></tr>
+<tr><td>an empty string</td><td>falsy</td></tr>
+<tr><td>a non-empty string</td><td>truthy</td></tr>
+<tr><td>an empty list or dict</td><td>falsy</td></tr>
+<tr><td>a non-empty list or dict</td><td>truthy</td></tr>
+<tr><td>anything else</td><td>truthy</td></tr>
+</tbody>
+</table>
+</div>
+<p>The one difference worth calling out explicitly: a negative number is
+truthy in Wire. A temperature of <code>-5</code> or an account balance of <code>-1</code>
+should still show up in the page; a template engine that treated any
+negative number as “nothing to show” would be a constant source of
+subtle bugs. An empty collection, on the other hand, is falsy — so
+<code>x-if="results"</code> correctly hides a section for a search that came back
+with nothing.</p>
+<h3 id="calling-functions"><a class="header" href="#calling-functions">Calling Functions</a></h3>
+<p>A value <a href="#globals">registered as a global</a> can be called directly:</p>
+<pre><code class="language-html">&lt;a href="{{ route('user.profile', user.id) }}"&gt;{{ user.name }}&lt;/a&gt;
+</code></pre>
+<p>There is also an older, standalone spelling for calling a function
+that takes no arguments, kept from Wire’s very first version because
+it reads well on its own:</p>
+<pre><code class="language-html">{! current_year !}
+</code></pre>
+<p>is exactly the same as writing:</p>
+<pre><code class="language-html">{{ current_year() }}
+</code></pre>
+<p>Prefer <code>{{ fn() }}</code> for anything new; <code>{! !}</code> exists for templates that
+already use it and for the handful of cases — a page’s build stamp, a
+feature flag — where a function taking nothing at all reads a little
+cleaner without the parentheses.</p>
+<h2 id="filters"><a class="header" href="#filters">Filters</a></h2>
+<p>A filter transforms the value on the left of a <code>|</code>. It is the same
+idea as a Unix pipe:</p>
+<pre><code class="language-html">{{ name|upper }}
+{{ price|round(2) }}
+{{ post.body|truncate(150) }}
+</code></pre>
+<p>The value being filtered is always the filter’s first argument;
+anything written in parentheses follows it. <code>truncate(150)</code> above
+calls the <code>truncate</code> filter as <code>truncate(post.body, 150)</code>.</p>
+<h3 id="chaining-filters"><a class="header" href="#chaining-filters">Chaining Filters</a></h3>
+<p>Filters read left to right, each one’s output feeding the next:</p>
+<pre><code class="language-html">{{ name|trim|title }}
+{{ comment.body|strip_tags|truncate(200) }}
+</code></pre>
+<h3 id="the--argument-shorthand"><a class="header" href="#the--argument-shorthand">The <code>=</code> Argument Shorthand</a></h3>
+<p>For a filter that takes exactly one argument, <code>name=value</code> is
+shorthand for <code>name(value)</code>:</p>
+<pre><code class="language-html">{{ status|is='active' }}
+</code></pre>
+<p>is the same as:</p>
+<pre><code class="language-html">{{ status|is('active') }}
+</code></pre>
+<p>This spelling exists for symmetry with Wire’s very first version and
+reads naturally for a short comparison; the parenthesised form is
+equally valid everywhere and is the only option once a filter needs
+more than one argument.</p>
+<h3 id="available-filters"><a class="header" href="#available-filters">Available Filters</a></h3>
+<p><strong>Escaping</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>raw</code></td><td><a href="#rendering-raw-markup">Marks the value as markup</a>, skipping escaping entirely.</td></tr>
+<tr><td><code>escape</code> / <code>e</code></td><td>Escapes for a context other than the one the value is being written into. Takes <code>'text'</code> (the default), <code>'attribute'</code>, <code>'url'</code>, <code>'script'</code>, or <code>'style'</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Text</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>upper</code></td><td>Converts to upper case.</td></tr>
+<tr><td><code>lower</code></td><td>Converts to lower case.</td></tr>
+<tr><td><code>title</code></td><td>Title Cases Every Word.</td></tr>
+<tr><td><code>capitalize</code></td><td>Capitalizes only the first letter, leaving the rest alone.</td></tr>
+<tr><td><code>trim</code></td><td>Removes leading and trailing whitespace of every kind (space, tab, newline).</td></tr>
+<tr><td><code>truncate(length, suffix?)</code></td><td>Cuts to <code>length</code> characters, appending <code>suffix</code> (default <code>'…'</code>) only if anything was actually cut.</td></tr>
+<tr><td><code>replace(search, replacement?)</code></td><td>Replaces every literal occurrence of <code>search</code>. Never a regular expression. <code>replacement</code> defaults to an empty string.</td></tr>
+<tr><td><code>lpad(width, fill?)</code></td><td>Pads on the left to <code>width</code> characters, with <code>fill</code> (default a space).</td></tr>
+<tr><td><code>rpad(width, fill?)</code></td><td>Pads on the right.</td></tr>
+<tr><td><code>repeat(count)</code></td><td>Repeats the value <code>count</code> times.</td></tr>
+<tr><td><code>nl2br</code></td><td>Turns line breaks into <code>&lt;br&gt;</code>, escaping the text first. Returns markup.</td></tr>
+<tr><td><code>line_breaks</code></td><td>An alias for <code>nl2br</code>.</td></tr>
+<tr><td><code>strip_tags</code></td><td>Removes every HTML tag, keeping only the text — a real parse, not a pattern match.</td></tr>
+<tr><td><code>slug</code></td><td>Lower-cased, hyphen-separated, safe for a URL segment.</td></tr>
+<tr><td><code>url_encode</code></td><td>Percent-encodes for use inside a URL.</td></tr>
+<tr><td><code>json</code></td><td>Encodes as JSON text.</td></tr>
+<tr><td><code>json_script(id?)</code></td><td>Wraps the value’s JSON encoding in a <code>&lt;script type="application/json"&gt;</code>, optionally with an <code>id</code>, ready to be read back by a script on the page. Returns markup.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Numbers</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>abs</code></td><td>Removes the sign.</td></tr>
+<tr><td><code>round(places?)</code></td><td>Rounds to <code>places</code> decimal places (default <code>0</code>), halves rounding away from zero.</td></tr>
+<tr><td><code>floor</code></td><td>Rounds down to the nearest whole number.</td></tr>
+<tr><td><code>ceil</code></td><td>Rounds up.</td></tr>
+<tr><td><code>number_format(places?, point?, separator?)</code></td><td>Groups thousands and fixes the decimal places, like <code>1,234,567.89</code>. Pass <code>point</code>/<code>separator</code> to use another convention, e.g. <code>1.234.567,89</code>.</td></tr>
+<tr><td><code>filesize(binary?)</code></td><td>A byte count written the way a person reads it — <code>1.4 MB</code> by default, or <code>1.3 MiB</code> with <code>binary</code> set to <code>true</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Collections</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>length</code></td><td>How many entries — works on a string, list, dict, or bytes. <code>nil</code> has length <code>0</code>.</td></tr>
+<tr><td><code>first</code></td><td>The first entry, or <code>nil</code> if there is none.</td></tr>
+<tr><td><code>last</code></td><td>The last entry.</td></tr>
+<tr><td><code>join(glue?)</code></td><td>Joins entries into one string with <code>glue</code> (default <code>''</code>) between them.</td></tr>
+<tr><td><code>sort(key?)</code></td><td>Sorted ascending; <code>key</code> sorts a list of dicts or instances by one field.</td></tr>
+<tr><td><code>reverse</code></td><td>The entries backwards, or a string reversed.</td></tr>
+<tr><td><code>unique</code></td><td>Duplicates removed, keeping the first of each.</td></tr>
+<tr><td><code>keys</code></td><td>A dict’s keys, in insertion order.</td></tr>
+<tr><td><code>values</code></td><td>A dict’s values, in insertion order.</td></tr>
+<tr><td><code>slice(start, end?)</code></td><td>The entries from <code>start</code> up to but not including <code>end</code>. Negative positions count from the end.</td></tr>
+<tr><td><code>sum(key?)</code></td><td>Adds the entries together; <code>key</code> sums one field of a list of dicts or instances.</td></tr>
+<tr><td><code>split(separator?)</code></td><td>Splits a string into a list. <code>separator</code> defaults to any run of whitespace.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Choice</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>default(fallback)</code> / <code>alt</code></td><td><code>fallback</code> when the value is <a href="#truthiness">falsy</a>, otherwise the value.</td></tr>
+<tr><td><code>empty</code></td><td>Whether the value has nothing in it. Unlike falsiness, a number is never empty — not even <code>0</code>.</td></tr>
+<tr><td><code>is(expected)</code></td><td>Whether the value equals <code>expected</code>.</td></tr>
+<tr><td><code>not(expected)</code></td><td>Whether it differs.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Dates</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Filter</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>date(format?)</code></td><td>Formats a <code>date.Date</code>, a Unix timestamp, or a parseable date string, using <a href="ch13-00-stdlib-tour.html#date">the same format directives as <code>Date.format()</code></a>. Defaults to <code>'Y-m-d H:i:s'</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-html">&lt;time datetime="{{ post.published_at|date('Y-m-d') }}"&gt;
+  {{ post.published_at|date('jS F Y') }}
+&lt;/time&gt;
+</code></pre>
+<h3 id="writing-your-own-filter"><a class="header" href="#writing-your-own-filter">Writing Your Own Filter</a></h3>
+<p>See <a href="#custom-filters">Custom Filters</a> below.</p>
+<h2 id="conditionals"><a class="header" href="#conditionals">Conditionals</a></h2>
+<h3 id="x-if-x-elif-and-x-else"><a class="header" href="#x-if-x-elif-and-x-else"><code>x-if</code>, <code>x-elif</code>, and <code>x-else</code></a></h3>
+<p><code>x-if</code> renders an element, and everything inside it, only when its
+expression is <a href="#truthiness">truthy</a>:</p>
+<pre><code class="language-html">&lt;p x-if="user.is_admin"&gt;You have administrator access.&lt;/p&gt;
+</code></pre>
+<p>If <code>user.is_admin</code> is falsy, the whole <code>&lt;p&gt;</code> — tag and contents — is
+left out of the page entirely. There is no empty element left behind.</p>
+<p>Chain further conditions with <code>x-elif</code>, and close the chain with a
+plain <code>x-else</code>:</p>
+<pre><code class="language-html">&lt;p x-if="user.role == 'admin'"&gt;Administrator&lt;/p&gt;
+&lt;p x-elif="user.role == 'staff'"&gt;Staff member&lt;/p&gt;
+&lt;p x-elif="user.role == 'contributor'"&gt;Contributor&lt;/p&gt;
+&lt;p x-else&gt;Member&lt;/p&gt;
+</code></pre>
+<p>Exactly one of these renders. Only whitespace and HTML comments are
+allowed between the elements in a chain — any real content in between
+ends it, and an <code>x-elif</code> or <code>x-else</code> with no <code>x-if</code> in front of it is
+rejected when the template compiles, not silently ignored:</p>
+<pre><code class="language-html">{{-- this chain is broken by the text between the two elements --}}
+&lt;p x-if="a"&gt;A&lt;/p&gt;
+some text
+&lt;p x-else&gt;not A&lt;/p&gt; {{-- error: x-else has no x-if in front of it --}}
+</code></pre>
+<h3 id="x-not"><a class="header" href="#x-not"><code>x-not</code></a></h3>
+<p><code>x-not</code> is the plain inverse of <code>x-if</code> — it renders when its expression
+is falsy — and does not take part in a chain:</p>
+<pre><code class="language-html">&lt;div x-not="user.has_verified_email"&gt;
+  &lt;p&gt;Please verify your email address.&lt;/p&gt;
+&lt;/div&gt;
+</code></pre>
+<p><code>x-if="!condition"</code> and <code>x-not="condition"</code> mean the same thing;
+<code>x-not</code> exists because it often reads more naturally for a guard
+clause.</p>
+<h2 id="loops"><a class="header" href="#loops">Loops</a></h2>
+<p><code>x-for</code> repeats an element once per entry of whatever its expression
+evaluates to — a list, a dict, a string, or a range:</p>
+<pre><code class="language-html">&lt;ul&gt;
+  &lt;li x-for="posts" x-value="post"&gt;{{ post.title }}&lt;/li&gt;
+&lt;/ul&gt;
+</code></pre>
+<p>Notice that the <em>element itself</em> repeats, not just its contents — the
+example above produces one whole <code>&lt;li&gt;</code> per post, not one <code>&lt;li&gt;</code>
+wrapping every post. <code>x-value</code> names the variable each iteration binds
+its current entry to; leave it out entirely if you do not need to
+refer to the entry by name.</p>
+<p>An optional <code>x-key</code> binds the position (for a list) or the key (for a
+dict):</p>
+<pre><code class="language-html">&lt;tr x-for="users" x-key="id" x-value="user"&gt;
+  &lt;td&gt;{{ id }}&lt;/td&gt;
+  &lt;td&gt;{{ user.name }}&lt;/td&gt;
+&lt;/tr&gt;
+</code></pre>
+<p>Every kind of collection iterates naturally:</p>
+<pre><code class="language-html">&lt;li x-for="tags" x-value="tag"&gt;{{ tag }}&lt;/li&gt;              {{-- a list --}}
+&lt;li x-for="scores" x-key="name" x-value="score"&gt;           {{-- a dict --}}
+  {{ name }}: {{ score }}
+&lt;/li&gt;
+&lt;span x-for="word" x-value="letter"&gt;{{ letter }}&lt;/span&gt;    {{-- a string, by character --}}
+&lt;option x-for="1..5" x-value="n"&gt;{{ n }}&lt;/option&gt;          {{-- a range --}}
+</code></pre>
+<p>A missing or empty collection simply renders nothing — there is no
+need to guard a loop with an <code>x-if</code> first:</p>
+<pre><code class="language-html">&lt;li x-for="comments" x-value="comment"&gt;{{ comment.body }}&lt;/li&gt;
+{{-- renders nothing at all if `comments` is empty or was never supplied --}}
+</code></pre>
+<h3 id="the-loop-variable"><a class="header" href="#the-loop-variable">The <code>loop</code> Variable</a></h3>
+<p>Every iteration publishes a <code>loop</code> variable with the following fields:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Value</th></tr>
+</thead>
+<tbody>
+<tr><td><code>loop.index</code></td><td>The position, counting from <code>1</code>.</td></tr>
+<tr><td><code>loop.index0</code></td><td>The position, counting from <code>0</code>.</td></tr>
+<tr><td><code>loop.first</code></td><td><code>true</code> on the first pass.</td></tr>
+<tr><td><code>loop.last</code></td><td><code>true</code> on the last pass.</td></tr>
+<tr><td><code>loop.length</code></td><td>How many entries there are in total.</td></tr>
+<tr><td><code>loop.even</code></td><td><code>true</code> on the 2nd, 4th, 6th, … pass — even-numbered by <code>loop.index</code>.</td></tr>
+<tr><td><code>loop.odd</code></td><td><code>true</code> on the 1st, 3rd, 5th, … pass.</td></tr>
+<tr><td><code>loop.key</code></td><td>The current key or index, whether or not <code>x-key</code> binds it too.</td></tr>
+<tr><td><code>loop.value</code></td><td>The current value, whether or not <code>x-value</code> binds it too.</td></tr>
+<tr><td><code>loop.parent</code></td><td>The enclosing loop’s own <code>loop</code>, for a nested <code>x-for</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-html">&lt;tr x-for="rows" x-value="row" x-attr="{ 'class': loop.odd ? 'zebra' : nil }"&gt;
+  &lt;td&gt;{{ loop.index }}&lt;/td&gt;
+  &lt;td&gt;{{ row.name }}&lt;/td&gt;
+&lt;/tr&gt;
+</code></pre>
+<h3 id="nesting-loops"><a class="header" href="#nesting-loops">Nesting Loops</a></h3>
+<p><code>x-loop</code> renames the metadata variable a specific <code>x-for</code> publishes,
+which is what lets an inner loop’s own <code>loop</code> and an outer loop’s
+<code>loop</code> both be reached at once:</p>
+<pre><code class="language-html">&lt;table x-for="rows" x-loop="row" x-value="cells"&gt;
+  &lt;tr&gt;
+    &lt;td x-for="cells" x-value="cell"&gt;
+      {{ row.index }}, {{ loop.index }}: {{ cell }}
+    &lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/table&gt;
+</code></pre>
+<p>Without <code>x-loop</code>, the inner loop’s own <code>loop</code> would simply shadow the
+outer one for the scope of the inner loop — reach for <code>loop.parent</code>
+instead if you would rather not rename anything:</p>
+<pre><code class="language-html">&lt;td x-for="cells" x-value="cell"&gt;
+  outer position {{ loop.parent.index }}, inner position {{ loop.index }}
+&lt;/td&gt;
+</code></pre>
+<h3 id="looping-without-a-wrapper-element"><a class="header" href="#looping-without-a-wrapper-element">Looping Without a Wrapper Element</a></h3>
+<p>Sometimes you want to repeat several elements together without a real
+element wrapping them, or without introducing any element at all. Put
+the directive on a <code>&lt;template&gt;</code> instead of on the element you want
+repeated:</p>
+<pre><code class="language-html">&lt;select&gt;
+  &lt;template x-for="countries" x-value="country"&gt;
+    &lt;option value="{{ country.code }}"&gt;{{ country.name }}&lt;/option&gt;
+  &lt;/template&gt;
+&lt;/select&gt;
+</code></pre>
+<p><code>&lt;template&gt;</code> is the one HTML element the parser lets through
+completely untouched, wherever it appears — inside a <code>&lt;head&gt;</code>, inside
+a <code>&lt;table&gt;</code>, inside a <code>&lt;select&gt;</code> — and Wire removes it from the output
+entirely, leaving only what was inside it, once per pass. This is also
+the way to apply <a href="#conditionals"><code>x-if</code></a> to a group of elements without
+picking one of them to carry the attribute:</p>
+<pre><code class="language-html">&lt;template x-if="user.is_admin"&gt;
+  &lt;a href="/admin"&gt;Dashboard&lt;/a&gt;
+  &lt;a href="/admin/users"&gt;Users&lt;/a&gt;
+&lt;/template&gt;
+</code></pre>
+<h2 id="content-and-attributes"><a class="header" href="#content-and-attributes">Content and Attributes</a></h2>
+<h3 id="x-text"><a class="header" href="#x-text"><code>x-text</code></a></h3>
+<p><code>x-text</code> replaces an element’s children with its expression, escaped
+as plain text — useful when the element already has other attributes
+and you would rather not write the value twice:</p>
+<pre><code class="language-html">&lt;p x-text="post.summary"&gt;&lt;/p&gt;
+</code></pre>
+<p>is the same as:</p>
+<pre><code class="language-html">&lt;p&gt;{{ post.summary }}&lt;/p&gt;
+</code></pre>
+<p>Anything written inside the element in the source is discarded; it
+exists only to describe what would go there without JavaScript.</p>
+<h3 id="x-html"><a class="header" href="#x-html"><code>x-html</code></a></h3>
+<p><code>x-html</code> is <code>x-text</code>’s unescaped counterpart — it replaces the
+element’s children with its expression’s value, written as markup
+rather than text:</p>
+<pre><code class="language-html">&lt;div x-html="post.rendered_body|raw"&gt;&lt;/div&gt;
+</code></pre>
+<p>Note the <code>|raw</code>: <code>x-html</code> still expects a value marked safe, the same
+as an ordinary interpolation would. <code>x-html</code> only changes <em>where</em> the
+markup goes (replacing the whole element’s contents, rather than
+sitting inline in a text run) — it does not, on its own, turn escaping
+off. The <a href="#rendering-raw-markup">same warning about untrusted input</a>
+applies here just as much as it does to the <code>raw</code> filter.</p>
+<h3 id="x-attr"><a class="header" href="#x-attr"><code>x-attr</code></a></h3>
+<p><code>x-attr</code> spreads a dictionary of names and values onto the element as
+attributes:</p>
+<pre><code class="language-html">&lt;input x-attr="{ type: 'text', name: field.name, required: field.is_required }"&gt;
+</code></pre>
+<p>Within that dictionary:</p>
+<ul>
+<li><code>true</code> produces a valueless attribute (<code>required</code>), exactly as
+writing <code>required</code> by hand would.</li>
+<li><code>false</code> and <code>nil</code> leave the attribute off entirely, rather than
+writing it with an empty or literal <code>"false"</code> value.</li>
+<li>Anything else is written as the attribute’s value, escaped for
+whatever that attribute means (a URL attribute is checked as a URL,
+same as always).</li>
+</ul>
+<p>This is what turns a boolean into a real HTML boolean attribute
+without a ternary in every place one is needed:</p>
+<pre><code class="language-html">&lt;button x-attr="{ disabled: !form.is_valid }"&gt;Submit&lt;/button&gt;
+</code></pre>
+<p>A computed attribute takes over from one written directly on the same
+element, so you can set a sensible default and only override it when
+there is something to override:</p>
+<pre><code class="language-html">&lt;div class="card" x-attr="{ 'class': featured ? 'card card-featured' : nil }"&gt;
+</code></pre>
+<h2 id="comments"><a class="header" href="#comments">Comments</a></h2>
+<p>HTML’s own comment syntax is a server-side note in a Wire template. It
+never reaches the rendered page, and nothing inside one is evaluated —
+which is exactly what makes it safe to leave notes for other people
+maintaining the template, without those notes shipping to a browser:</p>
+<pre><code class="language-html">&lt;!-- TODO: replace this hard-coded banner once marketing sends the real copy --&gt;
+&lt;div class="banner"&gt;Coming soon&lt;/div&gt;
+
+&lt;!-- this variable is not evaluated: {{ some.internal.detail }} --&gt;
+</code></pre>
+<p>If you genuinely want a comment to reach the browser — a conditional
+comment, a build stamp a deploy script checks for — turn comments back
+on for that <code>Wire</code> instance with <a href="#configuration"><code>set_comments(true)</code></a>.</p>
+<h2 id="including-templates"><a class="header" href="#including-templates">Including Templates</a></h2>
+<p><code>&lt;include path="..." /&gt;</code> renders another template in its place. It
+also has a directive spelling, <code>&lt;template x-include="..."&gt;</code>, which
+means exactly the same thing — the pseudo-element forms in this guide
+(<code>&lt;include&gt;</code>, <code>&lt;extend&gt;</code>, <code>&lt;declare&gt;</code>, <code>&lt;define&gt;</code>) are sugar, rewritten
+into the directive form before the template is even parsed, which is
+what lets them work correctly inside a <code>&lt;head&gt;</code> or a <code>&lt;table&gt;</code> where an
+element the parser does not recognise would otherwise be moved or
+dropped.</p>
+<pre><code class="language-html">&lt;include path="partials/nav.html" /&gt;
+</code></pre>
+<p>is the same as:</p>
+<pre><code class="language-html">&lt;template x-include="partials/nav.html"&gt;&lt;/template&gt;
+</code></pre>
+<p>The path is resolved <a href="#the-template-root">inside the template root</a>,
+the same as <code>render()</code>’s own path argument.</p>
+<p>By default, an include sees every variable the page around it can
+see — it is not a separate scope:</p>
+<pre><code class="language-html">{{-- page.html --}}
+&lt;include path="partials/greeting.html" /&gt;
+</code></pre>
+<pre><code class="language-html">{{-- partials/greeting.html --}}
+&lt;p&gt;Hi, {{ user.name }}!&lt;/p&gt;
+</code></pre>
+<p>renders correctly without <code>user</code> ever being passed explicitly to the
+partial.</p>
+<h3 id="passing-data-to-an-include"><a class="header" href="#passing-data-to-an-include">Passing Data to an Include</a></h3>
+<p><code>x-with</code> adds variables for the included template, alongside whatever
+it already inherits:</p>
+<pre><code class="language-html">&lt;include path="partials/badge.html" x-with="{ label: 'New', tone: 'green' }" /&gt;
+</code></pre>
+<p><code>only</code> withholds the surrounding scope entirely, leaving the partial
+with only what <code>x-with</code> gave it — turning a plain partial into
+something closer to a real component with a defined interface:</p>
+<pre><code class="language-html">&lt;include path="components/price-tag.html" x-with="{ amount: item.price }" only /&gt;
+</code></pre>
+<h3 id="includes-as-components"><a class="header" href="#includes-as-components">Includes as Components</a></h3>
+<p>Anything written <em>inside</em> an <code>&lt;include&gt;</code> tag is handed to the included
+template as a named region called <code>content</code>, declared with
+<code>&lt;declare name="content"&gt;</code>:</p>
+<pre><code class="language-html">{{-- components/card.html --}}
+&lt;section class="card"&gt;
+  &lt;h3&gt;{{ title }}&lt;/h3&gt;
+  &lt;declare name="content"&gt;&lt;/declare&gt;
+&lt;/section&gt;
+</code></pre>
+<pre><code class="language-html">{{-- the page --}}
+&lt;include path="components/card.html" x-with="{ title: 'Recent Orders' }"&gt;
+  &lt;p&gt;{{ orders|length }} orders this week&lt;/p&gt;
+&lt;/include&gt;
+</code></pre>
+<p>renders as:</p>
+<pre><code class="language-html">&lt;section class="card"&gt;
+  &lt;h3&gt;Recent Orders&lt;/h3&gt;
+  &lt;p&gt;3 orders this week&lt;/p&gt;
+&lt;/section&gt;
+</code></pre>
+<p>The content you write inside the <code>&lt;include&gt;</code> tag keeps the scope it
+was written in — the page’s, not the partial’s — which is exactly what
+lets <code>{{ orders|length }}</code> above read a variable from the page even
+though <code>x-only</code> was not used and the card component never mentions
+<code>orders</code> at all.</p>
+<h3 id="computed-include-paths"><a class="header" href="#computed-include-paths">Computed Include Paths</a></h3>
+<p>A path is read as literal text, with <code>{{ }}</code> interpolation allowed
+inside it — not as an expression in its own right, so
+<code>x-include="header"</code> names a file called <code>header</code>, rather than reading
+a variable of that name:</p>
+<pre><code class="language-html">&lt;include path="themes/{{ current_theme }}/header.html" /&gt;
+</code></pre>
+<p>resolves a different file per render depending on <code>current_theme</code>,
+while everything after <code>path="themes/"</code> up to the next <code>{{</code> is taken
+literally.</p>
+<h2 id="template-inheritance"><a class="header" href="#template-inheritance">Template Inheritance</a></h2>
+<p>Includes are for small, reusable fragments — a navbar, a footer, a
+badge. For whole-page structure — the parts of a layout every page on
+your site shares — template inheritance is the better fit. Where an
+include composes fragments together, inheritance lets a base layout
+define the <em>shape</em> of a page once, and lets each page fill in only the
+parts that differ.</p>
+<h3 id="defining-a-layout"><a class="header" href="#defining-a-layout">Defining a Layout</a></h3>
+<p>A base template marks the regions a page is allowed to fill in with
+<code>&lt;declare name="..."&gt;</code>:</p>
+<pre><code class="language-html">{{-- layouts/app.html --}}
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;{{ title }}&lt;/title&gt;
+    &lt;declare name="head"&gt;&lt;/declare&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;nav&gt;&lt;!-- shared navigation --&gt;&lt;/nav&gt;
+    &lt;main&gt;
+      &lt;declare name="content"&gt;&lt;/declare&gt;
+    &lt;/main&gt;
+    &lt;footer&gt;
+      &lt;declare name="footer"&gt;
+        &lt;p&gt;&amp;copy; {{ year }} My Company&lt;/p&gt;
+      &lt;/declare&gt;
+    &lt;/footer&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>Notice that <code>footer</code> has content already inside its <code>&lt;declare&gt;</code> tag.
+That becomes <a href="#default-slot-content">the default</a> — what renders when
+a page does not define that region at all.</p>
+<h3 id="extending-a-layout"><a class="header" href="#extending-a-layout">Extending a Layout</a></h3>
+<p>A page declares which layout it extends with <code>&lt;extend base="..."&gt;</code>,
+and fills in regions with <code>&lt;define name="..."&gt;</code>:</p>
+<pre><code class="language-html">{{-- pages/dashboard.html --}}
+&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="head"&gt;
+    &lt;meta name="description" content="Your account dashboard."&gt;
+  &lt;/define&gt;
+  &lt;define name="content"&gt;
+    &lt;h1&gt;Welcome back, {{ user.name }}&lt;/h1&gt;
+    &lt;p&gt;You have {{ notifications|length }} new notifications.&lt;/p&gt;
+  &lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>Rendering <code>pages/dashboard.html</code> produces the layout’s full structure,
+with <code>head</code> and <code>content</code> replaced by what the page defined, and
+<code>footer</code> left exactly as the layout’s own default. Both the layout and
+the page are rendered against the same variables <code>render()</code> was given
+— there is no separate scope to pass anything through.</p>
+<p>Everything inside an <code>&lt;extend&gt;</code> must be inside a <code>&lt;define&gt;</code>. The base
+template owns the page’s structure; a page’s job is only to fill in
+the regions it was offered, not to add markup of its own outside them.
+A template can extend exactly one base.</p>
+<h3 id="default-slot-content"><a class="header" href="#default-slot-content">Default Slot Content</a></h3>
+<p>A region a page does not define keeps whatever the layout put inside
+its own <code>&lt;declare&gt;</code> tag:</p>
+<pre><code class="language-html">{{-- pages/minimal.html --}}
+&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="content"&gt;
+    &lt;p&gt;Just this page's content — head and footer both use the layout's defaults.&lt;/p&gt;
+  &lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>A <code>&lt;declare&gt;</code> tag with nothing inside it — like <code>head</code> in the layout
+above — simply renders empty when nothing defines it.</p>
+<h3 id="x-super"><a class="header" href="#x-super"><code>x-super</code></a></h3>
+<p><code>&lt;super /&gt;</code> — or its directive spelling, <code>&lt;template x-super&gt;&lt;/template&gt;</code>
+— renders whatever the region it sits inside would have shown before
+this definition replaced it. That lets a page <em>add to</em> a section
+instead of fully restating it:</p>
+<pre><code class="language-html">&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="footer"&gt;
+    &lt;super /&gt;
+    &lt;p&gt;&lt;a href="/privacy"&gt;Privacy Policy&lt;/a&gt;&lt;/p&gt;
+  &lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>renders the layout’s own copyright line, followed by the extra privacy
+link — without the page having to know or repeat what the layout’s
+default footer actually said.</p>
+<h3 id="multi-level-inheritance"><a class="header" href="#multi-level-inheritance">Multi-Level Inheritance</a></h3>
+<p>A template that extends a base can itself declare regions of its own,
+letting a further template extend <em>it</em>. This is how a site with, say,
+a general layout and several page-type-specific layouts (a blog post,
+a product page) is usually structured:</p>
+<pre><code class="language-html">{{-- layouts/app.html --}}
+&lt;html&gt;&lt;body&gt;
+  &lt;declare name="body"&gt;&lt;p&gt;default&lt;/p&gt;&lt;/declare&gt;
+&lt;/body&gt;&lt;/html&gt;
+</code></pre>
+<pre><code class="language-html">{{-- layouts/article.html --}}
+&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="body"&gt;
+    &lt;article&gt;
+      &lt;declare name="article-content"&gt;&lt;/declare&gt;
+    &lt;/article&gt;
+  &lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<pre><code class="language-html">{{-- pages/post.html --}}
+&lt;extend base="layouts/article.html"&gt;
+  &lt;define name="article-content"&gt;
+    &lt;h1&gt;{{ post.title }}&lt;/h1&gt;
+    {{ post.body|raw }}
+  &lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>Rendering <code>pages/post.html</code> walks the whole chain: it extends
+<code>layouts/article.html</code>, which extends <code>layouts/app.html</code>, and the
+final page is assembled from all three.</p>
+<h3 id="overriding-a-definition"><a class="header" href="#overriding-a-definition">Overriding a Definition</a></h3>
+<p>Defining the same region twice in one template is almost always an
+accident — two people editing the same file, a copy-paste that was
+never cleaned up — so Wire refuses it at compile time unless you say
+the replacement is deliberate with <code>override</code>:</p>
+<pre><code class="language-html">&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="content"&gt;&lt;p&gt;First draft&lt;/p&gt;&lt;/define&gt;
+  &lt;define name="content" override&gt;&lt;p&gt;Final version&lt;/p&gt;&lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>Without <code>override</code> on the second one, this template fails to compile
+with a clear message naming the region and both locations, rather than
+silently keeping whichever definition happened to come last.</p>
+<h2 id="security"><a class="header" href="#security">Security</a></h2>
+<h3 id="why-everything-is-escaped-by-default"><a class="header" href="#why-everything-is-escaped-by-default">Why Everything Is Escaped by Default</a></h3>
+<p>A templating engine’s job includes keeping a value that came from
+outside your program — a form submission, a query string, another
+user’s profile — from becoming markup, a script, or a link, unless you
+explicitly say it is safe to. Wire treats this as the default rather
+than an opt-in setting, for the same reason a seatbelt only works if
+putting it on is the ordinary thing to do rather than the thing you
+remember to do under pressure: the moment escaping is something you
+have to <em>remember</em> to turn on, the templates that skip it are the ones
+that get exploited.</p>
+<p>Every interpolation is escaped for the exact place it lands — see the
+<a href="#escaping-data">table earlier in this guide</a> — and there is no
+template-level setting to disable that. The only way past it is the
+explicit, visible <a href="#rendering-raw-markup"><code>raw</code> filter or <code>x-html</code>
+directive</a>, which is exactly the friction you
+want between “displaying a value” and “trusting a value with
+unescaped markup.”</p>
+<h3 id="urls-are-checked-not-just-escaped"><a class="header" href="#urls-are-checked-not-just-escaped">URLs Are Checked, Not Just Escaped</a></h3>
+<p>An attribute a browser reads as a URL — <code>href</code>, <code>src</code>, <code>action</code>, and
+several others — gets more than entity escaping. Its scheme is checked
+against an allowlist, and a disallowed scheme is replaced with
+<code>about:blank</code> rather than written through:</p>
+<pre><code class="language-html">&lt;a href="{{ profile_link }}"&gt;{{ user.name }}&lt;/a&gt;
+</code></pre>
+<p>If <code>profile_link</code> were <code>javascript:alert(document.cookie)</code>, the
+rendered <code>href</code> is <code>about:blank</code>, not the script URL. A URL with no
+scheme at all — every relative link, every absolute path, every
+protocol-relative URL — is always allowed, since none of those can
+name a handler in the first place.</p>
+<p>The default allowlist covers <code>http</code>, <code>https</code>, <code>mailto</code>, <code>tel</code>, and a
+handful of others; it deliberately leaves out <code>javascript</code>,
+<code>vbscript</code>, <code>data</code>, and <code>file</code>. <a href="#configuration"><code>set_url_schemes()</code></a>
+replaces the list for an application that genuinely needs another
+scheme — a custom <code>app:</code> handler, say.</p>
+<p><code>srcset</code> and <code>ping</code>, which each hold a <em>list</em> of URLs, have every entry
+in the list checked the same way, with descriptors (<code>2x</code>, <code>640w</code>) and
+separators preserved exactly as written.</p>
+<h3 id="scripts-and-stylesheets"><a class="header" href="#scripts-and-stylesheets">Scripts and Stylesheets</a></h3>
+<p>A value interpolated inside a <code>&lt;script&gt;</code> element, or inside an event
+handler attribute like <code>onclick</code>, is encoded as JSON rather than
+merely escaped — automatically, with no filter needed:</p>
+<pre><code class="language-html">&lt;script&gt;
+  var currentUser = {{ user }};
+&lt;/script&gt;
+</code></pre>
+<p>renders the whole <code>user</code> value as a JSON literal, with its own quotes
+included. That is worth internalising, because it changes how you
+write the surrounding script: <strong>do not</strong> wrap the interpolation in
+your own quotes.</p>
+<pre><code class="language-html">{{-- correct: renders   var name = "Ada";   --}}
+&lt;script&gt;var name = {{ user.name }};&lt;/script&gt;
+
+{{-- wrong: renders   var name = '"Ada"';   which is not what you meant --}}
+&lt;script&gt;var name = '{{ user.name }}';&lt;/script&gt;
+</code></pre>
+<p>A value inside a <code>&lt;style&gt;</code> block has anything outside a conservative,
+CSS-safe character set dropped rather than escaped — there is no
+escape sequence that would stop a <code>&lt;</code> from being read by the HTML
+tokenizer looking for <code>&lt;/style&gt;</code>, so the only sound answer is for the
+character not to be there at all.</p>
+<h3 id="the-template-root-is-a-sandbox"><a class="header" href="#the-template-root-is-a-sandbox">The Template Root Is a Sandbox</a></h3>
+<p>Every path — whether it came from <code>render()</code>’s own argument, or from
+an <code>x-include</code>/<code>x-extend</code> written inside a template, even one built
+from an interpolated value — is resolved <em>inside</em> the configured root
+and refused if it resolves anywhere else, <code>..</code> segments and symbolic
+links both included:</p>
+<pre><code class="language-html">&lt;include path="{{ theme }}/header.html" /&gt;
+</code></pre>
+<p>If <code>theme</code> ever came from something a request controls, an unbounded
+loader would turn this into a way to read arbitrary files the process
+can reach. Wire’s loader treats the root as a hard boundary instead:
+the worst a hostile value can do here is fail to find a template.</p>
+<h2 id="extending-wire"><a class="header" href="#extending-wire">Extending Wire</a></h2>
+<h3 id="custom-filters"><a class="header" href="#custom-filters">Custom Filters</a></h3>
+<p><code>register_filter()</code> adds a filter, or replaces one that already
+exists by that name. The value being filtered is always the first
+argument; anything the template passes after it follows:</p>
+<pre><code class="language-zuri ignore">view.register_filter('excerpt', @(value, words) {
+  var count = words ?? 25
+  return ' '.join(value.split('/\\s+/').take(count)) + '…'
+})
+</code></pre>
+<pre><code class="language-html">&lt;p&gt;{{ post.body|excerpt(40) }}&lt;/p&gt;
+</code></pre>
+<p>An argument the template leaves out arrives as <code>nil</code>, which is why
+<code>words ?? 25</code> above supplies a sensible default rather than the
+filter insisting the template spell it out every time.</p>
+<p>A filter returning a plain value has that value escaped like any
+other — the same as an ordinary interpolation. A filter that genuinely
+produces markup returns <a href="#rendering-raw-markup"><code>wire.safe()</code></a>, and
+from that point on is responsible for what is inside it, exactly like
+<code>raw</code> and <code>x-html</code> are.</p>
+<h3 id="globals"><a class="header" href="#globals">Globals</a></h3>
+<p><code>register_global()</code> makes a value readable from every template
+without it being passed to <code>render()</code> explicitly:</p>
+<pre><code class="language-zuri ignore">view.register_global('site_name', 'Example Inc.')
+view.register_global('route', @(name) {
+  return '/' + name
+})
+</code></pre>
+<pre><code class="language-html">&lt;title&gt;{{ page_title }} — {{ site_name }}&lt;/title&gt;
+&lt;a href="{{ route('user.profile', user.id) }}"&gt;{{ user.name }}&lt;/a&gt;
+</code></pre>
+<p>A variable of the same name passed to <code>render()</code> wins over a global —
+a global is a default, not a hard override, so a page can still shadow
+<code>site_name</code> for itself if it ever needs to.</p>
+<h3 id="custom-elements"><a class="header" href="#custom-elements">Custom Elements</a></h3>
+<p>For the rare case the directives genuinely cannot express,
+<code>register_element()</code> claims an HTML tag name outright and hands every
+element of that name to a Zuri function instead of writing it out:</p>
+<pre><code class="language-zuri ignore">view.register_element('icon', @(view, element) {
+  var name = element.attributes.get('name', 'dot')
+  return wire.safe('&lt;svg class="icon"&gt;&lt;use href="#${name}"&gt;&lt;/use&gt;&lt;/svg&gt;')
+})
+</code></pre>
+<pre><code class="language-html">&lt;icon name="star" /&gt;
+</code></pre>
+<p>The function receives the <code>Wire</code> instance and a dictionary describing
+the element — its tag name, its attributes (already rendered and
+escaped), its already-rendered children, and the scope it was written
+in. Return <code>wire.safe(markup)</code> to write markup, any other value to
+write it as escaped text, or <code>nil</code> to write nothing at all. Directives
+still work on a claimed element exactly as they read
+(<code>&lt;icon x-if="..." /&gt;</code> behaves the way it looks), and the whole
+mechanism exists for genuinely dynamic, code-driven markup that a
+partial and <code>x-include</code> cannot express — reach for an include first;
+it is easier for the next person to read and does not require them to
+go find the Zuri function behind it.</p>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>Every setting can be passed to the <code>Wire</code> constructor at once, or set
+individually with its own method afterward:</p>
+<pre><code class="language-zuri">var view = wire.wire({
+  root: './views',
+  extension: '.html',
+  compact: true,
+  comments: false,
+  auto_reload: true,
+  url_schemes: ['https', 'mailto'],
+})
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option / method</th><th>Default</th><th>What it controls</th></tr>
+</thead>
+<tbody>
+<tr><td><code>root</code> / <code>set_root(path)</code></td><td><code>./templates</code></td><td>The directory every template path resolves inside.</td></tr>
+<tr><td><code>extension</code> / <code>set_extension(ext)</code></td><td><code>.html</code></td><td>Tried when a path names no file as written. Must start with <code>.</code>.</td></tr>
+<tr><td><code>compact</code> / <code>set_compact(bool)</code></td><td><code>false</code></td><td>Drops whitespace-only text between tags.</td></tr>
+<tr><td><code>comments</code> / <code>set_comments(bool)</code></td><td><code>false</code></td><td>Whether HTML comments reach the rendered output.</td></tr>
+<tr><td><code>auto_reload</code> / <code>set_auto_reload(bool)</code></td><td><code>true</code></td><td>Whether a cached template is checked against its file, and re-read if it changed, before each render.</td></tr>
+<tr><td><code>url_schemes</code> / <code>set_url_schemes(list)</code></td><td>see <a href="#urls-are-checked-not-just-escaped">above</a></td><td>Which URL schemes an <code>href</code>/<code>src</code>/etc. is allowed to use.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>root()</code> reports the currently configured root as an absolute path,
+and <code>create_root()</code> makes the directory if it does not exist yet
+(returning whether it had to).</p>
+<h2 id="compiling-and-caching"><a class="header" href="#compiling-and-caching">Compiling and Caching</a></h2>
+<p><code>render()</code> compiles a template into its instruction tree the first
+time it is used, and keeps the compiled result for next time — parsing
+and directive resolution happen once per template, not once per
+request. Every subsequent render just walks that tree.</p>
+<p>With <code>auto_reload</code> on (the default), each render checks the file’s
+modification time and size against what was cached, and recompiles if
+either changed. That is one filesystem <code>stat</code> per template per
+render — cheap, and exactly what you want while actively editing
+templates. Turn it off with <code>set_auto_reload(false)</code> once you are
+running under load and are not editing templates live; <code>clear_cache()</code>
+is then how a long-running process picks up a new deployment.</p>
+<p><code>compile(path)</code> compiles a template without rendering it, and returns
+the compiled result — or raises, if the template has a mistake in it.
+That makes it a good fit for a startup-time check across a whole
+directory of templates, so a broken one is caught before the first
+request that would have hit it:</p>
+<pre><code class="language-zuri ignore">for name in os.read_dir('./views', true) {
+  view.compile(name)
+}
+</code></pre>
+<h2 id="error-handling"><a class="header" href="#error-handling">Error Handling</a></h2>
+<p>Everything Wire raises is a <code>wire.WireError</code>, and every one of them
+carries the template path and the line/column of the tag responsible,
+so catching the base class is enough to handle any template failure
+the same way — turning it into a 500 page, logging it with context,
+whatever your application needs:</p>
+<pre><code class="language-zuri">catch {
+  echo view.render('pages/dashboard', { user })
+} as e {
+  if instance_of(e, wire.WireError) {
+    log.error('template failed: ${e.reason} at ${e.location()}')
+    echo view.render('errors/500')
+  }
+}
+</code></pre>
+<p>Three more specific errors, each a <code>WireError</code>, tell you <em>what kind</em>
+of thing went wrong:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Error</th><th>Raised when</th></tr>
+</thead>
+<tbody>
+<tr><td><code>wire.TemplateSyntaxError</code></td><td>A template does not compile: an unknown directive, a malformed expression, a broken inheritance chain. Always caught the first time a template is used, not on a later render.</td></tr>
+<tr><td><code>wire.TemplateNotFoundError</code></td><td>A path names no file, or resolves outside the template root.</td></tr>
+<tr><td><code>wire.RenderError</code></td><td>Something that depends on the values a template was given: iterating something that cannot be iterated, a filter rejecting its input, an include chain that never bottoms out.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A variable that was simply never supplied is <em>not</em> one of these —
+that renders as empty and tests as falsy, by design, so an optional
+section can be written without a guard around every single field it
+touches.</p>
+<h2 id="full-directive-reference"><a class="header" href="#full-directive-reference">Full Directive Reference</a></h2>
+<p>Every directive Wire understands. An <code>x-</code> prefixed attribute outside
+this list fails to compile — Wire owns that whole prefix, so a typo
+like <code>x-fi</code> is caught the moment the template is compiled rather than
+silently doing nothing.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Directive</th><th>Takes</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>x-if</code></td><td>expression</td><td>Renders only if truthy. Starts a chain.</td></tr>
+<tr><td><code>x-elif</code></td><td>expression</td><td>Continues an <code>x-if</code> chain.</td></tr>
+<tr><td><code>x-else</code></td><td><em>(none)</em></td><td>Closes an <code>x-if</code> chain.</td></tr>
+<tr><td><code>x-not</code></td><td>expression</td><td>Renders only if falsy. Does not chain.</td></tr>
+<tr><td><code>x-for</code></td><td>expression</td><td>Repeats the element once per entry.</td></tr>
+<tr><td><code>x-value</code></td><td>name</td><td>Binds each iteration’s value.</td></tr>
+<tr><td><code>x-key</code></td><td>name</td><td>Binds each iteration’s key/index.</td></tr>
+<tr><td><code>x-loop</code></td><td>name</td><td>Renames the loop metadata variable.</td></tr>
+<tr><td><code>x-text</code></td><td>expression</td><td>Replaces children with escaped text.</td></tr>
+<tr><td><code>x-html</code></td><td>expression</td><td>Replaces children with unescaped markup.</td></tr>
+<tr><td><code>x-attr</code></td><td>expression (dict)</td><td>Spreads attributes onto the element.</td></tr>
+<tr><td><code>x-include</code></td><td>path</td><td>Renders another template in this element’s place.</td></tr>
+<tr><td><code>x-with</code></td><td>expression (dict)</td><td>Adds variables for an include.</td></tr>
+<tr><td><code>x-only</code></td><td><em>(none)</em></td><td>Withholds the surrounding scope from an include.</td></tr>
+<tr><td><code>x-extend</code></td><td>path</td><td>This template extends the named base.</td></tr>
+<tr><td><code>x-slot</code></td><td>name</td><td>Declares a region an extending template may replace.</td></tr>
+<tr><td><code>x-define</code></td><td>name</td><td>Replaces a base template’s region.</td></tr>
+<tr><td><code>x-override</code></td><td><em>(none)</em></td><td>Permits redefining a region already defined once.</td></tr>
+<tr><td><code>x-super</code></td><td><em>(none)</em></td><td>Renders the definition this one replaces.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Five pseudo-elements are sugar for the directives above, rewritten
+before the template is parsed:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Pseudo-element</th><th>Equivalent to</th></tr>
+</thead>
+<tbody>
+<tr><td><code>&lt;include path="p" /&gt;</code></td><td><code>&lt;template x-include="p"&gt;&lt;/template&gt;</code></td></tr>
+<tr><td><code>&lt;extend base="p"&gt;…&lt;/extend&gt;</code></td><td><code>&lt;template x-extend="p"&gt;…&lt;/template&gt;</code></td></tr>
+<tr><td><code>&lt;declare name="n"&gt;…&lt;/declare&gt;</code></td><td><code>&lt;template x-slot="n"&gt;…&lt;/template&gt;</code></td></tr>
+<tr><td><code>&lt;define name="n"&gt;…&lt;/define&gt;</code></td><td><code>&lt;template x-define="n"&gt;…&lt;/template&gt;</code></td></tr>
+<tr><td><code>&lt;super /&gt;</code></td><td><code>&lt;template x-super&gt;&lt;/template&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="cheat-sheet"><a class="header" href="#cheat-sheet">Cheat Sheet</a></h2>
+<pre><code class="language-html">{{-- Variables --}}
+{{ name }}
+{{ user.address.city }}
+{{ items.0 }}
+{{ items[index] }}
+
+{{-- Filters --}}
+{{ name|upper }}
+{{ price|round(2) }}
+{{ post.body|truncate(150) }}
+{{ status|is='active' }}
+
+{{-- Raw markup --}}
+{{ trusted_html|raw }}
+
+{{-- Conditionals --}}
+&lt;p x-if="condition"&gt;…&lt;/p&gt;
+&lt;p x-elif="other"&gt;…&lt;/p&gt;
+&lt;p x-else&gt;…&lt;/p&gt;
+&lt;p x-not="condition"&gt;…&lt;/p&gt;
+
+{{-- Loops --}}
+&lt;li x-for="items" x-value="item" x-key="i"&gt;{{ i }}: {{ item }}&lt;/li&gt;
+{{ loop.index }} {{ loop.first }} {{ loop.last }} {{ loop.length }}
+
+{{-- Wrapper-free groups --}}
+&lt;template x-for="items" x-value="item"&gt;…&lt;/template&gt;
+&lt;template x-if="condition"&gt;…&lt;/template&gt;
+
+{{-- Content and attributes --}}
+&lt;p x-text="value"&gt;&lt;/p&gt;
+&lt;div x-html="trusted_html|raw"&gt;&lt;/div&gt;
+&lt;input x-attr="{ type: 'text', disabled: !enabled }"&gt;
+
+{{-- Comments (never rendered) --}}
+&lt;!-- a note for the next person --&gt;
+
+{{-- Includes --}}
+&lt;include path="partials/nav.html" /&gt;
+&lt;include path="components/card.html" x-with="{ title: 'X' }" only&gt;
+  content for the component's declared region
+&lt;/include&gt;
+
+{{-- Inheritance --}}
+&lt;extend base="layouts/app.html"&gt;
+  &lt;define name="content"&gt;…&lt;/define&gt;
+  &lt;define name="footer"&gt;&lt;super /&gt;…&lt;/define&gt;
+&lt;/extend&gt;
+</code></pre>
+<p>Further reading: the <a href="ch13-00-stdlib-tour.html#html"><code>html</code> module</a> that Wire’s parser
+and serializer are built on, and the <a href="ch13-00-stdlib-tour.html#date"><code>date</code> module</a>
+for the format directives the <code>date</code> filter accepts.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch13-00-stdlib-tour.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch15-00-http.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch13-00-stdlib-tour.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch15-00-http.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
