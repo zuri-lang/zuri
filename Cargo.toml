@@ -169,6 +169,10 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_SystemInformation",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Threading",
+    # WSAPoll and its flags, for `net.poll` on Windows. Every module in
+    # this crate is behind its own feature; without this one the whole
+    # of Win32::Networking is compiled out.
+    "Win32_Networking_WinSock",
 ] }
 
 

@@ -7,11 +7,13 @@
 //! static facts, which is what this replaces it with.
 
 #[cfg(windows)]
+use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+
+#[cfg(windows)]
 use windows_sys::Win32::System::{
   Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
   },
-  Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
   SystemInformation::{
     ComputerNamePhysicalDnsHostname, GetComputerNameExW, GetTickCount64, GlobalMemoryStatusEx,
     MEMORYSTATUSEX,

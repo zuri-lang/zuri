@@ -749,7 +749,7 @@ fn kill_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   unsafe {
     let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
-    if handle == 0 {
+    if handle.is_null() {
       return Err(format!("could not open process {}", pid));
     }
     let ok = TerminateProcess(handle, 1);

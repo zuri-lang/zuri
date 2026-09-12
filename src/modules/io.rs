@@ -1,6 +1,7 @@
 //! `io` builtin module: `stdin`/`stdout`/`stderr` file objects
 //! wrapping the process's own standard streams, `readline(...)`, etc.
 
+#[cfg(unix)]
 use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 
@@ -284,7 +285,9 @@ fn read_secure_line(_obscure_text: &str) -> io::Result<String> {
 mod tty {
   use crate::vm::object::ZuriContext;
   use crate::vm::value::Value;
-  use crate::{enforce_arg_count, enforce_arg_range};
+  use crate::enforce_arg_count;
+  #[cfg(unix)]
+  use crate::enforce_arg_range;
 
   #[cfg(unix)]
   use std::cell::RefCell;

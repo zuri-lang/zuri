@@ -147,6 +147,7 @@ pub fn take_pending() -> Option<usize> {
 /// The `exit()` below it is unreachable for the terminating signals
 /// this module traps, and is there for the ones a future platform
 /// might not terminate on.
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub fn perform_default_action(idx: usize) -> ! {
   // Buffered output written by the callback that just declined would
   // otherwise be lost, since neither `raise` nor `exit` unwinds.
