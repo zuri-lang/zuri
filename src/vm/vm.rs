@@ -5173,6 +5173,23 @@ impl VM {
     unsafe { *self.registers.get_unchecked(abs) }
   }
 
+  /// The closure the frame on top of the stack is running, for the JIT
+  /// helpers that need it.
+  ///
+  /// Compiled code used to hand its own entry parameter back in, which
+  /// is a copy taken once at entry with nowhere for a collection to
+  /// write a relocated address into. `CallFrame::closure_val` is a real
+  /// GC root and is rewritten by every collection, so reading it here is
+  /// correct no matter what has moved since the invocation started.
+  #[inline]
+  pub(crate) fn current_closure_val(&self) -> Value {
+    self
+      .frames
+      .last()
+      .map(|f| f.closure_val)
+      .unwrap_or_else(Value::nil)
+  }
+
   #[inline(always)]
   /// The register range the active frame can actually reach.
   ///

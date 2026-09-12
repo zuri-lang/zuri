@@ -1820,21 +1820,21 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
 // ---------------------------------------------------------------------
 
 /// `Instr::Closure`; `proto_bits` is the baked function-prototype
-/// constant; `closure_bits` is the currently executing closure (this
-/// compiled function's own `closure` parameter), needed to resolve an
-/// `UpvalueDescriptor::Upvalue` (capture-through) entry.
+/// constant. An `UpvalueDescriptor::Upvalue` (capture-through) entry
+/// resolves against the closure currently executing, read from the live
+/// frame rather than taken as an argument: see `VM::current_closure_val`
+/// for why a copy of the entry parameter is not safe to use here.
 pub unsafe extern "C" fn zuri_jit_make_closure(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
   proto_bits: u64,
-  closure_bits: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
   let proto_val = Value::from_bits(proto_bits);
   let proto = proto_val.as_func();
-  let closure_val = Value::from_bits(closure_bits);
+  let closure_val = vm.current_closure_val();
   let current_closure: &ObjClosure = closure_val.as_closure();
 
   let mut captured = smallvec::SmallVec::with_capacity(proto.upvalues.len());
@@ -1870,20 +1870,14 @@ pub unsafe extern "C" fn zuri_jit_make_closure(
 /// code either side of this call. Never fails, touches no VM register,
 /// so `emit_upvalue_fast_path` calls this via `call_helper_raw`, not
 /// `call_checked`.
-pub unsafe extern "C" fn zuri_jit_closure_upvalues_ptr(_vm_ptr: *mut VM, closure_bits: u64) -> u64 {
-  let closure_val = Value::from_bits(closure_bits);
-  closure_val.as_closure().upvalues.as_ptr() as u64
+pub unsafe extern "C" fn zuri_jit_closure_upvalues_ptr(vm_ptr: *mut VM) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.current_closure_val().as_closure().upvalues.as_ptr() as u64
 }
 
-pub unsafe extern "C" fn zuri_jit_get_upval(
-  vm_ptr: *mut VM,
-  base: u64,
-  dst: u64,
-  idx: u64,
-  closure_bits: u64,
-) -> u64 {
+pub unsafe extern "C" fn zuri_jit_get_upval(vm_ptr: *mut VM, base: u64, dst: u64, idx: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
-  let closure_val = Value::from_bits(closure_bits);
+  let closure_val = vm.current_closure_val();
   let current_closure = closure_val.as_closure();
   let upval_val = current_closure.upvalues[idx as usize];
   if !upval_val.is_upvalue() {
@@ -1898,16 +1892,10 @@ pub unsafe extern "C" fn zuri_jit_get_upval(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_set_upval(
-  vm_ptr: *mut VM,
-  base: u64,
-  src: u64,
-  idx: u64,
-  closure_bits: u64,
-) -> u64 {
+pub unsafe extern "C" fn zuri_jit_set_upval(vm_ptr: *mut VM, base: u64, src: u64, idx: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
-  let closure_val = Value::from_bits(closure_bits);
+  let closure_val = vm.current_closure_val();
   let current_closure = closure_val.as_closure();
   let upval_val = current_closure.upvalues[idx as usize];
   if !upval_val.is_upvalue() {
@@ -3033,10 +3021,10 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_call_finish),
     spec3!(zuri_jit_finish_deopt),
     spec5!(zuri_jit_call_super_ctor),
-    spec5!(zuri_jit_make_closure),
-    spec2!(zuri_jit_closure_upvalues_ptr),
-    spec5!(zuri_jit_get_upval),
-    spec5!(zuri_jit_set_upval),
+    spec4!(zuri_jit_make_closure),
+    spec1!(zuri_jit_closure_upvalues_ptr),
+    spec4!(zuri_jit_get_upval),
+    spec4!(zuri_jit_set_upval),
     spec5!(zuri_jit_make_list),
     spec5!(zuri_jit_make_dict),
     spec5!(zuri_jit_make_range),

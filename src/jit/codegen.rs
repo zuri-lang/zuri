@@ -2916,6 +2916,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     (depth, frames_len)
   }
 
+  /// The closure the frame on top of the stack is running, read fresh
+  /// from memory. `closure_param` is a copy taken at entry, so a
+  /// collection that relocates the closure mid-invocation leaves it
+  /// pointing at a slot the nursery has since reused; the frame field is
+  /// a GC root and is rewritten by every collection instead.
+  fn emit_current_closure_val(&mut self) -> IrValue {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let vm = self.vm_param;
+    let frames_ptr = self.fb.ins().load(types::I64, flags, vm, FRAMES_PTR_OFFSET);
+    let frames_len = self.fb.ins().load(types::I64, flags, vm, FRAMES_LEN_OFFSET);
+    let top = self.fb.ins().iadd_imm_s(frames_len, -1);
+    let frame_off = self.fb.ins().imul_imm_s(top, CALL_FRAME_SIZE);
+    let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
+    self
+      .fb
+      .ins()
+      .load(types::I64, flags, frame_addr, CALL_FRAME_CLOSURE_VAL_OFFSET)
+  }
+
   fn emit_inline_frame_push(
     &mut self,
     proto_bits: u64,
@@ -2967,10 +2986,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .store(flags, proto_bits, frame_addr, CALL_FRAME_FUNCTION_OFFSET);
-    self
-      .fb
-      .ins()
-      .store(flags, closure_ptr, frame_addr, CALL_FRAME_CLOSURE_OFFSET);
+    // `CallFrame::closure` is a `*const ObjClosure`, so it has to point
+    // at the variant's payload, not at the `Obj` the tagged value names.
+    // `obj_ptr` hands back the `Obj` base (offset 0 is the tag byte, which
+    // is exactly what the callers' own `obj_tag` guards need), so the
+    // payload offset has to go back on here. Interpreted frame pushes
+    // store `&ObjClosure` directly and never see the difference; a frame
+    // built here only reveals it once the interpreter takes the frame
+    // over after a deopt and reads an upvalue through it.
+    let payload_off = self.i64c(object::obj_payload_offset() as i64);
+    let closure_payload = self.fb.ins().iadd(closure_ptr, payload_off);
+    self.fb.ins().store(
+      flags,
+      closure_payload,
+      frame_addr,
+      CALL_FRAME_CLOSURE_OFFSET,
+    );
     self.fb.ins().store(
       flags,
       closure_val,
@@ -3936,11 +3967,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `escape::self_reference_facts`): no runtime guard at all, since
   /// there is nothing left to misidentify; the callee register's
   /// VALUE is never even read here, only its bytecode INDEX (needed for
-  /// `new_base`'s frame-layout math). Reuses `self.closure_param` (this
-  /// invocation's own closure, already held stable for as long as it's
-  /// running: see `VM::ensure_stable_for_compiled_entry`'s own docs on
-  /// why that stability guarantee needs no re-establishing for a value
-  /// that's already the CURRENT frame's own closure) as the callee, and
+  /// `new_base`'s frame-layout math). The callee is this invocation's own
+  /// closure, read out of the live frame rather than from the entry
+  /// parameter, since a collection can relocate it mid-invocation and
+  /// only the frame field gets rewritten when it does; that value is
+  /// both passed on and stored into the frame this pushes, so a stale
+  /// one would leave the collector tracing a dead pointer. Paired with
   /// a genuine relocation-resolved direct `call` to `own_func_id` --
   /// NOT `call_indirect` on a runtime-loaded pointer; as the actual
   /// call instruction: `cranelift_module` resolves the target address
@@ -3961,7 +3993,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let new_base = self.fb.ins().iadd_imm_s(base, func as i64 + 1);
     let num_args_i = self.idx(num_args);
     let dst_i = self.idx(dst);
-    let closure_bits = self.closure_param;
+    let closure_bits = self.emit_current_closure_val();
 
     // Eligibility for the fully-inline path is a compile-time fact for
     // self-recursion (this function's own `arity`/`variadic`; there is
@@ -5586,7 +5618,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // on a nil" corruption this comment is here to prevent regressing.
     let direct_num_args_i = self.i64c(num_args as i64 + 1);
     let dst_i = self.idx(dst);
-    let closure_bits = self.closure_param;
+    let closure_bits = self.emit_current_closure_val();
 
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
@@ -9098,10 +9130,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(pass_block);
   }
 
-  /// `GetUpval`/`SetUpval`'s shared front half: resolves `closure_param
-  /// .upvalues[uidx]` and confirms it's really an `Obj::Upvalue`,
-  /// leaving its raw `*const Obj` current on return. Branches to
-  /// `slow_block` (the ordinary helper) on anything unexpected.
+  /// `GetUpval`/`SetUpval`'s shared front half: resolves
+  /// `upvalues[uidx]` on the running closure and confirms it's really an
+  /// `Obj::Upvalue`, leaving its raw `*const Obj` current on return.
+  /// Branches to `slow_block` (the ordinary helper) on anything
+  /// unexpected.
+  ///
+  /// The helper reads the closure from the live frame rather than being
+  /// handed this function's entry parameter: see
+  /// `VM::current_closure_val`.
   ///
   /// One helper call either way (`zuri_jit_closure_upvalues_ptr`), for
   /// the same reason `emit_list_get_index` still pays one for the list
@@ -9121,11 +9158,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// convention invariant, not something to assume in code about to
   /// dereference raw memory.
   fn emit_upvalue_obj_ptr(&mut self, uidx: u8, slow_block: Block) -> IrValue {
-    let closure_bits = self.closure_param;
-    let base_ptr = self.call_helper_raw(
-      "zuri_jit_closure_upvalues_ptr",
-      &[self.vm_param, closure_bits],
-    );
+    let base_ptr = self.call_helper_raw("zuri_jit_closure_upvalues_ptr", &[self.vm_param]);
     let upval_val = self.fb.ins().load(
       types::I64,
       cranelift_codegen::ir::MemFlagsData::trusted(),
@@ -9203,10 +9236,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let base = self.base_param;
     let dst_i = self.idx(dst);
     let uidx_i = self.idx(uidx);
-    self.call_checked(
-      "zuri_jit_get_upval",
-      &[self.vm_param, base, dst_i, uidx_i, self.closure_param],
-    );
+    self.call_checked("zuri_jit_get_upval", &[self.vm_param, base, dst_i, uidx_i]);
     self.resync_dst_from_memory(dst);
     self.fb.ins().jump(done_block, &[]);
 
@@ -9262,10 +9292,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let base = self.base_param;
     let src_i = self.idx(src);
     let uidx_i = self.idx(uidx);
-    self.call_checked(
-      "zuri_jit_set_upval",
-      &[self.vm_param, base, src_i, uidx_i, self.closure_param],
-    );
+    self.call_checked("zuri_jit_set_upval", &[self.vm_param, base, src_i, uidx_i]);
     self.resync_receiver_from_memory(src);
     self.fb.ins().jump(done_block, &[]);
 
@@ -12490,7 +12517,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let proto_v = self.bake_const(proto_const);
         self.call_checked(
           "zuri_jit_make_closure",
-          &[self.vm_param, base, dst_i, proto_v, self.closure_param],
+          &[self.vm_param, base, dst_i, proto_v],
         );
         self.resync_dst_from_memory(dst);
         false
