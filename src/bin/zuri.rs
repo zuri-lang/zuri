@@ -174,8 +174,7 @@ fn run_file(vm: &mut VM, file: &str) {
   // matching the target format; falls back to the given (possibly
   // relative) path if that fails for any reason.
   let display_path: Rc<str> = Rc::from(
-    fs::canonicalize(&resolved)
-      .map(|p| p.display().to_string())
+    zuri::builtins::file::canonical_path(&resolved.to_string_lossy())
       .unwrap_or_else(|_| resolved.display().to_string()),
   );
 

@@ -344,6 +344,12 @@ def which(name: string) {
   return nil
 }
 
+# What a single `*` or `?` is allowed to match: anything that is not a
+# path separator. Windows has two of them, and `read_dir()` spells its
+# entries with the platform's own, so a class that knows only about `/`
+# lets a single star run straight through a nested path there.
+var _glob_not_separator = _os.platform == 'windows' ? '[^/\\\\]' : '[^/]'
+
 def _glob_to_regex(pattern) {
   var out = '~^'
   var length = pattern.length()
@@ -357,10 +363,10 @@ def _glob_to_regex(pattern) {
         out += '.*'
         i++
       } else {
-        out += '[^/]*'
+        out += _glob_not_separator + '*'
       }
     } else if ch == '?' {
-      out += '[^/]'
+      out += _glob_not_separator
     } else if '.+()[]{}^$|\\'.contains(ch) {
       out += '\\' + ch
     } else {

@@ -376,8 +376,8 @@ fn path(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn abs_path(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let p = with_file_mut(ctx.args[0], |fh| fh.path.clone());
-  let abs = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
-  Ok(ctx.vm.heap_mut().alloc_string(abs.display().to_string()))
+  let abs = canonical_path(&p).map_err(|e| e.to_string())?;
+  Ok(ctx.vm.heap_mut().alloc_string(abs))
 }
 
 fn copy(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -722,6 +722,43 @@ pub fn stats_of(path: &str) -> Result<Stats, String> {
     blocks: meta.len().div_ceil(512),
     blksize: 4096,
   })
+}
+
+/// Canonicalises `path`, spelled the way the rest of the system spells
+/// it.
+///
+/// Windows' canonical form carries a `\\?\` verbatim prefix that no
+/// other API there produces. A path that has been through canonicalise
+/// therefore stops comparing equal to the same path that has not, which
+/// breaks every containment check written as a string prefix, and it
+/// reaches people unaltered in error messages and stack traces. The
+/// prefix is stripped back off here so nothing above this layer has to
+/// know it exists. On Unix there is nothing to strip.
+pub fn canonical_path(path: &str) -> std::io::Result<String> {
+  let resolved = std::fs::canonicalize(path)?;
+
+  #[cfg(windows)]
+  return Ok(strip_verbatim(resolved.display().to_string()));
+
+  #[cfg(not(windows))]
+  Ok(resolved.display().to_string())
+}
+
+/// Puts a verbatim Windows path back into its ordinary spelling.
+#[cfg(windows)]
+fn strip_verbatim(path: String) -> String {
+  // `\\?\UNC\server\share` is the verbatim spelling of
+  // `\\server\share`.
+  if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+    return format!(r"\\{}", rest);
+  }
+
+  // Only a plain drive path has a shorter spelling to go back to.
+  // Anything else needs the prefix in order to still mean what it says.
+  match path.strip_prefix(r"\\?\") {
+    Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_string(),
+    _ => path,
+  }
 }
 
 /// Applies a Unix mode to `path`.

@@ -504,9 +504,7 @@ fn realpath_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type!(ctx, 0, ArgType::String);
   let path = ctx.args[0].as_str().to_string();
-  let resolved = fs::canonicalize(&path)
-    .map(|p| p.display().to_string())
-    .unwrap_or(path);
+  let resolved = builtin_file::canonical_path(&path).unwrap_or(path);
   Ok(ctx.vm.heap_mut().alloc_string(resolved))
 }
 

@@ -172,8 +172,7 @@ pub(crate) fn load_from_candidate(vm: &mut VM, base: &Path, raw_path: &str) -> I
     ));
   };
 
-  let canonical = std::fs::canonicalize(&file_path)
-    .map(|p| p.display().to_string())
+  let canonical = crate::builtins::file::canonical_path(&file_path.to_string_lossy())
     .unwrap_or_else(|_| file_path.display().to_string());
 
   if let Some(&cached) = vm.modules.get(&canonical) {

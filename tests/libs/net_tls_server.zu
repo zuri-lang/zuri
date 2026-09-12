@@ -50,6 +50,15 @@ def mutual_tls_server(port_channel, server_cert, server_key, ca_cert) {
     var cert = tls_client.peer_certificate()
     var subject = cert == nil ? nil : cert.subject()
     tls_client.write_all('subject:' + (subject or 'nil'))
+
+    # Drained before closing. This client shuts its write side down as
+    # soon as the handshake finishes, so a close_notify is already
+    # waiting here, and closing a socket that still has anything unread
+    # makes the kernel send a reset instead of an orderly close. The
+    # reset discards the reply written just above, which reaches the
+    # client as a connection error rather than the data. Reading to EOF
+    # first cannot block: the peer has already signalled it is done.
+    tls_client.read_as_string()
     tls_client.close()
   } as e
   if e {

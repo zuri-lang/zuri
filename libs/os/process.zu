@@ -339,6 +339,13 @@ class Process {
  * Spawns `cmd` as a new subprocess and returns a `Process` handle
  * to it immediately, without waiting for it to finish.
  *
+ * `cmd` names a program to run, not a command line for a shell to
+ * interpret. Nothing here expands a variable, splits on whitespace,
+ * follows a pipe or knows what a shell builtin is, so a name only a
+ * shell would recognise raises rather than running: `echo` is a builtin
+ * on Windows with no executable behind it, and `cat` is not present
+ * there at all. Use `exec()` when a shell is what you want.
+ *
  * `options` may include:
  *
  * - `cwd`: `?string`: the child's working directory. Defaults to

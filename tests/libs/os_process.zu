@@ -2,9 +2,15 @@
  * test_os_process.zu
  *
  * Test suite for the `os` module's process functions: exec(), pid(),
- * ppid(), kill(), on_signal(), and spawn()/Process. These tests spawn
- * real Unix shell utilities (sh, echo, cat, grep) since that's the
- * only meaningful way to exercise a real subprocess boundary.
+ * ppid(), kill(), on_signal(), and spawn()/Process.
+ *
+ * Every child spawned here is this interpreter running a script the
+ * test wrote. spawn() launches a program rather than a shell command
+ * line, which is what separates it from exec(), so the child has to be
+ * a real executable: `echo` is a shell builtin with nothing behind it
+ * on Windows and `cat` is not present there at all. The interpreter
+ * running this suite is the one program guaranteed to exist wherever
+ * the suite runs.
  */
 
 import os
@@ -53,7 +59,24 @@ ok('exec() reports a non-zero exit code for a failing command')
 # ---------------------------------------------------------------------------
 # spawn(): basic run to completion
 # ---------------------------------------------------------------------------
-var p1 = os.spawn('echo', ['spawned', 'output'])
+# Resolved to an absolute path: one of the tests below runs a child in
+# a different working directory, and a relative program name would be
+# looked up against that directory instead of this one.
+var interpreter = os.abs_path(os.args[0])
+var scratch = os.create_temp_dir('zuri-os-process-')
+
+# Writes `body` to a script and returns the argument list that runs it.
+def child(name, body) {
+  var path = os.join_paths(scratch, name + '.zu')
+  var handle = file(path, 'w')
+
+  handle.write(body)
+  handle.close()
+
+  return [path]
+}
+
+var p1 = os.spawn(interpreter, child('emit', 'echo \'spawned output\'\n'))
 assert line(p1.read_stdout().to_string()) == 'spawned output',
   'Process.read_stdout() must return what the child wrote to stdout'
 assert p1.wait() == 0, 'Process.wait() must return the child\'s exit code'
@@ -62,7 +85,11 @@ ok('spawn() runs a command and read_stdout()/wait() report its output and exit c
 # ---------------------------------------------------------------------------
 # spawn(): piped stdin
 # ---------------------------------------------------------------------------
-var p2 = os.spawn('cat', [], { stdin: 'pipe' })
+var p2 = os.spawn(
+  interpreter,
+  child('echo_stdin', 'import io\nio.stdout.write(io.stdin.read())\n'),
+  { stdin: 'pipe' }
+)
 p2.write_stdin('line one\nline two\n')
 p2.close_stdin()
 assert p2.read_stdout().to_string() == 'line one\nline two\n',
@@ -73,7 +100,10 @@ ok('spawn() with stdin: \'pipe\' lets the caller write to the child and read its
 # ---------------------------------------------------------------------------
 # spawn(): separate stdout/stderr streams
 # ---------------------------------------------------------------------------
-var p3 = os.spawn('sh', ['-c', 'echo to-stdout; echo to-stderr 1>&2'])
+var p3 = os.spawn(interpreter, child(
+  'both_streams',
+  'import io\necho \'to-stdout\'\nio.stderr.write(\'to-stderr\\n\')\n'
+))
 var out3 = line(p3.read_stdout().to_string())
 var err3 = line(p3.read_stderr().to_string())
 p3.wait()
@@ -84,8 +114,12 @@ ok('spawn() keeps stdout and stderr as independent streams')
 # ---------------------------------------------------------------------------
 # spawn(): options: cwd and env
 # ---------------------------------------------------------------------------
-var scratch = os.create_temp_dir('zuri-os-process-')
-var p4 = os.spawn('sh', ['-c', 'pwd'], { cwd: scratch })
+var elsewhere = os.create_temp_dir('zuri-os-process-cwd-')
+var p4 = os.spawn(
+  interpreter,
+  child('report_cwd', 'import os\necho os.cwd()\n'),
+  { cwd: elsewhere }
+)
 var cwd_out = line(p4.read_stdout().to_string())
 p4.wait()
 
@@ -93,22 +127,26 @@ p4.wait()
 # physical directory, while `create_temp_dir()` returns whatever path it
 # was given; on a platform whose temporary directory sits behind a
 # symlink, the two spell the same directory differently.
-assert os.real_path(cwd_out) == os.real_path(scratch),
+assert os.real_path(cwd_out) == os.real_path(elsewhere),
   'spawn() with a cwd option must run the child in that directory'
 ok('spawn() options.cwd changes the child\'s working directory')
 
-var p5 = os.spawn('sh', ['-c', 'echo $ZURI_TEST_SPAWN_VAR'], { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } })
+var p5 = os.spawn(
+  interpreter,
+  child('report_env', 'import os\necho os.get_env(\'ZURI_TEST_SPAWN_VAR\', \'\')\n'),
+  { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } }
+)
 var env_out = line(p5.read_stdout().to_string())
 p5.wait()
 assert env_out == 'from-env-option', 'spawn() with an env option must set that variable in the child'
 ok('spawn() options.env sets an extra environment variable for the child')
 
-os.remove_dir(scratch, true)
+os.remove_dir(elsewhere, true)
 
 # ---------------------------------------------------------------------------
 # spawn(): try_wait() and exit code for a still-running vs finished child
 # ---------------------------------------------------------------------------
-var p6 = os.spawn('sh', ['-c', 'sleep 0.2; exit 3'])
+var p6 = os.spawn(interpreter, child('slow_exit', 'import os\nos.sleep(0.2)\nos.exit(3)\n'))
 assert p6.try_wait() == nil, 'try_wait() must return nil for a child that has not exited yet'
 assert p6.wait() == 3, 'wait() must block until the child exits and report its real exit code'
 assert p6.try_wait() == 3, 'try_wait() after the child has exited must report the same exit code'
@@ -117,7 +155,7 @@ ok('try_wait() distinguishes a still-running child from a finished one')
 # ---------------------------------------------------------------------------
 # spawn(): kill()
 # ---------------------------------------------------------------------------
-var p7 = os.spawn('sh', ['-c', 'sleep 30'])
+var p7 = os.spawn(interpreter, child('long_sleep', 'import os\nos.sleep(30)\n'))
 assert p7.try_wait() == nil, 'the sleep child must still be running right after spawn()'
 p7.kill()
 var killed_code = p7.wait()
@@ -177,6 +215,8 @@ if os.platform != 'windows' {
 # ===========================================================================
 # Final summary
 # ===========================================================================
+os.remove_dir(scratch, true)
+
 echo ''
 echo '═══════════════════════════════════════════════════════'
 echo '  All ${_passed} assertions passed.'
