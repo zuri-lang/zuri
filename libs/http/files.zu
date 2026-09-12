@@ -308,7 +308,16 @@ class StaticFiles {
       raise HttpError('static root is not a directory: ${directory}')
     }
 
+    # Resolved, not merely made absolute. Every path served is checked
+    # for being inside this one, and that check compares resolved
+    # paths; a root that is itself behind a symlink would never match
+    # one, and every request would be refused. macOS puts every
+    # temporary directory behind exactly such a symlink.
     self.root = os.abs_path(directory)
+
+    catch {
+      self.root = os.real_path(directory)
+    }
     self.index_files = ['index.html', 'index.htm']
 
     if options != nil {

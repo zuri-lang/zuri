@@ -80,7 +80,13 @@ var scratch = os.create_temp_dir('zuri-os-process-')
 var p4 = os.spawn('sh', ['-c', 'pwd'], { cwd: scratch })
 var cwd_out = p4.read_stdout().to_string().trim('\n')
 p4.wait()
-assert cwd_out == scratch, 'spawn() with a cwd option must run the child in that directory'
+
+# Both sides resolved before comparing. `pwd` in a child reports the
+# physical directory, while `create_temp_dir()` returns whatever path it
+# was given; on a platform whose temporary directory sits behind a
+# symlink, the two spell the same directory differently.
+assert os.real_path(cwd_out) == os.real_path(scratch),
+  'spawn() with a cwd option must run the child in that directory'
 ok('spawn() options.cwd changes the child\'s working directory')
 
 var p5 = os.spawn('sh', ['-c', 'echo $ZURI_TEST_SPAWN_VAR'], { env: { ZURI_TEST_SPAWN_VAR: 'from-env-option' } })

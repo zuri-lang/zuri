@@ -39,7 +39,7 @@ jobs:
       # The conformance suite. `build.rs` copies `libs/` next to the
       # binary, so the standard library is found without any env set.
       - name: Test
-        run: cargo test --locked --test zuri
+        run: RUST_BACKTRACE=full cargo test --locked --test zuri
 
   format:
     name: format
