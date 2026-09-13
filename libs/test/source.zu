@@ -1,0 +1,246 @@
+/**
+ * @module test.source
+ *
+ * Working out where a failure came from, and showing the code that
+ * was there.
+ *
+ * Every Zuri error carries a `stacktrace`: a list of strings shaped
+ * like `/path/to/file.zu:12 -> divide()`. That is enough to point a
+ * reader at the exact line, provided the frames belonging to the test
+ * module itself are dropped first. Nobody needs to be told that the
+ * failure passed through `_check()` on its way out.
+ */
+
+import os
+
+import .style
+
+
+# Files already read for a code frame. A failing suite tends to fail
+# several times in the same file, and reading it once is the
+# difference between one syscall and one per failure.
+var _cache = {}
+
+# This module's own directory. Every frame under it belongs to the
+# test framework rather than to the code under test.
+var _own_directory = os.dir_name(__file__)
+
+
+/**
+ * One frame of a stack trace, pulled apart.
+ */
+class Frame {
+
+  /** The file, as an absolute path. */
+  var file = ''
+
+  /** The line number. */
+  var line = 0
+
+  /** The function, without its trailing `()`. */
+  var name = ''
+
+  /** The frame exactly as the trace spelled it. */
+  var raw = ''
+
+  @new(file, line, name, raw) {
+    self.file = file
+    self.line = line
+    self.name = name
+    self.raw = raw
+  }
+
+  /**
+   * The frame written for a report: a path relative to the working
+   * directory, since an absolute one is mostly noise the reader
+   * already knows.
+   *
+   * @returns string
+   */
+  to_string() {
+    return '${short_path(self.file)}:${self.line}' +
+      (self.name == '' ? '' : ' in ${self.name}')
+  }
+}
+
+
+/**
+ * Splits one stack trace line into a `Frame`.
+ *
+ * @param string line
+ * @returns Frame: `nil` when the line is not shaped like a frame,
+ *    which is what a trace from a future runtime might well look
+ *    like.
+ */
+def parse_frame(line: string) {
+  var at = line.last_index_of(' -> ')
+  if at < 0 {
+    return nil
+  }
+
+  var location = line[0, at].trim()
+  var name = line[at + 4, line.length()].trim()
+
+  if name.ends_with('()') {
+    name = name[0, name.length() - 2]
+  }
+
+  var colon = location.last_index_of(':')
+  if colon < 0 {
+    return nil
+  }
+
+  var number = location[colon + 1, location.length()]
+  if !number.is_number() {
+    return nil
+  }
+
+  return Frame(location[0, colon], number.to_number().int(), name, line)
+}
+
+
+/**
+ * Every frame of `stacktrace` that belongs to the code under test,
+ * innermost first.
+ *
+ * The test module's own frames are dropped, because a failure is
+ * never interesting for having gone through a matcher.
+ *
+ * @param list stacktrace: an error's `stacktrace`.
+ * @returns list: a list of `Frame`.
+ */
+def user_frames(stacktrace: list) {
+  var frames = []
+
+  for line in stacktrace {
+    var frame = parse_frame(line)
+
+    if frame == nil or frame.file.starts_with(_own_directory) {
+      continue
+    }
+
+    frames.append(frame)
+  }
+
+  return frames
+}
+
+
+/**
+ * The innermost frame of `stacktrace` outside the test module: where
+ * the failing line actually is.
+ *
+ * @param list stacktrace
+ * @returns Frame: `nil` when every frame belongs to the framework,
+ *    which happens when a matcher is misused rather than failing.
+ */
+def origin(stacktrace: list) {
+  var frames = user_frames(stacktrace)
+
+  return frames.is_empty() ? nil : frames[0]
+}
+
+
+/**
+ * A path written relative to the working directory when it is under
+ * it, and left alone when it is not.
+ *
+ * @param string path
+ * @returns string
+ */
+def short_path(path: string) {
+  var root = os.cwd()
+
+  if path.starts_with(root + os.path_separator) {
+    return path[root.length() + 1, path.length()]
+  }
+
+  return path
+}
+
+
+def _lines_of(path) {
+  if _cache.contains(path) {
+    return _cache[path]
+  }
+
+  var lines = []
+
+  catch {
+    lines = file(path).read().lines()
+  } as error
+
+  _cache.set(path, lines)
+
+  return lines
+}
+
+
+/**
+ * The source around a failure, with the offending line marked.
+ *
+ * ```text
+ *   10 |   var total = 0
+ *   11 |
+ * > 12 |   expect(total).to_be(1)
+ *   13 | })
+ * ```
+ *
+ * @param Frame frame
+ * @param ?int context: lines of surrounding code either side, `2` by
+ *    default.
+ * @returns list: the lines, already coloured. Empty when the file
+ *    cannot be read, which is the normal answer for a frame from
+ *    somewhere that no longer exists.
+ */
+def code_frame(frame, context: ?int) {
+  if frame == nil {
+    return []
+  }
+
+  if context == nil {
+    context = 2
+  }
+
+  var lines = _lines_of(frame.file)
+  if lines.is_empty() {
+    return []
+  }
+
+  var first = frame.line - context
+  if first < 1 {
+    first = 1
+  }
+
+  var last = frame.line + context
+  if last > lines.length() {
+    last = lines.length()
+  }
+
+  var width = last.to_string().length()
+  var out = []
+
+  iter var number = first; number <= last; number++ {
+    var text = lines[number - 1]
+    var gutter = number.to_string().lpad(width, ' ')
+
+    if number == frame.line {
+      out.append(style.red('> ${gutter} | ') + text)
+    } else {
+      out.append(style.dim('  ${gutter} | ${text}'))
+    }
+  }
+
+  return out
+}
+
+
+/**
+ * Forgets every file read for a code frame.
+ *
+ * Only matters to a long-lived process that edits the files it is
+ * testing between runs.
+ */
+def clear_cache() {
+  _cache = {}
+}

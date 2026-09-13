@@ -118,18 +118,111 @@ var is_repl = _io.isrepl
 
 
 #------------------------------------------------------------------------------------------------
-# Capture constants
+# Output capture
 #------------------------------------------------------------------------------------------------
 
 /**
- * Capture stdout stream.
+ * Begins capturing standard output.
+ *
+ * From this call until the matching `capture_end()`, everything Zuri
+ * writes to standard output is collected into a buffer instead of
+ * reaching the terminal. That covers `echo`, `print()`, and writes
+ * through `io.stdout`. It does not cover `io.stderr`, output written
+ * by a child process started with `os.spawn()`, or bytes a native
+ * module writes straight to the descriptor.
+ *
+ * Captures nest. Each `capture_begin()` opens a new frame and the
+ * innermost open frame receives everything, so an inner capture never
+ * leaks into the one around it.
+ *
+ * Capture is per-thread: one opened inside an isolate collects only
+ * that isolate's own output.
+ *
+ * A frame that is never closed is flushed to the terminal when the
+ * program ends, so output is never silently lost. Prefer `capture()`
+ * unless you need the output of a body that raises.
+ *
+ * ```zuri
+ * import io
+ *
+ * io.capture_begin()
+ * echo 'not printed yet'
+ * var text = io.capture_end()
+ *
+ * echo 'captured: ' + text.trim('\n')
+ * ```
+ * ```
+ * captured: not printed yet
+ * ```
  */
-var CAPTURE_STDOUT = 0
+def capture_begin() {
+  _io.capture_begin()
+}
 
 /**
- * Capture stderr stream.
+ * Ends the innermost capture and returns everything it collected.
+ *
+ * The text comes back exactly as written, trailing newline included.
+ * Bytes that are not valid UTF-8 decode to U+FFFD rather than
+ * raising, so a whole frame is never lost over one stray byte.
+ *
+ * @returns string: the captured output, or `nil` when no capture was
+ *    open.
  */
-var CAPTURE_STDERR = 1
+def capture_end() {
+  return _io.capture_end()
+}
+
+/**
+ * The number of capture frames currently open. `0` means output is
+ * going to the terminal.
+ *
+ * @returns int
+ */
+def capture_depth() {
+  return _io.capture_depth()
+}
+
+/**
+ * Runs `body` with standard output captured, and returns everything
+ * it printed.
+ *
+ * ```zuri
+ * import io
+ *
+ * def greet(name) {
+ *   echo 'Hello, ${name}!'
+ * }
+ *
+ * var out = io.capture(@{ greet('Ada') })
+ * echo out.length()
+ * ```
+ * ```
+ * 13
+ * ```
+ *
+ * @note when `body` raises, the capture is closed and the error is
+ *    re-raised, but whatever was collected before it is discarded.
+ *    Use `capture_begin()`/`capture_end()` around your own `catch`
+ *    when you need both.
+ * @param function body
+ * @returns string
+ */
+def capture(body: function) {
+  capture_begin()
+
+  catch {
+    body()
+  } as error
+
+  var output = capture_end()
+
+  if error {
+    raise error
+  }
+
+  return output
+}
 
 
 /**

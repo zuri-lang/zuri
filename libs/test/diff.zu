@@ -1,0 +1,499 @@
+/**
+ * @module test.diff
+ *
+ * Structural equality, and the rendering of what two unequal values
+ * disagree about.
+ *
+ * `equal()` is what `to_equal()` is built on, and it is worth knowing
+ * exactly how it differs from `==`:
+ *
+ * | | `==` | `equal()` |
+ * | --- | --- | --- |
+ * | list, dict, bytes | compares contents | compares contents |
+ * | instance | compares identity | compares class, then every field |
+ * | `NaN` | never equal to anything | equal to `NaN` |
+ * | `-0` and `0` | equal | equal |
+ * | int and bigint | never equal | never equal |
+ * | cyclic values | hangs | compares, treating a repeated pair as equal |
+ *
+ * The one that surprises people is instances: `Point(1, 2) ==
+ * Point(1, 2)` is `false`, because two separately constructed objects
+ * are two objects. `equal()` is the one to reach for when what you
+ * care about is the contents.
+ *
+ * `render()` turns a failed comparison into lines to print. It picks
+ * the shape that shows the most: a line diff for multi-line strings,
+ * a character marker for single-line ones, a keyed structural diff
+ * for dictionaries and instances, a positional one for lists, and a
+ * plain two-line expected/received block for anything else.
+ */
+
+import .format
+import .style
+
+
+# The deepest nesting `render()` walks into before it stops describing
+# a difference in place and just prints the two subtrees. Deeper than
+# this and the annotated form stops being easier to read than the
+# values themselves.
+var MAX_DIFF_DEPTH = 6
+
+# How many lines of a list or string diff to print before summarising
+# the rest. Enough to see the shape of the mismatch, few enough that
+# one bad assertion does not bury the report.
+var MAX_DIFF_LINES = 30
+
+
+# `pairs` holds the (expected, received) pairs currently being
+# compared further up the stack, as real values rather than
+# identities, so the collector keeps them correct if it relocates one
+# mid-comparison. Identity is recomputed at the moment of the test.
+def _seen_pair(pairs, left, right) {
+  var a = id(left)
+  var b = id(right)
+
+  for pair in pairs {
+    if id(pair[0]) == a and id(pair[1]) == b {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+# Containers are decided here, element by element, and never by `==`.
+# Zuri's own `==` walks a list or a dictionary structurally with no
+# cycle check of its own, so handing it a value that contains itself
+# takes the whole process down rather than returning an answer.
+def _equal(left, right, pairs) {
+  if is_list(left) and is_list(right) {
+    if left.length() != right.length() {
+      return false
+    }
+
+    if _seen_pair(pairs, left, right) {
+      return true
+    }
+
+    pairs.append([left, right])
+
+    iter var index = 0; index < left.length(); index++ {
+      if !_equal(left[index], right[index], pairs) {
+        pairs.pop()
+        return false
+      }
+    }
+
+    pairs.pop()
+    return true
+  }
+
+  if is_dict(left) and is_dict(right) {
+    if left.length() != right.length() {
+      return false
+    }
+
+    if _seen_pair(pairs, left, right) {
+      return true
+    }
+
+    pairs.append([left, right])
+
+    for key, value in left {
+      if !right.contains(key) {
+        pairs.pop()
+        return false
+      }
+
+      if !_equal(value, right[key], pairs) {
+        pairs.pop()
+        return false
+      }
+    }
+
+    pairs.pop()
+    return true
+  }
+
+  if is_instance(left) and is_instance(right) {
+    if typeof(left) != typeof(right) {
+      return false
+    }
+
+    if _seen_pair(pairs, left, right) {
+      return true
+    }
+
+    pairs.append([left, right])
+
+    var properties = _properties(left)
+    if properties.length() != _properties(right).length() {
+      pairs.pop()
+      return false
+    }
+
+    for property in properties {
+      if !_equal(_property(left, property), _property(right, property), pairs) {
+        pairs.pop()
+        return false
+      }
+    }
+
+    pairs.pop()
+    return true
+  }
+
+  # A container never equals a non-container, and the scalar cases are
+  # all `==` can be trusted with.
+  if is_list(left) or is_list(right) or is_dict(left) or is_dict(right) {
+    return false
+  }
+
+  if is_instance(left) or is_instance(right) {
+    return false
+  }
+
+  # `NaN` is the one value `==` refuses to match against itself. A
+  # list holding one would otherwise not even equal a copy of itself,
+  # which is not a useful thing for a test framework to say.
+  if is_number(left) and is_number(right) and left.is_nan() and right.is_nan() {
+    return true
+  }
+
+  return left == right
+}
+
+
+# Imported lazily through `format` rather than pulling `zuri.reflect`
+# in twice; `format` already needs it and already handles the
+# module's shape.
+def _properties(instance) {
+  return format.properties_of(instance)
+}
+
+def _property(instance, name) {
+  return format.property_of(instance, name)
+}
+
+
+/**
+ * Whether `left` and `right` are structurally equal.
+ *
+ * @param any left
+ * @param any right
+ * @returns bool
+ */
+def equal(left, right) {
+  return _equal(left, right, [])
+}
+
+
+/**
+ * Whether every key in `subset` is present in `value` with a
+ * structurally equal value, ignoring any key `value` has that
+ * `subset` does not mention.
+ *
+ * Nested dictionaries recurse, so `{ user: { id: 1 } }` matches
+ * `{ user: { id: 1, name: 'Ada' } }`. Lists do not: a list in
+ * `subset` must equal the list in `value` outright, since "some of
+ * these elements, in no particular place" is a different question and
+ * has its own matcher.
+ *
+ * Instances are matched by property, so a dictionary of expectations
+ * can be checked against a real object.
+ *
+ * @param dict subset
+ * @param any value
+ * @returns bool
+ */
+def subset(expected: dict, value) {
+  if is_dict(value) {
+    for key, wanted in expected {
+      if !value.contains(key) {
+        return false
+      }
+
+      if !_entry_matches(wanted, value[key]) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  if is_instance(value) {
+    var properties = _properties(value)
+
+    for key, wanted in expected {
+      if !properties.contains(key) {
+        return false
+      }
+
+      if !_entry_matches(wanted, _property(value, key)) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  return false
+}
+
+
+# One key's worth of the comparison: a dictionary of expectations
+# against a dictionary or an object recurses as a subset, and
+# anything else has to match outright.
+def _entry_matches(wanted, actual) {
+  if is_dict(wanted) and (is_dict(actual) or is_instance(actual)) {
+    return subset(wanted, actual)
+  }
+
+  return equal(wanted, actual)
+}
+
+
+def _marker_added(text) {
+  return style.green('+ ' + text)
+}
+
+def _marker_removed(text) {
+  return style.red('- ' + text)
+}
+
+def _marker_same(text) {
+  return style.dim('  ' + text)
+}
+
+
+def _header(lines) {
+  lines.append(style.dim('  ') + style.green('+ expected') + style.dim('  ') + style.red('- received'))
+  lines.append('')
+}
+
+
+def _truncated(lines, remaining) {
+  lines.append(style.dim('  ${style.symbols().ellipsis} ${format.plural(remaining, "more line")}'))
+}
+
+
+# A multi-line string is the case where a plain "expected X, received
+# Y" is least useful: the two are long, nearly identical, and the
+# difference is a few characters somewhere in the middle.
+def _string_diff(expected, received, lines) {
+  var left = expected.lines()
+  var right = received.lines()
+  var count = left.length() > right.length() ? left.length() : right.length()
+  var shown = 0
+
+  _header(lines)
+
+  iter var index = 0; index < count; index++ {
+    if shown >= MAX_DIFF_LINES {
+      _truncated(lines, count - index)
+      break
+    }
+
+    var a = index < left.length() ? left[index] : nil
+    var b = index < right.length() ? right[index] : nil
+
+    if a == b {
+      lines.append(_marker_same(a))
+    } else {
+      if b != nil {
+        lines.append(_marker_removed(b))
+      }
+      if a != nil {
+        lines.append(_marker_added(a))
+      }
+    }
+
+    shown++
+  }
+}
+
+
+# For two single-line strings, the useful thing is where they first
+# part company, marked under the text rather than described in prose.
+def _string_point(expected, received, lines) {
+  var limit = expected.length() < received.length() ? expected.length() : received.length()
+  var at = limit
+
+  iter var index = 0; index < limit; index++ {
+    if expected[index, index + 1] != received[index, index + 1] {
+      at = index
+      break
+    }
+  }
+
+  lines.append(_marker_added(format.inline_plain(expected)))
+  lines.append(_marker_removed(format.inline_plain(received)))
+
+  # The rendered form is quoted, so the caret sits one column right of
+  # where the difference is in the raw text.
+  lines.append(style.dim('  ' + (' ' * (at + 1)) + '^'))
+  lines.append(style.dim('  first difference at index ${at}'))
+}
+
+
+def _list_diff(expected, received, lines) {
+  var count = expected.length() > received.length() ? expected.length() : received.length()
+  var shown = 0
+
+  _header(lines)
+
+  iter var index = 0; index < count; index++ {
+    if shown >= MAX_DIFF_LINES {
+      _truncated(lines, count - index)
+      break
+    }
+
+    var has_expected = index < expected.length()
+    var has_received = index < received.length()
+
+    if has_expected and has_received and equal(expected[index], received[index]) {
+      lines.append(_marker_same('[${index}] ' + format.inline(expected[index])))
+    } else {
+      if has_received {
+        lines.append(_marker_removed('[${index}] ' + format.inline(received[index])))
+      }
+      if has_expected {
+        lines.append(_marker_added('[${index}] ' + format.inline(expected[index])))
+      }
+    }
+
+    shown++
+  }
+}
+
+
+def _keyed_diff(expected_keys, expected_at, received_keys, received_at, lines) {
+  _header(lines)
+
+  var shown = 0
+
+  for key in expected_keys {
+    if shown >= MAX_DIFF_LINES {
+      _truncated(lines, expected_keys.length() - shown)
+      break
+    }
+
+    shown++
+
+    if !received_keys.contains(key) {
+      lines.append(_marker_added('${key}: ' + format.inline(expected_at(key)) + style.dim('  (missing)')))
+      continue
+    }
+
+    var mine = expected_at(key)
+    var theirs = received_at(key)
+
+    if equal(mine, theirs) {
+      lines.append(_marker_same('${key}: ' + format.inline(mine)))
+    } else {
+      lines.append(_marker_removed('${key}: ' + format.inline(theirs)))
+      lines.append(_marker_added('${key}: ' + format.inline(mine)))
+    }
+  }
+
+  for key in received_keys {
+    if expected_keys.contains(key) {
+      continue
+    }
+
+    lines.append(_marker_removed('${key}: ' + format.inline(received_at(key)) + style.dim('  (unexpected)')))
+  }
+}
+
+
+def _plain(expected, received, lines) {
+  lines.append(_marker_added('expected  ' + format.inline(expected)))
+  lines.append(_marker_removed('received  ' + format.inline(received)))
+}
+
+
+def _render(expected, received, depth) {
+  var lines = []
+
+  var expected_type = format.type_label(expected)
+  var received_type = format.type_label(received)
+
+  # Two different types is the whole story; annotating their insides
+  # against each other would just be noise on top of it.
+  if expected_type != received_type {
+    lines.append(_marker_added('expected  ' + format.inline(expected) + style.dim('  (${expected_type})')))
+    lines.append(_marker_removed('received  ' + format.inline(received) + style.dim('  (${received_type})')))
+    return lines
+  }
+
+  if depth >= MAX_DIFF_DEPTH {
+    _plain(expected, received, lines)
+    return lines
+  }
+
+  if is_string(expected) {
+    if expected.contains('\n') or received.contains('\n') {
+      _string_diff(expected, received, lines)
+    } else {
+      _string_point(expected, received, lines)
+    }
+
+    return lines
+  }
+
+  if is_list(expected) {
+    _list_diff(expected, received, lines)
+    return lines
+  }
+
+  if is_dict(expected) {
+    _keyed_diff(
+      expected.keys(), @(key) { return expected[key] },
+      received.keys(), @(key) { return received[key] },
+      lines
+    )
+    return lines
+  }
+
+  if is_instance(expected) {
+    _keyed_diff(
+      _properties(expected), @(key) { return _property(expected, key) },
+      _properties(received), @(key) { return _property(received, key) },
+      lines
+    )
+    return lines
+  }
+
+  _plain(expected, received, lines)
+
+  return lines
+}
+
+
+/**
+ * The lines to print underneath a failure message, showing what the
+ * two values disagree about.
+ *
+ * Every line is already coloured and carries no indent of its own;
+ * the reporter decides how far in the whole block sits.
+ *
+ * ```zuri
+ * import test.diff
+ *
+ * for line in diff.render([1, 2, 3], [1, 9, 3]) {
+ *   echo line
+ * }
+ * ```
+ *
+ * @param any expected
+ * @param any received
+ * @returns list: the lines, or an empty list when the two are equal.
+ */
+def render(expected, received) {
+  if equal(expected, received) {
+    return []
+  }
+
+  return _render(expected, received, 0)
+}

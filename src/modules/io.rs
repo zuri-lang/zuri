@@ -4,7 +4,9 @@
 use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 
+use crate::enforce_arg_count;
 use crate::modules::{BuiltinModuleDef, native};
+use crate::vm::natives;
 use crate::vm::object::{FileHandle, ModuleNamespace, ObjModule, ZuriContext, write_barrier};
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -23,8 +25,47 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("isrepl", Value::bool(vm.is_repl)),
     ("readline", native(vm, "readline", 0, true, readline)),
     ("getch", native(vm, "getch", 0, true, getch)),
+    (
+      "capture_begin",
+      native(vm, "capture_begin", 0, false, capture_begin),
+    ),
+    ("capture_end", native(vm, "capture_end", 0, false, capture_end)),
+    (
+      "capture_depth",
+      native(vm, "capture_depth", 0, false, capture_depth),
+    ),
     ("TTY", build_tty_submodule(vm)),
   ]
+}
+
+/// Starts redirecting this thread's stdout into a buffer. Frames
+/// nest, and the innermost one takes everything until it is closed.
+fn capture_begin(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  natives::capture_begin();
+  Ok(Value::nil())
+}
+
+/// Closes the innermost frame and returns what it caught as a string,
+/// or `nil` when no capture was open.
+///
+/// Undecodable bytes become U+FFFD rather than raising: a capture is
+/// there to be read back and shown, and a script that wrote raw bytes
+/// to stdout would otherwise lose the whole frame over one of them.
+fn capture_end(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  match natives::capture_end() {
+    Some(bytes) => {
+      let text = String::from_utf8_lossy(&bytes).into_owned();
+      Ok(ctx.heap().alloc_string(text))
+    },
+    None => Ok(Value::nil()),
+  }
+}
+
+fn capture_depth(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::number(natives::capture_depth() as f64))
 }
 
 /// A nested "module" purely as a namespacing device: `libs/io/tty.zu`
@@ -101,6 +142,7 @@ fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
     mode: mode.to_string(),
     binary: mode.to_lowercase().contains('b'),
     is_stream: true,
+    fd,
     handle,
   }
 }
@@ -160,17 +202,19 @@ fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
     mode: mode.to_string(),
     binary: mode.to_lowercase().contains('b'),
     is_stream: true,
+    fd,
     handle,
   }
 }
 
 #[cfg(not(any(unix, windows)))]
-fn std_file(_fd: i32, path: &str, mode: &str) -> FileHandle {
+fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
   FileHandle {
     path: path.to_string(),
     mode: mode.to_string(),
     binary: mode.to_lowercase().contains('b'),
     is_stream: true,
+    fd,
     handle: None,
   }
 }

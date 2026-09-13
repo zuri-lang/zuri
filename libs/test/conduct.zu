@@ -1,0 +1,630 @@
+/**
+ * @module test.conduct
+ *
+ * Running a directory of test files, each in a process of its own.
+ *
+ * ```zuri
+ * import test
+ *
+ * test.conduct('tests')
+ * ```
+ *
+ * ### Why separate processes
+ *
+ * A test file is an ordinary Zuri script, and Zuri has no way to load
+ * one at runtime, so there is no in-process way to run several of
+ * them. That constraint turns out to be the right design anyway:
+ *
+ * - A file that loops forever is killed, and the rest still run.
+ * - A file that segfaults, or calls `os.exit()` halfway through, is
+ *   reported as a crashed file rather than taking the run with it.
+ * - Global state, a module loaded with a side effect, a signal
+ *   handler, a changed working directory: none of it leaks from one
+ *   file into the next.
+ * - `timeout` becomes real. Inside one process there is nothing to
+ *   interrupt a synchronous function; across a process boundary there
+ *   is `kill`.
+ *
+ * ### What a test file has to do
+ *
+ * Nothing special. It declares its tests and calls `test.run()` like
+ * any other. The conductor sets `ZURI_TEST_CONDUCTED` in the child,
+ * and `run()` switches to a machine-readable reporter when it sees
+ * it, so the same file is equally runnable on its own.
+ *
+ * A file that never calls `test.run()` is reported as such rather
+ * than silently counting as zero tests.
+ *
+ * ### Ordering
+ *
+ * Files are reported in the order they were discovered, whatever
+ * order they finish in, so a run is reproducible even with `jobs`
+ * turned up.
+ */
+
+import json
+import os
+
+import .error { TestSetupError }
+import .format
+import .reporter as reporters
+import .style
+
+
+# Set in every child. `runner.run()` looks for it and switches to the
+# ndjson reporter, whatever the file itself asked for, because the
+# parent is parsing that stream.
+var CONDUCTED = 'ZURI_TEST_CONDUCTED'
+
+
+def _defaults() {
+  return {
+    match: ['*.zu'],
+    ignore: ['_*', '.*'],
+    recursive: true,
+    jobs: 1,
+    timeout: 0,
+    bail: 0,
+    env: nil,
+  }
+}
+
+
+def _resolve(given) {
+  var options = _defaults()
+
+  if is_dict(given) {
+    for key, value in given {
+      if !options.contains(key) {
+        raise TestSetupError(
+          "conduct() does not know the option '${key}'; the ones it knows are ${', '.join(options.keys().clone().sort())}"
+        )
+      }
+
+      options.set(key, value)
+    }
+  }
+
+  if options.jobs < 1 {
+    options.set('jobs', 1)
+  }
+
+  return options
+}
+
+
+# A `*`/`?` glob over one path segment, which is all a filename
+# pattern ever needs. Turning it into a regular expression keeps the
+# matching in one well-tested place rather than in a hand-rolled
+# walker.
+def _glob_matches(pattern, name) {
+  var expression = '^'
+
+  iter var index = 0; index < pattern.length(); index++ {
+    var character = pattern[index, index + 1]
+
+    using character {
+      when '*' expression += '[^/]*'
+      when '?' expression += '[^/]'
+      default {
+        if '.^$+(){}[]|\\'.contains(character) {
+          expression += '\\' + character
+        } else {
+          expression += character
+        }
+      }
+    }
+  }
+
+  return is_dict(name.match('/${expression}$/'))
+}
+
+
+def _wanted(name, options) {
+  for pattern in options.ignore {
+    if _glob_matches(pattern, name) {
+      return false
+    }
+  }
+
+  for pattern in options.match {
+    if _glob_matches(pattern, name) {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+/**
+ * Every test file under `directory`, in the order they will run.
+ *
+ * @param string directory
+ * @param ?dict options: `match`, `ignore` and `recursive`, as
+ *    `conduct()` takes them.
+ * @returns list: paths, relative to `directory`.
+ */
+def discover(directory: string, options: ?dict) {
+  var resolved = _resolve(options)
+
+  if !os.dir_exists(directory) {
+    raise TestSetupError("there is no '${directory}' directory to run tests from")
+  }
+
+  var found = []
+
+  for entry in os.read_dir(directory, resolved.recursive) {
+    if entry == '.' or entry == '..' {
+      continue
+    }
+
+    var full = os.join_paths(directory, entry)
+    if os.is_dir(full) {
+      continue
+    }
+
+    # Ignore patterns apply to every segment, so `__snapshots__` and a
+    # `_helpers.zu` are both skipped wherever they sit.
+    var segments = entry.replace('/\\\\/', '/').split('/')
+    var skip = false
+
+    for segment in segments {
+      for pattern in resolved.ignore {
+        if _glob_matches(pattern, segment) {
+          skip = true
+          break
+        }
+      }
+    }
+
+    if skip or !_wanted(segments.last(), resolved) {
+      continue
+    }
+
+    found.append(entry)
+  }
+
+  return found
+}
+
+
+/**
+ * What became of one file.
+ */
+class FileResult {
+
+  /** The path, relative to the directory that was conducted. */
+  var path = ''
+
+  /** The child's exit status. */
+  var code = 0
+
+  /** How long the child ran, in milliseconds. */
+  var duration = 0
+
+  /** The `test_finished` payloads the child reported. */
+  var tests = []
+
+  /** The child's own summary, or `nil` when it never reported one. */
+  var summary = nil
+
+  /** Anything the child printed that was not part of the protocol. */
+  var output = ''
+
+  /** Why the file did not report properly, when it did not. */
+  var problem = ''
+
+  @new(path) {
+    self.path = path
+    self.tests = []
+  }
+
+  /** Whether the file ran cleanly and everything in it passed. @returns bool */
+  ok() {
+    return self.problem == '' and self.code == 0 and
+      self.summary != nil and self.summary.get('failed', 0) == 0
+  }
+}
+
+
+class _Job {
+
+  var path = ''
+  var process = nil
+  var started = 0
+  var result = nil
+
+  @new(path, process, started) {
+    self.path = path
+    self.process = process
+    self.started = started
+    self.result = FileResult(path)
+  }
+}
+
+
+def _now_ms() {
+  return time() * 1000
+}
+
+
+def _spawn(directory, path, options) {
+  var environment = { }
+  environment.set(CONDUCTED, '1')
+
+  if is_dict(options.env) {
+    for key, value in options.env {
+      environment.set(key, value)
+    }
+  }
+
+  return os.spawn(
+    os.exe_path,
+    [os.join_paths(directory, path)],
+    {
+      env: environment,
+      stdin: 'null',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  )
+}
+
+
+def _drain(job) {
+  var result = job.result
+  var raw = ''
+
+  catch {
+    raw = job.process.read_stdout().to_string()
+  } as error
+
+  catch {
+    var errors = job.process.read_stderr().to_string()
+
+    if errors != '' {
+      result.output += errors
+    }
+  } as error
+
+  for line in raw.lines() {
+    if !line.starts_with(reporters.PREFIX) {
+      if line != '' {
+        result.output += line + '\n'
+      }
+
+      continue
+    }
+
+    var payload = nil
+
+    catch {
+      payload = json.decode(line[reporters.PREFIX.length(), line.length()])
+    } as error {
+      result.output += line + '\n'
+      continue
+    }
+
+    using payload.get('event', '') {
+      when 'test_finished' result.tests.append(payload)
+      when 'run_finished' result.summary = payload.get('summary', {})
+    }
+  }
+}
+
+
+def _diagnose(result) {
+  if result.problem != '' {
+    return
+  }
+
+  if result.summary == nil {
+    result.problem = result.code == 0 ?
+      'the file finished without calling test.run()' :
+      'the file exited with status ${result.code} before reporting'
+  }
+}
+
+
+# =========================================================================
+# Reporting
+# =========================================================================
+
+def _echo_file(result, options) {
+  var symbols = style.symbols()
+  var failed = result.tests.filter(@(test) { return test.status == 'failed' })
+
+  var badge = ''
+  if result.problem != '' {
+    badge = style.badge('fail', 'ERROR')
+  } else if !failed.is_empty() {
+    badge = style.badge('fail', 'FAIL')
+  } else {
+    badge = style.badge('pass', 'PASS')
+  }
+
+  echo ''
+  echo '  ' + badge + '  ' + style.bold(result.path) +
+    style.dim('  ${format.duration(result.duration)}') +
+    style.dim('  ${format.plural(result.tests.length(), "test")}')
+
+  if result.problem != '' {
+    echo '        ' + style.red(result.problem)
+  }
+
+  for test in failed {
+    echo '        ' + style.red(symbols.fail) + ' ' + style.red(test.full_name)
+
+    for failure in test.get('failures', []) {
+      echo '          ' + failure.get('message', '')
+
+      var file = failure.get('file', nil)
+      if file != nil {
+        echo '          ' + style.dim('at ${file}:${failure.get("line", 0)}')
+      }
+    }
+  }
+
+  if result.output != '' and (result.problem != '' or !failed.is_empty()) {
+    for line in result.output.lines() {
+      echo '        ' + style.dim('${symbols.pipe} ') + line
+    }
+  }
+}
+
+
+def _echo_totals(totals, files, duration) {
+  var parts = []
+
+  if totals.failed > 0 {
+    parts.append(style.bold(style.red('${totals.failed} failed')))
+  }
+  if totals.passed > 0 {
+    parts.append(style.bold(style.green('${totals.passed} passed')))
+  }
+  if totals.flaky > 0 {
+    parts.append(style.bold(style.magenta('${totals.flaky} flaky')))
+  }
+  if totals.skipped > 0 {
+    parts.append(style.yellow('${totals.skipped} skipped'))
+  }
+  if totals.todo > 0 {
+    parts.append(style.blue('${totals.todo} todo'))
+  }
+
+  parts.append(style.dim('${totals.total} total'))
+
+  var broken = files.filter(@(file) { return !file.ok() }).length()
+
+  echo ''
+  echo '  ' + style.dim('files ') + files.length().to_string() +
+    style.dim('   failed files ') + broken.to_string()
+  echo '  ' + style.dim('  ${style.symbols().bullet}  ').join(parts)
+  echo '  ' + style.dim('time ') + format.duration(duration)
+  echo ''
+}
+
+
+# =========================================================================
+# The run
+# =========================================================================
+
+/**
+ * Runs every test file under `directory`, each in its own process,
+ * and reports them together.
+ *
+ * ```zuri
+ * import test
+ * import os
+ *
+ * var outcome = test.conduct('tests', { timeout: 30000, jobs: 4 })
+ * os.exit(outcome.exit_code)
+ * ```
+ *
+ * @param ?string directory: `'tests'` by default.
+ * @param ?dict options:
+ *
+ *    - `match`: filename patterns to run, `['*.zu']` by default.
+ *      `*` and `?` are the only wildcards.
+ *    - `ignore`: patterns for files and directories to skip,
+ *      `['_*', '.*']` by default, which is what keeps helper files
+ *      and `__snapshots__` out.
+ *    - `recursive`: whether to look in subdirectories. `true`.
+ *    - `jobs`: how many files to run at once. `1`, because a test
+ *      file that binds a port or writes a fixture was probably not
+ *      written to share the machine. Reporting order is by
+ *      discovery whatever this is set to.
+ *    - `timeout`: milliseconds to give one file before killing it.
+ *      `0`, meaning no limit.
+ *    - `bail`: stop after this many failing files. `0` never stops.
+ *    - `env`: extra environment variables for every child.
+ *
+ * @returns dict: `{ files, totals, duration, exit_code, ok }`, where
+ *    `files` is a list of `FileResult`.
+ * @raises TestSetupError when `directory` does not exist.
+ */
+def conduct(directory: ?string, options: ?dict) {
+  if directory == nil {
+    directory = 'tests'
+  }
+
+  var resolved = _resolve(options)
+  var paths = discover(directory, options)
+  var started = _now_ms()
+
+  echo ''
+  echo '  ' + style.bold('zuri test') + style.dim('  ${format.plural(paths.length(), "file")} in ${directory}')
+
+  if paths.is_empty() {
+    echo ''
+    echo '  ' + style.yellow('no test files found')
+    echo ''
+
+    return {
+      files: [],
+      totals: _empty_totals(),
+      duration: 0,
+      exit_code: 0,
+      ok: true,
+    }
+  }
+
+  var results = _execute(directory, paths, resolved)
+  var duration = _now_ms() - started
+  var totals = _empty_totals()
+
+  for result in results {
+    _accumulate(totals, result)
+    _echo_file(result, resolved)
+  }
+
+  _echo_totals(totals, results, duration)
+
+  var ok = results.every(@(result) { return result.ok() })
+
+  return {
+    files: results,
+    totals,
+    duration,
+    exit_code: ok ? 0 : 1,
+    ok,
+  }
+}
+
+
+def _empty_totals() {
+  return {
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    todo: 0,
+    flaky: 0,
+    total: 0,
+  }
+}
+
+
+def _accumulate(totals, result) {
+  if result.summary == nil {
+    # A file that never reported still failed at something, and
+    # counting it as one failure keeps the total honest.
+    totals.set('failed', totals.failed + 1)
+    totals.set('total', totals.total + 1)
+
+    return
+  }
+
+  for key in ['passed', 'failed', 'skipped', 'todo', 'flaky', 'total'] {
+    totals.set(key, totals[key] + result.summary.get(key, 0))
+  }
+}
+
+
+# Files are started up to `jobs` at a time and collected as they
+# finish, but kept in discovery order for the report. Draining a
+# child's pipe is what would block, so it only ever happens once the
+# child has actually exited.
+def _execute(directory, paths, options) {
+  var results = []
+  var running = []
+  var next = 0
+  var failed_files = 0
+
+  while next < paths.length() or !running.is_empty() {
+    while running.length() < options.jobs and next < paths.length() {
+      if options.bail > 0 and failed_files >= options.bail {
+        break
+      }
+
+      running.append(_Job(paths[next], _spawn(directory, paths[next], options), _now_ms()))
+      next++
+    }
+
+    if running.is_empty() {
+      break
+    }
+
+    var progressed = false
+    var still_running = []
+
+    for job in running {
+      var elapsed = _now_ms() - job.started
+      var code = job.process.try_wait()
+
+      if code == nil and options.timeout > 0 and elapsed > options.timeout {
+        job.process.kill()
+        job.process.wait()
+        job.result.problem = 'timed out after ${format.duration(elapsed)}'
+        code = -1
+      }
+
+      if code == nil {
+        still_running.append(job)
+        continue
+      }
+
+      job.result.code = code
+      job.result.duration = elapsed
+
+      _drain(job)
+      _diagnose(job.result)
+
+      results.append(job.result)
+      progressed = true
+
+      if !job.result.ok() {
+        failed_files++
+      }
+    }
+
+    running = still_running
+
+    if !progressed and !running.is_empty() {
+      os.sleep(0.005)
+    }
+
+    if options.bail > 0 and failed_files >= options.bail {
+      for job in running {
+        job.process.kill()
+        job.process.wait()
+      }
+
+      running = []
+      next = paths.length()
+    }
+  }
+
+  return _in_discovery_order(paths, results)
+}
+
+
+def _in_discovery_order(paths, results) {
+  var ordered = []
+
+  for path in paths {
+    for result in results {
+      if result.path == path {
+        ordered.append(result)
+        break
+      }
+    }
+  }
+
+  return ordered
+}
+
+
+/**
+ * Whether this process was started by the conductor.
+ *
+ * `run()` uses it to switch to the machine-readable reporter. A test
+ * file has no reason to care.
+ *
+ * @returns bool
+ */
+def is_conducted() {
+  var flag = os.get_env(CONDUCTED)
+
+  return flag != nil and flag != ''
+}

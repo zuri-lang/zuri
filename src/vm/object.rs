@@ -1207,6 +1207,22 @@ pub struct FileHandle {
   /// behave like `.gets()`/`.puts()` instead: use (and keep open)
   /// whatever handle is already there.
   pub is_stream: bool,
+  /// The file descriptor this handle stands for, or `-1` when it is
+  /// not known.
+  ///
+  /// For the three standard streams it is the descriptor they are
+  /// named by (0, 1, 2), not the private duplicate `modules::io`
+  /// actually holds, so anything that cares WHICH stream it has can
+  /// just compare the number. `io.capture()` is the current caller;
+  /// redirecting stderr, or reading stdin from somewhere else, would
+  /// use the same field.
+  ///
+  /// For an ordinary file it starts at `-1` and `file.number()` fills
+  /// it in from the live handle the first time it is asked, on the
+  /// platforms that have descriptors at all. `close()` and `open()`
+  /// put it back, since the next handle is free to land on a
+  /// different descriptor.
+  pub fd: i32,
 }
 
 /// A type-erased handle to an arbitrary Rust value, letting a native

@@ -13,6 +13,7 @@ use crate::{
     method, method_n, method_opt, to_string,
   },
   vm::{
+    natives::{capture_depth, capture_write},
     object::{FileHandle, ZuriContext},
     value::Value,
   },
@@ -112,15 +113,31 @@ fn exists(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn close(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  with_file_mut(ctx.args[0], |fh| fh.handle = None);
+  with_file_mut(ctx.args[0], |fh| {
+    fh.handle = None;
+    forget_descriptor(fh);
+  });
   Ok(Value::nil())
+}
+
+/// Drops a cached descriptor number, because the handle it described
+/// is gone and the next one is free to land somewhere else. A
+/// standard stream keeps its number: that is the stream's identity,
+/// not a cache of anything.
+fn forget_descriptor(fh: &mut FileHandle) {
+  if !fh.is_stream {
+    fh.fd = -1;
+  }
 }
 
 fn open(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let (path, mode) = with_file_mut(ctx.args[0], |fh| (fh.path.clone(), fh.mode.clone()));
   let handle = open_with_mode(&path, &mode)?;
-  with_file_mut(ctx.args[0], |fh| fh.handle = Some(handle));
+  with_file_mut(ctx.args[0], |fh| {
+    fh.handle = Some(handle);
+    forget_descriptor(fh);
+  });
   Ok(ctx.args[0])
 }
 
@@ -218,6 +235,14 @@ fn do_write(ctx: &mut ZuriContext, auto_close: bool) -> Result<Value, String> {
     ctx.args[1].with_bytes(|b| b.to_vec())
   };
 
+  // `io.stdout` is the one write path to the terminal that does not
+  // already run through `natives::echo_value`/`print`, so an open
+  // `io.capture()` frame has to intercept it here too.
+  if capture_depth() > 0 && ctx.args[0].as_file_cell().borrow().fd == 1 {
+    capture_write(&data);
+    return Ok(Value::bool(true));
+  }
+
   let mut is_stream = false;
   let mut opened_here = false;
   {
@@ -258,12 +283,27 @@ fn puts(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 fn number(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
+
+  // Already known: either a standard stream, which is named by its
+  // descriptor rather than by the duplicate it holds, or an ordinary
+  // file this has already been asked about.
+  let known = with_file_mut(ctx.args[0], |fh| fh.fd);
+  if known >= 0 {
+    return Ok(Value::number(known as f64));
+  }
+
   #[cfg(unix)]
   {
     use std::os::unix::io::AsRawFd;
-    let fd = with_file_mut(ctx.args[0], |fh| fh.handle.as_ref().map(|f| f.as_raw_fd()));
-    Ok(Value::number(fd.unwrap_or(-1) as f64))
+    let fd = with_file_mut(ctx.args[0], |fh| {
+      let raw = fh.handle.as_ref().map(|f| f.as_raw_fd()).unwrap_or(-1);
+      fh.fd = raw;
+      raw
+    });
+    Ok(Value::number(fd as f64))
   }
+  // Nothing to report on a platform with no descriptors, and nothing
+  // to cache either; `fd` stays -1 and every call answers -1.
   #[cfg(not(unix))]
   {
     Ok(Value::number(-1.0))

@@ -1,0 +1,450 @@
+/**
+ * @module test.style
+ *
+ * Terminal presentation for the test module: colour, symbols, width,
+ * and the padding helpers that keep a report's columns lined up once
+ * escape sequences are in the text.
+ *
+ * Colour and symbols are decided once, when this module loads, from
+ * the environment the process actually has. Nothing else in the test
+ * module asks whether colour is on; it calls `green()` and gets plain
+ * text back when it isn't.
+ *
+ * ### Deciding whether to use colour
+ *
+ * In order, the first of these that applies wins:
+ *
+ * 1. `NO_COLOR` set to anything non-empty turns colour off, per
+ *    <https://no-color.org>.
+ * 2. `FORCE_COLOR` set to anything other than `0` turns it on, which
+ *    is how CI systems that capture output but still render ANSI ask
+ *    for it.
+ * 3. Standard output being a terminal turns it on, and a pipe or a
+ *    file turns it off.
+ *
+ * `set_enabled()` overrides the lot, for a caller that has already
+ * made the decision itself.
+ *
+ * ### Deciding whether to use Unicode
+ *
+ * `ZURI_TEST_ASCII` set to anything non-empty forces the ASCII
+ * symbol set. Otherwise the box-drawing and tick/cross characters are
+ * used everywhere except a Windows console that is not Windows
+ * Terminal, which is the one common environment that still renders
+ * them as mojibake.
+ */
+
+import colors
+import io
+import os
+
+
+var _enabled = false
+var _unicode = true
+
+
+def _detect_color() {
+  var no_color = os.get_env('NO_COLOR')
+  if no_color != nil and no_color != '' {
+    return false
+  }
+
+  var force = os.get_env('FORCE_COLOR')
+  if force != nil and force != '' and force != '0' {
+    return true
+  }
+
+  catch {
+    return io.stdout.is_tty()
+  } as error
+
+  return false
+}
+
+
+def _detect_unicode() {
+  var ascii_only = os.get_env('ZURI_TEST_ASCII')
+  if ascii_only != nil and ascii_only != '' {
+    return false
+  }
+
+  if os.platform != 'windows' {
+    return true
+  }
+
+  # Windows Terminal sets this and renders the full set correctly.
+  # The legacy console host does not, and neither does it set it.
+  return os.get_env('WT_SESSION') != nil
+}
+
+
+_enabled = _detect_color()
+_unicode = _detect_unicode()
+
+
+/**
+ * Whether colour is currently being emitted.
+ *
+ * @returns bool
+ */
+def enabled() {
+  return _enabled
+}
+
+/**
+ * Forces colour on or off, overriding what the environment said.
+ *
+ * @param bool on
+ */
+def set_enabled(on: bool) {
+  _enabled = on
+}
+
+/**
+ * Whether the Unicode symbol set is in use, as opposed to the ASCII
+ * fallbacks.
+ *
+ * @returns bool
+ */
+def unicode() {
+  return _unicode
+}
+
+/**
+ * Forces the Unicode symbol set on or off.
+ *
+ * @param bool on
+ */
+def set_unicode(on: bool) {
+  _unicode = on
+}
+
+
+def _paint(text, code, background) {
+  if !_enabled {
+    return text
+  }
+
+  if background != nil {
+    return colors.text(text, code, background)
+  }
+
+  return colors.text(text, code)
+}
+
+
+/**
+ * Emphasis. Returns `text` unchanged when colour is off.
+ *
+ * @param string text
+ * @returns string
+ */
+def bold(text: string) {
+  return _paint(text, colors.style.bold, nil)
+}
+
+/**
+ * De-emphasis, for detail that should recede: timings, counts, the
+ * suite path above a failure.
+ *
+ * @param string text
+ * @returns string
+ */
+def dim(text: string) {
+  return _paint(text, colors.style.disable, nil)
+}
+
+/**
+ * Reserved for text that has to be found instantly on a busy screen.
+ *
+ * @param string text
+ * @returns string
+ */
+def inverse(text: string) {
+  return _paint(text, colors.style.reverse, nil)
+}
+
+/** Failure. @param string text @returns string */
+def red(text: string) {
+  return _paint(text, colors.text_color.light_red, nil)
+}
+
+/** Success. @param string text @returns string */
+def green(text: string) {
+  return _paint(text, colors.text_color.light_green, nil)
+}
+
+/** Skipped and other deliberate non-results. @param string text @returns string */
+def yellow(text: string) {
+  return _paint(text, colors.text_color.yellow, nil)
+}
+
+/** Structure: suite names, headings. @param string text @returns string */
+def cyan(text: string) {
+  return _paint(text, colors.text_color.light_cyan, nil)
+}
+
+/** Todo entries and other informational notes. @param string text @returns string */
+def blue(text: string) {
+  return _paint(text, colors.text_color.light_blue, nil)
+}
+
+/** Values in a rendered diff or failure message. @param string text @returns string */
+def magenta(text: string) {
+  return _paint(text, colors.text_color.magenta, nil)
+}
+
+/** Punctuation and separators. @param string text @returns string */
+def grey(text: string) {
+  return _paint(text, colors.text_color.dark_grey, nil)
+}
+
+/** Plain foreground, used to lift a key out of dimmed surroundings. @param string text @returns string */
+def white(text: string) {
+  return _paint(text, colors.text_color.white, nil)
+}
+
+
+/**
+ * A filled, inverted label, the way a status banner reads in a CI
+ * log. `kind` is one of `'pass'`, `'fail'`, `'skip'`, `'todo'` or
+ * `'flaky'`; anything else gets the neutral grey background.
+ *
+ * @param string kind
+ * @param string text
+ * @returns string
+ */
+def badge(kind: string, text: string) {
+  var background = colors.background.dark_grey
+
+  using kind {
+    when 'pass' background = colors.background.green
+    when 'fail' background = colors.background.red
+    when 'skip' background = colors.background.yellow
+    when 'todo' background = colors.background.blue
+    when 'flaky' background = colors.background.magenta
+  }
+
+  return _paint(' ${text} ', colors.text_color.black, background)
+}
+
+
+/**
+ * The symbol set in use, keyed by role.
+ *
+ * Every entry is a single display column wide in both sets, so a
+ * layout built on them does not shift when the ASCII fallbacks are
+ * in play. The exception is `arrow`, which is two columns in ASCII.
+ *
+ * @returns dict
+ */
+def symbols() {
+  if _unicode {
+    return {
+      pass: '✓',
+      fail: '✗',
+      skip: '○',
+      todo: '◌',
+      flaky: '⚑',
+      bullet: '•',
+      arrow: '›',
+      pointer: '❯',
+      dash: '─',
+      pipe: '│',
+      corner: '└',
+      tee: '├',
+      ellipsis: '…',
+      plus: '+',
+      minus: '-',
+    }
+  }
+
+  return {
+    pass: 'v',
+    fail: 'x',
+    skip: 'o',
+    todo: '.',
+    flaky: '!',
+    bullet: '*',
+    arrow: '>',
+    pointer: '>',
+    dash: '-',
+    pipe: '|',
+    corner: '\\',
+    tee: '+',
+    ellipsis: '...',
+    plus: '+',
+    minus: '-',
+  }
+}
+
+
+# Matches one ANSI SGR sequence, which is the only kind anything here
+# emits. Kept as a module variable so the pattern is compiled once
+# rather than on every padded cell of a long report.
+var _ANSI = '/\x1b\[[0-9;]*m/'
+
+
+/**
+ * `text` with every ANSI escape sequence removed.
+ *
+ * @param string text
+ * @returns string
+ */
+def strip(text: string) {
+  return text.replace(_ANSI, '')
+}
+
+/**
+ * How many columns `text` occupies once its escape sequences are
+ * discounted. This, not `length()`, is what padding and alignment
+ * have to measure.
+ *
+ * @note counts codepoints, so a wide CJK character or an emoji is
+ *    counted as one column even though a terminal draws it as two.
+ *    Test names are the only user-supplied text this is applied to.
+ * @param string text
+ * @returns int
+ */
+def visible_length(text: string) {
+  return strip(text).length()
+}
+
+/**
+ * Pads `text` on the right to `width` visible columns, leaving it
+ * alone when it is already that wide or wider.
+ *
+ * @param string text
+ * @param int width
+ * @param ?string fill: a single character, `' '` by default.
+ * @returns string
+ */
+def pad_right(text: string, width: int, fill: ?string) {
+  if fill == nil {
+    fill = ' '
+  }
+
+  var short = width - visible_length(text)
+  if short <= 0 {
+    return text
+  }
+
+  return text + (fill * short)
+}
+
+/**
+ * Pads `text` on the left to `width` visible columns, leaving it
+ * alone when it is already that wide or wider.
+ *
+ * @param string text
+ * @param int width
+ * @param ?string fill: a single character, `' '` by default.
+ * @returns string
+ */
+def pad_left(text: string, width: int, fill: ?string) {
+  if fill == nil {
+    fill = ' '
+  }
+
+  var short = width - visible_length(text)
+  if short <= 0 {
+    return text
+  }
+
+  return (fill * short) + text
+}
+
+/**
+ * Shortens `text` to at most `width` visible columns, marking the cut
+ * with an ellipsis. Returns `text` untouched when it already fits.
+ *
+ * @note only safe on text with no escape sequences in it, since it
+ *    cuts by codepoint and would leave a colour sequence unterminated.
+ *    Colour the result, not the input.
+ * @param string text
+ * @param int width
+ * @returns string
+ */
+def truncate(text: string, width: int) {
+  if text.length() <= width {
+    return text
+  }
+
+  var mark = symbols().ellipsis
+  var room = width - mark.length()
+
+  if room <= 0 {
+    return mark
+  }
+
+  return text[0, room] + mark
+}
+
+/**
+ * `count` copies of `character`.
+ *
+ * @param string character
+ * @param int count
+ * @returns string
+ */
+def rule(character: string, count: int) {
+  if count <= 0 {
+    return ''
+  }
+
+  return character * count
+}
+
+/**
+ * Two spaces per level, the indent every nested suite and test line
+ * in the report is built from.
+ *
+ * @param int depth
+ * @returns string
+ */
+def indent(depth: int) {
+  if depth <= 0 {
+    return ''
+  }
+
+  return '  ' * depth
+}
+
+
+/**
+ * The width to lay the report out to.
+ *
+ * Asks the terminal first, falls back to `COLUMNS`, and finally to a
+ * conventional 80. Clamped to 40..120 so neither a one-column pty nor
+ * a maximised ultrawide produces an unreadable layout.
+ *
+ * @returns int
+ */
+def width() {
+  var columns = 80
+
+  catch {
+    var size = io.TTY(io.stdout).get_size()
+    if size.cols > 0 {
+      columns = size.cols
+    }
+  } as error {
+    var raw = os.get_env('COLUMNS')
+    if raw != nil {
+      var parsed = raw.trim().to_number()
+      if parsed > 0 {
+        columns = parsed.int()
+      }
+    }
+  }
+
+  if columns < 40 {
+    return 40
+  }
+
+  if columns > 120 {
+    return 120
+  }
+
+  return columns
+}

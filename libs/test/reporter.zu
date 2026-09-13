@@ -1,0 +1,793 @@
+/**
+ * @module test.reporter
+ *
+ * How a run is shown.
+ *
+ * The runner knows nothing about output. It walks the tree and calls
+ * the methods below as things happen, and a reporter decides what, if
+ * anything, that looks like. Swapping one for another changes the
+ * report and nothing else.
+ *
+ * ### The built-in reporters
+ *
+ * | Name | What it is for |
+ * | --- | --- |
+ * | `spec` | the default: an indented tree, with failures spelled out |
+ * | `dot` | one character per test, for a run too long to read |
+ * | `tap` | TAP version 14, for anything that already speaks TAP |
+ * | `junit` | JUnit XML, which is what most CI systems ingest |
+ * | `json` | one JSON document at the end, for a tool of your own |
+ * | `ndjson` | one JSON object per event, as it happens |
+ * | `silent` | nothing at all |
+ *
+ * `test.run({ reporter: 'dot' })` picks one by name, and
+ * `test.run({ reporter: MyReporter() })` uses your own.
+ *
+ * ### Writing one
+ *
+ * Subclass `Reporter` and override what you care about. Every method
+ * has a do-nothing default, so a reporter that only reacts to
+ * failures is six lines:
+ *
+ * ```zuri
+ * import test.reporter { Reporter }
+ *
+ * class Quiet < Reporter {
+ *   test_finished(test) {
+ *     if test.status == 'failed' {
+ *       echo test.full_name()
+ *     }
+ *   }
+ * }
+ * ```
+ */
+
+import json
+
+import .error { TestSetupError }
+import .format
+import .result
+import .source
+import .style
+
+
+/**
+ * The interface the runner talks to, with every method doing nothing.
+ *
+ * Subclass it and override what you want; there is no need to call
+ * `parent()` from an override, since nothing here does anything.
+ */
+class Reporter {
+
+  /**
+   * Called once, before anything runs.
+   *
+   * @param dict plan: `{ cases, suites, files, options }`, where
+   *    `cases` is how many tests are going to run.
+   */
+  run_started(plan) {}
+
+  /**
+   * Called when a suite is entered, before any of its tests.
+   *
+   * @param Suite suite
+   */
+  suite_started(suite) {}
+
+  /**
+   * Called when a suite is left, after every one of its tests.
+   *
+   * @param Suite suite
+   */
+  suite_finished(suite) {}
+
+  /**
+   * Called before a test's body runs. Not called for a test that is
+   * skipped or is a todo.
+   *
+   * @param Case test
+   */
+  test_started(test) {}
+
+  /**
+   * Called once per test, whatever became of it, including the ones
+   * that never ran.
+   *
+   * @param Case test
+   */
+  test_finished(test) {}
+
+  /**
+   * Called once, after everything.
+   *
+   * @param Summary summary
+   * @param Suite root
+   */
+  run_finished(summary, root) {}
+}
+
+
+def _is_suite(node) {
+  return is_instance(node) and typeof(node) == 'Suite'
+}
+
+
+# An indented blank line is trailing whitespace, which is noise in a
+# terminal and a diff complaint in a golden-output test.
+def _indented(indent, text) {
+  echo text == '' ? '' : indent + text
+}
+
+
+# =========================================================================
+# spec
+# =========================================================================
+
+/**
+ * The default: the suite tree, one line per test, and every failure
+ * written out in full at the end.
+ */
+class Spec < Reporter {
+
+  var _slow = 300
+  var _verbose = false
+  var _shown = []
+
+  /**
+   * @param ?dict options: `slow` is the millisecond threshold past
+   *    which a test's time is highlighted (`300` by default, `0` to
+   *    never highlight). `verbose` prints a passing test's captured
+   *    output as well as a failing one's.
+   */
+  @new(options) {
+    if is_dict(options) {
+      self._slow = options.get('slow', 300)
+      self._verbose = options.get('verbose', false)
+    }
+
+    self._shown = []
+  }
+
+  run_started(plan) {
+    echo ''
+
+    if plan.cases == 0 {
+      echo style.dim('  no tests to run')
+    }
+  }
+
+  # Suite headings are printed when the first test inside actually
+  # reaches the report, not when the suite is entered. A suite whose
+  # tests were all filtered out has nothing to head.
+  _heading(suite) {
+    if suite == nil or suite.name == '' {
+      return
+    }
+
+    for seen in self._shown {
+      if id(seen) == id(suite) {
+        return
+      }
+    }
+
+    self._heading(suite.owner)
+    self._shown.append(suite)
+
+    echo style.indent(suite.depth()) + style.bold(style.cyan(suite.name))
+  }
+
+  test_finished(test) {
+    self._heading(test.owner)
+
+    var indent = style.indent(test.depth())
+    var symbols = style.symbols()
+
+    using test.status {
+      when result.PASSED {
+        echo indent + style.green(symbols.pass) + ' ' + style.dim(test.name) + self._timing(test)
+      }
+      when result.FLAKY {
+        echo indent + style.magenta(symbols.flaky) + ' ' + test.name +
+          style.magenta(' (passed on attempt ${test.attempts})') + self._timing(test)
+      }
+      when result.FAILED {
+        echo indent + style.red(symbols.fail) + ' ' + style.red(test.name) + self._timing(test)
+      }
+      when result.SKIPPED {
+        echo indent + style.yellow(symbols.skip) + ' ' + style.dim(test.name) +
+          style.yellow(test.skip_reason == '' ? ' [skipped]' : ' [${test.skip_reason}]')
+      }
+      when result.TODO {
+        echo indent + style.blue(symbols.todo) + ' ' + style.dim(test.name) + style.blue(' [todo]')
+      }
+    }
+
+    if self._verbose and test.output != '' and test.status != result.FAILED {
+      _echo_output(test.output, test.depth() + 1)
+    }
+  }
+
+  _timing(test) {
+    if test.duration < 1 {
+      return ''
+    }
+
+    var text = ' (${format.duration(test.duration)})'
+
+    return test.is_slow(self._slow) ? style.yellow(text) : style.dim(text)
+  }
+
+  run_finished(summary, root) {
+    if !summary.failures.is_empty() {
+      echo ''
+      echo style.bold(style.red('  Failures'))
+
+      var number = 1
+      for test in summary.failures {
+        _echo_failure(number, test)
+        number++
+      }
+    }
+
+    _echo_summary(summary, self._slow)
+  }
+}
+
+
+def _echo_output(output, depth) {
+  var indent = style.indent(depth)
+
+  echo indent + style.dim('stdout')
+
+  for line in output.lines() {
+    echo indent + style.dim(style.symbols().pipe + ' ') + line
+  }
+}
+
+
+def _echo_failure(number, test) {
+  echo ''
+  echo style.red('  ${number}) ') + style.dim(' > '.join(test.suite_path())) +
+    (test.suite_path().is_empty() ? '' : style.dim(' ${style.symbols().arrow} ')) +
+    style.bold(style.red(test.name))
+
+  for failure in test.failures {
+    echo ''
+    echo '     ' + style.red(failure.message)
+
+    if !failure.details.is_empty() {
+      echo ''
+      for line in failure.details {
+        _indented('     ', line)
+      }
+    }
+
+    var origin = failure.origin()
+    if origin != nil {
+      echo ''
+      echo '     ' + style.dim('at ${origin.to_string()}')
+
+      var frame = source.code_frame(origin, 2)
+      if !frame.is_empty() {
+        echo ''
+        for line in frame {
+          _indented('     ', line)
+        }
+      }
+    }
+  }
+
+  if test.output != '' {
+    echo ''
+    _echo_output(test.output, 2)
+  }
+}
+
+
+def _echo_summary(summary, slow) {
+  var symbols = style.symbols()
+
+  echo ''
+
+  if !summary.slow.is_empty() and slow > 0 {
+    echo style.yellow('  Slow tests') + style.dim(' (over ${format.duration(slow)})')
+
+    var shown = 0
+    for test in summary.slow {
+      if shown >= 5 {
+        echo '    ' + style.dim('${symbols.ellipsis} ${format.plural(summary.slow.length() - shown, "more")}')
+        break
+      }
+
+      echo '    ' + style.yellow(format.duration(test.duration).lpad(8, ' ')) + '  ' + style.dim(test.full_name())
+      shown++
+    }
+
+    echo ''
+  }
+
+  var badges = []
+
+  if summary.failed > 0 {
+    badges.append(style.badge('fail', 'FAIL'))
+  } else if summary.passed > 0 {
+    badges.append(style.badge('pass', 'PASS'))
+  }
+
+  if summary.flaky > 0 {
+    badges.append(style.badge('flaky', 'FLAKY'))
+  }
+
+  if !badges.is_empty() {
+    echo '  ' + '  '.join(badges)
+    echo ''
+  }
+
+  var parts = []
+
+  if summary.failed > 0 {
+    parts.append(style.bold(style.red('${summary.failed} failed')))
+  }
+  if summary.passed > 0 {
+    parts.append(style.bold(style.green('${summary.passed} passed')))
+  }
+  if summary.flaky > 0 {
+    parts.append(style.bold(style.magenta('${summary.flaky} flaky')))
+  }
+  if summary.skipped > 0 {
+    parts.append(style.yellow('${summary.skipped} skipped'))
+  }
+  if summary.todo > 0 {
+    parts.append(style.blue('${summary.todo} todo'))
+  }
+
+  parts.append(style.dim('${summary.total()} total'))
+
+  echo '  ' + style.dim('  ${symbols.bullet}  ').join(parts)
+  echo '  ' + style.dim('suites ') + summary.suites.to_string() +
+    style.dim('   time ') + format.duration(summary.duration)
+
+  if summary.seed != nil {
+    echo '  ' + style.dim('seed ') + summary.seed.to_string() +
+      style.dim('   rerun this order with { seed: ${summary.seed} }')
+  }
+
+  _echo_snapshot_summary(summary.snapshots)
+
+  if summary.bailed {
+    echo ''
+    echo '  ' + style.yellow('stopped early: the bail limit was reached')
+  }
+
+  echo ''
+}
+
+
+def _echo_snapshot_summary(snapshots) {
+  if !is_dict(snapshots) {
+    return
+  }
+
+  var parts = []
+
+  if snapshots.get('written', 0) > 0 {
+    parts.append(style.green('${snapshots.written} written'))
+  }
+  if snapshots.get('updated', 0) > 0 {
+    parts.append(style.yellow('${snapshots.updated} updated'))
+  }
+  if snapshots.get('obsolete', 0) > 0 {
+    parts.append(style.yellow('${snapshots.obsolete} obsolete'))
+  }
+
+  if parts.is_empty() {
+    return
+  }
+
+  echo '  ' + style.dim('snapshots ') + '  '.join(parts) +
+    (snapshots.get('obsolete', 0) > 0 ?
+      style.dim('   remove them with ZURI_UPDATE_SNAPSHOTS=1') : '')
+}
+
+
+# =========================================================================
+# dot
+# =========================================================================
+
+/**
+ * One character per test, wrapped to the terminal, then the same
+ * failure detail and summary the spec reporter gives.
+ *
+ * For a run long enough that a line per test is more scrolling than
+ * information.
+ */
+class Dot < Reporter {
+
+  var _column = 0
+  var _width = 60
+  var _slow = 300
+
+  @new(options) {
+    self._column = 0
+    self._width = style.width() - 4
+    self._slow = is_dict(options) ? options.get('slow', 300) : 300
+  }
+
+  run_started(plan) {
+    echo ''
+  }
+
+  test_finished(test) {
+    if self._column == 0 {
+      print('  ')
+    }
+
+    var symbols = style.symbols()
+
+    using test.status {
+      when result.PASSED print(style.green(symbols.bullet))
+      when result.FLAKY print(style.magenta(symbols.flaky))
+      when result.FAILED print(style.red(symbols.fail))
+      when result.SKIPPED print(style.yellow(symbols.skip))
+      when result.TODO print(style.blue(symbols.todo))
+    }
+
+    self._column++
+
+    if self._column >= self._width {
+      self._column = 0
+      echo ''
+    }
+  }
+
+  run_finished(summary, root) {
+    if self._column != 0 {
+      echo ''
+    }
+
+    if !summary.failures.is_empty() {
+      echo ''
+      echo style.bold(style.red('  Failures'))
+
+      var number = 1
+      for test in summary.failures {
+        _echo_failure(number, test)
+        number++
+      }
+    }
+
+    _echo_summary(summary, self._slow)
+  }
+}
+
+
+# =========================================================================
+# tap
+# =========================================================================
+
+/**
+ * TAP version 14: one `ok`/`not ok` line per test, with failure
+ * detail in a YAML block underneath.
+ *
+ * The output carries no colour, whatever the terminal supports, since
+ * something else is going to parse it.
+ */
+class Tap < Reporter {
+
+  var _number = 0
+
+  @new(options) {
+    self._number = 0
+  }
+
+  run_started(plan) {
+    echo 'TAP version 14'
+    echo '1..${plan.cases}'
+  }
+
+  test_finished(test) {
+    self._number++
+
+    var name = test.full_name().replace('/#/', '\\#')
+
+    if test.status == result.SKIPPED {
+      echo 'ok ${self._number} - ${name} # SKIP ${test.skip_reason}'
+      return
+    }
+
+    if test.status == result.TODO {
+      echo 'ok ${self._number} - ${name} # TODO'
+      return
+    }
+
+    if test.status == result.FAILED {
+      echo 'not ok ${self._number} - ${name}'
+      self._diagnostics(test)
+      return
+    }
+
+    echo 'ok ${self._number} - ${name}' +
+      (test.status == result.FLAKY ? ' # flaky, passed on attempt ${test.attempts}' : '')
+  }
+
+  _diagnostics(test) {
+    echo '  ---'
+
+    for failure in test.failures {
+      echo '  message: ${_yaml(style.strip(failure.message))}'
+      echo '  severity: fail'
+
+      if failure.has_values {
+        echo '  found: ${_yaml(format.inline_plain(failure.received))}'
+        echo '  wanted: ${_yaml(format.inline_plain(failure.expected))}'
+      }
+
+      var origin = failure.origin()
+      if origin != nil {
+        echo '  at:'
+        echo '    file: ${_yaml(source.short_path(origin.file))}'
+        echo '    line: ${origin.line}'
+      }
+    }
+
+    echo '  ...'
+  }
+
+  run_finished(summary, root) {
+    echo '# pass ${summary.passed}'
+    echo '# fail ${summary.failed}'
+    echo '# skip ${summary.skipped}'
+  }
+}
+
+
+def _yaml(text) {
+  return "'" + text.replace("/'/", "''") + "'"
+}
+
+
+# =========================================================================
+# junit
+# =========================================================================
+
+/**
+ * JUnit XML, which is the format nearly every CI system knows how to
+ * turn into a test report page.
+ *
+ * Each `describe` becomes a `<testsuite>` and each test a
+ * `<testcase>`. Written to standard output; redirect it to the file
+ * your CI is configured to collect.
+ */
+class Junit < Reporter {
+
+  @new(options) {}
+
+  run_finished(summary, root) {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo '<testsuites name="zuri" tests="${summary.total()}" failures="${summary.failed}" ' +
+      'skipped="${summary.skipped + summary.todo}" time="${(summary.duration / 1000).fixed(3)}">'
+
+    for suite in root.suites() {
+      var cases = suite.children.filter(@(child) { return !_is_suite(child) })
+
+      if cases.is_empty() {
+        continue
+      }
+
+      self._suite(suite, cases)
+    }
+
+    echo '</testsuites>'
+  }
+
+  _suite(suite, cases) {
+    var failed = cases.filter(@(test) { return test.status == result.FAILED }).length()
+    var skipped = cases.filter(@(test) {
+      return test.status == result.SKIPPED or test.status == result.TODO
+    }).length()
+    var time = 0
+
+    for test in cases {
+      time += test.duration
+    }
+
+    var name = suite.path().is_empty() ? 'root' : ' > '.join(suite.path())
+
+    echo '  <testsuite name="${_xml(name)}" tests="${cases.length()}" ' +
+      'failures="${failed}" skipped="${skipped}" time="${(time / 1000).fixed(3)}">'
+
+    for test in cases {
+      self._case(test, name)
+    }
+
+    echo '  </testsuite>'
+  }
+
+  _case(test, suite_name) {
+    var head = '    <testcase classname="${_xml(suite_name)}" name="${_xml(test.name)}" ' +
+      'time="${(test.duration / 1000).fixed(3)}"'
+
+    if test.status == result.SKIPPED or test.status == result.TODO {
+      echo head + '>'
+      echo '      <skipped/>'
+      echo '    </testcase>'
+      return
+    }
+
+    if test.status != result.FAILED {
+      echo head + '/>'
+      return
+    }
+
+    echo head + '>'
+
+    for failure in test.failures {
+      var origin = failure.origin()
+      var where = origin == nil ? '' : '\n${source.short_path(origin.file)}:${origin.line}'
+
+      echo '      <failure type="${_xml(failure.kind)}" message="${_xml(style.strip(failure.message))}">'
+      echo _xml(style.strip(failure.message) + where)
+      echo '      </failure>'
+    }
+
+    if test.output != '' {
+      echo '      <system-out>${_xml(test.output)}</system-out>'
+    }
+
+    echo '    </testcase>'
+  }
+}
+
+
+def _xml(text) {
+  return text.to_string()
+    .replace('/&/', '&amp;')
+    .replace('/</', '&lt;')
+    .replace('/>/', '&gt;')
+    .replace('/"/', '&quot;')
+}
+
+
+# =========================================================================
+# json / ndjson
+# =========================================================================
+
+def _failure_dict(failure) {
+  var origin = failure.origin()
+
+  return {
+    kind: failure.kind,
+    message: style.strip(failure.message),
+    matcher: failure.matcher,
+    expected: failure.has_values ? format.inline_plain(failure.expected) : nil,
+    received: failure.has_values ? format.inline_plain(failure.received) : nil,
+    file: origin == nil ? nil : source.short_path(origin.file),
+    line: origin == nil ? nil : origin.line,
+    # Only the frames belonging to the code under test: the framework's
+    # own are the same half-dozen lines on every single failure.
+    stacktrace: source.user_frames(failure.stacktrace).map(@(frame) {
+      return frame.to_string()
+    }),
+  }
+}
+
+
+def _case_dict(test) {
+  return {
+    name: test.name,
+    full_name: test.full_name(),
+    suite: test.suite_path(),
+    file: source.short_path(test.file),
+    status: test.status,
+    duration: test.duration,
+    attempts: test.attempts,
+    output: test.output,
+    skip_reason: test.skip_reason,
+    failures: test.failures.map(_failure_dict),
+  }
+}
+
+
+/**
+ * One JSON document at the end, holding the summary and every test.
+ *
+ * For a tool of your own that wants the whole run rather than a
+ * stream of it.
+ */
+class Json < Reporter {
+
+  var _cases = []
+
+  @new(options) {
+    self._cases = []
+  }
+
+  test_finished(test) {
+    self._cases.append(_case_dict(test))
+  }
+
+  run_finished(summary, root) {
+    echo json.encode({
+      summary: summary.to_dict(),
+      tests: self._cases,
+    })
+  }
+}
+
+
+/**
+ * One JSON object per line, emitted as each thing happens.
+ *
+ * This is what a test file writes when it is being run by the
+ * conductor in a process of its own: the parent reads the stream as
+ * it arrives rather than waiting for the child to finish.
+ *
+ * Every line carries the prefix below, so anything else the file
+ * prints can be told apart from the protocol and passed through.
+ */
+class Ndjson < Reporter {
+
+  @new(options) {}
+
+  run_started(plan) {
+    self._emit({ event: 'run_started', cases: plan.cases, suites: plan.suites })
+  }
+
+  test_finished(test) {
+    var payload = _case_dict(test)
+    payload.set('event', 'test_finished')
+
+    self._emit(payload)
+  }
+
+  run_finished(summary, root) {
+    self._emit({ event: 'run_finished', summary: summary.to_dict() })
+  }
+
+  _emit(payload) {
+    echo PREFIX + json.encode(payload)
+  }
+}
+
+
+/**
+ * What marks a line of `ndjson` output as protocol rather than as
+ * something the test file happened to print.
+ */
+var PREFIX = '@@zuri-test@@'
+
+
+/**
+ * No output at all, for a caller reading the returned `Summary`
+ * instead.
+ */
+class Silent < Reporter {
+
+  @new(options) {}
+}
+
+
+/**
+ * Builds a reporter by name.
+ *
+ * @param string name: one of `spec`, `dot`, `tap`, `junit`, `json`,
+ *    `ndjson`, `silent`.
+ * @param ?dict options: passed to the reporter's constructor.
+ * @returns Reporter
+ * @raises TestSetupError when there is no such reporter.
+ */
+def create(name: string, options: ?dict) {
+  using name {
+    when 'spec' return Spec(options)
+    when 'dot' return Dot(options)
+    when 'tap' return Tap(options)
+    when 'junit' return Junit(options)
+    when 'json' return Json(options)
+    when 'ndjson' return Ndjson(options)
+    when 'silent' return Silent(options)
+  }
+
+  raise TestSetupError(
+    "there is no '${name}' reporter; the built-in ones are spec, dot, tap, junit, json, ndjson and silent"
+  )
+}

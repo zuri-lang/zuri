@@ -1,0 +1,102 @@
+/**
+ * @module test.error
+ *
+ * The errors the test module raises, kept in a module of their own so
+ * that the assertion side and the runner side can both name them
+ * without importing each other.
+ *
+ * Only `AssertionError` normally reaches a test author, and only by
+ * being caught for them. Everything else in here marks a mistake in
+ * how the framework itself was used, and is meant to stop the run.
+ */
+
+
+/**
+ * A matcher that did not hold.
+ *
+ * The runner catches these, so a test body never has to. What
+ * separates one from any other error raised inside a test is that the
+ * framework knows how to display it: it carries the two values that
+ * disagreed, and whatever extra lines (a diff, a hint) the matcher
+ * wanted shown underneath.
+ *
+ * ```zuri
+ * import test { AssertionError }
+ *
+ * catch {
+ *   expect(1).to_be(2)
+ * } as error {
+ *   echo error.matcher
+ *   echo error.expected
+ *   echo error.received
+ * }
+ * ```
+ * ```
+ * to_be
+ * 2
+ * 1
+ * ```
+ */
+class AssertionError < Error {
+
+  /** The matcher that failed, e.g. `'to_be'`, `'to_contain'`. */
+  var matcher = ''
+
+  /** What the matcher was told to expect. */
+  var expected = nil
+
+  /** What it was actually given. */
+  var received = nil
+
+  /**
+   * Whether `expected` and `received` are worth showing.
+   *
+   * `false` for a matcher whose failure the message already explains
+   * in full, such as `to_be_nil()`, where printing "expected nil,
+   * received nil" back would say nothing.
+   */
+  var has_values = false
+
+  /**
+   * Pre-rendered lines to print underneath the message: a structural
+   * diff, the calls a mock actually received, a hint about a likely
+   * mistake. Each is one line, already coloured, with no indent of
+   * its own.
+   */
+  var details = []
+
+  /**
+   * @param string message: the one-line summary.
+   * @param ?dict info: any of `matcher`, `expected`, `received`,
+   *    `has_values`, `details`.
+   */
+  @new(message, info) {
+    parent(message)
+    self.type = 'AssertionError'
+
+    if is_dict(info) {
+      self.matcher = info.get('matcher', '')
+      self.expected = info.get('expected', nil)
+      self.received = info.get('received', nil)
+      self.has_values = info.get('has_values', false)
+      self.details = info.get('details', [])
+    }
+  }
+}
+
+
+/**
+ * The framework was asked to do something that does not make sense:
+ * a matcher given the wrong kind of argument, a hook registered
+ * outside any suite, a reporter name that does not exist.
+ *
+ * This is never a test failing. It stops the run, because carrying on
+ * would report results that do not mean what they say.
+ */
+class TestSetupError < Error {
+
+  @new(message) {
+    parent(message)
+    self.type = 'TestSetupError'
+  }
+}

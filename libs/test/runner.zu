@@ -1,0 +1,911 @@
+/**
+ * @module test.runner
+ *
+ * Collecting the tests a file declares, deciding which of them to
+ * run, and running them.
+ *
+ * ### Two phases, not one
+ *
+ * `describe()` and `it()` do not run anything. They build a tree, and
+ * `run()` walks it afterwards. That separation is what makes
+ * `only`, filtering, shuffling, bailing and an up-front test count
+ * possible at all: none of them can be decided while the file is
+ * still being read.
+ *
+ * It is also why a test file ends with `test.run()`. Zuri has no
+ * at-exit hook, so there is no moment the framework could pick for
+ * itself. Having to say when is a small price for `run()` being the
+ * one place every option is passed.
+ *
+ * ### Hook ordering
+ *
+ * `before_all` runs once, immediately before the first test in its
+ * suite that is actually going to run, and not at all for a suite
+ * whose tests were all filtered out. `after_all` runs after the last
+ * one, and only if `before_all` ran. `before_each` runs outermost
+ * first, `after_each` innermost first, and `after_each` runs even
+ * when the test failed.
+ *
+ * ### What cannot be done
+ *
+ * A test cannot be interrupted. Zuri runs synchronously and has no
+ * way to preempt a function that will not return, so a `timeout`
+ * option is checked after the body returns: it catches a test that is
+ * too slow, not one that hangs. A hang needs a process boundary, which
+ * is what the conductor puts around each file; see {test.conduct}.
+ */
+
+import io
+import os
+import zuri { reflect }
+
+import .context
+import .error { TestSetupError }
+import .format
+import .mock
+import .reporter as reporters
+import .result
+import .result { Case, Failure, Suite, Summary }
+import .snapshot
+
+
+var _root = Suite('', nil, '', 'normal')
+var _current = _root
+var _has_only = false
+var _collecting = false
+
+
+/**
+ * The tree as it stands, for a caller that wants to look at what was
+ * declared without running it.
+ *
+ * @returns Suite
+ */
+def root() {
+  return _root
+}
+
+
+/**
+ * Throws away every declaration and every snapshot store, so a second
+ * run in the same process starts from nothing.
+ */
+def reset() {
+  _root = Suite('', nil, '', 'normal')
+  _current = _root
+  _has_only = false
+  snapshot.reset()
+}
+
+
+# Where a test was declared, taken from its own body rather than from
+# a stack trace: a function already knows what file it was compiled
+# from, and asking costs nothing.
+def _file_of(body) {
+  if !is_callable(body) {
+    return _current.file
+  }
+
+  catch {
+    return reflect.function_info(body).source_path
+  } as error
+
+  return _current.file
+}
+
+
+/**
+ * Opens a suite, runs `body` to collect what is inside it, and closes
+ * it again.
+ *
+ * @param string name
+ * @param function body
+ * @param ?string mode: `'normal'`, `'skip'` or `'only'`.
+ * @returns Suite
+ */
+def describe(name: string, body: function, mode: ?string) {
+  if mode == nil {
+    mode = 'normal'
+  }
+
+  if mode == 'only' {
+    _has_only = true
+  }
+
+  var suite = Suite(name, _current, _file_of(body), mode)
+  _current.children.append(suite)
+
+  var outer = _current
+  var was_collecting = _collecting
+
+  _current = suite
+  _collecting = true
+
+  catch {
+    body()
+  } as error {
+    # A suite body that raises has declared nothing past the point it
+    # failed. Recording it as a failure of the suite keeps the run
+    # going and still makes the problem impossible to miss.
+    var failure = Failure('error', 'The body of describe(${format.inline(name)}) raised: ${_message_of(error)}')
+    failure.stacktrace = _stacktrace_of(error)
+    suite.failures.append(failure)
+  }
+
+  _current = outer
+  _collecting = was_collecting
+
+  return suite
+}
+
+
+/**
+ * Declares one test.
+ *
+ * @param string name
+ * @param ?function body: left out, the test is a todo.
+ * @param ?dict options: `retries`, `failing`, `timeout`, `tags`.
+ * @param ?string mode: `'normal'`, `'skip'`, `'only'` or `'todo'`.
+ * @returns Case
+ */
+def it(name: string, body: ?function, options: ?dict, mode: ?string) {
+  if mode == nil {
+    mode = body == nil ? 'todo' : 'normal'
+  }
+
+  if mode == 'only' {
+    _has_only = true
+  }
+
+  var test = Case(name, _current, _file_of(body), mode, body, options)
+  _current.children.append(test)
+
+  return test
+}
+
+
+def _hook(kind, body) {
+  if !is_callable(body) {
+    raise TestSetupError('${kind}() needs a function')
+  }
+
+  using kind {
+    when 'before_all' _current.before_all.append(body)
+    when 'after_all' _current.after_all.append(body)
+    when 'before_each' _current.before_each.append(body)
+    when 'after_each' _current.after_each.append(body)
+  }
+}
+
+
+/** @param function body */
+def before_all(body: function) {
+  _hook('before_all', body)
+}
+
+/** @param function body */
+def after_all(body: function) {
+  _hook('after_all', body)
+}
+
+/** @param function body */
+def before_each(body: function) {
+  _hook('before_each', body)
+}
+
+/** @param function body */
+def after_each(body: function) {
+  _hook('after_each', body)
+}
+
+
+def _message_of(error) {
+  if is_instance(error) and reflect.has_prop(error, 'message') {
+    return error.message
+  }
+
+  return error.to_string()
+}
+
+
+def _stacktrace_of(error) {
+  if is_instance(error) and reflect.has_prop(error, 'stacktrace') and is_list(error.stacktrace) {
+    return error.stacktrace
+  }
+
+  return []
+}
+
+
+# =========================================================================
+# Options
+# =========================================================================
+
+def _defaults() {
+  return {
+    reporter: 'spec',
+    filter: nil,
+    tags: nil,
+    exclude_tags: nil,
+    bail: 0,
+    seed: nil,
+    shuffle: false,
+    slow: 300,
+    timeout: 0,
+    retries: 0,
+    capture: true,
+    verbose: false,
+    update_snapshots: _env_flag('ZURI_UPDATE_SNAPSHOTS'),
+    ci: _env_flag('CI'),
+    exit: false,
+  }
+}
+
+
+def _env_flag(name) {
+  var raw = os.get_env(name)
+
+  return raw != nil and raw != '' and raw != '0' and raw.lower() != 'false'
+}
+
+
+def _resolve(given) {
+  var options = _defaults()
+
+  if is_dict(given) {
+    for key, value in given {
+      if !options.contains(key) {
+        raise TestSetupError(
+          "run() does not know the option '${key}'; the ones it knows are ${', '.join(options.keys().clone().sort())}"
+        )
+      }
+
+      options.set(key, value)
+    }
+  }
+
+  var from_env = os.get_env('ZURI_TEST_FILTER')
+  if options.filter == nil and from_env != nil and from_env != '' {
+    options.set('filter', from_env)
+  }
+
+  var reporter_env = os.get_env('ZURI_TEST_REPORTER')
+  if !is_dict(given) or !given.contains('reporter') {
+    if reporter_env != nil and reporter_env != '' {
+      options.set('reporter', reporter_env)
+    }
+  }
+
+  # The conductor is parsing this process's stdout, so its protocol
+  # wins over whatever the file asked for.
+  if _env_flag('ZURI_TEST_CONDUCTED') {
+    options.set('reporter', 'ndjson')
+  }
+
+  if options.shuffle and options.seed == nil {
+    options.set('seed', (time() * 1000).int() % 1000000)
+  }
+
+  return options
+}
+
+
+# =========================================================================
+# Planning
+# =========================================================================
+
+def _matches_filter(test, pattern) {
+  if pattern == nil or pattern == '' {
+    return true
+  }
+
+  var name = test.full_name()
+
+  if pattern.length() > 1 and pattern.starts_with('/') and pattern.ends_with('/') {
+    return is_dict(name.match(pattern))
+  }
+
+  return name.lower().contains(pattern.lower())
+}
+
+
+def _matches_tags(test, wanted, unwanted) {
+  var tags = test.tags()
+
+  if is_list(unwanted) and unwanted.some(@(tag) { return tags.contains(tag) }) {
+    return false
+  }
+
+  if is_list(wanted) and !wanted.is_empty() {
+    return wanted.some(@(tag) { return tags.contains(tag) })
+  }
+
+  return true
+}
+
+
+def _inherits_skip(node) {
+  var walker = node
+
+  while walker != nil {
+    if walker.mode == 'skip' {
+      return true
+    }
+
+    walker = walker.owner
+  }
+
+  return false
+}
+
+
+def _inherits_only(node) {
+  var walker = node
+
+  while walker != nil {
+    if walker.mode == 'only' {
+      return true
+    }
+
+    walker = walker.owner
+  }
+
+  return false
+}
+
+
+# Decides, once, what happens to every declared test. Doing this up
+# front is what lets the reporter be told how many tests there are
+# before the first one runs.
+def _plan(options) {
+  var decisions = []
+
+  for test in _root.cases() {
+    var reason = ''
+
+    if test.mode == 'todo' or test.body == nil {
+      decisions.append({ test, run: false, status: result.TODO, reason })
+      continue
+    }
+
+    if test.mode == 'skip' or _inherits_skip(test) {
+      decisions.append({ test, run: false, status: result.SKIPPED, reason: 'skipped' })
+      continue
+    }
+
+    if _has_only and !_inherits_only(test) {
+      decisions.append({ test, run: false, status: result.SKIPPED, reason: 'not focused' })
+      continue
+    }
+
+    if !_matches_filter(test, options.filter) {
+      decisions.append({ test, run: false, status: result.SKIPPED, reason: 'filtered out' })
+      continue
+    }
+
+    if !_matches_tags(test, options.tags, options.exclude_tags) {
+      decisions.append({ test, run: false, status: result.SKIPPED, reason: 'tag filtered' })
+      continue
+    }
+
+    decisions.append({ test, run: true, status: nil, reason })
+  }
+
+  return decisions
+}
+
+
+def _decision_for(decisions, test) {
+  for decision in decisions {
+    if id(decision.test) == id(test) {
+      return decision
+    }
+  }
+
+  return nil
+}
+
+
+# A small linear congruential generator, so a shuffled order can be
+# reproduced from its seed. The runtime's own `rand()` cannot be
+# seeded, and an order nobody can reproduce is no use for finding the
+# test that only fails when it runs second.
+class _Random {
+
+  var _state = 1
+
+  @new(seed) {
+    self._state = seed.int() % 2147483647
+
+    if self._state <= 0 {
+      self._state += 2147483646
+    }
+  }
+
+  next(bound) {
+    self._state = (self._state * 16807) % 2147483647
+
+    return self._state % bound
+  }
+}
+
+
+def _shuffle(items, random) {
+  iter var index = items.length() - 1; index > 0; index-- {
+    var other = random.next(index + 1)
+    var held = items[index]
+
+    items[index] = items[other]
+    items[other] = held
+  }
+
+  return items
+}
+
+
+# =========================================================================
+# Execution
+# =========================================================================
+
+class _State {
+
+  var options = {}
+  var reporter = nil
+  var summary = nil
+  var decisions = []
+  var random = nil
+  var stop = false
+
+  @new(options, reporter, summary, decisions, random) {
+    self.options = options
+    self.reporter = reporter
+    self.summary = summary
+    self.decisions = decisions
+    self.random = random
+  }
+}
+
+
+def _now_ms() {
+  return time() * 1000
+}
+
+
+def _capture_start(state) {
+  if !state.options.capture {
+    return -1
+  }
+
+  var depth = io.capture_depth()
+  io.capture_begin()
+
+  return depth
+}
+
+
+def _capture_stop(state, outer_depth) {
+  if outer_depth < 0 {
+    return ''
+  }
+
+  var collected = ''
+
+  # A test body is free to open a capture of its own and never close
+  # it. Unwinding back to the depth we started at is what stops one
+  # careless test from swallowing the rest of the report.
+  while io.capture_depth() > outer_depth {
+    var frame = io.capture_end()
+
+    if frame != nil {
+      collected = frame + collected
+    }
+  }
+
+  return collected
+}
+
+
+def _failure_from(error) {
+  if is_instance(error) and typeof(error) == 'AssertionError' {
+    var failure = Failure('assertion', error.message)
+    failure.matcher = error.matcher
+    failure.expected = error.expected
+    failure.received = error.received
+    failure.has_values = error.has_values
+    failure.details = error.details
+    failure.stacktrace = _stacktrace_of(error)
+
+    return failure
+  }
+
+  var kind = is_instance(error) and typeof(error) == 'TestSetupError' ? 'setup' : 'error'
+  var failure = Failure(kind, _error_headline(error))
+  failure.stacktrace = _stacktrace_of(error)
+
+  return failure
+}
+
+
+def _error_headline(error) {
+  if is_instance(error) and reflect.has_prop(error, 'type') {
+    return '${error.type}: ${_message_of(error)}'
+  }
+
+  return 'Raised: ${format.inline_plain(error)}'
+}
+
+
+# Hooks from every enclosing suite, outermost first. `after_each` runs
+# them in reverse, which is what makes teardown undo setup in the
+# order it was done.
+def _hooks_along(suite, kind) {
+  var outermost_first = []
+  var walker = suite
+
+  # Walking up gives innermost first, so each suite's hooks are
+  # prepended as a block: `before_each` has to run outermost first,
+  # and its caller reverses the whole chain for `after_each`.
+  while walker != nil {
+    var own = walker.hooks_for(kind)
+
+    iter var index = own.length() - 1; index >= 0; index-- {
+      outermost_first.insert(own[index], 0)
+    }
+
+    walker = walker.owner
+  }
+
+  if kind == 'after_each' {
+    return outermost_first.reverse()
+  }
+
+  return outermost_first
+}
+
+
+def _run_hooks(chain, label) {
+  for hook in chain {
+    catch {
+      hook()
+    } as error {
+      var failure = _failure_from(error)
+      failure.kind = 'hook'
+      failure.message = '${label} hook failed: ${failure.message}'
+
+      return failure
+    }
+  }
+
+  return nil
+}
+
+
+def _attempt(state, test) {
+  var frame = context.begin(test.name, test.suite_path(), test.file)
+  var outer = _capture_start(state)
+  var started = _now_ms()
+
+  catch {
+    test.body()
+  } as error
+
+  # Microsecond precision is the most a report can use, and a raw
+  # float here would put fifteen meaningless digits into the JSON.
+  var elapsed = ((_now_ms() - started) * 1000).round() / 1000
+  var output = _capture_stop(state, outer)
+  var finished = context.end()
+
+  var failure = nil
+
+  if error {
+    failure = _failure_from(error)
+  } else {
+    var broken_promise = context.check(finished)
+
+    if broken_promise != nil {
+      failure = Failure('assertions', broken_promise)
+    }
+  }
+
+  return { failure, elapsed, output, assertions: finished.assertions }
+}
+
+
+def _run_case(state, test, suite) {
+  var decision = _decision_for(state.decisions, test)
+
+  if decision == nil or !decision.run {
+    test.status = decision == nil ? result.SKIPPED : decision.status
+    test.skip_reason = decision == nil ? '' : decision.reason
+
+    if test.status == result.TODO {
+      state.summary.todo++
+    } else {
+      state.summary.skipped++
+    }
+
+    state.reporter.test_finished(test)
+
+    return
+  }
+
+  state.reporter.test_started(test)
+
+  var retries = test.options.get('retries', state.options.retries)
+  var expects_failure = test.options.get('failing', false) == true
+  var budget = test.options.get('timeout', state.options.timeout)
+
+  var before = _run_hooks(_hooks_along(suite, 'before_each'), 'before_each')
+
+  if before != nil {
+    _run_hooks(_hooks_along(suite, 'after_each'), 'after_each')
+    mock.restore_all()
+    _finish_failed(state, test, [before])
+
+    return
+  }
+
+  var outcome = nil
+  var attempt = 0
+
+  while attempt <= retries {
+    attempt++
+    outcome = _attempt(state, test)
+
+    if expects_failure ? outcome.failure != nil : outcome.failure == nil {
+      break
+    }
+  }
+
+  test.attempts = attempt
+  test.duration = outcome.elapsed
+  test.output = outcome.output
+
+  var failures = []
+
+  if expects_failure {
+    if outcome.failure == nil {
+      failures.append(Failure(
+        'assertion',
+        'Expected this test to fail, because it is marked failing, but it passed'
+      ))
+    }
+  } else if outcome.failure != nil {
+    failures.append(outcome.failure)
+  }
+
+  if failures.is_empty() and budget > 0 and outcome.elapsed > budget {
+    failures.append(Failure(
+      'timeout',
+      'Took ${format.duration(outcome.elapsed)}, over its ${format.duration(budget)} budget'
+    ))
+  }
+
+  var after = _run_hooks(_hooks_along(suite, 'after_each'), 'after_each')
+  if after != nil {
+    failures.append(after)
+  }
+
+  mock.restore_all()
+
+  if !failures.is_empty() {
+    _finish_failed(state, test, failures)
+    return
+  }
+
+  test.status = attempt > 1 ? result.FLAKY : result.PASSED
+
+  if test.status == result.FLAKY {
+    state.summary.flaky++
+  }
+
+  state.summary.passed++
+
+  if test.is_slow(state.options.slow) {
+    state.summary.slow.append(test)
+  }
+
+  state.reporter.test_finished(test)
+}
+
+
+def _finish_failed(state, test, failures) {
+  test.status = result.FAILED
+  test.failures = failures
+
+  state.summary.failed++
+  state.summary.failures.append(test)
+
+  state.reporter.test_finished(test)
+
+  if state.options.bail > 0 and state.summary.failed >= state.options.bail {
+    state.stop = true
+    state.summary.bailed = true
+  }
+}
+
+
+def _will_run(state, suite) {
+  for test in suite.cases() {
+    var decision = _decision_for(state.decisions, test)
+
+    if decision != nil and decision.run {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+def _run_suite(state, suite) {
+  state.reporter.suite_started(suite)
+
+  # `before_all` runs only if something in here is actually going to
+  # run, and `after_all` only if `before_all` did. A suite everything
+  # was filtered out of should not be connecting to a database.
+  var runs = _will_run(state, suite)
+
+  if runs {
+    var failure = _run_hooks(suite.before_all, 'before_all')
+
+    if failure != nil {
+      _fail_whole_suite(state, suite, failure)
+      state.reporter.suite_finished(suite)
+
+      return
+    }
+  }
+
+  var children = suite.children
+
+  if state.random != nil {
+    children = _shuffle(children.clone(), state.random)
+  }
+
+  for child in children {
+    if state.stop {
+      break
+    }
+
+    if is_instance(child) and typeof(child) == 'Suite' {
+      _run_suite(state, child)
+    } else {
+      _run_case(state, child, suite)
+    }
+  }
+
+  if runs {
+    var failure = _run_hooks(suite.after_all, 'after_all')
+
+    if failure != nil {
+      suite.failures.append(failure)
+      _record_suite_failure(state, suite, failure)
+    }
+  }
+
+  if runs and suite.name != '' {
+    state.summary.suites++
+  }
+
+  state.reporter.suite_finished(suite)
+}
+
+
+# A `before_all` that failed took every test in the suite with it:
+# none of them can be trusted to have had the setup they needed.
+def _fail_whole_suite(state, suite, failure) {
+  for test in suite.cases() {
+    var decision = _decision_for(state.decisions, test)
+
+    if decision == nil or !decision.run {
+      continue
+    }
+
+    test.status = result.FAILED
+    test.failures = [failure]
+
+    state.summary.failed++
+    state.summary.failures.append(test)
+    state.reporter.test_finished(test)
+  }
+}
+
+
+# A failure that belongs to a suite rather than to any one test still
+# has to reach the report, and a report is a list of tests. A
+# placeholder carrying the suite's name is the honest way to show it.
+def _record_suite_failure(state, suite, failure) {
+  var placeholder = Case(
+    suite.name == '' ? '<root>' : suite.name,
+    suite.owner,
+    suite.file,
+    'normal',
+    nil,
+    {}
+  )
+
+  placeholder.status = result.FAILED
+  placeholder.failures = [failure]
+
+  state.summary.failed++
+  state.summary.failures.append(placeholder)
+}
+
+
+def _collect_declaration_failures(state) {
+  for suite in _root.suites() {
+    for failure in suite.failures {
+      _record_suite_failure(state, suite, failure)
+    }
+  }
+}
+
+
+/**
+ * Runs everything declared so far and reports it.
+ *
+ * ```zuri
+ * import test { describe, it, expect }
+ *
+ * describe('parser', @{
+ *   it('reads an empty document', @{
+ *     expect(parse('')).to_equal({})
+ *   })
+ * })
+ *
+ * test.run()
+ * ```
+ *
+ * @param ?dict options: see {test} for every option and its default.
+ * @returns Summary
+ */
+def run(options: ?dict) {
+  var resolved = _resolve(options)
+
+  snapshot.set_updating(resolved.update_snapshots)
+  snapshot.set_strict(resolved.ci)
+
+  var reporter = is_instance(resolved.reporter) ?
+    resolved.reporter :
+    reporters.create(resolved.reporter, resolved)
+
+  var decisions = _plan(resolved)
+  var summary = Summary()
+  summary.seed = resolved.shuffle ? resolved.seed : nil
+
+  var random = resolved.shuffle ? _Random(resolved.seed) : nil
+  var state = _State(resolved, reporter, summary, decisions, random)
+
+  var files = []
+  for test in _root.cases() {
+    if !files.contains(test.file) {
+      files.append(test.file)
+    }
+  }
+
+  reporter.run_started({
+    cases: decisions.filter(@(decision) { return decision.run }).length(),
+    suites: _root.suites().length() - 1,
+    files: files.length(),
+    options: resolved,
+  })
+
+  var started = _now_ms()
+
+  _collect_declaration_failures(state)
+  _run_suite(state, _root)
+
+  summary.duration = ((_now_ms() - started) * 1000).round() / 1000
+
+  snapshot.flush(nil)
+  summary.snapshots = snapshot.summary()
+
+  reporter.run_finished(summary, _root)
+
+  if resolved.exit {
+    os.exit(summary.exit_code())
+  }
+
+  return summary
+}

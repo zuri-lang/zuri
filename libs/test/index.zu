@@ -1,0 +1,572 @@
+/**
+ * @module test
+ *
+ * A testing framework: suites, assertions, mocks, snapshots,
+ * lifecycle hooks, and reports worth reading.
+ *
+ * ```zuri
+ * import test { describe, it, expect }
+ *
+ * describe('Calculator', @{
+ *
+ *   it('adds', @{
+ *     expect(2 + 2).to_be(4)
+ *   })
+ *
+ *   it('divides', @{
+ *     expect(10 / 4).to_be_close_to(2.5)
+ *   })
+ *
+ * })
+ *
+ * test.run()
+ * ```
+ *
+ * Run it like any other script:
+ *
+ * ```console
+ * $ zuri tests/calculator.zu
+ *
+ * Calculator
+ *   ✓ adds
+ *   ✓ divides
+ *
+ *   PASS
+ *
+ *   2 passed  •  2 total
+ *   suites 1   time 1ms
+ * ```
+ *
+ * ## Declaring
+ *
+ * `describe(name, body)` groups tests and may be nested as deeply as
+ * the subject calls for. `it(name, body)` declares one. Neither runs
+ * anything: they build a tree that `run()` walks afterwards, which is
+ * what makes focusing, filtering and counting possible at all.
+ *
+ * Every test file therefore ends with `test.run()`. Zuri has no
+ * at-exit hook, so there is no moment the framework could pick for
+ * itself, and having to say when is what makes `run()` the single
+ * place every option is passed.
+ *
+ * ### Focusing and skipping
+ *
+ * ```zuri
+ * describe_only('the one I am working on', @{ ... })
+ * describe_skip('not now', @{ ... })
+ *
+ * it_only('just this', @{ ... })
+ * it_skip('known broken', @{ ... })
+ * it_todo('handle an empty payload')
+ * ```
+ *
+ * As soon as anything is marked `only`, everything not marked `only`
+ * and not inside something marked `only` is skipped. `skip` always
+ * wins over `only`.
+ *
+ * `it('name')` with no body is a todo as well: it is reported as one
+ * and counts towards nothing.
+ *
+ * ### Table-driven tests
+ *
+ * ```zuri
+ * it_each([
+ *   [1, 1, 2],
+ *   [2, 3, 5],
+ *   [10, -4, 6],
+ * ], 'adds $0 and $1 to make $2', @(left, right, total) {
+ *   expect(left + right).to_be(total)
+ * })
+ * ```
+ *
+ * Each row becomes one test. `$0`, `$1` and so on in the name are
+ * replaced with that row's values, and `$#` with the row number.
+ * `describe_each()` does the same for whole suites.
+ *
+ * ### Per-test options
+ *
+ * ```zuri
+ * it('reaches the network', @{ ... }, { retries: 2, tags: ['slow'] })
+ * it('reproduces issue 412', @{ ... }, { failing: true })
+ * it('stays fast', @{ ... }, { timeout: 50 })
+ * ```
+ *
+ * | Option | What it does |
+ * | --- | --- |
+ * | `retries` | run the body again on failure, up to this many times; passing after a retry is reported as flaky |
+ * | `failing` | the test passes when the body fails, and fails when it passes |
+ * | `timeout` | fail the test if it took longer than this many milliseconds |
+ * | `tags` | a list of labels to filter on |
+ *
+ * ## Hooks
+ *
+ * ```zuri
+ * describe('Database', @{
+ *   before_all(@{ db.connect() })
+ *   after_all(@{ db.close() })
+ *
+ *   before_each(@{ db.begin() })
+ *   after_each(@{ db.rollback() })
+ *
+ *   it('inserts a row', @{ ... })
+ * })
+ * ```
+ *
+ * `before_all` runs once, immediately before the first test in its
+ * suite that is actually going to run, and not at all for a suite
+ * everything was filtered out of. `after_all` runs after the last one.
+ * `before_each` runs outermost first and `after_each` innermost
+ * first, and `after_each` runs even when the test failed.
+ *
+ * ## Asserting
+ *
+ * `expect(value)` gives an object carrying every matcher, each of
+ * which negates through `.not` and returns itself so several read as
+ * one:
+ *
+ * ```zuri
+ * expect(port).to_be_int().to_be_between(1024, 65535)
+ * expect(items).not.to_be_empty()
+ * ```
+ *
+ * The full list is in {test.expect}. In short:
+ *
+ * - **equality**: `to_be`, `to_equal`, `to_be_same_as`,
+ *   `to_be_close_to`, `to_be_within`, `to_match_object`
+ * - **truthiness**: `to_be_true`, `to_be_false`, `to_be_truthy`,
+ *   `to_be_falsy`, `to_be_nil`, `to_be_defined`
+ * - **types**: `to_be_a`, `to_be_string`, `to_be_number`, `to_be_int`,
+ *   `to_be_float`, `to_be_bigint`, `to_be_bool`, `to_be_list`,
+ *   `to_be_dict`, `to_be_bytes`, `to_be_function`, `to_be_callable`,
+ *   `to_be_iterable`, `to_be_class`, `to_be_instance`,
+ *   `to_be_instance_of`
+ * - **numbers**: `to_be_greater_than`, `to_be_greater_than_or_equal`,
+ *   `to_be_less_than`, `to_be_less_than_or_equal`, `to_be_between`,
+ *   `to_be_positive`, `to_be_negative`, `to_be_zero`,
+ *   `to_be_divisible_by`, `to_be_even`, `to_be_odd`, `to_be_nan`,
+ *   `to_be_finite`, `to_be_infinite`
+ * - **text**: `to_contain`, `to_contain_ignoring_case`,
+ *   `to_equal_ignoring_case`, `to_start_with`, `to_end_with`,
+ *   `to_match`, `to_be_blank`
+ * - **collections**: `to_have_length`, `to_be_empty`,
+ *   `to_contain_equal`, `to_contain_all`, `to_contain_any`,
+ *   `to_contain_none`, `to_contain_exactly`, `to_have_key`,
+ *   `to_have_keys`, `to_have_value`, `to_have_property`,
+ *   `to_be_sorted`, `to_have_unique_items`
+ * - **errors**: `to_raise`, `to_raise_instance_of`,
+ *   `to_raise_with_message`, `to_not_raise`
+ * - **mocks**: `to_have_been_called`, `to_have_been_called_times`,
+ *   `to_have_been_called_with`, `to_have_been_last_called_with`,
+ *   `to_have_been_nth_called_with`, `to_have_returned`,
+ *   `to_have_returned_with`, `to_have_raised`
+ * - **output**: `to_print`, `to_print_exactly`, `to_print_nothing`
+ * - **snapshots**: `to_match_snapshot`
+ * - **anything else**: `to_satisfy`
+ *
+ * `fail(message)` fails outright, for the branch that should never be
+ * reached. `assertions(n)` and `has_assertions()` fail a test that
+ * did not assert what it said it would, which is how a test proves
+ * that the callback it put its assertions in actually ran.
+ *
+ * ## Mocking
+ *
+ * ```zuri
+ * var send = mock()
+ * notify(send.fn)
+ *
+ * expect(send).to_have_been_called_times(1)
+ * expect(send).to_have_been_called_with('hello')
+ * ```
+ *
+ * `spy_on(object, 'key')` replaces a function in place and restores
+ * it after the test, whether the test passed or not. See {test.mock}
+ * for what can and cannot be spied on.
+ *
+ * ## Snapshots
+ *
+ * ```zuri
+ * expect(render(invoice)).to_match_snapshot()
+ * ```
+ *
+ * The first run records the value beside the test file and passes;
+ * later runs compare against it. See {test.snapshot} for the file
+ * format, how to update them, and why a brand new snapshot fails on
+ * CI.
+ *
+ * ## Running
+ *
+ * `run()` takes an options dictionary:
+ *
+ * | Option | Default | What it does |
+ * | --- | --- | --- |
+ * | `reporter` | `'spec'` | `spec`, `dot`, `tap`, `junit`, `json`, `ndjson`, `silent`, or a `Reporter` of your own |
+ * | `filter` | `nil` | run only tests whose full name contains this, or matches it when it is a regular expression |
+ * | `tags` | `nil` | run only tests carrying one of these tags |
+ * | `exclude_tags` | `nil` | skip tests carrying one of these tags |
+ * | `bail` | `0` | stop after this many failures; `0` never stops |
+ * | `shuffle` | `false` | run in a random order, to catch tests that depend on each other |
+ * | `seed` | `nil` | the seed to shuffle with; one is chosen and reported when not given |
+ * | `slow` | `300` | milliseconds past which a test's time is highlighted |
+ * | `timeout` | `0` | a budget applied to every test; `0` means none |
+ * | `retries` | `0` | retries applied to every test |
+ * | `capture` | `true` | collect each test's output and show it only when it fails |
+ * | `verbose` | `false` | show a passing test's output as well |
+ * | `update_snapshots` | `ZURI_UPDATE_SNAPSHOTS` | rewrite snapshots instead of checking them |
+ * | `ci` | `CI` | treat a brand new snapshot as a failure |
+ * | `exit` | `false` | exit the process with the run's status when it finishes |
+ *
+ * `filter` and `reporter` can also come from `ZURI_TEST_FILTER` and
+ * `ZURI_TEST_REPORTER`, which is what lets one command be pointed at
+ * one test without editing the file.
+ *
+ * `run()` returns a `Summary`; `summary.exit_code()` is `0` when
+ * everything passed. A test file meant for CI ends:
+ *
+ * ```zuri
+ * test.run({ exit: true })
+ * ```
+ *
+ * ## More than one file
+ *
+ * `conduct(directory)` finds every test file under a directory, runs
+ * each in a process of its own, and reports them together. A file
+ * that hangs or crashes takes nothing else down with it. See
+ * {test.conduct}.
+ *
+ * ```zuri
+ * import test
+ *
+ * test.conduct('tests')
+ * ```
+ *
+ * @copyright 2021, Richard Ore and Zuri contributors
+ */
+
+import .runner
+
+import @.error { AssertionError, TestSetupError }
+import @.expect { Expect, expect, fail, assertions, has_assertions, capture_output }
+import @.mock { Mock, mock, spy_on }
+import @.reporter { Reporter }
+import @.result { Case, Suite, Summary, Failure }
+
+import .conduct as _conduct
+import .format
+import .mock as _mock
+import .snapshot as _snapshot
+import .style as _style
+
+
+/**
+ * Groups tests, and may be nested.
+ *
+ * ```zuri
+ * describe('Stack', @{
+ *   describe('push()', @{
+ *     it('grows the stack', @{ ... })
+ *   })
+ * })
+ * ```
+ *
+ * @param string name
+ * @param function body
+ * @returns Suite
+ */
+def describe(name: string, body: function) {
+  return runner.describe(name, body, 'normal')
+}
+
+/**
+ * Runs only this suite, and anything else marked `only`.
+ *
+ * @param string name
+ * @param function body
+ * @returns Suite
+ */
+def describe_only(name: string, body: function) {
+  return runner.describe(name, body, 'only')
+}
+
+/**
+ * Skips this suite. Its tests are still declared, still counted, and
+ * still listed; they simply do not run.
+ *
+ * @param string name
+ * @param function body
+ * @returns Suite
+ */
+def describe_skip(name: string, body: function) {
+  return runner.describe(name, body, 'skip')
+}
+
+
+/**
+ * Declares one test.
+ *
+ * ```zuri
+ * it('returns the total', @{
+ *   expect(total(cart)).to_be(42)
+ * })
+ * ```
+ *
+ * @param string name
+ * @param ?function body: left out, this is a todo.
+ * @param ?dict options: `retries`, `failing`, `timeout`, `tags`. See
+ *    the module documentation for what each does.
+ * @returns Case
+ */
+def it(name: string, body: ?function, options: ?dict) {
+  return runner.it(name, body, options, nil)
+}
+
+/**
+ * Runs only this test, and anything else marked `only`.
+ *
+ * @param string name
+ * @param function body
+ * @param ?dict options
+ * @returns Case
+ */
+def it_only(name: string, body: function, options: ?dict) {
+  return runner.it(name, body, options, 'only')
+}
+
+/**
+ * Skips this test, while still listing it in the report.
+ *
+ * @param string name
+ * @param ?function body
+ * @param ?dict options
+ * @returns Case
+ */
+def it_skip(name: string, body: ?function, options: ?dict) {
+  return runner.it(name, body, options, 'skip')
+}
+
+/**
+ * Notes a test that has not been written yet.
+ *
+ * It is listed in the report and counts towards nothing, which is the
+ * point: a todo is a reminder that survives being committed.
+ *
+ * @param string name
+ * @returns Case
+ */
+def it_todo(name: string) {
+  return runner.it(name, nil, nil, 'todo')
+}
+
+
+# `$0`, `$1`, ... stand for the row's values and `$#` for its number.
+# Substituting longest-first keeps `$10` from being read as `$1`
+# followed by a `0`.
+def _fill(template, row, number) {
+  var filled = template.replace('/\\$#/', number.to_string())
+
+  iter var index = row.length() - 1; index >= 0; index-- {
+    filled = filled.replace(
+      '/\\$${index}/',
+      _style.strip(format.inline_plain(row[index]))
+    )
+  }
+
+  return filled
+}
+
+
+def _rows_of(table) {
+  return table.map(@(row) { return is_list(row) ? row : [row] })
+}
+
+
+/**
+ * Declares one test per row of a table.
+ *
+ * ```zuri
+ * it_each([
+ *   ['', 0],
+ *   ['a', 1],
+ *   ['hello', 5],
+ * ], 'says $0 is $1 characters long', @(text, length) {
+ *   expect(text.length()).to_be(length)
+ * })
+ * ```
+ *
+ * Each row is spread across `body`'s parameters, so a three-column
+ * table calls a three-parameter function. A row that is not a list
+ * counts as a single-column row.
+ *
+ * @param list table: the rows.
+ * @param string name: `$0`, `$1`, ... are replaced with that row's
+ *    values, and `$#` with the row number, counting from one.
+ * @param function body
+ * @param ?dict options: applied to every test the table declares.
+ * @returns list: the declared tests.
+ */
+def it_each(table: list, name: string, body: function, options: ?dict) {
+  var declared = []
+  var number = 1
+
+  for row in _rows_of(table) {
+    var values = row
+
+    declared.append(runner.it(
+      _fill(name, values, number),
+      @{ return body.apply(values) },
+      options,
+      nil
+    ))
+
+    number++
+  }
+
+  return declared
+}
+
+
+/**
+ * Declares one suite per row of a table.
+ *
+ * The row is spread across `body`'s parameters exactly as
+ * `it_each()` does, so the whole suite is written once against
+ * whatever the row holds.
+ *
+ * ```zuri
+ * describe_each([
+ *   ['json', json_codec],
+ *   ['yaml', yaml_codec],
+ * ], '$0 codec', @(name, codec) {
+ *   it('round-trips a dictionary', @{
+ *     expect(codec.decode(codec.encode({ a: 1 }))).to_equal({ a: 1 })
+ *   })
+ * })
+ * ```
+ *
+ * @param list table
+ * @param string name
+ * @param function body
+ * @returns list: the declared suites.
+ */
+def describe_each(table: list, name: string, body: function) {
+  var declared = []
+  var number = 1
+
+  for row in _rows_of(table) {
+    var values = row
+
+    declared.append(runner.describe(
+      _fill(name, values, number),
+      @{ return body.apply(values) },
+      'normal'
+    ))
+
+    number++
+  }
+
+  return declared
+}
+
+
+/**
+ * Runs once before the first test in the enclosing suite that is
+ * going to run.
+ *
+ * @param function body
+ */
+def before_all(body: function) {
+  runner.before_all(body)
+}
+
+/**
+ * Runs once after the last test in the enclosing suite, and only if
+ * `before_all` ran.
+ *
+ * @param function body
+ */
+def after_all(body: function) {
+  runner.after_all(body)
+}
+
+/**
+ * Runs before every test in the enclosing suite and everything nested
+ * inside it, outermost suite first.
+ *
+ * @param function body
+ */
+def before_each(body: function) {
+  runner.before_each(body)
+}
+
+/**
+ * Runs after every test in the enclosing suite and everything nested
+ * inside it, innermost suite first, whether the test passed or not.
+ *
+ * @param function body
+ */
+def after_each(body: function) {
+  runner.after_each(body)
+}
+
+
+/**
+ * Runs everything declared so far.
+ *
+ * ```zuri
+ * test.run()
+ * test.run({ reporter: 'dot', bail: 1 })
+ * test.run({ exit: true })
+ * ```
+ *
+ * @param ?dict options: see the module documentation for every option
+ *    and its default.
+ * @returns Summary
+ */
+def run(options: ?dict) {
+  return runner.run(options)
+}
+
+
+/**
+ * Discovers test files under `directory` and runs each in a process
+ * of its own.
+ *
+ * @param ?string directory: `'tests'` by default.
+ * @param ?dict options: see {test.conduct}.
+ * @returns dict: the combined result.
+ */
+def conduct(directory: ?string, options: ?dict) {
+  return _conduct.conduct(directory, options)
+}
+
+
+/**
+ * The tests declared so far, as a tree, without running any of them.
+ *
+ * @returns Suite
+ */
+def declared() {
+  return runner.root()
+}
+
+
+/**
+ * Forgets every declaration and every loaded snapshot file.
+ *
+ * For a process that runs more than one suite, and for the tests of
+ * this framework itself.
+ */
+def reset() {
+  runner.reset()
+  _mock.restore_all()
+}
+
+
+/**
+ * Forces colour in the report on or off, overriding what the
+ * environment said.
+ *
+ * @param bool on
+ */
+def use_color(on: bool) {
+  _style.set_enabled(on)
+}

@@ -1,0 +1,630 @@
+/**
+ * @module test.format
+ *
+ * Turning any Zuri value into text a person can read in a failure
+ * message.
+ *
+ * Two shapes are produced. `inline()` gives one line, abbreviated to
+ * fit in a sentence: this is what `Expected 3 but received 4` is
+ * built from. `block()` gives a list of lines, indented, with nothing
+ * abbreviated away: this is what a diff and a snapshot are built
+ * from.
+ *
+ * Both are safe on values that contain themselves. A list or a
+ * dictionary already being rendered further up the same call is
+ * printed as `[Circular]` rather than followed round again.
+ *
+ * ### Limits
+ *
+ * `inline()` shows at most 8 entries of a list or dictionary, nests
+ * at most 3 levels deep, and shortens a string past 60 characters.
+ * Anything cut off is marked, never silently dropped. Pass an options
+ * dictionary to change any of them:
+ *
+ * ```zuri
+ * import test.format
+ *
+ * echo format.inline(big_list, { max_items: 40, max_depth: 6 })
+ * ```
+ *
+ * `block()` has no item or depth limit at all, because the reader
+ * asked for the whole thing.
+ */
+
+import zuri { reflect }
+
+import .style
+
+
+# What `inline()` uses when the caller says nothing.
+var DEFAULT_MAX_ITEMS = 8
+var DEFAULT_MAX_DEPTH = 3
+var DEFAULT_MAX_STRING = 60
+
+
+/**
+ * The name of `value`'s type: `'nil'`, `'bool'`, `'int'`, `'float'`,
+ * `'bigint'`, `'string'`, `'bytes'`, `'list'`, `'dict'`, `'range'`,
+ * `'function'`, `'class'`, `'instance'`, `'module'` or `'file'`.
+ *
+ * Every instance is an `'instance'`, whatever it was built from. Use
+ * `type_label()` for the form that names the class.
+ *
+ * @param any value
+ * @returns string
+ */
+def type_name(value) {
+  # The one distinction the runtime does not draw for itself: both
+  # report a number as `'number'`, and a matcher that says "expected
+  # an int, received a float" is saying something worth hearing.
+  if is_number(value) {
+    return is_int(value) ? 'int' : 'float'
+  }
+
+  var named = typeof(value)
+  var kind = reflect.kind(value)
+
+  # They agree everywhere except an instance, where `typeof` answers
+  # with the class name. That belongs to `type_label()`; the type here
+  # is `'instance'`.
+  return named != kind ? kind : named
+}
+
+
+/**
+ * How to name `value`'s type in a sentence a person reads.
+ *
+ * The same as `type_name()`, except that an instance is called by its
+ * class: "expected a Point, received a Vector" beats hearing that
+ * both of them are instances.
+ *
+ * @param any value
+ * @returns string
+ */
+def type_label(value) {
+  if is_instance(value) {
+    return typeof(value)
+  }
+
+  return type_name(value)
+}
+
+
+/**
+ * `word` with the article that belongs in front of it.
+ *
+ * Worth the three lines: "expected a int" is the kind of wording that
+ * makes a tool feel unfinished.
+ *
+ * @param string word
+ * @returns string
+ */
+def with_article(word: string) {
+  if word == '' {
+    return word
+  }
+
+  return 'aeiou'.contains(word[0, 1].lower()) ? 'an ${word}' : 'a ${word}'
+}
+
+
+/**
+ * The names of an instance's own properties, in declaration order.
+ *
+ * The single place in the test module that knows how to look inside
+ * an instance, so equality, diffing and rendering never disagree
+ * about what an object's contents are.
+ *
+ * @param instance value
+ * @returns list
+ */
+def properties_of(value) {
+  if !is_instance(value) {
+    return []
+  }
+
+  return reflect.get_props(value)
+}
+
+/**
+ * Reads one of an instance's own properties by name.
+ *
+ * @param instance value
+ * @param string name
+ * @returns any: `nil` when there is no such property.
+ */
+def property_of(value, name: string) {
+  if !is_instance(value) or !reflect.has_prop(value, name) {
+    return nil
+  }
+
+  return reflect.get_prop(value, name)
+}
+
+
+/**
+ * The name of the class `value` was built from, or `nil` when it is
+ * not an instance.
+ *
+ * @param any value
+ * @returns string
+ */
+def class_name(value) {
+  if is_instance(value) {
+    return typeof(value)
+  }
+
+  if is_class(value) {
+    return reflect.class_info(value).name
+  }
+
+  return nil
+}
+
+
+def _options(given) {
+  var options = {
+    color: true,
+    max_items: DEFAULT_MAX_ITEMS,
+    max_depth: DEFAULT_MAX_DEPTH,
+    max_string: DEFAULT_MAX_STRING,
+    sort_keys: false,
+  }
+
+  if is_dict(given) {
+    for key, value in given {
+      options.set(key, value)
+    }
+  }
+
+  return options
+}
+
+
+# Colour, but only when this particular render asked for it. A
+# reporter writing JSON or TAP needs the same text with no escape
+# sequences in it, whatever the terminal supports.
+def _paint(options, painter, text) {
+  if !options.color {
+    return text
+  }
+
+  return painter(text)
+}
+
+
+# `seen` holds the actual container values currently being rendered,
+# not their identities, so it stays a real reference the collector
+# updates when it relocates something. Identity is recomputed here, at
+# the moment of the comparison, for the same reason.
+def _is_cyclic(seen, value) {
+  var target = id(value)
+
+  for entry in seen {
+    if id(entry) == target {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+def _quote(text, options) {
+  var body = text
+    .replace('/\\\\/', '\\\\')
+    .replace("/'/", "\\'")
+    .replace('/\n/', '\\n')
+    .replace('/\t/', '\\t')
+    .replace('/\r/', '\\r')
+
+  if options.max_string > 0 and body.length() > options.max_string {
+    body = body[0, options.max_string] + style.symbols().ellipsis
+  }
+
+  return _paint(options, style.green, "'${body}'")
+}
+
+
+def _number(value, options) {
+  if is_bigint(value) {
+    return _paint(options, style.yellow, value.to_string() + 'n')
+  }
+
+  if value.is_nan() {
+    return _paint(options, style.yellow, 'NaN')
+  }
+
+  if value.is_inf() {
+    return _paint(options, style.yellow, value > 0 ? 'Infinity' : '-Infinity')
+  }
+
+  return _paint(options, style.yellow, value.to_string())
+}
+
+
+def _bytes(value, options) {
+  var shown = []
+  var limit = options.max_items > 0 ? options.max_items : value.length()
+  var count = value.length() < limit ? value.length() : limit
+
+  iter var index = 0; index < count; index++ {
+    shown.append(value[index].hex().lpad(2, '0'))
+  }
+
+  var body = ' '.join(shown)
+  if value.length() > count {
+    body += ' ${style.symbols().ellipsis}'
+  }
+
+  return _paint(options, style.magenta, 'bytes(${value.length()})[${body}]')
+}
+
+
+def _instance(value, options, depth, seen) {
+  var name = typeof(value)
+
+  # A class that bothered to write `to_string()` has said how it wants
+  # to be shown; taking it at its word beats printing its fields back
+  # at the reader.
+  if reflect.has_method(value, 'to_string') {
+    return _paint(options, style.cyan, '${name} ${value.to_string()}')
+  }
+
+  var properties = properties_of(value)
+  if properties.is_empty() {
+    return _paint(options, style.cyan, '${name} {}')
+  }
+
+  var parts = []
+  var shown = 0
+
+  for property in properties {
+    if options.max_items > 0 and shown >= options.max_items {
+      parts.append(_paint(options, style.grey, style.symbols().ellipsis))
+      break
+    }
+
+    var rendered = _render(property_of(value, property), options, depth + 1, seen)
+    parts.append(_paint(options, style.white, property) + ': ' + rendered)
+    shown++
+  }
+
+  return _paint(options, style.cyan, name) + ' { ' + ', '.join(parts) + ' }'
+}
+
+
+def _list(value, options, depth, seen) {
+  if value.is_empty() {
+    return _paint(options, style.grey, '[]')
+  }
+
+  seen.append(value)
+
+  var parts = []
+  var shown = 0
+
+  for item in value {
+    if options.max_items > 0 and shown >= options.max_items {
+      var remaining = value.length() - shown
+      parts.append(_paint(options, style.grey, '${style.symbols().ellipsis} ${remaining} more'))
+      break
+    }
+
+    parts.append(_render(item, options, depth + 1, seen))
+    shown++
+  }
+
+  seen.pop()
+
+  return '[' + ', '.join(parts) + ']'
+}
+
+
+def _dict(value, options, depth, seen) {
+  if value.is_empty() {
+    return _paint(options, style.grey, '{}')
+  }
+
+  seen.append(value)
+
+  var keys = value.keys()
+  if options.sort_keys {
+    keys = keys.clone().sort()
+  }
+
+  var parts = []
+  var shown = 0
+
+  for key in keys {
+    if options.max_items > 0 and shown >= options.max_items {
+      var remaining = keys.length() - shown
+      parts.append(_paint(options, style.grey, '${style.symbols().ellipsis} ${remaining} more'))
+      break
+    }
+
+    var label = is_string(key) ? key : _render(key, options, depth + 1, seen)
+    parts.append(_paint(options, style.white, label) + ': ' + _render(value[key], options, depth + 1, seen))
+    shown++
+  }
+
+  seen.pop()
+
+  return '{ ' + ', '.join(parts) + ' }'
+}
+
+
+def _render(value, options, depth, seen) {
+  if value == nil {
+    return _paint(options, style.grey, 'nil')
+  }
+
+  if is_bool(value) {
+    return _paint(options, style.yellow, value.to_string())
+  }
+
+  if is_number(value) or is_bigint(value) {
+    return _number(value, options)
+  }
+
+  if is_string(value) {
+    return _quote(value, options)
+  }
+
+  if is_bytes(value) {
+    return _bytes(value, options)
+  }
+
+  if is_list(value) or is_dict(value) {
+    if _is_cyclic(seen, value) {
+      return _paint(options, style.magenta, '[Circular]')
+    }
+
+    if options.max_depth > 0 and depth >= options.max_depth {
+      var size = value.length()
+      return _paint(options, style.grey, is_list(value) ? '[${size} items]' : '{${size} keys}')
+    }
+
+    return is_list(value) ?
+      _list(value, options, depth, seen) :
+      _dict(value, options, depth, seen)
+  }
+
+  if is_class(value) {
+    return _paint(options, style.cyan, 'class ${reflect.class_info(value).name}')
+  }
+
+  if is_instance(value) {
+    if _is_cyclic(seen, value) {
+      return _paint(options, style.magenta, '[Circular]')
+    }
+
+    if options.max_depth > 0 and depth >= options.max_depth {
+      return _paint(options, style.cyan, '${typeof(value)} {...}')
+    }
+
+    seen.append(value)
+    var rendered = _instance(value, options, depth, seen)
+    seen.pop()
+
+    return rendered
+  }
+
+  if is_callable(value) {
+    var name = value.name()
+    return _paint(options, style.cyan, name.starts_with('@') ? 'function' : 'function ${name}')
+  }
+
+  if is_file(value) {
+    return _paint(options, style.cyan, 'file ${value.path()}')
+  }
+
+  return _paint(options, style.grey, '${reflect.kind(value)} ${value.to_string()}')
+}
+
+
+/**
+ * `value` rendered as a single line, abbreviated to stay readable
+ * inside a sentence.
+ *
+ * ```zuri
+ * import test.format
+ *
+ * echo format.inline({ name: 'Ada', tags: ['x', 'y'] })
+ * ```
+ * ```
+ * { name: 'Ada', tags: ['x', 'y'] }
+ * ```
+ *
+ * @param any value
+ * @param ?dict options: any of `color`, `max_items`, `max_depth`,
+ *    `max_string`, `sort_keys`. Anything left out keeps its default.
+ * @returns string
+ */
+def inline(value, options: ?dict) {
+  return _render(value, _options(options), 0, [])
+}
+
+/**
+ * `inline()` with colour suppressed, whatever the terminal supports.
+ *
+ * This is what a machine-readable reporter and a snapshot key are
+ * built from, since an escape sequence in either would be a
+ * correctness bug rather than a cosmetic one.
+ *
+ * @param any value
+ * @param ?dict options
+ * @returns string
+ */
+def inline_plain(value, options: ?dict) {
+  var resolved = _options(options)
+  resolved.set('color', false)
+
+  return _render(value, resolved, 0, [])
+}
+
+
+def _block(value, options, depth, seen, out) {
+  var pad = '  ' * depth
+
+  if is_list(value) and !value.is_empty() and !_is_cyclic(seen, value) {
+    seen.append(value)
+    out.append('[')
+
+    var index = 0
+    for item in value {
+      var tail = index < value.length() - 1 ? ',' : ''
+      _append_entry(out, pad + '  ', '', item, options, depth, seen, tail)
+      index++
+    }
+
+    out.append(pad + ']')
+    seen.pop()
+
+    return out
+  }
+
+  if is_dict(value) and !value.is_empty() and !_is_cyclic(seen, value) {
+    seen.append(value)
+    out.append('{')
+
+    var keys = value.keys()
+    if options.sort_keys {
+      keys = keys.clone().sort()
+    }
+
+    var index = 0
+    for key in keys {
+      var label = is_string(key) ? key : _render(key, options, 0, [])
+      var tail = index < keys.length() - 1 ? ',' : ''
+      _append_entry(out, pad + '  ', '${label}: ', value[key], options, depth, seen, tail)
+      index++
+    }
+
+    out.append(pad + '}')
+    seen.pop()
+
+    return out
+  }
+
+  out.append(_render(value, options, 0, seen))
+
+  return out
+}
+
+
+# Renders one element or one key/value pair into `out`. A nested
+# container becomes several lines, the first of which has to carry the
+# key prefix and the last of which has to carry the comma.
+def _append_entry(out, pad, prefix, value, options, depth, seen, tail) {
+  var nested = []
+  _block(value, options, depth + 1, seen, nested)
+
+  out.append(pad + prefix + nested[0])
+
+  iter var index = 1; index < nested.length(); index++ {
+    out.append(nested[index])
+  }
+
+  out[out.length() - 1] = out[out.length() - 1] + tail
+}
+
+
+/**
+ * `value` rendered over as many lines as it takes, with nothing
+ * abbreviated away.
+ *
+ * A scalar comes back as a single-element list, so the caller never
+ * has to special-case it.
+ *
+ * ```zuri
+ * import test.format
+ *
+ * for line in format.block({ id: 7, tags: ['a', 'b'] }) {
+ *   echo line
+ * }
+ * ```
+ * ```
+ * {
+ *   id: 7,
+ *   tags: [
+ *     'a',
+ *     'b'
+ *   ]
+ * }
+ * ```
+ *
+ * @param any value
+ * @param ?dict options: as `inline()`, except that `max_items` and
+ *    `max_depth` default to unlimited.
+ * @returns list: the lines, without trailing newlines.
+ */
+def block(value, options: ?dict) {
+  var resolved = _options(options)
+
+  if !is_dict(options) or !options.contains('max_items') {
+    resolved.set('max_items', 0)
+  }
+
+  if !is_dict(options) or !options.contains('max_depth') {
+    resolved.set('max_depth', 0)
+  }
+
+  if !is_dict(options) or !options.contains('max_string') {
+    resolved.set('max_string', 0)
+  }
+
+  return _block(value, resolved, 0, [], [])
+}
+
+/**
+ * `block()` with colour suppressed and dictionary keys sorted, which
+ * together make the output stable enough to commit to a repository.
+ *
+ * This is the exact text a snapshot file holds.
+ *
+ * @param any value
+ * @returns string: the lines joined with `\n`, with no trailing one.
+ */
+def serialize(value) {
+  return '\n'.join(block(value, { color: false, sort_keys: true }))
+}
+
+
+/**
+ * A duration in milliseconds, rendered the way a reader wants to see
+ * it: whole milliseconds below a second, and seconds with one decimal
+ * place above.
+ *
+ * @param number milliseconds
+ * @returns string
+ */
+def duration(milliseconds: number) {
+  if milliseconds < 1 {
+    return '<1ms'
+  }
+
+  if milliseconds < 1000 {
+    return '${milliseconds.round().int()}ms'
+  }
+
+  return '${(milliseconds / 1000).fixed(1)}s'
+}
+
+
+/**
+ * `count` followed by `singular` or `plural`, whichever the count
+ * calls for.
+ *
+ * @param int count
+ * @param string singular
+ * @param ?string plural: `singular + 's'` by default.
+ * @returns string
+ */
+def plural(count: int, singular: string, plural: ?string) {
+  if plural == nil {
+    plural = singular + 's'
+  }
+
+  return '${count} ${count == 1 ? singular : plural}'
+}

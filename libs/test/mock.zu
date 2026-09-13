@@ -1,0 +1,499 @@
+/**
+ * @module test.mock
+ *
+ * Test doubles: functions that record how they were called, and
+ * stand-ins that replace a real one for the length of a test.
+ *
+ * ### A recording function
+ *
+ * ```zuri
+ * import test { describe, it, expect, mock }
+ *
+ * describe('retry', @{
+ *   it('calls the operation once per attempt', @{
+ *     var operation = mock()
+ *     operation.raises_once(Error('first attempt'))
+ *     operation.returns('ok')
+ *
+ *     expect(retry(operation.fn, 3)).to_be('ok')
+ *     expect(operation).to_have_been_called_times(2)
+ *   })
+ * })
+ * ```
+ *
+ * `mock()` hands back a `Mock`, and `mock.fn` is the plain function
+ * to pass wherever a callback is wanted. Matchers accept either, so
+ * `expect(operation)` and `expect(operation.fn)` mean the same thing.
+ *
+ * ### Replacing something that already exists
+ *
+ * `spy_on()` swaps a function out in place and gives back a `Mock`
+ * that both records and stands in for it:
+ *
+ * ```zuri
+ * var clock = { now: @{ return real_time() } }
+ * var now = spy_on(clock, 'now')
+ * now.returns(1000)
+ * ```
+ *
+ * It works on a dictionary entry and on an instance property that
+ * holds a function. It does not work on a class method or a module
+ * function: Zuri classes are immutable once declared, and a module's
+ * members cannot be assigned from outside it. Code that wants to be
+ * substitutable takes its collaborators as arguments or holds them in
+ * properties, which is the shape worth designing for anyway.
+ *
+ * ### Lifetime
+ *
+ * The runner calls `restore_all()` after every test, so a spy never
+ * outlives the test that installed it, even one that failed partway
+ * through. Nothing needs to be undone by hand.
+ */
+
+import zuri { reflect }
+
+import .error { TestSetupError }
+
+
+/**
+ * One recorded call.
+ */
+class Call {
+
+  /** The arguments, in order. */
+  var args = []
+
+  /** What the call returned, or `nil` when it raised. */
+  var result = nil
+
+  /** The error it raised, or `nil` when it returned. */
+  var error = nil
+
+  /** Whether the call raised rather than returned. */
+  var threw = false
+
+  @new(args) {
+    self.args = args
+  }
+}
+
+
+# Every mock built in this process, so a matcher handed the bare
+# function can find its way back to the record. Mocks are cleared
+# between tests, so this stays a handful of entries and a linear
+# lookup is the right shape for it.
+var _mocks = []
+
+
+/**
+ * A recording stand-in for a function.
+ *
+ * Built by `mock()` and by `spy_on()`; there is no reason to
+ * construct one directly.
+ */
+class Mock {
+
+  /** What the mock is called in failure messages. */
+  var name = 'mock'
+
+  /**
+   * The plain function to pass around. Calling it is what gets
+   * recorded.
+   */
+  var fn = nil
+
+  /** Every call so far, oldest first. */
+  var calls = []
+
+  # The standing implementation, used once the one-shot queue is
+  # empty. `nil` means "return nil and do nothing".
+  var _behaviour = nil
+
+  # One-shot behaviours, taken from the front, ahead of `_behaviour`.
+  var _queue = []
+
+  # For a spy: where the original came from and what it was, so
+  # `restore()` can put it back.
+  var _target = nil
+  var _key = nil
+  var _original = nil
+  var _installed = false
+
+  /**
+   * @param ?string name
+   * @param ?function implementation: what the mock does when called.
+   *    A mock with none returns `nil`.
+   * @param ?dict replacing: for a spy, `{ target, key, original }`
+   *    naming what this mock was installed over, so `restore()` knows
+   *    what to put back.
+   */
+  @new(name, implementation, replacing) {
+    self.name = name != nil ? name : 'mock'
+    self.calls = []
+    self._queue = []
+    self._behaviour = implementation != nil ? { kind: 'call', value: implementation } : nil
+
+    if is_dict(replacing) {
+      self._target = replacing.target
+      self._key = replacing.key
+      self._original = replacing.original
+      self._installed = true
+    }
+
+    self.fn = @(...args) {
+      return self._invoke(args)
+    }
+
+    _mocks.append(self)
+  }
+
+  _invoke(args) {
+    var call = Call(args)
+    self.calls.append(call)
+
+    var behaviour = self._queue.is_empty() ?
+      self._behaviour :
+      self._queue.shift()
+
+    if behaviour == nil {
+      return nil
+    }
+
+    if behaviour.kind == 'return' {
+      call.result = behaviour.value
+      return behaviour.value
+    }
+
+    if behaviour.kind == 'raise' {
+      call.threw = true
+      call.error = behaviour.value
+      raise behaviour.value
+    }
+
+    catch {
+      call.result = behaviour.value.apply(args)
+    } as failure {
+      call.threw = true
+      call.error = failure
+      raise failure
+    }
+
+    return call.result
+  }
+
+  /**
+   * Makes every call from now on return `value`.
+   *
+   * @param any value
+   * @returns Mock: itself, so calls chain.
+   */
+  returns(value) {
+    self._behaviour = { kind: 'return', value }
+    return self
+  }
+
+  /**
+   * Makes the next call return `value`, once. Queue several to script
+   * a sequence; once the queue runs dry the standing behaviour takes
+   * over again.
+   *
+   * @param any value
+   * @returns Mock
+   */
+  returns_once(value) {
+    self._queue.append({ kind: 'return', value })
+    return self
+  }
+
+  /**
+   * Makes every call from now on raise `value`.
+   *
+   * @param Error value
+   * @returns Mock
+   */
+  raises(value) {
+    self._behaviour = { kind: 'raise', value }
+    return self
+  }
+
+  /**
+   * Makes the next call raise `value`, once.
+   *
+   * @param Error value
+   * @returns Mock
+   */
+  raises_once(value) {
+    self._queue.append({ kind: 'raise', value })
+    return self
+  }
+
+  /**
+   * Makes every call from now on run `implementation` and return what
+   * it returns. The implementation receives exactly the arguments the
+   * mock was called with.
+   *
+   * @param function implementation
+   * @returns Mock
+   */
+  implements(implementation: function) {
+    self._behaviour = { kind: 'call', value: implementation }
+    return self
+  }
+
+  /**
+   * Makes the next call run `implementation`, once.
+   *
+   * @param function implementation
+   * @returns Mock
+   */
+  implements_once(implementation: function) {
+    self._queue.append({ kind: 'call', value: implementation })
+    return self
+  }
+
+  /**
+   * Restores the original behaviour, dropping the standing one and
+   * anything still queued. Recorded calls are kept.
+   *
+   * @returns Mock
+   */
+  clear_behaviour() {
+    self._behaviour = nil
+    self._queue = []
+    return self
+  }
+
+  /**
+   * How many times the mock has been called.
+   *
+   * @returns int
+   */
+  call_count() {
+    return self.calls.length()
+  }
+
+  /**
+   * Whether the mock has been called at all.
+   *
+   * @returns bool
+   */
+  called() {
+    return !self.calls.is_empty()
+  }
+
+  /**
+   * The arguments of every call, as a list of lists.
+   *
+   * @returns list
+   */
+  call_args() {
+    return self.calls.map(@(call) { return call.args })
+  }
+
+  /**
+   * The most recent call, or `nil` when there has not been one.
+   *
+   * @returns Call
+   */
+  last_call() {
+    return self.calls.is_empty() ? nil : self.calls.last()
+  }
+
+  /**
+   * The `index`-th call, counting from zero, or `nil` when there
+   * have not been that many. A negative index counts back from the
+   * most recent.
+   *
+   * @param int index
+   * @returns Call
+   */
+  nth_call(index: int) {
+    var at = index < 0 ? self.calls.length() + index : index
+
+    if at < 0 or at >= self.calls.length() {
+      return nil
+    }
+
+    return self.calls[at]
+  }
+
+  /**
+   * Forgets every recorded call. The behaviour is left alone.
+   *
+   * @returns Mock
+   */
+  reset() {
+    self.calls = []
+    return self
+  }
+
+  /**
+   * Puts back whatever this mock replaced, if it replaced anything.
+   *
+   * Safe to call more than once, and on a mock that was never
+   * installed over something.
+   *
+   * @returns Mock
+   */
+  restore() {
+    if !self._installed {
+      return self
+    }
+
+    _assign(self._target, self._key, self._original)
+    self._installed = false
+
+    return self
+  }
+}
+
+
+def _assign(target, key, value) {
+  if is_dict(target) {
+    target.set(key, value)
+    return
+  }
+
+  reflect.set_prop(target, key, value)
+}
+
+
+def _read(target, key) {
+  if is_dict(target) {
+    return target.get(key)
+  }
+
+  return reflect.get_prop(target, key)
+}
+
+
+def _has(target, key) {
+  if is_dict(target) {
+    return target.contains(key)
+  }
+
+  return is_instance(target) and reflect.has_prop(target, key)
+}
+
+
+/**
+ * A new recording function.
+ *
+ * ```zuri
+ * var send = mock()
+ * notify(send.fn)
+ * expect(send).to_have_been_called_with('hello')
+ * ```
+ *
+ * @param ?function implementation: what it does when called. Without
+ *    one it records the call and returns `nil`.
+ * @param ?string name: used in failure messages; `'mock'` by default.
+ * @returns Mock
+ */
+def mock(implementation: ?function, name: ?string) {
+  return Mock(name, implementation)
+}
+
+
+/**
+ * Replaces `target[key]` with a recording stand-in that calls through
+ * to the original, and returns the `Mock` that now sits there.
+ *
+ * Calling through is the default on purpose: a spy that changes
+ * behaviour as well as observing it is a different tool, and saying
+ * so is one `.returns()` away.
+ *
+ * ```zuri
+ * var gateway = { charge: @(amount) { return real_charge(amount) } }
+ * var charge = spy_on(gateway, 'charge')
+ *
+ * checkout(gateway)
+ *
+ * expect(charge).to_have_been_called_times(1)
+ * ```
+ *
+ * @param {dict|instance} target: a dictionary, or an instance with a
+ *    property holding a function.
+ * @param string key
+ * @returns Mock
+ * @raises TestSetupError when `target` is not a dictionary or an
+ *    instance, when it has no such entry, or when that entry does not
+ *    hold something callable. A class method cannot be spied on:
+ *    classes are immutable once declared.
+ */
+def spy_on(target, key: string) {
+  if !is_dict(target) and !is_instance(target) {
+    raise TestSetupError(
+      'spy_on() needs a dict or an instance, got a ${reflect.kind(target)}'
+    )
+  }
+
+  if !_has(target, key) {
+    raise TestSetupError("spy_on() found no '${key}' on the given ${is_dict(target) ? 'dict' : typeof(target)}")
+  }
+
+  var original = _read(target, key)
+
+  if !is_callable(original) {
+    raise TestSetupError(
+      "spy_on() needs '${key}' to hold a function, but it holds a ${typeof(original)}"
+    )
+  }
+
+  var spy = Mock(key, original, { target, key, original })
+  _assign(target, key, spy.fn)
+
+  return spy
+}
+
+
+/**
+ * The `Mock` behind `value`, which may be a `Mock` already or the
+ * plain function one handed out.
+ *
+ * @param any value
+ * @returns Mock: `nil` when `value` is neither.
+ */
+def mock_of(value) {
+  if is_instance(value) and typeof(value) == 'Mock' {
+    return value
+  }
+
+  if !is_callable(value) {
+    return nil
+  }
+
+  for entry in _mocks {
+    if entry.fn == value {
+      return entry
+    }
+  }
+
+  return nil
+}
+
+
+/**
+ * Undoes every spy and forgets every mock built so far.
+ *
+ * The runner calls this after each test, so a spy installed by a test
+ * that failed halfway through still comes back out.
+ */
+def restore_all() {
+  for entry in _mocks {
+    entry.restore()
+  }
+
+  _mocks = []
+}
+
+
+/**
+ * Forgets the calls recorded by every live mock, leaving the mocks
+ * themselves and their behaviours in place.
+ */
+def reset_all() {
+  for entry in _mocks {
+    entry.reset()
+  }
+}

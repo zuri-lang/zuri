@@ -4,7 +4,9 @@ use std::sync::LazyLock;
 
 use crate::{
   builtins::{
-    MethodTable, build, enforce::enforce_method_arg_count, method, method_opt, to_string,
+    MethodTable, build,
+    enforce::{ArgType, enforce_method_arg_count, enforce_method_arg_type},
+    method, method_n, method_opt, to_string,
   },
   vm::{
     object::{Obj, ZuriContext},
@@ -20,6 +22,7 @@ pub static FUNCTION_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method("is_variadic", is_variadic),
     method("name", name),
     method_opt("call", 0, call),
+    method_n("apply", 1, apply),
   ])
 });
 
@@ -30,6 +33,30 @@ fn call(ctx: &mut ZuriContext) -> Result<Value, String> {
     .map_err(|e| ctx.vm.describe_error(e))?;
 
   Ok(val)
+}
+
+/// `call`'s sibling for an argument list that isn't known until
+/// runtime. Zuri has no spread at a call site, so a wrapper that has
+/// to forward whatever it was handed (a spy, a decorator, a
+/// table-driven test runner) has no way to express the call at all
+/// without this.
+///
+/// Building the argument slice here is GC-safe without pinning for
+/// the same reason `call`'s is: allocation alone never collects (see
+/// `Heap::alloc_sized`), collection only happens at the VM's own
+/// safepoints, and `call_value` copies every argument into the
+/// callee's registers before a single bytecode instruction of it
+/// runs.
+fn apply(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 1, ArgType::List);
+
+  let args: Vec<Value> = ctx.args[1].as_list().into_iter().collect();
+
+  ctx
+    .vm
+    .call_value(ctx.args[0], &args)
+    .map_err(|e| ctx.vm.describe_error(e))
 }
 
 fn arity(ctx: &mut ZuriContext) -> Result<Value, String> {

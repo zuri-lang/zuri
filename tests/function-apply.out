@@ -1,0 +1,9 @@
+6
+only/nil
+nil/nil
+[1, [2, 3, 4]]
+15
+20
+20
+3
+Error: 'apply' expects argument 1 to be a list, got string

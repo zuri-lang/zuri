@@ -1,0 +1,55 @@
+# `apply()` calls with an argument list decided at runtime, which is
+# the only way to forward arguments in a language with no spread at
+# the call site.
+
+def add(a, b, c) {
+  return a + b + c
+}
+
+echo add.apply([1, 2, 3])
+
+# Missing arguments still arrive as nil, exactly as in a direct call.
+def describe(a, b) {
+  return '${a}/${b}'
+}
+
+echo describe.apply(['only'])
+echo describe.apply([])
+
+# A variadic callee collects the overflow the same way too.
+def collect(first, ...rest) {
+  return [first, rest]
+}
+
+echo collect.apply([1, 2, 3, 4])
+
+# Bound methods, not just plain functions: a spy wrapping obj.method
+# has nothing else to hand the arguments to.
+class Counter {
+  var total = 0
+
+  @new(total) {
+    self.total = total
+  }
+
+  add(n) {
+    self.total += n
+    return self.total
+  }
+}
+
+var counter = Counter(10)
+var bound = counter.add
+
+echo bound.apply([5])
+echo bound.call(5)
+echo counter.total
+
+# A class is callable too, so it works anywhere a callback does.
+echo [1, 2, 3].map(Counter)[2].total
+
+catch {
+  add.apply('not a list')
+} as e {
+  echo '${e.type}: ${e.message}'
+}

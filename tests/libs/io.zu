@@ -3,12 +3,13 @@
  *
  * Test suite for the core `io` standard library module surface: the
  * standard stream handles and their `is_tty()`/`is_repl` status, the
- * seek/capture constants, and the free functions (`flush`, `putc`,
- * `getc`). `io.TTY` and `io.BytesIO` each get their own dedicated suite
+ * seek constants, output capture, and the free functions (`flush`,
+ * `putc`, `getc`). `io.TTY` and `io.BytesIO` each get their own dedicated suite
  * (see `io_tty.zu` and `io_bytesio.zu`).
  */
 
 import io
+import os
 
 var _passed = 0
 
@@ -51,13 +52,70 @@ assert io.stdout.write('') == true, 'stdout must be open for writing'
 assert io.stderr.write('') == true, 'stderr must be open for writing'
 ok('stdout and stderr are attached to something that accepts writes')
 
+# A standard stream reports the descriptor it is NAMED by, not the
+# private duplicate the runtime holds open for it, so `number()` is
+# what tells stdout apart from stderr.
+if os.platform != 'windows' {
+  assert io.stdin.number() == 0 and io.stdout.number() == 1 and io.stderr.number() == 2,
+    'the standard streams must report descriptors 0, 1 and 2'
+  ok('number() identifies each standard stream')
+}
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 assert io.SEEK_SET == 0 and io.SEEK_CUR == 1 and io.SEEK_END == 2,
   'the seek constants must match the conventional SEEK_SET/SEEK_CUR/SEEK_END values'
-assert io.CAPTURE_STDOUT == 0 and io.CAPTURE_STDERR == 1, 'the capture constants must be distinct'
-ok('SEEK_*/CAPTURE_* constants')
+ok('SEEK_* constants')
+
+# ---------------------------------------------------------------------------
+# Output capture
+# ---------------------------------------------------------------------------
+assert io.capture_depth() == 0, 'no capture must be open before one is started'
+
+var captured = io.capture(@{
+  echo 'echoed'
+  print('printed\n')
+  io.stdout.write('written\n')
+})
+
+assert captured == 'echoed\nprinted\nwritten\n',
+  'capture() must collect echo, print() and io.stdout writes in order, and nothing else'
+assert io.capture_depth() == 0, 'capture() must close its frame before returning'
+ok('capture() collects every Zuri-level write to standard output')
+
+var outer = io.capture(@{
+  echo 'outer-before'
+
+  var inner = io.capture(@{
+    echo 'inner-only'
+  })
+
+  assert inner == 'inner-only\n', 'an inner capture must receive only its own output'
+  echo 'outer-after'
+})
+
+assert outer == 'outer-before\nouter-after\n',
+  'an inner capture must not leak its output into the frame around it'
+ok('captures nest, innermost first')
+
+io.capture_begin()
+echo 'manual'
+assert io.capture_depth() == 1, 'capture_depth() must report the open frame'
+var manual = io.capture_end()
+
+assert manual == 'manual\n', 'capture_end() must return what the frame collected'
+assert io.capture_end() == nil, 'capture_end() with no frame open must return nil, not raise'
+ok('capture_begin()/capture_end() work as the manual pair')
+
+assert raises(@{
+  io.capture(@{
+    echo 'discarded'
+    raise ValueError('from inside a capture')
+  })
+}), 'capture() must re-raise what its body raised'
+assert io.capture_depth() == 0, 'capture() must close its frame even when the body raises'
+ok('capture() closes its frame and re-raises when the body fails')
 
 # ---------------------------------------------------------------------------
 # Free functions

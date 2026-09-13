@@ -1360,7 +1360,11 @@ impl VM {
       compiled: false,
     });
     let res = self.run_until(0);
-    crate::vm::natives::flush_stdout();
+    // Unwind first: a capture the script opened and never closed
+    // holds real output, and dropping it on the floor would be the
+    // one failure mode with no visible symptom at all.
+    super::natives::capture_unwind_all();
+    super::natives::flush_stdout();
     res?;
     Ok(())
   }
@@ -1374,6 +1378,34 @@ impl VM {
       return self.call_native(native, args);
     }
     if !callee.is_closure() {
+      // Everything `Instr::Call` can invoke, `call_value` has to be
+      // able to invoke too, or a native callback path (`list.map`,
+      // `function.call`, `function.apply`, ...) silently refuses
+      // callables an ordinary `f(x)` accepts.
+      if callee.is_obj() {
+        match unsafe { &*callee.as_obj() } {
+          Obj::BoundMethod(_) => {
+            let bound = callee.as_bound_method();
+            let method = bound.method;
+            let mut full_args = Vec::with_capacity(args.len() + 1);
+            full_args.push(bound.receiver);
+            full_args.extend_from_slice(args);
+            return self.call_value(method, &full_args);
+          },
+          Obj::Class(_) => return self.instantiate(callee, args),
+          Obj::ModuleBinding(b) => {
+            return match b.promoted {
+              Some(f) => self.call_value(f, args),
+              None => {
+                let msg = format!("module '{}' is not callable", b.bind_name);
+                Err(self.raise("TypeError", msg))
+              },
+            };
+          },
+          _ => {},
+        }
+      }
+
       let msg = format!("cannot call object of type {}", callee.type_name());
       return Err(self.raise("TypeError", msg));
     }

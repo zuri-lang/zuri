@@ -1,0 +1,228 @@
+/**
+ * @module test.context
+ *
+ * What is true right now, while one particular test is running.
+ *
+ * The assertion side and the runner side both need this, and neither
+ * should have to import the other, so it lives on its own. Nothing in
+ * here is interesting to a test author; the API a test uses is
+ * `test.assertions()` and `test.has_assertions()`, both of which are
+ * thin wrappers over what is below.
+ *
+ * The state is a single module-level value because a Zuri program has
+ * one call stack and runs one test at a time. There is nothing to key
+ * it by.
+ */
+
+import .error { TestSetupError }
+
+
+/**
+ * The test the runner currently has open, as far as anything outside
+ * the runner needs to know about it.
+ */
+class Frame {
+
+  /** The test's own name. */
+  var name = ''
+
+  /** Enclosing suite names, outermost first. */
+  var suite_path = []
+
+  /** The file the test was declared in. */
+  var file = ''
+
+  /** Matchers that have run since the test started. */
+  var assertions = 0
+
+  /**
+   * How many assertions the test said it would make, or `-1` when it
+   * did not say.
+   */
+  var expected_assertions = -1
+
+  /** Whether the test asked to be failed if it asserts nothing. */
+  var requires_assertions = false
+
+  /**
+   * Snapshot names already used by this test, so an unnamed snapshot
+   * can be numbered `1`, `2`, `3` in the order it was taken.
+   */
+  var snapshot_count = 0
+
+  @new(name, suite_path, file) {
+    self.name = name
+    self.suite_path = suite_path
+    self.file = file
+    self.assertions = 0
+    self.expected_assertions = -1
+    self.requires_assertions = false
+    self.snapshot_count = 0
+  }
+
+  /**
+   * The test's full name, suite path included, as it appears in a
+   * report and in a snapshot file.
+   *
+   * @returns string
+   */
+  full_name() {
+    if self.suite_path.is_empty() {
+      return self.name
+    }
+
+    return ' > '.join(self.suite_path) + ' > ' + self.name
+  }
+}
+
+
+var _current = nil
+
+
+/**
+ * Opens a frame for a test about to run. Called by the runner, once
+ * per attempt.
+ *
+ * @param string name
+ * @param list suite_path
+ * @param string file
+ * @returns Frame
+ */
+def begin(name: string, suite_path: list, file: string) {
+  _current = Frame(name, suite_path, file)
+  return _current
+}
+
+/**
+ * Closes the current frame and returns it, so the runner can read the
+ * final assertion count off it.
+ *
+ * @returns Frame: `nil` when no test was open.
+ */
+def end() {
+  var frame = _current
+  _current = nil
+
+  return frame
+}
+
+/**
+ * The frame for the test currently running, or `nil` outside one.
+ *
+ * @returns Frame
+ */
+def current() {
+  return _current
+}
+
+/**
+ * Whether a test is running right now.
+ *
+ * Matchers use this to tell a real assertion failure, which the
+ * runner will catch and report, from one raised in a suite body or at
+ * the top level of a file, where there is nothing to attribute it to.
+ *
+ * @returns bool
+ */
+def active() {
+  return _current != nil
+}
+
+
+/**
+ * Counts one matcher against the current test. Every matcher calls
+ * this, whether it passes or fails.
+ */
+def record_assertion() {
+  if _current != nil {
+    _current.assertions++
+  }
+}
+
+/**
+ * How many matchers have run in the current test.
+ *
+ * @returns int: `0` outside a test.
+ */
+def assertion_count() {
+  return _current != nil ? _current.assertions : 0
+}
+
+
+/**
+ * Declares that the current test makes exactly `count` assertions.
+ *
+ * @param int count
+ * @raises TestSetupError outside a test, where there is nothing to
+ *    hold to the promise.
+ */
+def expect_assertions(count: int) {
+  if _current == nil {
+    raise TestSetupError('assertions() can only be called inside a test')
+  }
+
+  _current.expected_assertions = count
+}
+
+/**
+ * Declares that the current test makes at least one assertion.
+ *
+ * @raises TestSetupError outside a test.
+ */
+def expect_some_assertions() {
+  if _current == nil {
+    raise TestSetupError('has_assertions() can only be called inside a test')
+  }
+
+  _current.requires_assertions = true
+}
+
+
+/**
+ * Checks a finished test's assertion promises against what it
+ * actually did.
+ *
+ * @param Frame frame
+ * @returns string: what went wrong, or `nil` when nothing did.
+ */
+def check(frame) {
+  if frame == nil {
+    return nil
+  }
+
+  if frame.expected_assertions >= 0 and frame.assertions != frame.expected_assertions {
+    return 'Expected ${frame.expected_assertions} assertions but ${frame.assertions} ran'
+  }
+
+  if frame.requires_assertions and frame.assertions == 0 {
+    return 'Expected at least one assertion but none ran'
+  }
+
+  return nil
+}
+
+
+/**
+ * Claims the next snapshot key for the current test.
+ *
+ * A named snapshot keeps its name. An unnamed one is numbered in the
+ * order it was taken, so reordering the snapshots inside one test is
+ * a change the snapshot file will notice.
+ *
+ * @param ?string name
+ * @returns string
+ * @raises TestSetupError outside a test.
+ */
+def snapshot_key(name: ?string) {
+  if _current == nil {
+    raise TestSetupError('snapshots can only be taken inside a test')
+  }
+
+  _current.snapshot_count++
+
+  if name != nil and name != '' {
+    return _current.full_name() + ': ' + name
+  }
+
+  return _current.full_name() + ' ${_current.snapshot_count}'
+}

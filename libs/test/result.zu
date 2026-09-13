@@ -1,0 +1,390 @@
+/**
+ * @module test.result
+ *
+ * The shapes a test run is made of: the tree the declarations build,
+ * and what running it produced.
+ *
+ * Every reporter is handed these objects and nothing else, so a
+ * custom reporter has the same view of a run that the built-in ones
+ * do. See {test.reporter} for what a reporter does with them.
+ */
+
+import .format
+import .source
+
+
+/** A test was declared and not yet run. */
+var PENDING = 'pending'
+
+/** It ran and every assertion held. */
+var PASSED = 'passed'
+
+/** It ran and something did not hold. */
+var FAILED = 'failed'
+
+/** It was not run: `skip`, a filter, or another test's `only`. */
+var SKIPPED = 'skipped'
+
+/** It was declared with no body, as a note to write it later. */
+var TODO = 'todo'
+
+/** It failed, was retried, and then passed. */
+var FLAKY = 'flaky'
+
+
+/**
+ * One thing that went wrong.
+ *
+ * A test can carry more than one: a failing body and then a failing
+ * `after_each` are two separate answers to "what went wrong", and
+ * collapsing them loses the one that explains the other.
+ */
+class Failure {
+
+  /**
+   * Where it came from: `'assertion'` for a matcher, `'error'` for
+   * anything else raised by the test body, `'hook'` for a lifecycle
+   * hook, `'assertions'` for a broken `assertions()` promise, and
+   * `'timeout'` for a test that ran past its budget.
+   */
+  var kind = 'error'
+
+  /** The one-line summary. */
+  var message = ''
+
+  /** The matcher that failed, for an assertion. */
+  var matcher = ''
+
+  /** What was expected, when that is a meaningful thing to show. */
+  var expected = nil
+
+  /** What was received. */
+  var received = nil
+
+  /** Whether `expected` and `received` are worth printing. */
+  var has_values = false
+
+  /** Pre-rendered lines to print under the message. */
+  var details = []
+
+  /** The raw stack trace, innermost first. */
+  var stacktrace = []
+
+  @new(kind, message) {
+    self.kind = kind
+    self.message = message
+    self.details = []
+    self.stacktrace = []
+  }
+
+  /**
+   * Where the failure happened, in the code under test.
+   *
+   * @returns source.Frame: `nil` when the trace holds nothing outside
+   *    the test module.
+   */
+  origin() {
+    return source.origin(self.stacktrace)
+  }
+}
+
+
+/**
+ * One declared test, and what became of it.
+ */
+class Case {
+
+  /** The name given to `it()`. */
+  var name = ''
+
+  /** The suite it was declared in. */
+  var owner = nil
+
+  /** The file it was declared in. */
+  var file = ''
+
+  /**
+   * How it was declared: `'normal'`, `'skip'`, `'only'` or `'todo'`.
+   */
+  var mode = 'normal'
+
+  /** The body, or `nil` for a todo. */
+  var body = nil
+
+  /** Its options, as given to `it()`. */
+  var options = {}
+
+  /** What became of it: one of the status constants. */
+  var status = PENDING
+
+  /** Everything that went wrong. */
+  var failures = []
+
+  /** How long the last attempt took, in milliseconds. */
+  var duration = 0
+
+  /** How many times the body ran, counting retries. */
+  var attempts = 0
+
+  /** What it printed, when output was being captured. */
+  var output = ''
+
+  /** Why it was skipped, when something other than `skip` decided. */
+  var skip_reason = ''
+
+  @new(name, owner, file, mode, body, options) {
+    self.name = name
+    self.owner = owner
+    self.file = file
+    self.mode = mode
+    self.body = body
+    self.options = is_dict(options) ? options : {}
+    self.failures = []
+  }
+
+  /** How deeply nested the test is. @returns int */
+  depth() {
+    return self.owner == nil ? 0 : self.owner.depth() + 1
+  }
+
+  /** The enclosing suite names, outermost first. @returns list */
+  suite_path() {
+    return self.owner == nil ? [] : self.owner.path()
+  }
+
+  /**
+   * The test's full name, suite path included.
+   *
+   * @returns string
+   */
+  full_name() {
+    var path = self.suite_path()
+
+    return path.is_empty() ? self.name : ' > '.join(path) + ' > ' + self.name
+  }
+
+  /** Whether it ran longer than `threshold` milliseconds. @param number threshold @returns bool */
+  is_slow(threshold: number) {
+    return threshold > 0 and self.duration > threshold
+  }
+
+  /** The tags it was declared with. @returns list */
+  tags() {
+    var tags = self.options.get('tags', [])
+
+    return is_list(tags) ? tags : [tags]
+  }
+}
+
+
+/**
+ * A `describe()` block: its tests, its nested suites, and its hooks.
+ */
+class Suite {
+
+  /** The name given to `describe()`, or `''` for the implicit root. */
+  var name = ''
+
+  /** The enclosing suite, or `nil` for the root. */
+  var owner = nil
+
+  /** The file it was declared in. */
+  var file = ''
+
+  /** How it was declared: `'normal'`, `'skip'` or `'only'`. */
+  var mode = 'normal'
+
+  /** Its tests and nested suites, in declaration order. */
+  var children = []
+
+  /** Hooks registered inside it. */
+  var before_all = []
+  var after_all = []
+  var before_each = []
+  var after_each = []
+
+  /** Anything that went wrong in a hook belonging to this suite. */
+  var failures = []
+
+  @new(name, owner, file, mode) {
+    self.name = name
+    self.owner = owner
+    self.file = file
+    self.mode = mode
+    self.children = []
+    self.before_all = []
+    self.after_all = []
+    self.before_each = []
+    self.after_each = []
+    self.failures = []
+  }
+
+  /**
+   * The hooks of one kind registered on this suite, in the order they
+   * were registered.
+   *
+   * @param string kind: `'before_all'`, `'after_all'`,
+   *    `'before_each'` or `'after_each'`.
+   * @returns list
+   */
+  hooks_for(kind: string) {
+    using kind {
+      when 'before_all' return self.before_all
+      when 'after_all' return self.after_all
+      when 'before_each' return self.before_each
+      when 'after_each' return self.after_each
+    }
+
+    return []
+  }
+
+  /** How deeply nested the suite is; the root is `0`. @returns int */
+  depth() {
+    return self.owner == nil ? 0 : self.owner.depth() + 1
+  }
+
+  /**
+   * This suite's name preceded by its ancestors', skipping the
+   * unnamed root.
+   *
+   * @returns list
+   */
+  path() {
+    if self.owner == nil {
+      return self.name == '' ? [] : [self.name]
+    }
+
+    var path = self.owner.path()
+    path.append(self.name)
+
+    return path
+  }
+
+  /**
+   * Every test in this suite and everything under it, in declaration
+   * order.
+   *
+   * @returns list
+   */
+  cases() {
+    var found = []
+
+    for child in self.children {
+      if is_instance(child) and typeof(child) == 'Suite' {
+        found.extend(child.cases())
+      } else {
+        found.append(child)
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * Every suite under this one, itself included.
+   *
+   * @returns list
+   */
+  suites() {
+    var found = [self]
+
+    for child in self.children {
+      if is_instance(child) and typeof(child) == 'Suite' {
+        found.extend(child.suites())
+      }
+    }
+
+    return found
+  }
+}
+
+
+/**
+ * What a whole run came to.
+ */
+class Summary {
+
+  /** Suites that contained at least one test that ran. */
+  var suites = 0
+
+  var passed = 0
+  var failed = 0
+  var skipped = 0
+  var todo = 0
+
+  /** Tests that passed only after a retry. */
+  var flaky = 0
+
+  /** Every test that failed, for the report at the end. */
+  var failures = []
+
+  /** Tests that ran slower than the slow threshold. */
+  var slow = []
+
+  /** Total wall time, in milliseconds. */
+  var duration = 0
+
+  /** The seed the order was shuffled with, or `nil` when it was not. */
+  var seed = nil
+
+  /** What happened to snapshots, from {test.snapshot}. */
+  var snapshots = {}
+
+  /** Whether the run stopped early because `bail` was reached. */
+  var bailed = false
+
+  @new() {
+    self.failures = []
+    self.slow = []
+    self.snapshots = {}
+  }
+
+  /** Tests that actually ran. @returns int */
+  ran() {
+    return self.passed + self.failed
+  }
+
+  /** Every test the run knew about. @returns int */
+  total() {
+    return self.passed + self.failed + self.skipped + self.todo
+  }
+
+  /** Whether the run should be considered a success. @returns bool */
+  ok() {
+    return self.failed == 0 and !self.bailed
+  }
+
+  /** `0` when everything passed, `1` when anything did not. @returns int */
+  exit_code() {
+    return self.ok() ? 0 : 1
+  }
+
+  /**
+   * The run as plain data, for a machine-readable reporter or for a
+   * caller driving the framework itself.
+   *
+   * @returns dict
+   */
+  to_dict() {
+    return {
+      suites: self.suites,
+      passed: self.passed,
+      failed: self.failed,
+      skipped: self.skipped,
+      todo: self.todo,
+      flaky: self.flaky,
+      total: self.total(),
+      duration: self.duration,
+      seed: self.seed,
+      snapshots: self.snapshots,
+      bailed: self.bailed,
+      ok: self.ok(),
+    }
+  }
+
+  /** @returns string */
+  to_string() {
+    return '${self.passed} passed, ${self.failed} failed, ' +
+      '${self.skipped} skipped, ${self.todo} todo in ${format.duration(self.duration)}'
+  }
+}

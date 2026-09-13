@@ -1,0 +1,1939 @@
+/**
+ * @module test.expect
+ *
+ * `expect(value)` and everything that can be said about a value once
+ * you have one.
+ *
+ * ```zuri
+ * expect(total).to_be(42)
+ * expect(user).to_match_object({ name: 'Ada' })
+ * expect(items).not.to_be_empty()
+ * expect(@{ parse('') }).to_raise_instance_of(ValueError)
+ * ```
+ *
+ * ### Negation
+ *
+ * Every matcher negates through `.not`, and there is exactly one
+ * implementation behind both directions, so a matcher and its
+ * negation can never disagree about what they mean.
+ *
+ * ### Chaining
+ *
+ * Matchers return the `Expect` they were called on, so several
+ * statements about one value read as one:
+ *
+ * ```zuri
+ * expect(port).to_be_int().to_be_between(1024, 65535)
+ * ```
+ *
+ * ### Labels
+ *
+ * A second argument to `expect()` names the value, which is worth
+ * doing when the number alone would not say which number it was:
+ *
+ * ```zuri
+ * expect(response.status, 'status').to_be(200)
+ * ```
+ * ```text
+ * Expected status (404) to be 200
+ * ```
+ *
+ * ### Choosing between to_be and to_equal
+ *
+ * `to_be` is Zuri's `==`. That already compares lists, dictionaries
+ * and bytes by their contents, so it is the right matcher for most
+ * things. It compares two instances by identity, though, so two
+ * separately constructed objects are never `to_be` each other.
+ * `to_equal` is the structural one: it walks instances field by
+ * field, treats `NaN` as equal to itself, and survives a value that
+ * contains itself.
+ */
+
+import io
+import zuri { reflect }
+
+import .context
+import .diff
+import .error { AssertionError, TestSetupError }
+import .format
+import .mock
+import .snapshot
+import .style
+
+
+/**
+ * The subject of an assertion, and every matcher that can be applied
+ * to it.
+ *
+ * Built by `expect()`; there is no reason to construct one directly.
+ */
+class Expect {
+
+  var _value = nil
+  var _label = nil
+  var _negated = false
+
+  /**
+   * The same subject, with every matcher asserting the opposite.
+   *
+   * `expect(x).not.not` is `expect(x)` again, not a third object.
+   */
+  var not = nil
+
+  /**
+   * @param any value: the value under test.
+   * @param ?string label: a name for it, used in failure messages.
+   * @param ?bool negated
+   * @param ?Expect twin: the opposite-polarity object to point `not`
+   *    at. Left out, one is built; this is what stops the pair from
+   *    constructing each other forever.
+   */
+  @new(value, label, negated, twin) {
+    self._value = value
+    self._label = label
+    self._negated = negated == true
+    self.not = twin != nil ? twin : Expect(value, label, !self._negated, self)
+  }
+
+
+  # How the value is named in a message. A label earns its keep by
+  # saying which of several similar values this one was, so it leads
+  # and the rendered value follows in brackets.
+  _subject() {
+    var rendered = format.inline(self._value)
+
+    if self._label == nil or self._label == '' {
+      return rendered
+    }
+
+    return style.bold(self._label) + ' (${rendered})'
+  }
+
+
+  # The single place an assertion is decided. `passed` is always
+  # written from the positive point of view; negation is applied here
+  # and nowhere else, which is what keeps `.not.to_contain()` from
+  # drifting away from `to_contain()`.
+  _check(passed, matcher, phrase, info) {
+    context.record_assertion()
+
+    if self._negated ? !passed : passed {
+      return self
+    }
+
+    var details = []
+    var expected = nil
+    var received = self._value
+    var has_values = false
+
+    if is_dict(info) {
+      details = info.get('details', [])
+      expected = info.get('expected', nil)
+      received = info.get('received', self._value)
+      has_values = info.get('has_values', false)
+    }
+
+    raise AssertionError(
+      'Expected ${self._subject()} ${self._negated ? "not " : ""}${phrase}',
+      {
+        matcher,
+        expected,
+        received,
+        has_values,
+        details,
+      }
+    )
+  }
+
+
+  # A diff belongs under a failure that says two things should have
+  # been the same. Under a negated one they WERE the same, and there
+  # is nothing to show.
+  _diff(expected, received) {
+    if self._negated {
+      return []
+    }
+
+    return diff.render(expected, received)
+  }
+
+
+  # Matchers that only make sense for one kind of value say so
+  # outright rather than quietly reporting `false`, which would make
+  # `.not` pass for the wrong reason.
+  _require(condition, matcher, requirement) {
+    if condition {
+      return
+    }
+
+    raise TestSetupError(
+      '${matcher}() needs ${requirement}, but was given ${format.with_article(format.type_label(self._value))}'
+    )
+  }
+
+
+  # =========================================================================
+  # Equality
+  # =========================================================================
+
+  /**
+   * Asserts `==`.
+   *
+   * Numbers, strings and booleans compare by value; lists,
+   * dictionaries and bytes compare by contents; instances and
+   * functions compare by identity.
+   *
+   * ```zuri
+   * expect(2 + 2).to_be(4)
+   * expect([1, 2]).to_be([1, 2])
+   * ```
+   *
+   * @param any expected
+   * @returns Expect
+   */
+  to_be(expected) {
+    return self._check(
+      self._value == expected,
+      'to_be',
+      'to be ${format.inline(expected)}',
+      {
+        expected,
+        has_values: true,
+        details: self._diff(expected, self._value),
+      }
+    )
+  }
+
+  /**
+   * Asserts structural equality: instances are compared field by
+   * field rather than by identity, `NaN` equals `NaN`, and a value
+   * that contains itself is handled rather than hung on.
+   *
+   * ```zuri
+   * expect(Point(1, 2)).to_equal(Point(1, 2))
+   * ```
+   *
+   * @param any expected
+   * @returns Expect
+   */
+  to_equal(expected) {
+    return self._check(
+      diff.equal(self._value, expected),
+      'to_equal',
+      'to deeply equal ${format.inline(expected)}',
+      {
+        expected,
+        has_values: true,
+        details: self._diff(expected, self._value),
+      }
+    )
+  }
+
+  /**
+   * Asserts that this is the very same object, not merely one that
+   * looks the same. Two lists with identical contents are `to_be`
+   * each other but not `to_be_same_as` each other.
+   *
+   * ```zuri
+   * var original = [1, 2]
+   * expect(passed_through(original)).to_be_same_as(original)
+   * ```
+   *
+   * @param any expected
+   * @returns Expect
+   */
+  to_be_same_as(expected) {
+    return self._check(
+      id(self._value) == id(expected),
+      'to_be_same_as',
+      'to be the same object as ${format.inline(expected)}',
+      { expected, has_values: true }
+    )
+  }
+
+  /**
+   * Asserts two numbers agree to `digits` decimal places, which is
+   * the only sane way to compare anything that has been through
+   * floating-point arithmetic.
+   *
+   * ```zuri
+   * expect(0.1 + 0.2).to_be_close_to(0.3)
+   * ```
+   *
+   * @param number expected
+   * @param ?int digits: decimal places, `2` by default, so the
+   *    default tolerance is 0.005.
+   * @returns Expect
+   */
+  to_be_close_to(expected: number, digits: ?int) {
+    self._require(is_number(self._value), 'to_be_close_to', 'a number')
+
+    if digits == nil {
+      digits = 2
+    }
+
+    var tolerance = 0.5 / (10 ** digits)
+    var apart = (self._value - expected).abs()
+
+    return self._check(
+      apart < tolerance,
+      'to_be_close_to',
+      'to be within ${tolerance} of ${format.inline(expected)} (it is ${apart} away)',
+      { expected, has_values: true }
+    )
+  }
+
+  /**
+   * Asserts two numbers are no more than `delta` apart, when the
+   * tolerance is better stated as an absolute amount than as a number
+   * of decimal places.
+   *
+   * ```zuri
+   * expect(elapsed_ms).to_be_within(500, 50)
+   * ```
+   *
+   * @param number expected
+   * @param number delta: inclusive.
+   * @returns Expect
+   */
+  to_be_within(expected: number, delta: number) {
+    self._require(is_number(self._value), 'to_be_within', 'a number')
+
+    var apart = (self._value - expected).abs()
+
+    return self._check(
+      apart <= delta,
+      'to_be_within',
+      'to be within ${delta} of ${format.inline(expected)} (it is ${apart} away)',
+      { expected, has_values: true }
+    )
+  }
+
+  /**
+   * Asserts that every key in `expected` is present with a matching
+   * value, ignoring anything else the subject carries.
+   *
+   * Nested dictionaries recurse, and the subject may be a dictionary
+   * or an instance, so one expectation can be checked against either.
+   *
+   * ```zuri
+   * expect(create_user('Ada')).to_match_object({ name: 'Ada', active: true })
+   * ```
+   *
+   * @param dict expected
+   * @returns Expect
+   */
+  to_match_object(expected: dict) {
+    self._require(
+      is_dict(self._value) or is_instance(self._value),
+      'to_match_object',
+      'a dict or an instance'
+    )
+
+    return self._check(
+      diff.subset(expected, self._value),
+      'to_match_object',
+      'to match ${format.inline(expected)}',
+      {
+        expected,
+        has_values: true,
+        details: self._diff(expected, _shallow(self._value, expected)),
+      }
+    )
+  }
+
+
+  # =========================================================================
+  # Truthiness
+  # =========================================================================
+
+  /** Asserts the value is exactly `true`. @returns Expect */
+  to_be_true() {
+    return self._check(self._value == true, 'to_be_true', 'to be true', { expected: true })
+  }
+
+  /** Asserts the value is exactly `false`. @returns Expect */
+  to_be_false() {
+    return self._check(self._value == false, 'to_be_false', 'to be false', { expected: false })
+  }
+
+  /**
+   * Asserts the value is truthy.
+   *
+   * @note Zuri counts `nil`, `false`, `0`, any negative number, an
+   *    empty string and an empty collection as falsy. A negative
+   *    number being falsy is the one that catches people out.
+   * @returns Expect
+   */
+  to_be_truthy() {
+    return self._check(!!self._value, 'to_be_truthy', 'to be truthy', nil)
+  }
+
+  /**
+   * Asserts the value is falsy.
+   *
+   * @note see `to_be_truthy()` on what Zuri counts as falsy.
+   * @returns Expect
+   */
+  to_be_falsy() {
+    return self._check(!self._value, 'to_be_falsy', 'to be falsy', nil)
+  }
+
+  /** Asserts the value is `nil`. @returns Expect */
+  to_be_nil() {
+    return self._check(self._value == nil, 'to_be_nil', 'to be nil', { expected: nil })
+  }
+
+  /**
+   * Asserts the value is anything other than `nil`, which is the
+   * assertion to reach for after a lookup that can come back empty.
+   *
+   * @returns Expect
+   */
+  to_be_defined() {
+    return self._check(self._value != nil, 'to_be_defined', 'to be defined', nil)
+  }
+
+
+  # =========================================================================
+  # Types
+  # =========================================================================
+
+  /**
+   * Asserts the value's type.
+   *
+   * `type` may be a type name as a string, one of the names
+   * `format.type_name()` produces, or a class, in which case this
+   * means the same as `to_be_instance_of()`.
+   *
+   * ```zuri
+   * expect(payload).to_be_a('dict')
+   * expect(result).to_be_a(Point)
+   * ```
+   *
+   * @param {string|class} type
+   * @returns Expect
+   */
+  to_be_a(type) {
+    if is_class(type) {
+      return self.to_be_instance_of(type)
+    }
+
+    if !is_string(type) {
+      raise TestSetupError('to_be_a() needs a type name or a class, got ${format.with_article(format.type_label(type))}')
+    }
+
+    return self._check(
+      format.type_name(self._value) == type,
+      'to_be_a',
+      'to be ${format.with_article(type)}, not ${format.with_article(format.type_label(self._value))}',
+      { expected: type, received: format.type_name(self._value) }
+    )
+  }
+
+  /** Asserts the value is a string. @returns Expect */
+  to_be_string() {
+    return self._check(is_string(self._value), 'to_be_string', _is_a('string', self._value), nil)
+  }
+
+  /** Asserts the value is a number, of either kind. @returns Expect */
+  to_be_number() {
+    return self._check(is_number(self._value), 'to_be_number', _is_a('number', self._value), nil)
+  }
+
+  /** Asserts the value is a number with no fractional part. @returns Expect */
+  to_be_int() {
+    return self._check(is_int(self._value), 'to_be_int', _is_a('int', self._value), nil)
+  }
+
+  /** Asserts the value is a number with a fractional part. @returns Expect */
+  to_be_float() {
+    return self._check(
+      is_number(self._value) and !is_int(self._value),
+      'to_be_float',
+      _is_a('float', self._value),
+      nil
+    )
+  }
+
+  /** Asserts the value is an arbitrary-precision integer. @returns Expect */
+  to_be_bigint() {
+    return self._check(is_bigint(self._value), 'to_be_bigint', _is_a('bigint', self._value), nil)
+  }
+
+  /** Asserts the value is a boolean. @returns Expect */
+  to_be_bool() {
+    return self._check(is_bool(self._value), 'to_be_bool', _is_a('bool', self._value), nil)
+  }
+
+  /** Asserts the value is a list. @returns Expect */
+  to_be_list() {
+    return self._check(is_list(self._value), 'to_be_list', _is_a('list', self._value), nil)
+  }
+
+  /** Asserts the value is a dictionary. @returns Expect */
+  to_be_dict() {
+    return self._check(is_dict(self._value), 'to_be_dict', _is_a('dict', self._value), nil)
+  }
+
+  /** Asserts the value is a bytes buffer. @returns Expect */
+  to_be_bytes() {
+    return self._check(is_bytes(self._value), 'to_be_bytes', _is_a('bytes', self._value), nil)
+  }
+
+  /** Asserts the value is a function. @returns Expect */
+  to_be_function() {
+    return self._check(is_function(self._value), 'to_be_function', _is_a('function', self._value), nil)
+  }
+
+  /**
+   * Asserts the value can be called, which a class and a bound method
+   * can be as well as a function.
+   *
+   * @returns Expect
+   */
+  to_be_callable() {
+    return self._check(is_callable(self._value), 'to_be_callable', 'to be callable', nil)
+  }
+
+  /**
+   * Asserts the value can be iterated with `for`, which covers lists,
+   * dictionaries, strings, ranges, bytes, and any class defining
+   * `@key` and `@value`.
+   *
+   * @returns Expect
+   */
+  to_be_iterable() {
+    return self._check(is_iterable(self._value), 'to_be_iterable', 'to be iterable', nil)
+  }
+
+  /** Asserts the value is a class, not an instance of one. @returns Expect */
+  to_be_class() {
+    return self._check(is_class(self._value), 'to_be_class', _is_a('class', self._value), nil)
+  }
+
+  /** Asserts the value is an instance of some class. @returns Expect */
+  to_be_instance() {
+    return self._check(is_instance(self._value), 'to_be_instance', _is_a('instance', self._value), nil)
+  }
+
+  /**
+   * Asserts the value is an instance of `klass` or of anything that
+   * inherits from it.
+   *
+   * ```zuri
+   * expect(error).to_be_instance_of(ValueError)
+   * ```
+   *
+   * @param type klass
+   * @returns Expect
+   */
+  to_be_instance_of(klass: type) {
+    var name = reflect.class_info(klass).name
+
+    return self._check(
+      instance_of(self._value, klass),
+      'to_be_instance_of',
+      'to be an instance of ${name}, not ${format.with_article(format.type_label(self._value))}',
+      { expected: name, received: format.type_label(self._value) }
+    )
+  }
+
+
+  # =========================================================================
+  # Numbers
+  # =========================================================================
+
+  /** @param number bound @returns Expect */
+  to_be_greater_than(bound: number) {
+    self._require(is_number(self._value), 'to_be_greater_than', 'a number')
+
+    return self._check(
+      self._value > bound,
+      'to_be_greater_than',
+      'to be greater than ${format.inline(bound)}',
+      { expected: bound, has_values: true }
+    )
+  }
+
+  /** @param number bound @returns Expect */
+  to_be_greater_than_or_equal(bound: number) {
+    self._require(is_number(self._value), 'to_be_greater_than_or_equal', 'a number')
+
+    return self._check(
+      self._value >= bound,
+      'to_be_greater_than_or_equal',
+      'to be at least ${format.inline(bound)}',
+      { expected: bound, has_values: true }
+    )
+  }
+
+  /** @param number bound @returns Expect */
+  to_be_less_than(bound: number) {
+    self._require(is_number(self._value), 'to_be_less_than', 'a number')
+
+    return self._check(
+      self._value < bound,
+      'to_be_less_than',
+      'to be less than ${format.inline(bound)}',
+      { expected: bound, has_values: true }
+    )
+  }
+
+  /** @param number bound @returns Expect */
+  to_be_less_than_or_equal(bound: number) {
+    self._require(is_number(self._value), 'to_be_less_than_or_equal', 'a number')
+
+    return self._check(
+      self._value <= bound,
+      'to_be_less_than_or_equal',
+      'to be at most ${format.inline(bound)}',
+      { expected: bound, has_values: true }
+    )
+  }
+
+  /**
+   * Asserts the value falls in `[low, high]`, both ends included.
+   *
+   * @param number low
+   * @param number high
+   * @returns Expect
+   */
+  to_be_between(low: number, high: number) {
+    self._require(is_number(self._value), 'to_be_between', 'a number')
+
+    return self._check(
+      self._value >= low and self._value <= high,
+      'to_be_between',
+      'to be between ${format.inline(low)} and ${format.inline(high)}',
+      { expected: [low, high] }
+    )
+  }
+
+  /** Asserts the value is greater than zero. @returns Expect */
+  to_be_positive() {
+    self._require(is_number(self._value), 'to_be_positive', 'a number')
+    return self._check(self._value > 0, 'to_be_positive', 'to be positive', nil)
+  }
+
+  /** Asserts the value is less than zero. @returns Expect */
+  to_be_negative() {
+    self._require(is_number(self._value), 'to_be_negative', 'a number')
+    return self._check(self._value < 0, 'to_be_negative', 'to be negative', nil)
+  }
+
+  /** Asserts the value is zero, of either sign. @returns Expect */
+  to_be_zero() {
+    self._require(is_number(self._value), 'to_be_zero', 'a number')
+    return self._check(self._value == 0, 'to_be_zero', 'to be zero', { expected: 0 })
+  }
+
+  /**
+   * Asserts the value divides by `divisor` with nothing left over.
+   *
+   * @param number divisor
+   * @returns Expect
+   */
+  to_be_divisible_by(divisor: number) {
+    self._require(is_number(self._value), 'to_be_divisible_by', 'a number')
+
+    if divisor == 0 {
+      raise TestSetupError('to_be_divisible_by() cannot divide by zero')
+    }
+
+    return self._check(
+      self._value % divisor == 0,
+      'to_be_divisible_by',
+      'to be divisible by ${format.inline(divisor)}',
+      { expected: divisor }
+    )
+  }
+
+  /** Asserts the value is an even whole number. @returns Expect */
+  to_be_even() {
+    self._require(is_int(self._value), 'to_be_even', 'a whole number')
+    return self._check(self._value % 2 == 0, 'to_be_even', 'to be even', nil)
+  }
+
+  /** Asserts the value is an odd whole number. @returns Expect */
+  to_be_odd() {
+    self._require(is_int(self._value), 'to_be_odd', 'a whole number')
+    return self._check(self._value % 2 != 0, 'to_be_odd', 'to be odd', nil)
+  }
+
+  /**
+   * Asserts the value is the floating-point not-a-number.
+   *
+   * `NaN` is not `==` to itself, so this is the only way to check for
+   * it.
+   *
+   * @returns Expect
+   */
+  to_be_nan() {
+    return self._check(
+      is_number(self._value) and self._value.is_nan(),
+      'to_be_nan',
+      'to be NaN',
+      nil
+    )
+  }
+
+  /** Asserts the value is a number that is neither infinite nor NaN. @returns Expect */
+  to_be_finite() {
+    return self._check(
+      is_number(self._value) and self._value.is_finite(),
+      'to_be_finite',
+      'to be finite',
+      nil
+    )
+  }
+
+  /** Asserts the value is positive or negative infinity. @returns Expect */
+  to_be_infinite() {
+    return self._check(
+      is_number(self._value) and self._value.is_inf(),
+      'to_be_infinite',
+      'to be infinite',
+      nil
+    )
+  }
+
+
+  # =========================================================================
+  # Text
+  # =========================================================================
+
+  /**
+   * Asserts the subject contains `item`.
+   *
+   * What "contains" means follows the subject: a substring of a
+   * string, an element of a list or a bytes buffer, a key of a
+   * dictionary. Comparison is `==`; `to_contain_equal()` is the
+   * structural version.
+   *
+   * @param any item
+   * @returns Expect
+   */
+  to_contain(item) {
+    self._require(_is_container(self._value), 'to_contain', 'a string, list, dict or bytes')
+
+    return self._check(
+      _contains(self._value, item),
+      'to_contain',
+      'to contain ${format.inline(item)}',
+      { expected: item }
+    )
+  }
+
+  /**
+   * Asserts the subject contains an element deeply equal to `item`,
+   * which is what finding an object in a list needs.
+   *
+   * @param any item
+   * @returns Expect
+   */
+  to_contain_equal(item) {
+    self._require(is_list(self._value), 'to_contain_equal', 'a list')
+
+    return self._check(
+      _index_of_equal(self._value, item) >= 0,
+      'to_contain_equal',
+      'to contain something deeply equal to ${format.inline(item)}',
+      { expected: item }
+    )
+  }
+
+  /**
+   * Asserts the string contains `part`, ignoring case.
+   *
+   * @param string part
+   * @returns Expect
+   */
+  to_contain_ignoring_case(part: string) {
+    self._require(is_string(self._value), 'to_contain_ignoring_case', 'a string')
+
+    return self._check(
+      self._value.lower().contains(part.lower()),
+      'to_contain_ignoring_case',
+      'to contain ${format.inline(part)}, ignoring case',
+      { expected: part }
+    )
+  }
+
+  /**
+   * Asserts the string equals `expected`, ignoring case.
+   *
+   * @param string expected
+   * @returns Expect
+   */
+  to_equal_ignoring_case(expected: string) {
+    self._require(is_string(self._value), 'to_equal_ignoring_case', 'a string')
+
+    return self._check(
+      self._value.lower() == expected.lower(),
+      'to_equal_ignoring_case',
+      'to equal ${format.inline(expected)}, ignoring case',
+      { expected, has_values: true }
+    )
+  }
+
+  /**
+   * @param string prefix
+   * @returns Expect
+   */
+  to_start_with(prefix: string) {
+    self._require(is_string(self._value), 'to_start_with', 'a string')
+
+    return self._check(
+      self._value.starts_with(prefix),
+      'to_start_with',
+      'to start with ${format.inline(prefix)}',
+      { expected: prefix }
+    )
+  }
+
+  /**
+   * @param string suffix
+   * @returns Expect
+   */
+  to_end_with(suffix: string) {
+    self._require(is_string(self._value), 'to_end_with', 'a string')
+
+    return self._check(
+      self._value.ends_with(suffix),
+      'to_end_with',
+      'to end with ${format.inline(suffix)}',
+      { expected: suffix }
+    )
+  }
+
+  /**
+   * Asserts the string matches a regular expression.
+   *
+   * ```zuri
+   * expect(id).to_match('/^user-[0-9]+$/')
+   * ```
+   *
+   * @param string pattern: a Zuri regular expression, delimiters
+   *    included.
+   * @returns Expect
+   */
+  to_match(pattern: string) {
+    self._require(is_string(self._value), 'to_match', 'a string')
+
+    # `match()` answers `false`, not `nil`, when nothing matched, and
+    # a dictionary of capture groups when something did.
+    return self._check(
+      is_dict(self._value.match(pattern)),
+      'to_match',
+      'to match ${format.inline(pattern)}',
+      { expected: pattern }
+    )
+  }
+
+  /**
+   * Asserts the string is empty or contains nothing but whitespace.
+   *
+   * @returns Expect
+   */
+  to_be_blank() {
+    self._require(is_string(self._value), 'to_be_blank', 'a string')
+
+    return self._check(
+      self._value.trim().trim('\t').trim('\n').trim('\r') == '',
+      'to_be_blank',
+      'to be blank',
+      nil
+    )
+  }
+
+
+  # =========================================================================
+  # Collections
+  # =========================================================================
+
+  /**
+   * Asserts the subject's length.
+   *
+   * @param int expected
+   * @returns Expect
+   */
+  to_have_length(expected: int) {
+    self._require(_has_length(self._value), 'to_have_length', 'a string, list, dict or bytes')
+
+    var actual = self._value.length()
+
+    return self._check(
+      actual == expected,
+      'to_have_length',
+      'to have length ${expected}, not ${actual}',
+      { expected, received: actual, has_values: true }
+    )
+  }
+
+  /**
+   * Asserts the subject has no elements, no entries, or no
+   * characters.
+   *
+   * @returns Expect
+   */
+  to_be_empty() {
+    self._require(_has_length(self._value), 'to_be_empty', 'a string, list, dict or bytes')
+
+    return self._check(self._value.length() == 0, 'to_be_empty', 'to be empty', nil)
+  }
+
+  /**
+   * Asserts every one of `items` is present, in any order.
+   *
+   * @param list items
+   * @returns Expect
+   */
+  to_contain_all(items: list) {
+    self._require(_is_container(self._value), 'to_contain_all', 'a string, list, dict or bytes')
+
+    var missing = items.filter(@(item) { return !_contains_equal(self._value, item) })
+
+    return self._check(
+      missing.is_empty(),
+      'to_contain_all',
+      'to contain all of ${format.inline(items)}' +
+        (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
+      { expected: items }
+    )
+  }
+
+  /**
+   * Asserts at least one of `items` is present.
+   *
+   * @param list items
+   * @returns Expect
+   */
+  to_contain_any(items: list) {
+    self._require(_is_container(self._value), 'to_contain_any', 'a string, list, dict or bytes')
+
+    return self._check(
+      items.some(@(item) { return _contains_equal(self._value, item) }),
+      'to_contain_any',
+      'to contain any of ${format.inline(items)}',
+      { expected: items }
+    )
+  }
+
+  /**
+   * Asserts none of `items` is present.
+   *
+   * @param list items
+   * @returns Expect
+   */
+  to_contain_none(items: list) {
+    self._require(_is_container(self._value), 'to_contain_none', 'a string, list, dict or bytes')
+
+    var found = items.filter(@(item) { return _contains_equal(self._value, item) })
+
+    return self._check(
+      found.is_empty(),
+      'to_contain_none',
+      'to contain none of ${format.inline(items)}' +
+        (found.is_empty() ? '' : ', but it has ${format.inline(found)}'),
+      { expected: items }
+    )
+  }
+
+  /**
+   * Asserts the list holds exactly `items`, in any order and with the
+   * same number of duplicates.
+   *
+   * This is the matcher for a collection whose order is not part of
+   * the contract, such as one built from a dictionary's keys.
+   *
+   * @param list items
+   * @returns Expect
+   */
+  to_contain_exactly(items: list) {
+    self._require(is_list(self._value), 'to_contain_exactly', 'a list')
+
+    var remaining = self._value.clone()
+    var unmatched = []
+
+    for item in items {
+      var at = _index_of_equal(remaining, item)
+
+      if at < 0 {
+        unmatched.append(item)
+      } else {
+        remaining.remove_at(at)
+      }
+    }
+
+    var details = []
+    if !self._negated {
+      if !unmatched.is_empty() {
+        details.append(style.green('+ missing     ' + format.inline(unmatched)))
+      }
+      if !remaining.is_empty() {
+        details.append(style.red('- unexpected  ' + format.inline(remaining)))
+      }
+    }
+
+    return self._check(
+      unmatched.is_empty() and remaining.is_empty(),
+      'to_contain_exactly',
+      'to hold exactly ${format.inline(items)}, in any order',
+      { expected: items, details }
+    )
+  }
+
+  /**
+   * Asserts the dictionary has `key`, whatever it maps to.
+   *
+   * @param any key
+   * @returns Expect
+   */
+  to_have_key(key) {
+    self._require(is_dict(self._value), 'to_have_key', 'a dict')
+
+    return self._check(
+      self._value.contains(key),
+      'to_have_key',
+      'to have the key ${format.inline(key)}',
+      { expected: key }
+    )
+  }
+
+  /**
+   * Asserts the dictionary has every one of `keys`.
+   *
+   * @param list keys
+   * @returns Expect
+   */
+  to_have_keys(keys: list) {
+    self._require(is_dict(self._value), 'to_have_keys', 'a dict')
+
+    var missing = keys.filter(@(key) { return !self._value.contains(key) })
+
+    return self._check(
+      missing.is_empty(),
+      'to_have_keys',
+      'to have the keys ${format.inline(keys)}' +
+        (missing.is_empty() ? '' : ', missing ${format.inline(missing)}'),
+      { expected: keys }
+    )
+  }
+
+  /**
+   * Asserts the dictionary maps some key to `value`.
+   *
+   * @param any value
+   * @returns Expect
+   */
+  to_have_value(value) {
+    self._require(is_dict(self._value), 'to_have_value', 'a dict')
+
+    return self._check(
+      self._value.values().some(@(candidate) { return diff.equal(candidate, value) }),
+      'to_have_value',
+      'to have a value equal to ${format.inline(value)}',
+      { expected: value }
+    )
+  }
+
+  /**
+   * Asserts something exists at a dotted path, and optionally that it
+   * equals `value`.
+   *
+   * The path walks dictionary keys, instance properties and list
+   * indices alike, so one expression reaches into a whole decoded
+   * response:
+   *
+   * ```zuri
+   * expect(payload).to_have_property('data.items.0.id', 7)
+   * ```
+   *
+   * @param string path
+   * @param ?any value: when given, what must be there. Left out, this
+   *    only asserts that the path resolves to something other than
+   *    `nil`.
+   * @returns Expect
+   */
+  to_have_property(path: string, value) {
+    var found = _walk(self._value, path.split('.'))
+
+    if value == nil {
+      return self._check(
+        found.found and found.value != nil,
+        'to_have_property',
+        'to have something at ${format.inline(path)}',
+        { expected: path }
+      )
+    }
+
+    return self._check(
+      found.found and diff.equal(found.value, value),
+      'to_have_property',
+      'to have ${format.inline(value)} at ${format.inline(path)}' +
+        (found.found ? ', not ${format.inline(found.value)}' : ', but nothing is there'),
+      {
+        expected: value,
+        received: found.value,
+        has_values: found.found,
+        details: found.found ? self._diff(value, found.value) : [],
+      }
+    )
+  }
+
+  /**
+   * Asserts the list is in ascending order.
+   *
+   * Numbers compare numerically and strings compare by codepoint. A
+   * list mixing the two has no order to be in, and says so.
+   *
+   * @returns Expect
+   */
+  to_be_sorted() {
+    self._require(is_list(self._value), 'to_be_sorted', 'a list')
+
+    return self._check(
+      _is_sorted(self._value),
+      'to_be_sorted',
+      'to be sorted',
+      nil
+    )
+  }
+
+  /**
+   * Asserts no two elements of the list are equal.
+   *
+   * @returns Expect
+   */
+  to_have_unique_items() {
+    self._require(is_list(self._value), 'to_have_unique_items', 'a list')
+
+    var duplicates = []
+
+    iter var index = 0; index < self._value.length(); index++ {
+      var first = _index_of_equal(self._value, self._value[index])
+
+      if first < index and !_contains_equal(duplicates, self._value[index]) {
+        duplicates.append(self._value[index])
+      }
+    }
+
+    return self._check(
+      duplicates.is_empty(),
+      'to_have_unique_items',
+      'to have no duplicates' +
+        (duplicates.is_empty() ? '' : ', but ${format.inline(duplicates)} repeats'),
+      nil
+    )
+  }
+
+
+  # =========================================================================
+  # Errors
+  # =========================================================================
+
+  /**
+   * Asserts that calling the subject raises.
+   *
+   * The subject must be a function taking no arguments; wrap the call
+   * being tested in one.
+   *
+   * ```zuri
+   * expect(@{ parse('') }).to_raise()
+   * ```
+   *
+   * @returns Expect
+   */
+  to_raise() {
+    var outcome = self._invoke('to_raise')
+
+    return self._check(
+      outcome.raised,
+      'to_raise',
+      'to raise' + (outcome.raised ? ', and it raised ${_describe_error(outcome.error)}' : ''),
+      { details: self._raised_details(outcome) }
+    )
+  }
+
+  /**
+   * Asserts that calling the subject raises an instance of `klass`,
+   * or of something inheriting from it.
+   *
+   * ```zuri
+   * expect(@{ parse('') }).to_raise_instance_of(ValueError)
+   * ```
+   *
+   * @param type klass
+   * @returns Expect
+   */
+  to_raise_instance_of(klass: type) {
+    var outcome = self._invoke('to_raise_instance_of')
+    var name = reflect.class_info(klass).name
+
+    return self._check(
+      outcome.raised and instance_of(outcome.error, klass),
+      'to_raise_instance_of',
+      'to raise a ${name}' + (
+        outcome.raised ?
+          ', but it raised ${_describe_error(outcome.error)}' :
+          ', but nothing was raised'
+      ),
+      { expected: name, details: self._raised_details(outcome) }
+    )
+  }
+
+  /**
+   * Asserts that calling the subject raises something whose message
+   * contains `part`, or matches it when `part` is a regular
+   * expression.
+   *
+   * ```zuri
+   * expect(@{ withdraw(10, 5) }).to_raise_with_message('cannot withdraw')
+   * expect(@{ withdraw(10, 5) }).to_raise_with_message('/withdraw [0-9]+/')
+   * ```
+   *
+   * @param string part: taken as a regular expression when it is
+   *    delimited like one, and as a substring otherwise.
+   * @returns Expect
+   */
+  to_raise_with_message(part: string) {
+    var outcome = self._invoke('to_raise_with_message')
+    var message = outcome.raised ? _message_of(outcome.error) : nil
+    var matched = false
+
+    if is_string(message) {
+      matched = _looks_like_regex(part) ?
+        is_dict(message.match(part)) :
+        message.contains(part)
+    }
+
+    return self._check(
+      outcome.raised and matched,
+      'to_raise_with_message',
+      'to raise with a message matching ${format.inline(part)}' + (
+        outcome.raised ?
+          ', but the message was ${format.inline(message)}' :
+          ', but nothing was raised'
+      ),
+      { expected: part, received: message, details: self._raised_details(outcome) }
+    )
+  }
+
+  /**
+   * Asserts that calling the subject does not raise.
+   *
+   * The same as `.not.to_raise()`, and there for the many tests that
+   * read better stating it directly.
+   *
+   * @returns Expect
+   */
+  to_not_raise() {
+    return self.not.to_raise()
+  }
+
+
+  # =========================================================================
+  # Mocks
+  # =========================================================================
+
+  /**
+   * Asserts the mock has been called at least once.
+   *
+   * The subject may be the `Mock` or the function it handed out.
+   *
+   * @returns Expect
+   */
+  to_have_been_called() {
+    var target = self._mock('to_have_been_called')
+
+    return self._check(
+      target.called(),
+      'to_have_been_called',
+      'to have been called' +
+        (target.called() ? ', and it was called ${format.plural(target.call_count(), "time")}' : ''),
+      nil
+    )
+  }
+
+  /**
+   * Asserts the mock has been called exactly `count` times.
+   *
+   * @param int count
+   * @returns Expect
+   */
+  to_have_been_called_times(count: int) {
+    var target = self._mock('to_have_been_called_times')
+    var actual = target.call_count()
+
+    return self._check(
+      actual == count,
+      'to_have_been_called_times',
+      'to have been called ${format.plural(count, "time")}, not ${actual}',
+      { expected: count, received: actual, has_values: true, details: _call_details(target) }
+    )
+  }
+
+  /**
+   * Asserts the mock was called at least once with exactly these
+   * arguments.
+   *
+   * ```zuri
+   * expect(send).to_have_been_called_with('hello', { retry: true })
+   * ```
+   *
+   * @param ...any args
+   * @returns Expect
+   */
+  to_have_been_called_with(...args) {
+    var target = self._mock('to_have_been_called_with')
+
+    return self._check(
+      target.call_args().some(@(recorded) { return diff.equal(recorded, args) }),
+      'to_have_been_called_with',
+      'to have been called with ${_args_phrase(args)}',
+      { expected: args, details: _call_details(target) }
+    )
+  }
+
+  /**
+   * Asserts the mock's most recent call had exactly these arguments.
+   *
+   * @param ...any args
+   * @returns Expect
+   */
+  to_have_been_last_called_with(...args) {
+    var target = self._mock('to_have_been_last_called_with')
+    var call = target.last_call()
+
+    return self._check(
+      call != nil and diff.equal(call.args, args),
+      'to_have_been_last_called_with',
+      'to have last been called with ${_args_phrase(args)}',
+      {
+        expected: args,
+        received: call != nil ? call.args : nil,
+        has_values: call != nil,
+        details: _call_details(target),
+      }
+    )
+  }
+
+  /**
+   * Asserts the mock's `index`-th call had exactly these arguments,
+   * counting from zero. A negative index counts back from the most
+   * recent.
+   *
+   * @param int index
+   * @param ...any args
+   * @returns Expect
+   */
+  to_have_been_nth_called_with(index, ...args) {
+    var target = self._mock('to_have_been_nth_called_with')
+    var call = target.nth_call(index)
+
+    return self._check(
+      call != nil and diff.equal(call.args, args),
+      'to_have_been_nth_called_with',
+      'call ${index} to have been made with ${_args_phrase(args)}',
+      {
+        expected: args,
+        received: call != nil ? call.args : nil,
+        has_values: call != nil,
+        details: _call_details(target),
+      }
+    )
+  }
+
+  /**
+   * Asserts at least one call returned rather than raised.
+   *
+   * @returns Expect
+   */
+  to_have_returned() {
+    var target = self._mock('to_have_returned')
+
+    return self._check(
+      target.calls.some(@(call) { return !call.threw }),
+      'to_have_returned',
+      'to have returned from at least one call',
+      { details: _call_details(target) }
+    )
+  }
+
+  /**
+   * Asserts at least one call returned `value`.
+   *
+   * @param any value
+   * @returns Expect
+   */
+  to_have_returned_with(value) {
+    var target = self._mock('to_have_returned_with')
+
+    return self._check(
+      target.calls.some(@(call) { return !call.threw and diff.equal(call.result, value) }),
+      'to_have_returned_with',
+      'to have returned ${format.inline(value)}',
+      { expected: value, details: _call_details(target) }
+    )
+  }
+
+  /**
+   * Asserts at least one call raised.
+   *
+   * @returns Expect
+   */
+  to_have_raised() {
+    var target = self._mock('to_have_raised')
+
+    return self._check(
+      target.calls.some(@(call) { return call.threw }),
+      'to_have_raised',
+      'to have raised from at least one call',
+      { details: _call_details(target) }
+    )
+  }
+
+
+  # =========================================================================
+  # Output
+  # =========================================================================
+
+  /**
+   * Asserts that running the subject prints something containing
+   * `part`.
+   *
+   * The subject must be a function taking no arguments. Everything
+   * Zuri writes to standard output while it runs is collected: `echo`,
+   * `print()` and `io.stdout` alike.
+   *
+   * ```zuri
+   * expect(@{ greet('Ada') }).to_print('Hello, Ada')
+   * ```
+   *
+   * @param string part
+   * @returns Expect
+   */
+  to_print(part: string) {
+    var printed = self._printed('to_print')
+
+    return self._check(
+      printed.contains(part),
+      'to_print',
+      'to print something containing ${format.inline(part)}, but it printed ${format.inline(printed)}',
+      { expected: part, received: printed }
+    )
+  }
+
+  /**
+   * Asserts that running the subject prints exactly `expected`,
+   * trailing newline and all.
+   *
+   * @param string expected
+   * @returns Expect
+   */
+  to_print_exactly(expected: string) {
+    var printed = self._printed('to_print_exactly')
+
+    return self._check(
+      printed == expected,
+      'to_print_exactly',
+      'to print exactly ${format.inline(expected)}',
+      {
+        expected,
+        received: printed,
+        has_values: true,
+        details: self._diff(expected, printed),
+      }
+    )
+  }
+
+  /**
+   * Asserts that running the subject prints nothing at all.
+   *
+   * @returns Expect
+   */
+  to_print_nothing() {
+    var printed = self._printed('to_print_nothing')
+
+    return self._check(
+      printed == '',
+      'to_print_nothing',
+      'to print nothing, but it printed ${format.inline(printed)}',
+      { received: printed }
+    )
+  }
+
+
+  # =========================================================================
+  # Snapshots
+  # =========================================================================
+
+  /**
+   * Asserts the value still looks the way it did when it was first
+   * recorded.
+   *
+   * The first run writes the snapshot and passes. Later runs compare
+   * against it. See {test.snapshot} on where the files live, how to
+   * update them, and why a brand new snapshot fails on CI.
+   *
+   * ```zuri
+   * expect(render(invoice)).to_match_snapshot()
+   * expect(headers).to_match_snapshot('response headers')
+   * ```
+   *
+   * @param ?string name: distinguishes several snapshots in one test.
+   *    Without one they are numbered in the order they are taken.
+   * @returns Expect
+   */
+  to_match_snapshot(name: ?string) {
+    if self._negated {
+      raise TestSetupError('to_match_snapshot() cannot be negated: there is nothing useful in asserting a value is not what it used to be')
+    }
+
+    var frame = context.current()
+    if frame == nil {
+      raise TestSetupError('to_match_snapshot() can only be called inside a test')
+    }
+
+    var key = context.snapshot_key(name)
+    var serialized = format.serialize(self._value)
+    var outcome = snapshot.check(frame.file, key, serialized)
+
+    context.record_assertion()
+
+    if outcome.status == 'match' or outcome.status == 'written' or outcome.status == 'updated' {
+      return self
+    }
+
+    if outcome.status == 'missing' {
+      raise AssertionError(
+        'Snapshot ${format.inline(key)} does not exist, and new snapshots are not written on CI',
+        {
+          matcher: 'to_match_snapshot',
+          details: [style.dim('  run the suite locally to record it, then commit the .snap file')],
+        }
+      )
+    }
+
+    raise AssertionError(
+      'Snapshot ${format.inline(key)} no longer matches',
+      {
+        matcher: 'to_match_snapshot',
+        expected: outcome.expected,
+        received: outcome.received,
+        has_values: true,
+        details: diff.render(outcome.expected, outcome.received),
+      }
+    )
+  }
+
+
+  # =========================================================================
+  # Anything else
+  # =========================================================================
+
+  /**
+   * Asserts `predicate(value)` is truthy, for the assertion no
+   * built-in matcher makes.
+   *
+   * ```zuri
+   * expect(port).to_satisfy(@(n) { return n % 2 == 0 }, 'to be an even port')
+   * ```
+   *
+   * @param function predicate
+   * @param ?string description: completes the sentence "Expected
+   *    <value> ...". Without one the message says only that a
+   *    predicate was not satisfied, which is rarely enough.
+   * @returns Expect
+   */
+  to_satisfy(predicate: function, description: ?string) {
+    return self._check(
+      !!predicate(self._value),
+      'to_satisfy',
+      description != nil and description != '' ? description : 'to satisfy the given predicate',
+      nil
+    )
+  }
+
+
+  # =========================================================================
+  # Shared plumbing
+  # =========================================================================
+
+  _invoke(matcher) {
+    self._require(is_callable(self._value), matcher, 'a function to call')
+
+    var raised = false
+    var error = nil
+
+    catch {
+      self._value()
+    } as failure {
+      raised = true
+      error = failure
+    }
+
+    return { raised, error }
+  }
+
+  # The message already names what was raised. What it cannot say is
+  # where from, and for an error nobody expected that is the whole
+  # question.
+  _raised_details(outcome) {
+    if !outcome.raised or self._negated {
+      return []
+    }
+
+    var origin = _origin_of(outcome.error)
+
+    return origin == nil ? [] : [style.dim('  raised at ${origin}')]
+  }
+
+  _printed(matcher) {
+    self._require(is_callable(self._value), matcher, 'a function to call')
+
+    io.capture_begin()
+
+    catch {
+      self._value()
+    } as failure
+
+    var printed = io.capture_end()
+
+    if failure {
+      raise failure
+    }
+
+    return printed
+  }
+
+  _mock(matcher) {
+    var target = mock.mock_of(self._value)
+
+    if target == nil {
+      raise TestSetupError(
+        '${matcher}() needs a mock or the function a mock handed out, but was given ${format.with_article(format.type_label(self._value))}'
+      )
+    }
+
+    return target
+  }
+}
+
+
+# `to_be_string()` and its dozen siblings all want the same sentence.
+def _is_a(name, value) {
+  return 'to be ${format.with_article(name)}, not ${format.with_article(format.type_label(value))}'
+}
+
+
+def _is_container(value) {
+  return is_string(value) or is_list(value) or is_dict(value) or is_bytes(value)
+}
+
+
+def _has_length(value) {
+  return _is_container(value)
+}
+
+
+def _contains(container, item) {
+  if is_bytes(container) {
+    return container.to_list().contains(item)
+  }
+
+  return container.contains(item)
+}
+
+
+def _contains_equal(container, item) {
+  if is_list(container) {
+    return _index_of_equal(container, item) >= 0
+  }
+
+  return _contains(container, item)
+}
+
+
+def _index_of_equal(items, item) {
+  iter var index = 0; index < items.length(); index++ {
+    if diff.equal(items[index], item) {
+      return index
+    }
+  }
+
+  return -1
+}
+
+
+# Ascending order, for the two kinds of value that have one. Strings
+# have no `<` operator in Zuri, so they go through `compare()`.
+def _is_sorted(items) {
+  iter var index = 1; index < items.length(); index++ {
+    var previous = items[index - 1]
+    var current = items[index]
+
+    if is_number(previous) and is_number(current) {
+      if previous > current {
+        return false
+      }
+      continue
+    }
+
+    if is_string(previous) and is_string(current) {
+      if previous.compare(current) > 0 {
+        return false
+      }
+      continue
+    }
+
+    raise TestSetupError(
+      'to_be_sorted() can order numbers or strings, but the list holds ${format.with_article(format.type_label(previous))} next to ${format.with_article(format.type_label(current))}'
+    )
+  }
+
+  return true
+}
+
+
+# Follows a dotted path through whatever it finds: dictionary keys,
+# instance properties, and list indices, since a decoded payload is
+# usually all three on the way down.
+def _walk(value, segments) {
+  var current = value
+
+  for segment in segments {
+    if is_dict(current) {
+      if !current.contains(segment) {
+        return { found: false, value: nil }
+      }
+
+      current = current[segment]
+      continue
+    }
+
+    if is_instance(current) {
+      if !reflect.has_prop(current, segment) {
+        return { found: false, value: nil }
+      }
+
+      current = reflect.get_prop(current, segment)
+      continue
+    }
+
+    if is_list(current) {
+      var index = segment.to_number()
+
+      if !segment.is_number() or index < 0 or index >= current.length() {
+        return { found: false, value: nil }
+      }
+
+      current = current[index.int()]
+      continue
+    }
+
+    return { found: false, value: nil }
+  }
+
+  return { found: true, value: current }
+}
+
+
+# The innermost frame of an error's own trace, which is the line that
+# actually raised it.
+def _origin_of(error) {
+  if !is_instance(error) or !reflect.has_prop(error, 'stacktrace') {
+    return nil
+  }
+
+  var trace = error.stacktrace
+
+  return is_list(trace) and !trace.is_empty() ? trace[0] : nil
+}
+
+
+def _message_of(error) {
+  if is_instance(error) and reflect.has_prop(error, 'message') {
+    return error.message
+  }
+
+  return format.inline_plain(error)
+}
+
+
+def _describe_error(error) {
+  if error == nil {
+    return 'nothing'
+  }
+
+  if is_instance(error) and reflect.has_prop(error, 'type') {
+    return '${error.type}: ${_message_of(error)}'
+  }
+
+  return format.inline_plain(error)
+}
+
+
+# A pattern needs a delimiter on both ends to be one; anything else is
+# a plain substring, which is what most callers mean.
+def _looks_like_regex(text) {
+  if text.length() < 2 {
+    return false
+  }
+
+  var first = text[0, 1]
+
+  return (first == '/' or first == '~' or first == '@') and text.ends_with(first)
+}
+
+
+def _args_phrase(args) {
+  if args.is_empty() {
+    return 'no arguments'
+  }
+
+  return ', '.join(args.map(@(arg) { return format.inline(arg) }))
+}
+
+
+# Under a failed mock expectation the single most useful thing to show
+# is what the mock was actually called with.
+def _call_details(target) {
+  if target.calls.is_empty() {
+    return [style.dim('  it was never called')]
+  }
+
+  var lines = [style.dim('  calls:')]
+  var shown = 0
+
+  for call in target.calls {
+    if shown >= 10 {
+      lines.append(style.dim('    ${style.symbols().ellipsis} ${format.plural(target.calls.length() - shown, "more call")}'))
+      break
+    }
+
+    lines.append(style.dim('    ${shown + 1}. ') + _args_phrase(call.args))
+    shown++
+  }
+
+  return lines
+}
+
+
+# For `to_match_object`, the diff should show the keys that were
+# asked about and nothing else; the whole object would bury the one
+# line that matters under everything that was never in question.
+def _shallow(value, expected) {
+  var narrowed = {}
+
+  for key in expected.keys() {
+    if is_dict(value) and value.contains(key) {
+      narrowed.set(key, value[key])
+    } else if is_instance(value) and reflect.has_prop(value, key) {
+      narrowed.set(key, reflect.get_prop(value, key))
+    }
+  }
+
+  return narrowed
+}
+
+
+/**
+ * Starts an assertion about `value`.
+ *
+ * ```zuri
+ * expect(total).to_be(42)
+ * expect(total, 'order total').to_be(42)
+ * ```
+ *
+ * @param any value
+ * @param ?string label: a name for the value, shown in failure
+ *    messages ahead of the value itself.
+ * @returns Expect
+ */
+def expect(value, label: ?string) {
+  return Expect(value, label, false, nil)
+}
+
+
+/**
+ * Fails the current test outright.
+ *
+ * For the branch that should never be reached:
+ *
+ * ```zuri
+ * using response.status {
+ *   when 200 handle_ok()
+ *   when 404 handle_missing()
+ *   default fail('unexpected status ${response.status}')
+ * }
+ * ```
+ *
+ * @param ?string message
+ * @raises AssertionError always.
+ */
+def fail(message: ?string) {
+  context.record_assertion()
+
+  raise AssertionError(
+    message != nil and message != '' ? message : 'Failed',
+    { matcher: 'fail' }
+  )
+}
+
+
+/**
+ * Declares that this test makes exactly `count` assertions, and fails
+ * it if the number turns out to be different.
+ *
+ * This is how a test proves that a branch it expected to reach was
+ * actually reached, which matters most when the assertions are inside
+ * a callback that might never run:
+ *
+ * ```zuri
+ * it('reports every error', @{
+ *   assertions(2)
+ *
+ *   validate(bad_input, @(error) {
+ *     expect(error.field).to_be_string()
+ *   })
+ * })
+ * ```
+ *
+ * @param int count
+ * @raises TestSetupError outside a test.
+ */
+def assertions(count: int) {
+  context.expect_assertions(count)
+}
+
+
+/**
+ * Declares that this test makes at least one assertion, and fails it
+ * if none did.
+ *
+ * @raises TestSetupError outside a test.
+ */
+def has_assertions() {
+  context.expect_some_assertions()
+}
+
+
+/**
+ * Runs `body` and returns everything it printed to standard output.
+ *
+ * The composable half of `to_print()`: use this when the assertion to
+ * make about the output is not "it contains this".
+ *
+ * ```zuri
+ * var printed = capture_output(@{ report(rows) })
+ * expect(printed.lines()).to_have_length(4)
+ * ```
+ *
+ * @param function body
+ * @returns string
+ */
+def capture_output(body: function) {
+  return io.capture(body)
+}

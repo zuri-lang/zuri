@@ -164,6 +164,7 @@ fn file(ctx: &mut ZuriContext) -> Result<Value, String> {
     binary,
     handle: None,
     is_stream: false,
+    fd: -1,
   });
 
   Ok(v)
@@ -289,6 +290,82 @@ thread_local! {
       get_stdout_buffer_capacity(),
       std::io::stdout(),
     ));
+
+  /// Open `io.capture()` frames, innermost last. While any frame is
+  /// open, everything Zuri writes to stdout lands in the innermost
+  /// one's buffer instead of the terminal.
+  ///
+  /// Thread-local, like the stdout buffer itself, so an isolate
+  /// capturing its own output never redirects another isolate's.
+  static CAPTURE_FRAMES: std::cell::RefCell<Vec<Vec<u8>>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+
+  /// `CAPTURE_FRAMES.len()`, mirrored so the test on every single
+  /// `echo` is one read rather than a `RefCell` borrow.
+  static CAPTURE_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+/// How many `io.capture()` frames are open right now. Anything
+/// writing to stdout checks this first; zero is the ordinary case and
+/// means write straight to the terminal.
+#[inline]
+pub fn capture_depth() -> usize {
+  CAPTURE_DEPTH.with(Cell::get)
+}
+
+/// Opens a capture frame. Output written from here until the matching
+/// `capture_end()` is buffered instead of printed.
+///
+/// The real stdout is flushed first so anything already buffered
+/// belongs to the terminal, not to the capture.
+pub fn capture_begin() {
+  flush_stdout();
+  CAPTURE_FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
+  CAPTURE_DEPTH.with(|d| d.set(d.get() + 1));
+}
+
+/// Closes the innermost capture frame and hands back what it caught,
+/// or `None` when nothing was open.
+pub fn capture_end() -> Option<Vec<u8>> {
+  let frame = CAPTURE_FRAMES.with(|frames| frames.borrow_mut().pop());
+  if frame.is_some() {
+    CAPTURE_DEPTH.with(|d| d.set(d.get() - 1));
+  }
+  frame
+}
+
+/// Appends to the innermost open capture frame. Callers check
+/// `capture_depth()` first; with no frame open this drops the bytes,
+/// which is why it is never the only path to stdout.
+pub fn capture_write(bytes: &[u8]) {
+  CAPTURE_FRAMES.with(|frames| {
+    if let Some(frame) = frames.borrow_mut().last_mut() {
+      frame.extend_from_slice(bytes);
+    }
+  });
+}
+
+/// Closes every still-open capture frame, printing what each caught.
+///
+/// A script that calls `io.capture_begin()` and never reaches its
+/// `capture_end()` (it raised, or it just forgot) would otherwise have
+/// that output vanish with no trace at all. Called once where the
+/// program actually ends.
+pub fn capture_unwind_all() {
+  let frames = CAPTURE_FRAMES.with(|frames| std::mem::take(&mut *frames.borrow_mut()));
+  CAPTURE_DEPTH.with(|d| d.set(0));
+
+  if frames.is_empty() {
+    return;
+  }
+
+  STDOUT_BUFFER.with(|buf_cell| {
+    let mut stdout = buf_cell.borrow_mut();
+    for frame in frames {
+      let _ = stdout.write_all(&frame);
+    }
+    let _ = stdout.flush();
+  });
 }
 
 #[inline]
@@ -301,6 +378,11 @@ pub fn flush_stdout() {
 /// Emits `echo`'s value followed by a newline into the shared stdout buffer and flushes.
 #[inline]
 pub fn echo_value(v: Value) {
+  if capture_depth() > 0 {
+    capture_write(format!("{}\n", v).as_bytes());
+    return;
+  }
+
   STDOUT_BUFFER.with(|buf_cell| {
     let mut stdout = buf_cell.borrow_mut();
     let _ = writeln!(stdout, "{}", v);
@@ -315,23 +397,36 @@ pub fn echo_value(v: Value) {
 /// raw-byte path is what lets a script stream binary output (e.g. a
 /// PBM/PNG image body one scanline at a time).
 fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  if capture_depth() > 0 {
+    let mut buf: Vec<u8> = Vec::new();
+    write_print_args(&mut buf, ctx.args)?;
+    capture_write(&buf);
+    return Ok(Value::nil());
+  }
+
   STDOUT_BUFFER.with(|buf_cell| -> Result<Value, String> {
     let mut stdout = buf_cell.borrow_mut();
-
-    for v in ctx.args.iter() {
-      if v.is_bytes() {
-        v.with_bytes(|raw| stdout.write_all(raw))
-          .map_err(|e| e.to_string())?;
-      } else if v.is_string() {
-        let s = v.as_str();
-        stdout.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
-      } else {
-        write!(stdout, "{}", v).map_err(|e| e.to_string())?;
-      }
-    }
-
+    write_print_args(&mut *stdout, ctx.args)?;
     Ok(Value::nil())
   })
+}
+
+/// `print()`'s formatting rules, factored out so the capture path and
+/// the terminal path cannot drift apart on what a bytes or a string
+/// argument turns into.
+fn write_print_args(out: &mut impl Write, args: &[Value]) -> Result<(), String> {
+  for v in args.iter() {
+    if v.is_bytes() {
+      v.with_bytes(|raw| out.write_all(raw))
+        .map_err(|e| e.to_string())?;
+    } else if v.is_string() {
+      let s = v.as_str();
+      out.write_all(s.as_bytes()).map_err(|e| e.to_string())?;
+    } else {
+      write!(out, "{}", v).map_err(|e| e.to_string())?;
+    }
+  }
+  Ok(())
 }
 
 thread_local! {

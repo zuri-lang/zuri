@@ -1,0 +1,446 @@
+/**
+ * @module test.snapshot
+ *
+ * Snapshot testing: recording what a value looked like the first time
+ * and failing when it stops looking like that.
+ *
+ * ```zuri
+ * it('renders the invoice', @{
+ *   expect(render(invoice)).to_match_snapshot()
+ * })
+ * ```
+ *
+ * The first run writes the value down. Every run after that compares
+ * against what was written and shows a diff when it differs. The file
+ * is meant to be committed and reviewed like any other code, because
+ * that review is the entire value of the technique: an unexplained
+ * change to a snapshot in a pull request is exactly the thing worth
+ * noticing.
+ *
+ * ### Where they live
+ *
+ * Beside the test file, in a `__snapshots__` directory, named after
+ * it: `tests/invoice.zu` gets `tests/__snapshots__/invoice.zu.snap`.
+ *
+ * ### The file format
+ *
+ * Plain text, indented, one entry per snapshot:
+ *
+ * ```text
+ * # Zuri snapshot file v1
+ *
+ * === Invoice > renders the invoice 1 ===
+ *   {
+ *     total: 4200
+ *   }
+ * ```
+ *
+ * The heading is the test's full name plus the position of the
+ * snapshot within that test, or the name given to
+ * `to_match_snapshot('name')`. Every body line is indented two
+ * spaces, which is what keeps a value that happens to contain `===`
+ * from being read back as a heading.
+ *
+ * ### Updating
+ *
+ * Run with `ZURI_UPDATE_SNAPSHOTS=1`, or pass
+ * `{ update_snapshots: true }` to `test.run()`. Every mismatching
+ * snapshot is rewritten and reported as updated rather than failed,
+ * and entries nothing asked for any more are deleted.
+ *
+ * ### On CI
+ *
+ * Writing a brand new snapshot is a pass locally and a failure on CI,
+ * because a snapshot nobody has looked at asserts nothing. `CI` being
+ * set in the environment is what switches this on; `{ ci: false }`
+ * turns it back off.
+ */
+
+import os
+
+import .error { TestSetupError }
+import .format
+
+
+var HEADER = '# Zuri snapshot file v1'
+
+# Every body line carries this, so nothing a value renders to can be
+# mistaken for a heading when the file is read back.
+var BODY_INDENT = '  '
+
+
+var _update = false
+var _ci = false
+
+var _stores = []
+
+var _stats = {
+  matched: 0,
+  written: 0,
+  updated: 0,
+  obsolete: 0,
+}
+
+
+/**
+ * Every snapshot recorded for one test file, and the file they live
+ * in.
+ */
+class Store {
+
+  /** The `.snap` file this reads and writes. */
+  var path = ''
+
+  /** Snapshot key to recorded text. */
+  var entries = {}
+
+  /** Keys this run actually asked about. */
+  var used = []
+
+  /** Whether anything has changed since it was read. */
+  var dirty = false
+
+  @new(path) {
+    self.path = path
+    self.entries = {}
+    self.used = []
+    self.dirty = false
+
+    self.read()
+  }
+
+  /**
+   * Reads the file, if it is there. A missing file is not an error:
+   * it is what every snapshot's first run looks like.
+   */
+  read() {
+    var handle = file(self.path)
+    if !handle.exists() {
+      return
+    }
+
+    var key = nil
+    var body = []
+
+    for line in handle.read().lines() {
+      var heading = _heading_of(line)
+
+      if heading != nil {
+        if key != nil {
+          self.entries.set(key, _join(body))
+        }
+
+        key = heading
+        body = []
+        continue
+      }
+
+      if key != nil {
+        body.append(line.starts_with(BODY_INDENT) ? line[2, line.length()] : line)
+      }
+    }
+
+    if key != nil {
+      self.entries.set(key, _join(body))
+    }
+  }
+
+  /**
+   * Writes the file back, creating the `__snapshots__` directory if
+   * it is not there yet. Does nothing when nothing changed.
+   *
+   * An empty store deletes its file rather than leaving an
+   * unexplained stub behind.
+   */
+  save() {
+    if !self.dirty {
+      return
+    }
+
+    self.dirty = false
+
+    var handle = file(self.path, 'w')
+
+    if self.entries.is_empty() {
+      if handle.exists() {
+        handle.delete()
+      }
+
+      return
+    }
+
+    var directory = os.dir_name(self.path)
+    if !os.dir_exists(directory) {
+      os.create_dir(directory, 0c755, true)
+    }
+
+    var out = [HEADER, '']
+
+    for key in self.entries.keys().clone().sort() {
+      out.append('=== ${key} ===')
+
+      for line in self.entries[key].lines() {
+        out.append(line == '' ? '' : BODY_INDENT + line)
+      }
+
+      out.append('')
+    }
+
+    handle.write('\n'.join(out))
+  }
+
+  /**
+   * Drops every entry this run never asked about, and reports how
+   * many there were.
+   *
+   * @returns int
+   */
+  prune() {
+    var gone = []
+
+    for key in self.entries.keys() {
+      if !self.used.contains(key) {
+        gone.append(key)
+      }
+    }
+
+    for key in gone {
+      self.entries.remove(key)
+      self.dirty = true
+    }
+
+    return gone.length()
+  }
+
+  /**
+   * Keys the file holds that this run never asked about.
+   *
+   * @returns list
+   */
+  obsolete() {
+    return self.entries.keys().filter(@(key) { return !self.used.contains(key) })
+  }
+}
+
+
+def _heading_of(line) {
+  if !line.starts_with('=== ') or !line.ends_with(' ===') or line.length() < 9 {
+    return nil
+  }
+
+  return line[4, line.length() - 4]
+}
+
+
+# Trailing blank lines belong to the file's layout, not to the value.
+def _join(body) {
+  var end = body.length()
+
+  while end > 0 and body[end - 1] == '' {
+    end--
+  }
+
+  return '\n'.join(body[0, end])
+}
+
+
+/**
+ * The `.snap` file that belongs to a given test file.
+ *
+ * @param string test_file
+ * @returns string
+ */
+def path_for(test_file: string) {
+  return os.join_paths(
+    os.dir_name(test_file),
+    '__snapshots__',
+    os.base_name(test_file) + '.snap'
+  )
+}
+
+
+/**
+ * The store for a test file, read from disk the first time it is
+ * asked for and kept afterwards.
+ *
+ * @param string test_file
+ * @returns Store
+ */
+def store_for(test_file: string) {
+  var path = path_for(test_file)
+
+  for store in _stores {
+    if store.path == path {
+      return store
+    }
+  }
+
+  var store = Store(path)
+  _stores.append(store)
+
+  return store
+}
+
+
+/**
+ * Whether snapshots are being rewritten rather than checked.
+ *
+ * @returns bool
+ */
+def updating() {
+  return _update
+}
+
+/**
+ * Turns snapshot rewriting on or off.
+ *
+ * @param bool on
+ */
+def set_updating(on: bool) {
+  _update = on
+}
+
+/**
+ * Whether a brand new snapshot counts as a failure, which is what it
+ * should be anywhere nobody is going to look at it before it is
+ * committed.
+ *
+ * @returns bool
+ */
+def strict() {
+  return _ci
+}
+
+/**
+ * Turns the strict, new-snapshots-fail behaviour on or off.
+ *
+ * @param bool on
+ */
+def set_strict(on: bool) {
+  _ci = on
+}
+
+
+/**
+ * Compares one value against what the snapshot file holds for `key`,
+ * writing it down when there is nothing there yet.
+ *
+ * @param string test_file: the file the test was declared in.
+ * @param string key
+ * @param string serialized: the value, already rendered by
+ *    `format.serialize()`.
+ * @returns dict: `{ status, expected, received }`, where `status` is
+ *    one of `'match'`, `'written'`, `'updated'`, `'mismatch'` or
+ *    `'missing'`. `'missing'` is the strict-mode answer to what would
+ *    otherwise have been `'written'`.
+ */
+def check(test_file: string, key: string, serialized: string) {
+  var store = store_for(test_file)
+
+  if !store.used.contains(key) {
+    store.used.append(key)
+  }
+
+  if !store.entries.contains(key) {
+    if _ci and !_update {
+      _stats.missing = _stats.get('missing', 0) + 1
+      return { status: 'missing', expected: nil, received: serialized }
+    }
+
+    store.entries.set(key, serialized)
+    store.dirty = true
+    _stats.written++
+
+    return { status: 'written', expected: nil, received: serialized }
+  }
+
+  var recorded = store.entries[key]
+
+  if recorded == serialized {
+    _stats.matched++
+    return { status: 'match', expected: recorded, received: serialized }
+  }
+
+  if _update {
+    store.entries.set(key, serialized)
+    store.dirty = true
+    _stats.updated++
+
+    return { status: 'updated', expected: recorded, received: serialized }
+  }
+
+  return { status: 'mismatch', expected: recorded, received: serialized }
+}
+
+
+/**
+ * The lines of the snapshot at `key`, as a list, for a reporter that
+ * wants to show what was recorded.
+ *
+ * @param string test_file
+ * @param string key
+ * @returns list
+ */
+def recorded_lines(test_file: string, key: string) {
+  var store = store_for(test_file)
+
+  if !store.entries.contains(key) {
+    return []
+  }
+
+  return store.entries[key].lines()
+}
+
+
+/**
+ * Writes every changed store back to disk, and in update mode drops
+ * entries the run never asked about.
+ *
+ * The runner calls this once, after everything has run. Pruning
+ * earlier would delete the snapshots of tests that a filter happened
+ * to skip.
+ *
+ * @param ?bool prune: whether to drop unused entries. Defaults to
+ *    whatever `updating()` says.
+ */
+def flush(prune: ?bool) {
+  if prune == nil {
+    prune = _update
+  }
+
+  for store in _stores {
+    if prune {
+      _stats.obsolete += store.prune()
+    } else {
+      _stats.obsolete += store.obsolete().length()
+    }
+
+    store.save()
+  }
+}
+
+
+/**
+ * What happened to snapshots over the whole run.
+ *
+ * @returns dict: `matched`, `written`, `updated`, `obsolete`, and
+ *    `missing` when strict mode refused to write any.
+ */
+def summary() {
+  return _stats.clone()
+}
+
+
+/**
+ * Forgets every loaded store and zeroes the counters, so a second
+ * run in the same process starts clean.
+ */
+def reset() {
+  _stores = []
+  _stats = {
+    matched: 0,
+    written: 0,
+    updated: 0,
+    obsolete: 0,
+  }
+}

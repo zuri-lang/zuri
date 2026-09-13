@@ -10,6 +10,7 @@ use crate::builtins::file as builtin_file;
 use crate::modules::isolate_util::pool;
 use crate::modules::os_util::{process as os_process, signal as os_signal, sysinfo};
 use crate::modules::{BuiltinModuleDef, native};
+use crate::vm::natives::{capture_unwind_all, flush_stdout};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -510,6 +511,11 @@ fn exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type!(ctx, 0, ArgType::Number);
   let code = ctx.args[0].as_number() as i32;
+  // `process::exit` runs no destructors, so anything still sitting in
+  // an open `io.capture()` frame or the stdout buffer has to be got
+  // out here or it is gone.
+  capture_unwind_all();
+  flush_stdout();
   std::process::exit(code);
 }
 
