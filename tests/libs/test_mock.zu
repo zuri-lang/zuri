@@ -1,0 +1,303 @@
+/**
+ * test_mock.zu
+ *
+ * Test suite for the `test` module's test doubles: recording,
+ * scripted behaviour, spying in place, the matchers that read a
+ * mock's history, and the automatic restore after every test.
+ */
+
+import test
+import test { describe, it, expect, mock, spy_on }
+import test.mock as mocking
+import test.style
+
+style.set_enabled(false)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def holds(body) {
+  catch {
+    body()
+    return true
+  } as error {
+    if typeof(error) == 'AssertionError' {
+      return false
+    }
+
+    raise error
+  }
+}
+
+def rejects(body) {
+  catch {
+    body()
+    return false
+  } as error {
+    return typeof(error) == 'TestSetupError'
+  }
+}
+
+class Handler {
+  var on_event = nil
+
+  @new() {
+    self.on_event = @(value) { return 'original:${value}' }
+  }
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  test.mock: test double suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Recording
+# ---------------------------------------------------------------------------
+mocking.restore_all()
+
+var recorder = mock()
+
+assert is_callable(recorder.fn), 'a mock must hand out something callable'
+assert recorder.fn() == nil, 'a mock with no behaviour must return nil'
+assert recorder.call_count() == 1, 'and must count the call'
+
+recorder.fn(1, 'two', [3])
+assert recorder.call_count() == 2, 'every call must be counted'
+assert recorder.call_args() == [[], [1, 'two', [3]]], 'every argument list must be recorded, in order'
+assert recorder.last_call().args == [1, 'two', [3]], 'last_call must be the most recent'
+assert recorder.nth_call(0).args == [], 'nth_call must count from zero'
+assert recorder.nth_call(-1).args == [1, 'two', [3]], 'a negative index must count back from the end'
+assert recorder.nth_call(9) == nil, 'an index past the end must be nil, not an error'
+assert recorder.called(), 'called() must be true once it has been called'
+ok('a mock records every call, with its arguments, in order')
+
+recorder.reset()
+assert recorder.call_count() == 0 and !recorder.called(), 'reset() must forget the calls'
+ok('reset() clears the history')
+
+# ---------------------------------------------------------------------------
+# Behaviour
+# ---------------------------------------------------------------------------
+var behaved = mock()
+
+assert behaved.returns('always') == behaved, 'the behaviour setters must return the mock, so they chain'
+assert behaved.fn() == 'always' and behaved.fn() == 'always', 'returns() must apply to every call'
+
+behaved.returns_once('first')
+behaved.returns_once('second')
+assert behaved.fn() == 'first', 'returns_once must apply to the next call'
+assert behaved.fn() == 'second', 'and they must queue in order'
+assert behaved.fn() == 'always', 'and the standing behaviour must take over once they run out'
+ok('returns() and returns_once() queue in front of the standing behaviour')
+
+var thrower = mock()
+thrower.raises_once(ValueError('scripted'))
+thrower.returns('recovered')
+
+catch {
+  thrower.fn()
+  assert false, 'raises_once must actually raise'
+} as raised {
+  assert raised.message == 'scripted', 'and must raise what it was given'
+}
+
+assert thrower.fn() == 'recovered', 'and only once'
+assert thrower.nth_call(0).threw, 'the raising call must be recorded as having raised'
+assert thrower.nth_call(0).error.message == 'scripted', 'along with what it raised'
+assert !thrower.nth_call(1).threw, 'and the next one as having returned'
+assert thrower.nth_call(1).result == 'recovered', 'along with what it returned'
+ok('raises()/raises_once(), and what a Call records about each outcome')
+
+var implemented = mock(@(left, right) { return left + right })
+assert implemented.fn(2, 3) == 5, 'an implementation must receive the arguments and its result be used'
+assert implemented.last_call().result == 5, 'and the result must be recorded'
+
+implemented.implements_once(@(left, right) { return left * right })
+assert implemented.fn(2, 3) == 6, 'implements_once must take over for one call'
+assert implemented.fn(2, 3) == 5, 'and only one'
+ok('implements()/implements_once() run real code with the real arguments')
+
+var cleared = mock()
+cleared.returns('x')
+cleared.returns_once('y')
+cleared.clear_behaviour()
+assert cleared.fn() == nil, 'clear_behaviour must drop both the queue and the standing behaviour'
+ok('clear_behaviour() empties both')
+
+# An implementation that raises must be recorded and let through
+# rather than swallowed.
+var failing = mock(@{ raise ValueError('from the implementation') })
+
+catch {
+  failing.fn()
+  assert false, 'an implementation that raises must raise'
+} as through {
+  assert through.message == 'from the implementation', 'and must be the same error'
+}
+
+assert failing.last_call().threw, 'and the call must be recorded as having raised'
+ok('an implementation that raises is recorded and passed through')
+
+# ---------------------------------------------------------------------------
+# Finding the mock behind a function
+# ---------------------------------------------------------------------------
+var found = mock()
+assert mocking.mock_of(found) == found, 'mock_of must accept the Mock itself'
+assert mocking.mock_of(found.fn) == found, 'and the function it handed out'
+assert mocking.mock_of(@{ }) == nil, 'and answer nil for an unrelated function'
+assert mocking.mock_of(42) == nil, 'and for something that is not a function at all'
+ok('mock_of resolves either a Mock or the function it handed out')
+
+# ---------------------------------------------------------------------------
+# Spying
+# ---------------------------------------------------------------------------
+var gateway = { charge: @(amount) { return 'real:${amount}' } }
+var charge = spy_on(gateway, 'charge')
+
+assert gateway['charge'] != nil, 'the entry must still be there'
+assert gateway['charge'](10) == 'real:10', 'a spy must call through to the original by default'
+assert charge.call_count() == 1, 'while recording the call'
+assert charge.last_call().args == [10], 'with its arguments'
+
+charge.returns('stubbed')
+assert gateway['charge'](10) == 'stubbed', 'and must be able to stop calling through'
+
+charge.restore()
+assert gateway['charge'](10) == 'real:10', 'restore() must put the original back'
+charge.restore()
+assert gateway['charge'](10) == 'real:10', 'and must be safe to call twice'
+ok('spy_on records, calls through, stubs, and restores a dict entry')
+
+var handler = Handler()
+var spy = spy_on(handler, 'on_event')
+
+assert handler.on_event(1) == 'original:1', 'a spy on an instance property must call through'
+assert spy.call_count() == 1, 'and record the call'
+
+mocking.restore_all()
+assert handler.on_event(2) == 'original:2', 'restore_all must put an instance property back too'
+ok('spy_on works on an instance property, and restore_all undoes it')
+
+assert rejects(@{ spy_on('a string', 'x') }), 'spy_on must refuse something with no properties'
+assert rejects(@{ spy_on({ a: 1 }, 'missing') }), 'spy_on must refuse a key that is not there'
+assert rejects(@{ spy_on({ a: 1 }, 'a') }), 'spy_on must refuse an entry that does not hold a function'
+ok('spy_on refuses what it cannot spy on, and says why')
+
+# ---------------------------------------------------------------------------
+# The matchers
+# ---------------------------------------------------------------------------
+mocking.restore_all()
+
+var send = mock()
+send.fn('hello', 1)
+send.fn('goodbye', 2)
+
+assert holds(@{ expect(send).to_have_been_called() }), 'to_have_been_called'
+assert holds(@{ expect(send.fn).to_have_been_called() }),
+  'every mock matcher must accept the handed-out function as readily as the Mock'
+assert holds(@{ expect(send).to_have_been_called_times(2) }), 'to_have_been_called_times'
+assert !holds(@{ expect(send).to_have_been_called_times(3) }), 'and must notice the wrong count'
+assert holds(@{ expect(send).to_have_been_called_with('hello', 1) }), 'to_have_been_called_with'
+assert !holds(@{ expect(send).to_have_been_called_with('hello') }),
+  'to_have_been_called_with must match the whole argument list, not a prefix'
+assert holds(@{ expect(send).to_have_been_last_called_with('goodbye', 2) }),
+  'to_have_been_last_called_with'
+assert !holds(@{ expect(send).to_have_been_last_called_with('hello', 1) }),
+  'and must mean the last one'
+assert holds(@{ expect(send).to_have_been_nth_called_with(0, 'hello', 1) }),
+  'to_have_been_nth_called_with must count from zero'
+assert holds(@{ expect(send).to_have_been_nth_called_with(-1, 'goodbye', 2) }),
+  'and must accept a negative index'
+ok('the call-history matchers')
+
+var never = mock()
+assert holds(@{ expect(never).not.to_have_been_called() }), 'a mock nobody called has not been called'
+ok('the mock matchers negate')
+
+var outcomes = mock()
+outcomes.returns_once('value')
+outcomes.raises_once(ValueError('boom'))
+outcomes.fn()
+
+catch {
+  outcomes.fn()
+} as ignored
+
+assert holds(@{ expect(outcomes).to_have_returned() }), 'to_have_returned'
+assert holds(@{ expect(outcomes).to_have_returned_with('value') }), 'to_have_returned_with'
+assert !holds(@{ expect(outcomes).to_have_returned_with('other') }), 'and must compare the value'
+assert holds(@{ expect(outcomes).to_have_raised() }), 'to_have_raised'
+ok('the outcome matchers read what each call did')
+
+assert rejects(@{ expect(@{ }).to_have_been_called() }),
+  'a mock matcher must refuse an ordinary function, rather than reporting that it was never called'
+assert rejects(@{ expect(42).to_have_been_called() }), 'and anything that is not a function at all'
+ok('a mock matcher refuses a subject that is not a mock')
+
+# A failed mock expectation is worth nothing without the calls that
+# were actually made.
+catch {
+  expect(send).to_have_been_called_with('never sent')
+} as detail
+
+assert detail.details.some(@(line) { return line.contains('hello') }),
+  'a failed mock expectation must show the calls that were actually made'
+ok('a failed mock expectation shows the real calls')
+
+# ---------------------------------------------------------------------------
+# Lifetime inside a run
+# ---------------------------------------------------------------------------
+test.reset()
+mocking.restore_all()
+
+var service = { fetch: @{ return 'live' } }
+var during = nil
+
+describe('spy lifetime', @{
+  it('installs a spy', @{
+    var fetch = spy_on(service, 'fetch')
+    fetch.returns('stubbed')
+    during = service['fetch']()
+  })
+
+  it('does not see it', @{
+    expect(service['fetch']()).to_be('live')
+  })
+})
+
+var summary = test.run({ reporter: 'silent' })
+
+assert during == 'stubbed', 'the spy must be in place for the test that installed it'
+assert summary.failed == 0, 'and gone again for the next one'
+ok('a spy is restored after the test that installed it')
+
+# And after a test that failed partway through, which is the case
+# that would otherwise leave the next test running against a stub.
+test.reset()
+mocking.restore_all()
+
+var fragile = { fetch: @{ return 'live' } }
+
+describe('spy after a failure', @{
+  it('fails with a spy installed', @{
+    spy_on(fragile, 'fetch').returns('stubbed')
+    expect(1).to_be(2)
+  })
+})
+
+test.run({ reporter: 'silent' })
+assert fragile['fetch']() == 'live', 'a spy must be restored even when the test that installed it failed'
+ok('a spy is restored after a failing test too')
+
+# ===========================================================================
+test.reset()
+mocking.restore_all()
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

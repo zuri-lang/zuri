@@ -1,0 +1,250 @@
+/**
+ * test_conduct.zu
+ *
+ * Test suite for the `test` module's conductor: discovering test
+ * files, running each in its own process, aggregating what they
+ * report, and surviving the ones that crash, never report, or never
+ * finish.
+ *
+ * The fixtures are written into a temporary directory rather than
+ * committed, so what each one does is visible right beside the
+ * assertion about it.
+ */
+
+import os
+import test
+import test.conduct
+import test.style
+
+style.set_enabled(false)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+var ROOT = os.join_paths('tmp', 'test_conduct')
+var SUITE = os.join_paths(ROOT, 'suite')
+
+def write(name, source) {
+  var path = os.join_paths(SUITE, name)
+  var directory = os.dir_name(path)
+
+  if !os.dir_exists(directory) {
+    os.create_dir(directory, 0c755, true)
+  }
+
+  file(path, 'w').write(source)
+}
+
+def cleanup() {
+  catch {
+    os.remove_dir(ROOT, true)
+  } as ignored
+}
+
+def result_for(outcome, path) {
+  for entry in outcome.files {
+    if entry.path == path {
+      return entry
+    }
+  }
+
+  return nil
+}
+
+cleanup()
+os.create_dir(SUITE, 0c755, true)
+
+echo '═══════════════════════════════════════════════════════'
+echo '  test.conduct: multi-file suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+write('a.zu', "import test { * }\n" +
+  "describe('alpha', @{\n" +
+  "  it('one', @{ expect(1).to_be(1) })\n" +
+  "  it('two', @{ expect('x').to_be_string() })\n" +
+  "})\n" +
+  "run()\n")
+
+write('b_fails.zu', "import test { * }\n" +
+  "describe('beta', @{\n" +
+  "  it('fails', @{ expect(1).to_be(2) })\n" +
+  "  it('passes', @{ expect(1).to_be(1) })\n" +
+  "  it_skip('skipped', @{ })\n" +
+  "  it_todo('todo')\n" +
+  "})\n" +
+  "run()\n")
+
+write(os.join_paths('nested', 'c.zu'), "import test { * }\n" +
+  "describe('gamma', @{\n" +
+  "  it('one', @{ expect([1]).to_have_length(1) })\n" +
+  "})\n" +
+  "run()\n")
+
+write('_helper.zu', "var helper = 1\n")
+write('notes.txt', "not a test file\n")
+
+var found = conduct.discover(SUITE, nil)
+
+assert found.contains('a.zu'), 'a top-level test file must be discovered'
+assert found.contains(os.join_paths('nested', 'c.zu')), 'and one in a subdirectory'
+assert !found.contains('_helper.zu'), 'a leading underscore keeps a helper out by default'
+assert !found.contains('notes.txt'), 'and only .zu files are taken'
+assert found.length() == 3, 'three files and no more'
+ok('discovery finds test files, skips helpers, and recurses')
+
+var narrowed = conduct.discover(SUITE, { match: ['b_*.zu'] })
+assert narrowed == ['b_fails.zu'], 'match narrows to the pattern it was given'
+
+var flat = conduct.discover(SUITE, { recursive: false })
+assert !flat.contains(os.join_paths('nested', 'c.zu')), 'recursive: false stays in the top directory'
+
+var everything = conduct.discover(SUITE, { ignore: [] })
+assert everything.contains('_helper.zu'), 'an empty ignore list takes the helper too'
+ok('match, ignore and recursive all take effect')
+
+catch {
+  conduct.discover(os.join_paths(ROOT, 'nowhere'), nil)
+  assert false, 'a directory that is not there must be an error'
+} as missing {
+  assert typeof(missing) == 'TestSetupError', 'and a TestSetupError at that'
+  assert missing.message.contains('nowhere'), 'naming the directory'
+}
+ok('a missing directory is refused by name')
+
+# ---------------------------------------------------------------------------
+# Running
+# ---------------------------------------------------------------------------
+var outcome = test.conduct(SUITE, nil)
+
+assert outcome.files.length() == 3, 'every discovered file must be run'
+assert outcome.totals.passed == 4, 'passes are summed across the files'
+assert outcome.totals.failed == 1, 'and so are failures'
+assert outcome.totals.skipped == 1, 'and skips'
+assert outcome.totals.todo == 1, 'and todos'
+assert outcome.totals.total == 7, 'and the total'
+assert outcome.totals.files == 3, 'the file count is kept apart from the test count'
+assert outcome.totals.failed_files == 1, 'only the file with a failing test counts as failed'
+assert !outcome.ok and outcome.exit_code == 1, 'and the run as a whole did not pass'
+ok('results are aggregated across files, with test and file counts kept apart')
+
+var alpha = result_for(outcome, 'a.zu')
+assert alpha.ok(), 'a file where everything passed is ok'
+assert alpha.tests.length() == 2, 'and reports each of its tests'
+assert alpha.summary.passed == 2, 'along with its own summary'
+assert alpha.code == 0, 'and exited cleanly'
+
+var beta = result_for(outcome, 'b_fails.zu')
+assert !beta.ok(), 'a file with a failing test is not ok'
+assert beta.tests.some(@(one) { return one.status == 'failed' }), 'and says which test failed'
+
+var failing_test = beta.tests.filter(@(one) { return one.status == 'failed' })[0]
+assert failing_test.full_name == 'beta > fails', 'with its full name'
+assert failing_test.failures[0].message.contains('Expected 1 to be 2'), 'and its message'
+assert failing_test.failures[0].line == 3, 'and the line it failed on'
+ok('each file reports its own tests, failures and lines back to the parent')
+
+# The order files are reported in is the order they were discovered,
+# so a report is the same whether or not files ran at the same time.
+var parallel = test.conduct(SUITE, { jobs: 3 })
+assert parallel.files.map(@(one) { return one.path }) ==
+  outcome.files.map(@(one) { return one.path }),
+  'running in parallel must not change the order results are reported in'
+assert parallel.totals.total == outcome.totals.total, 'or what they add up to'
+ok('jobs runs files at the same time without changing the report')
+
+# ---------------------------------------------------------------------------
+# Files that do not behave
+# ---------------------------------------------------------------------------
+write('d_no_run.zu', "import test { * }\n" +
+  "describe('delta', @{\n" +
+  "  it('never runs', @{ expect(1).to_be(1) })\n" +
+  "})\n")
+
+write('e_crashes.zu', "import test { * }\n" +
+  "describe('epsilon', @{\n" +
+  "  it('fine', @{ expect(1).to_be(1) })\n" +
+  "})\n" +
+  "raise ValueError('this file blows up before reporting')\n")
+
+var misbehaving = test.conduct(SUITE, nil)
+
+var forgot = result_for(misbehaving, 'd_no_run.zu')
+assert !forgot.ok(), 'a file that never called run() is not ok'
+assert forgot.problem.contains('run()'), 'and is told exactly what it forgot'
+assert forgot.code == 0, 'even though it exited cleanly'
+
+var crashed = result_for(misbehaving, 'e_crashes.zu')
+assert !crashed.ok(), 'a file that crashed is not ok'
+assert crashed.code != 0, 'and its exit status is kept'
+assert crashed.output.contains('this file blows up'), 'along with what it printed on the way out'
+
+assert misbehaving.totals.errored_files == 2, 'both are counted as files that never reported'
+assert misbehaving.totals.failed == 1, 'while the test totals stay what the files actually said'
+assert result_for(misbehaving, 'a.zu').ok(), 'and the well-behaved files still ran'
+ok('a file that forgets to run, or crashes, is reported without taking the others down')
+
+# ---------------------------------------------------------------------------
+# Timeouts
+# ---------------------------------------------------------------------------
+write('f_hangs.zu', "import test { * }\n" +
+  "import os\n" +
+  "describe('stuck', @{\n" +
+  "  it('never returns', @{\n" +
+  "    while true {\n" +
+  "      os.sleep(0.05)\n" +
+  "    }\n" +
+  "  })\n" +
+  "})\n" +
+  "run()\n")
+
+var timed = test.conduct(SUITE, { timeout: 1500, jobs: 4 })
+var stuck = result_for(timed, 'f_hangs.zu')
+
+assert stuck != nil, 'the hanging file must still be reported'
+assert !stuck.ok(), 'and must not be ok'
+assert stuck.problem.contains('timed out'), 'and must say it timed out'
+assert result_for(timed, 'a.zu').ok(),
+  'and everything else must still have run, which is the whole point of a process each'
+ok('a file that never finishes is killed, and the rest of the run survives it')
+
+catch {
+  file(os.join_paths(SUITE, 'f_hangs.zu')).delete()
+} as ignored
+
+# ---------------------------------------------------------------------------
+# An empty directory
+# ---------------------------------------------------------------------------
+var empty_directory = os.join_paths(ROOT, 'empty')
+os.create_dir(empty_directory, 0c755, true)
+
+var nothing = test.conduct(empty_directory, nil)
+assert nothing.files.is_empty(), 'a directory with no test files runs nothing'
+assert nothing.ok and nothing.exit_code == 0, 'and that is not a failure'
+ok('an empty directory is not a failure')
+
+# ---------------------------------------------------------------------------
+# Option validation
+# ---------------------------------------------------------------------------
+catch {
+  test.conduct(SUITE, { jbos: 4 })
+  assert false, 'a misspelt option must not be accepted'
+} as bad_option {
+  assert bad_option.message.contains('jbos'), 'and must be named'
+  assert bad_option.message.contains('jobs'), 'with the real ones listed'
+}
+ok('an unknown option is refused, with the known ones listed')
+
+# ===========================================================================
+cleanup()
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

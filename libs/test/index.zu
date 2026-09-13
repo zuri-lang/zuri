@@ -5,7 +5,7 @@
  * lifecycle hooks, and reports worth reading.
  *
  * ```zuri
- * import test { describe, it, expect }
+ * import test { * }
  *
  * describe('Calculator', @{
  *
@@ -19,7 +19,7 @@
  *
  * })
  *
- * test.run()
+ * run()
  * ```
  *
  * Run it like any other script:
@@ -37,6 +37,17 @@
  *   suites 1   time 1ms
  * ```
  *
+ * ## Importing
+ *
+ * `import test { * }` is the form to use in a test file. It brings
+ * `describe`, `it`, `expect`, `mock`, the hooks and `run` into scope,
+ * which is what makes a test read as a test rather than as a series
+ * of calls into a module.
+ *
+ * `import test` is there for anything that is not a test file, and
+ * qualifies the same names: `test.conduct('tests')`, `test.run()`.
+ * The two can be combined when a test file wants both.
+ *
  * ## Declaring
  *
  * `describe(name, body)` groups tests and may be nested as deeply as
@@ -44,10 +55,10 @@
  * anything: they build a tree that `run()` walks afterwards, which is
  * what makes focusing, filtering and counting possible at all.
  *
- * Every test file therefore ends with `test.run()`. Zuri has no
- * at-exit hook, so there is no moment the framework could pick for
- * itself, and having to say when is what makes `run()` the single
- * place every option is passed.
+ * Every test file therefore ends with `run()`. Zuri has no at-exit
+ * hook, so there is no moment the framework could pick for itself,
+ * and having to say when is what makes `run()` the single place every
+ * option is passed.
  *
  * ### Focusing and skipping
  *
@@ -223,7 +234,7 @@
  * everything passed. A test file meant for CI ends:
  *
  * ```zuri
- * test.run({ exit: true })
+ * run({ exit: true })
  * ```
  *
  * ## More than one file
@@ -512,9 +523,9 @@ def after_each(body: function) {
  * Runs everything declared so far.
  *
  * ```zuri
- * test.run()
- * test.run({ reporter: 'dot', bail: 1 })
- * test.run({ exit: true })
+ * run()
+ * run({ reporter: 'dot', bail: 1 })
+ * run({ exit: true })
  * ```
  *
  * @param ?dict options: see the module documentation for every option

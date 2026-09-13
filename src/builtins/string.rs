@@ -1013,7 +1013,7 @@ fn replace_with(ctx: &mut ZuriContext) -> Result<Value, String> {
     let replaced = ctx
       .vm
       .call_value(callback, &call_args)
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     result.push_str(&format!("{}", replaced));
 
     last_end = mend;
@@ -1042,7 +1042,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     ctx
       .vm
       .call_value(callback, &[char_val, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   let str_val = ctx.vm.pinned(mark);
@@ -1104,7 +1104,7 @@ fn each_line(ctx: &mut ZuriContext) -> Result<Value, String> {
     ctx
       .vm
       .call_value(callback, &[line_val, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   let str_val = ctx.vm.pinned(mark);

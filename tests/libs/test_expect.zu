@@ -1,0 +1,506 @@
+/**
+ * test_expect.zu
+ *
+ * Test suite for the `test` module's matchers: every matcher in both
+ * polarities, the arguments each one refuses, and the failure
+ * messages and diffs they produce.
+ *
+ * Deliberately written with plain `assert` rather than with the
+ * framework itself. A matcher that silently passed everything would
+ * make a suite written in terms of it pass too.
+ */
+
+import test { expect, fail, Expect }
+import test.diff
+import test.error { AssertionError, TestSetupError }
+import test.format
+import test.style
+
+# Failure messages are compared as text, so the escape sequences have
+# to be out of the way.
+style.set_enabled(false)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Runs `body` and returns the AssertionError it raised, or `nil` when
+# it did not raise one. Anything else raised propagates, since that is
+# a real failure of the matcher rather than an assertion outcome.
+def failure_of(body) {
+  catch {
+    body()
+    return nil
+  } as error {
+    if !is_instance(error) or typeof(error) != 'AssertionError' {
+      raise error
+    }
+
+    return error
+  }
+}
+
+def holds(body) {
+  return failure_of(body) == nil
+}
+
+def rejects(body) {
+  catch {
+    body()
+    return false
+  } as error {
+    return is_instance(error) and typeof(error) == 'TestSetupError'
+  }
+}
+
+# Every matcher should agree with its own negation on every value, in
+# both directions. This is the property that made the old hand-written
+# `.not` half worth deleting.
+def both_ways(label, body_positive, body_negative) {
+  assert holds(body_positive), '${label} must hold'
+  assert !holds(body_negative), '${label} must not hold when negated'
+}
+
+class Point {
+  var x = 0
+  var y = 0
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  test.expect: matcher suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# The Expect object itself
+# ---------------------------------------------------------------------------
+var subject = expect(1)
+assert is_instance(subject) and typeof(subject) == 'Expect', 'expect() must return an Expect'
+assert typeof(subject.not) == 'Expect', '.not must be an Expect too'
+assert subject.not.not == subject, '.not.not must be the original object, not a third one'
+ok('.not is a real twin, and negating twice comes back to where it started')
+
+assert subject.to_be(1) == subject, 'a matcher must return the Expect it was called on, so they chain'
+assert holds(@{ expect(5).to_be_int().to_be_between(1, 10).to_be_odd() }),
+  'chained matchers must all run'
+ok('matchers chain')
+
+# ---------------------------------------------------------------------------
+# Equality
+# ---------------------------------------------------------------------------
+both_ways('to_be', @{ expect(4).to_be(4) }, @{ expect(4).not.to_be(4) })
+assert !holds(@{ expect(4).to_be(5) }), 'to_be must fail on different values'
+assert holds(@{ expect([1, 2]).to_be([1, 2]) }), '== already compares list contents'
+assert holds(@{ expect({ a: 1 }).to_be({ a: 1 }) }), '== already compares dict contents'
+assert !holds(@{ expect(Point(1, 2)).to_be(Point(1, 2)) }),
+  'to_be must compare two instances by identity, which is what == does'
+ok('to_be follows == exactly, identity for instances included')
+
+assert holds(@{ expect(Point(1, 2)).to_equal(Point(1, 2)) }),
+  'to_equal must compare instances field by field'
+assert !holds(@{ expect(Point(1, 2)).to_equal(Point(1, 3)) }),
+  'to_equal must notice a differing field'
+assert holds(@{ expect([0 / 0]).to_equal([0 / 0]) }),
+  'to_equal must treat NaN as equal to itself, or a list holding one could never be compared'
+assert !holds(@{ expect(1).to_equal('1') }), 'to_equal must not equate across types'
+ok('to_equal is structural, descends into instances, and matches NaN with NaN')
+
+var shared = [1, 2]
+both_ways('to_be_same_as',
+  @{ expect(shared).to_be_same_as(shared) },
+  @{ expect(shared).not.to_be_same_as(shared) })
+assert !holds(@{ expect([1, 2]).to_be_same_as([1, 2]) }),
+  'to_be_same_as must reject two equal but distinct objects'
+ok('to_be_same_as is identity, not equality')
+
+assert holds(@{ expect(0.1 + 0.2).to_be_close_to(0.3) }), 'to_be_close_to must absorb float error'
+assert !holds(@{ expect(0.1 + 0.2).to_be_close_to(0.4) }), 'to_be_close_to must still notice a real difference'
+assert holds(@{ expect(1.004).to_be_close_to(1.0, 2) }), 'to_be_close_to must honour its precision argument'
+assert !holds(@{ expect(1.004).to_be_close_to(1.0, 3) }), 'a tighter precision must be tighter'
+assert rejects(@{ expect('x').to_be_close_to(1) }), 'to_be_close_to must refuse a non-number'
+ok('to_be_close_to, with and without an explicit precision')
+
+assert holds(@{ expect(105).to_be_within(100, 5) }), 'to_be_within must include its bound'
+assert !holds(@{ expect(106).to_be_within(100, 5) }), 'to_be_within must exclude anything past it'
+ok('to_be_within takes an absolute tolerance')
+
+assert holds(@{ expect({ name: 'Ada', age: 36 }).to_match_object({ name: 'Ada' }) }),
+  'to_match_object must ignore keys it was not asked about'
+assert holds(@{ expect({ user: { id: 1, name: 'x' } }).to_match_object({ user: { id: 1 } }) }),
+  'to_match_object must recurse into nested dicts'
+assert holds(@{ expect(Point(1, 2)).to_match_object({ x: 1 }) }),
+  'to_match_object must work against an instance'
+assert !holds(@{ expect({ name: 'Bob' }).to_match_object({ name: 'Ada' }) }),
+  'to_match_object must notice a differing value'
+assert rejects(@{ expect([1]).to_match_object({ a: 1 }) }), 'to_match_object must refuse a list'
+ok('to_match_object matches a subset of a dict or an instance')
+
+# ---------------------------------------------------------------------------
+# Truthiness
+# ---------------------------------------------------------------------------
+both_ways('to_be_true', @{ expect(true).to_be_true() }, @{ expect(true).not.to_be_true() })
+assert !holds(@{ expect(1).to_be_true() }), 'to_be_true must mean exactly true, not merely truthy'
+assert holds(@{ expect(false).to_be_false() }), 'to_be_false must hold for false'
+assert holds(@{ expect(nil).to_be_nil() }), 'to_be_nil must hold for nil'
+assert holds(@{ expect(0).not.to_be_nil() }), '0 is not nil'
+assert holds(@{ expect(0).to_be_defined() }), 'to_be_defined must hold for anything that is not nil'
+assert !holds(@{ expect(nil).to_be_defined() }), 'to_be_defined must fail for nil'
+ok('to_be_true/false/nil/defined')
+
+assert holds(@{ expect('x').to_be_truthy() }), 'a non-empty string is truthy'
+assert holds(@{ expect(-1).to_be_falsy() }), 'a negative number is falsy in Zuri, and this matcher must say so'
+assert holds(@{ expect(0).to_be_falsy() }), 'zero is falsy'
+assert holds(@{ expect('').to_be_falsy() }), 'the empty string is falsy'
+assert holds(@{ expect([]).to_be_truthy() }), 'an empty list is truthy: it is an object, and objects are truthy'
+assert holds(@{ expect({}).to_be_truthy() }), 'so is an empty dict'
+ok('to_be_truthy/falsy follow Zuri truthiness, negative numbers and empty lists included')
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+assert holds(@{ expect('x').to_be_a('string') }), 'to_be_a must accept a type name'
+assert holds(@{ expect(5).to_be_a('int') }), 'to_be_a must distinguish int from float'
+assert holds(@{ expect(5.5).to_be_a('float') }), 'to_be_a must distinguish float from int'
+assert holds(@{ expect(Point(1, 2)).to_be_a(Point) }), 'to_be_a must accept a class'
+assert !holds(@{ expect(5).to_be_a('string') }), 'to_be_a must fail on the wrong type'
+assert rejects(@{ expect(5).to_be_a(5) }), 'to_be_a must refuse something that is neither a name nor a class'
+ok('to_be_a, by name and by class')
+
+assert holds(@{ expect('x').to_be_string() }), 'to_be_string'
+assert holds(@{ expect(1).to_be_number() }), 'to_be_number'
+assert holds(@{ expect(1).to_be_int() }), 'to_be_int'
+assert holds(@{ expect(1.5).to_be_float() }), 'to_be_float'
+assert !holds(@{ expect(1).to_be_float() }), 'a whole number is not a float'
+assert holds(@{ expect((1).to_bigint()).to_be_bigint() }), 'to_be_bigint'
+assert holds(@{ expect(true).to_be_bool() }), 'to_be_bool'
+assert holds(@{ expect([]).to_be_list() }), 'to_be_list'
+assert holds(@{ expect({}).to_be_dict() }), 'to_be_dict'
+assert holds(@{ expect(bytes(1)).to_be_bytes() }), 'to_be_bytes'
+assert holds(@{ expect(@{ }).to_be_function() }), 'to_be_function'
+assert holds(@{ expect(Point).to_be_callable() }), 'a class is callable'
+assert holds(@{ expect([1]).to_be_iterable() }), 'to_be_iterable'
+assert holds(@{ expect(Point).to_be_class() }), 'to_be_class'
+assert holds(@{ expect(Point(1, 2)).to_be_instance() }), 'to_be_instance'
+ok('every single-type matcher agrees with its built-in predicate')
+
+assert holds(@{ expect(ValueError('x')).to_be_instance_of(Error) }),
+  'to_be_instance_of must follow inheritance'
+assert !holds(@{ expect(Error('x')).to_be_instance_of(ValueError) }),
+  'to_be_instance_of must not follow inheritance the wrong way'
+ok('to_be_instance_of follows the class hierarchy')
+
+# ---------------------------------------------------------------------------
+# Numbers
+# ---------------------------------------------------------------------------
+assert holds(@{ expect(5).to_be_greater_than(4) }), 'to_be_greater_than'
+assert !holds(@{ expect(5).to_be_greater_than(5) }), 'to_be_greater_than must be strict'
+assert holds(@{ expect(5).to_be_greater_than_or_equal(5) }), 'to_be_greater_than_or_equal must not be'
+assert holds(@{ expect(5).to_be_less_than(6) }), 'to_be_less_than'
+assert holds(@{ expect(5).to_be_less_than_or_equal(5) }), 'to_be_less_than_or_equal'
+assert holds(@{ expect(5).to_be_between(5, 10) }), 'to_be_between must include its lower bound'
+assert holds(@{ expect(10).to_be_between(5, 10) }), 'to_be_between must include its upper bound'
+assert !holds(@{ expect(11).to_be_between(5, 10) }), 'to_be_between must exclude anything outside'
+ok('the ordering matchers, and which of them are strict')
+
+assert holds(@{ expect(1).to_be_positive() }), 'to_be_positive'
+assert holds(@{ expect(-1).to_be_negative() }), 'to_be_negative'
+assert holds(@{ expect(0).to_be_zero() }), 'to_be_zero'
+assert !holds(@{ expect(0).to_be_positive() }), 'zero is not positive'
+assert holds(@{ expect(9).to_be_divisible_by(3) }), 'to_be_divisible_by'
+assert !holds(@{ expect(10).to_be_divisible_by(3) }), 'to_be_divisible_by must notice a remainder'
+assert rejects(@{ expect(10).to_be_divisible_by(0) }), 'to_be_divisible_by must refuse zero'
+assert holds(@{ expect(4).to_be_even() }), 'to_be_even'
+assert holds(@{ expect(3).to_be_odd() }), 'to_be_odd'
+assert rejects(@{ expect(3.5).to_be_odd() }), 'to_be_odd must refuse a fractional number'
+ok('sign, divisibility and parity')
+
+assert holds(@{ expect(0 / 0).to_be_nan() }), 'to_be_nan must recognise NaN, which == cannot'
+assert !holds(@{ expect(1).to_be_nan() }), 'an ordinary number is not NaN'
+assert holds(@{ expect(1).to_be_finite() }), 'to_be_finite'
+assert holds(@{ expect(1 / 0).to_be_infinite() }), 'to_be_infinite'
+assert !holds(@{ expect(1 / 0).to_be_finite() }), 'infinity is not finite'
+assert !holds(@{ expect(0 / 0).to_be_finite() }), 'NaN is not finite either'
+ok('NaN, finite and infinite')
+
+# ---------------------------------------------------------------------------
+# Text
+# ---------------------------------------------------------------------------
+assert holds(@{ expect('hello').to_contain('ell') }), 'to_contain must look for a substring in a string'
+assert holds(@{ expect([1, 2]).to_contain(2) }), 'to_contain must look for an element in a list'
+assert holds(@{ expect({ a: 1 }).to_contain('a') }), 'to_contain must look for a key in a dict'
+assert rejects(@{ expect(5).to_contain(5) }), 'to_contain must refuse something with no contents'
+ok('to_contain, over every kind of container')
+
+assert holds(@{ expect('Hello').to_contain_ignoring_case('hello') }), 'to_contain_ignoring_case'
+assert holds(@{ expect('Hello').to_equal_ignoring_case('HELLO') }), 'to_equal_ignoring_case'
+assert holds(@{ expect('hello').to_start_with('he') }), 'to_start_with'
+assert holds(@{ expect('hello').to_end_with('lo') }), 'to_end_with'
+assert holds(@{ expect('user-42').to_match('/^user-[0-9]+$/') }), 'to_match'
+assert !holds(@{ expect('nope').to_match('/^user/') }), 'to_match must fail when nothing matches'
+assert holds(@{ expect('   ').to_be_blank() }), 'to_be_blank must accept whitespace'
+assert holds(@{ expect('').to_be_blank() }), 'to_be_blank must accept the empty string'
+assert !holds(@{ expect(' x ').to_be_blank() }), 'to_be_blank must reject anything with content'
+ok('the string matchers')
+
+# `match()` answers `false`, not `nil`, when nothing matched, so a
+# matcher testing it against nil would pass for every string alive.
+assert 'nope'.match('/^user/') == false, "this is the footgun to_match has to be written around"
+ok('to_match is written against what match() actually returns')
+
+# ---------------------------------------------------------------------------
+# Collections
+# ---------------------------------------------------------------------------
+assert holds(@{ expect([1, 2]).to_have_length(2) }), 'to_have_length on a list'
+assert holds(@{ expect('abc').to_have_length(3) }), 'to_have_length on a string'
+assert holds(@{ expect({ a: 1 }).to_have_length(1) }), 'to_have_length on a dict'
+assert holds(@{ expect([]).to_be_empty() }), 'to_be_empty'
+assert holds(@{ expect([1]).not.to_be_empty() }), 'to_be_empty, negated'
+ok('to_have_length and to_be_empty')
+
+assert holds(@{ expect([{ a: 1 }]).to_contain_equal({ a: 1 }) }),
+  'to_contain_equal must compare structurally'
+assert holds(@{ expect([1, 2, 3]).to_contain_all([3, 1]) }), 'to_contain_all, in any order'
+assert !holds(@{ expect([1, 2]).to_contain_all([1, 9]) }), 'to_contain_all must notice a missing item'
+assert holds(@{ expect([1, 2]).to_contain_any([9, 2]) }), 'to_contain_any'
+assert holds(@{ expect([1, 2]).to_contain_none([8, 9]) }), 'to_contain_none'
+assert !holds(@{ expect([1, 2]).to_contain_none([2]) }), 'to_contain_none must notice a present item'
+ok('to_contain_equal/all/any/none')
+
+assert holds(@{ expect([3, 1, 2]).to_contain_exactly([1, 2, 3]) }),
+  'to_contain_exactly must ignore order'
+assert !holds(@{ expect([1, 1, 2]).to_contain_exactly([1, 2]) }),
+  'to_contain_exactly must count duplicates'
+assert !holds(@{ expect([1, 2]).to_contain_exactly([1, 2, 3]) }),
+  'to_contain_exactly must notice a missing element'
+ok('to_contain_exactly compares as a multiset')
+
+assert holds(@{ expect({ a: 1 }).to_have_key('a') }), 'to_have_key'
+assert holds(@{ expect({ a: 1, b: 2 }).to_have_keys(['a', 'b']) }), 'to_have_keys'
+assert !holds(@{ expect({ a: 1 }).to_have_keys(['a', 'b']) }), 'to_have_keys must need all of them'
+assert holds(@{ expect({ a: [1] }).to_have_value([1]) }), 'to_have_value must compare structurally'
+ok('the dict matchers')
+
+var payload = { data: { items: [{ id: 7 }] } }
+assert holds(@{ expect(payload).to_have_property('data.items.0.id', 7) }),
+  'to_have_property must walk dicts and list indices alike'
+assert holds(@{ expect(Point(1, 2)).to_have_property('x', 1) }),
+  'to_have_property must walk instance properties'
+assert holds(@{ expect(payload).to_have_property('data') }),
+  'to_have_property with no value must only assert that something is there'
+assert !holds(@{ expect(payload).to_have_property('data.missing') }),
+  'to_have_property must fail when the path goes nowhere'
+assert !holds(@{ expect(payload).to_have_property('data.items.9.id', 7) }),
+  'to_have_property must fail on an out-of-range index rather than raising'
+ok('to_have_property follows a dotted path through dicts, lists and objects')
+
+assert holds(@{ expect([1, 2, 3]).to_be_sorted() }), 'to_be_sorted on numbers'
+assert holds(@{ expect(['a', 'b']).to_be_sorted() }), 'to_be_sorted on strings'
+assert !holds(@{ expect([2, 1]).to_be_sorted() }), 'to_be_sorted must notice disorder'
+assert rejects(@{ expect([1, 'a']).to_be_sorted() }), 'to_be_sorted must refuse a list with no order'
+assert holds(@{ expect([1, 2]).to_have_unique_items() }), 'to_have_unique_items'
+assert !holds(@{ expect([1, 2, 1]).to_have_unique_items() }), 'to_have_unique_items must catch a repeat'
+ok('to_be_sorted and to_have_unique_items')
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
+assert holds(@{ expect(@{ raise ValueError('bad') }).to_raise() }), 'to_raise'
+assert !holds(@{ expect(@{ }).to_raise() }), 'to_raise must fail when nothing is raised'
+assert holds(@{ expect(@{ }).to_not_raise() }), 'to_not_raise'
+assert !holds(@{ expect(@{ raise Error('x') }).to_not_raise() }), 'to_not_raise must fail on a raise'
+assert rejects(@{ expect(5).to_raise() }), 'to_raise must refuse something it cannot call'
+ok('to_raise and to_not_raise')
+
+assert holds(@{ expect(@{ raise ValueError('bad') }).to_raise_instance_of(ValueError) }),
+  'to_raise_instance_of'
+assert holds(@{ expect(@{ raise ValueError('bad') }).to_raise_instance_of(Error) }),
+  'to_raise_instance_of must follow inheritance'
+assert !holds(@{ expect(@{ raise TypeError('bad') }).to_raise_instance_of(ValueError) }),
+  'to_raise_instance_of must reject a sibling class'
+ok('to_raise_instance_of')
+
+assert holds(@{ expect(@{ raise ValueError('bad input') }).to_raise_with_message('bad') }),
+  'to_raise_with_message must accept a substring'
+assert holds(@{ expect(@{ raise ValueError('bad input') }).to_raise_with_message('/b.d inp/') }),
+  'to_raise_with_message must accept a regular expression'
+assert !holds(@{ expect(@{ raise ValueError('bad') }).to_raise_with_message('good') }),
+  'to_raise_with_message must fail on the wrong message'
+assert !holds(@{ expect(@{ }).to_raise_with_message('anything') }),
+  'to_raise_with_message must fail when nothing is raised'
+ok('to_raise_with_message, as a substring and as a pattern')
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+assert holds(@{ expect(@{ echo 'Hello, Ada!' }).to_print('Hello') }), 'to_print'
+assert holds(@{ expect(@{ echo 'x' }).to_print_exactly('x\n') }),
+  'to_print_exactly must include the newline echo adds'
+assert holds(@{ expect(@{ }).to_print_nothing() }), 'to_print_nothing'
+assert !holds(@{ expect(@{ echo 'x' }).to_print_nothing() }), 'to_print_nothing must notice output'
+assert holds(@{ expect(@{ print('raw') }).to_print('raw') }), 'to_print must see print() as well as echo'
+ok('the output matchers capture echo and print alike')
+
+# A raising body must not leave the capture frame open, or every later
+# line of this suite would vanish into it.
+catch {
+  expect(@{
+    echo 'swallowed'
+    raise ValueError('from inside')
+  }).to_print('swallowed')
+} as capture_error
+
+assert capture_error != nil, 'to_print must let the body\'s own error through'
+ok('a body that raises inside to_print does not leave output captured')
+
+# ---------------------------------------------------------------------------
+# Anything else
+# ---------------------------------------------------------------------------
+assert holds(@{ expect(7).to_satisfy(@(n) { return n % 2 != 0 }, 'to be odd') }), 'to_satisfy'
+assert !holds(@{ expect(8).to_satisfy(@(n) { return n % 2 != 0 }, 'to be odd') }),
+  'to_satisfy must fail when the predicate does'
+ok('to_satisfy')
+
+var failed = failure_of(@{ fail('unreachable branch') })
+assert failed != nil and failed.message == 'unreachable branch', 'fail() must raise with its message'
+assert failure_of(@{ fail() }).message == 'Failed', 'fail() must have a default message'
+ok('fail()')
+
+# ---------------------------------------------------------------------------
+# What a failure carries
+# ---------------------------------------------------------------------------
+var detail = failure_of(@{ expect(4).to_be(5) })
+assert detail.matcher == 'to_be', 'the failure must name the matcher'
+assert detail.expected == 5 and detail.received == 4, 'the failure must carry both values'
+assert detail.has_values, 'to_be must mark its values as worth showing'
+assert detail.message == 'Expected 4 to be 5', 'the message must read as a sentence'
+assert !detail.stacktrace.is_empty(), 'the failure must carry a stack trace'
+ok('an AssertionError carries the matcher, both values and a trace')
+
+var negated = failure_of(@{ expect(4).not.to_be(4) })
+assert negated.message == 'Expected 4 not to be 4',
+  'the negated message must be the positive one with "not" in it'
+assert negated.details.is_empty(),
+  'a negated failure must show no diff: the two values were equal, so there is nothing to diff'
+ok('negated failures read correctly and show no diff')
+
+var labelled = failure_of(@{ expect(404, 'status').to_be(200) })
+assert labelled.message == 'Expected status (404) to be 200',
+  'a label must lead the message, with the value after it'
+ok('a label names the value in the message')
+
+var structural = failure_of(@{ expect([1, 2, 3]).to_equal([1, 9, 3]) })
+assert !structural.details.is_empty(), 'a structural failure must come with a diff'
+assert structural.details.some(@(line) { return line.contains('[1]') }),
+  'the diff must point at the element that differs'
+ok('a failed structural comparison comes with a diff')
+
+var wrong_type = failure_of(@{ expect('x').to_be_a('int') })
+assert wrong_type.message.contains('an int'), 'the message must use the right article'
+assert wrong_type.message.contains('a string'), 'and name what was actually given'
+ok('type messages are grammatical')
+
+# ---------------------------------------------------------------------------
+# Every matcher must go through the negation path
+# ---------------------------------------------------------------------------
+# One value per matcher that the positive form accepts, so `.not` has
+# something real to invert. A matcher missing from `_check` would show
+# up here as one that passes in both directions.
+var negation_cases = [
+  @{ expect(1).to_be(1) },
+  @{ expect([1]).to_equal([1]) },
+  @{ expect(1).to_be_close_to(1) },
+  @{ expect(1).to_be_within(1, 0) },
+  @{ expect({ a: 1 }).to_match_object({ a: 1 }) },
+  @{ expect(true).to_be_true() },
+  @{ expect(false).to_be_false() },
+  @{ expect(1).to_be_truthy() },
+  @{ expect(nil).to_be_falsy() },
+  @{ expect(nil).to_be_nil() },
+  @{ expect(1).to_be_defined() },
+  @{ expect('x').to_be_a('string') },
+  @{ expect('x').to_be_string() },
+  @{ expect(1).to_be_number() },
+  @{ expect(1).to_be_int() },
+  @{ expect(1.5).to_be_float() },
+  @{ expect(true).to_be_bool() },
+  @{ expect([]).to_be_list() },
+  @{ expect({}).to_be_dict() },
+  @{ expect(bytes(1)).to_be_bytes() },
+  @{ expect(@{ }).to_be_function() },
+  @{ expect(@{ }).to_be_callable() },
+  @{ expect([]).to_be_iterable() },
+  @{ expect(Point).to_be_class() },
+  @{ expect(Point(1, 2)).to_be_instance() },
+  @{ expect(Point(1, 2)).to_be_instance_of(Point) },
+  @{ expect(2).to_be_greater_than(1) },
+  @{ expect(2).to_be_greater_than_or_equal(2) },
+  @{ expect(1).to_be_less_than(2) },
+  @{ expect(1).to_be_less_than_or_equal(1) },
+  @{ expect(1).to_be_between(0, 2) },
+  @{ expect(1).to_be_positive() },
+  @{ expect(-1).to_be_negative() },
+  @{ expect(0).to_be_zero() },
+  @{ expect(4).to_be_divisible_by(2) },
+  @{ expect(4).to_be_even() },
+  @{ expect(3).to_be_odd() },
+  @{ expect(0 / 0).to_be_nan() },
+  @{ expect(1).to_be_finite() },
+  @{ expect(1 / 0).to_be_infinite() },
+  @{ expect('abc').to_contain('b') },
+  @{ expect([{ a: 1 }]).to_contain_equal({ a: 1 }) },
+  @{ expect('ABC').to_contain_ignoring_case('abc') },
+  @{ expect('ABC').to_equal_ignoring_case('abc') },
+  @{ expect('abc').to_start_with('a') },
+  @{ expect('abc').to_end_with('c') },
+  @{ expect('abc').to_match('/b/') },
+  @{ expect(' ').to_be_blank() },
+  @{ expect([1]).to_have_length(1) },
+  @{ expect([]).to_be_empty() },
+  @{ expect([1]).to_contain_all([1]) },
+  @{ expect([1]).to_contain_any([1]) },
+  @{ expect([1]).to_contain_none([2]) },
+  @{ expect([1]).to_contain_exactly([1]) },
+  @{ expect({ a: 1 }).to_have_key('a') },
+  @{ expect({ a: 1 }).to_have_keys(['a']) },
+  @{ expect({ a: 1 }).to_have_value(1) },
+  @{ expect({ a: 1 }).to_have_property('a', 1) },
+  @{ expect([1, 2]).to_be_sorted() },
+  @{ expect([1, 2]).to_have_unique_items() },
+  @{ expect(@{ raise Error('x') }).to_raise() },
+  @{ expect(@{ raise Error('x') }).to_raise_instance_of(Error) },
+  @{ expect(@{ raise Error('x') }).to_raise_with_message('x') },
+  @{ expect(@{ }).to_not_raise() },
+  @{ expect(@{ echo 'x' }).to_print('x') },
+  @{ expect(@{ echo 'x' }).to_print_exactly('x\n') },
+  @{ expect(@{ }).to_print_nothing() },
+  @{ expect(1).to_satisfy(@(n) { return true }) },
+]
+
+for positive in negation_cases {
+  assert holds(positive), 'every case in the negation table must hold as written'
+}
+ok('${negation_cases.length()} matchers hold on the values chosen for them')
+
+# The same bodies, with `.not` spliced in. Rather than writing them all
+# out twice, each is re-expressed against an Expect that starts
+# negated: `Expect(value, label, true, nil)` is what `.not` hands back.
+assert typeof(Expect(1, nil, true, nil).not) == 'Expect',
+  'a negated Expect must still carry a twin, so .not.not works from either side'
+assert !holds(@{ Expect(1, nil, true, nil).to_be(1) }),
+  'a negated Expect must invert the result'
+assert holds(@{ Expect(1, nil, true, nil).to_be(2) }),
+  'a negated Expect must pass when the positive form would fail'
+ok('negation is applied in one place, so it cannot drift per matcher')
+
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

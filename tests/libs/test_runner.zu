@@ -1,0 +1,650 @@
+/**
+ * test_runner.zu
+ *
+ * Test suite for the `test` module's execution engine: declaration,
+ * hook ordering, the `only`/`skip`/`todo` modes, retries, expected
+ * failures, filtering, tags, bail, shuffling, assertion promises, and
+ * output capture.
+ *
+ * Every scenario declares a small suite, runs it with the silent
+ * reporter, and asserts against the `Summary` that comes back.
+ * `test.reset()` between scenarios is what keeps one from leaking
+ * into the next.
+ */
+
+import test
+import test { describe, describe_each, describe_only, describe_skip }
+import test { it, it_each, it_only, it_skip, it_todo }
+import test { after_all, after_each, before_all, before_each }
+import test { assertions, expect, fail, has_assertions }
+import io
+import test.reporter { Reporter }
+import test.style
+
+style.set_enabled(false)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Declares a scenario with `body`, runs it, and hands back the
+# `Summary`. Nothing is printed: what a reporter would have shown is
+# asserted against the summary instead.
+def scenario(body, options) {
+  test.reset()
+  body()
+
+  var resolved = is_dict(options) ? options.clone() : {}
+
+  if !resolved.contains('reporter') {
+    resolved.set('reporter', 'silent')
+  }
+
+  return test.run(resolved)
+}
+
+def statuses(summary_root) {
+  return summary_root.cases().map(@(test_case) { return test_case.status })
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  test.runner: execution suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Declaration builds a tree, and running it is a separate step
+# ---------------------------------------------------------------------------
+test.reset()
+
+var ran = false
+
+describe('outer', @{
+  describe('inner', @{
+    it('a test', @{ ran = true })
+  })
+})
+
+assert !ran, 'declaring a test must not run it'
+
+var tree = test.declared()
+assert tree.cases().length() == 1, 'the tree must hold the one declared test'
+assert tree.cases()[0].full_name() == 'outer > inner > a test',
+  'a test must know its full path through the suites'
+assert tree.cases()[0].file.ends_with('test_runner.zu'),
+  'a test must know the file it was declared in'
+
+test.run({ reporter: 'silent' })
+assert ran, 'run() must be what actually runs the body'
+ok('declaration and execution are separate phases')
+
+# ---------------------------------------------------------------------------
+# Counting
+# ---------------------------------------------------------------------------
+var counted = scenario(@{
+  describe('counting', @{
+    it('passes', @{ expect(1).to_be(1) })
+    it('fails', @{ expect(1).to_be(2) })
+    it_skip('skipped', @{ })
+    it_todo('todo')
+  })
+}, nil)
+
+assert counted.passed == 1, 'one test passed'
+assert counted.failed == 1, 'one test failed'
+assert counted.skipped == 1, 'one test was skipped'
+assert counted.todo == 1, 'one test was a todo'
+assert counted.total() == 4, 'four tests in total'
+assert counted.ran() == 2, 'only two of them actually ran'
+assert counted.suites == 1, 'one suite had something to run'
+assert !counted.ok() and counted.exit_code() == 1, 'a run with a failure must not be ok'
+ok('every status is counted separately, and a failure sets the exit code')
+
+var clean = scenario(@{
+  describe('clean', @{
+    it('passes', @{ expect(1).to_be(1) })
+  })
+}, nil)
+
+assert clean.ok() and clean.exit_code() == 0, 'a run with no failures must be ok'
+ok('a clean run exits zero')
+
+# A test with no body is a todo, without having to say so.
+var implied = scenario(@{
+  describe('implied', @{
+    it('not written yet')
+  })
+}, nil)
+
+assert implied.todo == 1, 'it() with no body must be a todo'
+ok('it() with no body is a todo')
+
+# ---------------------------------------------------------------------------
+# Hook ordering
+# ---------------------------------------------------------------------------
+var log = []
+
+scenario(@{
+  describe('outer', @{
+    before_all(@{ log.append('outer:all') })
+    after_all(@{ log.append('/outer:all') })
+    before_each(@{ log.append('outer:each') })
+    after_each(@{ log.append('/outer:each') })
+
+    it('a', @{ log.append('a') })
+
+    describe('inner', @{
+      before_all(@{ log.append('inner:all') })
+      after_all(@{ log.append('/inner:all') })
+      before_each(@{ log.append('inner:each') })
+      after_each(@{ log.append('/inner:each') })
+
+      it('b', @{ log.append('b') })
+    })
+  })
+}, nil)
+
+assert log == [
+  'outer:all',
+  'outer:each', 'a', '/outer:each',
+  'inner:all',
+  'outer:each', 'inner:each', 'b', '/inner:each', '/outer:each',
+  '/inner:all',
+  '/outer:all',
+], 'hooks must nest correctly: before outermost first, after innermost first'
+ok('hook ordering, in and out')
+
+# A suite nothing runs in must not run its setup either, which is the
+# whole point of deciding what runs before running anything.
+var untouched = true
+
+scenario(@{
+  describe('skipped entirely', @{
+    before_all(@{ untouched = false })
+    it_skip('nope', @{ })
+  })
+}, nil)
+
+assert untouched, 'before_all must not run for a suite with nothing to run'
+ok('before_all does not fire for a suite that has nothing to do')
+
+# after_each has to run even when the body failed, or teardown stops
+# being trustworthy exactly when it matters most.
+var torn_down = false
+
+var after_failure = scenario(@{
+  describe('teardown', @{
+    after_each(@{ torn_down = true })
+    it('fails', @{ expect(1).to_be(2) })
+  })
+}, nil)
+
+assert after_failure.failed == 1, 'the test must still be reported as failed'
+assert torn_down, 'after_each must run after a failing test'
+ok('after_each runs even when the test failed')
+
+# A failing before_each fails the test rather than taking the run down.
+var broken_setup = scenario(@{
+  describe('broken setup', @{
+    before_each(@{ raise ValueError('setup exploded') })
+    it('never gets a chance', @{ expect(1).to_be(1) })
+  })
+}, nil)
+
+assert broken_setup.failed == 1, 'a failing before_each must fail the test'
+assert broken_setup.failures[0].failures[0].kind == 'hook', 'and must be reported as a hook failure'
+assert broken_setup.failures[0].failures[0].message.contains('before_each'),
+  'and must say which hook it was'
+ok('a failing before_each fails the test it was setting up')
+
+# A failing before_all takes the whole suite with it, because nothing
+# in it had the setup it was written against.
+var broken_suite = scenario(@{
+  describe('broken suite', @{
+    before_all(@{ raise ValueError('connection refused') })
+    it('one', @{ expect(1).to_be(1) })
+    it('two', @{ expect(1).to_be(1) })
+  })
+}, nil)
+
+assert broken_suite.failed == 2, 'a failing before_all must fail every test in the suite'
+ok('a failing before_all fails every test under it')
+
+# ---------------------------------------------------------------------------
+# Focusing and skipping
+# ---------------------------------------------------------------------------
+var focused = scenario(@{
+  describe('a', @{
+    it_only('runs', @{ expect(1).to_be(1) })
+    it('does not', @{ expect(1).to_be(2) })
+  })
+
+  describe('b', @{
+    it('also does not', @{ expect(1).to_be(2) })
+  })
+}, nil)
+
+assert focused.passed == 1 and focused.failed == 0,
+  'only the focused test may run, whatever the others would have done'
+assert focused.skipped == 2, 'everything else must be reported as skipped'
+ok('it_only focuses one test and skips the rest')
+
+var focused_suite = scenario(@{
+  describe_only('focused', @{
+    it('one', @{ expect(1).to_be(1) })
+    it('two', @{ expect(1).to_be(1) })
+  })
+
+  describe('ignored', @{
+    it('three', @{ expect(1).to_be(2) })
+  })
+}, nil)
+
+assert focused_suite.passed == 2 and focused_suite.skipped == 1,
+  'describe_only must focus everything inside it'
+ok('describe_only focuses a whole suite')
+
+# skip has to win, or marking something broken would be undone by
+# someone else focusing the suite around it.
+var skip_wins = scenario(@{
+  describe_only('focused', @{
+    it_skip('still skipped', @{ expect(1).to_be(2) })
+    it('runs', @{ expect(1).to_be(1) })
+  })
+}, nil)
+
+assert skip_wins.skipped == 1 and skip_wins.passed == 1, 'skip must win over only'
+ok('skip wins over only')
+
+var skipped_suite = scenario(@{
+  describe_skip('all off', @{
+    it('one', @{ expect(1).to_be(2) })
+    it('two', @{ expect(1).to_be(2) })
+  })
+}, nil)
+
+assert skipped_suite.skipped == 2 and skipped_suite.failed == 0,
+  'describe_skip must skip everything inside it'
+ok('describe_skip skips a whole suite')
+
+# ---------------------------------------------------------------------------
+# Table-driven declarations
+# ---------------------------------------------------------------------------
+test.reset()
+
+it_each([
+  ['', 0],
+  ['a', 1],
+  ['hello', 5],
+], 'says $0 is $1 long', @(text, length) {
+  expect(text.length()).to_be(length)
+})
+
+var table = test.run({ reporter: 'silent' })
+var names = test.declared().cases().map(@(test_case) { return test_case.name })
+
+assert table.passed == 3, 'it_each must declare one test per row'
+assert names == ["says '' is 0 long", "says 'a' is 1 long", "says 'hello' is 5 long"],
+  'the name template must be filled in from each row'
+ok('it_each declares one test per row and names them from it')
+
+test.reset()
+
+it_each([1, 2], 'row $# holds $0', @(value) {
+  expect(value).to_be_int()
+})
+
+test.run({ reporter: 'silent' })
+assert test.declared().cases()[1].name == 'row 2 holds 2',
+  '$# must be the row number, counting from one, and a bare row must count as one column'
+ok('$# numbers the rows, and a non-list row is a single column')
+
+# `$10` must not be read as `$1` followed by a `0`.
+test.reset()
+
+it_each([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'last']], 'ends with $10', @(...values) {
+  expect(values.length()).to_be(11)
+})
+
+test.run({ reporter: 'silent' })
+assert test.declared().cases()[0].name == "ends with 'last'",
+  '$10 must be the eleventh column, not the second followed by a zero'
+ok('a two-digit placeholder is not two placeholders')
+
+test.reset()
+
+describe_each([
+  ['first', 1],
+  ['second', 2],
+], '$0 codec', @(name, number) {
+  it('knows its number', @{
+    expect(number).to_be_int()
+  })
+})
+
+var suites = test.run({ reporter: 'silent' })
+assert suites.passed == 2, 'describe_each must declare one suite per row'
+assert test.declared().cases()[0].suite_path() == ["'first' codec"],
+  'the suite name must be filled in from the row'
+ok('describe_each declares one suite per row')
+
+# ---------------------------------------------------------------------------
+# Retries and expected failures
+# ---------------------------------------------------------------------------
+var attempts = 0
+
+var retried = scenario(@{
+  describe('flaky', @{
+    it('settles down', @{
+      attempts++
+      expect(attempts).to_be(3)
+    }, { retries: 3 })
+  })
+}, nil)
+
+assert attempts == 3, 'the body must be run again until it passes'
+assert retried.passed == 1 and retried.flaky == 1, 'a test that needed a retry must be reported as flaky'
+assert retried.failures.is_empty(), 'and must not be reported as a failure'
+ok('retries re-run the body, and a late pass is reported as flaky')
+
+var gave_up = scenario(@{
+  describe('really broken', @{
+    it('never passes', @{ expect(1).to_be(2) }, { retries: 2 })
+  })
+}, nil)
+
+assert gave_up.failed == 1, 'a test that fails every attempt must still fail'
+ok('retries run out')
+
+var expected_failure = scenario(@{
+  describe('known broken', @{
+    it('reproduces the bug', @{ expect(1).to_be(2) }, { failing: true })
+    it('has been fixed without anyone noticing', @{ expect(1).to_be(1) }, { failing: true })
+  })
+}, nil)
+
+assert expected_failure.passed == 1, 'a failing test marked failing must pass'
+assert expected_failure.failed == 1, 'and a passing one marked failing must fail'
+assert expected_failure.failures[0].failures[0].message.contains('marked failing'),
+  'the message must explain why a passing test failed'
+ok('failing: true inverts the outcome in both directions')
+
+# ---------------------------------------------------------------------------
+# Filtering
+# ---------------------------------------------------------------------------
+def three_suites() {
+  describe('alpha', @{
+    it('one', @{ expect(1).to_be(1) })
+    it('two', @{ expect(1).to_be(1) }, { tags: ['slow'] })
+  })
+
+  describe('beta', @{
+    it('three', @{ expect(1).to_be(1) })
+  })
+}
+
+var by_name = scenario(three_suites, { filter: 'alpha' })
+assert by_name.passed == 2 and by_name.skipped == 1, 'filter must match against the full name'
+
+var by_pattern = scenario(three_suites, { filter: '/^beta/' })
+assert by_pattern.passed == 1 and by_pattern.skipped == 2,
+  'a delimited filter must be treated as a regular expression'
+
+var by_tag = scenario(three_suites, { tags: ['slow'] })
+assert by_tag.passed == 1 and by_tag.skipped == 2, 'tags must select only what carries one'
+
+var without_tag = scenario(three_suites, { exclude_tags: ['slow'] })
+assert without_tag.passed == 2 and without_tag.skipped == 1, 'exclude_tags must remove what carries one'
+ok('filter, regular-expression filter, tags and exclude_tags')
+
+# ---------------------------------------------------------------------------
+# Bail
+# ---------------------------------------------------------------------------
+var reached = 0
+
+var bailed = scenario(@{
+  describe('bail', @{
+    it('one', @{ reached++; expect(1).to_be(2) })
+    it('two', @{ reached++ })
+    it('three', @{ reached++ })
+  })
+}, { bail: 1 })
+
+assert reached == 1, 'bail must stop before the next test runs'
+assert bailed.bailed, 'the summary must record that it stopped early'
+assert !bailed.ok(), 'a bailed run is never ok, even if nothing after it would have failed'
+ok('bail stops the run at the first failure')
+
+# ---------------------------------------------------------------------------
+# Shuffling
+# ---------------------------------------------------------------------------
+def ordered_suite(order) {
+  return @{
+    describe('order', @{
+      it('a', @{ order.append('a') })
+      it('b', @{ order.append('b') })
+      it('c', @{ order.append('c') })
+      it('d', @{ order.append('d') })
+      it('e', @{ order.append('e') })
+    })
+  }
+}
+
+var first_order = []
+var seeded = scenario(ordered_suite(first_order), { shuffle: true, seed: 12345 })
+
+var second_order = []
+scenario(ordered_suite(second_order), { shuffle: true, seed: 12345 })
+
+assert seeded.seed == 12345, 'the summary must report the seed it used'
+assert first_order == second_order, 'the same seed must produce the same order'
+assert first_order.length() == 5, 'shuffling must not lose or duplicate a test'
+assert first_order.clone().sort() == ['a', 'b', 'c', 'd', 'e'], 'and must run each exactly once'
+
+var chosen = scenario(ordered_suite([]), { shuffle: true })
+assert chosen.seed != nil, 'a seed must be chosen and reported when none was given'
+ok('shuffle is reproducible from its seed and runs everything exactly once')
+
+# ---------------------------------------------------------------------------
+# Assertion promises
+# ---------------------------------------------------------------------------
+var promises = scenario(@{
+  describe('promises', @{
+    it('keeps its count', @{
+      assertions(2)
+      expect(1).to_be(1)
+      expect(2).to_be(2)
+    })
+
+    it('breaks its count', @{
+      assertions(2)
+      expect(1).to_be(1)
+    })
+
+    it('asserts something', @{
+      has_assertions()
+      expect(1).to_be(1)
+    })
+
+    it('asserts nothing', @{
+      has_assertions()
+    })
+  })
+}, nil)
+
+assert promises.passed == 2 and promises.failed == 2,
+  'a broken assertion promise must fail the test that made it'
+assert promises.failures[0].failures[0].kind == 'assertions',
+  'a broken promise must be reported as its own kind of failure'
+assert promises.failures[0].failures[0].message.contains('Expected 2 assertions but 1 ran'),
+  'and must say what was promised and what happened'
+ok('assertions() and has_assertions() hold a test to what it said')
+
+# ---------------------------------------------------------------------------
+# Output capture
+# ---------------------------------------------------------------------------
+var captured = scenario(@{
+  describe('noisy', @{
+    it('prints', @{
+      echo 'this must not reach the report'
+      expect(1).to_be(1)
+    })
+  })
+}, nil)
+
+var noisy = test.declared().cases()[0]
+assert noisy.output == 'this must not reach the report\n',
+  'a test\'s output must be captured and attached to it'
+ok('a test\'s output is captured rather than printed')
+
+# A test that opens a capture and forgets to close it must not swallow
+# the rest of the run.
+var unbalanced = scenario(@{
+  describe('careless', @{
+    it('leaves a capture open', @{
+      io.capture_begin()
+      echo 'into the void'
+      expect(1).to_be(1)
+    })
+
+    it('still gets its own output', @{
+      echo 'mine'
+      expect(1).to_be(1)
+    })
+  })
+}, nil)
+
+assert unbalanced.passed == 2, 'both tests must run'
+assert test.declared().cases()[1].output == 'mine\n',
+  'the second test must get its own output, not inherit an unclosed frame'
+ok('an unbalanced capture inside a test is unwound at the end of it')
+
+var uncaptured = scenario(@{
+  describe('quiet', @{
+    it('prints', @{
+      expect(1).to_be(1)
+    })
+  })
+}, { capture: false })
+
+assert test.declared().cases()[0].output == '', 'capture: false must record no output'
+ok('capture can be turned off')
+
+# ---------------------------------------------------------------------------
+# Timeouts
+# ---------------------------------------------------------------------------
+var timed = scenario(@{
+  describe('slow', @{
+    it('takes its time', @{
+      var total = 0
+      iter var index = 0; index < 400000; index++ {
+        total += index
+      }
+      expect(total).to_be_greater_than(0)
+    }, { timeout: 0.0001 })
+  })
+}, nil)
+
+assert timed.failed == 1, 'a test over its budget must fail'
+assert timed.failures[0].failures[0].kind == 'timeout', 'and must be reported as a timeout'
+ok('a test that runs past its timeout is reported as one')
+
+# ---------------------------------------------------------------------------
+# Errors in a suite body
+# ---------------------------------------------------------------------------
+var broken_body = scenario(@{
+  describe('half declared', @{
+    it('declared before the problem', @{ expect(1).to_be(1) })
+    raise ValueError('the suite body itself blew up')
+  })
+}, nil)
+
+assert broken_body.passed == 1, 'whatever was declared before the problem must still run'
+assert broken_body.failed == 1, 'and the broken body must be reported as a failure'
+assert broken_body.failures[0].failures[0].message.contains('the suite body itself blew up'),
+  'and must carry what went wrong'
+ok('a suite body that raises is reported without losing what it had already declared')
+
+# ---------------------------------------------------------------------------
+# Custom reporters
+# ---------------------------------------------------------------------------
+class Counting < Reporter {
+  var started = 0
+  var finished = 0
+  var suites = 0
+  var runs = 0
+
+  @new() {
+    self.started = 0
+    self.finished = 0
+    self.suites = 0
+    self.runs = 0
+  }
+
+  run_started(plan) {
+    self.runs++
+  }
+
+  suite_started(suite) {
+    self.suites++
+  }
+
+  test_started(one) {
+    self.started++
+  }
+
+  test_finished(one) {
+    self.finished++
+  }
+}
+
+var counter = Counting()
+
+scenario(@{
+  describe('watched', @{
+    it('one', @{ expect(1).to_be(1) })
+    it('two', @{ expect(1).to_be(1) })
+    it_skip('three', @{ })
+  })
+}, { reporter: counter })
+
+assert counter.runs == 1, 'run_started must fire exactly once'
+assert counter.started == 2, 'test_started must fire only for tests that actually run'
+assert counter.finished == 3, 'test_finished must fire for every test, skipped ones included'
+assert counter.suites == 2, 'suite_started must fire for the root and for the declared suite'
+ok('a custom reporter sees the whole run')
+
+# ---------------------------------------------------------------------------
+# Option validation
+# ---------------------------------------------------------------------------
+test.reset()
+
+catch {
+  test.run({ repoter: 'spec' })
+  assert false, 'a misspelt option must not be accepted in silence'
+} as option_error {
+  assert typeof(option_error) == 'TestSetupError', 'a bad option must raise TestSetupError'
+  assert option_error.message.contains('repoter'), 'and must name what it did not understand'
+  assert option_error.message.contains('reporter'), 'and must list what it does understand'
+}
+ok('an unknown option is refused, with the known ones listed')
+
+test.reset()
+
+catch {
+  test.run({ reporter: 'nonesuch' })
+  assert false, 'an unknown reporter must not be accepted'
+} as reporter_error {
+  assert reporter_error.message.contains('nonesuch'), 'and must name it'
+}
+ok('an unknown reporter name is refused')
+
+# ===========================================================================
+test.reset()
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

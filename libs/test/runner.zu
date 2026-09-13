@@ -12,7 +12,7 @@
  * possible at all: none of them can be decided while the file is
  * still being read.
  *
- * It is also why a test file ends with `test.run()`. Zuri has no
+ * It is also why a test file ends with `run()`. Zuri has no
  * at-exit hook, so there is no moment the framework could pick for
  * itself. Having to say when is a small price for `run()` being the
  * one place every option is passed.
@@ -74,6 +74,8 @@ def reset() {
   _root = Suite('', nil, '', 'normal')
   _current = _root
   _has_only = false
+
+  context.end()
   snapshot.reset()
 }
 
@@ -846,7 +848,7 @@ def _collect_declaration_failures(state) {
  * Runs everything declared so far and reports it.
  *
  * ```zuri
- * import test { describe, it, expect }
+ * import test { * }
  *
  * describe('parser', @{
  *   it('reads an empty document', @{
@@ -854,7 +856,7 @@ def _collect_declaration_failures(state) {
  *   })
  * })
  *
- * test.run()
+ * run()
  * ```
  *
  * @param ?dict options: see {test} for every option and its default.

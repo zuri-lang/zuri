@@ -576,7 +576,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   let list_val = ctx.vm.pinned(mark);
@@ -603,7 +603,7 @@ fn map_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let mapped = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     result_slots.push(ctx.vm.pin_values([mapped]));
   }
 
@@ -633,7 +633,7 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
     let keep = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !keep.is_falsey() {
       kept.push(i);
     }
@@ -659,7 +659,7 @@ fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(true));
@@ -681,7 +681,7 @@ fn every(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(false));
@@ -721,7 +721,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
     acc = ctx
       .vm
       .call_value(callback, &[acc, item, Value::number(i as f64), list_val])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   ctx.vm.unpin(mark);
@@ -740,7 +740,7 @@ fn find(ctx: &mut ZuriContext) -> Result<Value, String> {
     let matched = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !matched.is_falsey() {
       // Re-read: `call_value` above may have relocated it since the
       // `item` copy taken just before the call.
@@ -765,7 +765,7 @@ fn find_index(ctx: &mut ZuriContext) -> Result<Value, String> {
     let matched = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !matched.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::number(i as f64));
@@ -787,7 +787,7 @@ fn find_last(ctx: &mut ZuriContext) -> Result<Value, String> {
     let matched = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !matched.is_falsey() {
       let found = ctx.vm.pinned(mark + 2 + i);
       ctx.vm.unpin(mark);
@@ -810,7 +810,7 @@ fn find_last_index(ctx: &mut ZuriContext) -> Result<Value, String> {
     let matched = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !matched.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::number(i as f64));
@@ -843,7 +843,7 @@ fn partition(ctx: &mut ZuriContext) -> Result<Value, String> {
     let keep = ctx
       .vm
       .call_value(callback, &[item, Value::number(i as f64)])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !keep.is_falsey() {
       matched.push(i);
     } else {

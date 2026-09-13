@@ -44,7 +44,7 @@
  * ### Updating
  *
  * Run with `ZURI_UPDATE_SNAPSHOTS=1`, or pass
- * `{ update_snapshots: true }` to `test.run()`. Every mismatching
+ * `{ update_snapshots: true }` to `run()`. Every mismatching
  * snapshot is rewritten and reported as updated rather than failed,
  * and entries nothing asked for any more are deleted.
  *
@@ -79,6 +79,7 @@ var _stats = {
   written: 0,
   updated: 0,
   obsolete: 0,
+  removed: 0,
 }
 
 
@@ -410,7 +411,7 @@ def flush(prune: ?bool) {
 
   for store in _stores {
     if prune {
-      _stats.obsolete += store.prune()
+      _stats.removed += store.prune()
     } else {
       _stats.obsolete += store.obsolete().length()
     }
@@ -423,8 +424,9 @@ def flush(prune: ?bool) {
 /**
  * What happened to snapshots over the whole run.
  *
- * @returns dict: `matched`, `written`, `updated`, `obsolete`, and
- *    `missing` when strict mode refused to write any.
+ * @returns dict: `matched`, `written`, `updated`, `obsolete` (found
+ *    and left alone), `removed` (found and deleted, in update mode),
+ *    and `missing` when strict mode refused to write a new one.
  */
 def summary() {
   return _stats.clone()
@@ -442,5 +444,6 @@ def reset() {
     written: 0,
     updated: 0,
     obsolete: 0,
+    removed: 0,
   }
 }

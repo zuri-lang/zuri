@@ -7,7 +7,7 @@
  * ### A recording function
  *
  * ```zuri
- * import test { describe, it, expect, mock }
+ * import test { * }
  *
  * describe('retry', @{
  *   it('calls the operation once per attempt', @{

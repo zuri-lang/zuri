@@ -376,6 +376,9 @@ def _echo_snapshot_summary(snapshots) {
   if snapshots.get('updated', 0) > 0 {
     parts.append(style.yellow('${snapshots.updated} updated'))
   }
+  if snapshots.get('removed', 0) > 0 {
+    parts.append(style.yellow('${snapshots.removed} removed'))
+  }
   if snapshots.get('obsolete', 0) > 0 {
     parts.append(style.yellow('${snapshots.obsolete} obsolete'))
   }

@@ -360,9 +360,11 @@ class Expect {
   /**
    * Asserts the value is truthy.
    *
-   * @note Zuri counts `nil`, `false`, `0`, any negative number, an
-   *    empty string and an empty collection as falsy. A negative
-   *    number being falsy is the one that catches people out.
+   * @note Zuri's falsy values are `false`, `nil`, zero, any negative
+   *    number, the empty string and an empty bytes buffer. An empty
+   *    list or dictionary is truthy, and so is `NaN`. The two that
+   *    catch people out are negative numbers and `[]`; use
+   *    `to_be_empty()` for the second.
    * @returns Expect
    */
   to_be_truthy() {
@@ -372,7 +374,8 @@ class Expect {
   /**
    * Asserts the value is falsy.
    *
-   * @note see `to_be_truthy()` on what Zuri counts as falsy.
+   * @note see `to_be_truthy()` for the full list of falsy values, and
+   *    for the two that surprise people.
    * @returns Expect
    */
   to_be_falsy() {

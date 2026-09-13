@@ -27,12 +27,12 @@
  *
  * ### What a test file has to do
  *
- * Nothing special. It declares its tests and calls `test.run()` like
- * any other. The conductor sets `ZURI_TEST_CONDUCTED` in the child,
+ * Nothing special. It declares its tests and calls `run()` like any
+ * other. The conductor sets `ZURI_TEST_CONDUCTED` in the child,
  * and `run()` switches to a machine-readable reporter when it sees
  * it, so the same file is equally runnable on its own.
  *
- * A file that never calls `test.run()` is reported as such rather
+ * A file that never calls `run()` is reported as such rather
  * than silently counting as zero tests.
  *
  * ### Ordering
@@ -321,7 +321,7 @@ def _diagnose(result) {
 
   if result.summary == nil {
     result.problem = result.code == 0 ?
-      'the file finished without calling test.run()' :
+      'the file finished without ever calling run()' :
       'the file exited with status ${result.code} before reporting'
   }
 }
@@ -374,33 +374,41 @@ def _echo_file(result, options) {
 }
 
 
-def _echo_totals(totals, files, duration) {
-  var parts = []
+def _echo_totals(totals, duration) {
+  var separator = style.dim('  ' + style.symbols().bullet + '  ')
+
+  var files = [style.dim('${totals.files} files')]
+
+  if totals.failed_files > 0 {
+    files.append(style.red('${totals.failed_files} with failures'))
+  }
+  if totals.errored_files > 0 {
+    files.append(style.red('${totals.errored_files} that never reported'))
+  }
+
+  var tests = []
 
   if totals.failed > 0 {
-    parts.append(style.bold(style.red('${totals.failed} failed')))
+    tests.append(style.bold(style.red('${totals.failed} failed')))
   }
   if totals.passed > 0 {
-    parts.append(style.bold(style.green('${totals.passed} passed')))
+    tests.append(style.bold(style.green('${totals.passed} passed')))
   }
   if totals.flaky > 0 {
-    parts.append(style.bold(style.magenta('${totals.flaky} flaky')))
+    tests.append(style.bold(style.magenta('${totals.flaky} flaky')))
   }
   if totals.skipped > 0 {
-    parts.append(style.yellow('${totals.skipped} skipped'))
+    tests.append(style.yellow('${totals.skipped} skipped'))
   }
   if totals.todo > 0 {
-    parts.append(style.blue('${totals.todo} todo'))
+    tests.append(style.blue('${totals.todo} todo'))
   }
 
-  parts.append(style.dim('${totals.total} total'))
-
-  var broken = files.filter(@(file) { return !file.ok() }).length()
+  tests.append(style.dim('${totals.total} total'))
 
   echo ''
-  echo '  ' + style.dim('files ') + files.length().to_string() +
-    style.dim('   failed files ') + broken.to_string()
-  echo '  ' + style.dim('  ${style.symbols().bullet}  ').join(parts)
+  echo '  ' + separator.join(files)
+  echo '  ' + separator.join(tests)
   echo '  ' + style.dim('time ') + format.duration(duration)
   echo ''
 }
@@ -479,7 +487,7 @@ def conduct(directory: ?string, options: ?dict) {
     _echo_file(result, resolved)
   }
 
-  _echo_totals(totals, results, duration)
+  _echo_totals(totals, duration)
 
   var ok = results.every(@(result) { return result.ok() })
 
@@ -501,22 +509,32 @@ def _empty_totals() {
     todo: 0,
     flaky: 0,
     total: 0,
+    files: 0,
+    failed_files: 0,
+    errored_files: 0,
   }
 }
 
 
+# Test counts and file counts are kept apart on purpose. A file that
+# crashed before reporting has no tests to count, and inventing one
+# failure for it would make the test total disagree with what any
+# single file said about itself.
 def _accumulate(totals, result) {
+  totals.set('files', totals.files + 1)
+
   if result.summary == nil {
-    # A file that never reported still failed at something, and
-    # counting it as one failure keeps the total honest.
-    totals.set('failed', totals.failed + 1)
-    totals.set('total', totals.total + 1)
+    totals.set('errored_files', totals.errored_files + 1)
 
     return
   }
 
   for key in ['passed', 'failed', 'skipped', 'todo', 'flaky', 'total'] {
     totals.set(key, totals[key] + result.summary.get(key, 0))
+  }
+
+  if result.summary.get('failed', 0) > 0 or result.code != 0 {
+    totals.set('failed_files', totals.failed_files + 1)
   }
 }
 

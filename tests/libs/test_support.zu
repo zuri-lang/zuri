@@ -1,0 +1,393 @@
+/**
+ * test_support.zu
+ *
+ * Test suite for the parts of the `test` module a matcher is built
+ * out of: value formatting, structural equality and diffing, terminal
+ * style, stack-trace reading, and the snapshot store.
+ */
+
+import os
+import test
+import test { describe, it, expect }
+import test.diff
+import test.format
+import test.snapshot
+import test.source
+import test.style
+
+style.set_enabled(false)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+class Point {
+  var x = 0
+  var y = 0
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+}
+
+class Named {
+  var value = 0
+
+  @new(value) {
+    self.value = value
+  }
+
+  to_string() {
+    return '<${self.value}>'
+  }
+}
+
+var TMP = os.join_paths('tmp', 'test_support')
+
+echo '═══════════════════════════════════════════════════════'
+echo '  test support modules: format, diff, style, source, snapshot'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# format.type_name / type_label
+# ---------------------------------------------------------------------------
+assert format.type_name(nil) == 'nil', 'nil'
+assert format.type_name(true) == 'bool', 'bool'
+assert format.type_name(5) == 'int', 'a whole number is an int'
+assert format.type_name(5.5) == 'float', 'and a fractional one is a float'
+assert format.type_name((5).to_bigint()) == 'bigint', 'bigint'
+assert format.type_name('x') == 'string', 'string'
+assert format.type_name(bytes(1)) == 'bytes', 'bytes'
+assert format.type_name([]) == 'list', 'list'
+assert format.type_name({}) == 'dict', 'dict'
+assert format.type_name(1..3) == 'range', 'range'
+assert format.type_name(@{ }) == 'function', 'function'
+assert format.type_name(Point) == 'class', 'class'
+assert format.type_name(Point(1, 2)) == 'instance', 'every instance is an instance'
+assert format.type_name(os) == 'module', 'module'
+ok('type_name covers every kind of value')
+
+assert format.type_label(Point(1, 2)) == 'Point', 'type_label names an instance by its class'
+assert format.type_label(5) == 'int', 'and agrees with type_name for everything else'
+ok('type_label names the class for instances')
+
+assert format.with_article('int') == 'an int', 'a vowel takes "an"'
+assert format.with_article('string') == 'a string', 'a consonant takes "a"'
+assert format.with_article('') == '', 'and nothing takes nothing'
+ok('with_article')
+
+# ---------------------------------------------------------------------------
+# format.inline
+# ---------------------------------------------------------------------------
+assert format.inline(nil) == 'nil', 'nil renders as itself'
+assert format.inline(42) == '42', 'a whole number has no decimal point'
+assert format.inline('hi') == "'hi'", 'a string is quoted, so an empty one is visible'
+assert format.inline(0 / 0) == 'NaN', 'NaN is named'
+assert format.inline(1 / 0) == 'Infinity', 'and so is infinity'
+assert format.inline(-1 / 0) == '-Infinity', 'in both directions'
+assert format.inline([1, 2]) == '[1, 2]', 'a list'
+assert format.inline({ a: 1 }) == '{ a: 1 }', 'a dict'
+assert format.inline([]) == '[]', 'an empty list'
+assert format.inline({}) == '{}', 'an empty dict'
+assert format.inline(Point(1, 2)) == 'Point { x: 1, y: 2 }', 'an instance shows its fields'
+assert format.inline(Named(7)) == 'Named <7>', "an instance with its own to_string() is asked"
+assert format.inline(Point) == 'class Point', 'a class'
+ok('inline renders every kind of value')
+
+assert format.inline("a\nb") == "'a\\nb'", 'a newline is escaped, so the value stays on one line'
+assert format.inline("a\\b") == "'a\\\\b'", 'and so is a backslash'
+assert format.inline("it's") == "'it\\'s'", 'and so is the quote it is wrapped in'
+ok('inline escapes what would otherwise break the line')
+
+var long_list = []
+iter var index = 0; index < 20; index++ {
+  long_list.append(index)
+}
+
+assert format.inline(long_list).contains('12 more'), 'a long list says how much it left out'
+assert format.inline(long_list, { max_items: 20 }) == format.inline(long_list, { max_items: 0 }),
+  'and the limit can be raised or turned off'
+assert format.inline([[[['deep']]]]).contains('1 items'),
+  'past the depth limit a container is described rather than opened'
+ok('inline abbreviates, and says so, and the limits are adjustable')
+
+var cyclic = [1]
+cyclic.append(cyclic)
+assert format.inline(cyclic) == '[1, [Circular]]', 'a list containing itself must render, not hang'
+
+var cyclic_dict = { name: 'root' }
+cyclic_dict.set('self', cyclic_dict)
+assert format.inline(cyclic_dict).contains('[Circular]'), 'and so must a dict'
+ok('a value that contains itself renders as [Circular]')
+
+# ---------------------------------------------------------------------------
+# format.block / serialize
+# ---------------------------------------------------------------------------
+assert format.block(5) == ['5'], 'a scalar comes back as one line, so no caller special-cases it'
+assert format.block({ a: 1, b: [2] }) == ['{', '  a: 1,', '  b: [', '    2', '  ]', '}'],
+  'block indents and puts one entry per line'
+assert format.serialize({ b: 2, a: 1 }) == '{\n  a: 1,\n  b: 2\n}',
+  'serialize sorts keys, so the same value always writes the same text'
+ok('block and serialize')
+
+assert format.duration(0.4) == '<1ms', 'anything under a millisecond'
+assert format.duration(42.6) == '43ms', 'whole milliseconds below a second'
+assert format.duration(1500) == '1.5s', 'and seconds above it'
+assert format.plural(1, 'test') == '1 test', 'one'
+assert format.plural(3, 'test') == '3 tests', 'many'
+assert format.plural(2, 'entry', 'entries') == '2 entries', 'and an irregular plural'
+ok('duration and plural')
+
+# ---------------------------------------------------------------------------
+# diff.equal
+# ---------------------------------------------------------------------------
+assert diff.equal(1, 1), 'scalars'
+assert !diff.equal(1, '1'), 'and not across types'
+assert diff.equal([1, [2, { a: 3 }]], [1, [2, { a: 3 }]]), 'nested containers'
+assert !diff.equal([1, 2], [1, 2, 3]), 'a length difference'
+assert !diff.equal({ a: 1 }, { a: 1, b: 2 }), 'an extra key'
+assert diff.equal(Point(1, 2), Point(1, 2)), 'instances, field by field'
+assert !diff.equal(Point(1, 2), Named(1)), 'but not across classes'
+assert diff.equal(0 / 0, 0 / 0), 'NaN equals itself here, unlike under =='
+assert diff.equal([0 / 0], [0 / 0]), 'inside a container too'
+assert diff.equal(0, -0), 'zero of either sign'
+ok('equal covers scalars, containers, instances and NaN')
+
+var left = [1]
+left.append(left)
+var right = [1]
+right.append(right)
+
+assert diff.equal(left, right), 'two values that contain themselves must compare, not hang'
+ok('equal survives a value that contains itself')
+
+assert diff.subset({ a: 1 }, { a: 1, b: 2 }), 'a subset ignores extra keys'
+assert diff.subset({ u: { id: 1 } }, { u: { id: 1, name: 'x' } }), 'and recurses into nested dicts'
+assert diff.subset({ x: 1 }, Point(1, 2)), 'and reads an instance by property'
+assert !diff.subset({ x: 9 }, Point(1, 2)), 'while still comparing the values it was given'
+assert !diff.subset({ a: 1 }, [1]), 'a list is not something a subset can match'
+ok('subset')
+
+# ---------------------------------------------------------------------------
+# diff.render
+# ---------------------------------------------------------------------------
+assert diff.render(1, 1) == [], 'two equal values have nothing to diff'
+
+var list_diff = '\n'.join(diff.render([1, 9, 3], [1, 2, 3]))
+assert list_diff.contains('[1]'), 'a list diff points at the index'
+assert list_diff.contains('- [1] 2') and list_diff.contains('+ [1] 9'),
+  'and marks received with - and expected with +'
+assert list_diff.contains('[0] 1'), 'and shows the elements that matched, for context'
+
+var dict_diff = '\n'.join(diff.render({ a: 1, b: 2 }, { a: 1, b: 3, c: 4 }))
+assert dict_diff.contains('- b: 3') and dict_diff.contains('+ b: 2'), 'a dict diff is keyed'
+assert dict_diff.contains('(unexpected)'), 'and marks a key that should not be there'
+
+var missing_diff = '\n'.join(diff.render({ a: 1, b: 2 }, { a: 1 }))
+assert missing_diff.contains('(missing)'), 'and one that should be'
+
+var type_diff = '\n'.join(diff.render(1, '1'))
+assert type_diff.contains('(int)') and type_diff.contains('(string)'),
+  'two different types are named rather than compared field by field'
+
+var text_diff = '\n'.join(diff.render('a\nb\nc', 'a\nZ\nc'))
+assert text_diff.contains('- Z') and text_diff.contains('+ b'), 'a multi-line string diffs by line'
+
+var point_diff = '\n'.join(diff.render('hello world', 'hello wxrld'))
+assert point_diff.contains('first difference at index 7'),
+  'and a single-line one is marked where it first differs'
+
+var object_diff = '\n'.join(diff.render(Point(1, 2), Point(1, 3)))
+assert object_diff.contains('- y: 3') and object_diff.contains('+ y: 2'),
+  'two instances diff by property'
+ok('render picks a shape that fits what it was given')
+
+# ---------------------------------------------------------------------------
+# style
+# ---------------------------------------------------------------------------
+style.set_enabled(false)
+assert style.green('x') == 'x', 'with colour off, every painter is the identity'
+assert style.badge('pass', 'PASS') == ' PASS ', 'and a badge is only its text'
+
+style.set_enabled(true)
+var painted = style.green('x')
+assert painted != 'x', 'with colour on, a painter adds escape sequences'
+assert style.strip(painted) == 'x', 'strip must take them back off'
+assert style.visible_length(painted) == 1, 'and length must count what is visible, not what is written'
+assert style.pad_right(painted, 4) == painted + '   ', 'padding must measure the visible width'
+style.set_enabled(false)
+ok('colour can be turned on and off, and width is measured after stripping')
+
+assert style.pad_right('a', 3, '.') == 'a..', 'pad_right'
+assert style.pad_left('a', 3, '.') == '..a', 'pad_left'
+assert style.pad_right('abcd', 2) == 'abcd', 'padding never shortens'
+assert style.truncate('abcdefghij', 6).length() == 6, 'truncate fits the width it was given'
+assert style.truncate('abc', 10) == 'abc', 'and leaves anything that already fits'
+assert style.rule('-', 3) == '---', 'rule'
+assert style.rule('-', 0) == '', 'and an empty one is empty'
+assert style.indent(2) == '    ', 'indent is two spaces a level'
+assert style.width() >= 40 and style.width() <= 120, 'the reported width is always usable'
+ok('the layout helpers')
+
+assert style.symbols().pass != '', 'there is a symbol for every role'
+style.set_unicode(false)
+assert style.symbols().pass == 'v', 'and an ASCII fallback for each'
+style.set_unicode(true)
+ok('symbols, with an ASCII fallback')
+
+# ---------------------------------------------------------------------------
+# source
+# ---------------------------------------------------------------------------
+var frame = source.parse_frame('/tmp/thing.zu:42 -> divide()')
+assert frame.file == '/tmp/thing.zu', 'a frame carries its file'
+assert frame.line == 42, 'its line'
+assert frame.name == 'divide', 'and its function, without the brackets'
+assert source.parse_frame('not a frame at all') == nil, 'and anything else parses to nil'
+ok('a stack trace line parses into a frame')
+
+catch {
+  raise ValueError('for the trace')
+} as traced
+
+var frames = source.user_frames(traced.stacktrace)
+assert !frames.is_empty(), 'a real trace must yield frames'
+assert frames[0].file.ends_with('test_support.zu'), 'the innermost of which is where it was raised'
+
+catch {
+  expect(1).to_be(2)
+} as assertion
+
+var assertion_origin = source.origin(assertion.stacktrace)
+assert assertion_origin.file.ends_with('test_support.zu'),
+  'the framework\'s own frames must be dropped, or every failure would point at expect.zu'
+ok('the test module drops its own frames from a trace')
+
+var code = source.code_frame(assertion_origin, 1)
+assert code.length() == 3, 'a code frame shows the line and its neighbours'
+assert code[1].contains('expect(1).to_be(2)'), 'with the failing line in the middle'
+assert code[1].starts_with('>'), 'and marked'
+assert source.code_frame(nil, 2) == [], 'and no frame means no code'
+ok('a code frame reads the real file and marks the real line')
+
+assert source.short_path(os.join_paths(os.cwd(), 'a', 'b.zu')) == os.join_paths('a', 'b.zu'),
+  'a path under the working directory is shown relative to it'
+assert source.short_path('/elsewhere/b.zu') == '/elsewhere/b.zu', 'and anything else is left alone'
+ok('paths are shortened against the working directory')
+
+# ---------------------------------------------------------------------------
+# snapshot
+# ---------------------------------------------------------------------------
+os.create_dir(TMP, 0c755, true)
+
+var subject_file = os.join_paths(TMP, 'subject.zu')
+var snap_file = snapshot.path_for(subject_file)
+
+catch {
+  file(snap_file).delete()
+} as ignored
+
+snapshot.reset()
+snapshot.set_updating(false)
+snapshot.set_strict(false)
+
+assert snap_file == os.join_paths(TMP, '__snapshots__', 'subject.zu.snap'),
+  'a snapshot file sits beside its test file, in __snapshots__'
+
+var first = snapshot.check(subject_file, 'a test 1', 'the value')
+assert first.status == 'written', 'the first run writes the snapshot'
+
+var second = snapshot.check(subject_file, 'a test 1', 'the value')
+assert second.status == 'match', 'and the second compares against it'
+
+var changed = snapshot.check(subject_file, 'a test 1', 'a different value')
+assert changed.status == 'mismatch', 'a changed value is a mismatch'
+assert changed.expected == 'the value', 'carrying what was recorded'
+assert changed.received == 'a different value', 'and what was given'
+ok('written, match and mismatch')
+
+snapshot.flush(false)
+assert file(snap_file).exists(), 'flush writes the file out'
+
+var written = file(snap_file).read()
+assert written.starts_with('# Zuri snapshot file v1'), 'with a header saying what it is'
+assert written.contains('=== a test 1 ==='), 'a heading per entry'
+assert written.contains('  the value'), 'and the body indented under it'
+ok('the snapshot file has the documented shape')
+
+# Reading back has to reproduce exactly what was written, including a
+# body that looks like a heading.
+snapshot.reset()
+
+var awkward = '=== not a heading ===\nsecond line'
+snapshot.check(subject_file, 'awkward', awkward)
+snapshot.flush(false)
+snapshot.reset()
+
+var reread = snapshot.check(subject_file, 'awkward', awkward)
+assert reread.status == 'match',
+  'a body that looks like a heading must survive the round trip, which is what the indent is for'
+ok('a snapshot body containing === is read back correctly')
+
+snapshot.reset()
+snapshot.set_updating(true)
+
+var updated = snapshot.check(subject_file, 'awkward', 'something else')
+assert updated.status == 'updated', 'update mode rewrites instead of failing'
+snapshot.flush(nil)
+assert snapshot.summary().updated == 1, 'and reports how many it rewrote'
+ok('update mode')
+
+# Two entries on disk, and a run that only asks about one of them.
+snapshot.reset()
+snapshot.set_updating(false)
+snapshot.check(subject_file, 'kept', 'a')
+snapshot.check(subject_file, 'abandoned', 'b')
+snapshot.flush(false)
+
+snapshot.reset()
+snapshot.check(subject_file, 'kept', 'a')
+snapshot.flush(nil)
+assert snapshot.summary().obsolete == 2,
+  'every entry nothing asked about must be reported as obsolete'
+assert snapshot.summary().removed == 0, 'but not deleted unless asked'
+assert file(snap_file).read().contains('abandoned'), 'and must still be in the file'
+
+snapshot.reset()
+snapshot.set_updating(true)
+snapshot.check(subject_file, 'kept', 'a')
+snapshot.flush(nil)
+assert snapshot.summary().removed == 2, 'update mode deletes them'
+
+snapshot.reset()
+var remaining = file(snap_file).read()
+assert !remaining.contains('abandoned'), 'and they are gone from the file'
+assert remaining.contains('kept'), 'while what was asked about stays'
+ok('obsolete entries are reported, and removed only in update mode')
+
+snapshot.reset()
+snapshot.set_updating(false)
+snapshot.set_strict(true)
+
+var on_ci = snapshot.check(subject_file, 'brand new', 'value')
+assert on_ci.status == 'missing', 'a brand new snapshot on CI is a failure, not a silent pass'
+snapshot.set_strict(false)
+ok('strict mode refuses to write a snapshot nobody has reviewed')
+
+snapshot.reset()
+
+catch {
+  os.remove_dir(os.join_paths(TMP, '__snapshots__'), true)
+  os.remove_dir(TMP, true)
+} as ignored
+
+# ===========================================================================
+test.reset()
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

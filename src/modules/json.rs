@@ -256,7 +256,7 @@ fn encode_value(
         let result = ctx
           .vm
           .call_value(m, &[v])
-          .map_err(|e| ctx.vm.describe_error(e))?;
+          .map_err(|e| ctx.vm.rethrow(e))?;
         encode_value(ctx, result, out, depth + 1, opts)?;
       },
       None => {

@@ -254,7 +254,7 @@ fn each(ctx: &mut ZuriContext) -> Result<Value, String> {
     ctx
       .vm
       .call_value(callback, &[v, k])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   let dict_val = ctx.vm.pinned(mark);
@@ -280,7 +280,7 @@ fn filter(ctx: &mut ZuriContext) -> Result<Value, String> {
     let keep = ctx
       .vm
       .call_value(callback, &[v, k])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !keep.is_falsey() {
       kept.push(i);
     }
@@ -312,7 +312,7 @@ fn some_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[v, k])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if !result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(true));
@@ -335,7 +335,7 @@ fn every(ctx: &mut ZuriContext) -> Result<Value, String> {
     let result = ctx
       .vm
       .call_value(callback, &[v, k])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
     if result.is_falsey() {
       ctx.vm.unpin(mark);
       return Ok(Value::bool(false));
@@ -373,7 +373,7 @@ fn reduce(ctx: &mut ZuriContext) -> Result<Value, String> {
     acc = ctx
       .vm
       .call_value(callback, &[acc, v, k, dict_val])
-      .map_err(|e| ctx.vm.describe_error(e))?;
+      .map_err(|e| ctx.vm.rethrow(e))?;
   }
 
   ctx.vm.unpin(mark);

@@ -647,6 +647,16 @@ pub struct VM {
   /// invisible to the normal root scan; push it here for as long as it
   /// needs to survive, then truncate back off.
   gc_pins: Vec<Value>,
+  /// Where in `gc_pins` the error a native asked to re-raise is
+  /// sitting, set by `rethrow` and consumed by `call_native`.
+  ///
+  /// A native's error channel is a `String`, so an error raised by a
+  /// callback it invoked would otherwise be flattened into its own
+  /// `Display` text and re-raised as a bare `Error`, losing the class
+  /// the program actually raised. This carries the original Value
+  /// across that gap. An index rather than the Value itself, because
+  /// `gc_pins` is a real GC root and a plain field would not be.
+  pending_error: Option<usize>,
   /// This VM's `os.on_signal()` callbacks, indexed by position in
   /// `modules::os_util::signal::NAMES`; `Value::nil()` where no
   /// callback is registered for that signal. Empty until the first
@@ -859,6 +869,7 @@ impl VM {
       open_upvalues: Vec::new(),
       has_open_upvalues: Cell::new(false),
       gc_pins: Vec::new(),
+      pending_error: None,
       signal_callbacks: Vec::new(),
       jit_scalar_roots: Vec::new(),
       jit_scalar_roots_len: Cell::new(0),
@@ -2566,6 +2577,24 @@ impl VM {
     self.gc_pins[idx]
   }
 
+  /// What a native returns as its error when a Zuri callback it
+  /// invoked raised: the original error is kept, and `call_native`
+  /// re-raises that Value untouched rather than building a fresh
+  /// `Error` out of the returned string.
+  ///
+  /// ```ignore
+  /// ctx.vm.call_value(callback, &[item]).map_err(|e| ctx.vm.rethrow(e))?
+  /// ```
+  ///
+  /// The string it returns is a fallback nothing should ever see; it
+  /// only surfaces if something clears the pending error in between.
+  pub fn rethrow(&mut self, error: Value) -> String {
+    let mark = self.pin_values([error]);
+    self.pending_error = Some(mark);
+
+    self.describe_error(error)
+  }
+
   /// Registers `value` as the callback for signal index `idx` (a
   /// position in `modules::os_util::signal::NAMES`), replacing
   /// whatever was registered before. Grows `signal_callbacks` (filling
@@ -3114,8 +3143,17 @@ impl VM {
       name: native.name,
     };
     let result = (native.func)(&mut ctx);
+
+    // Read the pinned error back BEFORE truncating, since truncating
+    // is what releases it. Taken whatever the native returned, so an
+    // Ok return can't leave one behind for whatever fails next.
+    let propagated = self.pending_error.take().map(|idx| self.gc_pins[idx]);
     self.gc_pins.truncate(pin_mark);
-    result.map_err(|msg| self.raise("Error", msg))
+
+    result.map_err(|msg| match propagated {
+      Some(error) => error,
+      None => self.raise("Error", msg),
+    })
   }
 
   /// Constructs a new instance of `class_val`: allocates storage sized to

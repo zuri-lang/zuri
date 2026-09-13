@@ -30,7 +30,7 @@ fn call(ctx: &mut ZuriContext) -> Result<Value, String> {
   let val = ctx
     .vm
     .call_value(ctx.args[0], &ctx.args[1..])
-    .map_err(|e| ctx.vm.describe_error(e))?;
+    .map_err(|e| ctx.vm.rethrow(e))?;
 
   Ok(val)
 }
@@ -56,7 +56,7 @@ fn apply(ctx: &mut ZuriContext) -> Result<Value, String> {
   ctx
     .vm
     .call_value(ctx.args[0], &args)
-    .map_err(|e| ctx.vm.describe_error(e))
+    .map_err(|e| ctx.vm.rethrow(e))
 }
 
 fn arity(ctx: &mut ZuriContext) -> Result<Value, String> {

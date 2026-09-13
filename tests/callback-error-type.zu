@@ -1,0 +1,59 @@
+# An error raised inside a callback a native invoked is the same error
+# the callback raised, not a fresh one wrapping its text. Without this,
+# `catch ... as e` sees `Error` for anything reached through `map`,
+# `each`, `filter`, `call`, `apply` or a `@to_json` hook.
+
+class ParseError < Error {
+  var line = 0
+
+  @new(message, line) {
+    parent(message)
+    self.type = 'ParseError'
+    self.line = line
+  }
+}
+
+def show(label, body) {
+  catch {
+    body()
+    echo '${label}: nothing raised'
+  } as error {
+    echo '${label}: ${error.type} / ${error.message} / ${instance_of(error, ParseError)}'
+  }
+}
+
+show('direct', @{ raise ParseError('bad token', 3) })
+show('each', @{ [1].each(@(item) { raise ParseError('bad token', 3) }) })
+show('map', @{ [1].map(@(item) { raise ParseError('bad token', 3) }) })
+show('filter', @{ [1].filter(@(item) { raise ParseError('bad token', 3) }) })
+show('reduce', @{ [1].reduce(@(total, item) { raise ParseError('bad token', 3) }, 0) })
+var pairs = { a: 1 }
+show('dict.each', @{ pairs.each(@(value, key) { raise ParseError('bad token', 3) }) })
+show('string.each', @{ 'ab'.each(@(character) { raise ParseError('bad token', 3) }) })
+show('call', @{ (@{ raise ParseError('bad token', 3) }).call() })
+show('apply', @{ (@{ raise ParseError('bad token', 3) }).apply([]) })
+
+# Two natives deep: the inner callback's error has to survive both
+# boundaries, not just the one nearest to it.
+show('nested', @{
+  [1].each(@(outer) {
+    [2].map(@(inner) { raise ParseError('bad token', 3) })
+  })
+})
+
+# The custom field survives too, which is the point of keeping the
+# object rather than its text.
+catch {
+  [1].map(@(item) { raise ParseError('bad token', 3) })
+} as carried {
+  echo 'line: ${carried.line}'
+  echo 'trace frames: ${carried.stacktrace.length() > 0}'
+}
+
+# An error the runtime itself raises inside a callback keeps its own
+# class in exactly the same way.
+show('runtime', @{ [1].map(@(item) { return [][9] }) })
+
+# A native failing on its own terms, with no callback involved, still
+# reports as it always did.
+show('no callback', @{ 'x'.lpad('not a number') })

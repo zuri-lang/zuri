@@ -1,0 +1,14 @@
+direct: ParseError / bad token / true
+each: ParseError / bad token / true
+map: ParseError / bad token / true
+filter: ParseError / bad token / true
+reduce: ParseError / bad token / true
+dict.each: ParseError / bad token / true
+string.each: ParseError / bad token / true
+call: ParseError / bad token / true
+apply: ParseError / bad token / true
+nested: ParseError / bad token / true
+line: 3
+trace frames: true
+runtime: RangeError / index 9 out of bounds (length 0) / false
+no callback: Error / 'lpad' expects argument 1 to be a number, got string / false
