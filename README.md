@@ -92,55 +92,29 @@ Zuri takes the expressive, familiar syntax of modern dynamic languages
 and adds deliberate structural controls. It is dynamically typed, and it
 declines to be vague.
 
-**A function cannot be quietly redefined.**
+Zuri features true access controls with sealed classes, function 
+parameter type guards, private methods and modules, all enforced by the 
+compiler. The point of each is the same. The things that are hard to see 
+when reading code are the things the language refuses to let you get 
+wrong.
 
-```console
-SyntaxError: multiple declaration for function 'greet' found
-```
-
-**A declared parameter type is enforced at the call**, not documented
-and hoped for.
-
-```console
-TypeError: twice() expects parameter 'n' (argument 1) to be a number, got string
-```
-
-**Classes are sealed.** The fields a class declares are the fields it
-has, so a typo is an error rather than a new attribute.
-
-```console
-PropertyError: undefined field 'y' on instance of 'Point'
-```
-
-**A leading underscore is private, and the compiler enforces it** across
-a module boundary. Not a convention, not a linting rule: an attempt does
-not compile.
-
-```console
-SyntaxError: Cannot import private items from module
-```
-
-The point of each is the same. The things that are hard to see when
-reading code are the things the language refuses to let you get wrong.
-
-## Under the Hood
-
-A register-based virtual machine, a Cranelift JIT with on-stack
-replacement, and a generational garbage collector.
+Zuri features a fast Just-In-Time (JIT) compiler driven underneath by Cranelift 
+&mdash; The same engine that drives `wasmtime`, with cutting edge 
+specialization and optimized to production workloads.
 
 ## Documentation
 
 [`docs/`](docs) holds everything written about the language.
 
-- [**The Zuri Programming Language**](docs/book/src/SUMMARY.md) is the
-  main text: twenty chapters from installing it to a full-stack web
+- [**The Zuri Programming Language**](https://zuri-lang.github.io/zuri-rs/book) 
+  is the main text: twenty chapters from installing it to a full-stack web
   application, plus appendices covering the keywords, the operators and
   every method on every built-in type.
-- **The Zuri Standard Library** is the reference: every module, every
-  public name, generated from the library's own doc blocks so a page and
-  the code it describes can never disagree.
+- [**The Zuri Standard Library**](https://zuri-lang.github.io/zuri-rs/reference) 
+  is the reference: every module, every public name, generated from the library's own doc blocks so a page and the code it describes can never disagree.
 
-Read the book on GitHub as it is, or render either locally:
+Read the book on [The Zuri website](https://zuri-lang.github.io/zuri-rs/) as it 
+is, or render either locally if you have `cargo` installed:
 
 ```console
 $ cargo run-docs                # the book
@@ -151,27 +125,14 @@ $ cargo run-docs -- reference   # the standard library
 
 Syntax highlighting, from the same hands as everything else.
 
-- **[Open VSX](https://open-vsx.org/extension/zuri-lang/zuri-vscode)** —
+- **[Open VSX](https://open-vsx.org/extension/zuri-lang/zuri-vscode)** &mdash;
   the current build. This is the one to install: VS Codium, Cursor,
   Windsurf, Gitpod and Eclipse Theia all pull from here.
 - **[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=zuri-lang.zuri-vscode)**
-  — the same extension for VS Code itself, and it trails the Open VSX
+  &mdash; the same extension for VS Code itself, and it trails the Open VSX
   build.
 
 ## Roadmap
-
-On the way, in the order it matters:
-
-- [ ] **A data layer**, so that persisting a record never means reaching
-      outside the language.
-- [ ] **A package manager**, for the code that is genuinely
-      third-party. A complete standard library is not an argument
-      against sharing.
-- [ ] **A self-hosted repository server** to serve it.
-- [ ] **A test runner.** `assert` is a built-in; a runner that finds,
-      groups and reports on tests is not.
-- [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
-- [ ] **C and Rust compatible FFI interop.**
 
 Already here:
 
@@ -180,6 +141,20 @@ Already here:
 - [x] A Just-In-Time compiler
 - [x] A standard library covering the whole stack bar the data layer
 - [x] Two books, one of them generated from the library itself
+
+On the way, in the order it matters:
+
+- [ ] **Database & ORM**, so that persisting a record never means reaching
+      outside the language.
+- [ ] **Nyssa package manager**, for the code that is genuinely
+      third-party. A complete standard library is not an argument
+      against sharing.
+- [ ] **A self-hosted repository server** bundled with `Nyssa` that allows 
+      public and private organizations to share Zuri packages whichever way 
+      they like.
+- [ ] **A test runner.**
+- [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
+- [ ] **C and Rust compatible FFI interop.**
 
 ## AI Involvement
 
