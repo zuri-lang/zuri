@@ -78,8 +78,10 @@ server.post('/signup', @(request, response) {
 server.listen()
 ```
 
-There is no `package.json`, no lockfile, no vendor directory. There is
-one binary and the library that ships beside it.
+There is one binary and the library that ships beside it. Zuri has
+first-class language-level support for package management and vendoring,
+so the code you bring in from outside needs no third-party tooling
+either.
 
 Every module in it was built by the same hands:
 

@@ -359,6 +359,13 @@ img {
   min-width: 0;
 }
 
+/* A band that carries no label in the rail: the body takes the whole
+   width instead of sitting in a 16rem column meant for a heading. The
+   closing note under the code sample is the one that does this. */
+.band-inner > .band-body:only-child {
+  grid-column: 1 / -1;
+}
+
 .band-body p {
   margin: 0 0 1.1rem;
   color: var(--muted);
