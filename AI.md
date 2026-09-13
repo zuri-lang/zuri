@@ -27,3 +27,15 @@ Which brings us to one important rule which I'm going to iterate here and in the
 > 1. Before starting your change, run all of the benchmarks under an identified and controlled system load and take note of the performance.
 > 2. Run the tests and ensure no regression using the command `cargo test --test zuri`.
 > 3. Run all the benchmarks again under similar load after your changes to ensure that none of the benchmarks regressed.
+
+Starting from commit `1af802ae`, I employed Claude Opus 5 again in one of the most daungthing works of Software Engineering &mdash; Documentation. 
+
+As Software Engineers, writing code is easy and over years becomes second nature if you truly enjoy what you do. But, writing documentations? That's another ball game. So I decided to throw at Claude one task that has eluded me sleeps for over 5 years since the Zuri project began &mdash; Documentation.
+
+For more than four (4) iterations of Zuri programming language, starting from the first release under the old name (Blade Programming Language), through the rename to Zuri, through the GraalVM Truffle-based JIT compiled implementation, through the preliminary Rust implementation up until this version, Zuri has lacked a sufficient and a proper documentation. Why? Simple; I am lazy! And I suck at writing prose.
+
+In about 24 hours, Claude Opus 5 read the entire codebase, asked various questions, and finally, wrote a complete Zuri Programming Language book and an auto-updating Zuri standard reference, as well as a basic Site to serve as the root of both.
+
+On this one, Claude Opus 5 did a good job! I believe it excels at this kind of stuff.
+
+While mdBook will be phased out over time to replace it with Zuri's own alternative (maybe `Doka` &mdash; which predates this repository and does about the same job), where it stands now at commit `1472fca` works just fine.
