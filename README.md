@@ -1,9 +1,25 @@
-# Zuri
+<h1 align="center">
+  <img src="docs/site/zuri-butterfly-large.svg" alt="Zuri" width="420">
+</h1>
 
-**One language, one binary, the entire development lifecycle.**
+<p align="center">
+  <strong>One language, one binary, the entire development lifecycle.</strong>
+</p>
 
-Stop learning an entire constellation of third-party tools just to build
-on the web.
+<p align="center">
+  Stop learning an entire constellation of third-party tools just to
+  build on the web.
+</p>
+
+<p align="center">
+  <a href="https://zuri-lang.github.io/zuri-rs/">Website</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://zuri-lang.github.io/zuri-rs/book">The Book</a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://zuri-lang.github.io/zuri-rs/reference">Standard Library</a>
+  &nbsp;&middot;&nbsp;
+  <a href="LICENSE">BSD 2-Clause</a>
+</p>
 
 ## Philosophy
 
