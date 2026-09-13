@@ -20,9 +20,10 @@ edit-url-template = "https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/sr
 mathjax-support = false
 
 # mdBook's highlight.js has no Zuri in it. This registers the language
-# and re-highlights the blocks its first pass skipped, so the one file
-# serves both books.
-additional-js = ["theme/zuri-highlight.js"]
+# and re-highlights the blocks its first pass skipped. The second script
+# adds the menu-bar link back to the landing page. Both are shared with
+# the other book and copied in from docs/tools by `cargo build-docs`.
+additional-js = ["theme/zuri-highlight.js", "theme/zuri-site-link.js"]
 
 [output.html.fold]
 enable = true

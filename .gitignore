@@ -1,7 +1,7 @@
 /target
 sample.zu
 /tests/generated
-/docs/book/theme/zuri-highlight.js
+/docs/book/theme
 /docs/reference/theme
 
 # Added here to that contributors do not accidentially commit 

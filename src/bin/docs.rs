@@ -161,7 +161,7 @@ fn build(args: &[String]) -> Result<(), String> {
   let whole = args.is_empty();
 
   for doc in chosen {
-    install_highlighter(doc)?;
+    install_theme_scripts(doc)?;
     generate(doc)?;
 
     println!("building {}", doc.name);
@@ -252,24 +252,30 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
   Ok(())
 }
 
-/// Puts the Zuri highlighter where this book's `book.toml` expects it.
+/// Puts the shared theme scripts where this book's `book.toml` expects
+/// them: the Zuri highlighter, and the link home to the landing page.
 ///
 /// mdBook resolves `additional-js` relative to the book's own root and
 /// copies the file into the rendered output preserving that relative
 /// path, so a path reaching out of the book with `..` lands outside the
 /// build directory and survives `cargo clean-docs`. Both books render
-/// the same language, so the file has one source in `docs/tools` and is
-/// copied into each book's `theme/` on the way past.
-fn install_highlighter(doc: &Doc) -> Result<(), String> {
+/// the same language and sit under the same landing page, so each file
+/// has one source in `docs/tools` and is copied into each book's
+/// `theme/` on the way past.
+fn install_theme_scripts(doc: &Doc) -> Result<(), String> {
+  const SCRIPTS: [&str; 2] = ["zuri-highlight.js", "zuri-site-link.js"];
+
   let root = crate_root();
-  let source = root.join("docs").join("tools").join("zuri-highlight.js");
   let theme = root.join(doc.dir).join("theme");
 
   std::fs::create_dir_all(&theme)
     .map_err(|e| format!("could not create {}: {e}", theme.display()))?;
 
-  std::fs::copy(&source, theme.join("zuri-highlight.js"))
-    .map_err(|e| format!("could not copy {}: {e}", source.display()))?;
+  for script in SCRIPTS {
+    let source = root.join("docs").join("tools").join(script);
+    std::fs::copy(&source, theme.join(script))
+      .map_err(|e| format!("could not copy {}: {e}", source.display()))?;
+  }
 
   Ok(())
 }
@@ -342,7 +348,7 @@ fn serve(args: &[String]) -> Result<(), String> {
   let (doc, rest) = select(args)?;
   let port = parse_port(&rest)?;
 
-  install_highlighter(doc)?;
+  install_theme_scripts(doc)?;
   generate(doc)?;
 
   println!("serving the {} at http://localhost:{port}", doc.name);
