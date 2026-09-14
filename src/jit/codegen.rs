@@ -725,22 +725,19 @@ struct FuncCompiler<'a, 'b> {
   /// every later `x[i]`/`x[i] = v` on that same register while the
   /// resolution still holds.
   ///
-  /// Resolving one costs five instructions (mask the tag off the
-  /// value, load `ListStorage::ptr`, load `len`, form the inline
-  /// address, select between the two) for a single element load, and
-  /// the code Cranelift produces re-does all five per access: the
-  /// pieces are pure, so the egraph sinks them to their uses, and a
-  /// list register under any real pressure gets reloaded from its
-  /// spill slot each time. `fannkuch-redux`'s inner loop paid for
-  /// eight of these per iteration to touch four elements.
+  /// Resolving one costs a tag mask, two header loads and the
+  /// inline/heap choice, and without a cache every access in a loop
+  /// body repeats all of it: the pieces are pure, so Cranelift's
+  /// elaborator re-emits them at each use, and a list register under
+  /// register pressure gets reloaded from its spill slot each time.
   ///
-  /// Cranelift cannot collapse them on its own: the redundant-load
-  /// pass tracks one undifferentiated memory state, so the element
+  /// Cranelift's own redundant-load pass cannot collapse them,
+  /// because it tracks one undifferentiated memory state: the element
   /// store in `perm[i] = perm[k - i]` invalidates the header loads
   /// around it even though a `ListStorage`'s `ptr`/`len` sit outside
-  /// the element buffer entirely. Doing it here also gets the stronger
-  /// result, since what a list's storage can and cannot do between two
-  /// accesses is a fact about Zuri, not about memory.
+  /// the element buffer entirely. Answering it here also gets the
+  /// stronger result, since what a list's storage can and cannot do
+  /// between two accesses is a fact about Zuri, not about memory.
   list_headers: FxHashMap<u8, ListHeader>,
   self_ref_facts: std::cell::OnceCell<Vec<crate::jit::escape::MustSet>>,
   self_summary: std::cell::OnceCell<crate::jit::escape::FuncEscapeSummary>,
@@ -2209,23 +2206,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // where they describe nothing; what the specialized body
         // relies on there is whatever its own facts claim at `ip`, so
         // that is what gets re-established, narrowed to the registers
-        // actually live. Leaving these at zero let an OSR entry walk
-        // into a body that had already folded the speculation into its
-        // fast paths, with nothing having checked it.
+        // actually live. Skipping it would let an OSR entry into a
+        // body that has already folded the speculation into its fast
+        // paths with nothing having checked it.
         let (list_mask, int_mask) = if ip == 0 {
           (
             self.speculative_lists.unwrap_or(0),
             self.speculative_ints.unwrap_or(0),
           )
         } else {
+          // The whole claimed set, not just the part the speculation
+          // alone contributes. Trimming it to the difference against
+          // the general body's facts is sound, since anything the
+          // general body proves holds on any path that genuinely
+          // reached `ip`, but it measures worse: these guards run once
+          // per entry and cost nothing at steady state, while the
+          // blocks they add shape how the allocator colours the loop
+          // underneath them.
           let live = self.live_mask_at(ip);
-          (
-            spec_list_facts.mask_at(ip) & live,
-            self
-              .spec_int_facts
-              .as_ref()
-              .map_or(0, |f| f.mask_at(ip) & live),
-          )
+          let list_needed = spec_list_facts.mask_at(ip);
+          let int_needed = self.spec_int_facts.as_ref().map_or(0, |f| f.mask_at(ip));
+          (list_needed & live, int_needed & live)
         };
         if num_mask == 0 && list_mask == 0 && int_mask == 0 {
           if self.speculative_regs.is_some()
@@ -3528,12 +3529,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// answer as a block parameter, not the `select` the shape invites.
   /// Cranelift's elaborator re-emits every PURE value at each use
   /// rather than keeping one copy at its definition, and a `select`
-  /// fed by a `band` and an `iadd_imm` is three pure ops deep; every
-  /// `x[i]` in a loop body was re-deriving the whole chain, spill
-  /// reload of the receiver included, even once `list_headers` had
-  /// collapsed the loads behind it down to one. A block parameter is
-  /// not pure, so it is elaborated once and stays wherever the
-  /// register allocator puts it.
+  /// fed by a `band` and an `iadd_imm` is three pure ops deep, so as a
+  /// `select` this whole chain is re-derived at every element access,
+  /// spill reload of the receiver included. A block parameter is not
+  /// pure, so it is elaborated once and stays wherever the register
+  /// allocator puts it.
   ///
   /// The branch itself costs no more than the `test`/`cmove` pair it
   /// replaces, and a list does not change which side it is on while a

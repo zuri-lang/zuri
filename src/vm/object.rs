@@ -2163,11 +2163,11 @@ pub struct Heap {
   /// backing allocation is pulled out via `into_raw_parts` instead of
   /// being freed) and drained by `alloc_instance`, turning what used to
   /// be a real `malloc`+`free` pair on every short-lived instance into
-  /// a plain `Vec::pop`/`push` most of the time. Bounded per size class
-  /// by `FIELD_STORAGE_POOL_CAP` so a one-off burst of a rarely-used
-  /// field count doesn't hold memory forever; exactly the same
-  /// "retain some, drop the rest" tradeoff `MAX_RETAINED_NURSERY_CHUNKS`
-  /// already makes for nursery chunks.
+  /// a plain `Vec::pop`/`push` most of the time. Bounded by total
+  /// retained bytes (see `FIELD_STORAGE_POOL_BUDGET_FACTOR`) so a
+  /// one-off burst of a rarely-used field count doesn't hold memory
+  /// forever; exactly the same "retain some, drop the rest" tradeoff
+  /// `MAX_RETAINED_NURSERY_CHUNKS` already makes for nursery chunks.
   field_storage_pool: FieldStoragePool,
 }
 
@@ -2182,18 +2182,25 @@ struct NurseryChunk {
   slots: Vec<GcBox>,
 }
 
-/// Cap on how many recycled buffers `Heap::field_storage_pool` retains
-/// PER field-count size class; large enough to cover a single hot
-/// size class's worth of survivors from one collection cycle in an
-/// allocation-heavy, deep-recursion workload (tens of thousands of
-/// same-field-count instances dying at once is normal there), without
-/// needing to fall back to real `malloc`/`free` mid-cycle. Each pooled
-/// entry is one `*mut Cell<Value>` (8 bytes), so even this cap costs
-/// only a few megabytes of pointer-array overhead at its absolute
-/// worst. Past the cap, a freed buffer is still dropped for real
-/// instead of hoarded forever; the exact same "retain some, drop the
-/// rest" shape `MAX_RETAINED_NURSERY_CHUNKS` already uses.
-const FIELD_STORAGE_POOL_CAP: usize = 4096;
+/// Ceiling on the total bytes `Heap::field_storage_pool` keeps alive,
+/// as a multiple of the young generation's own budget.
+///
+/// What the pool has to cover is one collection cycle's worth of dead
+/// instances, and a cycle cannot free more than it allocated, so the
+/// young budget is the natural bound: at one times the budget the pool
+/// absorbs a whole cycle's churn of a single shape without ever
+/// reaching `malloc`. Two times rather than one so a cycle whose
+/// survivors and casualties overlap in time still lands inside it.
+///
+/// Bounding the retained BYTES rather than a buffer count per size
+/// class is what ties the ceiling to the workload: a program churning
+/// millions of four-field instances per cycle and one churning a
+/// handful of thirty-field ones both want the same answer, and only a
+/// byte total gives it to them. Past the ceiling a freed buffer is
+/// dropped for real rather than hoarded, the same "retain some, drop
+/// the rest" trade `MAX_RETAINED_NURSERY_CHUNKS` makes for nursery
+/// chunks.
+const FIELD_STORAGE_POOL_BUDGET_FACTOR: usize = 2;
 
 /// How many field counts `FieldStoragePool` serves from its direct,
 /// index-addressed free lists (`0..FIELD_STORAGE_DIRECT_CLASSES`);
@@ -2215,8 +2222,8 @@ const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
 /// `heads` first, so a head slot is reachable at a compile-time-known
 /// offset plus `field_count * 8`).
 ///
-/// `counts` exists only to enforce `FIELD_STORAGE_POOL_CAP` per size
-/// class, which an intrusive list cannot answer by itself.
+/// `pooled_bytes` exists only to enforce the retention ceiling, which
+/// an intrusive list cannot answer by itself.
 ///
 /// Field count 0 is never pooled: `FieldStorage::new(0)` allocates
 /// nothing at all (an empty `Box<[T]>` is a dangling pointer), so
@@ -2224,11 +2231,12 @@ const FIELD_STORAGE_DIRECT_CLASSES: usize = 33;
 #[repr(C)]
 struct FieldStoragePool {
   heads: [*mut Cell<Value>; FIELD_STORAGE_DIRECT_CLASSES],
-  counts: [u32; FIELD_STORAGE_DIRECT_CLASSES],
   /// Field counts at or beyond `FIELD_STORAGE_DIRECT_CLASSES` fall back
   /// to a hash map; not worth a dedicated array slot for shapes this
   /// large and rare.
   overflow: FxHashMap<usize, Vec<*mut Cell<Value>>>,
+  /// Total bytes of buffer currently held across every size class.
+  pooled_bytes: usize,
 }
 
 impl Default for FieldStoragePool {
@@ -2241,8 +2249,8 @@ impl FieldStoragePool {
   fn new() -> Self {
     FieldStoragePool {
       heads: [std::ptr::null_mut(); FIELD_STORAGE_DIRECT_CLASSES],
-      counts: [0; FIELD_STORAGE_DIRECT_CLASSES],
       overflow: FxHashMap::default(),
+      pooled_bytes: 0,
     }
   }
 
@@ -2263,12 +2271,20 @@ impl FieldStoragePool {
       // very buffer, which it owns exclusively while pooled.
       let next = unsafe { *(head as *const *mut Cell<Value>) };
       self.heads[len] = next;
-      self.counts[len] -= 1;
+      self.pooled_bytes = self.pooled_bytes.saturating_sub(Self::buffer_bytes(len));
       unsafe { (*head).set(Value::nil()) };
       return Some(head);
     }
     let list = self.overflow.get_mut(&len)?;
-    list.pop()
+    let ptr = list.pop()?;
+    self.pooled_bytes = self.pooled_bytes.saturating_sub(Self::buffer_bytes(len));
+    Some(ptr)
+  }
+
+  /// What one buffer of `len` cells actually costs to hold.
+  #[inline]
+  fn buffer_bytes(len: usize) -> usize {
+    len * std::mem::size_of::<Cell<Value>>()
   }
 
   /// Returns a dead instance's buffer to the pool. `false` means the
@@ -2277,27 +2293,25 @@ impl FieldStoragePool {
   ///
   /// Every cell must already be `Value::nil()` on entry; cell 0 is
   /// then repurposed as the free-list link, and `take` restores it.
-  fn give(&mut self, ptr: *mut Cell<Value>, len: usize) -> bool {
+  fn give(&mut self, ptr: *mut Cell<Value>, len: usize, budget: usize) -> bool {
     if ptr.is_null() || len <= INLINE_FIELDS {
       return false;
     }
+    let bytes = Self::buffer_bytes(len);
+    if self.pooled_bytes + bytes > budget {
+      return false;
+    }
     if len < FIELD_STORAGE_DIRECT_CLASSES {
-      if self.counts[len] as usize >= FIELD_STORAGE_POOL_CAP {
-        return false;
-      }
       // SAFETY: this buffer is dead and exclusively owned from here
       // until `take` hands it back out, so its first cell is free
       // storage. `Cell<Value>` is 8 bytes, exactly a pointer.
       unsafe { *(ptr as *mut *mut Cell<Value>) = self.heads[len] };
       self.heads[len] = ptr;
-      self.counts[len] += 1;
+      self.pooled_bytes += bytes;
       return true;
     }
-    let list = self.overflow.entry(len).or_default();
-    if list.len() >= FIELD_STORAGE_POOL_CAP {
-      return false;
-    }
-    list.push(ptr);
+    self.overflow.entry(len).or_default().push(ptr);
+    self.pooled_bytes += bytes;
     true
   }
 }
@@ -3001,7 +3015,7 @@ impl Heap {
   /// `&mut self` method here would make the borrow checker treat it as
   /// touching all of `self`, conflicting with the loop's own borrow
   /// even though the two never actually overlap.
-  fn reclaim_dead_obj(pool: &mut FieldStoragePool, obj: Obj) {
+  fn reclaim_dead_obj(pool: &mut FieldStoragePool, obj: Obj, pool_budget: usize) {
     match obj {
       Obj::Instance(instance) => {
         let (ptr, len) = instance.fields.into_raw_parts();
@@ -3009,13 +3023,20 @@ impl Heap {
           for i in 0..len {
             unsafe { (*ptr.add(i)).set(Value::nil()) };
           }
-          if !pool.give(ptr, len) {
+          if !pool.give(ptr, len, pool_budget) {
             drop(unsafe { FieldStorage::from_raw_parts(ptr, len) });
           }
         }
       },
       other => drop(other),
     }
+  }
+
+  /// How many bytes of recycled field storage this heap will hold on
+  /// to: see `FIELD_STORAGE_POOL_BUDGET_FACTOR`.
+  #[inline]
+  fn field_storage_pool_budget(&self) -> usize {
+    self.young_next_gc * FIELD_STORAGE_POOL_BUDGET_FACTOR
   }
 
   /// Reclaims the nursery after a minor collection's copy phase has
@@ -3052,6 +3073,7 @@ impl Heap {
     // every slot allocated since the last refill is invisible here and
     // silently leaks its payload instead of being reclaimed.
     self.sync_active_chunk_len();
+    let pool_budget = self.field_storage_pool_budget();
     let mut freed_count = 0usize;
     let mut freed_bytes = 0usize;
     for chunk in self.nursery_chunks.iter_mut() {
@@ -3080,7 +3102,7 @@ impl Heap {
           // the forwarded case. `chunk.slots.set_len(0)` below never
           // runs any destructor over this slot again either way.
           let obj = unsafe { std::ptr::read(&gcbox.obj) };
-          Self::reclaim_dead_obj(&mut self.field_storage_pool, obj);
+          Self::reclaim_dead_obj(&mut self.field_storage_pool, obj, pool_budget);
           freed_count += 1;
         }
       }
@@ -3483,6 +3505,7 @@ impl Heap {
   /// the nursery first (via `VM::collect_minor`), so every live slot
   /// found here is definitionally `Old`.
   pub fn sweep(&mut self) -> usize {
+    let pool_budget = self.field_storage_pool_budget();
     let mut freed = 0;
 
     for idx in 0..self.chunks.len() {
@@ -3521,7 +3544,7 @@ impl Heap {
                 step: Cell::new(1.0),
               },
             );
-            Self::reclaim_dead_obj(&mut self.field_storage_pool, obj);
+            Self::reclaim_dead_obj(&mut self.field_storage_pool, obj, pool_budget);
             gcbox.live.set(false);
             chunk.live_count -= 1;
             chunk.free.push(gcbox as *mut GcBox);

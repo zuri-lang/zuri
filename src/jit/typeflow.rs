@@ -1210,12 +1210,9 @@ pub fn analyze_list(
     }
     // Function entry has no real predecessors, so it is pinned to the
     // seed rather than to whatever a back edge into ip 0 would meet
-    // into it. Pinning it to the EMPTY set instead threw the
-    // speculation away the first time the worklist reached ip 0, which
-    // made `speculative_lists` a guard with nothing behind it: codegen
-    // emitted the entry tag check and then proved nothing from it, so
-    // every `x[i]` in the body still re-checked the object shape it had
-    // just paid to establish.
+    // into it. Pinning it to the EMPTY set instead would discard
+    // `speculative_lists` here and leave codegen emitting the entry
+    // tag check with nothing downstream able to use what it proves.
     if ip == 0 {
       new_in = seed.clone();
     }

@@ -1,0 +1,65 @@
+# Instances with more fields than fit inline keep their fields in a
+# separate buffer, and a collection hands a dead instance's buffer
+# straight to the next instance of the same shape instead of freeing
+# it. Handing out a buffer that is still reachable, or one whose cells
+# were not cleared, shows up as a field reading back as another
+# instance's value.
+
+class Four {
+  @new(a, b, c, d) {
+    self.a = a
+    self.b = b
+    self.c = c
+    self.d = d
+  }
+  sum() {
+    return self.a + self.b + self.c + self.d
+  }
+}
+class Seven {
+  @new(base) {
+    self.f0 = base
+    self.f1 = base + 1
+    self.f2 = base + 2
+    self.f3 = base + 3
+    self.f4 = base + 4
+    self.f5 = base + 5
+    self.f6 = base + 6
+  }
+  sum() {
+    return self.f0 + self.f1 + self.f2 + self.f3 + self.f4 + self.f5 + self.f6
+  }
+}
+# Two shapes churning at once, so the pool is serving more than one
+# size class and a mixup between them would surface here.
+def churn(rounds) {
+  var total = 0
+  iter var r = 0; r < rounds; r++ {
+    # Held only for the length of one iteration: every one of these is
+    # garbage by the next round, and their buffers go back to the pool.
+    var four = Four(r, r + 1, r + 2, r + 3)
+    var seven = Seven(r)
+    total += four.sum() + seven.sum()
+  }
+  return total
+}
+echo churn(200000)
+# A generation that survives collection while the pool is being drained
+# and refilled around it. Every one of these must still read back what
+# it was built with.
+var kept = []
+iter var i = 0; i < 4000; i++ {
+  kept.append(Four(i, i, i, i))
+  churn(30)
+}
+var live_total = 0
+var wrong = 0
+iter var i = 0; i < kept.length(); i++ {
+  var want = i * 4
+  if kept[i].sum() != want {
+    wrong += 1
+  }
+  live_total += kept[i].sum()
+}
+echo 'survivors intact: ${wrong == 0}'
+echo live_total
