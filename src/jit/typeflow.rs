@@ -527,6 +527,27 @@ impl IntFacts {
   pub fn is_int_list(&self, ip: usize, r: u8) -> bool {
     self.list_entry[ip].get(r)
   }
+
+  /// Every register (of the first 64) this claims at `ip`, as a bit
+  /// mask; what `codegen::emit_entry_dispatch` has to re-establish at
+  /// an on-stack-replacement entry that jumps straight to `ip`.
+  ///
+  /// The parameter bitmap the specialization was seeded from says
+  /// nothing at an OSR entry: those registers describe the arguments
+  /// of the call that triggered compilation, and by the time a loop
+  /// inside the function is warm they may have been reassigned any
+  /// number of times. The claim that actually has to hold is the one
+  /// the body relies on right at `ip`, which is this. Same reasoning
+  /// `TypeFacts::numeric_mask_at` spells out at length.
+  pub fn mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.entry[ip].get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
+  }
 }
 
 fn transfer_int(
@@ -873,6 +894,27 @@ impl ListFacts {
   pub fn is_list(&self, ip: usize, r: u8) -> bool {
     self.entry[ip].get(r)
   }
+
+  /// Every register (of the first 64) this claims at `ip`, as a bit
+  /// mask; what `codegen::emit_entry_dispatch` has to re-establish at
+  /// an on-stack-replacement entry that jumps straight to `ip`.
+  ///
+  /// The parameter bitmap the specialization was seeded from says
+  /// nothing at an OSR entry: those registers describe the arguments
+  /// of the call that triggered compilation, and by the time a loop
+  /// inside the function is warm they may have been reassigned any
+  /// number of times. The claim that actually has to hold is the one
+  /// the body relies on right at `ip`, which is this. Same reasoning
+  /// `TypeFacts::numeric_mask_at` spells out at length.
+  pub fn mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.entry[ip].get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
+  }
 }
 
 fn transfer_list(
@@ -1126,18 +1168,22 @@ pub fn analyze_list(
 
   let num_registers = proto.num_registers as usize;
 
+  let seed: RegSet = {
+    let mut set = RegSet::empty(num_registers);
+    if let Some(mask) = speculative_lists {
+      for r in 0..num_registers.min(64) {
+        if (mask & (1u64 << r)) != 0 {
+          set.set(r as u8, true);
+        }
+      }
+    }
+    set
+  };
+
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        let mut set = RegSet::empty(num_registers);
-        if let Some(mask) = speculative_lists {
-          for r in 0..num_registers.min(64) {
-            if (mask & (1u64 << r)) != 0 {
-              set.set(r as u8, true);
-            }
-          }
-        }
-        set
+        seed.clone()
       } else {
         RegSet::full(num_registers)
       }
@@ -1162,8 +1208,16 @@ pub fn analyze_list(
     if !any_pred {
       new_in = RegSet::full(num_registers);
     }
+    // Function entry has no real predecessors, so it is pinned to the
+    // seed rather than to whatever a back edge into ip 0 would meet
+    // into it. Pinning it to the EMPTY set instead threw the
+    // speculation away the first time the worklist reached ip 0, which
+    // made `speculative_lists` a guard with nothing behind it: codegen
+    // emitted the entry tag check and then proved nothing from it, so
+    // every `x[i]` in the body still re-checked the object shape it had
+    // just paid to establish.
     if ip == 0 {
-      new_in = RegSet::empty(num_registers);
+      new_in = seed.clone();
     }
 
     if new_in != entry[ip] {

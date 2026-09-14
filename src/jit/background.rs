@@ -120,6 +120,11 @@ pub struct CompileResult {
   pub osr_ids: FxHashMap<usize, i32>,
   pub speculative_params: Option<u64>,
   pub speculative_regs: Option<typeflow::SpeculativeRegs>,
+  /// Carried back purely so `ZURI_JIT_LOG` can report what this
+  /// compilation actually bet on; the facts themselves were consumed
+  /// by the compile.
+  pub speculative_lists: Option<u64>,
+  pub speculative_ints: Option<u64>,
   /// `Ok(entry_fn)` on success or a human-readable failure reason.
   pub outcome: Result<EntryFn, String>,
 }
@@ -290,6 +295,8 @@ fn compiler_loop(
     }
 
     let proto = unsafe { &*job.proto.0 };
+    let speculative_lists = job.facts.speculative_lists;
+    let speculative_ints = job.facts.speculative_ints;
     let (outcome, osr_ids) = match engine.compile_function(
       proto,
       job.speculative_params,
@@ -310,6 +317,8 @@ fn compiler_loop(
       osr_ids,
       speculative_params: job.speculative_params,
       speculative_regs: job.speculative_regs,
+      speculative_lists,
+      speculative_ints,
       outcome,
     };
     if let Some((reply_tx, reply_pending)) = job.reply_to {

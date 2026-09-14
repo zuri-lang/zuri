@@ -46,6 +46,10 @@ pub struct JitEngine {
   /// `Module::declare_func_in_func`) by every subsequent function this
   /// engine compiles.
   helper_ids: FxHashMap<&'static str, FuncId>,
+  /// `ZURI_JIT_LOG_ASM`'s `FuncId` -> readable name map, so the dumped
+  /// machine code lands under the Zuri function's own name rather than
+  /// a module-local id that restarts per compiler worker.
+  asm_labels: FxHashMap<FuncId, String>,
   /// Monotonic counter giving every compiled function a distinct
   /// module-local symbol name (`cranelift_module::Module` requires
   /// unique names for `declare_function`); purely an internal detail,
@@ -126,6 +130,7 @@ impl JitEngine {
       isa,
       builder_ctx: FunctionBuilderContext::new(),
       helper_ids,
+      asm_labels: FxHashMap::default(),
       next_id: 0,
     }
   }
@@ -249,6 +254,20 @@ impl JitEngine {
     if crate::jit::log_ir_enabled() {
       eprintln!("[jit] IR for '{}':\n{}", proto.name, ctx.func.display());
     }
+    if crate::jit::log_asm_enabled() {
+      let label: String = proto
+        .display_name()
+        .chars()
+        .map(|c| {
+          if c.is_alphanumeric() || c == '.' {
+            c
+          } else {
+            '_'
+          }
+        })
+        .collect();
+      self.asm_labels.insert(func_id, label);
+    }
 
     Ok(PendingCompile {
       ctx,
@@ -272,6 +291,19 @@ impl JitEngine {
     bytes: &[u8],
     relocs: &[ModuleReloc],
   ) -> Result<EntryFn, String> {
+    if crate::jit::log_asm_enabled() {
+      let dir = std::path::Path::new("tmp/jitasm");
+      let _ = std::fs::create_dir_all(dir);
+      let label = match self.asm_labels.get(&func_id) {
+        Some(l) => l.clone(),
+        None => format!("fn{}", func_id.as_u32()),
+      };
+      let _ = std::fs::write(dir.join(format!("{label}.bin")), bytes);
+      eprintln!(
+        "[jit] asm for '{label}' -> tmp/jitasm/{label}.bin ({} bytes)",
+        bytes.len()
+      );
+    }
     self
       .module
       .define_function_bytes(func_id, alignment, bytes, relocs)

@@ -1,0 +1,50 @@
+# Specialization samples the argument types of the call that triggers
+# compilation and folds them into a second, faster body. An on-stack
+# replacement entry jumps into the middle of that body without going
+# through a call at all, so every claim the sample bought has to be
+# re-established right there. Two of those claims are not just "this
+# register holds a number": that it holds a list, and that it holds a
+# whole number.
+#
+# Both halves below have the same shape. The warm calls are far too
+# short to tier up on their own; they exist only to push the call count
+# over the threshold. The mismatched call that follows then starts
+# interpreted, while the compile is still in flight, and its own loop is
+# long enough that the finished body lands under it and a back edge
+# tiers it up. That is the entry the guards have to cover.
+
+def first_of(xs, n) {
+  var last = nil
+  var i = 0
+  while i < n {
+    last = xs[0]
+    i = i + 1
+  }
+  return last
+}
+
+iter var t = 0; t < 4; t++ {
+  first_of([10, 20, 30], 40)
+}
+
+# A string and a dict both answer `[0]`, and neither is a list.
+echo first_of('abc', 600000)
+echo first_of({ 0: 'zero' }, 600000)
+
+def remainder_sum(n, k) {
+  var sum = 0
+  var i = 0
+  while i < n {
+    sum = sum + (i % k)
+    i = i + 1
+  }
+  return sum
+}
+
+iter var t = 0; t < 4; t++ {
+  remainder_sum(40, 7)
+}
+
+# 2.5 divides the counter into a period of five whose remainders sum to
+# exactly five, so the answer is the iteration count itself.
+echo remainder_sum(600000, 2.5)

@@ -608,6 +608,19 @@ impl IterableIntrinsic {
   }
 }
 
+/// One list register's resolved `ListStorage`, as the IR values that
+/// computed it: see `FuncCompiler::list_headers`.
+#[derive(Clone, Copy)]
+struct ListHeader {
+  /// The receiver value with its tag masked off.
+  obj_ptr: IrValue,
+  /// Where the elements actually start, inline buffer or heap buffer
+  /// already selected between.
+  data_ptr: IrValue,
+  /// The element count, zero-extended to `I64`.
+  len: IrValue,
+}
+
 struct FuncCompiler<'a, 'b> {
   fb: &'a mut FunctionBuilder<'b>,
   module: &'a mut JITModule,
@@ -708,6 +721,27 @@ struct FuncCompiler<'a, 'b> {
   /// control flow, never on what any one of those passes is proving,
   /// so recomputing it per-pass was pure repeated work paid on every
   preds: Vec<Vec<usize>>,
+  /// A list register's already-resolved backing storage, reused by
+  /// every later `x[i]`/`x[i] = v` on that same register while the
+  /// resolution still holds.
+  ///
+  /// Resolving one costs five instructions (mask the tag off the
+  /// value, load `ListStorage::ptr`, load `len`, form the inline
+  /// address, select between the two) for a single element load, and
+  /// the code Cranelift produces re-does all five per access: the
+  /// pieces are pure, so the egraph sinks them to their uses, and a
+  /// list register under any real pressure gets reloaded from its
+  /// spill slot each time. `fannkuch-redux`'s inner loop paid for
+  /// eight of these per iteration to touch four elements.
+  ///
+  /// Cranelift cannot collapse them on its own: the redundant-load
+  /// pass tracks one undifferentiated memory state, so the element
+  /// store in `perm[i] = perm[k - i]` invalidates the header loads
+  /// around it even though a `ListStorage`'s `ptr`/`len` sit outside
+  /// the element buffer entirely. Doing it here also gets the stronger
+  /// result, since what a list's storage can and cannot do between two
+  /// accesses is a fact about Zuri, not about memory.
+  list_headers: FxHashMap<u8, ListHeader>,
   self_ref_facts: std::cell::OnceCell<Vec<crate::jit::escape::MustSet>>,
   self_summary: std::cell::OnceCell<crate::jit::escape::FuncEscapeSummary>,
   /// A ONE-SHOT type sample of the call that triggered this
@@ -1363,6 +1397,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       global_vars: FxHashMap::default(),
       current_ip: 0,
       liveness,
+      list_headers: FxHashMap::default(),
       self_field_slots: facts.self_field_slots,
       self_numeric_fields: facts.self_numeric_fields,
       numeric_fields: facts.numeric_fields,
@@ -1865,7 +1900,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // computed HERE too (not lazily during the second pass, as before)
     //; `emit_entry_dispatch` needs them NOW to build a SOUND per-OSR-
     // target guard (see its own docs).
-    let specialized: Option<(Vec<Block>, typeflow::TypeFacts)> =
+    let specialized: Option<(Vec<Block>, typeflow::TypeFacts, typeflow::ListFacts)> =
       if self.speculative_params.is_some()
         || self.speculative_regs.is_some()
         || self.speculative_lists.is_some()
@@ -1886,7 +1921,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           &self.numeric_fields,
           Some(int_facts_ref),
         );
-        Some((blocks, facts))
+        // Computed here for the same reason the type facts are: the
+        // entry dispatch needs them NOW to know what an OSR route has
+        // to re-establish before it may jump into the specialized body.
+        let list_facts = typeflow::analyze_list(
+          self.proto,
+          &self.preds,
+          self.speculative_lists,
+          &self.global_lists,
+        );
+        Some((blocks, facts, list_facts))
       } else {
         None
       };
@@ -1928,7 +1972,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.emit_entry_dispatch(
       osr_param,
-      specialized.as_ref().map(|(b, f)| (b.as_slice(), f)),
+      specialized.as_ref().map(|(b, f, l)| (b.as_slice(), f, l)),
     );
 
     // Pass 1: the general body.
@@ -1943,6 +1987,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
       self.fb.switch_to_block(self.blocks[ip]);
       self.maybe_clear_guarded_instances(ip);
+      self.maybe_clear_list_headers(ip);
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
       if !terminated {
@@ -1953,17 +1998,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     // Pass 2: the specialized body, if any.
-    if let Some((spec_blocks, spec_facts)) = specialized {
+    if let Some((spec_blocks, spec_facts, spec_list_facts)) = specialized {
       self.type_facts = spec_facts;
       if let Some(spec_int) = self.spec_int_facts.take() {
         self.int_facts = spec_int;
       }
-      self.list_facts = typeflow::analyze_list(
-        self.proto,
-        &self.preds,
-        self.speculative_lists,
-        &self.global_lists,
-      );
+      self.list_facts = spec_list_facts;
       // The specialized facts prove strictly more than the general
       // ones, so this body typically gets more canonical registers;
       // recompute rather than carrying pass 1's answer over. See
@@ -1972,6 +2012,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let general_blocks = std::mem::replace(&mut self.blocks, spec_blocks);
       let code_len = self.blocks.len();
       self.is_specialized_pass = true;
+      self.list_headers.clear();
       self.active_guarded.clear();
       self.active_guarded_classes.clear();
       for ip in 0..code_len {
@@ -1982,6 +2023,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         self.fb.switch_to_block(self.blocks[ip]);
         self.maybe_clear_guarded_instances(ip);
+        self.maybe_clear_list_headers(ip);
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
         if terminated {
@@ -2091,10 +2133,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
+  /// The registers live at `ip`, as a bit mask over the first 64.
+  /// Narrows an OSR entry's guard set so it never re-establishes a
+  /// claim about a register the body is not going to read: a dead
+  /// register can carry a stale value that fails the check and costs
+  /// the whole specialized body for nothing.
+  fn live_mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for r in self.liveness.live_regs_at(ip) {
+      if r < 64 {
+        mask |= 1u64 << r;
+      }
+    }
+    mask
+  }
+
   fn emit_entry_dispatch(
     &mut self,
     osr_param: IrValue,
-    specialized: Option<(&[Block], &typeflow::TypeFacts)>,
+    specialized: Option<(&[Block], &typeflow::TypeFacts, &typeflow::ListFacts)>,
   ) {
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
@@ -2141,20 +2198,34 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(next_check);
     self.fb.ins().jump(normal_target, &[]);
 
-    if let Some((spec_blocks, spec_facts)) = specialized {
+    if let Some((spec_blocks, spec_facts, spec_list_facts)) = specialized {
       for (route_block, ip) in routes {
         self.fb.switch_to_block(route_block);
         self.emit_osr_scalar_list_init(ip);
         let num_mask = spec_facts.numeric_mask_at(ip);
-        let list_mask = if ip == 0 {
-          self.speculative_lists.unwrap_or(0)
+        // At `ip == 0` the parameters still hold their arguments, so
+        // the sampled bitmaps describe exactly what is in the
+        // registers. An OSR route lands in the middle of the function,
+        // where they describe nothing; what the specialized body
+        // relies on there is whatever its own facts claim at `ip`, so
+        // that is what gets re-established, narrowed to the registers
+        // actually live. Leaving these at zero let an OSR entry walk
+        // into a body that had already folded the speculation into its
+        // fast paths, with nothing having checked it.
+        let (list_mask, int_mask) = if ip == 0 {
+          (
+            self.speculative_lists.unwrap_or(0),
+            self.speculative_ints.unwrap_or(0),
+          )
         } else {
-          0
-        };
-        let int_mask = if ip == 0 {
-          self.speculative_ints.unwrap_or(0)
-        } else {
-          0
+          let live = self.live_mask_at(ip);
+          (
+            spec_list_facts.mask_at(ip) & live,
+            self
+              .spec_int_facts
+              .as_ref()
+              .map_or(0, |f| f.mask_at(ip) & live),
+          )
         };
         if num_mask == 0 && list_mask == 0 && int_mask == 0 {
           if self.speculative_regs.is_some()
@@ -2415,6 +2486,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// through here (or `store_reg_f64`) so the register's two views can
   /// never drift apart on some path.
   fn def_reg_both(&mut self, r: u8, v: IrValue) {
+    self.invalidate_list_header(r);
     if self.is_f64_tracked(r) {
       let f = self.to_f64(v);
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
@@ -2436,6 +2508,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// register stops right there, and for the rest Cranelift's own DCE
   /// still drops the integer view wherever nothing reads it.
   fn store_reg_f64(&mut self, r: u8, f: IrValue) {
+    self.invalidate_list_header(r);
     if self.is_f64_tracked(r) {
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
     }
@@ -2456,6 +2529,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn flush_live(&mut self, ip: usize) {
+    // Every call out of compiled code, to a helper or to another Zuri
+    // function, flushes first; catching them all here covers the
+    // direct and indirect call sites that never go through
+    // `call_helper_raw`. Callee code can append to a list or collect,
+    // either of which retires a resolved header.
+    self.invalidate_list_headers();
     let live: Vec<u8> = self.liveness.live_regs_at(ip).collect();
     for r in live {
       let v = self.load_reg(r);
@@ -2618,6 +2697,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// see its own docs). Every other call site in this file goes through
   /// `call_helper` instead.
   fn call_helper_raw(&mut self, name: &str, args: &[IrValue]) -> IrValue {
+    // Every FFI edge out of compiled code, safepoints included, can
+    // collect; a collection relocates young objects, and a list header
+    // resolved from the old address does not survive that. The
+    // registers themselves are re-read on the way back in; these are
+    // not, so they go.
+    self.invalidate_list_headers();
     let func_id = *self
       .helpers
       .get(name)
@@ -3383,6 +3468,76 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// address unconditionally is safe; it is arithmetic on a pointer
   /// this site has already proven points at a live `Obj::List`, and
   /// nothing is dereferenced until after the bounds check.
+  /// `r`'s resolved `ListStorage`, reusing the one an earlier access
+  /// in this same run of instructions already resolved.
+  ///
+  /// Only ever called where `proven_list` holds, which is what makes
+  /// loading the header before the index has been range-checked sound:
+  /// the receiver is known to be a list object, so its header is there
+  /// to read whatever the index turns out to be. Emits into the
+  /// caller's current block, which is the block the instruction
+  /// started in, so the values dominate everything the instruction
+  /// goes on to build and everything that follows it in the same run.
+  fn list_header(&mut self, r: u8, obj_val: IrValue) -> ListHeader {
+    if let Some(h) = self.list_headers.get(&r) {
+      return *h;
+    }
+    let obj_ptr = self.obj_ptr(obj_val);
+    let (data_ptr, len) = self.load_list_ptr_len(obj_ptr);
+    let header = ListHeader {
+      obj_ptr,
+      data_ptr,
+      len,
+    };
+    self.list_headers.insert(r, header);
+    header
+  }
+
+  /// Drops every cached list header. The blanket answer for anything
+  /// that can relocate an object or change a list's length: a
+  /// safepoint, a call into Zuri code, any helper at all.
+  #[inline]
+  fn invalidate_list_headers(&mut self) {
+    self.list_headers.clear();
+  }
+
+  /// Drops the cached header for one register, because the register no
+  /// longer holds the list it was resolved from.
+  #[inline]
+  fn invalidate_list_header(&mut self, r: u8) {
+    if !self.list_headers.is_empty() {
+      self.list_headers.remove(&r);
+    }
+  }
+
+  /// Keeps the cached headers across the step from `ip - 1` to `ip`
+  /// only where that step is the sole way into `ip`; otherwise the
+  /// values they name no longer dominate the block about to be
+  /// emitted. Same dominance test `maybe_clear_guarded_instances`
+  /// makes for the same reason.
+  fn maybe_clear_list_headers(&mut self, ip: usize) {
+    if ip == 0 || self.preds[ip].len() != 1 || self.preds[ip][0] != ip - 1 {
+      self.list_headers.clear();
+    }
+  }
+
+  /// Resolves a list's element pointer and length from its object
+  /// pointer.
+  ///
+  /// The inline/heap choice is a branch into a merge block taking the
+  /// answer as a block parameter, not the `select` the shape invites.
+  /// Cranelift's elaborator re-emits every PURE value at each use
+  /// rather than keeping one copy at its definition, and a `select`
+  /// fed by a `band` and an `iadd_imm` is three pure ops deep; every
+  /// `x[i]` in a loop body was re-deriving the whole chain, spill
+  /// reload of the receiver included, even once `list_headers` had
+  /// collapsed the loads behind it down to one. A block parameter is
+  /// not pure, so it is elaborated once and stays wherever the
+  /// register allocator puts it.
+  ///
+  /// The branch itself costs no more than the `test`/`cmove` pair it
+  /// replaces, and a list does not change which side it is on while a
+  /// loop runs, so it predicts perfectly.
   fn load_list_ptr_len(&mut self, obj_ptr: IrValue) -> (IrValue, IrValue) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let heap_ptr = self
@@ -3394,13 +3549,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .load(types::I32, flags, obj_ptr, object::obj_list_len_offset());
     let len = self.fb.ins().uextend(types::I64, len32);
+
+    let inline_block = self.fb.create_block();
+    let merge_block = self.fb.create_block();
+    self.fb.append_block_param(merge_block, types::I64);
+    let zero = self.i64c(0);
+    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
+    self.fb.ins().brif(
+      is_inline,
+      inline_block,
+      &[],
+      merge_block,
+      &[heap_ptr.into()],
+    );
+
+    self.fb.switch_to_block(inline_block);
     let inline_ptr = self
       .fb
       .ins()
       .iadd_imm_s(obj_ptr, object::obj_list_inline_offset() as i64);
-    let zero = self.i64c(0);
-    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap_ptr, zero);
-    let data_ptr = self.fb.ins().select(is_inline, inline_ptr, heap_ptr);
+    self.fb.ins().jump(merge_block, &[inline_ptr.into()]);
+
+    self.fb.switch_to_block(merge_block);
+    let data_ptr = self.fb.block_params(merge_block)[0];
     (data_ptr, len)
   }
 
@@ -4484,6 +4655,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     plan: &[(usize, Instr)],
     func: u8,
   ) -> IrValue {
+    // An inlined body is still a call as far as anything cached about
+    // the heap is concerned.
+    self.invalidate_list_headers();
     let mut regs: Vec<IrValue> = Vec::with_capacity(callee.num_registers as usize);
     let zero = self.fb.ins().f64const(0.0);
     regs.resize(callee.num_registers as usize, zero);
@@ -9889,12 +10063,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // arms is ever actually emitted for a given `Instr::GetIndex` site,
     // never both, so `ptr`/`as_int` dominate `resolve_block` either way
     // (a single predecessor chain, just a shorter one when proven).
+    let mut hoisted: Option<ListHeader> = None;
     let (ptr, as_int) = if proven_list {
       // The object-shape half of the guard (`is_obj` + tag==LIST)
       // already ran once, at `obj`'s own Instr::CheckParamType; go
       // straight to the pointer; only the index still needs checking
-      // here.
-      let ptr = self.obj_ptr(obj_val);
+      // here. Resolving the whole header up front rather than after
+      // the index check is what lets the next access on this register
+      // skip it entirely: see `list_headers`.
+      let header = self.list_header(obj, obj_val);
+      hoisted = Some(header);
+      let ptr = header.obj_ptr;
       let as_int = if let Some(c) = proven_const_idx {
         self.fb.ins().iconst(types::I64, c as i64)
       } else if idx_proven_int && self.int_tracked[iidx as usize] {
@@ -10216,7 +10395,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
 
     self.fb.switch_to_block(resolve_block);
-    let (data_ptr, len) = self.load_list_ptr_len(ptr);
+    let (data_ptr, len) = match hoisted {
+      Some(h) => (h.data_ptr, h.len),
+      None => self.load_list_ptr_len(ptr),
+    };
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
@@ -10306,6 +10488,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+
+    // `slow_block`'s helper cleared the cache as a side effect of being
+    // generated, but for a receiver `proven_list` already settled,
+    // neither `zuri_jit_get_index` nor `zuri_jit_set_index` can
+    // invalidate what was resolved: on a list they bounds-check and read
+    // or write one slot, never reallocating the buffer, never changing
+    // `len`, never running Zuri code that could. The one thing they can
+    // do is raise, and `call_checked` returns straight out of the
+    // function on that path rather than reaching `done_block`. So the
+    // header still describes the register here, and the access after
+    // this one gets to skip resolving its own.
+    if let Some(h) = hoisted {
+      self.list_headers.insert(obj, h);
+    }
   }
 
   /// `Instr::SetIndex`'s fast path; the write-side counterpart of
@@ -10458,8 +10654,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let done_block = self.fb.create_block();
     let resolve_block = self.fb.create_block();
 
+    let mut hoisted: Option<ListHeader> = None;
     let (ptr, as_int) = if proven_list {
-      let ptr = self.obj_ptr(obj_val);
+      // Same hoist `emit_list_get_index` does, and for the same
+      // reason: see `list_headers`.
+      let header = self.list_header(obj, obj_val);
+      hoisted = Some(header);
+      let ptr = header.obj_ptr;
       let as_int = if let Some(c) = proven_const_idx {
         self.fb.ins().iconst(types::I64, c as i64)
       } else if idx_proven_int && self.int_tracked[iidx as usize] {
@@ -10653,7 +10854,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
 
     self.fb.switch_to_block(resolve_block);
-    let (data_ptr, len) = self.load_list_ptr_len(ptr);
+    let (data_ptr, len) = match hoisted {
+      Some(h) => (h.data_ptr, h.len),
+      None => self.load_list_ptr_len(ptr),
+    };
     let in_bounds = self.fb.ins().icmp(IntCC::UnsignedLessThan, as_int, len);
 
     let fast_block = self.fb.create_block();
@@ -10730,6 +10934,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(done_block);
+
+    // `slow_block`'s helper cleared the cache as a side effect of being
+    // generated, but for a receiver `proven_list` already settled,
+    // neither `zuri_jit_get_index` nor `zuri_jit_set_index` can
+    // invalidate what was resolved: on a list they bounds-check and read
+    // or write one slot, never reallocating the buffer, never changing
+    // `len`, never running Zuri code that could. The one thing they can
+    // do is raise, and `call_checked` returns straight out of the
+    // function on that path rather than reaching `done_block`. So the
+    // header still describes the register here, and the access after
+    // this one gets to skip resolving its own.
+    if let Some(h) = hoisted {
+      self.list_headers.insert(obj, h);
+    }
   }
 
   /// Bounded so a single scalar-replaced allocation can't blow up this

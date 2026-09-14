@@ -2358,12 +2358,14 @@ impl VM {
         Ok(entry) => {
           if crate::jit::log_enabled() {
             eprintln!(
-              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x})",
+              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
               proto.display_name(),
               proto.chunk.code.len(),
               result.osr_ids.len(),
               result.speculative_params.unwrap_or(0),
               result.speculative_regs.unwrap_or(0),
+              result.speculative_lists.unwrap_or(0),
+              result.speculative_ints.unwrap_or(0),
             );
           }
           *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);

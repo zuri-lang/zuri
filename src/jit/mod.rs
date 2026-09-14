@@ -93,6 +93,17 @@ pub fn log_ir_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_IR").is_some())
 }
 
+/// Write each compiled function's finished machine code to
+/// `tmp/jitasm/<symbol>.bin`; `ZURI_JIT_LOG_ASM=1`. Cranelift is built
+/// here without its own disassembler, so the bytes go out raw for
+/// `objdump -b binary -m i386:x86-64` to decode. Reading the real
+/// instruction stream is the only way to settle whether a fast path
+/// costs what its IR suggests it costs.
+pub fn log_asm_enabled() -> bool {
+  static ENABLED: OnceLock<bool> = OnceLock::new();
+  *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_ASM").is_some())
+}
+
 /// A compiled function's single machine-code entry point, callable
 /// either as an ordinary call (`osr_id = -1`, starts at bytecode `ip
 /// 0`) or as an on-stack-replacement entry (`osr_id >= 0`, jumps
