@@ -2283,6 +2283,7 @@ impl VM {
       self_class_bits: self.resolve_self_class(proto),
       self_method_protos: self.resolve_self_method_protos(proto),
       deopt_sites: proto.jit.deopt_sites.borrow().clone(),
+      young_budget: self.heap.young_budget(),
       field_speculation_off: proto.jit.field_speculation_off.get(),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),

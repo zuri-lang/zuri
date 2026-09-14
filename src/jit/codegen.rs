@@ -93,7 +93,7 @@ const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i
 /// (major) and `young_bytes_allocated` (minor); lets `emit_safepoint`
 /// inline both `Heap::needs_major_gc()`/`needs_minor_gc()` checks
 /// (three loads + two compares; the young threshold itself is a
-/// compile-time immediate, see `Heap::YOUNG_NEXT_GC`) instead of an
+/// compile-time immediate, see `Heap::young_budget`) instead of an
 /// unconditional FFI call on every loop back-edge and call site, only
 /// actually calling into Rust on the rare branch where a collection
 /// (of either kind) is really about to happen.
@@ -907,6 +907,8 @@ struct FuncCompiler<'a, 'b> {
   /// settles the whole group in one recompilation instead of one per
   /// field.
   deopt_receivers: FxHashSet<u8>,
+  /// See `jit::CompileFacts::young_budget`.
+  young_budget: i64,
   /// Compile this function with no field-class bets at all; see
   /// `JitInfo::field_speculation_off`.
   field_speculation_off: bool,
@@ -1392,6 +1394,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         })
         .collect(),
       deopt_sites: facts.deopt_sites,
+      young_budget: facts.young_budget as i64,
       field_speculation_off: facts.field_speculation_off,
       self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
@@ -10936,14 +10939,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, next_total, vm, HEAP_BYTES_ALLOCATED_OFFSET);
 
-    // Update jit_gc_needed if young exceeded YOUNG_NEXT_GC. `icmp`
+    // Update jit_gc_needed if young exceeded the budget. `icmp`
     // already yields i8 (see every other icmp-derived value in this
     // file, which only ever gets uextended UP to i64, never to i8);
     // extending it to its own type is a genuine Cranelift type error,
     // caught by the verifier in debug builds ("arg 0 with type i8
     // failed to satisfy type set") but silently accepted downstream
     // in release, where the verifier is off (see `JitEngine::new`).
-    let young_limit = self.i64c(object::Heap::YOUNG_NEXT_GC as i64);
+    let young_limit = self.i64c(self.young_budget);
     let need_gc = self
       .fb
       .ins()

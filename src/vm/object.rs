@@ -2087,6 +2087,11 @@ pub struct Heap {
   /// into collecting roughly every time the heap doubles rather than
   /// thrashing on a fixed budget.
   next_gc: usize,
+  /// How much this heap lets its young generation grow before a minor
+  /// collection; `YOUNG_NEXT_GC`, or `ISOLATE_YOUNG_NEXT_GC` for an
+  /// isolate's own heap. Fixed for the heap's whole life, which is what
+  /// lets `jit::codegen` keep baking it in as an immediate.
+  young_next_gc: usize,
   live_count: usize,
   /// Bytes allocated into the young generation since the last minor
   /// (or major) collection; deliberately tracked separately from
@@ -2383,6 +2388,21 @@ impl Heap {
   /// short-lived calls to die for free.
   pub(crate) const YOUNG_NEXT_GC: usize = 128 * 1024 * 1024;
 
+  /// The same budget for a heap belonging to an isolate rather than to
+  /// the main VM.
+  ///
+  /// Every isolate carries its own nursery, so the figure above is not
+  /// a ceiling on one program's young generation but on each of them:
+  /// a server running eight workers reaches eight times it before
+  /// anything is collected, and resident memory follows. Isolates are
+  /// there to run work concurrently, which is the shape of program the
+  /// larger budget buys the least for, so they get the smaller one.
+  ///
+  /// Deep recursion inside an isolate pays for this the way the main VM
+  /// did before the budget was raised: a live set that outlives a cycle
+  /// gets promoted wholesale instead of dying young.
+  pub(crate) const ISOLATE_YOUNG_NEXT_GC: usize = 32 * 1024 * 1024;
+
   /// Upper bound on how many nursery chunk buffers `reset_nursery`
   /// keeps allocated (emptied, not dropped) between cycles for
   /// immediate reuse. Sized to comfortably cover one full
@@ -2400,11 +2420,22 @@ impl Heap {
     (Self::YOUNG_NEXT_GC / (CHUNK_SIZE * std::mem::size_of::<GcBox>())) + 4;
 
   pub fn new() -> Self {
+    Self::with_young_budget(Self::YOUNG_NEXT_GC)
+  }
+
+  /// A heap for an isolate, which collects its young generation on a
+  /// smaller budget: see `ISOLATE_YOUNG_NEXT_GC`.
+  pub fn new_for_isolate() -> Self {
+    Self::with_young_budget(Self::ISOLATE_YOUNG_NEXT_GC)
+  }
+
+  fn with_young_budget(young_next_gc: usize) -> Self {
     Heap {
       chunks: Vec::new(),
       candidates: Vec::new(),
       bytes_allocated: 0,
       next_gc: Self::MIN_NEXT_GC,
+      young_next_gc,
       live_count: 0,
       young_bytes_allocated: 0,
       jit_gc_needed: false,
@@ -2508,7 +2539,14 @@ impl Heap {
 
   #[inline]
   pub fn needs_minor_gc(&self) -> bool {
-    self.young_bytes_allocated > Self::YOUNG_NEXT_GC
+    self.young_bytes_allocated > self.young_next_gc
+  }
+
+  /// This heap's young-generation budget, for `jit::codegen` to bake
+  /// into the safepoint check it emits.
+  #[inline]
+  pub fn young_budget(&self) -> usize {
+    self.young_next_gc
   }
 
   #[inline]

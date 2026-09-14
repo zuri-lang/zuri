@@ -343,6 +343,11 @@ pub struct CompileFacts {
   /// the job is built, like the rest of this struct, so nothing here is
   /// read from a worker while the VM is still running.
   pub deopt_sites: rustc_hash::FxHashSet<usize>,
+  /// The compiling VM's young-generation budget, baked into the
+  /// safepoint check as an immediate; see `Heap::young_budget`. Carried
+  /// per compilation because an isolate's heap collects on a smaller
+  /// one than the main VM's does.
+  pub young_budget: usize,
   /// Drop every field-class bet in this function; see
   /// `JitInfo::field_speculation_off`.
   pub field_speculation_off: bool,

@@ -280,7 +280,7 @@ struct IsolateIsolate {
 
 impl IsolateIsolate {
   fn new() -> Self {
-    let mut vm = VM::new(Heap::new());
+    let mut vm = VM::new(Heap::new_for_isolate());
     vm.init();
     IsolateIsolate { vm }
   }
