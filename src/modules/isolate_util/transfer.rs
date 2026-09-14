@@ -1327,14 +1327,17 @@ fn materialize_prototype(
     Some(home) => Some(load_module_cached(vm, &home.path)?),
   };
 
-  let mark = vm.pin_values(std::iter::empty());
+  // One pin per constant, but the pin INDEX has to be remembered rather
+  // than counted from a mark: a constant that is itself a nested
+  // prototype sends `materialize_prototype` back round, and that pins
+  // the function it builds along with every constant of its own, so the
+  // n-th constant of this chunk is not the n-th pin past the mark.
+  let mut pins = Vec::with_capacity(proto.data.constants.len());
   for c in &proto.data.constants {
     let v = materialize_constant(vm, c, arena, node_pin)?;
-    vm.pin_values([v]);
+    pins.push(vm.pin_values([v]));
   }
-  let constants: Vec<Value> = (0..proto.data.constants.len())
-    .map(|i| vm.pinned(mark + i))
-    .collect();
+  let constants: Vec<Value> = pins.into_iter().map(|p| vm.pinned(p)).collect();
 
   let mut chunk = Chunk::new();
   chunk.code = proto.data.code.clone();

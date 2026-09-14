@@ -1956,10 +1956,11 @@ http.serve(app.setup, {
 ```
 
 `setup` is called once inside each worker with that worker's own
-`HttpServer`. It has to be a function defined in a module rather than
-a closure in the main script: an isolate resolves a function by module
-binding, and a closure that captured an imported module cannot cross
-the boundary at all.
+`HttpServer`. It can live in the main script or in a module. What it
+cannot do is reach for an imported module, because a module value
+cannot cross into an isolate, so a `setup` that needs one like the
+example above does, belongs in a module itself. The isolate resolves
+it there by name, and its imports are resolved again on that side.
 
 Isolates share no memory, so anything a worker needs — a cache, a
 connection pool, a counter — is per worker. That is the trade the

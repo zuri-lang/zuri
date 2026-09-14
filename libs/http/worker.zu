@@ -41,10 +41,10 @@ var _POOL_HEADROOM = 2
  * The loop each worker isolate runs: build a server of its own from
  * `setup`, then serve whatever connections the acceptor hands it.
  *
- * This lives in a module rather than in a closure because that is
- * what can cross an isolate boundary - a spawned isolate resolves a
- * function by module binding, and a closure that captured an imported
- * module namespace cannot be transferred at all.
+ * This lives in a module because it names imported ones of its own
+ * (`HttpServer`, `net`). A module value cannot be handed to an
+ * isolate, but a function belonging to a module is resolved there by
+ * name, with its imports resolved again on that side.
  *
  * @param Channel connections: accepted sockets arrive here
  * @param function(1) setup: called once with this worker's server
@@ -318,8 +318,7 @@ def _drain(state) {
  * The calling isolate does nothing but accept, which is cheap; every
  * accepted socket is moved across a channel to whichever worker takes
  * it next. Because isolates share no memory, each worker builds its
- * own routes by calling `setup` - which is why `setup` has to be a
- * module-level function rather than a closure.
+ * own routes by calling `setup`.
  *
  * @note Each worker holds an isolate pool thread for as long as the
  *    server runs. `serve()` sizes the pool for that when it is the
@@ -361,7 +360,7 @@ def _drain(state) {
  */
 def serve(setup, options: ?dict) {
   if !is_function(setup) and !is_callable(setup) {
-    raise TypeError('setup must be a function defined in a module')
+    raise TypeError('setup must be a function')
   }
 
   var settings = options == nil ? {} : options.clone()
@@ -388,9 +387,9 @@ def serve(setup, options: ?dict) {
     raise HttpError('could not bind ${host}:${port}: ${error.message}')
   }
 
-  # Held back rather than passed along: it is a callback for this
-  # isolate, and a closure that captured an imported module cannot
-  # cross the boundary at all.
+  # Held back rather than passed along: it belongs to this isolate,
+  # closing over the listener it stops and the flag the accept loop
+  # reads, neither of which means anything to a worker.
   var on_ready = settings.get('on_ready', nil)
   var max_connections = settings.get('max_connections', nil)
 

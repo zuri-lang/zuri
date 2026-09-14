@@ -1,0 +1,49 @@
+/**
+ * A function handed to an isolate is rebuilt from a captured copy of
+ * its prototype, constants and all. A constant that is itself a nested
+ * prototype sends that rebuild back round on the nested function, so
+ * the constants of the outer one are not produced in a single flat
+ * pass: getting them back in order is what lets `Instr::Closure` find
+ * the function it names rather than whichever value landed nearby.
+ *
+ * Everything here lives in the main script on purpose. A function that
+ * belongs to a module is resolved across the boundary by name, which
+ * never exercises any of this.
+ */
+
+import isolate
+
+def build(label, factor, suffix) {
+  var scale = @(value) {
+    return value * factor
+  }
+
+  var decorate = @(value) {
+    return '${label}:${value}${suffix}'
+  }
+
+  return decorate(scale(21))
+}
+
+def nest(depth) {
+  if depth == 0 {
+    return 'bottom'
+  }
+
+  var inner = @(n) {
+    return nest(n - 1)
+  }
+
+  return 'level${depth}/${inner(depth)}'
+}
+
+var built = isolate.spawn(build, 'answer', 2, '!')
+assert built.join() == 'answer:42!', 'a main-script function must rebuild its nested prototypes'
+
+var nested = isolate.spawn(nest, 3)
+assert nested.join() == 'level3/level2/level1/bottom', 'nesting must survive the boundary'
+
+# The same function still works in this VM after being copied out of it.
+assert build('local', 3, '?') == 'local:63?', 'the original must be untouched'
+
+echo 'main-script closures cross the isolate boundary'

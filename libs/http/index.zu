@@ -102,9 +102,11 @@
  * http.serve(app.setup, { port: 3000, workers: 8 })
  * ```
  *
- * The setup function has to live in a module rather than in the main
- * script, because that is what an isolate can resolve on the other
- * side of the boundary.
+ * `setup` runs inside each worker, so everything it reaches for has to
+ * be something an isolate can be handed. A module is not: a `setup`
+ * that names an imported module belongs in a module itself, which the
+ * isolate resolves by name and whose own imports are resolved again on
+ * that side.
  *
  * ### What the module handles for you
  *
@@ -320,9 +322,11 @@ def tls_server(port: number, cert_chain: string, private_key: string, host: ?str
  *
  * `setup` is called once inside each worker with that worker's own
  * `HttpServer`, and registers the routes, middleware and settings the
- * worker should serve with. It must be a function defined in a module
- * - an isolate resolves a function by module binding, and a closure
- * that captured an imported module cannot cross the boundary at all.
+ * worker should serve with. It may be defined in the main script or in
+ * a module; what it may not do is reach for an imported module, since
+ * a module value cannot cross the boundary. A `setup` that needs one
+ * belongs in a module itself, where the isolate resolves it by name
+ * and its imports are resolved again on that side.
  *
  * The calling isolate binds the socket and accepts connections,
  * handing each one to a worker. It does not return until the server
