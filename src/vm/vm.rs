@@ -1801,11 +1801,7 @@ impl VM {
     // `own_field_initializer`, not in `methods`, but it is every bit as
     // much "code whose `self` is an instance of this class" as a real
     // method: `instantiate` walks the chain root-to-leaf and hands each
-    // ancestor's initializer the leaf instance. Leaving it out here cost
-    // it the whole fast path, and the inline cache it fell back to
-    // speculates on ONE receiver class; for a base class with many
-    // subclasses that guess is wrong on nearly every construction, so the
-    // compiled initializer deopted on essentially every call.
+    // ancestor's initializer the leaf instance to fill in.
     let is_proto =
       |m: Value| m.is_closure() && std::ptr::eq(m.as_closure().function.as_func(), proto_ptr);
     let owns_proto = class.methods.values().any(|m| is_proto(*m))
@@ -2348,7 +2344,7 @@ impl VM {
           if crate::jit::log_enabled() {
             eprintln!(
               "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x})",
-              proto.name,
+              proto.display_name(),
               proto.chunk.code.len(),
               result.osr_ids.len(),
               result.speculative_params.unwrap_or(0),
@@ -2360,7 +2356,7 @@ impl VM {
         },
         Err(reason) => {
           if crate::jit::log_enabled() {
-            eprintln!("[jit] '{}' ineligible: {}", proto.name, reason);
+            eprintln!("[jit] '{}' ineligible: {}", proto.display_name(), reason);
           }
           proto.jit.ineligible.set(true);
         },
@@ -2376,12 +2372,13 @@ impl VM {
     }
   }
 
-  /// Name of the function whose frame is currently on top, for the JIT's
-  /// deopt logging. Only ever called behind `ZURI_JIT_LOG`.
-  pub(crate) fn current_function_name(&self) -> &str {
+  /// Name of the function whose frame is currently on top, as
+  /// `Class.method` where it has a class, for the JIT's deopt logging.
+  /// Only ever called behind `ZURI_JIT_LOG`.
+  pub(crate) fn current_function_name(&self) -> std::borrow::Cow<'_, str> {
     match self.frames.last() {
-      Some(frame) => unsafe { &*frame.function }.name.as_str(),
-      None => "<none>",
+      Some(frame) => unsafe { &*frame.function }.display_name(),
+      None => std::borrow::Cow::Borrowed("<none>"),
     }
   }
 

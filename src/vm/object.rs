@@ -2,6 +2,7 @@ use num_bigint::BigInt;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::any::Any;
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -556,6 +557,19 @@ pub struct ObjFunction {
   /// same prototype shares the same compiled machine code; a closure
   /// only contributes its own upvalues on top.
   pub jit: JitInfo,
+}
+
+impl ObjFunction {
+  /// `Class.method` for anything that belongs to a class, the plain
+  /// name for everything else. Worth the formatting: a JIT log line
+  /// naming `@new` could mean any constructor the program has loaded,
+  /// and a program of any size has plenty.
+  pub fn display_name(&self) -> Cow<'_, str> {
+    match &self.owning_class_name {
+      Some(class) => Cow::Owned(format!("{class}.{}", self.name)),
+      None => Cow::Borrowed(&self.name),
+    }
+  }
 }
 
 /// Per-function tiering state consulted by both the interpreter (to
