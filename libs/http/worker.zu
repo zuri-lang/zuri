@@ -156,8 +156,15 @@ def _admit_waiting(state, connections) {
   return taken
 }
 
-# Brings one accepted socket under this worker's poller, or serves it
-# to completion right here when it turns out not to be HTTP/1.1.
+# Brings one accepted socket under this worker's poller.
+#
+# Which protocol the peer speaks is decided later, on the first read,
+# rather than here. Telling HTTP/2 from HTTP/1.1 means looking at the
+# first bytes, and a socket that has been accepted has not necessarily
+# sent any: asking for them here blocks the whole worker on one silent
+# peer for as long as `read_timeout` allows, while every connection it
+# already holds waits for a turn. Waiting for readability first costs
+# nothing and is the entire reason this loop polls.
 def _admit(state, client) {
   var connection = state.instance.accept_connection(client)
 
@@ -165,27 +172,10 @@ def _admit(state, client) {
     return
   }
 
-  # An HTTP/2 connection is already multiplexed internally, so it is
-  # served to completion in place rather than interleaved with the
-  # HTTP/1.1 connections around it.
-  if state.instance.is_http2_connection(connection) {
-    catch {
-      state.instance.serve_http2(connection)
-    } as error
-
-    if error {
-      state.instance.report_error(error, connection)
-    }
-
-    state.instance.finish_connection(connection)
-
-    return
-  }
-
   var token = state.next_token
   state.next_token = token + 1
 
-  state.live[token] = [connection, 0, time()]
+  state.live[token] = [connection, 0, time(), false]
   state.poller.add(connection.transport(), token, net.READABLE)
 }
 
@@ -221,6 +211,42 @@ def _service(state, token) {
   }
 
   var connection = entry[0]
+
+  # First time this connection has anything to say, so this is where the
+  # protocol probe belongs: the bytes it wants are already in hand.
+  if !entry[3] {
+    entry[3] = true
+
+    var http2 = false
+
+    catch {
+      http2 = state.instance.is_http2_connection(connection)
+    } as error
+
+    if error {
+      state.instance.report_error(error, connection)
+      _close(state, token)
+
+      return
+    }
+
+    # An HTTP/2 connection is already multiplexed internally, so it is
+    # served to completion in place rather than interleaved with the
+    # HTTP/1.1 connections around it.
+    if http2 {
+      catch {
+        state.instance.serve_http2(connection)
+      } as http2_error
+
+      if http2_error {
+        state.instance.report_error(http2_error, connection)
+      }
+
+      _close(state, token)
+
+      return
+    }
+  }
 
   while true {
     var keep = false
