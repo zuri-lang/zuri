@@ -117,7 +117,7 @@ def _file_of(body) {
 
   catch {
     return reflect.function_info(body).source_path
-  } as error
+  }
 
   return _current.file
 }

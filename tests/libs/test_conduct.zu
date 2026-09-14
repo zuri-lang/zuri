@@ -42,7 +42,7 @@ def write(name, source) {
 def cleanup() {
   catch {
     os.remove_dir(ROOT, true)
-  } as ignored
+  }
 }
 
 def result_for(outcome, path) {
@@ -231,7 +231,56 @@ ok('a file that never finishes is killed, and the run comes back without it')
 
 catch {
   file(os.join_paths(SUITE, 'f_hangs.zu')).delete()
-} as ignored
+}
+
+# ---------------------------------------------------------------------------
+# A directory that runs itself
+# ---------------------------------------------------------------------------
+# `zuri <directory>` runs that directory's `index.zu`, so a tests
+# directory conducting itself is the shape to expect. The index must
+# not discover itself, or every run would start another one.
+var SELF = os.join_paths(ROOT, 'selfrun')
+os.create_dir(SELF, 0c755, true)
+
+file(os.join_paths(SELF, 'index.zu'), 'w').write(
+  "import os\n" +
+  "import test\n" +
+  "test.conduct(os.dir_name(__file__))\n"
+)
+
+file(os.join_paths(SELF, 'one.zu'), 'w').write(
+  "import test { * }\n" +
+  "describe('one', @{\n" +
+  "  it('passes', @{ expect(1).to_be(1) })\n" +
+  "})\n"
+)
+
+assert conduct.discover(SELF, nil) == ['one.zu'],
+  'index.zu is what starts a suite, so it is never discovered as part of one'
+assert conduct.discover(SELF, { ignore: [] }).contains('index.zu'),
+  'though an ignore list of your own can take it back'
+
+var self_run = os.spawn(os.exe_path, [SELF], { stdin: 'null' })
+var self_code = self_run.wait()
+var self_out = self_run.read_stdout().to_string()
+
+assert self_code == 0, 'a passing suite run through its own index must exit 0'
+assert self_out.contains('1 file'), 'and must have found exactly the one test file'
+assert self_out.contains('1 passed'), 'and run it'
+ok('a tests directory can run itself through its own index.zu')
+
+file(os.join_paths(SELF, 'two.zu'), 'w').write(
+  "import test { * }\n" +
+  "describe('two', @{\n" +
+  "  it('fails', @{ expect(1).to_be(2) })\n" +
+  "})\n"
+)
+
+var self_failed = os.spawn(os.exe_path, [SELF], { stdin: 'null' })
+
+assert self_failed.wait() == 1,
+  'conduct must end the process with 1 when a file failed, with nothing added to say so'
+ok('conduct sets the exit status itself')
 
 # ---------------------------------------------------------------------------
 # An empty directory
@@ -258,6 +307,11 @@ ok('an unknown option is refused, with the known ones listed')
 
 # ===========================================================================
 cleanup()
+
+# Conducting fixtures that fail on purpose leaves this process marked
+# as failed, which is exactly what it should do for a real caller.
+# This file is not one, and says so.
+os.set_exit_code(0)
 
 echo ''
 echo '═══════════════════════════════════════════════════════'

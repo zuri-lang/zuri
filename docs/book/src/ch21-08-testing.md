@@ -30,26 +30,35 @@ taskboard/
   storage/
   routes/
   tests/
+    index.zu            runs the rest
     task.zu
     board.zu
     api.zu
-  run_tests.zu
 ```
 
-<span class="filename">Filename: run_tests.zu</span>
+<span class="filename">Filename: tests/index.zu</span>
 
 ```zuri,ignore
-import test
 import os
+import test
 
-os.exit(test.conduct('tests').exit_code)
+test.conduct(os.dir_name(__file__))
 ```
 
 ```console
-$ zuri run_tests.zu
+$ zuri tests
 ```
 
-Each file is an ordinary script: it declares its tests and stops.
+`tests/` gets an `index.zu` for the same reason `models/` and `storage/`
+do: a directory handed to `zuri` runs its `index.zu`. The application is
+`zuri taskboard`, so its tests are `zuri tests`, and neither needs a file
+name remembering.
+
+`conduct` leaves `index.zu` out of discovery, and never runs the script
+that called it either, so the index cannot end up running itself. It exits
+`1` when anything failed, which is all CI needs.
+
+Each test file is an ordinary script: it declares its tests and stops.
 `conduct` runs each one in a process of its own, which matters here for
 one concrete reason: every one of these files is going to create a
 `Board`, and a `Board` is a file on disk. One process per file means one
@@ -506,7 +515,7 @@ were checking.
 Run it:
 
 ```console
-$ zuri run_tests.zu
+$ zuri tests
 
   zuri test  3 files in tests
 

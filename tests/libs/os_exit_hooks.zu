@@ -41,7 +41,7 @@ def run_script(source) {
 def cleanup() {
   catch {
     os.remove_dir(TMP, true)
-  } as ignored
+  }
 }
 
 cleanup()

@@ -694,7 +694,7 @@ ok('a file that crashes still runs what it had already declared')
 
 catch {
   os.remove_dir(AUTO, true)
-} as ignored
+}
 
 # ---------------------------------------------------------------------------
 # Option validation

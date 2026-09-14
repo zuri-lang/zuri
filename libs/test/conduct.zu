@@ -22,6 +22,27 @@
  * - `timeout` is enforced by `kill`, so it holds for a file that
  *   never returns.
  *
+ * ### The index is not a test file
+ *
+ * `index.zu` is left out of discovery. A directory handed to `zuri`
+ * runs its `index.zu`, so a suite is started by putting one there:
+ *
+ * ```zuri,ignore
+ * # tests/index.zu
+ * import os
+ * import test
+ *
+ * test.conduct(os.dir_name(__file__))
+ * ```
+ *
+ * ```console
+ * $ zuri tests
+ * ```
+ *
+ * The script that is currently running is left out as well, whatever
+ * it is called, so no arrangement of files makes a run start itself
+ * again.
+ *
  * ### What a test file has to do
  *
  * Nothing special. It declares its tests. The conductor sets
@@ -45,6 +66,7 @@ import os
 import .error { TestSetupError }
 import .format
 import .reporter as reporters
+import .source
 import .style
 
 
@@ -57,7 +79,7 @@ var CONDUCTED = 'ZURI_TEST_CONDUCTED'
 def _defaults() {
   return {
     match: ['*.zu'],
-    ignore: ['_*', '.*'],
+    ignore: ['_*', '.*', 'index.zu'],
     recursive: true,
     jobs: 1,
     timeout: 0,
@@ -117,6 +139,18 @@ def _glob_matches(pattern, name) {
 }
 
 
+# Whether `path` is the script this process was started with.
+# `__root__` is already canonical, so the candidate has to be made
+# canonical too before they can be compared.
+def _is_this_script(path) {
+  catch {
+    return os.real_path(path) == __root__
+  }
+
+  return false
+}
+
+
 def _wanted(name, options) {
   for pattern in options.ignore {
     if _glob_matches(pattern, name) {
@@ -136,6 +170,15 @@ def _wanted(name, options) {
 
 /**
  * Every test file under `directory`, in the order they will run.
+ *
+ * `index.zu` is never one of them. A directory handed to `zuri` runs
+ * its `index.zu`, so that file is the thing that starts a suite rather
+ * than a part of one, and conducting a directory from inside its own
+ * index is the shape this is written for. Pass an `ignore` list of
+ * your own when a file of that name really is a test.
+ *
+ * The script that is currently running is left out too, whatever it is
+ * called, so no arrangement of files can make a run start itself again.
  *
  * @param string directory
  * @param ?dict options: `match`, `ignore` and `recursive`, as
@@ -157,7 +200,7 @@ def discover(directory: string, options: ?dict) {
     }
 
     var full = os.join_paths(directory, entry)
-    if os.is_dir(full) {
+    if os.is_dir(full) or _is_this_script(full) {
       continue
     }
 
@@ -275,7 +318,7 @@ def _drain(job) {
 
   catch {
     raw = job.process.read_stdout().to_string()
-  } as error
+  }
 
   catch {
     var errors = job.process.read_stderr().to_string()
@@ -283,7 +326,7 @@ def _drain(job) {
     if errors != '' {
       result.output += errors
     }
-  } as error
+  }
 
   for line in raw.lines() {
     if !line.starts_with(reporters.PREFIX) {
@@ -430,11 +473,14 @@ def _echo_totals(totals, duration) {
  *
  * ```zuri
  * import test
- * import os
  *
- * var outcome = test.conduct('tests', { timeout: 30000, jobs: 4 })
- * os.exit(outcome.exit_code)
+ * test.conduct('tests', { timeout: 30000, jobs: 4 })
  * ```
+ *
+ * The process ends with status `1` when anything failed, through
+ * `os.set_exit_code()`, so nothing has to be added for CI. The
+ * returned dictionary is there for a caller that wants to look at the
+ * run rather than just be told about it.
  *
  * @param ?string directory: `'tests'` by default.
  * @param ?dict options:
@@ -442,8 +488,9 @@ def _echo_totals(totals, duration) {
  *    - `match`: filename patterns to run, `['*.zu']` by default.
  *      `*` and `?` are the only wildcards.
  *    - `ignore`: patterns for files and directories to skip,
- *      `['_*', '.*']` by default, which is what keeps helper files
- *      and `__snapshots__` out.
+ *      `['_*', '.*', 'index.zu']` by default, which is what keeps
+ *      helper files, `__snapshots__` and the index that starts the
+ *      suite out of it.
  *    - `recursive`: whether to look in subdirectories. `true`.
  *    - `jobs`: how many files to run at once. `1`, because a test
  *      file that binds a port or writes a fixture was probably not
@@ -456,6 +503,9 @@ def _echo_totals(totals, duration) {
  *
  * @returns dict: `{ files, totals, duration, exit_code, ok }`, where
  *    `files` is a list of `FileResult`.
+ * @note `index.zu` is never one of the files it runs, and neither is
+ *    the script that called it, so a `tests/index.zu` conducting its
+ *    own directory works.
  * @raises TestSetupError when `directory` does not exist.
  */
 def conduct(directory: ?string, options: ?dict) {
@@ -467,8 +517,10 @@ def conduct(directory: ?string, options: ?dict) {
   var paths = discover(directory, options)
   var started = _now_ms()
 
+  var where = source.short_path(directory)
+
   echo ''
-  echo '  ' + style.bold('zuri test') + style.dim('  ${format.plural(paths.length(), "file")} in ${directory}')
+  echo '  ' + style.bold('zuri test') + style.dim('  ${format.plural(paths.length(), "file")} in ${where}')
 
   if paths.is_empty() {
     echo ''
@@ -496,6 +548,10 @@ def conduct(directory: ?string, options: ?dict) {
   _echo_totals(totals, duration)
 
   var ok = results.every(@(result) { return result.ok() })
+
+  if !ok {
+    os.set_exit_code(1)
+  }
 
   return {
     files: results,

@@ -168,7 +168,7 @@ def _lines_of(path) {
 
   catch {
     lines = file(path).read().lines()
-  } as error
+  }
 
   _cache.set(path, lines)
 

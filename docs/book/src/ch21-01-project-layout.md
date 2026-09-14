@@ -21,10 +21,10 @@ taskboard/
   static/
     app.css
   tests/
-    task.zu             one file per layer, run by conduct()
+    index.zu            `zuri tests` runs the rest
+    task.zu             one file per layer
     board.zu
     api.zu
-  run_tests.zu
 ```
 
 Four decisions are worth explaining, because they are the ones that make

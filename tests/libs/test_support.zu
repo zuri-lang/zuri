@@ -288,7 +288,7 @@ var snap_file = snapshot.path_for(subject_file)
 
 catch {
   file(snap_file).delete()
-} as ignored
+}
 
 snapshot.reset()
 snapshot.set_updating(false)
@@ -382,7 +382,7 @@ snapshot.reset()
 catch {
   os.remove_dir(os.join_paths(TMP, '__snapshots__'), true)
   os.remove_dir(TMP, true)
-} as ignored
+}
 
 # ===========================================================================
 test.reset()

@@ -240,10 +240,14 @@
  * that hangs or crashes takes nothing else down with it. See
  * {test.conduct}.
  *
- * ```zuri
+ * Give the directory an `index.zu` and the whole suite is `zuri tests`:
+ *
+ * ```zuri,ignore
+ * # tests/index.zu
+ * import os
  * import test
  *
- * test.conduct('tests')
+ * test.conduct(os.dir_name(__file__))
  * ```
  *
  * @copyright 2021, Richard Ore and Zuri contributors

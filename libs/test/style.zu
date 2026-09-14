@@ -56,7 +56,7 @@ def _detect_color() {
 
   catch {
     return io.stdout.is_tty()
-  } as error
+  }
 
   return false
 }

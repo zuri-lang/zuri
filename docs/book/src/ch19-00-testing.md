@@ -616,22 +616,25 @@ A real project has a directory of them:
 ```text
 project/
   tests/
+    index.zu
     cart.zu
     pricing.zu
-  run_tests.zu
 ```
+
+<span class="filename">Filename: tests/index.zu</span>
 
 ```zuri,ignore
-# run_tests.zu
-import test
 import os
+import test
 
-var outcome = test.conduct('tests')
-os.exit(outcome.exit_code)
+test.conduct(os.dir_name(__file__))
 ```
 
+A directory handed to `zuri` runs its `index.zu`, so that one file makes
+the whole suite `zuri tests`:
+
 ```console
-$ zuri run_tests.zu
+$ zuri tests
 
   zuri test  2 files in tests
 
@@ -646,6 +649,10 @@ $ zuri run_tests.zu
   1 failed  •  2 passed  •  3 total
   time 476ms
 ```
+
+`conduct` leaves `index.zu` out of discovery, and never runs the script
+that called it either, so the index cannot end up running itself. It ends
+the process with `1` when anything failed.
 
 Each file runs in a process of its own. That is not an implementation
 detail you can ignore, because it is what you are buying:

@@ -225,7 +225,7 @@ outcomes.fn()
 
 catch {
   outcomes.fn()
-} as ignored
+}
 
 assert holds(@{ expect(outcomes).to_have_returned() }), 'to_have_returned'
 assert holds(@{ expect(outcomes).to_have_returned_with('value') }), 'to_have_returned_with'
