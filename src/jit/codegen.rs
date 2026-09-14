@@ -1152,9 +1152,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       return (targets, construct_info, construct_slots);
     }
 
+    // A method's own name is not a global binding of itself (see
+    // `escape::self_reference_facts_with_preds`), so a global that
+    // happens to share it is an ordinary named global here, not the
+    // self-recursive case this filter is skipping.
     let named_facts: Vec<(&String, Vec<escape::MustSet>)> = globals
       .keys()
-      .filter(|name| *name != &proto.name)
+      .filter(|name| proto.is_method || *name != &proto.name)
       .map(|name| {
         let facts = escape::global_ref_facts_with_preds(proto, preds, name);
         (name, facts)

@@ -1,0 +1,65 @@
+/**
+ * A method's name is not a binding of that method. It lives in its
+ * class's method table and calls itself through `self`, so a bare
+ * `name(...)` inside a method reaches the global of that name, even
+ * when the method shares it.
+ *
+ * Getting that wrong compiles the global's calls as calls to the method
+ * itself, and the method's calling convention wants a receiver in the
+ * first register: without one every argument arrives a parameter late,
+ * so the first parameter picks up the second argument. The methods here
+ * declare more parameters than their call sites pass, which is what
+ * makes that shift visible rather than silent.
+ */
+
+def label(prefix, suffix) {
+  return '${prefix}:${suffix}'
+}
+
+def widest(a, b) {
+  return a.length() > b.length() ? a : b
+}
+
+class Tagger {
+  var seen = 0
+
+  label(prefix: string, suffix: ?string, extra: ?string) {
+    self.seen++
+    return label(prefix, 'tail')
+  }
+
+  widest(a: string, b: ?string, c: ?string) {
+    return widest(a, 'xx')
+  }
+}
+
+var tagger = Tagger()
+var rounds = 60000
+var labels = 0
+var widths = 0
+
+iter var i = 0; i < rounds; i++ {
+  var tagged = tagger.label('head')
+  if tagged != 'head:tail' {
+    raise Error('round ${i}: label gave ${tagged}, expected head:tail')
+  }
+
+  var wide = tagger.widest('abcd')
+  if wide != 'abcd' {
+    raise Error('round ${i}: widest gave ${wide}, expected abcd')
+  }
+
+  labels++
+  widths++
+}
+
+if tagger.seen != rounds {
+  raise Error('seen ${tagger.seen}, expected ${rounds}')
+}
+
+# The plain functions keep working on their own terms.
+if label('a', 'b') != 'a:b' or widest('xyz', 'q') != 'xyz' {
+  raise Error('globals broken: ${label('a', 'b')} ${widest('xyz', 'q')}')
+}
+
+echo 'method shadowing: ${labels} labels, ${widths} widths over ${rounds} rounds'

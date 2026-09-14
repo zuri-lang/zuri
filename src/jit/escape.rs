@@ -306,6 +306,20 @@ pub fn self_reference_facts(proto: &ObjFunction) -> Vec<MustSet> {
 }
 
 pub fn self_reference_facts_with_preds(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<MustSet> {
+  // Matching the name only identifies the function itself when the
+  // function is what that name is bound to. A method is not: it lives
+  // in its class's method table, and calls itself through `self.name()`,
+  // an `Invoke`. A bare `name(...)` inside a method is therefore always
+  // something else, and a method that shares its name with a global
+  // (`file`, `print`, anything in the builtins) would otherwise have
+  // that global's calls compiled as calls to the method; the receiver
+  // the method's calling convention expects in register 0 is not there,
+  // so every argument lands one parameter late.
+  if proto.is_method {
+    let code_len = proto.chunk.code.len();
+    let num_registers = proto.num_registers as usize;
+    return (0..code_len).map(|_| MustSet::empty(num_registers)).collect();
+  }
   let is_self_name = |name_const: u16| -> bool {
     match proto.chunk.constants.get(name_const as usize) {
       Some(v) if v.is_string() => v.as_str() == proto.name,
