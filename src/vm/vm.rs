@@ -39,6 +39,18 @@ const MAX_JIT_CALL_DEPTH: u32 = 1024;
 /// the nesting since it can't be re-entered from there.
 const MAX_DEOPT_REENTRANCY: u32 = 64;
 
+/// How many times a function may have its compiled code thrown away
+/// after a deopt before we stop doing it and let the existing code
+/// stand, deopts and all.
+///
+/// Recompiling pays off when the next compilation can act on where the
+/// last one gave up, which is the case for a speculation that turned
+/// out to be wrong. Not every deopt is like that, and one that the
+/// compiler cannot avoid would otherwise recompile the same function
+/// forever; a handful of attempts is enough to settle the cases that
+/// can settle.
+const MAX_JIT_INVALIDATIONS: u32 = 3;
+
 static ZURI_LOG_GC: LazyLock<bool> = LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 static ZURI_JIT_ENABLED: LazyLock<bool> = LazyLock::new(|| {
   !matches!(
@@ -2270,6 +2282,7 @@ impl VM {
       param_field_slots: self.resolve_param_field_slots(proto),
       self_class_bits: self.resolve_self_class(proto),
       self_method_protos: self.resolve_self_method_protos(proto),
+      deopt_sites: proto.jit.deopt_sites.borrow().clone(),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       speculative_lists,
@@ -2897,6 +2910,35 @@ impl VM {
     Some(self.resolve_deopt_slow(deopt_ip as usize))
   }
 
+  /// Records where compiled code gave up and, up to the invalidation
+  /// cap, throws that code away so the function is compiled again with
+  /// the site noted.
+  ///
+  /// `call_count` goes back to zero rather than the function being
+  /// re-enqueued on the spot: warming up again is what keeps a function
+  /// that deopts on a path it rarely takes from paying for a
+  /// recompilation it doesn't need, and `call_threshold` already scales
+  /// with bytecode length, so bigger functions wait longer.
+  ///
+  /// An `Instr::Raise` compiles to a deopt by design rather than to a
+  /// failed bet (see `jit::codegen`'s eligibility scan), so a function
+  /// that raises is left alone; recompiling it would produce the same
+  /// code and give up in the same place.
+  fn note_deopt_site(&self, proto: &ObjFunction, deopt_ip: usize) {
+    if matches!(proto.chunk.code.get(deopt_ip), Some(Instr::Raise { .. })) {
+      return;
+    }
+    proto.jit.deopt_sites.borrow_mut().insert(deopt_ip);
+
+    let invalidations = proto.jit.invalidations.get();
+    if invalidations >= MAX_JIT_INVALIDATIONS {
+      return;
+    }
+    proto.jit.invalidations.set(invalidations + 1);
+    proto.jit.entry.set(None);
+    proto.jit.call_count.set(0);
+  }
+
   #[cold]
   #[inline(never)]
   fn resolve_deopt_slow(&mut self, deopt_ip: usize) -> RunResult<Value> {
@@ -2922,6 +2964,7 @@ impl VM {
         );
       }
     }
+    self.note_deopt_site(deopting_fn, deopt_ip);
     self.frames[frame_idx].ip = deopt_ip;
     // The interpreter takes this frame over and syncs ip on every
     // instruction from here, so jit_ip stops being the truthful source.

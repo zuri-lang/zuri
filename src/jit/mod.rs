@@ -338,6 +338,11 @@ pub struct CompileFacts {
   /// valid for the whole compile. The closure wrapping it is deliberately
   /// not recorded: closures are young allocations that relocate.
   pub self_method_protos: FxHashMap<String, usize>,
+  /// Bytecode positions an earlier compilation of this function gave up
+  /// at; see `JitInfo::deopt_sites`. Copied out of the prototype when
+  /// the job is built, like the rest of this struct, so nothing here is
+  /// read from a worker while the VM is still running.
+  pub deopt_sites: rustc_hash::FxHashSet<usize>,
 }
 
 /// One construction site's compile-time view of the class it builds.

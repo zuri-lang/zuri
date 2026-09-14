@@ -625,6 +625,23 @@ pub struct JitInfo {
   /// call sites see this and stop trying, rather than re-attempting a
   /// doomed compilation on every single call.
   pub ineligible: Cell<bool>,
+  /// Bytecode positions where this function's compiled code gave up and
+  /// handed control back to the interpreter. A speculation that misses
+  /// here missed on real input, so the next compilation skips it and
+  /// leaves that site on its ordinary inline cache.
+  ///
+  /// Written only from `VM::resolve_deopt_slow` and read only when a
+  /// compile job is built, both on the VM's thread, and those two can
+  /// never overlap for one prototype: a deopt means compiled code is
+  /// running, which means `entry` is set, which is exactly what stops a
+  /// compile from being enqueued. `RefCell` costs nothing here; deopting
+  /// is a cold path and the set is empty for almost every function.
+  pub deopt_sites: RefCell<rustc_hash::FxHashSet<usize>>,
+  /// How many times compiled code for this prototype has been thrown
+  /// away after a deopt. Capped, so a function whose deopts come from
+  /// something the next compilation can't avoid settles down instead of
+  /// recompiling forever.
+  pub invalidations: Cell<u32>,
   /// Per-loop-header back-edge hit counts, keyed by the bytecode `ip`
   /// the loop's `Instr::Jmp` back-edge targets; consulted only by
   /// that instruction's own handler in `vm.rs` to decide when a
@@ -692,6 +709,8 @@ impl JitInfo {
       entry: Cell::new(None),
       osr_ids: RefCell::new(None),
       ineligible: Cell::new(false),
+      deopt_sites: RefCell::new(rustc_hash::FxHashSet::default()),
+      invalidations: Cell::new(0),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),

@@ -896,6 +896,16 @@ struct FuncCompiler<'a, 'b> {
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
   active_guarded: FxHashSet<u8>,
   known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
+  /// Where an earlier compilation of this function gave up; see
+  /// `JitInfo::deopt_sites`. A speculation covering one of these has
+  /// already been contradicted by real input, so it isn't made again.
+  deopt_sites: FxHashSet<usize>,
+  /// Receiver registers named by those sites. A field access that bet
+  /// wrong is rarely alone: reading eleven fields off one dictionary is
+  /// eleven sites that will each bet the same way and each be wrong, so
+  /// giving up on the register rather than the instruction settles the
+  /// whole group in one recompilation instead of eleven.
+  deopt_receivers: FxHashSet<u8>,
   /// See `jit::CompileFacts::self_method_protos`.
   self_method_protos: FxHashMap<String, usize>,
   is_specialized_pass: bool,
@@ -1365,6 +1375,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       guarded_instance_vars: FxHashMap::default(),
       active_guarded: FxHashSet::default(),
       known_classes: facts.known_classes,
+      deopt_receivers: facts
+        .deopt_sites
+        .iter()
+        .filter_map(|&ip| match proto.chunk.code.get(ip) {
+          Some(Instr::GetField { obj, .. }) | Some(Instr::SetField { obj, .. }) => Some(*obj),
+          _ => None,
+        })
+        .collect(),
+      deopt_sites: facts.deopt_sites,
       self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
@@ -5929,6 +5948,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// built by a construct earlier in this function. Only past the
   /// construct: before it the register holds the class global itself.
   fn construct_field_slot(&self, ip: usize, obj: u8, name_const: u16) -> Option<(u64, u16)> {
+    if self.deopt_sites.contains(&ip) {
+      return None;
+    }
     let (construct_ip, bits, slots) = self.construct_field_slots.get(&obj)?;
     if ip <= *construct_ip {
       return None;
@@ -6021,7 +6043,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     found
   }
 
-  fn target_class_for_field(&self, ip: usize, name: &str) -> Option<(u64, u16)> {
+  /// The class this `GetField`/`SetField` site should guard against,
+  /// with its slot, or `None` to leave the site on its ordinary inline
+  /// cache.
+  ///
+  /// `find_unique_known_class_for_field` picks a class from the field
+  /// name alone, which says nothing about whether the receiver is even
+  /// an instance: a dictionary reaches the same instruction. When that
+  /// bet is wrong it is wrong on every call, and a missed guard here
+  /// leaves compiled code entirely, so the site is worth far less than
+  /// nothing. `deopt_sites` is what a previous compilation learned
+  /// about exactly that.
+  fn target_class_for_field(&self, ip: usize, obj: u8, name: &str) -> Option<(u64, u16)> {
+    if self.deopt_sites.contains(&ip) || self.deopt_receivers.contains(&obj) {
+      return None;
+    }
     if let Some(cell) = self.proto.chunk.field_cache_cell(ip) {
       let c_bits = cell.class_bits.get();
       if c_bits != 0 {
@@ -6364,7 +6400,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
           return;
         }
-      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, name) {
+      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, obj, name) {
         let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
         let recv = self.load_reg(obj);
 
@@ -6588,7 +6624,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_write_barrier_for_store(ip, src, src_val, ptr);
           return;
         }
-      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, name) {
+      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, obj, name) {
         let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
         let recv = self.load_reg(obj);
 
