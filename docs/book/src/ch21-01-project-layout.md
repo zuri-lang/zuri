@@ -20,6 +20,11 @@ taskboard/
     board.html
   static/
     app.css
+  tests/
+    task.zu             one file per layer, run by conduct()
+    board.zu
+    api.zu
+  run_tests.zu
 ```
 
 Four decisions are worth explaining, because they are the ones that make
@@ -35,7 +40,8 @@ index.zu  ->  app.zu  ->  routes/  ->  storage/  ->  models/
 `routes` knows about `storage`; `storage` knows about `models`; `models`
 knows about nothing but `config`. Nothing points back the other way, which
 is what makes each layer readable on its own and testable without the ones
-above it.
+above it. [Testing the Board](ch21-08-testing.md) is where that second
+half is cashed in.
 
 `config.zu` sits outside that chain — everything may read it, and it reads
 nothing. That is the one module allowed to be depended on from anywhere,
@@ -132,7 +138,7 @@ it is the difference between "did it start?" and knowing.
 Note what `index.zu` does *not* do. It builds nothing, configures nothing
 and knows nothing about boards, templates or routes. Every one of those
 decisions is in `app.zu`, which is why the whole of
-[Middleware, Logging and Errors](ch20-06-middleware.md) can walk through
+[Middleware, Logging and Errors](ch21-06-middleware.md) can walk through
 one function and cover the entire assembly.
 
 ## Configuration Has Defaults

@@ -1,0 +1,6 @@
+the script itself
+registers another on its way out
+registered from inside a handler
+error in an at_exit handler: ValueError: this handler is broken
+registered second, runs first
+registered first, runs last

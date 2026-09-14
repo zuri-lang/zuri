@@ -9,11 +9,9 @@
  * test.conduct('tests')
  * ```
  *
- * ### Why separate processes
+ * ### One process per file
  *
- * A test file is an ordinary Zuri script, and Zuri has no way to load
- * one at runtime, so there is no in-process way to run several of
- * them. That constraint turns out to be the right design anyway:
+ * A test file is an ordinary Zuri script, and each one is run as one:
  *
  * - A file that loops forever is killed, and the rest still run.
  * - A file that segfaults, or calls `os.exit()` halfway through, is
@@ -21,25 +19,24 @@
  * - Global state, a module loaded with a side effect, a signal
  *   handler, a changed working directory: none of it leaks from one
  *   file into the next.
- * - `timeout` becomes real. Inside one process there is nothing to
- *   interrupt a synchronous function; across a process boundary there
- *   is `kill`.
+ * - `timeout` is enforced by `kill`, so it holds for a file that
+ *   never returns.
  *
  * ### What a test file has to do
  *
- * Nothing special. It declares its tests and calls `run()` like any
- * other. The conductor sets `ZURI_TEST_CONDUCTED` in the child,
- * and `run()` switches to a machine-readable reporter when it sees
- * it, so the same file is equally runnable on its own.
+ * Nothing special. It declares its tests. The conductor sets
+ * `ZURI_TEST_CONDUCTED` in the child, and the run switches to a
+ * machine-readable reporter when it sees it, so the same file is
+ * equally runnable on its own.
  *
- * A file that never calls `run()` is reported as such rather
- * than silently counting as zero tests.
+ * A file that declares no tests at all, or exits before it can report,
+ * is called out rather than silently counting as zero tests.
  *
  * ### Ordering
  *
  * Files are reported in the order they were discovered, whatever
- * order they finish in, so a run is reproducible even with `jobs`
- * turned up.
+ * order they finish in, so a run is reproducible with `jobs` turned
+ * up.
  */
 
 import json
@@ -321,8 +318,17 @@ def _diagnose(result) {
 
   if result.summary == nil {
     result.problem = result.code == 0 ?
-      'the file finished without ever calling run()' :
+      'the file declared no tests' :
       'the file exited with status ${result.code} before reporting'
+
+    return
+  }
+
+  # It reported, and then something else went wrong on the way out.
+  # Without this the exit status would be the only sign, and nothing
+  # in the report would mention it.
+  if result.code != 0 and result.summary.get('failed', 0) == 0 {
+    result.problem = 'every test passed, but the file exited with status ${result.code}'
   }
 }
 

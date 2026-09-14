@@ -374,7 +374,7 @@ false
 
 That is the mechanism behind the "handle one kind, re-raise the rest"
 pattern in [Error Handling](ch07-00-error-handling.md), and behind mapping
-a domain error to an HTTP status in [Chapter 20](ch20-06-middleware.md).
+a domain error to an HTTP status in [Chapter 20](ch21-06-middleware.md).
 
 ### `typeof(value)`
 

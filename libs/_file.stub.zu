@@ -248,6 +248,13 @@ class file {
    * 6
    * ```
    *
+   * A standard stream reports the descriptor it is named by, `0`,
+   * `1` or `2`, rather than the private duplicate the runtime holds
+   * open for it, so `number()` is what tells `io.stdout` apart from
+   * `io.stderr`.
+   *
+   * @note `-1` on a platform with no file descriptors, and on any
+   *    handle that is not currently open.
    * @return {int}
    */
   number() {}

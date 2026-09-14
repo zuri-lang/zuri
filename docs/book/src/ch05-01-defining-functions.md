@@ -167,10 +167,24 @@ echo count([1, 2], 3)
 [[1, 2], 3]
 ```
 
-There is no spread operator at the call site. `count(...list)` does not
-parse, and there is no way to expand a list back into separate arguments.
-When a function should accept a collection, take the list as an ordinary
-parameter.
+`...` marks a parameter, not an argument: `count(...list)` does not parse.
+To call a function with a list of arguments, use
+[`apply()`](appendix-05-10-function.md#apply):
+
+```zuri
+def count(...args) {
+  return args.length()
+}
+
+echo count.apply([1, 2, 3])
+```
+
+```console
+3
+```
+
+When a function should accept a collection, though, take the list as an
+ordinary parameter and skip both.
 
 **Named parameters bind first.** A variadic can follow named ones, and it
 takes whatever is left over:

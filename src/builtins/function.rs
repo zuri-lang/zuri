@@ -35,14 +35,10 @@ fn call(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(val)
 }
 
-/// `call`'s sibling for an argument list that isn't known until
-/// runtime. Zuri has no spread at a call site, so a wrapper that has
-/// to forward whatever it was handed (a spy, a decorator, a
-/// table-driven test runner) has no way to express the call at all
-/// without this.
+/// `call` with the arguments in a list rather than written out.
 ///
-/// Building the argument slice here is GC-safe without pinning for
-/// the same reason `call`'s is: allocation alone never collects (see
+/// Building the argument slice here needs no pinning, for the same
+/// reason `call`'s doesn't: allocation alone never collects (see
 /// `Heap::alloc_sized`), collection only happens at the VM's own
 /// safepoints, and `call_value` copies every argument into the
 /// callee's registers before a single bytecode instruction of it

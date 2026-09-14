@@ -7,15 +7,15 @@
  * ### Two phases, not one
  *
  * `describe()` and `it()` do not run anything. They build a tree, and
- * `run()` walks it afterwards. That separation is what makes
- * `only`, filtering, shuffling, bailing and an up-front test count
- * possible at all: none of them can be decided while the file is
- * still being read.
+ * `run()` walks it afterwards. That separation is what makes `only`,
+ * filtering, shuffling, bailing and an up-front test count possible
+ * at all: none of them can be decided while the file is still being
+ * read.
  *
- * It is also why a test file ends with `run()`. Zuri has no
- * at-exit hook, so there is no moment the framework could pick for
- * itself. Having to say when is a small price for `run()` being the
- * one place every option is passed.
+ * Declaring the first test registers an `os.at_exit()` handler that
+ * calls `run()` once the file is done, so a test file needs no
+ * closing line. An explicit `run()` marks the tree as run and the
+ * handler then does nothing.
  *
  * ### Hook ordering
  *
@@ -26,13 +26,13 @@
  * first, `after_each` innermost first, and `after_each` runs even
  * when the test failed.
  *
- * ### What cannot be done
+ * ### Timeouts
  *
- * A test cannot be interrupted. Zuri runs synchronously and has no
- * way to preempt a function that will not return, so a `timeout`
- * option is checked after the body returns: it catches a test that is
- * too slow, not one that hangs. A hang needs a process boundary, which
- * is what the conductor puts around each file; see {test.conduct}.
+ * Zuri runs synchronously, so a test runs to completion and is then
+ * timed: the `timeout` option is measured after the body returns. It
+ * catches a test that got too slow, not one that hangs. A hang needs a
+ * process boundary, which is what the conductor puts around each file;
+ * see {test.conduct}.
  */
 
 import io
@@ -53,6 +53,32 @@ var _root = Suite('', nil, '', 'normal')
 var _current = _root
 var _has_only = false
 var _collecting = false
+var _ran = false
+var _armed = false
+
+
+# Declaring the first test arms `os.at_exit`, so a file that declares
+# tests runs them whether or not it says so. `run()` called by hand
+# takes precedence and the handler then has nothing to do.
+def _arm() {
+  if _armed {
+    return
+  }
+
+  _armed = true
+
+  os.at_exit(@{
+    if _ran or _root.cases().is_empty() {
+      return
+    }
+
+    var summary = run(nil)
+
+    if !summary.ok() {
+      os.set_exit_code(summary.exit_code())
+    }
+  })
+}
 
 
 /**
@@ -74,6 +100,7 @@ def reset() {
   _root = Suite('', nil, '', 'normal')
   _current = _root
   _has_only = false
+  _ran = false
 
   context.end()
   snapshot.reset()
@@ -113,6 +140,8 @@ def describe(name: string, body: function, mode: ?string) {
   if mode == 'only' {
     _has_only = true
   }
+
+  _arm()
 
   var suite = Suite(name, _current, _file_of(body), mode)
   _current.children.append(suite)
@@ -158,6 +187,8 @@ def it(name: string, body: ?function, options: ?dict, mode: ?string) {
   if mode == 'only' {
     _has_only = true
   }
+
+  _arm()
 
   var test = Case(name, _current, _file_of(body), mode, body, options)
   _current.children.append(test)
@@ -863,6 +894,8 @@ def _collect_declaration_failures(state) {
  * @returns Summary
  */
 def run(options: ?dict) {
+  _ran = true
+
   var resolved = _resolve(options)
 
   snapshot.set_updating(resolved.update_snapshots)

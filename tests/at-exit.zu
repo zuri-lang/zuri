@@ -1,0 +1,29 @@
+# Handlers run last registered first, and run whether the program
+# reached the end of its script, called exit(), or stopped on an
+# uncaught error.
+
+import os
+
+os.at_exit(@{
+  echo 'registered first, runs last'
+})
+
+os.at_exit(@{
+  echo 'registered second, runs first'
+})
+
+# One handler failing must not cancel the rest.
+os.at_exit(@{
+  raise ValueError('this handler is broken')
+})
+
+# A handler may register another, and that one runs too.
+os.at_exit(@{
+  os.at_exit(@{
+    echo 'registered from inside a handler'
+  })
+
+  echo 'registers another on its way out'
+})
+
+echo 'the script itself'

@@ -198,7 +198,7 @@ def capture_depth() {
  * echo out.length()
  * ```
  * ```
- * 13
+ * 12
  * ```
  *
  * @note when `body` raises, the capture is closed and the error is

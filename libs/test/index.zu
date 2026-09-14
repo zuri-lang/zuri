@@ -18,8 +18,6 @@
  *   })
  *
  * })
- *
- * run()
  * ```
  *
  * Run it like any other script:
@@ -52,17 +50,17 @@
  *
  * `describe(name, body)` groups tests and may be nested as deeply as
  * the subject calls for. `it(name, body)` declares one. Neither runs
- * anything: they build a tree that `run()` walks afterwards, which is
- * what makes focusing, filtering and counting possible at all.
+ * anything: they build a tree, and the tree is run once the file has
+ * finished declaring everything in it. That is what makes focusing,
+ * filtering and counting possible at all.
  *
- * Every test file therefore ends with `run()`. Zuri has no at-exit
- * hook, so there is no moment the framework could pick for itself,
- * and having to say when is what makes `run()` the single place every
- * option is passed.
+ * The run happens on its own, through `os.at_exit()`. Call `run()`
+ * explicitly when you want to pass options or read the `Summary` back;
+ * doing so takes over, and nothing runs a second time.
  *
  * ### Focusing and skipping
  *
- * ```zuri
+ * ```zuri,ignore
  * describe_only('the one I am working on', @{ ... })
  * describe_skip('not now', @{ ... })
  *
@@ -96,7 +94,7 @@
  *
  * ### Per-test options
  *
- * ```zuri
+ * ```zuri,ignore
  * it('reaches the network', @{ ... }, { retries: 2, tags: ['slow'] })
  * it('reproduces issue 412', @{ ... }, { failing: true })
  * it('stays fast', @{ ... }, { timeout: 50 })
@@ -111,7 +109,7 @@
  *
  * ## Hooks
  *
- * ```zuri
+ * ```zuri,ignore
  * describe('Database', @{
  *   before_all(@{ db.connect() })
  *   after_all(@{ db.close() })
@@ -231,11 +229,9 @@
  * one test without editing the file.
  *
  * `run()` returns a `Summary`; `summary.exit_code()` is `0` when
- * everything passed. A test file meant for CI ends:
- *
- * ```zuri
- * run({ exit: true })
- * ```
+ * everything passed. A file that never calls `run()` gets the same
+ * status: the automatic run sets it through `os.set_exit_code()` when
+ * anything failed, so CI needs nothing added.
  *
  * ## More than one file
  *
@@ -271,7 +267,7 @@ import .style as _style
 /**
  * Groups tests, and may be nested.
  *
- * ```zuri
+ * ```zuri,ignore
  * describe('Stack', @{
  *   describe('push()', @{
  *     it('grows the stack', @{ ... })
@@ -520,14 +516,21 @@ def after_each(body: function) {
 
 
 /**
- * Runs everything declared so far.
+ * Runs everything declared so far, and reports it.
+ *
+ * Calling this is optional. A file that declares tests and never says
+ * anything else runs them as it ends, and fails the process when they
+ * fail. Call it when you want to pass options or read the result:
  *
  * ```zuri
- * run()
  * run({ reporter: 'dot', bail: 1 })
- * run({ exit: true })
+ *
+ * var summary = run({ filter: 'parser' })
+ * echo summary.passed
  * ```
  *
+ * @note calling it takes over from the automatic run, so nothing is
+ *    reported twice. Calling it twice does run everything twice.
  * @param ?dict options: see the module documentation for every option
  *    and its default.
  * @returns Summary

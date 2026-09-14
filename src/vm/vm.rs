@@ -672,6 +672,21 @@ pub struct VM {
   /// of the VM's life, not just for the one `on_signal()` call that
   /// registered it.
   signal_callbacks: Vec<Value>,
+  /// Callbacks registered with `os.at_exit()`, in registration order;
+  /// `run_exit_handlers` drains them from the end so the last one
+  /// registered runs first.
+  ///
+  /// A real GC root of its own, for the same reason
+  /// `signal_callbacks` is: `call_native` truncates `gc_pins` the
+  /// moment the native that registered one returns, and these have to
+  /// outlive that by the whole rest of the program.
+  exit_handlers: Vec<Value>,
+  /// Set while `run_exit_handlers` is draining, so `os.exit()` called
+  /// from inside a handler exits instead of starting the drain again.
+  running_exit_handlers: bool,
+  /// The status `os.set_exit_code()` asked the process to end with,
+  /// applied once everything else has finished.
+  pending_exit_code: Option<i32>,
   /// `(base pointer, element count)` for every scalar-replaced allocation a
   /// JIT-compiled function currently has live in its own Cranelift stack
   /// frame. Retired in lockstep with the owning frame via
@@ -871,6 +886,9 @@ impl VM {
       gc_pins: Vec::new(),
       pending_error: None,
       signal_callbacks: Vec::new(),
+      exit_handlers: Vec::new(),
+      running_exit_handlers: false,
+      pending_exit_code: None,
       jit_scalar_roots: Vec::new(),
       jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
@@ -1371,9 +1389,12 @@ impl VM {
       compiled: false,
     });
     let res = self.run_until(0);
-    // Unwind first: a capture the script opened and never closed
-    // holds real output, and dropping it on the floor would be the
-    // one failure mode with no visible symptom at all.
+
+    // Handlers first, since they are ordinary Zuri code and may print.
+    // Then any capture the script opened and never closed, which holds
+    // real output and would otherwise be the one failure mode with no
+    // visible symptom at all.
+    self.run_exit_handlers();
     super::natives::capture_unwind_all();
     super::natives::flush_stdout();
     res?;
@@ -2648,6 +2669,58 @@ impl VM {
     }
 
     Ok(())
+  }
+
+  /// Records the status the process should end with, without ending
+  /// it. Lets an `at_exit` handler fail the run while leaving an
+  /// uncaught error, and the handlers after it, their turn first.
+  pub fn set_exit_code(&mut self, code: i32) {
+    self.pending_exit_code = Some(code);
+  }
+
+  /// Reads back and clears what `set_exit_code` recorded.
+  pub fn take_exit_code(&mut self) -> Option<i32> {
+    self.pending_exit_code.take()
+  }
+
+  /// Adds `callback` to the list `run_exit_handlers` drains when the
+  /// program ends.
+  pub fn register_exit_handler(&mut self, callback: Value) {
+    self.exit_handlers.push(callback);
+  }
+
+  /// Whether the program is already on its way out, which is what
+  /// `os.exit()` checks before deciding to start the drain.
+  pub fn is_exiting(&self) -> bool {
+    self.running_exit_handlers
+  }
+
+  /// Runs every `os.at_exit()` callback, last registered first, and
+  /// clears the list.
+  ///
+  /// Draining from the end rather than iterating a snapshot means a
+  /// handler may register another one and have it run, which is what
+  /// a handler that opens something of its own needs.
+  ///
+  /// A handler that raises is reported and the rest still run: one
+  /// failing cleanup must not cancel the others. Errors go to stderr
+  /// because stdout may be mid-capture or already committed to a
+  /// machine-readable report.
+  pub fn run_exit_handlers(&mut self) {
+    if self.running_exit_handlers {
+      return;
+    }
+
+    self.running_exit_handlers = true;
+
+    while let Some(handler) = self.exit_handlers.pop() {
+      if let Err(e) = self.call_value(handler, &[]) {
+        let message = self.describe_error(e);
+        eprintln!("error in an at_exit handler: {}", message);
+      }
+    }
+
+    self.running_exit_handlers = false;
   }
 
   /// Whether this VM has ever registered a signal callback at all;
@@ -5616,6 +5689,9 @@ impl VM {
     for v in &self.signal_callbacks {
       Self::mark_root(*v, &mut worklist);
     }
+    for v in &self.exit_handlers {
+      Self::mark_root(*v, &mut worklist);
+    }
     // Each jit_scalar_roots entry is count ordinary Value slots with no
     // Obj/GcBox layer, so this is the same treatment as gc_pins just
     // above, reading through a raw pointer/count pair instead of a Vec.
@@ -5729,6 +5805,9 @@ impl VM {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     for v in &mut self.signal_callbacks {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    for v in &mut self.exit_handlers {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     // Same treatment as the gc_pins loop above: each entry is count live

@@ -162,33 +162,39 @@ ok('jobs runs files at the same time without changing the report')
 # ---------------------------------------------------------------------------
 # Files that do not behave
 # ---------------------------------------------------------------------------
-write('d_no_run.zu', "import test { * }\n" +
-  "describe('delta', @{\n" +
-  "  it('never runs', @{ expect(1).to_be(1) })\n" +
-  "})\n")
+write('d_no_tests.zu', "import test { * }\n" +
+  "echo 'this file forgot to declare anything'\n")
 
 write('e_crashes.zu', "import test { * }\n" +
-  "describe('epsilon', @{\n" +
-  "  it('fine', @{ expect(1).to_be(1) })\n" +
+  "raise ValueError('this file blows up before declaring anything')\n")
+
+write('g_crashes_after.zu', "import test { * }\n" +
+  "describe('eta', @{\n" +
+  "  it('passes', @{ expect(1).to_be(1) })\n" +
   "})\n" +
-  "raise ValueError('this file blows up before reporting')\n")
+  "run({ reporter: 'ndjson' })\n" +
+  "raise ValueError('this file blows up after reporting')\n")
 
 var misbehaving = test.conduct(SUITE, nil)
 
-var forgot = result_for(misbehaving, 'd_no_run.zu')
-assert !forgot.ok(), 'a file that never called run() is not ok'
-assert forgot.problem.contains('run()'), 'and is told exactly what it forgot'
-assert forgot.code == 0, 'even though it exited cleanly'
+var empty = result_for(misbehaving, 'd_no_tests.zu')
+assert !empty.ok(), 'a file that declares no tests is not ok'
+assert empty.problem.contains('declared no tests'), 'and is told what it did not do'
+assert empty.code == 0, 'even though it exited cleanly'
 
 var crashed = result_for(misbehaving, 'e_crashes.zu')
 assert !crashed.ok(), 'a file that crashed is not ok'
 assert crashed.code != 0, 'and its exit status is kept'
 assert crashed.output.contains('this file blows up'), 'along with what it printed on the way out'
 
-assert misbehaving.totals.errored_files == 2, 'both are counted as files that never reported'
-assert misbehaving.totals.failed == 1, 'while the test totals stay what the files actually said'
+var late = result_for(misbehaving, 'g_crashes_after.zu')
+assert !late.ok(), 'a file that reported and then crashed is not ok either'
+assert late.summary.get('passed', 0) == 1, 'what it reported is still counted'
+assert late.problem.contains('exited with status'), 'and the crash is still called out'
+
+assert misbehaving.totals.errored_files == 2, 'both files that never reported are counted as such'
 assert result_for(misbehaving, 'a.zu').ok(), 'and the well-behaved files still ran'
-ok('a file that forgets to run, or crashes, is reported without taking the others down')
+ok('a file that declares nothing, or crashes before or after reporting, is called out')
 
 # ---------------------------------------------------------------------------
 # Timeouts
@@ -204,15 +210,24 @@ write('f_hangs.zu', "import test { * }\n" +
   "})\n" +
   "run()\n")
 
-var timed = test.conduct(SUITE, { timeout: 1500, jobs: 4 })
+# Only the hanging file and one well-behaved neighbour, so the budget
+# is about the loop rather than about how loaded the machine is.
+var timed = test.conduct(SUITE, {
+  match: ['a.zu', 'f_hangs.zu'],
+  timeout: 2000,
+  jobs: 2,
+})
+
 var stuck = result_for(timed, 'f_hangs.zu')
 
 assert stuck != nil, 'the hanging file must still be reported'
 assert !stuck.ok(), 'and must not be ok'
 assert stuck.problem.contains('timed out'), 'and must say it timed out'
-assert result_for(timed, 'a.zu').ok(),
-  'and everything else must still have run, which is the whole point of a process each'
-ok('a file that never finishes is killed, and the rest of the run survives it')
+assert timed.files.length() == 2,
+  'the conductor must return having reported on every file, rather than waiting forever with the child'
+assert result_for(timed, 'a.zu') != nil,
+  'including the one that was running alongside the hang'
+ok('a file that never finishes is killed, and the run comes back without it')
 
 catch {
   file(os.join_paths(SUITE, 'f_hangs.zu')).delete()

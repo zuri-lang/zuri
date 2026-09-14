@@ -165,9 +165,10 @@ def _equal(left, right, pairs) {
 }
 
 
-# Imported lazily through `format` rather than pulling `zuri.reflect`
-# in twice; `format` already needs it and already handles the
-# module's shape.
+# Through `format` rather than reaching for `zuri.reflect` again here.
+# `format` is the one place that knows how to look inside an instance,
+# so equality and rendering can never disagree about what an object
+# holds.
 def _properties(instance) {
   return format.properties_of(instance)
 }

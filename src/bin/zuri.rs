@@ -205,6 +205,10 @@ fn run_file(vm: &mut VM, file: &str) {
           eprintln!("{}", vm.format_uncaught(e, &display_path, &content));
           process::exit(1);
         }
+
+        if let Some(code) = vm.take_exit_code() {
+          process::exit(code);
+        }
       },
       Err(errors) => {
         eprintln!("{}", format_parse_errors(&errors, &display_path, &content));

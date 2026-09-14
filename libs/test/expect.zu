@@ -96,7 +96,7 @@ class Expect {
   }
 
 
-  # How the value is named in a message. A label earns its keep by
+  # How the value is named in a message: A label earns its keep by
   # saying which of several similar values this one was, so it leads
   # and the rendered value follows in brackets.
   _subject() {

@@ -36,6 +36,11 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   members.push(("chdir", native(vm, "chdir", 1, false, chdir_fn)));
   members.push(("exists", native(vm, "exists", 1, false, exists_fn)));
   members.push(("exit", native(vm, "exit", 1, false, exit_fn)));
+  members.push(("at_exit", native(vm, "at_exit", 1, false, at_exit_fn)));
+  members.push((
+    "set_exit_code",
+    native(vm, "set_exit_code", 1, false, set_exit_code_fn),
+  ));
   members.push(("realpath", native(vm, "realpath", 1, false, realpath_fn)));
   members.push(("dirname", native(vm, "dirname", 1, false, dirname_fn)));
   members.push(("basename", native(vm, "basename", 1, false, basename_fn)));
@@ -511,12 +516,37 @@ fn exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type!(ctx, 0, ArgType::Number);
   let code = ctx.args[0].as_number() as i32;
+
+  // Called from inside a handler, this exits immediately: draining
+  // again would either recurse or re-run what has already run.
+  if !ctx.vm.is_exiting() {
+    ctx.vm.run_exit_handlers();
+  }
+
   // `process::exit` runs no destructors, so anything still sitting in
   // an open `io.capture()` frame or the stdout buffer has to be got
   // out here or it is gone.
   capture_unwind_all();
   flush_stdout();
   std::process::exit(code);
+}
+
+fn set_exit_code_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Number);
+
+  ctx.vm.set_exit_code(ctx.args[0].as_number() as i32);
+
+  Ok(Value::nil())
+}
+
+fn at_exit_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::Function);
+
+  ctx.vm.register_exit_handler(ctx.args[0]);
+
+  Ok(Value::nil())
 }
 
 // Path helpers

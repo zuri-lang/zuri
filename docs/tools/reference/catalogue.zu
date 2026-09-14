@@ -51,6 +51,11 @@ var GROUPS = [
     modules: ['os', 'io', 'args', 'log'],
   },
   {
+    title: 'Testing',
+    blurb: 'Suites, matchers, test doubles, snapshots, and the reports they produce.',
+    modules: ['test'],
+  },
+  {
     title: 'Networking',
     blurb: 'Sockets, addresses, and a complete HTTP stack on top of them.',
     modules: ['net', 'http'],

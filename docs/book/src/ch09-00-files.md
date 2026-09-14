@@ -266,6 +266,33 @@ if e {
 }
 ```
 
+For something that has to be cleaned up however the program ends, rather
+than however one block ends, register it with `os.at_exit()`:
+
+```zuri
+import os
+
+var scratch = file('scratch.txt', 'w')
+scratch.open()
+
+os.at_exit(@{
+  scratch.close()
+  scratch.delete()
+})
+
+scratch.write('working notes')
+echo scratch.is_open()
+```
+
+```console
+true
+```
+
+Handlers run last registered first, and they run whether the program
+reached the end of its script, called `os.exit()`, or stopped on an
+uncaught error. A handler that raises is reported on standard error and
+the rest still run, so one failed cleanup cannot cancel the others.
+
 ## Directories
 
 ```zuri

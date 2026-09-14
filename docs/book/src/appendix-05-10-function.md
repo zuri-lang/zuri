@@ -14,6 +14,7 @@ so there is no doc block to generate them from.
 | [`arity()`](#arity) | `number` |
 | [`is_variadic()`](#is_variadic) | `bool` |
 | [`call(...args)`](#call) | `any` |
+| [`apply(args)`](#apply) | `any` |
 | [`to_string()`](#to_string) | `string` |
 
 ## `name()`
@@ -74,6 +75,30 @@ and the call site reads better spelled out.
 - **Parameter** `...any` args The arguments to call with.
 - **Returns** `any` Whatever the function returns.
 - **Raises** Anything the called function raises.
+
+## `apply()`
+
+Calls the function with the arguments in a list, and returns its result.
+`call()` takes them written out; this one takes them in a list.
+
+```zuri
+%> def add(a, b) { return a + b }
+%> add.apply([2, 3])
+5
+%> def collect(first, ...rest) { return [first, rest] }
+%> collect.apply([1, 2, 3])
+[1, [2, 3]]
+```
+
+A list shorter than the function's arity leaves the remaining parameters
+`nil`, exactly as calling it directly with too few arguments does; a
+longer one overflows into a variadic parameter, or is discarded when
+there is none.
+
+- **Parameter** `list` args The arguments to call with, in order.
+- **Returns** `any` Whatever the function returns.
+- **Raises** `TypeError` when `args` is not a list, and anything the
+  called function raises.
 
 ## `to_string()`
 

@@ -57,18 +57,20 @@
 
 - [Metaprogramming and Reflection](ch17-00-metaprogramming.md)
 - [Performance and the JIT](ch18-00-performance.md)
-- [Debugging](ch19-00-debugging.md)
+- [Testing](ch19-00-testing.md)
+- [Debugging](ch20-00-debugging.md)
 
 # The Capstone
 
-- [A Full-Stack Task Board](ch20-00-task-board.md)
-  - [Laying Out the Project](ch20-01-project-layout.md)
-  - [The Storage Layer](ch20-02-storage.md)
-  - [Validation and the Domain Model](ch20-03-domain.md)
-  - [The JSON API](ch20-04-api.md)
-  - [Server-Rendered Pages with Wire](ch20-05-pages.md)
-  - [Middleware, Logging and Errors](ch20-06-middleware.md)
-  - [Running It for Real](ch20-07-running-it.md)
+- [A Full-Stack Task Board](ch21-00-task-board.md)
+  - [Laying Out the Project](ch21-01-project-layout.md)
+  - [The Storage Layer](ch21-02-storage.md)
+  - [Validation and the Domain Model](ch21-03-domain.md)
+  - [The JSON API](ch21-04-api.md)
+  - [Server-Rendered Pages with Wire](ch21-05-pages.md)
+  - [Middleware, Logging and Errors](ch21-06-middleware.md)
+  - [Running It for Real](ch21-07-running-it.md)
+  - [Testing the Board](ch21-08-testing.md)
 
 # Appendices
 

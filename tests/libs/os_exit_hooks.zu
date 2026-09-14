@@ -1,0 +1,181 @@
+/**
+ * os_exit_hooks.zu
+ *
+ * Test suite for `os.at_exit()` and `os.set_exit_code()` across every
+ * way a program can end: falling off the end of the script, calling
+ * `exit()`, and stopping on an uncaught error.
+ *
+ * Each case is a small script run as a child process, since what is
+ * being checked is what happens as a process ends.
+ */
+
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+var TMP = os.join_paths('tmp', 'os_exit_hooks')
+
+def run_script(source) {
+  if !os.dir_exists(TMP) {
+    os.create_dir(TMP, 0c755, true)
+  }
+
+  var path = os.join_paths(TMP, 'case.zu')
+  file(path, 'w').write(source)
+
+  var child = os.spawn(os.exe_path, [path], { stdin: 'null' })
+  var code = child.wait()
+
+  return {
+    code,
+    out: child.read_stdout().to_string(),
+    err: child.read_stderr().to_string(),
+  }
+}
+
+def cleanup() {
+  catch {
+    os.remove_dir(TMP, true)
+  } as ignored
+}
+
+cleanup()
+
+echo '═══════════════════════════════════════════════════════'
+echo '  os: exit hooks'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# Ordering
+# ---------------------------------------------------------------------------
+var ordered = run_script(
+  "import os\n" +
+  "os.at_exit(@{ echo 'first' })\n" +
+  "os.at_exit(@{ echo 'second' })\n" +
+  "os.at_exit(@{ echo 'third' })\n" +
+  "echo 'body'\n"
+)
+
+assert ordered.code == 0, 'registering a handler must not change the exit status'
+assert ordered.out == 'body\nthird\nsecond\nfirst\n',
+  'handlers must run after the script, last registered first'
+ok('handlers run after the script, in reverse order of registration')
+
+# ---------------------------------------------------------------------------
+# Every way out
+# ---------------------------------------------------------------------------
+var via_exit = run_script(
+  "import os\n" +
+  "os.at_exit(@{ echo 'cleanup' })\n" +
+  "echo 'body'\n" +
+  "os.exit(3)\n"
+)
+
+assert via_exit.code == 3, 'exit() must still deliver its status'
+assert via_exit.out == 'body\ncleanup\n', 'and must run the handlers on the way'
+ok('exit() runs the handlers and keeps its status')
+
+var via_error = run_script(
+  "import os\n" +
+  "os.at_exit(@{ echo 'cleanup' })\n" +
+  "raise ValueError('boom')\n"
+)
+
+assert via_error.code == 1, 'an uncaught error still ends the program with 1'
+assert via_error.out.contains('cleanup'), 'and the handlers still run'
+assert via_error.err.contains('boom'), 'and the error is still reported'
+ok('an uncaught error runs the handlers and is still reported')
+
+# ---------------------------------------------------------------------------
+# A handler that misbehaves
+# ---------------------------------------------------------------------------
+var broken = run_script(
+  "import os\n" +
+  "os.at_exit(@{ echo 'still runs' })\n" +
+  "os.at_exit(@{ raise ValueError('broken handler') })\n" +
+  "echo 'body'\n"
+)
+
+assert broken.code == 0, 'a failing handler must not change the exit status'
+assert broken.out.contains('still runs'), 'and must not stop the handlers after it'
+assert broken.err.contains('broken handler'), 'and must be reported on standard error'
+ok('a handler that raises is reported, and the rest still run')
+
+var nested = run_script(
+  "import os\n" +
+  "os.at_exit(@{\n" +
+  "  os.at_exit(@{ echo 'inner' })\n" +
+  "  echo 'outer'\n" +
+  "})\n" +
+  "echo 'body'\n"
+)
+
+assert nested.out == 'body\nouter\ninner\n', 'a handler registered by a handler must also run'
+ok('a handler may register another one')
+
+var exits_from_handler = run_script(
+  "import os\n" +
+  "os.at_exit(@{ echo 'never runs' })\n" +
+  "os.at_exit(@{ os.exit(7) })\n" +
+  "echo 'body'\n"
+)
+
+assert exits_from_handler.code == 7, 'exit() from inside a handler must deliver its status'
+assert !exits_from_handler.out.contains('never runs'),
+  'and must not run the handlers that had not run yet'
+ok('exit() from inside a handler ends the program there')
+
+# ---------------------------------------------------------------------------
+# set_exit_code
+# ---------------------------------------------------------------------------
+var recorded = run_script(
+  "import os\n" +
+  "os.set_exit_code(2)\n" +
+  "echo 'body'\n" +
+  "echo 'still running'\n"
+)
+
+assert recorded.code == 2, 'set_exit_code must decide the status'
+assert recorded.out == 'body\nstill running\n', 'without stopping the program'
+ok('set_exit_code records a status without ending the program')
+
+var from_handler = run_script(
+  "import os\n" +
+  "os.at_exit(@{ os.set_exit_code(4) })\n" +
+  "echo 'body'\n"
+)
+
+assert from_handler.code == 4, 'a handler may set the status'
+ok('a handler can fail the run without cutting the others short')
+
+var last_wins = run_script(
+  "import os\n" +
+  "os.set_exit_code(2)\n" +
+  "os.set_exit_code(5)\n"
+)
+
+assert last_wins.code == 5, 'the last call must win'
+ok('the last set_exit_code wins')
+
+var error_wins = run_script(
+  "import os\n" +
+  "os.set_exit_code(5)\n" +
+  "raise ValueError('boom')\n"
+)
+
+assert error_wins.code == 1,
+  'an uncaught error must end the program with 1 whatever was recorded'
+ok('an uncaught error outranks a recorded status')
+
+cleanup()
+
+# ===========================================================================
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertion groups passed.'
+echo '═══════════════════════════════════════════════════════'

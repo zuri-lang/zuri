@@ -66,6 +66,12 @@ a doc block stating its parameters, its defaults and its edge cases.
 | `log` | levelled, structured logging with pluggable transports | [13](ch13-00-stdlib-tour.md) |
 | `isolate` | OS-thread concurrency, channels and broadcasts | [11](ch11-00-isolates.md) |
 
+## Testing
+
+| Module | What it is for | Book |
+| --- | --- | --- |
+| `test` | suites, matchers, test doubles, snapshots and reports | [19](ch19-00-testing.md) |
+
 ## The Network
 
 | Module | What it is for | Book |
@@ -238,6 +244,24 @@ One module per element width, each exporting a single class.
 | `os.process` | process identity, subprocesses, signals |
 | `os.system` | facts about the process, the runtime and the machine |
 | `os.tempfile` | the temporary directory, and scratch files in it |
+
+### `test`
+
+| Submodule | What it is for |
+| --- | --- |
+| `test.expect` | `Expect` and every matcher on it |
+| `test.runner` | collecting the declarations and running them |
+| `test.reporter` | `Reporter`, and the seven built-in ones |
+| `test.result` | `Case`, `Suite`, `Failure` and `Summary` |
+| `test.mock` | `Mock`, `mock()` and `spy_on()` |
+| `test.snapshot` | the snapshot store and its file format |
+| `test.conduct` | discovering and running a directory of test files |
+| `test.diff` | structural equality, and rendering what differs |
+| `test.format` | rendering any value for a failure message |
+| `test.source` | reading a stack trace back to the failing line |
+| `test.style` | terminal colour, symbols and width |
+| `test.error` | `AssertionError` and `TestSetupError` |
+| `test.context` | what is true while one test is running |
 
 ### `validate`
 

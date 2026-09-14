@@ -18,6 +18,7 @@ import test { it, it_each, it_only, it_skip, it_todo }
 import test { after_all, after_each, before_all, before_each }
 import test { assertions, expect, fail, has_assertions }
 import io
+import os
 import test.reporter { Reporter }
 import test.style
 
@@ -615,6 +616,85 @@ assert counter.started == 2, 'test_started must fire only for tests that actuall
 assert counter.finished == 3, 'test_finished must fire for every test, skipped ones included'
 assert counter.suites == 2, 'suite_started must fire for the root and for the declared suite'
 ok('a custom reporter sees the whole run')
+
+# ---------------------------------------------------------------------------
+# The automatic run
+# ---------------------------------------------------------------------------
+# A file that declares tests and says nothing else runs them as it
+# ends, so this has to be watched from outside, in a child process.
+var AUTO = os.join_paths('tmp', 'test_auto_run')
+
+def auto_run(source) {
+  if !os.dir_exists(AUTO) {
+    os.create_dir(AUTO, 0c755, true)
+  }
+
+  var path = os.join_paths(AUTO, 'case.zu')
+  file(path, 'w').write(source)
+
+  var child = os.spawn(os.exe_path, [path], { stdin: 'null' })
+  var code = child.wait()
+
+  return { code, out: child.read_stdout().to_string() }
+}
+
+var implicit = auto_run(
+  "import test { * }\n" +
+  "describe('auto', @{\n" +
+  "  it('runs without being told', @{ expect(1).to_be(1) })\n" +
+  "})\n"
+)
+
+assert implicit.code == 0, 'a passing file that never calls run() must exit 0'
+assert implicit.out.contains('runs without being told'), 'and must still report'
+assert implicit.out.contains('1 passed'), 'and must still count'
+
+var implicit_failure = auto_run(
+  "import test { * }\n" +
+  "describe('auto', @{\n" +
+  "  it('fails', @{ expect(1).to_be(2) })\n" +
+  "})\n"
+)
+
+assert implicit_failure.code == 1, 'a failing file that never calls run() must exit 1'
+assert implicit_failure.out.contains('1 failed'), 'and must say so'
+ok('a file that declares tests runs them, and fails the process when they fail')
+
+var explicit = auto_run(
+  "import test { * }\n" +
+  "describe('auto', @{\n" +
+  "  it('passes', @{ expect(1).to_be(1) })\n" +
+  "})\n" +
+  "run({ reporter: 'silent' })\n" +
+  "echo 'done'\n"
+)
+
+assert explicit.out == 'done\n',
+  'an explicit run() must take over, so the automatic one reports nothing'
+ok('an explicit run() takes over from the automatic one')
+
+var declared_nothing = auto_run("import test { * }\necho 'nothing here'\n")
+
+assert declared_nothing.out == 'nothing here\n',
+  'a file that declares no tests must report nothing at all'
+ok('a file with no tests reports nothing')
+
+var crashed = auto_run(
+  "import test { * }\n" +
+  "describe('auto', @{\n" +
+  "  it('declared before the crash', @{ expect(1).to_be(1) })\n" +
+  "})\n" +
+  "raise ValueError('the file itself blew up')\n"
+)
+
+assert crashed.code == 1, 'a file that crashes must still exit 1'
+assert crashed.out.contains('declared before the crash'),
+  'and whatever it declared before crashing must still run'
+ok('a file that crashes still runs what it had already declared')
+
+catch {
+  os.remove_dir(AUTO, true)
+} as ignored
 
 # ---------------------------------------------------------------------------
 # Option validation

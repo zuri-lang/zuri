@@ -414,6 +414,9 @@ Processes, the filesystem, paths and the environment. Covered in
 `os.exec(command)` runs a shell command and gives you its output.
 `os.spawn(command, args, options)` starts a process you can talk to.
 `os.on_signal(name, handler)` installs a signal handler.
+`os.at_exit(handler)` registers cleanup that runs however the program
+ends, and `os.set_exit_code(code)` decides the status it ends with
+without ending it there and then.
 
 ### `io`
 
@@ -431,6 +434,47 @@ echo io.stdout.is_tty()
 `io.TTY` puts the terminal into raw mode, reads single keypresses and moves
 the cursor, which is what an interactive program needs. `io.BytesIO` is the
 in-memory file from [Chapter 10](ch10-00-binary-data.md).
+
+`io.capture(body)` collects everything `body` writes to standard output
+instead of printing it, `echo`, `print()` and `io.stdout` alike:
+
+```zuri
+import io
+
+def greet(name) {
+  echo 'Hello, ${name}!'
+}
+
+var out = io.capture(@{ greet('Ada') })
+
+echo 'captured ${out.length()} characters'
+```
+
+```console
+captured 12 characters
+```
+
+Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
+for when the body might raise and you want its output anyway. This is
+what lets [Chapter 19](ch19-00-testing.md) assert on what a function
+prints, and keep a passing test's output out of the report.
+
+### `test`
+
+Suites, matchers, mocks, snapshots and reports. Covered in
+[Chapter 19](ch19-00-testing.md).
+
+```zuri,ignore
+import test { * }
+
+describe('slug', @{
+  it('lowercases and joins', @{
+    expect(slug('Hello World')).to_be('hello-world')
+  })
+})
+
+run()
+```
 
 ### `stat`
 
@@ -496,7 +540,7 @@ Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
 reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
 fully in [Chapter 15](ch15-00-http.md), and used throughout
-[Chapter 20](ch20-00-task-board.md).
+[Chapter 20](ch21-00-task-board.md).
 
 ## Compression
 

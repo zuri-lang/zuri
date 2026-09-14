@@ -215,7 +215,14 @@ For example:
 6
 ```
 
+A standard stream reports the descriptor it is named by, `0`, `1` or
+`2`, rather than the private duplicate the runtime holds open for it, so
+`number()` is what tells `io.stdout` apart from `io.stderr`.
+
 **Returns** `int`
+
+> **Note:** `-1` on a platform with no file descriptors, and on any handle
+> that is not currently open.
 
 ## `is_tty()`
 
@@ -310,7 +317,18 @@ ino: 4865113, nlink: 1, uid: 501, gid: 20, mtime: 1631395239, atime: 1631395271,
 blksize: 4096}
 ```
 
+Every key above is present on every platform, so reading `size` or
+`mtime` needs no check of which one you are on.
+
 **Returns** `dict`
+
+> **Note:** Windows keeps a different set of facts about a file, and the
+> ones it has no answer for read as `0`: `dev`, `ino`, `uid` and `gid`,
+> with `nlink` always `1`. `mode` is assembled from the file's type and
+> its read-only attribute, so it carries the right file-type bits and
+> either `0o444` or `0o666`, widened by `0o111` for a directory or a name
+> `PATHEXT` says the shell would run. `ctime` is the file's creation time
+> there, Windows having no equivalent of a Unix inode-change time.
 
 ## `symlink()`
 
@@ -328,6 +346,12 @@ true
 ```
 
 **Returns** `boolean`
+
+> **Note:** Windows decides at creation time whether a link stands for a
+> file or a directory, so the original is inspected first; one pointing at
+> something that does not exist yet is made as a file link. Creating any
+> symbolic link there is privileged, and fails unless the machine is in
+> developer mode or the process is elevated.
 
 ## `delete()`
 
@@ -480,6 +504,11 @@ true
 - `mode` (`int`)
 
 **Returns** `boolean`
+
+> **Note:** Windows stores one read-only attribute where Unix stores nine
+> permission bits, so the owner-write bit decides it and the rest are
+> dropped: `0o755` and `0o700` are the same instruction there. A mode with
+> no owner-write bit marks the file read-only.
 
 ## `set_times()`
 

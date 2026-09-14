@@ -67,6 +67,76 @@ def exit(code: number) {
 }
 
 /**
+ * Records the status the process should end with, without ending it.
+ *
+ * Unlike `exit()`, the program carries on: the rest of the script,
+ * every `at_exit()` handler, and an uncaught error's report all still
+ * get their turn, and the status is applied once they are done.
+ *
+ * ```zuri
+ * import os
+ *
+ * os.at_exit(@{
+ *   echo 'one check did not pass'
+ *   os.set_exit_code(1)
+ * })
+ *
+ * echo 'working'
+ * ```
+ * ```
+ * working
+ * one check did not pass
+ * ```
+ *
+ * @note an uncaught error still ends the program with `1`, whatever
+ *    was recorded here.
+ * @note the last call wins.
+ * @param number code
+ */
+def set_exit_code(code: number) {
+  _os.set_exit_code(code)
+}
+
+/**
+ * Registers `callback` to run when the program ends.
+ *
+ * Handlers run last registered first, whether the program reached the
+ * end of its script, called `exit()`, or stopped on an uncaught
+ * error. Registering several is fine, and a handler may register
+ * another one which will also run.
+ *
+ * ```zuri
+ * import os
+ *
+ * var handle = file('report.txt', 'w')
+ *
+ * os.at_exit(@{
+ *   handle.close()
+ *   echo 'report written'
+ * })
+ *
+ * handle.write('done')
+ * echo 'working'
+ * ```
+ * ```
+ * working
+ * report written
+ * ```
+ *
+ * @note a handler that raises is reported on standard error and the
+ *    remaining handlers still run, so one failed cleanup cannot
+ *    cancel the others.
+ * @note `exit()` called from inside a handler exits immediately with
+ *    that code; the handlers that have not run yet do not run.
+ * @note a handler does not run when the process is killed by a signal
+ *    nothing handled, since nothing gets to run at that point.
+ * @param function callback
+ */
+def at_exit(callback: function) {
+  _os.at_exit(callback)
+}
+
+/**
  * The current process's id.
  *
  * @returns int
