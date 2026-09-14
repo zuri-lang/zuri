@@ -343,6 +343,9 @@ pub struct CompileFacts {
   /// the job is built, like the rest of this struct, so nothing here is
   /// read from a worker while the VM is still running.
   pub deopt_sites: rustc_hash::FxHashSet<usize>,
+  /// Drop every field-class bet in this function; see
+  /// `JitInfo::field_speculation_off`.
+  pub field_speculation_off: bool,
 }
 
 /// One construction site's compile-time view of the class it builds.

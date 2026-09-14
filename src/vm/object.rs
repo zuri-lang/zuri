@@ -642,6 +642,16 @@ pub struct JitInfo {
   /// something the next compilation can't avoid settles down instead of
   /// recompiling forever.
   pub invalidations: Cell<u32>,
+  /// Set on the last invalidation a function is allowed: compile it
+  /// once more with every field-class bet in it dropped, rather than
+  /// leaving code that gives up on the same instruction for the rest of
+  /// the program's life.
+  ///
+  /// Site-by-site feedback settles the ordinary cases in one or two
+  /// rounds. Reaching the cap means it hasn't, so the remaining choice
+  /// is between guessing again and not guessing at all, and code that
+  /// runs to completion beats code that bails out every call.
+  pub field_speculation_off: Cell<bool>,
   /// Per-loop-header back-edge hit counts, keyed by the bytecode `ip`
   /// the loop's `Instr::Jmp` back-edge targets; consulted only by
   /// that instruction's own handler in `vm.rs` to decide when a
@@ -711,6 +721,7 @@ impl JitInfo {
       ineligible: Cell::new(false),
       deopt_sites: RefCell::new(rustc_hash::FxHashSet::default()),
       invalidations: Cell::new(0),
+      field_speculation_off: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),

@@ -39,16 +39,16 @@ const MAX_JIT_CALL_DEPTH: u32 = 1024;
 /// the nesting since it can't be re-entered from there.
 const MAX_DEOPT_REENTRANCY: u32 = 64;
 
-/// How many times a function may have its compiled code thrown away
-/// after a deopt before we stop doing it and let the existing code
-/// stand, deopts and all.
+/// How many times a function may be recompiled against what its last
+/// compilation learned before the blunt instrument comes out.
 ///
-/// Recompiling pays off when the next compilation can act on where the
-/// last one gave up, which is the case for a speculation that turned
-/// out to be wrong. Not every deopt is like that, and one that the
-/// compiler cannot avoid would otherwise recompile the same function
-/// forever; a handful of attempts is enough to settle the cases that
-/// can settle.
+/// Recompiling pays off when the next attempt can act on where the last
+/// one gave up, which is the case for a field-class bet that turned out
+/// to be wrong; those settle in a round or two. A function still
+/// deoptimizing after this many rounds isn't converging site by site,
+/// so it gets one final compilation with every field bet in it dropped
+/// (`JitInfo::field_speculation_off`) and then keeps whatever that
+/// produced. Either way the recompiling stops.
 const MAX_JIT_INVALIDATIONS: u32 = 3;
 
 static ZURI_LOG_GC: LazyLock<bool> = LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
@@ -2283,6 +2283,7 @@ impl VM {
       self_class_bits: self.resolve_self_class(proto),
       self_method_protos: self.resolve_self_method_protos(proto),
       deopt_sites: proto.jit.deopt_sites.borrow().clone(),
+      field_speculation_off: proto.jit.field_speculation_off.get(),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       speculative_lists,
@@ -2931,8 +2932,18 @@ impl VM {
     proto.jit.deopt_sites.borrow_mut().insert(deopt_ip);
 
     let invalidations = proto.jit.invalidations.get();
-    if invalidations >= MAX_JIT_INVALIDATIONS {
+    if invalidations > MAX_JIT_INVALIDATIONS {
       return;
+    }
+    if invalidations == MAX_JIT_INVALIDATIONS {
+      proto.jit.field_speculation_off.set(true);
+      if crate::jit::log_enabled() {
+        eprintln!(
+          "[jit] '{}' recompiling with field speculation off after {} deopt site(s)",
+          proto.display_name(),
+          proto.jit.deopt_sites.borrow().len()
+        );
+      }
     }
     proto.jit.invalidations.set(invalidations + 1);
     proto.jit.entry.set(None);

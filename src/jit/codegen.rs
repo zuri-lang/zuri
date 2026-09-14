@@ -901,11 +901,15 @@ struct FuncCompiler<'a, 'b> {
   /// already been contradicted by real input, so it isn't made again.
   deopt_sites: FxHashSet<usize>,
   /// Receiver registers named by those sites. A field access that bet
-  /// wrong is rarely alone: reading eleven fields off one dictionary is
-  /// eleven sites that will each bet the same way and each be wrong, so
-  /// giving up on the register rather than the instruction settles the
-  /// whole group in one recompilation instead of eleven.
+  /// wrong is rarely alone: every field read off the same value is a
+  /// separate site that will bet the same way and be wrong the same
+  /// way, so giving up on the register rather than the instruction
+  /// settles the whole group in one recompilation instead of one per
+  /// field.
   deopt_receivers: FxHashSet<u8>,
+  /// Compile this function with no field-class bets at all; see
+  /// `JitInfo::field_speculation_off`.
+  field_speculation_off: bool,
   /// See `jit::CompileFacts::self_method_protos`.
   self_method_protos: FxHashMap<String, usize>,
   is_specialized_pass: bool,
@@ -1384,6 +1388,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         })
         .collect(),
       deopt_sites: facts.deopt_sites,
+      field_speculation_off: facts.field_speculation_off,
       self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
@@ -5948,7 +5953,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// built by a construct earlier in this function. Only past the
   /// construct: before it the register holds the class global itself.
   fn construct_field_slot(&self, ip: usize, obj: u8, name_const: u16) -> Option<(u64, u16)> {
-    if self.deopt_sites.contains(&ip) {
+    if self.field_speculation_off || self.deopt_sites.contains(&ip) {
       return None;
     }
     let (construct_ip, bits, slots) = self.construct_field_slots.get(&obj)?;
@@ -6055,7 +6060,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// nothing. `deopt_sites` is what a previous compilation learned
   /// about exactly that.
   fn target_class_for_field(&self, ip: usize, obj: u8, name: &str) -> Option<(u64, u16)> {
-    if self.deopt_sites.contains(&ip) || self.deopt_receivers.contains(&obj) {
+    if self.field_speculation_off
+      || self.deopt_sites.contains(&ip)
+      || self.deopt_receivers.contains(&obj)
+    {
       return None;
     }
     if let Some(cell) = self.proto.chunk.field_cache_cell(ip) {

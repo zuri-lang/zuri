@@ -12,6 +12,22 @@
  * the answers have to hold across that too.
  */
 
+class Alpha {
+  var alpha_reading = 0
+}
+
+class Beta {
+  var beta_reading = 0
+}
+
+class Gamma {
+  var gamma_reading = 0
+}
+
+class Delta {
+  var delta_reading = 0
+}
+
 class Reading {
   var kelvin = 0
   var scale = ''
@@ -57,6 +73,19 @@ def total_from_instances(readings) {
   return total
 }
 
+/**
+ * Four receivers, four field names, each owned by exactly one class and
+ * none of them ever an instance here. One wrong bet per recompilation
+ * would never settle, so this is what drives a function past the
+ * recompilation cap and onto the blunt fallback.
+ */
+def total_from_four(alpha, beta, gamma, delta) {
+  return alpha.alpha_reading
+    + beta.beta_reading
+    + gamma.gamma_reading
+    + delta.delta_reading
+}
+
 var samples = [
   { kelvin: 300, offset: 1 },
   { kelvin: 310, offset: 2 },
@@ -64,6 +93,16 @@ var samples = [
 ]
 
 var readings = [Reading(100), Reading(200), Reading(300)]
+
+# Parked so the four field names above resolve to real classes.
+var anchors = [Alpha(), Beta(), Gamma(), Delta()]
+
+var quad = [
+  { alpha_reading: 1 },
+  { beta_reading: 20 },
+  { gamma_reading: 300 },
+  { delta_reading: 4000 },
+]
 
 var rounds = 30000
 var dict_total = 0
@@ -78,6 +117,11 @@ iter var round = 0; round < rounds; round++ {
   var from_instances = total_from_instances(readings)
   if from_instances != 600 {
     raise Error('round ${round}: instance total ${from_instances}, expected 600')
+  }
+
+  var from_four = total_from_four(quad[0], quad[1], quad[2], quad[3])
+  if from_four != 4321 {
+    raise Error('round ${round}: four total ${from_four}, expected 4321')
   }
 
   dict_total += from_dicts
@@ -95,6 +139,10 @@ if instance_total != 600 * rounds {
 # The dictionaries stay dictionaries and the instances stay instances.
 if samples[0].kelvin != 300 or samples[2].offset != 3 {
   raise Error('samples corrupted: ${samples}')
+}
+
+if anchors[0].alpha_reading != 0 or anchors[3].delta_reading != 0 {
+  raise Error('anchors corrupted: ${anchors[0].alpha_reading} ${anchors[3].delta_reading}')
 }
 
 if probe.describe() != '300K' or readings[1].describe() != '200K' {
