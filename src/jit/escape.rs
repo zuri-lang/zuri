@@ -318,7 +318,9 @@ pub fn self_reference_facts_with_preds(proto: &ObjFunction, preds: &[Vec<usize>]
   if proto.is_method {
     let code_len = proto.chunk.code.len();
     let num_registers = proto.num_registers as usize;
-    return (0..code_len).map(|_| MustSet::empty(num_registers)).collect();
+    return (0..code_len)
+      .map(|_| MustSet::empty(num_registers))
+      .collect();
   }
   let is_self_name = |name_const: u16| -> bool {
     match proto.chunk.constants.get(name_const as usize) {
