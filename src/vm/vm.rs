@@ -1774,7 +1774,9 @@ impl VM {
   /// Resolves the class a method's `self` is guaranteed to be an instance
   /// of, then maps every field name safe to read/write on it directly (no
   /// `BoundMethod`-wrapping risk) to its slot index. `None` for a
-  /// non-method function or unprovable resolution.
+  /// non-method function or unprovable resolution. A class's synthesized
+  /// field initializer counts as one of its methods here; see
+  /// `owns_proto` below.
   ///
   /// Field slots are stable across inheritance; `Instr::Class` clones the
   /// superclass's `field_slots` wholesale and `DeclareField` only appends,
@@ -1795,10 +1797,19 @@ impl VM {
     }
     let class = class_val.as_class();
     let proto_ptr = proto as *const ObjFunction;
-    let owns_proto = class
-      .methods
-      .values()
-      .any(|m| m.is_closure() && std::ptr::eq(m.as_closure().function.as_func(), proto_ptr));
+    // A class's synthesized field initializer lives in
+    // `own_field_initializer`, not in `methods`, but it is every bit as
+    // much "code whose `self` is an instance of this class" as a real
+    // method: `instantiate` walks the chain root-to-leaf and hands each
+    // ancestor's initializer the leaf instance. Leaving it out here cost
+    // it the whole fast path, and the inline cache it fell back to
+    // speculates on ONE receiver class; for a base class with many
+    // subclasses that guess is wrong on nearly every construction, so the
+    // compiled initializer deopted on essentially every call.
+    let is_proto =
+      |m: Value| m.is_closure() && std::ptr::eq(m.as_closure().function.as_func(), proto_ptr);
+    let owns_proto = class.methods.values().any(|m| is_proto(*m))
+      || class.own_field_initializer.is_some_and(is_proto);
     if !owns_proto {
       return None;
     }

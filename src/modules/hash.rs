@@ -211,10 +211,7 @@ fn id_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       class.methods.get("to_hash").copied()
     };
     if let Some(m) = method {
-      return ctx
-        .vm
-        .call_value(m, &[v])
-        .map_err(|e| ctx.vm.rethrow(e));
+      return ctx.vm.call_value(m, &[v]).map_err(|e| ctx.vm.rethrow(e));
     }
   }
 

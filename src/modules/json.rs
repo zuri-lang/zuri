@@ -253,10 +253,7 @@ fn encode_value(
     };
     match method {
       Some(m) => {
-        let result = ctx
-          .vm
-          .call_value(m, &[v])
-          .map_err(|e| ctx.vm.rethrow(e))?;
+        let result = ctx.vm.call_value(m, &[v]).map_err(|e| ctx.vm.rethrow(e))?;
         encode_value(ctx, result, out, depth + 1, opts)?;
       },
       None => {

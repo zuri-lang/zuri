@@ -29,7 +29,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "capture_begin",
       native(vm, "capture_begin", 0, false, capture_begin),
     ),
-    ("capture_end", native(vm, "capture_end", 0, false, capture_end)),
+    (
+      "capture_end",
+      native(vm, "capture_end", 0, false, capture_end),
+    ),
     (
       "capture_depth",
       native(vm, "capture_depth", 0, false, capture_depth),

@@ -1,0 +1,68 @@
+/**
+ * Support file for tests/inherited_field_initializer.zu.
+ *
+ * Six subclasses, so any single-class guess about the receiver of
+ * `Shape`'s field initializer is wrong far more often than it is
+ * right. Three of them append fields of their own, which land in slots
+ * after the base's and so double as a check that the base initializer
+ * wrote where it meant to.
+ */
+
+import .inherited_field_initializer_base { Shape }
+
+class Dot < Shape {
+  @new() {
+    parent('dot')
+  }
+}
+
+class Line < Shape {
+  var length = 0
+
+  @new() {
+    parent('line')
+    self.sides = 1
+    self.length = 2
+  }
+}
+
+class Tri < Shape {
+  @new() {
+    parent('tri')
+    self.sides = 3
+  }
+}
+
+class Quad < Shape {
+  var corners = []
+
+  @new() {
+    parent('quad')
+    self.sides = 4
+    self.corners.append(1)
+  }
+}
+
+class Penta < Shape {
+  @new() {
+    parent('penta')
+    self.sides = 5
+  }
+}
+
+class Hexa < Shape {
+  var label = ''
+
+  @new() {
+    parent('hexa')
+    self.sides = 6
+    self.label = 'six'
+  }
+}
+
+/**
+ * One instance of every subclass, in declaration order.
+ */
+def make_all() {
+  return [Dot(), Line(), Tri(), Quad(), Penta(), Hexa()]
+}

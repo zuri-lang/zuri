@@ -1,0 +1,24 @@
+/**
+ * Support file for tests/inherited_field_initializer.zu.
+ *
+ * The base class lives in its own module on purpose. A field
+ * initializer is compiled against the class that declares it, but it
+ * runs against every subclass instance ever constructed, and the JIT
+ * only sees the subclasses at all when they share a module with the
+ * base or sit in the entry script's globals. Keeping them apart is
+ * what puts the initializer on the path this fixture is here to cover.
+ */
+
+class Shape {
+  var kind = 'none'
+  var sides = 0
+  var meta = {}
+
+  @new(kind) {
+    self.kind = kind
+  }
+
+  describe() {
+    return '${self.kind}/${self.sides}'
+  }
+}
