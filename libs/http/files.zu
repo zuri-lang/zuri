@@ -349,12 +349,12 @@ class StaticFiles {
 
     var normalized = util.normalize_path(decoded).ltrim('/')
 
-    if !self.allow_dotfiles {
-      for segment in normalized.split('/') {
-        if segment.starts_with('.') {
-          return nil
-        }
-      }
+    # A segment beginning with a dot is either the first one or sits
+    # right behind a separator, which is the same answer splitting the
+    # path into a list would give, without building the list.
+    if !self.allow_dotfiles
+      and (normalized.starts_with('.') or normalized.index_of('/.') > -1) {
+      return nil
     }
 
     var candidate = normalized.is_empty() ?

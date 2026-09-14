@@ -592,6 +592,14 @@ def percent_encode(text: string) {
  * @returns string: always starting with `/`
  */
 def normalize_path(path: string) {
+  # Already rooted, with no empty, '.' or '..' segment to collapse:
+  # taking it apart and putting it back would hand over exactly what
+  # came in, and this runs on every request a server answers.
+  if path.starts_with('/') and path.index_of('//') == -1
+    and path.index_of('/.') == -1 {
+    return path
+  }
+
   var segments = []
 
   for segment in path.split('/') {

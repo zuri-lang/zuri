@@ -39,33 +39,48 @@ var _alt_sep = _os.platform == 'windows' ? '/' : nil
  * @returns string
  */
 def join_paths(...paths) {
-  var result = ''
+  var parts = []
+
   for arg in paths {
     if !is_string(arg) {
       raise TypeError('string expected, ${typeof(arg)} given')
     }
 
-    arg = arg.trim()
+    var part = arg
+
+    # Each of these hands back a new string whether or not it changed
+    # anything, and joining two paths that are already tidy is by far
+    # the common case, so each one is asked for only when it has work
+    # to do.
+    if part.starts_with(' ') or part.ends_with(' ') {
+      part = part.trim()
+    }
 
     if _alt_sep != nil {
-      arg = arg.replace(_alt_sep, _sep, false)
+      part = part.replace(_alt_sep, _sep, false)
     }
 
-    if arg {
-      result = result.rtrim(_sep)
-      if result != '' {
-        arg = arg.ltrim(_sep)
-      }
-
-      result += '${_sep}${arg}'
+    if part {
+      parts.append(part)
     }
   }
 
-  if result {
-    result = result[1,]
+  var last = parts.length() - 1
+
+  iter var i = 0; i < parts.length(); i++ {
+    # An inner separator belongs to exactly one of the two parts it
+    # sits between: trailing ones go, leading ones go, and whatever
+    # the first and last parts carry on their outer edges stays.
+    if i > 0 and parts[i].starts_with(_sep) {
+      parts[i] = parts[i].ltrim(_sep)
+    }
+
+    if i < last and parts[i].ends_with(_sep) {
+      parts[i] = parts[i].rtrim(_sep)
+    }
   }
 
-  return result
+  return _sep.join(parts)
 }
 
 /**
@@ -100,8 +115,12 @@ def abs_path(path: string, strict: ?bool) {
   }
 
   var is_windows = _os.platform == 'windows'
-  var regex = is_windows ? '~^[a-zA-Z]\\:~' : '~^\\/~'
-  var is_absolute = path.match(regex)
+
+  # A leading separator is the whole test off Windows, and reading one
+  # character beats compiling and running a pattern for it.
+  var is_absolute = is_windows ?
+    path.match('~^[a-zA-Z]\\:~') :
+    path.starts_with('/')
 
   var root = ''
   var raw
@@ -123,7 +142,24 @@ def abs_path(path: string, strict: ?bool) {
     }
   }
 
-  raw = raw.replace('\\', '/')
+  # Only worth rebuilding the string when there is actually something
+  # to rewrite; a separator that is already '/' is the common case.
+  if raw.index_of('\\') > -1 {
+    raw = raw.replace('\\', '/')
+  }
+
+  # An already-clean absolute path has no empty, '.' or '..' segment to
+  # collapse, so splitting it and joining it back produces exactly what
+  # came in. Skipping that round trip is what keeps this off the list of
+  # things that make a per-request path check expensive.
+  if root == '' and !raw.ends_with('/')
+    and raw.index_of('//') == -1 and raw.index_of('/.') == -1 {
+    if strict and !_os.exists(raw) {
+      raise Error('path "${raw}" does not exist')
+    }
+
+    return raw
+  }
 
   var resolved = []
   for seg in raw.split('/') {
