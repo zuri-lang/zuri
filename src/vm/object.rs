@@ -685,6 +685,18 @@ pub struct JitInfo {
   /// Argument-type feedback accumulated across calls for whole-number (Int) parameters;
   /// bit `i` is set if parameter `i` was observed to be a whole number.
   pub int_feedback: Cell<u64>,
+  /// Bit `i` is set if parameter `i` was a list whose elements all
+  /// looked like whole numbers on every call sampled so far. A hint
+  /// only, and deliberately a cheap one: `VM::sample_param_elem_types`
+  /// looks at a bounded prefix of each list rather than walking a
+  /// million elements on every warm-up call. What makes the bet SOUND
+  /// is the full scan `codegen` emits once at entry, which sends a
+  /// list that fails it to the general body.
+  pub int_list_feedback: Cell<u64>,
+  /// `int_list_feedback` widened to any number, fractions included;
+  /// what a list of floats gets proven with. Sampled and guarded the
+  /// same way.
+  pub num_list_feedback: Cell<u64>,
   /// Number of calls that have contributed to `numeric_feedback` so
   /// far. Needed because `numeric_feedback` alone can't distinguish
   /// "every call observed had numeric args" from "no call has been
@@ -727,6 +739,8 @@ impl JitInfo {
       numeric_feedback: Cell::new(!0u64),
       list_feedback: Cell::new(!0u64),
       int_feedback: Cell::new(!0u64),
+      int_list_feedback: Cell::new(!0u64),
+      num_list_feedback: Cell::new(!0u64),
       feedback_samples: Cell::new(0),
       global_slot_cache: vec![Cell::new(-1i64); code_len].into_boxed_slice(),
     }

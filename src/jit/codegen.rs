@@ -748,6 +748,11 @@ struct FuncCompiler<'a, 'b> {
   speculative_params: Option<u64>,
   speculative_lists: Option<u64>,
   speculative_ints: Option<u64>,
+  /// The element-type bets on list parameters, kept raw for the same
+  /// reason `speculative_lists` is: `emit_entry_dispatch` builds the
+  /// entry scan straight from these bits.
+  speculative_int_lists: Option<u64>,
+  speculative_num_lists: Option<u64>,
   spec_int_facts: Option<typeflow::IntFacts>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
   /// `speculative_params`, but covering every register in the
@@ -1330,12 +1335,37 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let no_self_numeric_fields = FxHashSet::default();
     let no_numeric_fields = FxHashSet::default();
     let speculative_ints = facts.speculative_ints.filter(|&m| m != 0);
+    // Narrowed to the parameters the bet can actually pay for BEFORE
+    // anything is seeded from it, so the analysis below and the entry
+    // scan in `emit_entry_dispatch` are built from one identical mask.
+    // A claim seeded here but not scanned there would be a claim
+    // nothing ever checked.
+    let elem_bet = Self::elem_bet_worth_placing(proto);
+    let speculative_int_lists = facts
+      .speculative_int_lists
+      .map(|m| m & elem_bet)
+      .filter(|&m| m != 0);
+    let speculative_num_lists = facts
+      .speculative_num_lists
+      .map(|m| m & elem_bet)
+      .filter(|&m| m != 0);
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
     let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
-    let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts, &facts.global_ints);
-    let spec_int_facts = speculative_ints
-      .map(|si| typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts, &facts.global_ints));
+    let int_facts =
+      typeflow::analyze_int(proto, &preds, None, None, &bytes_facts, &facts.global_ints);
+    let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
+      Some(typeflow::analyze_int(
+        proto,
+        &preds,
+        speculative_ints,
+        speculative_int_lists,
+        &bytes_facts,
+        &facts.global_ints,
+      ))
+    } else {
+      None
+    };
     let type_facts = typeflow::analyze(
       proto,
       &preds,
@@ -1382,6 +1412,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       speculative_params,
       speculative_lists: facts.speculative_lists.filter(|&m| m != 0),
       speculative_ints,
+      speculative_int_lists,
+      speculative_num_lists,
       spec_int_facts,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
@@ -1907,6 +1939,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         || self.speculative_regs.is_some()
         || self.speculative_lists.is_some()
         || self.speculative_ints.is_some()
+        || self.speculative_int_lists.is_some()
+        || self.speculative_num_lists.is_some()
         || !self.self_numeric_fields.is_empty()
         || !self.numeric_fields.is_empty()
       {
@@ -2151,6 +2185,101 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     mask
   }
 
+  /// The list parameters worth betting element types on: those this
+  /// function actually indexes from inside a loop.
+  ///
+  /// The bet is paid for by a full scan of the list at entry, so it
+  /// only makes sense where the reads it saves outnumber the elements
+  /// it walks. A single indexed read on a straight-line path never
+  /// does; a read on a loop body's critical path does, and that is
+  /// the shape the speculation exists for. Without this gate a small
+  /// helper called in a hot loop would rescan its argument on every
+  /// call to save one check.
+  fn elem_bet_worth_placing(proto: &ObjFunction) -> u64 {
+    let code = &proto.chunk.code;
+
+    let mut in_loop = vec![false; code.len()];
+    for (ip, instr) in code.iter().enumerate() {
+      if let Instr::Jmp { offset } = *instr
+        && offset < 0
+      {
+        let target = (ip as isize + 1 + offset as isize) as usize;
+        for flag in in_loop.iter_mut().take(ip + 1).skip(target) {
+          *flag = true;
+        }
+      }
+    }
+
+    let mut mask = 0u64;
+    for (ip, instr) in code.iter().enumerate() {
+      if !in_loop[ip] {
+        continue;
+      }
+      let obj = match *instr {
+        Instr::GetIndex { obj, .. } | Instr::SetIndex { obj, .. } => obj,
+        _ => continue,
+      };
+      if obj < 64 {
+        mask |= 1u64 << obj;
+      }
+    }
+    mask
+  }
+
+  /// Emits the once-per-entry element scans behind the int-list and
+  /// num-list claims, each branching to `fail` (the general body) when
+  /// the list turns out to hold something else.
+  ///
+  /// A register claimed as an int list is only scanned for
+  /// whole-numbers: every whole number is a number, so the wider claim
+  /// comes free with the narrower one and a second walk of the same
+  /// list would prove nothing new.
+  fn emit_elem_guards(
+    &mut self,
+    int_list_mask: u64,
+    num_list_mask: u64,
+    distinct_mask: u64,
+    fail: Block,
+  ) {
+    let vm_p = self.vm_param;
+    for bit in 0..64u8 {
+      let wants_int = int_list_mask & (1u64 << bit) != 0;
+      let wants_num = num_list_mask & (1u64 << bit) != 0;
+      if !wants_int && !wants_num {
+        continue;
+      }
+      let helper = if wants_int {
+        "zuri_jit_list_all_int"
+      } else {
+        "zuri_jit_list_all_number"
+      };
+      let v = self.entry_reg_values[bit as usize];
+      let ok = self.call_helper_raw(helper, &[vm_p, v]);
+      let passed = self.fb.create_block();
+      self.fb.ins().brif(ok, passed, &[], fail, &[]);
+      self.fb.switch_to_block(passed);
+    }
+
+    // What lets `typeflow`'s `SetIndex` arm keep one claim while
+    // clearing another: these registers hold lists (the scans above
+    // just walked them), and the body neither reassigns nor copies
+    // them, so this is the last way two of them could turn out to be
+    // one list. `f(a, a)` runs the general body.
+    let distinct: Vec<u8> = (0..64u8)
+      .filter(|b| distinct_mask & (1u64 << b) != 0)
+      .collect();
+    for (i, &a) in distinct.iter().enumerate() {
+      for &b in &distinct[i + 1..] {
+        let pa = self.obj_ptr(self.entry_reg_values[a as usize]);
+        let pb = self.obj_ptr(self.entry_reg_values[b as usize]);
+        let differs = self.fb.ins().icmp(IntCC::NotEqual, pa, pb);
+        let passed = self.fb.create_block();
+        self.fb.ins().brif(differs, passed, &[], fail, &[]);
+        self.fb.switch_to_block(passed);
+      }
+    }
+  }
+
   fn emit_entry_dispatch(
     &mut self,
     osr_param: IrValue,
@@ -2234,9 +2363,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let int_needed = self.spec_int_facts.as_ref().map_or(0, |f| f.mask_at(ip));
           (list_needed & live, int_needed & live)
         };
-        if num_mask == 0 && list_mask == 0 && int_mask == 0 {
+        // The element-type claims the specialized body folded into its
+        // indexed reads, re-established here the same way and for the
+        // same reason as the shape claims above. At `ip == 0` that is
+        // the sampled bet; at an OSR route it is whatever the
+        // specialized facts hold at `ip`, since by then the registers
+        // have long stopped describing the arguments.
+        let elem_int_mask = if ip == 0 {
+          self.speculative_int_lists.unwrap_or(0)
+        } else {
+          let live = self.live_mask_at(ip);
+          self.spec_int_facts.as_ref().map_or(0, |f| f.list_mask_at(ip)) & live
+        };
+        if num_mask == 0 && list_mask == 0 && int_mask == 0 && elem_int_mask == 0 {
           if self.speculative_regs.is_some()
             || self.speculative_ints.is_some()
+            || self.speculative_int_lists.is_some()
             || !self.self_numeric_fields.is_empty()
             || !self.numeric_fields.is_empty()
             || !self.known_classes.is_empty()
@@ -2313,6 +2455,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               self.fb.switch_to_block(int_passed_block);
             }
           }
+        }
+        if elem_int_mask != 0 {
+          let fail = self.blocks[ip];
+          let distinct = elem_int_mask
+            & self
+              .spec_int_facts
+              .as_ref()
+              .map_or(0, |f| f.isolated_mask);
+          self.emit_elem_guards(elem_int_mask, 0, distinct, fail);
         }
         self.fb.ins().jump(spec_blocks[ip], &[]);
       }

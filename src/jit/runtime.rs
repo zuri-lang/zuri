@@ -588,6 +588,65 @@ pub unsafe extern "C" fn zuri_jit_dict_contains(
   Value::bool(recv.dict_get(&key).is_some()).to_bits()
 }
 
+/// Does `value_bits` name a list whose every element is a number?
+/// This is what makes the element-type bets in
+/// `codegen::emit_entry_dispatch` sound: it runs once per entry, and
+/// a list that fails it sends the entry to the general body, so the
+/// specialized body's indexed reads can drop their per read
+/// `is_number` check entirely.
+///
+/// Deliberately total. Anything that isn't a list answers no, so the
+/// caller doesn't have to have established list-ness first and the
+/// two guards can't disagree about what they're looking at.
+///
+/// Walks the whole list, which is the point: a prefix would only
+/// re-state the hint the sampler already gave. Reads only; cannot
+/// allocate or collect.
+pub unsafe extern "C" fn zuri_jit_list_all_number(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
+  let v = Value::from_bits(value_bits);
+  if !v.is_obj() {
+    return 0;
+  }
+  match &*v.as_obj() {
+    crate::vm::object::Obj::List(items) => {
+      // SAFETY: single-threaded, and this only reads; the same
+      // reasoning `Value::list_len` spells out.
+      debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+      let storage = &*items.as_ptr();
+      u64::from(storage.iter().all(|e| e.is_number()))
+    },
+    _ => 0,
+  }
+}
+
+/// The whole-number counterpart of `zuri_jit_list_all_number`: every
+/// element is a number with no fractional part, and within the range
+/// an `i64` can name, so a value read out of this list is usable as
+/// an index or an integer operand with no check of its own.
+///
+/// NaN and both infinities fail, since `fract()` on any of them is
+/// NaN rather than zero.
+pub unsafe extern "C" fn zuri_jit_list_all_int(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
+  let v = Value::from_bits(value_bits);
+  if !v.is_obj() {
+    return 0;
+  }
+  match &*v.as_obj() {
+    crate::vm::object::Obj::List(items) => {
+      debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+      let storage = &*items.as_ptr();
+      u64::from(storage.iter().all(|e| {
+        if !e.is_number() {
+          return false;
+        }
+        let n = e.as_number();
+        n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
+      }))
+    },
+    _ => 0,
+  }
+}
+
 pub unsafe extern "C" fn zuri_jit_bitnot_slow(
   vm_ptr: *mut VM,
   base: u64,
@@ -2955,6 +3014,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_dict_index_get),
     spec3!(zuri_jit_dict_contains),
     spec2!(zuri_jit_dict_len),
+    spec2!(zuri_jit_list_all_number),
+    spec2!(zuri_jit_list_all_int),
     spec3!(zuri_jit_print),
     spec3!(zuri_jit_close_upvalues),
     spec4!(zuri_jit_bitnot_slow),

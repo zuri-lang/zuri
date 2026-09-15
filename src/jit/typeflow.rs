@@ -518,6 +518,14 @@ pub fn analyze(
 pub struct IntFacts {
   pub(crate) entry: Vec<RegSet>,
   pub(crate) list_entry: Vec<RegSet>,
+  /// The seeded list parameters the body never reassigns and never
+  /// copies out of, so the only other name any of them could have is
+  /// another parameter. `transfer_int`'s `SetIndex` arm keeps their
+  /// claims alive independently of each other, which is only sound
+  /// because `codegen` compares them pairwise at entry; the two have
+  /// to be built from the same set, so it is published here rather
+  /// than recomputed there.
+  pub isolated_mask: u64,
 }
 
 impl IntFacts {
@@ -551,6 +559,20 @@ impl IntFacts {
     }
     mask
   }
+
+  /// The int-list claim at `ip`, as a bit mask, for the same reason
+  /// `mask_at` exists: an on-stack-replacement entry jumping straight
+  /// to `ip` has to re-establish whatever the specialized body already
+  /// folded into its fast paths there.
+  pub fn list_mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.list_entry[ip].get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
+  }
 }
 
 fn transfer_int(
@@ -560,6 +582,7 @@ fn transfer_int(
   instr: &Instr,
   proto: &ObjFunction,
   global_ints: &rustc_hash::FxHashSet<String>,
+  isolated: &RegSet,
 ) -> (RegSet, RegSet) {
   let mut out_int = in_int.clone();
   let mut out_list = in_list.clone();
@@ -596,6 +619,13 @@ fn transfer_int(
     | Instr::Mod { dst, a, b } => {
       out_int.set(dst, in_int.get(a) && in_int.get(b));
       out_list.set(dst, false);
+    },
+    // `MulImm` is list repetition when its left operand is a list
+    // (`[0] * 8`), exactly as `Mul` is, and the repeated copy holds
+    // the same elements as the original.
+    Instr::MulImm { dst, a, .. } if in_list.get(a) => {
+      out_list.set(dst, true);
+      out_int.set(dst, false);
     },
     Instr::AddImm { dst, a, imm_const }
     | Instr::SubImm { dst, a, imm_const }
@@ -642,9 +672,28 @@ fn transfer_int(
       out_list.set(dst, all_int);
     },
 
+    // Storing a non-integer generally clears the claim for EVERY
+    // register, not just `obj`. Nothing here tracks aliasing, so after
+    // `var b = a` the two registers name one list, and clearing only
+    // the one written through would leave the other still claiming
+    // elements that are no longer whole.
+    //
+    // `isolated` is the exception, and the one that makes a kernel
+    // like `matmult(y, val, row, col, x)` work at all: those registers
+    // are parameters that the body never reassigns and never copies
+    // out of, and `codegen`'s entry guard has checked they name
+    // pairwise distinct lists. No other register holding a claim can
+    // be looking at the same list as one of them, so writing a float
+    // into `y` says nothing about `row` or `col`.
     Instr::SetIndex { obj, idx: _, src } => {
       if !in_int.get(src) {
-        out_list.set(obj, false);
+        if isolated.get(obj) {
+          out_list.set(obj, false);
+        } else {
+          for w in &mut out_list.words {
+            *w = 0;
+          }
+        }
       }
     },
 
@@ -750,6 +799,7 @@ pub fn analyze_int(
   proto: &ObjFunction,
   preds: &[Vec<usize>],
   speculative_params: Option<u64>,
+  speculative_int_lists: Option<u64>,
   bytes_facts: &BytesFacts,
   global_ints: &rustc_hash::FxHashSet<String>,
 ) -> IntFacts {
@@ -757,7 +807,9 @@ pub fn analyze_int(
   let code_len = code.len();
 
   let has_speculative = speculative_params.map_or(false, |m| m != 0);
+  let has_int_list_seed = speculative_int_lists.map_or(false, |m| m != 0);
   let has_int_source = has_speculative
+    || has_int_list_seed
     || !global_ints.is_empty()
     || code.iter().any(|i| match i {
       Instr::LoadConst { const_idx, .. } => {
@@ -789,25 +841,63 @@ pub fn analyze_int(
     return IntFacts {
       entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
       list_entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
+      isolated_mask: 0,
     };
   }
 
   let num_registers = proto.num_registers as usize;
-
-  let seed: Option<RegSet> = speculative_params.map(|mask| {
+  let required = if proto.variadic {
+    proto.arity.saturating_sub(1)
+  } else {
+    proto.arity
+  };
+  let param_seed = |mask: u64| {
     let mut s = RegSet::empty(num_registers);
-    let required = if proto.variadic {
-      proto.arity.saturating_sub(1)
-    } else {
-      proto.arity
-    };
     for r in 0..(required as usize).min(64) {
       if (mask & (1u64 << r)) != 0 {
         s.set(r as u8, true);
       }
     }
     s
-  });
+  };
+
+  let seed: Option<RegSet> = speculative_params.map(&param_seed);
+
+  // The element-type bet on list parameters, which is where a
+  // compressed-row matrix kernel gets its index lists from: they
+  // arrive as arguments, so without this there is no definition site
+  // in the body for the analysis to reason from and every index read
+  // out of them pays a whole-number check forever.
+  // `codegen::emit_entry_dispatch` scans each of these lists in full
+  // before entering the specialized body.
+  let list_seed: RegSet = speculative_int_lists
+    .map(&param_seed)
+    .unwrap_or_else(|| RegSet::empty(num_registers));
+
+  // Which seeded parameters can be written through without disturbing
+  // anything else's claim: see the `SetIndex` arm of `transfer_int`.
+  // A parameter qualifies only if the body never reassigns it and
+  // never copies it into another register, so the only other name for
+  // its list is another parameter, and the entry guard has already
+  // ruled that out by comparing them pairwise.
+  let isolated: RegSet = {
+    let mut aliased = vec![false; num_registers];
+    for instr in code {
+      if let Some(d) = any_dst(instr) {
+        aliased[d as usize] = true;
+      }
+      if let Instr::Move { src, .. } = *instr {
+        aliased[src as usize] = true;
+      }
+    }
+    let mut s = RegSet::empty(num_registers);
+    for r in 0..num_registers.min(64) {
+      if list_seed.get(r as u8) && !aliased[r] {
+        s.set(r as u8, true);
+      }
+    }
+    s
+  };
 
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
@@ -822,7 +912,7 @@ pub fn analyze_int(
   let mut list_entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        RegSet::empty(num_registers)
+        list_seed.clone()
       } else {
         RegSet::full(num_registers)
       }
@@ -840,6 +930,7 @@ pub fn analyze_int(
         &code[ip],
         proto,
         global_ints,
+        &isolated,
       )
     })
     .collect();
@@ -861,7 +952,7 @@ pub fn analyze_int(
     }
     if ip == 0 {
       new_in = seed.clone().unwrap_or_else(|| RegSet::empty(num_registers));
-      new_list_in = RegSet::empty(num_registers);
+      new_list_in = list_seed.clone();
     }
 
     if new_in != entry[ip] || new_list_in != list_entry[ip] {
@@ -874,6 +965,7 @@ pub fn analyze_int(
         &code[ip],
         proto,
         global_ints,
+        &isolated,
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -884,7 +976,18 @@ pub fn analyze_int(
     }
   }
 
-  IntFacts { entry, list_entry }
+  let mut isolated_mask = 0u64;
+  for bit in 0..64u8 {
+    if isolated.get(bit) {
+      isolated_mask |= 1u64 << bit;
+    }
+  }
+
+  IntFacts {
+    entry,
+    list_entry,
+    isolated_mask,
+  }
 }
 
 //-----------------------------------------------------------------------------------

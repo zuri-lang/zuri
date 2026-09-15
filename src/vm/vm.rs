@@ -2337,6 +2337,14 @@ impl VM {
           self.combined_int_feedback(proto),
         )
       };
+    let (speculative_int_lists, speculative_num_lists) = if self.no_jit_specialization {
+      (None, None)
+    } else {
+      match self.combined_elem_feedback(proto) {
+        Some((i, n)) => (Some(i), Some(n)),
+        None => (None, None),
+      }
+    };
     for (ip, instr) in proto.chunk.code.iter().enumerate() {
       let name_const = match instr {
         Instr::GetGlobal { name_const, .. }
@@ -2375,6 +2383,8 @@ impl VM {
       global_numbers: self.snapshot_global_numbers(proto),
       speculative_lists,
       speculative_ints,
+      speculative_int_lists,
+      speculative_num_lists,
       known_classes: self.resolve_known_classes(proto),
     };
 
@@ -2566,6 +2576,76 @@ impl VM {
     Some(mask)
   }
 
+  /// Cheap element-type hint for list parameters: `(int_list, num_list)`
+  /// bitmaps over the first 64 parameters, where a bit means "every
+  /// element this sample looked at was a whole number" and "... was a
+  /// number" respectively.
+  ///
+  /// Only a bounded prefix of each list is read. This runs on every
+  /// call while a function is warming up, and the lists that make the
+  /// bet worth placing are exactly the big ones, so walking them in
+  /// full here would cost more than the speculation ever pays back.
+  /// A prefix is enough to decide whether the bet is worth PLACING;
+  /// `codegen`'s entry guard is what decides whether it HOLDS, and it
+  /// walks every element.
+  fn sample_param_elem_types(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
+    const SAMPLE_PREFIX: usize = 32;
+
+    let frame = self.frames.last()?;
+    if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
+      return None;
+    }
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+    let base = frame.base;
+    let mut int_mask: u64 = 0;
+    let mut num_mask: u64 = 0;
+    for i in 0..(required as usize).min(64) {
+      let Some(v) = self.registers.get(base + i) else {
+        break;
+      };
+      if !v.is_obj() {
+        continue;
+      }
+      let Obj::List(items) = (unsafe { &*v.as_obj() }) else {
+        continue;
+      };
+      // SAFETY: same single-threaded, no-live-borrow reasoning as
+      // `Value::list_len`; this only reads, and nothing between the
+      // borrow and the end of the loop can re-enter the VM.
+      debug_assert!(items.try_borrow().is_ok(), "elem sample over a live borrow");
+      let storage = unsafe { &*items.as_ptr() };
+      let n = storage.len().min(SAMPLE_PREFIX);
+      let mut all_num = true;
+      let mut all_int = true;
+      for e in &storage[..n] {
+        if !e.is_number() {
+          all_num = false;
+          all_int = false;
+          break;
+        }
+        if e.as_number().fract() != 0.0 {
+          all_int = false;
+        }
+      }
+      // An empty list proves nothing either way, and betting on one
+      // costs a guard for a loop that will not run.
+      if storage.is_empty() {
+        continue;
+      }
+      if all_num {
+        num_mask |= 1u64 << i;
+      }
+      if all_int {
+        int_mask |= 1u64 << i;
+      }
+    }
+    Some((int_mask, num_mask))
+  }
+
   fn sample_param_int_types(&self, proto: &ObjFunction) -> Option<u64> {
     let frame = self.frames.last()?;
     if !std::ptr::eq(frame.function, proto as *const ObjFunction) {
@@ -2622,6 +2702,16 @@ impl VM {
         .int_feedback
         .set(proto.jit.int_feedback.get() & int_mask);
     }
+    if let Some((int_list_mask, num_list_mask)) = self.sample_param_elem_types(proto) {
+      proto
+        .jit
+        .int_list_feedback
+        .set(proto.jit.int_list_feedback.get() & int_list_mask);
+      proto
+        .jit
+        .num_list_feedback
+        .set(proto.jit.num_list_feedback.get() & num_list_mask);
+    }
     proto
       .jit
       .feedback_samples
@@ -2654,6 +2744,17 @@ impl VM {
       Some(proto.jit.int_feedback.get())
     } else {
       self.sample_param_int_types(proto)
+    }
+  }
+
+  fn combined_elem_feedback(&self, proto: &ObjFunction) -> Option<(u64, u64)> {
+    if proto.jit.feedback_samples.get() > 0 {
+      Some((
+        proto.jit.int_list_feedback.get(),
+        proto.jit.num_list_feedback.get(),
+      ))
+    } else {
+      self.sample_param_elem_types(proto)
     }
   }
 

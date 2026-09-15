@@ -371,6 +371,17 @@ pub struct CompileFacts {
   pub global_numbers: rustc_hash::FxHashSet<String>,
   pub speculative_lists: Option<u64>,
   pub speculative_ints: Option<u64>,
+  /// Bit `i` bets that list parameter `i` holds nothing but whole
+  /// numbers, so an element read out of it can feed an index or an
+  /// integer operation without its own whole-number check. Sampled
+  /// from a bounded prefix by `VM::sample_param_elem_types` and made
+  /// sound by the full scan `codegen::emit_entry_dispatch` emits once
+  /// per entry; a list that fails the scan runs the general body.
+  pub speculative_int_lists: Option<u64>,
+  /// The same bet widened to any number, fractions included: what a
+  /// list of floats gets proven with, so a read out of it skips
+  /// `is_number` without being claimed whole.
+  pub speculative_num_lists: Option<u64>,
   pub known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
   /// Method name -> the `ObjFunction` the COMPILING function's own class
   /// resolves it to, for every method that class has. Only meaningful
