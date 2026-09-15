@@ -753,6 +753,10 @@ struct FuncCompiler<'a, 'b> {
   /// entry scan straight from these bits.
   speculative_int_lists: Option<u64>,
   speculative_num_lists: Option<u64>,
+  /// Built once in `new` from both element bets together, and used by
+  /// the specialized body's analyses and by the entry guard alike, so
+  /// what one keeps alive is exactly what the other checked.
+  aliasing: typeflow::AliasSummary,
   spec_int_facts: Option<typeflow::IntFacts>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
   /// `speculative_params`, but covering every register in the
@@ -1352,8 +1356,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
     let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
-    let int_facts =
-      typeflow::analyze_int(proto, &preds, None, None, &bytes_facts, &facts.global_ints);
+    // Built from the WIDER of the two element bets: whole numbers are
+    // numbers, so the numeric-list seed contains the integer one, and
+    // one summary covering both keeps the two analyses agreeing about
+    // which parameters `emit_elem_guards` will have compared.
+    let general_aliasing = typeflow::AliasSummary::conservative(proto);
+    let aliasing = typeflow::AliasSummary::build(
+      proto,
+      speculative_num_lists.unwrap_or(0) | speculative_int_lists.unwrap_or(0),
+    );
+    let int_facts = typeflow::analyze_int(
+      proto,
+      &preds,
+      None,
+      None,
+      &bytes_facts,
+      &facts.global_ints,
+      &general_aliasing,
+    );
     let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
       Some(typeflow::analyze_int(
         proto,
@@ -1362,6 +1382,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         speculative_int_lists,
         &bytes_facts,
         &facts.global_ints,
+        &aliasing,
       ))
     } else {
       None
@@ -1375,6 +1396,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &no_self_numeric_fields,
       &no_numeric_fields,
       Some(&int_facts),
+      None,
+      &general_aliasing,
     );
     let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
     let string_facts = typeflow::analyze_string(proto, &preds);
@@ -1414,6 +1437,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       speculative_ints,
       speculative_int_lists,
       speculative_num_lists,
+      aliasing,
       spec_int_facts,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
@@ -1957,6 +1981,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           &self.self_numeric_fields,
           &self.numeric_fields,
           Some(int_facts_ref),
+          self.speculative_num_lists,
+          &self.aliasing,
         );
         // Computed here for the same reason the type facts are: the
         // entry dispatch needs them NOW to know what an OSR route has
@@ -2369,16 +2395,32 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // the sampled bet; at an OSR route it is whatever the
         // specialized facts hold at `ip`, since by then the registers
         // have long stopped describing the arguments.
-        let elem_int_mask = if ip == 0 {
-          self.speculative_int_lists.unwrap_or(0)
+        let (elem_int_mask, elem_num_mask) = if ip == 0 {
+          (
+            self.speculative_int_lists.unwrap_or(0),
+            self.speculative_num_lists.unwrap_or(0),
+          )
         } else {
           let live = self.live_mask_at(ip);
-          self.spec_int_facts.as_ref().map_or(0, |f| f.list_mask_at(ip)) & live
+          (
+            self
+              .spec_int_facts
+              .as_ref()
+              .map_or(0, |f| f.list_mask_at(ip))
+              & live,
+            spec_facts.num_list_mask_at(ip) & live,
+          )
         };
-        if num_mask == 0 && list_mask == 0 && int_mask == 0 && elem_int_mask == 0 {
+        if num_mask == 0
+          && list_mask == 0
+          && int_mask == 0
+          && elem_int_mask == 0
+          && elem_num_mask == 0
+        {
           if self.speculative_regs.is_some()
             || self.speculative_ints.is_some()
             || self.speculative_int_lists.is_some()
+            || self.speculative_num_lists.is_some()
             || !self.self_numeric_fields.is_empty()
             || !self.numeric_fields.is_empty()
             || !self.known_classes.is_empty()
@@ -2456,14 +2498,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             }
           }
         }
-        if elem_int_mask != 0 {
+        if elem_int_mask != 0 || elem_num_mask != 0 {
           let fail = self.blocks[ip];
-          let distinct = elem_int_mask
-            & self
-              .spec_int_facts
-              .as_ref()
-              .map_or(0, |f| f.isolated_mask);
-          self.emit_elem_guards(elem_int_mask, 0, distinct, fail);
+          let distinct = self.aliasing.isolated_mask();
+          self.emit_elem_guards(elem_int_mask, elem_num_mask, distinct, fail);
         }
         self.fb.ins().jump(spec_blocks[ip], &[]);
       }
@@ -13370,9 +13408,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if crate::jit::log_facts_enabled() {
           eprintln!(
             "[facts] {} ip={} GetIndex obj=r{} idx=r{} | idx: is_int={} tracked={} proven_int={} proven_num={} | obj: list={} int_list={} tf_num={}",
-            self.proto.display_name(), ip, obj, iidx,
+            self.proto.display_name(),
+            ip,
+            obj,
+            iidx,
             self.int_facts.is_int(ip, iidx),
-            self.int_tracked.get(iidx as usize).copied().unwrap_or(false),
+            self
+              .int_tracked
+              .get(iidx as usize)
+              .copied()
+              .unwrap_or(false),
             self.proven_int(ip, iidx),
             self.proven_numeric(ip, iidx),
             self.proven_list(ip, obj),

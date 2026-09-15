@@ -1,0 +1,87 @@
+# When a list is handed to a function and indexed inside a loop, the
+# compiler bets on what the list holds: nothing but whole numbers, so a
+# value read out of it can go straight into an index with no check of
+# its own. The bet is checked by walking the list once on the way in,
+# which is what these cover, in all three directions it can go wrong:
+# the list turning out to hold a fraction, two parameters turning out
+# to name one list, and the list picking up a fraction long after the
+# loop is already running compiled.
+
+def gather(values, indices, n, reps) {
+  var total = 0.0
+
+  iter var r = 0; r < reps; r++ {
+    iter var i = 0; i < n; i++ {
+      total += values[indices[i]]
+    }
+  }
+
+  return total
+}
+
+# Two lists written through one, then read back as indices through the
+# other. Nothing in the body says they are the same list, so the entry
+# guard is the only thing that can notice.
+def alias_probe(sink, idx, data, n) {
+  var total = 0.0
+
+  iter var i = 0; i < n; i++ {
+    sink[i % 4] = i + 0.5
+    total += data[idx[i % 4]]
+  }
+
+  return total
+}
+
+# The fraction only starts going in well past the point the loop has
+# been compiled and re-entered, so an entry check alone never sees it.
+def late_alias(idx, data, n, flag) {
+  var copy = data
+
+  if flag {
+    copy = idx
+  }
+
+  var total = 0.0
+
+  iter var i = 0; i < n; i++ {
+    if i > 150_000 {
+      copy[i % 4] = (i % 4) + 0.5
+    }
+
+    total += data[idx[i % 4]]
+  }
+
+  return total
+}
+
+var data = [10.5, 20.25, 30.125, 40.0625]
+var idx = [0, 1, 2, 3]
+
+echo gather(data, idx, 4, 200_000)
+
+# Same function, same shape of argument, but one element is not whole.
+var bad = [0, 1, 2.5, 3]
+catch {
+  echo gather(data, bad, 4, 200_000)
+} as e {
+  echo 'gather raised: ${e.message}'
+}
+
+var a = [0, 1, 2, 3]
+var b = [0, 1, 2, 3]
+echo alias_probe(a, b, data, 200_000)
+
+var shared = [0, 1, 2, 3]
+catch {
+  echo alias_probe(shared, shared, data, 200_000)
+} as e {
+  echo 'alias raised: ${e.message}'
+}
+
+var m = [0, 1, 2, 3]
+catch {
+  echo late_alias(m, data, 200_000, true)
+} as e {
+  echo 'late raised: ${e.message}'
+}

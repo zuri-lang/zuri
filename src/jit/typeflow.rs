@@ -215,12 +215,39 @@ impl RegSet {
 /// arithmetic op's operands need a runtime guard at all.
 pub struct TypeFacts {
   entry: Vec<RegSet>,
+  /// The registers proven to hold a list of nothing but numbers at
+  /// each position, carried in this analysis's own fixed point rather
+  /// than a pass of its own. It has to be: the claim dies when a
+  /// non-number is stored into the list, and whether the stored value
+  /// IS a number is exactly what `entry` is working out at the same
+  /// time. Two separate passes would each need the other's answer
+  /// first.
+  num_list_entry: Vec<RegSet>,
 }
 
 impl TypeFacts {
   #[inline]
   pub fn is_numeric(&self, ip: usize, r: u8) -> bool {
     self.entry[ip].get(r)
+  }
+
+  #[inline]
+  pub fn is_num_list(&self, ip: usize, r: u8) -> bool {
+    self.num_list_entry[ip].get(r)
+  }
+
+  /// The numeric-list claim at `ip` as a bit mask, for the same reason
+  /// `numeric_mask_at` exists: an on-stack-replacement entry landing
+  /// at `ip` has to re-establish whatever the specialized body already
+  /// folded into its indexed reads there.
+  pub fn num_list_mask_at(&self, ip: usize) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.num_list_entry[ip].get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
   }
 
   /// Every register (among the first 64; the same bound
@@ -324,6 +351,8 @@ pub fn analyze(
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
   numeric_fields: &rustc_hash::FxHashSet<String>,
   int_facts: Option<&IntFacts>,
+  speculative_num_lists: Option<u64>,
+  aliasing: &AliasSummary,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -409,26 +438,68 @@ pub fn analyze(
     .map(|mask| mask & !ambiguous_speculative_regs(code))
     .unwrap_or(0);
 
+  // The element bet on list parameters, seeded exactly the way the
+  // integer one is and checked by the same entry scan. What it buys
+  // that the integer analysis cannot is a list of floats: an indexed
+  // read out of one is numeric even though no element of it is whole.
+  let list_seed: RegSet = {
+    let mut set = RegSet::empty(total_slots);
+    if let Some(mask) = speculative_num_lists {
+      let required = if proto.variadic {
+        proto.arity.saturating_sub(1)
+      } else {
+        proto.arity
+      };
+      for r in 0..(required as usize).min(64) {
+        if mask & (1u64 << r) != 0 {
+          set.set(r as u8, true);
+        }
+      }
+    }
+    set
+  };
+
+  let mut num_list_entry: Vec<RegSet> = (0..code_len)
+    .map(|ip| {
+      if ip == 0 {
+        list_seed.clone()
+      } else {
+        RegSet::full(total_slots)
+      }
+    })
+    .collect();
+
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   // Seed every out set from its (possibly still-`full()`, not-yet-
   // converged) in set, so the worklist loop below has a real starting
   // point to compare against.
-  let mut out: Vec<RegSet> = (0..code_len)
+  let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
     .map(|ip| {
-      transfer(
-        &entry[ip],
-        ip,
-        &code[ip],
-        proto,
-        spec_regs,
-        num_registers,
-        &global_indices,
-        &mutable_globals,
-        global_numbers,
-        self_numeric_fields,
-        numeric_fields,
-        int_facts,
+      (
+        transfer(
+          &entry[ip],
+          &num_list_entry[ip],
+          ip,
+          &code[ip],
+          proto,
+          spec_regs,
+          num_registers,
+          &global_indices,
+          &mutable_globals,
+          global_numbers,
+          self_numeric_fields,
+          numeric_fields,
+          int_facts,
+        ),
+        transfer_num_list(
+          &entry[ip],
+          &num_list_entry[ip],
+          &code[ip],
+          proto,
+          &aliasing.isolated,
+          &aliasing.alias_group,
+        ),
       )
     })
     .collect();
@@ -437,9 +508,11 @@ pub fn analyze(
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(total_slots);
+    let mut new_list_in = RegSet::full(total_slots);
     let mut any_pred = false;
     for &p in &preds[ip] {
-      new_in.and_assign(&out[p]);
+      new_in.and_assign(&out[p].0);
+      new_list_in.and_assign(&out[p].1);
       any_pred = true;
     }
     if !any_pred {
@@ -448,6 +521,7 @@ pub fn analyze(
       // actually executes this instruction, so whatever `codegen`
       // does with an over-optimistic fact here can never run.
       new_in = RegSet::full(total_slots);
+      new_list_in = RegSet::full(total_slots);
     }
     if ip == 0
       && let Some(seed) = &seed
@@ -456,22 +530,37 @@ pub fn analyze(
     } else if ip == 0 {
       new_in = RegSet::empty(total_slots);
     }
+    if ip == 0 {
+      new_list_in = list_seed.clone();
+    }
 
-    if new_in != entry[ip] {
+    if new_in != entry[ip] || new_list_in != num_list_entry[ip] {
       entry[ip] = new_in;
-      out[ip] = transfer(
-        &entry[ip],
-        ip,
-        &code[ip],
-        proto,
-        spec_regs,
-        num_registers,
-        &global_indices,
-        &mutable_globals,
-        global_numbers,
-        self_numeric_fields,
-        numeric_fields,
-        int_facts,
+      num_list_entry[ip] = new_list_in;
+      out[ip] = (
+        transfer(
+          &entry[ip],
+          &num_list_entry[ip],
+          ip,
+          &code[ip],
+          proto,
+          spec_regs,
+          num_registers,
+          &global_indices,
+          &mutable_globals,
+          global_numbers,
+          self_numeric_fields,
+          numeric_fields,
+          int_facts,
+        ),
+        transfer_num_list(
+          &entry[ip],
+          &num_list_entry[ip],
+          &code[ip],
+          proto,
+          &aliasing.isolated,
+          &aliasing.alias_group,
+        ),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -482,7 +571,118 @@ pub fn analyze(
     }
   }
 
-  TypeFacts { entry }
+  TypeFacts {
+    entry,
+    num_list_entry,
+  }
+}
+
+/// What one instruction does to the "this register holds a list of
+/// nothing but numbers" claim, given both that claim and the numeric
+/// claim on entry to it. Runs inside `analyze`'s fixed point alongside
+/// `transfer`, reading the same `in_num` set that `transfer` is
+/// deriving; see `TypeFacts::num_list_entry` on why it cannot be its
+/// own pass.
+///
+/// A near mirror of the list half of `transfer_int`, with one
+/// difference that is the whole point of having both: a store only
+/// kills the claim if what went in was not a number at all, so a loop
+/// writing floats into a float array keeps it, where the integer
+/// analysis would not.
+fn transfer_num_list(
+  in_num: &RegSet,
+  in_num_list: &RegSet,
+  instr: &Instr,
+  proto: &ObjFunction,
+  isolated: &RegSet,
+  alias_group: &[u64],
+) -> RegSet {
+  let mut out = in_num_list.clone();
+
+  match *instr {
+    Instr::Move { dst, src } => out.set(dst, in_num_list.get(src)),
+
+    // List repetition: `[0.0] * n` and its folded-immediate form.
+    Instr::Mul { dst, a, b } => {
+      out.set(dst, in_num_list.get(a) || in_num_list.get(b));
+    },
+    Instr::MulImm { dst, a, .. } => out.set(dst, in_num_list.get(a)),
+
+    Instr::MakeList { dst, start, count } => {
+      let all_num = count > 0 && (0..count).all(|offset| in_num.get(start + offset));
+      out.set(dst, all_num);
+    },
+
+    // See `transfer_int`'s own `SetIndex` arm: same aliasing rules,
+    // same reason a parameter the entry guard compared can be cleared
+    // on its own.
+    Instr::SetIndex { obj, idx: _, src } => {
+      if !in_num.get(src) {
+        if isolated.get(obj) {
+          let doomed = alias_group[obj as usize];
+          for bit in 0..64u8 {
+            if doomed & (1u64 << bit) != 0 {
+              out.set(bit, false);
+            }
+          }
+        } else {
+          for w in &mut out.words {
+            *w = 0;
+          }
+        }
+      }
+    },
+
+    // Reachable from somewhere this function cannot see any more, so
+    // anything at all could be written into it from here on.
+    Instr::SetGlobal { src, .. }
+    | Instr::AssignGlobal { src, .. }
+    | Instr::SetUpval { src, .. } => {
+      out.set(src, false);
+    },
+
+    Instr::Invoke {
+      dst,
+      obj,
+      method_const,
+      num_args,
+    } => {
+      let method_name = proto
+        .chunk
+        .constants
+        .get(method_const as usize)
+        .and_then(|v| {
+          if v.is_string() {
+            Some(v.as_str())
+          } else {
+            None
+          }
+        })
+        .unwrap_or("");
+      let builtin_read =
+        in_num_list.get(obj) && num_args == 0 && matches!(method_name, "length" | "is_empty");
+      if !builtin_read {
+        for w in &mut out.words {
+          *w = 0;
+        }
+      }
+      out.set(dst, false);
+    },
+
+    Instr::Call { dst, .. } | Instr::InvokeSuper { dst, .. } | Instr::CallSuperCtor { dst, .. } => {
+      for w in &mut out.words {
+        *w = 0;
+      }
+      out.set(dst, false);
+    },
+
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        out.set(dst, false);
+      }
+    },
+  }
+  out
 }
 
 //-----------------------------------------------------------------------------------
@@ -575,6 +775,111 @@ impl IntFacts {
   }
 }
 
+/// What `transfer_int` and `transfer_num_list` need in order to keep
+/// one list's element claim alive while clearing another's.
+///
+/// `isolated` is the seeded list parameters the body never reassigns,
+/// so each still names the argument it was called with for the whole
+/// function; `codegen::emit_elem_guards` compares those pairwise on
+/// the way in, which is what rules out two of them turning out to be
+/// one list.
+///
+/// `alias_group[r]` is every register `r` could share an object with
+/// through a chain of `Move`s. Flow-insensitive on purpose: the
+/// question is only ever "could these two ever be the same object",
+/// and folding in a copy that was live at some unrelated point costs
+/// nothing but a slightly wider kill.
+///
+/// Computed once, outside both analyses, because they have to agree:
+/// each keeps claims alive on the strength of the SAME pairwise
+/// comparison `codegen` emits, so a register one of them treats as
+/// isolated and the other does not would be a claim nothing checked.
+pub struct AliasSummary {
+  pub isolated: RegSet,
+  pub alias_group: Vec<u64>,
+}
+
+impl AliasSummary {
+  pub fn build(proto: &ObjFunction, seed_mask: u64) -> AliasSummary {
+    let code = &proto.chunk.code;
+    let num_registers = proto.num_registers as usize;
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+
+    let mut parent: Vec<usize> = (0..num_registers).collect();
+    fn find(parent: &mut Vec<usize>, mut r: usize) -> usize {
+      while parent[r] != r {
+        parent[r] = parent[parent[r]];
+        r = parent[r];
+      }
+      r
+    }
+    for instr in code {
+      if let Instr::Move { dst, src } = *instr {
+        let (a, b) = (
+          find(&mut parent, dst as usize),
+          find(&mut parent, src as usize),
+        );
+        if a != b {
+          parent[a] = b;
+        }
+      }
+    }
+    let mut alias_group = vec![0u64; num_registers];
+    for r in 0..num_registers.min(64) {
+      let root = find(&mut parent, r);
+      for other in 0..num_registers.min(64) {
+        if find(&mut parent, other) == root {
+          alias_group[r] |= 1u64 << other;
+        }
+      }
+    }
+
+    let mut redefined = vec![false; num_registers];
+    for instr in code {
+      if let Some(d) = any_dst(instr) {
+        redefined[d as usize] = true;
+      }
+    }
+
+    let mut isolated = RegSet::empty(num_registers);
+    for r in 0..(required as usize).min(num_registers).min(64) {
+      if seed_mask & (1u64 << r) != 0 && !redefined[r] {
+        isolated.set(r as u8, true);
+      }
+    }
+
+    AliasSummary {
+      isolated,
+      alias_group,
+    }
+  }
+
+  /// A summary that claims no isolation at all: every store of the
+  /// wrong kind of value clears every claim. What the general body is
+  /// built from, since nothing has compared anything pairwise on the
+  /// way into it.
+  pub fn conservative(proto: &ObjFunction) -> AliasSummary {
+    AliasSummary {
+      isolated: RegSet::empty(proto.num_registers as usize),
+      alias_group: vec![0u64; proto.num_registers as usize],
+    }
+  }
+
+  pub fn isolated_mask(&self) -> u64 {
+    let mut mask = 0u64;
+    for bit in 0..64u8 {
+      if self.isolated.get(bit) {
+        mask |= 1u64 << bit;
+      }
+    }
+    mask
+  }
+}
+
 fn transfer_int(
   in_int: &RegSet,
   in_list: &RegSet,
@@ -583,6 +888,7 @@ fn transfer_int(
   proto: &ObjFunction,
   global_ints: &rustc_hash::FxHashSet<String>,
   isolated: &RegSet,
+  alias_group: &[u64],
 ) -> (RegSet, RegSet) {
   let mut out_int = in_int.clone();
   let mut out_list = in_list.clone();
@@ -680,15 +986,19 @@ fn transfer_int(
     //
     // `isolated` is the exception, and the one that makes a kernel
     // like `matmult(y, val, row, col, x)` work at all: those registers
-    // are parameters that the body never reassigns and never copies
-    // out of, and `codegen`'s entry guard has checked they name
-    // pairwise distinct lists. No other register holding a claim can
-    // be looking at the same list as one of them, so writing a float
-    // into `y` says nothing about `row` or `col`.
+    // are parameters the body never reassigns, and `codegen`'s entry
+    // guard has checked they name pairwise distinct lists. Writing a
+    // float into `y` then reaches only `y` and whatever was copied
+    // from it, never `row` or `col`.
     Instr::SetIndex { obj, idx: _, src } => {
       if !in_int.get(src) {
         if isolated.get(obj) {
-          out_list.set(obj, false);
+          let doomed = alias_group[obj as usize];
+          for bit in 0..64u8 {
+            if doomed & (1u64 << bit) != 0 {
+              out_list.set(bit, false);
+            }
+          }
         } else {
           for w in &mut out_list.words {
             *w = 0;
@@ -749,7 +1059,17 @@ fn transfer_int(
           }
         })
         .unwrap_or("");
-      if (method_name == "max" || method_name == "min") && num_args == 1 {
+      // A list's own `length`/`is_empty` are builtins: they cannot run
+      // Zuri code, so nothing they do can put a fraction into a list
+      // this function is reasoning about. Worth carving out because a
+      // kernel that walks an array almost always reads its length
+      // first, and clearing every claim there would undo the whole
+      // analysis before the loop is even reached. `in_list` is what
+      // establishes the receiver really is a list, so a user class
+      // with a method of the same name never reaches this arm.
+      if in_list.get(obj) && num_args == 0 && matches!(method_name, "length" | "is_empty") {
+        out_int.set(dst, method_name == "length");
+      } else if (method_name == "max" || method_name == "min") && num_args == 1 {
         let arg_reg = obj + 2;
         out_int.set(dst, in_int.get(obj) && in_int.get(arg_reg));
       } else {
@@ -802,6 +1122,7 @@ pub fn analyze_int(
   speculative_int_lists: Option<u64>,
   bytes_facts: &BytesFacts,
   global_ints: &rustc_hash::FxHashSet<String>,
+  aliasing: &AliasSummary,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -880,24 +1201,6 @@ pub fn analyze_int(
   // never copies it into another register, so the only other name for
   // its list is another parameter, and the entry guard has already
   // ruled that out by comparing them pairwise.
-  let isolated: RegSet = {
-    let mut aliased = vec![false; num_registers];
-    for instr in code {
-      if let Some(d) = any_dst(instr) {
-        aliased[d as usize] = true;
-      }
-      if let Instr::Move { src, .. } = *instr {
-        aliased[src as usize] = true;
-      }
-    }
-    let mut s = RegSet::empty(num_registers);
-    for r in 0..num_registers.min(64) {
-      if list_seed.get(r as u8) && !aliased[r] {
-        s.set(r as u8, true);
-      }
-    }
-    s
-  };
 
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
@@ -930,7 +1233,8 @@ pub fn analyze_int(
         &code[ip],
         proto,
         global_ints,
-        &isolated,
+        &aliasing.isolated,
+        &aliasing.alias_group,
       )
     })
     .collect();
@@ -965,7 +1269,8 @@ pub fn analyze_int(
         &code[ip],
         proto,
         global_ints,
-        &isolated,
+        &aliasing.isolated,
+        &aliasing.alias_group,
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -976,17 +1281,10 @@ pub fn analyze_int(
     }
   }
 
-  let mut isolated_mask = 0u64;
-  for bit in 0..64u8 {
-    if isolated.get(bit) {
-      isolated_mask |= 1u64 << bit;
-    }
-  }
-
   IntFacts {
     entry,
     list_entry,
-    isolated_mask,
+    isolated_mask: aliasing.isolated_mask(),
   }
 }
 
@@ -2330,6 +2628,7 @@ fn ref_transfer(
 /// says so: see `SpeculativeRegs`'s own docs.
 fn transfer(
   in_set: &RegSet,
+  in_num_list: &RegSet,
   ip: usize,
   instr: &Instr,
   proto: &ObjFunction,
@@ -2482,7 +2781,10 @@ fn transfer(
     Instr::GetIndex { dst, obj, .. } => {
       let speculated = dst < 64 && (spec_regs >> dst) & 1 != 0;
       let from_int_list = int_facts.map(|f| f.is_int_list(ip, obj)).unwrap_or(false);
-      out.set(dst, from_int_list || speculated || unsound_numeric_index());
+      out.set(
+        dst,
+        from_int_list || in_num_list.get(obj) || speculated || unsound_numeric_index(),
+      );
     },
     Instr::Closure { dst, .. }
     | Instr::GetUpval { dst, .. }

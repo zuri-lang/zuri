@@ -611,7 +611,10 @@ pub unsafe extern "C" fn zuri_jit_list_all_number(_vm_ptr: *mut VM, value_bits: 
     crate::vm::object::Obj::List(items) => {
       // SAFETY: single-threaded, and this only reads; the same
       // reasoning `Value::list_len` spells out.
-      debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+      debug_assert!(
+        items.try_borrow().is_ok(),
+        "element scan over a live borrow"
+      );
       let storage = &*items.as_ptr();
       u64::from(storage.iter().all(|e| e.is_number()))
     },
@@ -633,7 +636,10 @@ pub unsafe extern "C" fn zuri_jit_list_all_int(_vm_ptr: *mut VM, value_bits: u64
   }
   match &*v.as_obj() {
     crate::vm::object::Obj::List(items) => {
-      debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+      debug_assert!(
+        items.try_borrow().is_ok(),
+        "element scan over a live borrow"
+      );
       let storage = &*items.as_ptr();
       u64::from(storage.iter().all(|e| {
         if !e.is_number() {
