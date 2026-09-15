@@ -636,12 +636,7 @@ struct ElemSites {
 }
 
 impl ElemSites {
-  fn build(
-    proto: &ObjFunction,
-    preds: &[Vec<usize>],
-    seed_mask: u64,
-    list_mask: u64,
-  ) -> ElemSites {
+  fn build(proto: &ObjFunction, preds: &[Vec<usize>], seed_mask: u64, list_mask: u64) -> ElemSites {
     let code = &proto.chunk.code;
     let mut of_ip = vec![PT_UNKNOWN; code.len()];
     let mut of_param = [PT_UNKNOWN; 64];

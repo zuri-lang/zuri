@@ -899,6 +899,23 @@ struct FuncCompiler<'a, 'b> {
   /// for a register `escape::analyze_one` already proved never leaves
   /// this function, and any ordinary write to that register removes it.
   scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
+  /// The current value of a scalar-replaced instance's field, keyed by
+  /// (register, field slot), so a field read straight after the value
+  /// was written is answered from the value itself rather than by
+  /// bouncing it through the stack slot.
+  ///
+  /// The slot still gets every write: it is what a deopt rebuilds the
+  /// object from, what an on-stack-replacement entry refills, and what
+  /// the collector scans. What it does not have to be is the only way
+  /// to READ a field, and `nbody-vec` reads each of its three twelve
+  /// times per pair for one write.
+  ///
+  /// Only ever holds values proven numeric. A moving collector updates
+  /// the slot, since that is a registered root, but it knows nothing
+  /// about a value the register allocator is holding, so caching an
+  /// object reference here would leave a dangling pointer behind the
+  /// first collection. A number cannot move.
+  scalar_fields: FxHashMap<(u8, u16), IrValue>,
   /// The scalar-construct sites decided before any code is emitted,
   /// with their stack slots. Separate from `scalar_instances` because
   /// that one is deliberately invalidated by any write to the register
@@ -1484,6 +1501,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       call_targets,
       construct_info,
       scalar_instances: FxHashMap::default(),
+      scalar_fields: FxHashMap::default(),
       planned_scalar_instances: FxHashMap::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
@@ -2075,6 +2093,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.switch_to_block(self.blocks[ip]);
       self.maybe_clear_guarded_instances(ip);
       self.maybe_clear_list_headers(ip);
+      self.maybe_clear_scalar_fields(ip);
       let instr = self.proto.chunk.code[ip];
       let terminated = self.emit_instruction(ip, instr);
       if !terminated {
@@ -2111,6 +2130,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.fb.switch_to_block(self.blocks[ip]);
         self.maybe_clear_guarded_instances(ip);
         self.maybe_clear_list_headers(ip);
+        self.maybe_clear_scalar_fields(ip);
         let instr = self.proto.chunk.code[ip];
         let terminated = self.emit_instruction(ip, instr);
         if terminated {
@@ -2748,7 +2768,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn store_reg(&mut self, r: u8, v: IrValue) {
     self.def_reg_both(r, v);
     self.scalar_lists.remove(&r);
-    self.scalar_instances.remove(&r);
+    if self.scalar_instances.remove(&r).is_some() {
+      self.scalar_fields.retain(|&(reg, _), _| reg != r);
+    }
   }
 
   /// The float-producing counterpart of `store_reg`. The `F64` view is
@@ -2765,7 +2787,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.def_var(self.reg_vars[r as usize], v);
     }
     self.scalar_lists.remove(&r);
-    self.scalar_instances.remove(&r);
+    if self.scalar_instances.remove(&r).is_some() {
+      self.scalar_fields.retain(|&(reg, _), _| reg != r);
+    }
   }
 
   fn store_reg_int(&mut self, r: u8, i: IrValue) {
@@ -3769,6 +3793,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
   }
 
+  /// Same dominance rule as `maybe_clear_list_headers`, for the same
+  /// reason: a value defined in one block may only be read from a
+  /// block it dominates, and straight-line fall-through is the one
+  /// shape that guarantees it without a dominator tree.
+  fn maybe_clear_scalar_fields(&mut self, ip: usize) {
+    if ip == 0 || self.preds[ip].len() != 1 || self.preds[ip][0] != ip - 1 {
+      self.scalar_fields.clear();
+    }
+  }
+
   /// Resolves a list's element pointer and length from its object
   /// pointer.
   ///
@@ -4005,59 +4039,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn scalar_construct_eligible(&self, ip: usize, dst: u8) -> bool {
-    let log = std::env::var_os("ZURI_JIT_LOG_SCALAR").is_some();
     let Some(info) = self.construct_info.get(&ip) else {
-      if log {
-        eprintln!(
-          "[scalar] {} ip={} dst=r{}: no construct_info",
-          self.proto.display_name(),
-          ip,
-          dst
-        );
-      }
       return false;
     };
     if info.simple_ctor_param_slots.is_none() || info.field_count == 0 {
-      if log {
-        eprintln!(
-          "[scalar] {} ip={} dst=r{}: simple_ctor={} field_count={}",
-          self.proto.display_name(),
-          ip,
-          dst,
-          info.simple_ctor_param_slots.is_some(),
-          info.field_count
-        );
-      }
       return false;
     }
     for instr in &self.proto.chunk.code {
       if let Instr::Move { src, .. } = instr
         && *src == dst
       {
-        if log {
-          eprintln!(
-            "[scalar] {} ip={} dst=r{}: moved",
-            self.proto.display_name(),
-            ip,
-            dst
-          );
-        }
         return false;
       }
     }
-    let escapes = self
+    !self
       .escape_analyze_one(ip, None, Some(&info.safety))
-      .escapes;
-    if log {
-      eprintln!(
-        "[scalar] {} ip={} dst=r{}: escapes={}",
-        self.proto.display_name(),
-        ip,
-        dst,
-        escapes
-      );
-    }
-    !escapes
+      .escapes
   }
 
   /// Builds a proven-non-escaping instance with NO heap allocation:
@@ -4103,21 +4100,44 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // Arguments sit at `func + 1 ..= func + num_args`, exactly as the
     // ordinary call convention leaves them.
+    let mut seeded: Vec<(u16, IrValue)> = Vec::new();
     for (param, &field_slot) in param_slots.iter().enumerate() {
       if param >= num_args as usize {
         break;
       }
-      let v = self.load_reg(func + 1 + param as u8);
+      let arg = func + 1 + param as u8;
+      let v = self.load_reg(arg);
       self
         .fb
         .ins()
         .stack_store(types::I64, v, slot, (field_slot as i32) * 8);
+      if self.proven_numeric(ip, arg) {
+        seeded.push((field_slot, v));
+      }
     }
 
-    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
-    let count_c = self.u64c(field_count as u64);
-    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    // The root exists so the collector can trace references parked in
+    // the slot. A slot holding nothing but numbers has none to trace,
+    // and the fields this constructor does not write are nil, which is
+    // not a heap reference either. Skipping it matters because this is
+    // a runtime call and the construct it guards sits in an inner
+    // loop: `nbody-vec` builds one `Vec3` per body pair per step, so
+    // the root push was costing more than the allocation it replaced.
+    //
+    // Decided per body. The specialized body proves these arguments
+    // numeric and the general one does not, so the cold path keeps
+    // pushing, which is correct and cheap there.
+    let ctor_written = param_slots.len().min(num_args as usize);
+    let all_numeric = seeded.len() == ctor_written;
+    if !all_numeric {
+      let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let count_c = self.u64c(field_count as u64);
+      self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    }
     self.scalar_instances.insert(dst, (slot, ip));
+    for (field_slot, v) in seeded {
+      self.scalar_fields.insert((dst, field_slot), v);
+    }
   }
 
   /// Resolves `name_const` to a field slot on a scalar-replaced
@@ -13313,10 +13333,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // A scalar-replaced instance has no object to read from; the
         // field IS the stack slot, so this becomes a plain load.
         if let Some((slot, field)) = self.scalar_instance_slot(obj, name_const) {
-          let v = self
-            .fb
-            .ins()
-            .stack_load(types::I64, types::I64, slot, (field as i32) * 8);
+          let v = match self.scalar_fields.get(&(obj, field)).copied() {
+            Some(cached) => cached,
+            None => self
+              .fb
+              .ins()
+              .stack_load(types::I64, types::I64, slot, (field as i32) * 8),
+          };
           self.store_reg(dst, v);
           return false;
         }
@@ -13362,6 +13385,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             .fb
             .ins()
             .stack_store(types::I64, v, slot, (field as i32) * 8);
+          if self.proven_numeric(ip, src) {
+            self.scalar_fields.insert((obj, field), v);
+          } else {
+            self.scalar_fields.remove(&(obj, field));
+          }
           return false;
         }
         if let Some(slot) = self.self_field_slot(obj, name_const) {
