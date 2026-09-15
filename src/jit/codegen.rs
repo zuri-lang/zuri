@@ -2206,6 +2206,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .iter()
       .filter_map(|(&dst, &(slot, site))| {
         let count = self.construct_info.get(&site)?.field_count;
+        // Entering where the register does not hold this construct
+        // would hand the refill helper something that is not an
+        // instance at all.
+        if !self.scalar_site_reaches(site, dst)[ip] {
+          return None;
+        }
         Some((dst, slot, count))
       })
       .collect();
@@ -3942,33 +3948,116 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     )
   }
 
+  /// For every bytecode position, whether the value in `dst` is
+  /// definitely the one constructed at `site`: `site` is the only
+  /// definition of `dst` that reaches there.
+  ///
+  /// This replaces asking merely "is `dst` written anywhere after
+  /// `site`", which a register machine answers yes to constantly and
+  /// for no good reason: a later loop reusing the same scratch slot
+  /// for something else has nothing to do with the construct, and
+  /// rejecting on it cost nbody-vec its entire reason for existing.
+  ///
+  /// Codegen's own map already handles the straight-line case, since
+  /// `store_reg` drops the mapping the moment the register is written
+  /// again. What it cannot answer for is an on-stack-replacement entry
+  /// landing somewhere in the middle: the refill runs off
+  /// `planned_scalar_instances`, which is keyed by register and never
+  /// cleared, so entering the second loop would read whatever that
+  /// register happens to hold and treat it as an instance. This is
+  /// what tells the refill where the instance is genuinely live.
+  fn scalar_site_reaches(&self, site: usize, dst: u8) -> Vec<bool> {
+    let code = &self.proto.chunk.code;
+    let code_len = code.len();
+    // A "must" fixed point: optimistic everywhere, pulled down by any
+    // path that does not carry the construct.
+    let mut out = vec![true; code_len];
+    let mut entry = vec![true; code_len];
+    let mut changed = true;
+    while changed {
+      changed = false;
+      for ip in 0..code_len {
+        let new_entry = if ip == 0 {
+          false
+        } else {
+          let preds = &self.preds[ip];
+          if preds.is_empty() {
+            true
+          } else {
+            preds.iter().all(|&p| out[p])
+          }
+        };
+        let new_out = if ip == site {
+          true
+        } else if typeflow::any_dst(&code[ip]) == Some(dst) {
+          false
+        } else {
+          new_entry
+        };
+        if new_entry != entry[ip] || new_out != out[ip] {
+          entry[ip] = new_entry;
+          out[ip] = new_out;
+          changed = true;
+        }
+      }
+    }
+    entry
+  }
+
   fn scalar_construct_eligible(&self, ip: usize, dst: u8) -> bool {
+    let log = std::env::var_os("ZURI_JIT_LOG_SCALAR").is_some();
     let Some(info) = self.construct_info.get(&ip) else {
+      if log {
+        eprintln!(
+          "[scalar] {} ip={} dst=r{}: no construct_info",
+          self.proto.display_name(),
+          ip,
+          dst
+        );
+      }
       return false;
     };
     if info.simple_ctor_param_slots.is_none() || info.field_count == 0 {
+      if log {
+        eprintln!(
+          "[scalar] {} ip={} dst=r{}: simple_ctor={} field_count={}",
+          self.proto.display_name(),
+          ip,
+          dst,
+          info.simple_ctor_param_slots.is_some(),
+          info.field_count
+        );
+      }
       return false;
     }
     for instr in &self.proto.chunk.code {
       if let Instr::Move { src, .. } = instr
         && *src == dst
       {
+        if log {
+          eprintln!(
+            "[scalar] {} ip={} dst=r{}: moved",
+            self.proto.display_name(),
+            ip,
+            dst
+          );
+        }
         return false;
       }
     }
-    let rewritten = self
-      .proto
-      .chunk
-      .code
-      .iter()
-      .enumerate()
-      .any(|(i, instr)| i > ip && typeflow::any_dst(instr) == Some(dst));
-    if rewritten {
-      return false;
-    }
-    !self
+    let escapes = self
       .escape_analyze_one(ip, None, Some(&info.safety))
-      .escapes
+      .escapes;
+    if log {
+      eprintln!(
+        "[scalar] {} ip={} dst=r{}: escapes={}",
+        self.proto.display_name(),
+        ip,
+        dst,
+        escapes
+      );
+    }
+    !escapes
   }
 
   /// Builds a proven-non-escaping instance with NO heap allocation:
