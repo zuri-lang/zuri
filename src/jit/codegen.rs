@@ -4116,24 +4116,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
-    // The root exists so the collector can trace references parked in
-    // the slot. A slot holding nothing but numbers has none to trace,
-    // and the fields this constructor does not write are nil, which is
-    // not a heap reference either. Skipping it matters because this is
-    // a runtime call and the construct it guards sits in an inner
-    // loop: `nbody-vec` builds one `Vec3` per body pair per step, so
-    // the root push was costing more than the allocation it replaced.
-    //
-    // Decided per body. The specialized body proves these arguments
-    // numeric and the general one does not, so the cold path keeps
-    // pushing, which is correct and cheap there.
-    let ctor_written = param_slots.len().min(num_args as usize);
-    let all_numeric = seeded.len() == ctor_written;
-    if !all_numeric {
-      let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
-      let count_c = self.u64c(field_count as u64);
-      self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
-    }
+    // The root lets the collector trace references parked in the slot,
+    // and it is registered unconditionally. Whether the fields hold
+    // anything traceable is not knowable from the constructor's own
+    // arguments: `SetField` can store a reference into the slot later,
+    // and nothing in `scalar_construct_eligible` forbids it.
+    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+    let count_c = self.u64c(field_count as u64);
+    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
     self.scalar_instances.insert(dst, (slot, ip));
     for (field_slot, v) in seeded {
       self.scalar_fields.insert((dst, field_slot), v);
