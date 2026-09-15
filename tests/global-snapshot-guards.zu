@@ -1,0 +1,48 @@
+# The compiler samples what a global holds at the moment compilation is
+# requested, and folds "this is a number" or "this is a whole number"
+# into the body it generates: arithmetic on it skips its type check, and
+# an index derived from it stays in an integer register instead of being
+# computed as a float and converted back. A module-level binding is
+# mutable whatever it was declared as, so both claims have to be
+# re-checked at the read, and reassigning the global afterwards has to
+# take the reader off that path rather than reinterpret the new value.
+
+var SCALE = 3
+var OFFSET = 4
+var STRIDE = 2
+
+def scaled(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = SCALE * OFFSET
+  }
+  return total
+}
+
+def strided(table, n) {
+  var last = 0
+  iter var i = 0; i < n; i++ {
+    last = table[i % 4 * STRIDE]
+  }
+  return last
+}
+
+var table = [10, 20, 30, 40, 50, 60, 70, 80]
+
+# Warm both far past the point where the sampled facts are folded in.
+echo scaled(200000)
+echo strided(table, 200000)
+
+# A number where a whole number was sampled: the index derived from it
+# must stop taking the integer path. The catch sits out here so the two
+# functions under test stay eligible for compilation.
+STRIDE = 2.5
+catch {
+  echo strided(table, 200000)
+} as e {
+  echo 'strided raised: ${e.message}'
+}
+
+# Not a number at all, where one was sampled.
+SCALE = 'ab'
+echo scaled(200000)

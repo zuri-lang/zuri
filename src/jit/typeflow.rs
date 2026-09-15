@@ -318,6 +318,7 @@ pub type SpeculativeRegs = u64;
 pub fn analyze(
   proto: &ObjFunction,
   preds: &[Vec<usize>],
+  global_numbers: &rustc_hash::FxHashSet<String>,
   speculative_params: Option<u64>,
   speculative_regs: Option<SpeculativeRegs>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
@@ -424,6 +425,7 @@ pub fn analyze(
         num_registers,
         &global_indices,
         &mutable_globals,
+        global_numbers,
         self_numeric_fields,
         numeric_fields,
         int_facts,
@@ -466,6 +468,7 @@ pub fn analyze(
         num_registers,
         &global_indices,
         &mutable_globals,
+        global_numbers,
         self_numeric_fields,
         numeric_fields,
         int_facts,
@@ -556,6 +559,7 @@ fn transfer_int(
   in_bytes: &RegSet,
   instr: &Instr,
   proto: &ObjFunction,
+  global_ints: &rustc_hash::FxHashSet<String>,
 ) -> (RegSet, RegSet) {
   let mut out_int = in_int.clone();
   let mut out_list = in_list.clone();
@@ -652,6 +656,24 @@ fn transfer_int(
       out_list.set(dst, false);
     },
 
+    // Seeded from a snapshot of the binding, which `codegen`'s
+    // `guard_snapshot_int_global` re-verifies at this very instruction.
+    // The two have to agree: claiming integer-ness here without that
+    // check emitted would let an index skip its whole-number proof on a
+    // value that is no longer one. `snapshot_global_ints` deliberately
+    // skips any global this function also writes, so there is no
+    // question of this outranking the dataflow.
+    Instr::GetGlobal { dst, name_const } => {
+      let is_int_global = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .map(|v| v.is_string() && global_ints.contains(v.as_str()))
+        .unwrap_or(false);
+      out_int.set(dst, is_int_global);
+      out_list.set(dst, false);
+    },
+
     Instr::SetGlobal { src, .. }
     | Instr::AssignGlobal { src, .. }
     | Instr::SetUpval { src, .. } => {
@@ -729,12 +751,14 @@ pub fn analyze_int(
   preds: &[Vec<usize>],
   speculative_params: Option<u64>,
   bytes_facts: &BytesFacts,
+  global_ints: &rustc_hash::FxHashSet<String>,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
 
   let has_speculative = speculative_params.map_or(false, |m| m != 0);
   let has_int_source = has_speculative
+    || !global_ints.is_empty()
     || code.iter().any(|i| match i {
       Instr::LoadConst { const_idx, .. } => {
         let c = &proto.chunk.constants[*const_idx as usize];
@@ -815,6 +839,7 @@ pub fn analyze_int(
         bytes_facts.entry_set(ip),
         &code[ip],
         proto,
+        global_ints,
       )
     })
     .collect();
@@ -848,6 +873,7 @@ pub fn analyze_int(
         bytes_facts.entry_set(ip),
         &code[ip],
         proto,
+        global_ints,
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -2208,6 +2234,7 @@ fn transfer(
   _num_registers: usize,
   global_indices: &rustc_hash::FxHashMap<u16, usize>,
   mutable_globals: &rustc_hash::FxHashSet<usize>,
+  global_numbers: &rustc_hash::FxHashSet<String>,
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
   numeric_fields: &rustc_hash::FxHashSet<String>,
   int_facts: Option<&IntFacts>,
@@ -2280,7 +2307,19 @@ fn transfer(
         .get(&name_const)
         .map(|&g| in_set.get_global(g))
         .unwrap_or(false);
-      out.set(dst, speculated || is_num_global);
+      // The slot above only ever knows about globals written in THIS
+      // function; a module-level constant a function merely reads has
+      // no write here to learn from. The snapshot covers exactly that
+      // case, and `codegen`'s `guard_snapshot_numeric_global`
+      // re-verifies it right at this instruction, so the two must stay
+      // in step.
+      let snapshot_numeric = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .map(|v| v.is_string() && global_numbers.contains(v.as_str()))
+        .unwrap_or(false);
+      out.set(dst, speculated || is_num_global || snapshot_numeric);
     },
     Instr::SetGlobal { name_const, src } | Instr::AssignGlobal { name_const, src } => {
       if let Some(&g) = global_indices.get(&name_const) {
@@ -2340,7 +2379,7 @@ fn transfer(
     Instr::GetIndex { dst, obj, .. } => {
       let speculated = dst < 64 && (spec_regs >> dst) & 1 != 0;
       let from_int_list = int_facts.map(|f| f.is_int_list(ip, obj)).unwrap_or(false);
-      out.set(dst, from_int_list || speculated);
+      out.set(dst, from_int_list || speculated || unsound_numeric_index());
     },
     Instr::Closure { dst, .. }
     | Instr::GetUpval { dst, .. }
@@ -3335,4 +3374,9 @@ mod ref_classify_tests {
       "Move should propagate non-ref-ness"
     );
   }
+}
+
+pub fn unsound_numeric_index() -> bool {
+  static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+  *ON.get_or_init(|| std::env::var("ZURI_UNSOUND_NUMERIC_INDEX").is_ok())
 }

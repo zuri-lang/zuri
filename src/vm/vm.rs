@@ -1726,6 +1726,90 @@ impl VM {
     out
   }
 
+  /// `snapshot_global_lists`' counterpart for whole numbers: see
+  /// `jit::CompileFacts::global_ints` for why a module-level constant
+  /// needs this at all.
+  ///
+  /// Only reads are scanned. A global this function also WRITES is
+  /// already tracked precisely by the dataflow from the write onward,
+  /// and seeding it here would claim something about its value before
+  /// that write rather than after it.
+  fn snapshot_global_ints(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+    let mut written: rustc_hash::FxHashSet<&str> = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code {
+      if let Instr::SetGlobal { name_const, .. } | Instr::AssignGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        written.insert(v.as_str());
+      }
+    }
+
+    let mut out = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code {
+      if let Instr::GetGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        let name = v.as_str();
+        if written.contains(name) {
+          continue;
+        }
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) {
+          let resolved = self.read_resolved(proto.globals_module, is_root, slot);
+          if resolved.is_number() {
+            let n = resolved.as_number();
+            if n.fract() == 0.0 && n.abs() < 9_223_372_036_854_775_808.0 {
+              out.insert(name.to_string());
+            }
+          }
+        }
+      }
+    }
+    out
+  }
+
+  /// `snapshot_global_ints` widened to every number, integral or not.
+  ///
+  /// The integer snapshot is a subset of this one, and the two answer
+  /// different questions: whether an index can stay in an integer
+  /// register, and whether arithmetic on the value needs a runtime
+  /// `is_number` check at all. A module-level `const DT = 0.1` is the
+  /// second without being the first.
+  fn snapshot_global_numbers(&self, proto: &ObjFunction) -> rustc_hash::FxHashSet<String> {
+    let mut written: rustc_hash::FxHashSet<&str> = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code {
+      if let Instr::SetGlobal { name_const, .. } | Instr::AssignGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        written.insert(v.as_str());
+      }
+    }
+
+    let mut out = rustc_hash::FxHashSet::default();
+    for instr in &proto.chunk.code {
+      if let Instr::GetGlobal { name_const, .. } = instr
+        && let Some(v) = proto.chunk.constants.get(*name_const as usize)
+        && v.is_string()
+      {
+        let name = v.as_str();
+        if written.contains(name) {
+          continue;
+        }
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) {
+          if self
+            .read_resolved(proto.globals_module, is_root, slot)
+            .is_number()
+          {
+            out.insert(name.to_string());
+          }
+        }
+      }
+    }
+    out
+  }
+
   fn resolve_known_classes(&self, proto: &ObjFunction) -> FxHashMap<u64, FxHashMap<String, u16>> {
     let mut out = FxHashMap::default();
 
@@ -2287,6 +2371,8 @@ impl VM {
       field_speculation_off: proto.jit.field_speculation_off.get(),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
+      global_ints: self.snapshot_global_ints(proto),
+      global_numbers: self.snapshot_global_numbers(proto),
       speculative_lists,
       speculative_ints,
       known_classes: self.resolve_known_classes(proto),

@@ -104,6 +104,11 @@ pub fn log_asm_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_ASM").is_some())
 }
 
+pub fn log_facts_enabled() -> bool {
+  static ENABLED: OnceLock<bool> = OnceLock::new();
+  *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_FACTS").is_some())
+}
+
 /// A compiled function's single machine-code entry point, callable
 /// either as an ordinary call (`osr_id = -1`, starts at bytecode `ip
 /// 0`) or as an on-stack-replacement entry (`osr_id >= 0`, jumps
@@ -337,6 +342,33 @@ pub struct CompileFacts {
   pub self_class_bits: Option<(u64, u64)>,
   pub globals_snapshot: FxHashMap<String, ResolvedGlobal>,
   pub global_lists: rustc_hash::FxHashSet<String>,
+  /// Global names holding a whole number at the moment compilation was
+  /// requested.
+  ///
+  /// A module-level `const GRID = 128` is compiled to an ordinary
+  /// `SetGlobal` with the const-ness discarded, so nothing downstream
+  /// can tell it apart from a mutable binding. Without this, a function
+  /// that only READS such a global proves nothing about it:
+  /// `typeflow::IntFacts` has no notion of globals at all, and
+  /// `TypeFacts` only tracks the ones written in the same function. The
+  /// consequence shows up in generated code as index arithmetic done in
+  /// floating point and converted back, with a whole-number proof, at
+  /// every single use; `benchmarks/navier-stokes.zu` spends 28% of its
+  /// time on exactly that, because its strides come from
+  /// `const ROW = WIDTH + 2`.
+  ///
+  /// This is a snapshot, not a proof: the binding is mutable as far as
+  /// anything here knows, so `codegen` re-verifies it at each
+  /// `Instr::GetGlobal` that relies on it. That check runs once per
+  /// read of the global rather than once per index derived from it,
+  /// which in a nested loop is the whole difference.
+  pub global_ints: rustc_hash::FxHashSet<String>,
+  /// `global_ints` widened to every number. Same defect, one level up:
+  /// `TypeFacts` does carry global slots, but seeds them only from a
+  /// `SetGlobal` in the SAME function, so a function that merely reads
+  /// `const DT = 0.1` proves nothing numeric about it and every
+  /// arithmetic op using it pays a runtime `is_number` check.
+  pub global_numbers: rustc_hash::FxHashSet<String>,
   pub speculative_lists: Option<u64>,
   pub speculative_ints: Option<u64>,
   pub known_classes: FxHashMap<u64, FxHashMap<String, u16>>,

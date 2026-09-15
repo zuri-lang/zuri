@@ -924,6 +924,8 @@ struct FuncCompiler<'a, 'b> {
   proven_param_shapes: FxHashMap<u8, ParamShape>,
   numeric_fields: FxHashSet<String>,
   global_lists: FxHashSet<String>,
+  global_ints: FxHashSet<String>,
+  global_numbers: FxHashSet<String>,
   guarded_instance_vars: FxHashMap<u8, (Variable, Variable, Variable)>,
   active_guarded: FxHashSet<u8>,
   known_classes: FxHashMap<u64, FxHashMap<String, u16>>,
@@ -1331,12 +1333,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
     let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
-    let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts);
-    let spec_int_facts =
-      speculative_ints.map(|si| typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts));
+    let int_facts = typeflow::analyze_int(proto, &preds, None, &bytes_facts, &facts.global_ints);
+    let spec_int_facts = speculative_ints
+      .map(|si| typeflow::analyze_int(proto, &preds, Some(si), &bytes_facts, &facts.global_ints));
     let type_facts = typeflow::analyze(
       proto,
       &preds,
+      &facts.global_numbers,
       None,
       None,
       &no_self_numeric_fields,
@@ -1399,6 +1402,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self_numeric_fields: facts.self_numeric_fields,
       numeric_fields: facts.numeric_fields,
       global_lists: facts.global_lists,
+      global_ints: facts.global_ints,
+      global_numbers: facts.global_numbers,
       param_field_slots: facts.param_field_slots,
       construct_field_slots: construct_slots,
       own_func_id,
@@ -1912,6 +1917,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let facts = typeflow::analyze(
           self.proto,
           &self.preds,
+          &self.global_numbers,
           self.speculative_params,
           self.speculative_regs,
           &self.self_numeric_fields,
@@ -5964,6 +5970,112 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   fn emit_get_global(&mut self, ip: usize, dst: u8, name_const: u16) {
     self.emit_get_global_load(ip, dst, name_const);
     self.guard_snapshot_list_global(ip, dst, name_const);
+    // The integer guard proves numeric on its way past, so the two are
+    // mutually exclusive rather than stacked.
+    if !self.guard_snapshot_int_global(ip, dst, name_const) {
+      self.guard_snapshot_numeric_global(ip, dst, name_const);
+    }
+  }
+
+  /// The runtime check that makes `transfer`'s snapshot arm for
+  /// `Instr::GetGlobal` safe: see `jit::CompileFacts::global_numbers`.
+  ///
+  /// Weaker and cheaper than `guard_snapshot_int_global`, and wanted in
+  /// the cases that one cannot serve: a module-level `const DT = 0.1`
+  /// is a number but not a whole one, and proving just that much
+  /// removes the `is_number` check from every arithmetic operation the
+  /// constant feeds.
+  fn guard_snapshot_numeric_global(&mut self, ip: usize, dst: u8, name_const: u16) {
+    if ip + 1 >= self.proto.chunk.code.len() || !self.type_facts.is_numeric(ip + 1, dst) {
+      return;
+    }
+    let Some(name) = self.proto.chunk.constants.get(name_const as usize) else {
+      return;
+    };
+    if !name.is_string() || !self.global_numbers.contains(name.as_str()) {
+      return;
+    }
+
+    let v = self.load_reg(dst);
+    let is_num = self.is_number(v);
+    let ok_block = self.fb.create_block();
+    let deopt_block = self.fb.create_block();
+    self.fb.ins().brif(is_num, ok_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip);
+
+    self.fb.switch_to_block(ok_block);
+  }
+
+  /// `guard_snapshot_list_global`'s counterpart for whole numbers, and
+  /// what makes `transfer_int`'s `GetGlobal` arm safe.
+  ///
+  /// That arm seeds integer-ness from `VM::snapshot_global_ints`, which
+  /// is a reading of the binding taken when compilation was requested,
+  /// not a proof about it. Re-checking here keeps the claim honest, and
+  /// the placement is the whole point: this runs once per read of the
+  /// global, while what it buys is every index derived from that global
+  /// staying in integer registers instead of being computed as a float
+  /// and converted back, with its own whole-number proof, at each use.
+  /// In a nested loop the read happens once per outer iteration and the
+  /// uses once per inner one.
+  ///
+  /// Only emitted where the fact is actually consumed, same as the list
+  /// guard: a global nothing downstream treats as an integer should not
+  /// pay for the check.
+  fn guard_snapshot_int_global(&mut self, ip: usize, dst: u8, name_const: u16) -> bool {
+    if ip + 1 >= self.proto.chunk.code.len() || !self.int_facts.is_int(ip + 1, dst) {
+      return false;
+    }
+    let Some(name) = self.proto.chunk.constants.get(name_const as usize) else {
+      return false;
+    };
+    if !name.is_string() || !self.global_ints.contains(name.as_str()) {
+      return false;
+    }
+
+    let v = self.load_reg(dst);
+    let is_num = self.is_number(v);
+    let numeric_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    let deopt_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_num, numeric_block, &[], deopt_block, &[]);
+
+    // The round trip only means anything once the value is known to be a
+    // number, so it waits for that, the same way the list guard waits for
+    // `is_obj` before touching the tag.
+    self.fb.switch_to_block(numeric_block);
+    let f = self.to_f64(v);
+    let as_int = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let is_whole = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+    let seed_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_whole, seed_block, &[], deopt_block, &[]);
+
+    // Hand the proven integer straight to the integer view, so the uses
+    // downstream read it out of a register rather than reconstructing it.
+    self.fb.switch_to_block(seed_block);
+    if self.int_tracked[dst as usize] {
+      self.fb.def_var(self.reg_vars_int[dst as usize], as_int);
+    }
+    self.fb.ins().jump(ok_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip);
+
+    self.fb.switch_to_block(ok_block);
+    true
   }
 
   /// The runtime check that makes `transfer_list`'s `GetGlobal` arm safe.
@@ -13104,6 +13216,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         obj,
         idx: iidx,
       } => {
+        if crate::jit::log_facts_enabled() {
+          eprintln!(
+            "[facts] {} ip={} GetIndex obj=r{} idx=r{} | idx: is_int={} tracked={} proven_int={} proven_num={} | obj: list={} int_list={} tf_num={}",
+            self.proto.display_name(), ip, obj, iidx,
+            self.int_facts.is_int(ip, iidx),
+            self.int_tracked.get(iidx as usize).copied().unwrap_or(false),
+            self.proven_int(ip, iidx),
+            self.proven_numeric(ip, iidx),
+            self.proven_list(ip, obj),
+            self.int_facts.is_int_list(ip, obj),
+            self.type_facts.is_numeric(ip, dst),
+          );
+        }
         if let Some(&(slot, count)) = self.scalar_lists.get(&obj) {
           self.emit_scalar_list_get(
             dst,

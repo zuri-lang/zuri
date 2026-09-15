@@ -1,0 +1,249 @@
+/**
+ * A fluid solver, ported from Octane's navier-stokes benchmark.
+ *
+ * Octane's version is itself a port of Jos Stam's "Real-Time Fluid
+ * Dynamics for Games", and it is the standard measurement for dense
+ * floating-point grid work in a dynamic language: a square grid held as
+ * one flat list, swept by Gauss-Seidel relaxation, semi-Lagrangian
+ * advection and a divergence projection. Every inner loop here is
+ * indexed reads and writes into lists of floats, with the advection
+ * step additionally computing its indices from floating-point
+ * coordinates.
+ *
+ * The grid and solver iteration count are Octane's own
+ * (`setResolution(128, 128)`, `setIterations(20)`). The kernels are
+ * faithful to Octane's; the driver runs a fixed source pattern rather
+ * than Octane's UI-driven one, and chooses its own frame count, so the
+ * checksum below is this program's own.
+ *
+ * contributed by Richard Ore
+ */
+
+const WIDTH = 128
+const HEIGHT = 128
+const ROW = WIDTH + 2
+const SIZE = (WIDTH + 2) * (HEIGHT + 2)
+const SOLVER_ITERATIONS = 20
+const STEPS = 120
+const DT = 0.1
+
+def add_fields(x, s, dt) {
+  iter var i = 0; i < SIZE; i++ {
+    x[i] += dt * s[i]
+  }
+}
+
+/* Reflects the interior back across each edge. `b` selects which
+ * component is being mirrored: 1 negates across the vertical walls, 2
+ * across the horizontal ones, 0 negates nothing. */
+def set_bnd(b, x) {
+  const last_row = (HEIGHT + 1) * ROW
+  const top_row = HEIGHT * ROW
+
+  if b == 2 {
+    iter var i = 1; i <= WIDTH; i++ {
+      x[i] = -x[i + ROW]
+      x[i + last_row] = -x[i + top_row]
+    }
+
+    iter var j = 1; j <= HEIGHT; j++ {
+      x[j * ROW] = x[1 + j * ROW]
+      x[(WIDTH + 1) + j * ROW] = x[WIDTH + j * ROW]
+    }
+  } else if b == 1 {
+    iter var i = 1; i <= WIDTH; i++ {
+      x[i] = x[i + ROW]
+      x[i + last_row] = x[i + top_row]
+    }
+
+    iter var j = 1; j <= HEIGHT; j++ {
+      x[j * ROW] = -x[1 + j * ROW]
+      x[(WIDTH + 1) + j * ROW] = -x[WIDTH + j * ROW]
+    }
+  } else {
+    iter var i = 1; i <= WIDTH; i++ {
+      x[i] = x[i + ROW]
+      x[i + last_row] = x[i + top_row]
+    }
+
+    iter var j = 1; j <= HEIGHT; j++ {
+      x[j * ROW] = x[1 + j * ROW]
+      x[(WIDTH + 1) + j * ROW] = x[WIDTH + j * ROW]
+    }
+  }
+
+  x[0] = 0.5 * (x[1] + x[ROW])
+  x[last_row] = 0.5 * (x[1 + last_row] + x[top_row])
+  x[WIDTH + 1] = 0.5 * (x[WIDTH] + x[WIDTH + 1 + ROW])
+  x[WIDTH + 1 + last_row] = 0.5 * (x[WIDTH + last_row] + x[WIDTH + 1 + top_row])
+}
+
+/* Gauss-Seidel relaxation. The hottest loop in the benchmark by a wide
+ * margin: five indexed reads and one indexed write per cell, repeated
+ * over the whole grid once per solver iteration. */
+def lin_solve(b, x, x0, a, c) {
+  const inv_c = 1.0 / c
+
+  iter var k = 0; k < SOLVER_ITERATIONS; k++ {
+    iter var j = 1; j <= HEIGHT; j++ {
+      const row = j * ROW
+      const prev = row - ROW
+      const next = row + ROW
+
+      iter var i = 1; i <= WIDTH; i++ {
+        const idx = row + i
+        x[idx] = (x0[idx] + a * (x[idx - 1] + x[idx + 1] + x[prev + i] + x[next + i])) * inv_c
+      }
+    }
+
+    set_bnd(b, x)
+  }
+}
+
+def diffuse(b, x, x0, dt) {
+  const a = 0.0
+  lin_solve(b, x, x0, a, 1 + 4 * a)
+}
+
+/* Semi-Lagrangian advection: trace each cell back along the velocity
+ * field and read where it came from, bilinearly. The source index comes
+ * out of floating-point arithmetic, which is what separates this loop
+ * from the relaxation above. */
+def advect(b, d, d0, u, v, dt) {
+  const wdt = dt * WIDTH
+  const hdt = dt * HEIGHT
+  const w_edge = WIDTH + 0.5
+  const h_edge = HEIGHT + 0.5
+
+  iter var j = 1; j <= HEIGHT; j++ {
+    const row = j * ROW
+
+    iter var i = 1; i <= WIDTH; i++ {
+      const idx = row + i
+
+      var px = i - wdt * u[idx]
+      if px < 0.5 {
+        px = 0.5
+      } else if px > w_edge {
+        px = w_edge
+      }
+
+      var py = j - hdt * v[idx]
+      if py < 0.5 {
+        py = 0.5
+      } else if py > h_edge {
+        py = h_edge
+      }
+
+      const i0 = px.floor()
+      const j0 = py.floor()
+      const s1 = px - i0
+      const s0 = 1 - s1
+      const t1 = py - j0
+      const t0 = 1 - t1
+
+      const row1 = j0 * ROW
+      const row2 = row1 + ROW
+
+      d[idx] = s0 * (t0 * d0[i0 + row1] + t1 * d0[i0 + row2]) +
+        s1 * (t0 * d0[i0 + 1 + row1] + t1 * d0[i0 + 1 + row2])
+    }
+  }
+
+  set_bnd(b, d)
+}
+
+def project(u, v, p, div) {
+  const h = -0.5 / (WIDTH * HEIGHT).sqrt()
+
+  iter var j = 1; j <= HEIGHT; j++ {
+    const row = j * ROW
+    const prev = row - ROW
+    const next = row + ROW
+
+    iter var i = 1; i <= WIDTH; i++ {
+      const idx = row + i
+      div[idx] = h * (u[idx + 1] - u[idx - 1] + v[next + i] - v[prev + i])
+      p[idx] = 0.0
+    }
+  }
+
+  set_bnd(0, div)
+  set_bnd(0, p)
+  lin_solve(0, p, div, 1, 4)
+
+  const w_scale = 0.5 * WIDTH
+  const h_scale = 0.5 * HEIGHT
+
+  iter var j = 1; j <= HEIGHT; j++ {
+    const row = j * ROW
+    const prev = row - ROW
+    const next = row + ROW
+
+    iter var i = 1; i <= WIDTH; i++ {
+      const idx = row + i
+      u[idx] -= w_scale * (p[idx + 1] - p[idx - 1])
+      v[idx] -= h_scale * (p[next + i] - p[prev + i])
+    }
+  }
+
+  set_bnd(1, u)
+  set_bnd(2, v)
+}
+
+/* A fixed stirring pattern, so every run does the same work. */
+def seed_sources(dens_prev, u_prev, v_prev, step) {
+  iter var i = 0; i < SIZE; i++ {
+    dens_prev[i] = 0.0
+    u_prev[i] = 0.0
+    v_prev[i] = 0.0
+  }
+
+  const cx = (WIDTH // 2) + 1
+  const cy = (HEIGHT // 2) + 1
+
+  iter var d = -3; d <= 3; d++ {
+    const idx = (cy + d) * ROW + cx
+    dens_prev[idx] = 100.0
+    u_prev[idx] = 20.0 * ((step % 7) - 3)
+    v_prev[idx] = 20.0 * ((step % 5) - 2)
+  }
+}
+
+def main() {
+  var u = [0.0] * SIZE
+  var v = [0.0] * SIZE
+  var u_prev = [0.0] * SIZE
+  var v_prev = [0.0] * SIZE
+  var dens = [0.0] * SIZE
+  var dens_prev = [0.0] * SIZE
+
+  iter var step = 0; step < STEPS; step++ {
+    seed_sources(dens_prev, u_prev, v_prev, step)
+
+    add_fields(u, u_prev, DT)
+    add_fields(v, v_prev, DT)
+    diffuse(1, u_prev, u, DT)
+    diffuse(2, v_prev, v, DT)
+    project(u_prev, v_prev, u, v)
+    advect(1, u, u_prev, u_prev, v_prev, DT)
+    advect(2, v, v_prev, u_prev, v_prev, DT)
+    project(u, v, u_prev, v_prev)
+
+    add_fields(dens, dens_prev, DT)
+    diffuse(0, dens_prev, dens, DT)
+    advect(0, dens, dens_prev, u, v, DT)
+  }
+
+  var total = 0.0
+  iter var i = 0; i < SIZE; i++ {
+    total += dens[i]
+  }
+
+  echo 'density checksum: ${total}'
+}
+
+var start = time()
+main()
+
+echo '\nTotal time taken: ${time() - start}s'

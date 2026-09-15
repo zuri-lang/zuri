@@ -1,0 +1,113 @@
+/**
+ * SciMark2's sparse matrix multiply kernel.
+ *
+ * Ported from the NIST SciMark 2.0 benchmark (SparseCompRow.c and
+ * kernel.c), which is the standard measurement for this shape: a
+ * compressed-row sparse matrix multiplied by a dense vector, over and
+ * over. The inner loop is three indexed reads and a multiply-add,
+ * with nothing else in it, which is what makes it worth having here.
+ * Every other array-shaped benchmark in this directory either indexes
+ * whole numbers (fannkuch-redux, meteor) or reaches its numbers
+ * through object fields (nbody), so none of them says anything about
+ * a hot loop reading floating-point values out of a list.
+ *
+ * The matrix is generated the way SciMark's kernel.c generates it, at
+ * its large (out-of-cache) problem size: 100000 rows and 1000000
+ * nonzeros, so ten nonzeros per row, with the column stride widening as
+ * the row index grows. The access pattern into the dense vector
+ * therefore spreads out the further down the matrix you go, which is
+ * the whole point of the kernel.
+ *
+ * SciMark fills the values from its own lagged-Fibonacci generator;
+ * this uses a plain congruential one instead, so the checksum below is
+ * this program's own rather than SciMark's. Nothing about the access
+ * pattern, the sizes or the arithmetic differs.
+ *
+ * contributed by Richard Ore
+ */
+
+const N = 100_000
+const NONZEROS_PER_ROW = 10
+const ITERATIONS = 240
+
+/* A plain congruential generator, chosen so this program and any port
+ * of it agree digit for digit on the matrix they built. */
+class Random {
+  @new(seed) {
+    self.seed = seed
+  }
+
+  next() {
+    self.seed = (self.seed * 16_807) % 2_147_483_647
+    return self.seed / 2_147_483_647.0
+  }
+}
+
+def random_vector(n, rng) {
+  var v = [0.0] * n
+
+  iter var i = 0; i < n; i++ {
+    v[i] = rng.next()
+  }
+
+  return v
+}
+
+/* y = A * x, with A held as (val, row, col) in compressed row form. */
+def matmult(y, val, row, col, x, reps) {
+  var rows = y.length()
+
+  iter var r = 0; r < reps; r++ {
+    iter var i = 0; i < rows; i++ {
+      var sum = 0.0
+      var start = row[i]
+      var stop = row[i + 1]
+
+      iter var j = start; j < stop; j++ {
+        sum += x[col[j]] * val[j]
+      }
+
+      y[i] = sum
+    }
+  }
+}
+
+def main() {
+  var rng = Random(101)
+  var nonzeros = N * NONZEROS_PER_ROW
+
+  var x = random_vector(N, rng)
+  var y = [0.0] * N
+  var val = random_vector(nonzeros, rng)
+  var col = [0] * nonzeros
+  var row = [0] * (N + 1)
+
+  iter var r = 0; r < N; r++ {
+    var row_start = r * NONZEROS_PER_ROW
+    row[r + 1] = row_start + NONZEROS_PER_ROW
+
+    var step = r // NONZEROS_PER_ROW
+    if step < 1 {
+      step = 1
+    }
+
+    iter var i = 0; i < NONZEROS_PER_ROW; i++ {
+      col[row_start + i] = i * step
+    }
+  }
+
+  matmult(y, val, row, col, x, ITERATIONS)
+
+  /* Sum the result so nothing above can be optimised away, and so a
+   * port that got the matrix wrong disagrees visibly. */
+  var total = 0.0
+  iter var i = 0; i < N; i++ {
+    total += y[i]
+  }
+
+  echo 'checksum: ${total}'
+}
+
+var start = time()
+main()
+echo '\nTotal time taken: ${time() - start}s'
