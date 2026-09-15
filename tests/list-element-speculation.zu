@@ -55,6 +55,33 @@ def late_alias(idx, data, n, flag) {
   return total
 }
 
+# One list under two names. Nothing in the body says they are the same
+# list, so the claim has to belong to the list rather than to either
+# name, or the store through `copy` leaves `own` still claiming whole
+# numbers. The fraction goes in long after the loop is compiled.
+def own_alias(n, flag) {
+  var own = [0, 1, 2, 3]
+  var copy = own
+
+  if !flag {
+    copy = [0, 0, 0, 0]
+  }
+
+  var total = 0
+
+  iter var i = 0; i < n; i++ {
+    if i > 150_000 {
+      copy[1] = 2.5
+    }
+
+    total += TABLE[own[1]]
+  }
+
+  return total
+}
+
+const TABLE = [10, 20, 30, 40]
+
 var data = [10.5, 20.25, 30.125, 40.0625]
 var idx = [0, 1, 2, 3]
 
@@ -84,4 +111,10 @@ catch {
   echo late_alias(m, data, 200_000, true)
 } as e {
   echo 'late raised: ${e.message}'
+}
+
+catch {
+  echo own_alias(200_000, true)
+} as e {
+  echo 'own alias raised: ${e.message}'
 }

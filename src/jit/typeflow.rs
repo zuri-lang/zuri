@@ -352,7 +352,6 @@ pub fn analyze(
   numeric_fields: &rustc_hash::FxHashSet<String>,
   int_facts: Option<&IntFacts>,
   speculative_num_lists: Option<u64>,
-  aliasing: &AliasSummary,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -442,29 +441,14 @@ pub fn analyze(
   // integer one is and checked by the same entry scan. What it buys
   // that the integer analysis cannot is a list of floats: an indexed
   // read out of one is numeric even though no element of it is whole.
-  let list_seed: RegSet = {
-    let mut set = RegSet::empty(total_slots);
-    if let Some(mask) = speculative_num_lists {
-      let required = if proto.variadic {
-        proto.arity.saturating_sub(1)
-      } else {
-        proto.arity
-      };
-      for r in 0..(required as usize).min(64) {
-        if mask & (1u64 << r) != 0 {
-          set.set(r as u8, true);
-        }
-      }
-    }
-    set
-  };
-
-  let mut num_list_entry: Vec<RegSet> = (0..code_len)
+  let sites = ElemSites::build(proto, speculative_num_lists.unwrap_or(0));
+  let entry_elem = elem_entry_state(num_registers, &sites);
+  let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        list_seed.clone()
+        entry_elem.clone()
       } else {
-        RegSet::full(total_slots)
+        ElemState::new(num_registers, sites.count, PT_UNSET, true)
       }
     })
     .collect();
@@ -474,12 +458,13 @@ pub fn analyze(
   // Seed every out set from its (possibly still-`full()`, not-yet-
   // converged) in set, so the worklist loop below has a real starting
   // point to compare against.
-  let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
+  let mut out: Vec<(RegSet, ElemState)> = (0..code_len)
     .map(|ip| {
+      let claims = elem[ip].claims(num_registers);
       (
         transfer(
           &entry[ip],
-          &num_list_entry[ip],
+          &claims,
           ip,
           &code[ip],
           proto,
@@ -492,14 +477,7 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_num_list(
-          &entry[ip],
-          &num_list_entry[ip],
-          &code[ip],
-          proto,
-          &aliasing.isolated,
-          &aliasing.alias_group,
-        ),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
       )
     })
     .collect();
@@ -508,11 +486,14 @@ pub fn analyze(
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(total_slots);
-    let mut new_list_in = RegSet::full(total_slots);
+    let mut new_elem: Option<ElemState> = None;
     let mut any_pred = false;
     for &p in &preds[ip] {
       new_in.and_assign(&out[p].0);
-      new_list_in.and_assign(&out[p].1);
+      match &mut new_elem {
+        None => new_elem = Some(out[p].1.clone()),
+        Some(acc) => acc.meet_assign(&out[p].1),
+      }
       any_pred = true;
     }
     if !any_pred {
@@ -521,8 +502,10 @@ pub fn analyze(
       // actually executes this instruction, so whatever `codegen`
       // does with an over-optimistic fact here can never run.
       new_in = RegSet::full(total_slots);
-      new_list_in = RegSet::full(total_slots);
+      new_elem = None;
     }
+    let mut new_elem =
+      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true));
     if ip == 0
       && let Some(seed) = &seed
     {
@@ -531,16 +514,17 @@ pub fn analyze(
       new_in = RegSet::empty(total_slots);
     }
     if ip == 0 {
-      new_list_in = list_seed.clone();
+      new_elem = entry_elem.clone();
     }
 
-    if new_in != entry[ip] || new_list_in != num_list_entry[ip] {
+    if new_in != entry[ip] || new_elem != elem[ip] {
       entry[ip] = new_in;
-      num_list_entry[ip] = new_list_in;
+      elem[ip] = new_elem;
+      let claims = elem[ip].claims(num_registers);
       out[ip] = (
         transfer(
           &entry[ip],
-          &num_list_entry[ip],
+          &claims,
           ip,
           &code[ip],
           proto,
@@ -553,14 +537,7 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_num_list(
-          &entry[ip],
-          &num_list_entry[ip],
-          &code[ip],
-          proto,
-          &aliasing.isolated,
-          &aliasing.alias_group,
-        ),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -571,74 +548,287 @@ pub fn analyze(
     }
   }
 
+  let num_list_entry: Vec<RegSet> = elem.iter().map(|e| e.claims(num_registers)).collect();
+
   TypeFacts {
     entry,
     num_list_entry,
   }
 }
 
-/// What one instruction does to the "this register holds a list of
-/// nothing but numbers" claim, given both that claim and the numeric
-/// claim on entry to it. Runs inside `analyze`'s fixed point alongside
-/// `transfer`, reading the same `in_num` set that `transfer` is
-/// deriving; see `TypeFacts::num_list_entry` on why it cannot be its
-/// own pass.
+/// A register's element claim has to hang off the LIST, not off the
+/// register naming it. `var b = a` gives one list two names, and a
+/// store through either one changes what both of them see; hanging
+/// the claim on the register lets `b[i] = 0.5` clear `b` and leave
+/// `a` still claiming whole numbers, which is a miscompile, not a
+/// missed optimisation.
 ///
-/// A near mirror of the list half of `transfer_int`, with one
-/// difference that is the whole point of having both: a store only
-/// kills the claim if what went in was not a number at all, so a loop
-/// writing floats into a float array keeps it, where the integer
-/// analysis would not.
-fn transfer_num_list(
-  in_num: &RegSet,
-  in_num_list: &RegSet,
+/// So each register instead points at the ALLOCATION SITE its list
+/// came from, and the claim belongs to the site. Two registers holding
+/// one list agree by construction, because they point at the same
+/// site.
+///
+/// `PT_UNKNOWN` is "could be any list at all": a value read out of a
+/// field, returned from a call, or merged from paths that disagree.
+/// It carries no claim, and a store through it clears every claim,
+/// since it could be naming any of them. `PT_UNSET` is the optimistic
+/// top the fixed point starts from, and meets with anything to give
+/// that other thing.
+const PT_UNKNOWN: u16 = u16::MAX - 1;
+const PT_UNSET: u16 = u16::MAX;
+
+/// Past this many list-allocating instructions in one function the
+/// analysis gives up and claims nothing, rather than carrying a site
+/// bitset that large at every bytecode position.
+const MAX_ELEM_SITES: usize = 1024;
+
+/// Which allocation site each instruction and each seeded parameter
+/// owns. Built once per function, shared by the whole-number and the
+/// numeric element analyses so both agree on object identity.
+struct ElemSites {
+  of_ip: Vec<u16>,
+  of_param: [u16; 64],
+  count: usize,
+}
+
+impl ElemSites {
+  fn build(proto: &ObjFunction, seed_mask: u64) -> ElemSites {
+    let code = &proto.chunk.code;
+    let mut of_ip = vec![PT_UNKNOWN; code.len()];
+    let mut of_param = [PT_UNKNOWN; 64];
+    let mut count = 0usize;
+
+    // A seeded parameter gets a site of its own, which is sound only
+    // because `codegen::emit_elem_guards` compares the seeded
+    // parameters pairwise at entry; without that check `f(a, a)` would
+    // be two sites for one list.
+    let required = if proto.variadic {
+      proto.arity.saturating_sub(1)
+    } else {
+      proto.arity
+    };
+    for r in 0..(required as usize).min(64) {
+      if seed_mask & (1u64 << r) != 0 {
+        of_param[r] = count as u16;
+        count += 1;
+      }
+    }
+
+    // `Mul`/`MulImm` allocate when they are list repetition (`[0] * n`)
+    // and produce a plain number otherwise, in which case the site
+    // simply never carries a claim anyone reads.
+    for (ip, instr) in code.iter().enumerate() {
+      if matches!(
+        instr,
+        Instr::MakeList { .. } | Instr::Mul { .. } | Instr::MulImm { .. }
+      ) {
+        if count >= MAX_ELEM_SITES {
+          return ElemSites {
+            of_ip: vec![PT_UNKNOWN; code.len()],
+            of_param: [PT_UNKNOWN; 64],
+            count: 0,
+          };
+        }
+        of_ip[ip] = count as u16;
+        count += 1;
+      }
+    }
+
+    ElemSites {
+      of_ip,
+      of_param,
+      count,
+    }
+  }
+}
+
+/// Where every register points, plus which sites still hold what was
+/// claimed of them.
+#[derive(Clone, PartialEq, Eq)]
+struct ElemState {
+  pt: SmallVec<[u16; 32]>,
+  ok: SmallVec<[u64; 4]>,
+}
+
+impl ElemState {
+  fn new(num_registers: usize, num_sites: usize, pt_fill: u16, ok_fill: bool) -> ElemState {
+    ElemState {
+      pt: smallvec![pt_fill; num_registers],
+      ok: smallvec![if ok_fill { u64::MAX } else { 0 }; num_sites.div_ceil(64).max(1)],
+    }
+  }
+
+  #[inline]
+  fn site_ok(&self, site: u16) -> bool {
+    if site >= PT_UNKNOWN {
+      return false;
+    }
+    let (w, b) = (site as usize / 64, site as usize % 64);
+    self.ok.get(w).map(|x| (x >> b) & 1 != 0).unwrap_or(false)
+  }
+
+  #[inline]
+  fn set_site_ok(&mut self, site: u16, v: bool) {
+    if site >= PT_UNKNOWN {
+      return;
+    }
+    let (w, b) = (site as usize / 64, site as usize % 64);
+    if let Some(x) = self.ok.get_mut(w) {
+      if v {
+        *x |= 1u64 << b;
+      } else {
+        *x &= !(1u64 << b);
+      }
+    }
+  }
+
+  /// `site_ok`, but reading the optimistic top as claimed, for the
+  /// same reason `claimed` does.
+  #[inline]
+  fn claimed_site(&self, site: u16) -> bool {
+    site == PT_UNSET || self.site_ok(site)
+  }
+
+  fn clear_all_sites(&mut self) {
+    for w in &mut self.ok {
+      *w = 0;
+    }
+  }
+
+  /// Two paths that disagree about which list a register names leave
+  /// it naming no list in particular; claims survive only where every
+  /// path still holds them.
+  fn meet_assign(&mut self, other: &ElemState) {
+    for (a, b) in self.pt.iter_mut().zip(other.pt.iter()) {
+      if *a == PT_UNSET {
+        *a = *b;
+      } else if *b != PT_UNSET && *a != *b {
+        *a = PT_UNKNOWN;
+      }
+    }
+    for (a, b) in self.ok.iter_mut().zip(other.ok.iter()) {
+      *a &= *b;
+    }
+  }
+
+  /// Whether `r`'s list still holds what was claimed of it.
+  ///
+  /// `PT_UNSET` counts as claimed, and has to: it is the optimistic
+  /// top this fixed point starts every block from, and reading it as
+  /// "claims nothing" would make the transfer grow its output as its
+  /// input shrank, which is the one thing a worklist iteration cannot
+  /// survive. It only survives to convergence on a register no path
+  /// defines here, which nothing can go on to read. Same reasoning as
+  /// `RegSet::full` seeding the unreachable blocks.
+  #[inline]
+  fn claimed(&self, r: u8) -> bool {
+    match self.pt.get(r as usize) {
+      Some(&PT_UNSET) => true,
+      Some(&s) => self.site_ok(s),
+      None => false,
+    }
+  }
+
+  /// The claims as the register bitset the rest of the module already
+  /// speaks, so nothing downstream has to know sites exist.
+  fn claims(&self, num_registers: usize) -> RegSet {
+    let mut set = RegSet::empty(num_registers);
+    for r in 0..num_registers.min(256) {
+      if self.claimed(r as u8) {
+        set.set(r as u8, true);
+      }
+    }
+    set
+  }
+}
+
+/// What one instruction does to object identity and to the element
+/// claims. `accepted` is the registers whose value may be stored into
+/// a claimed list without ending the claim: the whole numbers for the
+/// integer analysis, the numbers for the numeric one, which is the
+/// only thing separating the two.
+fn transfer_elem(
+  state: &ElemState,
+  accepted: &RegSet,
   instr: &Instr,
+  ip: usize,
   proto: &ObjFunction,
-  isolated: &RegSet,
-  alias_group: &[u64],
-) -> RegSet {
-  let mut out = in_num_list.clone();
+  sites: &ElemSites,
+) -> ElemState {
+  let mut out = state.clone();
+  let pt = |r: u8| state.pt.get(r as usize).copied().unwrap_or(PT_UNKNOWN);
+
+  // A fresh allocation at a site any register still names means those
+  // registers are holding an OLDER object from the same site, which
+  // this cannot tell apart from the new one. They lose their footing
+  // rather than inherit the new list's claim.
+  let allocate = |out: &mut ElemState, dst: u8, site: u16, ok: bool| {
+    if site >= PT_UNKNOWN {
+      for slot in out.pt.iter_mut() {
+        if *slot == site {
+          *slot = PT_UNKNOWN;
+        }
+      }
+      if let Some(slot) = out.pt.get_mut(dst as usize) {
+        *slot = PT_UNKNOWN;
+      }
+      return;
+    }
+    for slot in out.pt.iter_mut() {
+      if *slot == site {
+        *slot = PT_UNKNOWN;
+      }
+    }
+    if let Some(slot) = out.pt.get_mut(dst as usize) {
+      *slot = site;
+    }
+    out.set_site_ok(site, ok);
+  };
+
+  let set_pt = |out: &mut ElemState, r: u8, v: u16| {
+    if let Some(slot) = out.pt.get_mut(r as usize) {
+      *slot = v;
+    }
+  };
 
   match *instr {
-    Instr::Move { dst, src } => out.set(dst, in_num_list.get(src)),
-
-    // List repetition: `[0.0] * n` and its folded-immediate form.
-    Instr::Mul { dst, a, b } => {
-      out.set(dst, in_num_list.get(a) || in_num_list.get(b));
-    },
-    Instr::MulImm { dst, a, .. } => out.set(dst, in_num_list.get(a)),
+    Instr::Move { dst, src } => set_pt(&mut out, dst, pt(src)),
 
     Instr::MakeList { dst, start, count } => {
-      let all_num = count > 0 && (0..count).all(|offset| in_num.get(start + offset));
-      out.set(dst, all_num);
+      let ok = count > 0 && (0..count).all(|offset| accepted.get(start + offset));
+      allocate(&mut out, dst, sites.of_ip[ip], ok);
     },
 
-    // See `transfer_int`'s own `SetIndex` arm: same aliasing rules,
-    // same reason a parameter the entry guard compared can be cleared
-    // on its own.
+    // List repetition copies the elements of the list it repeats.
+    Instr::Mul { dst, a, b } => {
+      let from = if pt(a) < PT_UNKNOWN { pt(a) } else { pt(b) };
+      allocate(&mut out, dst, sites.of_ip[ip], state.claimed_site(from));
+    },
+    Instr::MulImm { dst, a, .. } => {
+      allocate(&mut out, dst, sites.of_ip[ip], state.claimed_site(pt(a)));
+    },
+
+    // The claim dies for the LIST, so every name for it loses the
+    // claim at once. A store through a register naming no list in
+    // particular could be hitting any of them.
     Instr::SetIndex { obj, idx: _, src } => {
-      if !in_num.get(src) {
-        if isolated.get(obj) {
-          let doomed = alias_group[obj as usize];
-          for bit in 0..64u8 {
-            if doomed & (1u64 << bit) != 0 {
-              out.set(bit, false);
-            }
-          }
-        } else {
-          for w in &mut out.words {
-            *w = 0;
-          }
+      if !accepted.get(src) {
+        match pt(obj) {
+          // Nothing has reached here yet to say which list this is;
+          // a real path will, and the kill happens then. Clearing
+          // now would be the transfer running backwards.
+          PT_UNSET => {},
+          PT_UNKNOWN => out.clear_all_sites(),
+          site => out.set_site_ok(site, false),
         }
       }
     },
 
-    // Reachable from somewhere this function cannot see any more, so
-    // anything at all could be written into it from here on.
+    // Reachable from somewhere this function cannot see any more.
     Instr::SetGlobal { src, .. }
     | Instr::AssignGlobal { src, .. }
     | Instr::SetUpval { src, .. } => {
-      out.set(src, false);
+      out.set_site_ok(pt(src), false);
     },
 
     Instr::Invoke {
@@ -659,30 +849,58 @@ fn transfer_num_list(
           }
         })
         .unwrap_or("");
-      let builtin_read =
-        in_num_list.get(obj) && num_args == 0 && matches!(method_name, "length" | "is_empty");
-      if !builtin_read {
-        for w in &mut out.words {
-          *w = 0;
-        }
+      // Methods that cannot run Zuri code, and so cannot put anything
+      // into a list this function is reasoning about.
+      //
+      // `length`/`is_empty` are here because a kernel that walks an
+      // array almost always reads its length first, and clearing every
+      // claim there would undo the analysis before the loop is even
+      // reached; the claim itself is what establishes the receiver
+      // really is a list, so a user class with a method of that name
+      // never qualifies. The arithmetic names are the same set the
+      // whole-number analysis has always trusted, and `max`/`min` are
+      // the same: a running maximum folded inside the loop must not
+      // cost that loop every array claim it has.
+      let reads_only = (state.claimed(obj)
+        && num_args == 0
+        && matches!(method_name, "length" | "is_empty"))
+        || (matches!(method_name, "max" | "min") && num_args == 1)
+        || matches!(
+          method_name,
+          "abs" | "sign" | "floor" | "ceil" | "trunc" | "round" | "sqrt" | "to_number"
+        );
+      if !reads_only {
+        out.clear_all_sites();
       }
-      out.set(dst, false);
+      set_pt(&mut out, dst, PT_UNKNOWN);
     },
 
     Instr::Call { dst, .. } | Instr::InvokeSuper { dst, .. } | Instr::CallSuperCtor { dst, .. } => {
-      for w in &mut out.words {
-        *w = 0;
-      }
-      out.set(dst, false);
+      out.clear_all_sites();
+      set_pt(&mut out, dst, PT_UNKNOWN);
     },
 
     _ => {
       if let Some(dst) = any_dst(instr) {
-        out.set(dst, false);
+        set_pt(&mut out, dst, PT_UNKNOWN);
       }
     },
   }
   out
+}
+
+/// The state on entry to a function: the seeded parameters name their
+/// own lists and carry their claims, everything else names nothing in
+/// particular.
+fn elem_entry_state(num_registers: usize, sites: &ElemSites) -> ElemState {
+  let mut state = ElemState::new(num_registers, sites.count, PT_UNKNOWN, false);
+  for (r, &site) in sites.of_param.iter().enumerate() {
+    if site < PT_UNKNOWN && r < num_registers {
+      state.pt[r] = site;
+      state.set_site_ok(site, true);
+    }
+  }
+  state
 }
 
 //-----------------------------------------------------------------------------------
@@ -718,14 +936,6 @@ fn transfer_num_list(
 pub struct IntFacts {
   pub(crate) entry: Vec<RegSet>,
   pub(crate) list_entry: Vec<RegSet>,
-  /// The seeded list parameters the body never reassigns and never
-  /// copies out of, so the only other name any of them could have is
-  /// another parameter. `transfer_int`'s `SetIndex` arm keeps their
-  /// claims alive independently of each other, which is only sound
-  /// because `codegen` compares them pairwise at entry; the two have
-  /// to be built from the same set, so it is published here rather
-  /// than recomputed there.
-  pub isolated_mask: u64,
 }
 
 impl IntFacts {
@@ -775,111 +985,6 @@ impl IntFacts {
   }
 }
 
-/// What `transfer_int` and `transfer_num_list` need in order to keep
-/// one list's element claim alive while clearing another's.
-///
-/// `isolated` is the seeded list parameters the body never reassigns,
-/// so each still names the argument it was called with for the whole
-/// function; `codegen::emit_elem_guards` compares those pairwise on
-/// the way in, which is what rules out two of them turning out to be
-/// one list.
-///
-/// `alias_group[r]` is every register `r` could share an object with
-/// through a chain of `Move`s. Flow-insensitive on purpose: the
-/// question is only ever "could these two ever be the same object",
-/// and folding in a copy that was live at some unrelated point costs
-/// nothing but a slightly wider kill.
-///
-/// Computed once, outside both analyses, because they have to agree:
-/// each keeps claims alive on the strength of the SAME pairwise
-/// comparison `codegen` emits, so a register one of them treats as
-/// isolated and the other does not would be a claim nothing checked.
-pub struct AliasSummary {
-  pub isolated: RegSet,
-  pub alias_group: Vec<u64>,
-}
-
-impl AliasSummary {
-  pub fn build(proto: &ObjFunction, seed_mask: u64) -> AliasSummary {
-    let code = &proto.chunk.code;
-    let num_registers = proto.num_registers as usize;
-    let required = if proto.variadic {
-      proto.arity.saturating_sub(1)
-    } else {
-      proto.arity
-    };
-
-    let mut parent: Vec<usize> = (0..num_registers).collect();
-    fn find(parent: &mut Vec<usize>, mut r: usize) -> usize {
-      while parent[r] != r {
-        parent[r] = parent[parent[r]];
-        r = parent[r];
-      }
-      r
-    }
-    for instr in code {
-      if let Instr::Move { dst, src } = *instr {
-        let (a, b) = (
-          find(&mut parent, dst as usize),
-          find(&mut parent, src as usize),
-        );
-        if a != b {
-          parent[a] = b;
-        }
-      }
-    }
-    let mut alias_group = vec![0u64; num_registers];
-    for r in 0..num_registers.min(64) {
-      let root = find(&mut parent, r);
-      for other in 0..num_registers.min(64) {
-        if find(&mut parent, other) == root {
-          alias_group[r] |= 1u64 << other;
-        }
-      }
-    }
-
-    let mut redefined = vec![false; num_registers];
-    for instr in code {
-      if let Some(d) = any_dst(instr) {
-        redefined[d as usize] = true;
-      }
-    }
-
-    let mut isolated = RegSet::empty(num_registers);
-    for r in 0..(required as usize).min(num_registers).min(64) {
-      if seed_mask & (1u64 << r) != 0 && !redefined[r] {
-        isolated.set(r as u8, true);
-      }
-    }
-
-    AliasSummary {
-      isolated,
-      alias_group,
-    }
-  }
-
-  /// A summary that claims no isolation at all: every store of the
-  /// wrong kind of value clears every claim. What the general body is
-  /// built from, since nothing has compared anything pairwise on the
-  /// way into it.
-  pub fn conservative(proto: &ObjFunction) -> AliasSummary {
-    AliasSummary {
-      isolated: RegSet::empty(proto.num_registers as usize),
-      alias_group: vec![0u64; proto.num_registers as usize],
-    }
-  }
-
-  pub fn isolated_mask(&self) -> u64 {
-    let mut mask = 0u64;
-    for bit in 0..64u8 {
-      if self.isolated.get(bit) {
-        mask |= 1u64 << bit;
-      }
-    }
-    mask
-  }
-}
-
 fn transfer_int(
   in_int: &RegSet,
   in_list: &RegSet,
@@ -887,36 +992,28 @@ fn transfer_int(
   instr: &Instr,
   proto: &ObjFunction,
   global_ints: &rustc_hash::FxHashSet<String>,
-  isolated: &RegSet,
-  alias_group: &[u64],
-) -> (RegSet, RegSet) {
+) -> RegSet {
   let mut out_int = in_int.clone();
-  let mut out_list = in_list.clone();
 
   match *instr {
     Instr::LoadConst { dst, const_idx } => {
       let c = &proto.chunk.constants[const_idx as usize];
       out_int.set(dst, c.is_number() && c.as_number().fract() == 0.0);
-      out_list.set(dst, false);
     },
     Instr::Move { dst, src } => {
       out_int.set(dst, in_int.get(src));
-      out_list.set(dst, in_list.get(src));
     },
     Instr::Neg { dst, src } => {
       out_int.set(dst, in_int.get(src));
-      out_list.set(dst, false);
     },
 
     // See `IntFacts`'s own docs: sound at every magnitude, no overflow
     // check needed.
     Instr::Mul { dst, a, b } => {
       if in_list.get(a) || in_list.get(b) {
-        out_list.set(dst, true);
         out_int.set(dst, false);
       } else {
         out_int.set(dst, in_int.get(a) && in_int.get(b));
-        out_list.set(dst, false);
       }
     },
     Instr::Add { dst, a, b }
@@ -924,13 +1021,10 @@ fn transfer_int(
     | Instr::Floor { dst, a, b }
     | Instr::Mod { dst, a, b } => {
       out_int.set(dst, in_int.get(a) && in_int.get(b));
-      out_list.set(dst, false);
     },
     // `MulImm` is list repetition when its left operand is a list
-    // (`[0] * 8`), exactly as `Mul` is, and the repeated copy holds
-    // the same elements as the original.
+    // (`[0] * 8`), exactly as `Mul` is, and a list is not a number.
     Instr::MulImm { dst, a, .. } if in_list.get(a) => {
-      out_list.set(dst, true);
       out_int.set(dst, false);
     },
     Instr::AddImm { dst, a, imm_const }
@@ -941,7 +1035,6 @@ fn transfer_int(
         .fract()
         == 0.0;
       out_int.set(dst, imm_is_int && in_int.get(a));
-      out_list.set(dst, false);
     },
 
     // A bitwise op's result is a whole number BY DEFINITION of what
@@ -958,7 +1051,6 @@ fn transfer_int(
     | Instr::BitUshr { dst, .. }
     | Instr::BitNot { dst, .. } => {
       out_int.set(dst, true);
-      out_list.set(dst, false);
     },
 
     // A parameter checked as EXACTLY `int` (not the wider `number`,
@@ -969,42 +1061,10 @@ fn transfer_int(
       let all_int =
         !check.nullable && check.types.len() == 1 && matches!(check.types[0], ParamType::Int);
       out_int.set(reg, all_int);
-      out_list.set(reg, false);
     },
 
-    Instr::MakeList { dst, start, count } => {
+    Instr::MakeList { dst, .. } => {
       out_int.set(dst, false);
-      let all_int = count > 0 && (0..count).all(|offset| in_int.get(start + offset));
-      out_list.set(dst, all_int);
-    },
-
-    // Storing a non-integer generally clears the claim for EVERY
-    // register, not just `obj`. Nothing here tracks aliasing, so after
-    // `var b = a` the two registers name one list, and clearing only
-    // the one written through would leave the other still claiming
-    // elements that are no longer whole.
-    //
-    // `isolated` is the exception, and the one that makes a kernel
-    // like `matmult(y, val, row, col, x)` work at all: those registers
-    // are parameters the body never reassigns, and `codegen`'s entry
-    // guard has checked they name pairwise distinct lists. Writing a
-    // float into `y` then reaches only `y` and whatever was copied
-    // from it, never `row` or `col`.
-    Instr::SetIndex { obj, idx: _, src } => {
-      if !in_int.get(src) {
-        if isolated.get(obj) {
-          let doomed = alias_group[obj as usize];
-          for bit in 0..64u8 {
-            if doomed & (1u64 << bit) != 0 {
-              out_list.set(bit, false);
-            }
-          }
-        } else {
-          for w in &mut out_list.words {
-            *w = 0;
-          }
-        }
-      }
     },
 
     // An element of an int list is an integer, and so is an element of
@@ -1012,7 +1072,6 @@ fn transfer_int(
     // read cannot produce a fraction whatever the index.
     Instr::GetIndex { dst, obj, .. } => {
       out_int.set(dst, in_list.get(obj) || in_bytes.get(obj));
-      out_list.set(dst, false);
     },
 
     // Seeded from a snapshot of the binding, which `codegen`'s
@@ -1030,15 +1089,6 @@ fn transfer_int(
         .map(|v| v.is_string() && global_ints.contains(v.as_str()))
         .unwrap_or(false);
       out_int.set(dst, is_int_global);
-      out_list.set(dst, false);
-    },
-
-    Instr::SetGlobal { src, .. }
-    | Instr::AssignGlobal { src, .. }
-    | Instr::SetUpval { src, .. } => {
-      if in_list.get(src) {
-        out_list.set(src, false);
-      }
     },
 
     Instr::Invoke {
@@ -1074,34 +1124,20 @@ fn transfer_int(
         out_int.set(dst, in_int.get(obj) && in_int.get(arg_reg));
       } else {
         out_int.set(dst, false);
-        if !matches!(
-          method_name,
-          "abs" | "sign" | "floor" | "ceil" | "trunc" | "round" | "sqrt" | "to_number"
-        ) {
-          for w in &mut out_list.words {
-            *w = 0;
-          }
-        }
       }
-      out_list.set(dst, false);
     },
 
     Instr::Call { dst, .. } | Instr::InvokeSuper { dst, .. } | Instr::CallSuperCtor { dst, .. } => {
       out_int.set(dst, false);
-      for w in &mut out_list.words {
-        *w = 0;
-      }
-      out_list.set(dst, false);
     },
 
     _ => {
       if let Some(dst) = any_dst(instr) {
         out_int.set(dst, false);
-        out_list.set(dst, false);
       }
     },
   }
-  (out_int, out_list)
+  out_int
 }
 
 /// Runs the whole-number analysis: see `IntFacts`'s own docs. No
@@ -1122,7 +1158,6 @@ pub fn analyze_int(
   speculative_int_lists: Option<u64>,
   bytes_facts: &BytesFacts,
   global_ints: &rustc_hash::FxHashSet<String>,
-  aliasing: &AliasSummary,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -1162,7 +1197,6 @@ pub fn analyze_int(
     return IntFacts {
       entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
       list_entry: vec![RegSet::empty(proto.num_registers as usize); code_len],
-      isolated_mask: 0,
     };
   }
 
@@ -1191,16 +1225,7 @@ pub fn analyze_int(
   // out of them pays a whole-number check forever.
   // `codegen::emit_entry_dispatch` scans each of these lists in full
   // before entering the specialized body.
-  let list_seed: RegSet = speculative_int_lists
-    .map(&param_seed)
-    .unwrap_or_else(|| RegSet::empty(num_registers));
-
-  // Which seeded parameters can be written through without disturbing
-  // anything else's claim: see the `SetIndex` arm of `transfer_int`.
-  // A parameter qualifies only if the body never reassigns it and
-  // never copies it into another register, so the only other name for
-  // its list is another parameter, and the entry guard has already
-  // ruled that out by comparing them pairwise.
+  let sites = ElemSites::build(proto, speculative_int_lists.unwrap_or(0));
 
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
@@ -1212,29 +1237,32 @@ pub fn analyze_int(
     })
     .collect();
 
-  let mut list_entry: Vec<RegSet> = (0..code_len)
+  let entry_elem = elem_entry_state(num_registers, &sites);
+  let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
-        list_seed.clone()
+        entry_elem.clone()
       } else {
-        RegSet::full(num_registers)
+        ElemState::new(num_registers, sites.count, PT_UNSET, true)
       }
     })
     .collect();
 
   let mut worklist: Vec<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
-  let mut out: Vec<(RegSet, RegSet)> = (0..code_len)
+  let mut out: Vec<(RegSet, ElemState)> = (0..code_len)
     .map(|ip| {
-      transfer_int(
-        &entry[ip],
-        &list_entry[ip],
-        bytes_facts.entry_set(ip),
-        &code[ip],
-        proto,
-        global_ints,
-        &aliasing.isolated,
-        &aliasing.alias_group,
+      let claims = elem[ip].claims(num_registers);
+      (
+        transfer_int(
+          &entry[ip],
+          &claims,
+          bytes_facts.entry_set(ip),
+          &code[ip],
+          proto,
+          global_ints,
+        ),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
       )
     })
     .collect();
@@ -1243,34 +1271,41 @@ pub fn analyze_int(
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
-    let mut new_list_in = RegSet::full(num_registers);
+    let mut new_elem: Option<ElemState> = None;
     let mut any_pred = false;
     for &p in &preds[ip] {
       new_in.and_assign(&out[p].0);
-      new_list_in.and_assign(&out[p].1);
+      match &mut new_elem {
+        None => new_elem = Some(out[p].1.clone()),
+        Some(acc) => acc.meet_assign(&out[p].1),
+      }
       any_pred = true;
     }
     if !any_pred {
       new_in = RegSet::full(num_registers);
-      new_list_in = RegSet::full(num_registers);
+      new_elem = None;
     }
+    let mut new_elem =
+      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true));
     if ip == 0 {
       new_in = seed.clone().unwrap_or_else(|| RegSet::empty(num_registers));
-      new_list_in = list_seed.clone();
+      new_elem = entry_elem.clone();
     }
 
-    if new_in != entry[ip] || new_list_in != list_entry[ip] {
+    if new_in != entry[ip] || new_elem != elem[ip] {
       entry[ip] = new_in;
-      list_entry[ip] = new_list_in;
-      out[ip] = transfer_int(
-        &entry[ip],
-        &list_entry[ip],
-        bytes_facts.entry_set(ip),
-        &code[ip],
-        proto,
-        global_ints,
-        &aliasing.isolated,
-        &aliasing.alias_group,
+      elem[ip] = new_elem;
+      let claims = elem[ip].claims(num_registers);
+      out[ip] = (
+        transfer_int(
+          &entry[ip],
+          &claims,
+          bytes_facts.entry_set(ip),
+          &code[ip],
+          proto,
+          global_ints,
+        ),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -1281,11 +1316,9 @@ pub fn analyze_int(
     }
   }
 
-  IntFacts {
-    entry,
-    list_entry,
-    isolated_mask: aliasing.isolated_mask(),
-  }
+  let list_entry: Vec<RegSet> = elem.iter().map(|e| e.claims(num_registers)).collect();
+
+  IntFacts { entry, list_entry }
 }
 
 //-----------------------------------------------------------------------------------

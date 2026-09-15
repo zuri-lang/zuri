@@ -631,7 +631,10 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
     };
     // SAFETY: single-threaded, and this only reads; the same reasoning
     // `Value::list_len` spells out at length.
-    debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+    debug_assert!(
+      items.try_borrow().is_ok(),
+      "element scan over a live borrow"
+    );
     let storage = unsafe { &*items.as_ptr() };
     // A whole-number claim is the stronger of the two, so proving it
     // proves the numeric one as well and no second walk is needed.

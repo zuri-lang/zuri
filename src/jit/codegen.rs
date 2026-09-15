@@ -753,10 +753,6 @@ struct FuncCompiler<'a, 'b> {
   /// entry scan straight from these bits.
   speculative_int_lists: Option<u64>,
   speculative_num_lists: Option<u64>,
-  /// Built once in `new` from both element bets together, and used by
-  /// the specialized body's analyses and by the entry guard alike, so
-  /// what one keeps alive is exactly what the other checked.
-  aliasing: typeflow::AliasSummary,
   spec_int_facts: Option<typeflow::IntFacts>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
   /// `speculative_params`, but covering every register in the
@@ -1356,24 +1352,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
     let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
-    // Built from the WIDER of the two element bets: whole numbers are
-    // numbers, so the numeric-list seed contains the integer one, and
-    // one summary covering both keeps the two analyses agreeing about
-    // which parameters `emit_elem_guards` will have compared.
-    let general_aliasing = typeflow::AliasSummary::conservative(proto);
-    let aliasing = typeflow::AliasSummary::build(
-      proto,
-      speculative_num_lists.unwrap_or(0) | speculative_int_lists.unwrap_or(0),
-    );
-    let int_facts = typeflow::analyze_int(
-      proto,
-      &preds,
-      None,
-      None,
-      &bytes_facts,
-      &facts.global_ints,
-      &general_aliasing,
-    );
+    let int_facts =
+      typeflow::analyze_int(proto, &preds, None, None, &bytes_facts, &facts.global_ints);
     let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
       Some(typeflow::analyze_int(
         proto,
@@ -1382,7 +1362,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         speculative_int_lists,
         &bytes_facts,
         &facts.global_ints,
-        &aliasing,
       ))
     } else {
       None
@@ -1397,7 +1376,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &no_numeric_fields,
       Some(&int_facts),
       None,
-      &general_aliasing,
     );
     let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
     let string_facts = typeflow::analyze_string(proto, &preds);
@@ -1437,7 +1415,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       speculative_ints,
       speculative_int_lists,
       speculative_num_lists,
-      aliasing,
       spec_int_facts,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
@@ -1982,7 +1959,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           &self.numeric_fields,
           Some(int_facts_ref),
           self.speculative_num_lists,
-          &self.aliasing,
         );
         // Computed here for the same reason the type facts are: the
         // entry dispatch needs them NOW to know what an OSR route has
@@ -2271,7 +2247,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // the helper is told about it once and walks the list once.
     let nums = self.i64c((num_list_mask & !int_list_mask) as i64);
     let distinct = self.i64c(distinct_mask as i64);
-    let ok = self.call_helper_raw("zuri_jit_list_elems_ok", &[vm_p, base, ints, nums, distinct]);
+    let ok = self.call_helper_raw(
+      "zuri_jit_list_elems_ok",
+      &[vm_p, base, ints, nums, distinct],
+    );
     let passed = self.fb.create_block();
     self.fb.ins().brif(ok, passed, &[], fail, &[]);
     self.fb.switch_to_block(passed);
@@ -2372,14 +2351,28 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             self.speculative_num_lists.unwrap_or(0),
           )
         } else {
+          // Only the part of the claim the SPECULATION contributes,
+          // unlike the shape guards above, which deliberately re-check
+          // everything. What the general body proves it proves from
+          // the bytecode alone, so it holds on any path that genuinely
+          // reached `ip`, and an on-stack-replacement entry arrives
+          // over exactly such a path. Re-establishing it anyway would
+          // mean walking a list that nothing ever bet on: a kernel
+          // that builds its own arrays and never takes one as an
+          // argument would rescan all of them at every loop header for
+          // a claim already in hand, and the blocks that costs shape
+          // how the allocator colours the loop underneath.
           let live = self.live_mask_at(ip);
+          let general_ints = self.int_facts.list_mask_at(ip);
+          let general_nums = self.type_facts.num_list_mask_at(ip);
           (
             self
               .spec_int_facts
               .as_ref()
               .map_or(0, |f| f.list_mask_at(ip))
+              & !general_ints
               & live,
-            spec_facts.num_list_mask_at(ip) & live,
+            spec_facts.num_list_mask_at(ip) & !general_nums & live,
           )
         };
         if num_mask == 0
@@ -2471,7 +2464,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         if elem_int_mask != 0 || elem_num_mask != 0 {
           let fail = self.blocks[ip];
-          let distinct = self.aliasing.isolated_mask();
+          // Every parameter the bet was placed on: `typeflow` gives
+          // each one an identity of its own, which only holds while no
+          // two of them are the same list.
+          let distinct =
+            self.speculative_int_lists.unwrap_or(0) | self.speculative_num_lists.unwrap_or(0);
           self.emit_elem_guards(elem_int_mask, elem_num_mask, distinct, fail);
         }
         self.fb.ins().jump(spec_blocks[ip], &[]);
