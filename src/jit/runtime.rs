@@ -616,6 +616,15 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
   let vm = unsafe { vm(vm_ptr) };
   let base = base as usize;
 
+  // A bet that turns out wrong has to stop being placed. Every entry
+  // would otherwise rescan, fail, and run the general body, giving up
+  // the numeric and field speculation along with the element claim,
+  // for as long as the process lives.
+  let give_up = |vm: &VM| -> u64 {
+    vm.disable_elem_speculation();
+    0
+  };
+
   for reg in 0..64u8 {
     let bit = 1u64 << reg;
     let wants_int = int_mask & bit != 0;
@@ -624,10 +633,10 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
     }
     let v = vm.get_reg(base, reg);
     if !v.is_obj() {
-      return 0;
+      return give_up(vm);
     }
     let crate::vm::object::Obj::List(items) = (unsafe { &*v.as_obj() }) else {
-      return 0;
+      return give_up(vm);
     };
     // SAFETY: single-threaded, and this only reads; the same reasoning
     // `Value::list_len` spells out at length.
@@ -652,7 +661,7 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
       storage.iter().all(|e| e.is_number())
     };
     if !holds {
-      return 0;
+      return give_up(vm);
     }
   }
 
@@ -674,7 +683,7 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
       others &= others - 1;
       let vb = vm.get_reg(base, b);
       if vb.is_obj() && std::ptr::eq(va.as_obj(), vb.as_obj()) {
-        return 0;
+        return give_up(vm);
       }
     }
   }

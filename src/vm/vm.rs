@@ -2377,6 +2377,7 @@ impl VM {
       deopt_sites: proto.jit.deopt_sites.borrow().clone(),
       young_budget: self.heap.young_budget(),
       field_speculation_off: proto.jit.field_speculation_off.get(),
+      elem_speculation_off: proto.jit.elem_speculation_off.get(),
       globals_snapshot: self.snapshot_globals(proto),
       global_lists: self.snapshot_global_lists(proto),
       global_ints: self.snapshot_global_ints(proto),
@@ -2492,6 +2493,42 @@ impl VM {
     match self.frames.last() {
       Some(frame) => unsafe { &*frame.function }.display_name(),
       None => std::borrow::Cow::Borrowed("<none>"),
+    }
+  }
+
+  /// Called when an entry's element scan has just failed: stop betting
+  /// on what this function's list parameters hold, and drop the
+  /// compiled entry so the next warm-up compiles without the bet.
+  ///
+  /// Mirrors what a repeated deopt does for field speculation, and for
+  /// the same reason. The scan runs once per entry and sends the call
+  /// to the general body when it fails, which costs that call every
+  /// other speculation it would have had, so leaving a wrong bet in
+  /// place is far more expensive than the claim was ever worth.
+  /// Bounded by `MAX_JIT_INVALIDATIONS` like every other recompile, so
+  /// a pathological function settles rather than thrashing.
+  pub(crate) fn disable_elem_speculation(&self) {
+    let Some(frame) = self.frames.last() else {
+      return;
+    };
+    let proto = unsafe { &*frame.function };
+    if proto.jit.elem_speculation_off.get() {
+      return;
+    }
+    proto.jit.elem_speculation_off.set(true);
+
+    let invalidations = proto.jit.invalidations.get();
+    if invalidations > MAX_JIT_INVALIDATIONS {
+      return;
+    }
+    proto.jit.invalidations.set(invalidations + 1);
+    proto.jit.entry.set(None);
+    proto.jit.call_count.set(0);
+    if crate::jit::log_enabled() {
+      eprintln!(
+        "[jit] '{}' recompiling with element speculation off",
+        proto.display_name()
+      );
     }
   }
 

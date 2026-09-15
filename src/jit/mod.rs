@@ -377,6 +377,9 @@ pub struct CompileFacts {
   /// from a bounded prefix by `VM::sample_param_elem_types` and made
   /// sound by the full scan `codegen::emit_entry_dispatch` emits once
   /// per entry; a list that fails the scan runs the general body.
+  /// Set when a previous compilation's element scan was observed to
+  /// fail; both element bets below are dropped when it is.
+  pub elem_speculation_off: bool,
   pub speculative_int_lists: Option<u64>,
   /// The same bet widened to any number, fractions included: what a
   /// list of floats gets proven with, so a read out of it skips

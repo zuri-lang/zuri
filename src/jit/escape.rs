@@ -526,7 +526,7 @@ fn tracked_getfield_is_safe(
 /// (forces an explicit, deliberate decision about its escape
 /// implications) instead of silently falling into either an
 /// over-conservative or; far worse; an unsound default.
-fn escaping_reads(instr: &Instr) -> Vec<u8> {
+pub(crate) fn escaping_reads(instr: &Instr) -> Vec<u8> {
   match *instr {
     Instr::LoadConst { .. } | Instr::LoadNil { .. } | Instr::LoadBool { .. } => vec![],
 

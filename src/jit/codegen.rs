@@ -1341,12 +1341,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // A claim seeded here but not scanned there would be a claim
     // nothing ever checked.
     let elem_bet = Self::elem_bet_worth_placing(proto);
+    let int_demand = typeflow::int_demand(proto, &preds);
     let speculative_int_lists = facts
       .speculative_int_lists
-      .map(|m| m & elem_bet)
+      .filter(|_| !facts.elem_speculation_off)
+      .map(|m| m & elem_bet & Self::int_elem_bet_worth_placing(proto, &int_demand))
       .filter(|&m| m != 0);
     let speculative_num_lists = facts
       .speculative_num_lists
+      .filter(|_| !facts.elem_speculation_off)
       .map(|m| m & elem_bet)
       .filter(|&m| m != 0);
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
@@ -2222,6 +2225,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         _ => continue,
       };
       if obj < 64 {
+        mask |= 1u64 << obj;
+      }
+    }
+    mask
+  }
+
+  /// The list parameters whose ELEMENTS are worth betting hold whole
+  /// numbers, as opposed to merely numbers: those a `GetIndex` reads
+  /// into a register whose whole-ness something downstream actually
+  /// demands. See `typeflow::int_demand` for why that question has to
+  /// be asked flow-sensitively.
+  ///
+  /// Proving an element whole costs an entry scan that can fail, and a
+  /// failed scan sends the whole call to the general body, giving up
+  /// every other speculation it had. A solver's grid is read,
+  /// multiplied and written straight back without indexing anything,
+  /// so the bet buys it nothing and merely waits to go wrong: the
+  /// grids start life as `[0.0] * n`, every element genuinely is whole
+  /// while the function warms up, and the scan then fails on every
+  /// call once real velocities are written.
+  fn int_elem_bet_worth_placing(proto: &ObjFunction, demand: &[typeflow::RegSet]) -> u64 {
+    let mut mask = 0u64;
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      if let Instr::GetIndex { dst, obj, .. } = *instr
+        && obj < 64
+        && demand[ip].get(dst)
+      {
         mask |= 1u64 << obj;
       }
     }

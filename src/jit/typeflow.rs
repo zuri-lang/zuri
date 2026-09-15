@@ -589,6 +589,13 @@ struct ElemSites {
   of_ip: Vec<u16>,
   of_param: [u16; 64],
   count: usize,
+  /// Sites a register outside this function could also be naming, so
+  /// a store through one that names no particular list has to clear
+  /// them. A site that never leaves the registers it was allocated
+  /// into cannot be what such a store is hitting: the caller's
+  /// arguments predate it, and a call, field or index can only hand
+  /// back something that was put there first.
+  escaped: SmallVec<[u64; 4]>,
 }
 
 impl ElemSites {
@@ -614,23 +621,74 @@ impl ElemSites {
       }
     }
 
-    // `Mul`/`MulImm` allocate when they are list repetition (`[0] * n`)
-    // and produce a plain number otherwise, in which case the site
-    // simply never carries a claim anyone reads.
+    // `Mul`/`MulImm` allocate only when they are list repetition
+    // (`[0] * n`), which needs a list to repeat in the first place.
+    // Without one in the function they are plain arithmetic, and
+    // giving every float multiply in a solver its own site would widen
+    // the bitset carried at every bytecode position for nothing.
+    let repeatable = seed_mask != 0 || code.iter().any(|i| matches!(i, Instr::MakeList { .. }));
+
     for (ip, instr) in code.iter().enumerate() {
-      if matches!(
-        instr,
-        Instr::MakeList { .. } | Instr::Mul { .. } | Instr::MulImm { .. }
-      ) {
-        if count >= MAX_ELEM_SITES {
-          return ElemSites {
-            of_ip: vec![PT_UNKNOWN; code.len()],
-            of_param: [PT_UNKNOWN; 64],
-            count: 0,
-          };
+      let allocates = match instr {
+        Instr::MakeList { .. } => true,
+        Instr::Mul { .. } | Instr::MulImm { .. } => repeatable,
+        _ => false,
+      };
+      // Past the cap, stop handing out sites but keep the ones already
+      // assigned. Returning none at all would leave `codegen` emitting
+      // an entry scan for claims this had silently stopped making.
+      if !allocates || count >= MAX_ELEM_SITES {
+        continue;
+      }
+      of_ip[ip] = count as u16;
+      count += 1;
+    }
+
+    // A site escapes if the register it was allocated into ever
+    // reaches somewhere this function cannot see. `escape`'s own
+    // reader is an exhaustive match over every instruction, so a new
+    // one is a compile error there rather than a silent omission here.
+    let num_registers = proto.num_registers as usize;
+    let mut leaky = vec![false; num_registers.max(256)];
+    for instr in code.iter() {
+      for r in crate::jit::escape::escaping_reads(instr) {
+        leaky[r as usize] = true;
+      }
+    }
+    // A copy that escapes takes its source with it.
+    let mut changed = true;
+    while changed {
+      changed = false;
+      for instr in code.iter() {
+        if let Instr::Move { dst, src } = *instr
+          && leaky[dst as usize]
+          && !leaky[src as usize]
+        {
+          leaky[src as usize] = true;
+          changed = true;
         }
-        of_ip[ip] = count as u16;
-        count += 1;
+      }
+    }
+
+    let mut escaped: SmallVec<[u64; 4]> = smallvec![0u64; count.div_ceil(64).max(1)];
+    let mark = |escaped: &mut SmallVec<[u64; 4]>, site: u16| {
+      if site < PT_UNKNOWN {
+        escaped[site as usize / 64] |= 1u64 << (site as usize % 64);
+      }
+    };
+    // A parameter's list belongs to the caller, who can hand the same
+    // list to anything else as well.
+    for &site in of_param.iter() {
+      mark(&mut escaped, site);
+    }
+    for (ip, instr) in code.iter().enumerate() {
+      if of_ip[ip] >= PT_UNKNOWN {
+        continue;
+      }
+      if let Some(dst) = any_dst(instr)
+        && leaky[dst as usize]
+      {
+        mark(&mut escaped, of_ip[ip]);
       }
     }
 
@@ -638,8 +696,10 @@ impl ElemSites {
       of_ip,
       of_param,
       count,
+      escaped,
     }
   }
+
 }
 
 /// Where every register points, plus which sites still hold what was
@@ -689,6 +749,15 @@ impl ElemState {
     site == PT_UNSET || self.site_ok(site)
   }
 
+  /// Clears every site a register naming no particular list could be
+  /// pointing at. See `transfer_elem`'s `SetIndex` arm.
+  fn clear_escaped_sites(&mut self, sites: &ElemSites) {
+    for (w, word) in self.ok.iter_mut().enumerate() {
+      let escaped = sites.escaped.get(w).copied().unwrap_or(u64::MAX);
+      *word &= !escaped;
+    }
+  }
+
   fn clear_all_sites(&mut self) {
     for w in &mut self.ok {
       *w = 0;
@@ -699,15 +768,31 @@ impl ElemState {
   /// it naming no list in particular; claims survive only where every
   /// path still holds them.
   fn meet_assign(&mut self, other: &ElemState) {
+    // A register the two paths disagree about names one list on one
+    // path and another on the other, and nothing downstream can tell
+    // which. Both lose their claims here rather than at the store that
+    // eventually goes through it, because by then the register says
+    // nothing about which of them it is, and neither may have escaped
+    // for `clear_escaped_sites` to catch.
+    let mut collapsed: SmallVec<[u16; 8]> = SmallVec::new();
     for (a, b) in self.pt.iter_mut().zip(other.pt.iter()) {
       if *a == PT_UNSET {
         *a = *b;
       } else if *b != PT_UNSET && *a != *b {
+        if *a < PT_UNKNOWN {
+          collapsed.push(*a);
+        }
+        if *b < PT_UNKNOWN {
+          collapsed.push(*b);
+        }
         *a = PT_UNKNOWN;
       }
     }
     for (a, b) in self.ok.iter_mut().zip(other.ok.iter()) {
       *a &= *b;
+    }
+    for site in collapsed {
+      self.set_site_ok(site, false);
     }
   }
 
@@ -801,7 +886,13 @@ fn transfer_elem(
 
     // List repetition copies the elements of the list it repeats.
     Instr::Mul { dst, a, b } => {
-      let from = if pt(a) < PT_UNKNOWN { pt(a) } else { pt(b) };
+      let from = if pt(a) < PT_UNKNOWN {
+        pt(a)
+      } else if pt(b) < PT_UNKNOWN {
+        pt(b)
+      } else {
+        PT_UNKNOWN
+      };
       allocate(&mut out, dst, sites.of_ip[ip], state.claimed_site(from));
     },
     Instr::MulImm { dst, a, .. } => {
@@ -818,7 +909,15 @@ fn transfer_elem(
           // a real path will, and the kill happens then. Clearing
           // now would be the transfer running backwards.
           PT_UNSET => {},
-          PT_UNKNOWN => out.clear_all_sites(),
+          // No idea which list this names, so every list it COULD name
+          // loses its claim. That is not all of them: a list allocated
+          // here that never left these registers cannot be what an
+          // unknown register is pointing at, since the only ways to
+          // get one are a call, a field, an index or an argument, and
+          // all four need it to have been handed over first. Without
+          // this, any kernel writing a float through a list parameter
+          // would clear every claim it has.
+          PT_UNKNOWN => out.clear_escaped_sites(sites),
           site => out.set_site_ok(site, false),
         }
       }
@@ -3166,6 +3265,115 @@ impl LivenessFacts {
 /// converge because each `RegSet` only ever grows and is bounded above
 /// by "every register."
 /// `preds`: see `analyze`'s own docs on why this takes it as a
+/// For every bytecode position, which registers' WHOLE-NUMBER-ness is
+/// actually demanded by something downstream: an index, or an
+/// integer-only operation, or arithmetic feeding one of those.
+///
+/// `codegen` uses this to decide which list parameters are worth
+/// betting hold whole numbers rather than merely numbers. Proving an
+/// element whole costs an entry scan that can fail, and a failed scan
+/// gives up every other speculation that entry had, so it must only be
+/// placed where something downstream actually needs the element whole.
+/// A solver's grid is read, multiplied and written back without ever
+/// indexing anything, and gains nothing from the claim.
+///
+/// Backwards, and flow-sensitive, because register-level reasoning is
+/// not good enough here. Index temporaries and element temporaries
+/// share registers constantly:
+///
+/// ```text
+///   GetIndex { dst: 15, obj: 0, idx: 16 }   // reg 16 is an index
+///   GetIndex { dst: 16, obj: 0, idx: 17 }   // reg 16 is an element
+/// ```
+///
+/// Asking merely "is register 16 ever used as an index" answers yes to
+/// both and bets on a float grid. Running backwards, a definition
+/// kills the demand flowing past it, so the element read at the second
+/// instruction does not inherit the demand generated by the first.
+///
+/// A "may" analysis, merged with union: a bet is worth placing if the
+/// whole-ness pays off on any path, since the paths that do not want
+/// it are no worse for having it proven.
+pub fn int_demand(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<RegSet> {
+  let code = &proto.chunk.code;
+  let code_len = code.len();
+  let num_registers = proto.num_registers as usize;
+
+  let mut demand_in: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
+  let mut demand_out: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
+
+  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut in_worklist = vec![true; code_len];
+
+  while let Some(ip) = worklist.pop() {
+    in_worklist[ip] = false;
+
+    let mut out = RegSet::empty(num_registers);
+    for succ in successors(ip, &code[ip], proto) {
+      if succ < code_len {
+        out.or_assign(&demand_in[succ]);
+      }
+    }
+    demand_out[ip] = out.clone();
+
+    let mut new_in = out.clone();
+    // The definition kills whatever was demanded of this register
+    // further on; what that instruction produces is a different value
+    // from whatever the demand was about.
+    if let Some(dst) = any_dst(&code[ip]) {
+      new_in.set(dst, false);
+    }
+    // What this instruction demands in its own right, plus the demand
+    // it passes back to its operands when its result is wanted whole.
+    match code[ip] {
+      Instr::GetIndex { idx, .. } | Instr::SetIndex { idx, .. } => new_in.set(idx, true),
+      Instr::BitAnd { a, b, .. }
+      | Instr::BitOr { a, b, .. }
+      | Instr::BitXor { a, b, .. }
+      | Instr::BitShl { a, b, .. }
+      | Instr::BitShr { a, b, .. }
+      | Instr::BitUshr { a, b, .. } => {
+        new_in.set(a, true);
+        new_in.set(b, true);
+      },
+      Instr::BitNot { src, .. } => new_in.set(src, true),
+      Instr::Move { dst, src } | Instr::Neg { dst, src } => {
+        if out.get(dst) {
+          new_in.set(src, true);
+        }
+      },
+      Instr::Add { dst, a, b }
+      | Instr::Sub { dst, a, b }
+      | Instr::Mul { dst, a, b }
+      | Instr::Floor { dst, a, b }
+      | Instr::Mod { dst, a, b } => {
+        if out.get(dst) {
+          new_in.set(a, true);
+          new_in.set(b, true);
+        }
+      },
+      Instr::AddImm { dst, a, .. } | Instr::SubImm { dst, a, .. } | Instr::MulImm { dst, a, .. } => {
+        if out.get(dst) {
+          new_in.set(a, true);
+        }
+      },
+      _ => {},
+    }
+
+    if new_in != demand_in[ip] {
+      demand_in[ip] = new_in;
+      for &p in &preds[ip] {
+        if !in_worklist[p] {
+          in_worklist[p] = true;
+          worklist.push(p);
+        }
+      }
+    }
+  }
+
+  demand_out
+}
+
 /// parameter instead of computing it fresh.
 pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
   let code = &proto.chunk.code;

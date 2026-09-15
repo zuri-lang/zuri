@@ -652,6 +652,16 @@ pub struct JitInfo {
   /// is between guessing again and not guessing at all, and code that
   /// runs to completion beats code that bails out every call.
   pub field_speculation_off: Cell<bool>,
+  /// Set once an entry's element scan has actually failed, so the next
+  /// compilation stops betting on what the parameters' lists hold.
+  ///
+  /// Without it a bet that is wrong is wrong forever: the scan runs on
+  /// every entry, fails on every entry, and sends each call to the
+  /// general body, which costs that call every OTHER speculation it
+  /// would have had. `numeric_feedback` and friends cannot correct
+  /// this on their own; `VM::record_call_feedback` stops sampling the
+  /// moment a function is compiled.
+  pub elem_speculation_off: Cell<bool>,
   /// Per-loop-header back-edge hit counts, keyed by the bytecode `ip`
   /// the loop's `Instr::Jmp` back-edge targets; consulted only by
   /// that instruction's own handler in `vm.rs` to decide when a
@@ -734,6 +744,7 @@ impl JitInfo {
       deopt_sites: RefCell::new(rustc_hash::FxHashSet::default()),
       invalidations: Cell::new(0),
       field_speculation_off: Cell::new(false),
+      elem_speculation_off: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
       numeric_feedback: Cell::new(!0u64),
