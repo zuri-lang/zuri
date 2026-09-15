@@ -1378,6 +1378,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &bytes_facts,
       &facts.global_ints,
       &list_facts,
+      None,
     );
     let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
       Some(typeflow::analyze_int(
@@ -1388,6 +1389,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         &bytes_facts,
         &facts.global_ints,
         &spec_list_facts,
+        facts.speculative_lists.filter(|&m| m != 0),
       ))
     } else {
       None
@@ -1403,6 +1405,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Some(&int_facts),
       None,
       &list_facts,
+      None,
     );
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
@@ -2002,6 +2005,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(int_facts_ref),
           self.speculative_num_lists,
           &list_facts,
+          self.speculative_lists,
         );
         Some((blocks, facts, list_facts))
       } else {
@@ -2525,11 +2529,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         if elem_int_mask != 0 || elem_num_mask != 0 {
           let fail = self.blocks[ip];
-          // Every parameter the bet was placed on: `typeflow` gives
-          // each one an identity of its own, which only holds while no
-          // two of them are the same list.
-          let distinct =
-            self.speculative_int_lists.unwrap_or(0) | self.speculative_num_lists.unwrap_or(0);
+          // Every parameter `typeflow` gave an identity of its own,
+          // which is every one already proven to be a list, not just
+          // the ones being bet on. Their claims are cleared
+          // independently of each other, and that only holds while no
+          // two of them turn out to be the same list.
+          let distinct = self.speculative_lists.unwrap_or(0)
+            | self.speculative_int_lists.unwrap_or(0)
+            | self.speculative_num_lists.unwrap_or(0);
           self.emit_elem_guards(elem_int_mask, elem_num_mask, distinct, fail);
         }
         self.fb.ins().jump(spec_blocks[ip], &[]);

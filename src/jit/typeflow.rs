@@ -353,6 +353,7 @@ pub fn analyze(
   int_facts: Option<&IntFacts>,
   speculative_num_lists: Option<u64>,
   list_facts: &ListFacts,
+  speculative_lists: Option<u64>,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -442,8 +443,12 @@ pub fn analyze(
   // integer one is and checked by the same entry scan. What it buys
   // that the integer analysis cannot is a list of floats: an indexed
   // read out of one is numeric even though no element of it is whole.
-  let sites = ElemSites::build(proto, speculative_num_lists.unwrap_or(0));
-  let entry_elem = elem_entry_state(num_registers, &sites);
+  let sites = ElemSites::build(
+    proto,
+    speculative_num_lists.unwrap_or(0),
+    speculative_lists.unwrap_or(0),
+  );
+  let entry_elem = elem_entry_state(num_registers, &sites, speculative_num_lists.unwrap_or(0));
   let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
@@ -600,14 +605,22 @@ struct ElemSites {
 }
 
 impl ElemSites {
-  fn build(proto: &ObjFunction, seed_mask: u64) -> ElemSites {
+  fn build(proto: &ObjFunction, seed_mask: u64, list_mask: u64) -> ElemSites {
     let code = &proto.chunk.code;
     let mut of_ip = vec![PT_UNKNOWN; code.len()];
     let mut of_param = [PT_UNKNOWN; 64];
     let mut count = 0usize;
 
-    // A seeded parameter gets a site of its own, which is sound only
-    // because `codegen::emit_elem_guards` compares the seeded
+    // EVERY parameter already proven to be a list gets a site, not
+    // just the ones whose elements are being bet on. An output array
+    // written with floats is not bet on, but it still needs an
+    // identity: without one it reads as "some list, no idea which",
+    // and the store through it would clear the claims on the index
+    // arrays beside it, which is the whole analysis gone at the first
+    // write. Only the seeded ones start out CLAIMING anything; see
+    // `elem_entry_state`.
+    //
+    // Sound only because `codegen::emit_elem_guards` compares these
     // parameters pairwise at entry; without that check `f(a, a)` would
     // be two sites for one list.
     let required = if proto.variadic {
@@ -616,7 +629,7 @@ impl ElemSites {
       proto.arity
     };
     for r in 0..(required as usize).min(64) {
-      if seed_mask & (1u64 << r) != 0 {
+      if (seed_mask | list_mask) & (1u64 << r) != 0 {
         of_param[r] = count as u16;
         count += 1;
       }
@@ -1002,12 +1015,17 @@ fn transfer_elem(
 /// The state on entry to a function: the seeded parameters name their
 /// own lists and carry their claims, everything else names nothing in
 /// particular.
-fn elem_entry_state(num_registers: usize, sites: &ElemSites) -> ElemState {
+fn elem_entry_state(num_registers: usize, sites: &ElemSites, seed_mask: u64) -> ElemState {
   let mut state = ElemState::new(num_registers, sites.count, PT_UNKNOWN, false);
   for (r, &site) in sites.of_param.iter().enumerate() {
     if site < PT_UNKNOWN && r < num_registers {
+      // Every list parameter gets its identity, so a store through one
+      // says nothing about the others. Only the ones the entry scan
+      // actually walked start out claiming what they hold.
       state.pt[r] = site;
-      state.set_site_ok(site, true);
+      if r < 64 && seed_mask & (1u64 << r) != 0 {
+        state.set_site_ok(site, true);
+      }
     }
   }
   state
@@ -1269,6 +1287,7 @@ pub fn analyze_int(
   bytes_facts: &BytesFacts,
   global_ints: &rustc_hash::FxHashSet<String>,
   list_facts: &ListFacts,
+  speculative_lists: Option<u64>,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -1336,7 +1355,11 @@ pub fn analyze_int(
   // out of them pays a whole-number check forever.
   // `codegen::emit_entry_dispatch` scans each of these lists in full
   // before entering the specialized body.
-  let sites = ElemSites::build(proto, speculative_int_lists.unwrap_or(0));
+  let sites = ElemSites::build(
+    proto,
+    speculative_int_lists.unwrap_or(0),
+    speculative_lists.unwrap_or(0),
+  );
 
   let mut entry: Vec<RegSet> = (0..code_len)
     .map(|ip| {
@@ -1348,7 +1371,7 @@ pub fn analyze_int(
     })
     .collect();
 
-  let entry_elem = elem_entry_state(num_registers, &sites);
+  let entry_elem = elem_entry_state(num_registers, &sites, speculative_int_lists.unwrap_or(0));
   let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
