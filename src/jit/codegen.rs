@@ -2252,14 +2252,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     mask
   }
 
-  /// Emits the once-per-entry element scans behind the int-list and
-  /// num-list claims, each branching to `fail` (the general body) when
-  /// the list turns out to hold something else.
-  ///
-  /// A register claimed as an int list is only scanned for
-  /// whole-numbers: every whole number is a number, so the wider claim
-  /// comes free with the narrower one and a second walk of the same
-  /// list would prove nothing new.
+  /// Emits the once-per-entry check behind the element-type claims:
+  /// the lists hold what the specialized body was compiled to assume,
+  /// and the ones `typeflow` clears independently are distinct lists.
+  /// Anything that fails sends this entry to the general body, where
+  /// every indexed read carries its own check as usual.
   fn emit_elem_guards(
     &mut self,
     int_list_mask: u64,
@@ -2268,42 +2265,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     fail: Block,
   ) {
     let vm_p = self.vm_param;
-    for bit in 0..64u8 {
-      let wants_int = int_list_mask & (1u64 << bit) != 0;
-      let wants_num = num_list_mask & (1u64 << bit) != 0;
-      if !wants_int && !wants_num {
-        continue;
-      }
-      let helper = if wants_int {
-        "zuri_jit_list_all_int"
-      } else {
-        "zuri_jit_list_all_number"
-      };
-      let v = self.entry_reg_values[bit as usize];
-      let ok = self.call_helper_raw(helper, &[vm_p, v]);
-      let passed = self.fb.create_block();
-      self.fb.ins().brif(ok, passed, &[], fail, &[]);
-      self.fb.switch_to_block(passed);
-    }
-
-    // What lets `typeflow`'s `SetIndex` arm keep one claim while
-    // clearing another: these registers hold lists (the scans above
-    // just walked them), and the body neither reassigns nor copies
-    // them, so this is the last way two of them could turn out to be
-    // one list. `f(a, a)` runs the general body.
-    let distinct: Vec<u8> = (0..64u8)
-      .filter(|b| distinct_mask & (1u64 << b) != 0)
-      .collect();
-    for (i, &a) in distinct.iter().enumerate() {
-      for &b in &distinct[i + 1..] {
-        let pa = self.obj_ptr(self.entry_reg_values[a as usize]);
-        let pb = self.obj_ptr(self.entry_reg_values[b as usize]);
-        let differs = self.fb.ins().icmp(IntCC::NotEqual, pa, pb);
-        let passed = self.fb.create_block();
-        self.fb.ins().brif(differs, passed, &[], fail, &[]);
-        self.fb.switch_to_block(passed);
-      }
-    }
+    let base = self.base_param;
+    let ints = self.i64c(int_list_mask as i64);
+    // A register claimed whole is claimed numeric by implication, so
+    // the helper is told about it once and walks the list once.
+    let nums = self.i64c((num_list_mask & !int_list_mask) as i64);
+    let distinct = self.i64c(distinct_mask as i64);
+    let ok = self.call_helper_raw("zuri_jit_list_elems_ok", &[vm_p, base, ints, nums, distinct]);
+    let passed = self.fb.create_block();
+    self.fb.ins().brif(ok, passed, &[], fail, &[]);
+    self.fb.switch_to_block(passed);
   }
 
   fn emit_entry_dispatch(

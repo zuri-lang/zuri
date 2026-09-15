@@ -588,69 +588,95 @@ pub unsafe extern "C" fn zuri_jit_dict_contains(
   Value::bool(recv.dict_get(&key).is_some()).to_bits()
 }
 
-/// Does `value_bits` name a list whose every element is a number?
-/// This is what makes the element-type bets in
-/// `codegen::emit_entry_dispatch` sound: it runs once per entry, and
-/// a list that fails it sends the entry to the general body, so the
-/// specialized body's indexed reads can drop their per read
-/// `is_number` check entirely.
+/// Every element-type bet an entry is placing, checked in one call.
 ///
-/// Deliberately total. Anything that isn't a list answers no, so the
-/// caller doesn't have to have established list-ness first and the
-/// two guards can't disagree about what they're looking at.
+/// `int_mask` and `num_mask` name the registers claimed to hold a list
+/// of whole numbers and a list of numbers respectively; `distinct_mask`
+/// names the ones `typeflow` is allowed to clear independently of each
+/// other, which holds only for as long as no two of them are the same
+/// list. Returns nonzero when every claim stands, and the entry falls
+/// through to the general body when it does not.
 ///
-/// Walks the whole list, which is the point: a prefix would only
-/// re-state the hint the sampler already gave. Reads only; cannot
-/// allocate or collect.
-pub unsafe extern "C" fn zuri_jit_list_all_number(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
-  let v = Value::from_bits(value_bits);
-  if !v.is_obj() {
-    return 0;
-  }
-  match &*v.as_obj() {
-    crate::vm::object::Obj::List(items) => {
-      // SAFETY: single-threaded, and this only reads; the same
-      // reasoning `Value::list_len` spells out.
-      debug_assert!(
-        items.try_borrow().is_ok(),
-        "element scan over a live borrow"
-      );
-      let storage = &*items.as_ptr();
-      u64::from(storage.iter().all(|e| e.is_number()))
-    },
-    _ => 0,
-  }
-}
+/// One call rather than one per register on purpose. A kernel like
+/// `advance(x, y, z, vx, vy, vz, mass, dt)` bets on seven arrays and is
+/// called once per timestep, so seven calls and their pairwise
+/// comparisons spelled out in IR would cost more at the entry than the
+/// per-read checks they exist to remove.
+///
+/// Walks each list in full, which is the point: a prefix would only
+/// restate the hint `VM::sample_param_elem_types` already gave. Reads
+/// only; cannot allocate or collect.
+pub unsafe extern "C" fn zuri_jit_list_elems_ok(
+  vm_ptr: *mut VM,
+  base: u64,
+  int_mask: u64,
+  num_mask: u64,
+  distinct_mask: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let base = base as usize;
 
-/// The whole-number counterpart of `zuri_jit_list_all_number`: every
-/// element is a number with no fractional part, and within the range
-/// an `i64` can name, so a value read out of this list is usable as
-/// an index or an integer operand with no check of its own.
-///
-/// NaN and both infinities fail, since `fract()` on any of them is
-/// NaN rather than zero.
-pub unsafe extern "C" fn zuri_jit_list_all_int(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
-  let v = Value::from_bits(value_bits);
-  if !v.is_obj() {
-    return 0;
-  }
-  match &*v.as_obj() {
-    crate::vm::object::Obj::List(items) => {
-      debug_assert!(
-        items.try_borrow().is_ok(),
-        "element scan over a live borrow"
-      );
-      let storage = &*items.as_ptr();
-      u64::from(storage.iter().all(|e| {
+  for reg in 0..64u8 {
+    let bit = 1u64 << reg;
+    let wants_int = int_mask & bit != 0;
+    if !wants_int && num_mask & bit == 0 {
+      continue;
+    }
+    let v = vm.get_reg(base, reg);
+    if !v.is_obj() {
+      return 0;
+    }
+    let crate::vm::object::Obj::List(items) = (unsafe { &*v.as_obj() }) else {
+      return 0;
+    };
+    // SAFETY: single-threaded, and this only reads; the same reasoning
+    // `Value::list_len` spells out at length.
+    debug_assert!(items.try_borrow().is_ok(), "element scan over a live borrow");
+    let storage = unsafe { &*items.as_ptr() };
+    // A whole-number claim is the stronger of the two, so proving it
+    // proves the numeric one as well and no second walk is needed.
+    // NaN and both infinities fail, since `fract()` on any of them is
+    // NaN rather than zero.
+    let holds = if wants_int {
+      storage.iter().all(|e| {
         if !e.is_number() {
           return false;
         }
         let n = e.as_number();
         n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
-      }))
-    },
-    _ => 0,
+      })
+    } else {
+      storage.iter().all(|e| e.is_number())
+    };
+    if !holds {
+      return 0;
+    }
   }
+
+  // Whatever is left standing has to be distinct lists. Two parameters
+  // bound to one argument would let a store through the first change
+  // what the second is claimed to hold, with nothing in the body
+  // saying so.
+  let mut remaining = distinct_mask;
+  while remaining != 0 {
+    let a = remaining.trailing_zeros() as u8;
+    remaining &= remaining - 1;
+    let va = vm.get_reg(base, a);
+    if !va.is_obj() {
+      continue;
+    }
+    let mut others = remaining;
+    while others != 0 {
+      let b = others.trailing_zeros() as u8;
+      others &= others - 1;
+      let vb = vm.get_reg(base, b);
+      if vb.is_obj() && std::ptr::eq(va.as_obj(), vb.as_obj()) {
+        return 0;
+      }
+    }
+  }
+
+  1
 }
 
 pub unsafe extern "C" fn zuri_jit_bitnot_slow(
@@ -3020,8 +3046,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_dict_index_get),
     spec3!(zuri_jit_dict_contains),
     spec2!(zuri_jit_dict_len),
-    spec2!(zuri_jit_list_all_number),
-    spec2!(zuri_jit_list_all_int),
+    spec5!(zuri_jit_list_elems_ok),
     spec3!(zuri_jit_print),
     spec3!(zuri_jit_close_upvalues),
     spec4!(zuri_jit_bitnot_slow),
