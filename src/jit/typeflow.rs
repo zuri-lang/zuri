@@ -483,7 +483,9 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
+        transfer_elem(
+          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+        ),
       )
     })
     .collect();
@@ -543,7 +545,9 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
+        transfer_elem(
+          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+        ),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -713,7 +717,6 @@ impl ElemSites {
       escaped,
     }
   }
-
 }
 
 /// Where every register points, plus which sites still hold what was
@@ -1396,7 +1399,9 @@ pub fn analyze_int(
           proto,
           global_ints,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
+        transfer_elem(
+          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+        ),
       )
     })
     .collect();
@@ -1439,7 +1444,9 @@ pub fn analyze_int(
           proto,
           global_ints,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
+        transfer_elem(
+          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+        ),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -3387,7 +3394,9 @@ pub fn int_demand(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<RegSet> {
           new_in.set(b, true);
         }
       },
-      Instr::AddImm { dst, a, .. } | Instr::SubImm { dst, a, .. } | Instr::MulImm { dst, a, .. } => {
+      Instr::AddImm { dst, a, .. }
+      | Instr::SubImm { dst, a, .. }
+      | Instr::MulImm { dst, a, .. } => {
         if out.get(dst) {
           new_in.set(a, true);
         }
