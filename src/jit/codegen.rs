@@ -753,6 +753,10 @@ struct FuncCompiler<'a, 'b> {
   /// entry scan straight from these bits.
   speculative_int_lists: Option<u64>,
   speculative_num_lists: Option<u64>,
+  /// The list-shape facts the specialized body is built from, computed
+  /// once in `new` because the element analyses need them there and
+  /// the second pass needs the identical set.
+  spec_list_facts: Option<typeflow::ListFacts>,
   spec_int_facts: Option<typeflow::IntFacts>,
   /// A ONE-SHOT, WHOLE-FRAME type sample taken at the same moment as
   /// `speculative_params`, but covering every register in the
@@ -1355,8 +1359,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let bytes_facts = typeflow::analyze_bytes(proto, &preds);
     let dict_facts = typeflow::analyze_dict(proto, &preds);
     let byte_value_facts = typeflow::analyze_byte_value(proto, &preds, &bytes_facts);
-    let int_facts =
-      typeflow::analyze_int(proto, &preds, None, None, &bytes_facts, &facts.global_ints);
+    // Ahead of the element analyses, which need it: what makes a
+    // `length` call safe to read past is the receiver being a list,
+    // and nothing about list shape depends on element types, so there
+    // is no circularity in settling it first.
+    let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
+    let spec_list_facts = typeflow::analyze_list(
+      proto,
+      &preds,
+      facts.speculative_lists.filter(|&m| m != 0),
+      &facts.global_lists,
+    );
+    let int_facts = typeflow::analyze_int(
+      proto,
+      &preds,
+      None,
+      None,
+      &bytes_facts,
+      &facts.global_ints,
+      &list_facts,
+    );
     let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
       Some(typeflow::analyze_int(
         proto,
@@ -1365,6 +1387,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         speculative_int_lists,
         &bytes_facts,
         &facts.global_ints,
+        &spec_list_facts,
       ))
     } else {
       None
@@ -1379,8 +1402,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &no_numeric_fields,
       Some(&int_facts),
       None,
+      &list_facts,
     );
-    let list_facts = typeflow::analyze_list(proto, &preds, None, &facts.global_lists);
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
     let const_facts = typeflow::analyze_const(proto, &preds);
@@ -1418,6 +1441,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       speculative_ints,
       speculative_int_lists,
       speculative_num_lists,
+      spec_list_facts: Some(spec_list_facts),
       spec_int_facts,
       speculative_regs,
       // Populated in `run`, once `base_bytes` is available; empty
@@ -1951,6 +1975,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let blocks = (0..self.blocks.len())
           .map(|_| self.fb.create_block())
           .collect();
+        // The entry dispatch needs these NOW to know what an OSR route
+        // has to re-establish before it may jump into the specialized
+        // body, and the numeric analysis below needs them to tell a
+        // list's builtin `length` from a user method of that name.
+        // Already computed in `new`, where the element analyses needed
+        // the same set; recomputing would only be a second identical
+        // fixed point.
+        let list_facts = self.spec_list_facts.take().unwrap_or_else(|| {
+          typeflow::analyze_list(
+            self.proto,
+            &self.preds,
+            self.speculative_lists,
+            &self.global_lists,
+          )
+        });
         let int_facts_ref = self.spec_int_facts.as_ref().unwrap_or(&self.int_facts);
         let facts = typeflow::analyze(
           self.proto,
@@ -1962,15 +2001,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           &self.numeric_fields,
           Some(int_facts_ref),
           self.speculative_num_lists,
-        );
-        // Computed here for the same reason the type facts are: the
-        // entry dispatch needs them NOW to know what an OSR route has
-        // to re-establish before it may jump into the specialized body.
-        let list_facts = typeflow::analyze_list(
-          self.proto,
-          &self.preds,
-          self.speculative_lists,
-          &self.global_lists,
+          &list_facts,
         );
         Some((blocks, facts, list_facts))
       } else {

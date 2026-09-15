@@ -352,6 +352,7 @@ pub fn analyze(
   numeric_fields: &rustc_hash::FxHashSet<String>,
   int_facts: Option<&IntFacts>,
   speculative_num_lists: Option<u64>,
+  list_facts: &ListFacts,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -477,7 +478,7 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
       )
     })
     .collect();
@@ -537,7 +538,7 @@ pub fn analyze(
           numeric_fields,
           int_facts,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
@@ -839,6 +840,7 @@ fn transfer_elem(
   ip: usize,
   proto: &ObjFunction,
   sites: &ElemSites,
+  list_facts: &ListFacts,
 ) -> ElemState {
   let mut out = state.clone();
   let pt = |r: u8| state.pt.get(r as usize).copied().unwrap_or(PT_UNKNOWN);
@@ -960,7 +962,16 @@ fn transfer_elem(
       // whole-number analysis has always trusted, and `max`/`min` are
       // the same: a running maximum folded inside the loop must not
       // cost that loop every array claim it has.
-      let reads_only = (state.claimed(obj)
+      // Proven a LIST, not proven anything about its elements. What
+      // makes `length` safe here is that a list's own is a builtin and
+      // cannot run Zuri code; a user class with a method of that name
+      // could do anything, which is what the proof rules out. Asking
+      // instead whether the receiver's ELEMENTS are claimed gets this
+      // backwards and is self-defeating: a kernel that reads an output
+      // array's length before filling it would clear the claims on its
+      // index arrays at the first instruction, purely because the
+      // output array is not one of the arrays being bet on.
+      let reads_only = (list_facts.is_list(ip, obj)
         && num_args == 0
         && matches!(method_name, "length" | "is_empty"))
         || (matches!(method_name, "max" | "min") && num_args == 1)
@@ -1257,6 +1268,7 @@ pub fn analyze_int(
   speculative_int_lists: Option<u64>,
   bytes_facts: &BytesFacts,
   global_ints: &rustc_hash::FxHashSet<String>,
+  list_facts: &ListFacts,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -1361,7 +1373,7 @@ pub fn analyze_int(
           proto,
           global_ints,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
       )
     })
     .collect();
@@ -1404,7 +1416,7 @@ pub fn analyze_int(
           proto,
           global_ints,
         ),
-        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites),
+        transfer_elem(&elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts),
       );
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
