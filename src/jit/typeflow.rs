@@ -448,13 +448,21 @@ pub fn analyze(
     speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
   );
-  let entry_elem = elem_entry_state(num_registers, &sites, speculative_num_lists.unwrap_or(0));
+  let elem_self_numeric_fields = self_numeric_fields;
+  let elem_numeric_fields = numeric_fields;
+  let entry_elem = elem_entry_state(
+    num_registers,
+    &sites,
+    speculative_num_lists.unwrap_or(0),
+    speculative_num_lists.unwrap_or(0),
+    speculative_params.unwrap_or(0),
+  );
   let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
         entry_elem.clone()
       } else {
-        ElemState::new(num_registers, sites.count, PT_UNSET, true)
+        ElemState::new(num_registers, sites.count, PT_UNSET, true, true)
       }
     })
     .collect();
@@ -484,7 +492,16 @@ pub fn analyze(
           int_facts,
         ),
         transfer_elem(
-          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+          &elem[ip],
+          &entry[ip],
+          &code[ip],
+          ip,
+          proto,
+          &sites,
+          list_facts,
+          elem_self_numeric_fields,
+          elem_numeric_fields,
+          global_numbers,
         ),
       )
     })
@@ -513,7 +530,7 @@ pub fn analyze(
       new_elem = None;
     }
     let mut new_elem =
-      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true));
+      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true, true));
     if ip == 0
       && let Some(seed) = &seed
     {
@@ -546,7 +563,16 @@ pub fn analyze(
           int_facts,
         ),
         transfer_elem(
-          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+          &elem[ip],
+          &entry[ip],
+          &code[ip],
+          ip,
+          proto,
+          &sites,
+          list_facts,
+          elem_self_numeric_fields,
+          elem_numeric_fields,
+          global_numbers,
         ),
       );
       for &s in &successors(ip, &code[ip], proto) {
@@ -664,13 +690,28 @@ impl ElemSites {
 
     // A site escapes if the register it was allocated into ever
     // reaches somewhere this function cannot see. `escape`'s own
-    // reader is an exhaustive match over every instruction, so a new
-    // one is a compile error there rather than a silent omission here.
+    // reader is an exhaustive match over every instruction, so nothing
+    // is silently omitted there; `Closure` is the one arm it answers
+    // with nothing, because resolving a capture list needs the
+    // constant pool and that reader only sees the instruction. Its
+    // caller does the real work, and so does the loop below.
     let num_registers = proto.num_registers as usize;
     let mut leaky = vec![false; num_registers.max(256)];
     for instr in code.iter() {
       for r in crate::jit::escape::escaping_reads(instr) {
         leaky[r as usize] = true;
+      }
+      // Capturing a local register hands it to a closure that may well
+      // outlive this frame.
+      if let Instr::Closure { proto_const, .. } = *instr
+        && let Some(c) = proto.chunk.constants.get(proto_const as usize)
+        && c.is_func()
+      {
+        for desc in &c.as_func().upvalues {
+          if let crate::vm::object::UpvalueDescriptor::Local(n) = *desc {
+            leaky[n as usize] = true;
+          }
+        }
       }
     }
     // A copy that escapes takes its source with it.
@@ -725,13 +766,60 @@ impl ElemSites {
 struct ElemState {
   pt: SmallVec<[u16; 32]>,
   ok: SmallVec<[u64; 4]>,
+  /// Which sites hold nothing but NUMBERS, tracked alongside `ok` and
+  /// never derived from it.
+  ///
+  /// The whole-number analysis claims something stronger than numeric,
+  /// so its `ok` says nothing about a list of floats; asking it
+  /// whether `values[k]` is a number gets "no", and the multiply that
+  /// follows then reads as able to reach an operator override and ends
+  /// every claim in the loop. A sparse kernel indexing with one array
+  /// and weighting with another loses the first because of the second.
+  ok_num: SmallVec<[u64; 4]>,
+  /// The registers holding a value that is provably NOT a class
+  /// instance, which is the real condition for reaching an operator
+  /// override: `VM::try_operator_override` looks the method up on the
+  /// receiver's class and only an instance has one. A bool, a string
+  /// and a list are all as safe as a number here, and asking for a
+  /// number specifically costs a loop its claims the moment it tests
+  /// `!(x == 0)`.
+  ///
+  /// A superset of `num`.
+  prim: RegSet,
+  /// The registers holding a plain number here.
+  ///
+  /// Carried in this state rather than read off `TypeFacts` because
+  /// the whole-number analysis runs first and has no numeric facts to
+  /// consult, and because what this is for feeds straight back into
+  /// the claims: an arithmetic instruction whose operand is a number
+  /// cannot reach a user operator override, and one whose operand
+  /// might not be can, so it ends every claim. Its own transfer is
+  /// only as wide as that question needs, not a second `TypeFacts`.
+  num: RegSet,
 }
 
 impl ElemState {
-  fn new(num_registers: usize, num_sites: usize, pt_fill: u16, ok_fill: bool) -> ElemState {
+  fn new(
+    num_registers: usize,
+    num_sites: usize,
+    pt_fill: u16,
+    ok_fill: bool,
+    num_fill: bool,
+  ) -> ElemState {
     ElemState {
       pt: smallvec![pt_fill; num_registers],
       ok: smallvec![if ok_fill { u64::MAX } else { 0 }; num_sites.div_ceil(64).max(1)],
+      ok_num: smallvec![if ok_fill { u64::MAX } else { 0 }; num_sites.div_ceil(64).max(1)],
+      prim: if num_fill {
+        RegSet::full(num_registers)
+      } else {
+        RegSet::empty(num_registers)
+      },
+      num: if num_fill {
+        RegSet::full(num_registers)
+      } else {
+        RegSet::empty(num_registers)
+      },
     }
   }
 
@@ -742,6 +830,51 @@ impl ElemState {
     }
     let (w, b) = (site as usize / 64, site as usize % 64);
     self.ok.get(w).map(|x| (x >> b) & 1 != 0).unwrap_or(false)
+  }
+
+  #[inline]
+  fn site_num(&self, site: u16) -> bool {
+    if site >= PT_UNKNOWN {
+      return false;
+    }
+    let (w, b) = (site as usize / 64, site as usize % 64);
+    self
+      .ok_num
+      .get(w)
+      .map(|x| (x >> b) & 1 != 0)
+      .unwrap_or(false)
+  }
+
+  #[inline]
+  fn set_site_num(&mut self, site: u16, v: bool) {
+    if site >= PT_UNKNOWN {
+      return;
+    }
+    let (w, b) = (site as usize / 64, site as usize % 64);
+    if let Some(x) = self.ok_num.get_mut(w) {
+      if v {
+        *x |= 1u64 << b;
+      } else {
+        *x &= !(1u64 << b);
+      }
+    }
+  }
+
+  /// `site_num`, reading the optimistic top as claimed for the same
+  /// reason `claimed` does.
+  #[inline]
+  fn claimed_num_site(&self, site: u16) -> bool {
+    site == PT_UNSET || self.site_num(site)
+  }
+
+  /// Whether `r`'s list is known to hold nothing but numbers.
+  #[inline]
+  fn claimed_num(&self, r: u8) -> bool {
+    match self.pt.get(r as usize) {
+      Some(&PT_UNSET) => true,
+      Some(&s) => self.site_num(s),
+      None => false,
+    }
   }
 
   #[inline]
@@ -773,10 +906,17 @@ impl ElemState {
       let escaped = sites.escaped.get(w).copied().unwrap_or(u64::MAX);
       *word &= !escaped;
     }
+    for (w, word) in self.ok_num.iter_mut().enumerate() {
+      let escaped = sites.escaped.get(w).copied().unwrap_or(u64::MAX);
+      *word &= !escaped;
+    }
   }
 
   fn clear_all_sites(&mut self) {
     for w in &mut self.ok {
+      *w = 0;
+    }
+    for w in &mut self.ok_num {
       *w = 0;
     }
   }
@@ -808,8 +948,14 @@ impl ElemState {
     for (a, b) in self.ok.iter_mut().zip(other.ok.iter()) {
       *a &= *b;
     }
+    for (a, b) in self.ok_num.iter_mut().zip(other.ok_num.iter()) {
+      *a &= *b;
+    }
+    self.prim.and_assign(&other.prim);
+    self.num.and_assign(&other.num);
     for site in collapsed {
       self.set_site_ok(site, false);
+      self.set_site_num(site, false);
     }
   }
 
@@ -849,6 +995,15 @@ impl ElemState {
 /// a claimed list without ending the claim: the whole numbers for the
 /// integer analysis, the numbers for the numeric one, which is the
 /// only thing separating the two.
+///
+/// Arithmetic is not inert here. `+`, `-`, `*`, `<`, unary minus and
+/// the rest all fall back to a user-defined operator override when an
+/// operand is not a number, and an override is ordinary Zuri code: it
+/// can store a fraction into any list it can reach, including one this
+/// function took as an argument. `VM::try_operator_override` dispatches
+/// on the LEFT operand alone and never fires for a number, so proving
+/// that one operand numeric is exactly what rules the override out;
+/// anything less ends every claim.
 fn transfer_elem(
   state: &ElemState,
   accepted: &RegSet,
@@ -857,15 +1012,77 @@ fn transfer_elem(
   proto: &ObjFunction,
   sites: &ElemSites,
   list_facts: &ListFacts,
+  self_numeric_fields: &rustc_hash::FxHashSet<String>,
+  numeric_fields: &rustc_hash::FxHashSet<String>,
+  global_numbers: &rustc_hash::FxHashSet<String>,
 ) -> ElemState {
   let mut out = state.clone();
   let pt = |r: u8| state.pt.get(r as usize).copied().unwrap_or(PT_UNKNOWN);
+  let is_num = |r: u8| state.num.get(r);
+  let is_prim = |r: u8| state.prim.get(r);
+  // A number is a primitive; nothing sets one without the other.
+  let set_num = |out: &mut ElemState, r: u8, v: bool| {
+    out.num.set(r, v);
+    if v {
+      out.prim.set(r, true);
+    }
+  };
+  let set_prim = |out: &mut ElemState, r: u8, v: bool| {
+    out.prim.set(r, v);
+    if !v {
+      out.num.set(r, false);
+    }
+  };
+
+  // Whether this instruction can hand control to user code, and so
+  // has to be treated as able to write anywhere.
+  let overload_possible = match *instr {
+    // `list * n` is repetition, answered natively long before any
+    // override is consulted, so it is not a way into user code.
+    Instr::Mul { a, .. } | Instr::MulImm { a, .. }
+      if pt(a) != PT_UNKNOWN || list_facts.is_list(ip, a) =>
+    {
+      false
+    },
+    Instr::Add { a, b, .. }
+    | Instr::Sub { a, b, .. }
+    | Instr::Mul { a, b, .. }
+    | Instr::Div { a, b, .. }
+    | Instr::Pow { a, b, .. }
+    | Instr::Floor { a, b, .. }
+    | Instr::Mod { a, b, .. }
+    | Instr::BitAnd { a, b, .. }
+    | Instr::BitOr { a, b, .. }
+    | Instr::BitXor { a, b, .. }
+    | Instr::BitShl { a, b, .. }
+    | Instr::BitShr { a, b, .. }
+    | Instr::BitUshr { a, b, .. }
+    | Instr::Lt { a, b, .. }
+    | Instr::Le { a, b, .. }
+    | Instr::Gt { a, b, .. }
+    | Instr::Ge { a, b, .. } => {
+      let _ = b;
+      !is_prim(a)
+    },
+    Instr::AddImm { a, .. }
+    | Instr::SubImm { a, .. }
+    | Instr::MulImm { a, .. }
+    | Instr::LtImm { a, .. }
+    | Instr::LeImm { a, .. }
+    | Instr::GtImm { a, .. }
+    | Instr::GeImm { a, .. } => !is_prim(a),
+    Instr::Neg { src, .. } | Instr::Not { src, .. } | Instr::BitNot { src, .. } => !is_prim(src),
+    _ => false,
+  };
+  if overload_possible {
+    out.clear_all_sites();
+  }
 
   // A fresh allocation at a site any register still names means those
   // registers are holding an OLDER object from the same site, which
   // this cannot tell apart from the new one. They lose their footing
   // rather than inherit the new list's claim.
-  let allocate = |out: &mut ElemState, dst: u8, site: u16, ok: bool| {
+  let allocate = |out: &mut ElemState, dst: u8, site: u16, ok: bool, ok_num: bool| {
     if site >= PT_UNKNOWN {
       for slot in out.pt.iter_mut() {
         if *slot == site {
@@ -886,6 +1103,7 @@ fn transfer_elem(
       *slot = site;
     }
     out.set_site_ok(site, ok);
+    out.set_site_num(site, ok_num);
   };
 
   let set_pt = |out: &mut ElemState, r: u8, v: u16| {
@@ -899,28 +1117,76 @@ fn transfer_elem(
 
     Instr::MakeList { dst, start, count } => {
       let ok = count > 0 && (0..count).all(|offset| accepted.get(start + offset));
-      allocate(&mut out, dst, sites.of_ip[ip], ok);
+      let ok_num = count > 0 && (0..count).all(|offset| is_num(start + offset));
+      allocate(&mut out, dst, sites.of_ip[ip], ok, ok_num);
     },
 
-    // List repetition copies the elements of the list it repeats.
+    // List repetition copies the elements of the list it repeats, so
+    // the result is a fresh list of this site holding what the source
+    // held. Only when an operand really is a list this analysis knows:
+    // otherwise `*` is either plain arithmetic or a `@mul` override,
+    // and an override hands back whatever it likes, including one of
+    // the very lists being reasoned about here. Naming the result
+    // after this site would then turn a later store through it into a
+    // kill on the wrong list.
     Instr::Mul { dst, a, b } => {
-      let from = if pt(a) < PT_UNKNOWN {
+      // `PT_UNSET` counts as a list here, not as "not a list". It is
+      // the optimistic top every block starts from, and reading it the
+      // other way makes this arm produce a WORSE answer from a better
+      // input, which a worklist fixed point cannot converge through.
+      let from = if pt(a) != PT_UNKNOWN {
         pt(a)
-      } else if pt(b) < PT_UNKNOWN {
+      } else if pt(b) != PT_UNKNOWN {
         pt(b)
       } else {
         PT_UNKNOWN
       };
-      allocate(&mut out, dst, sites.of_ip[ip], state.claimed_site(from));
+      if from != PT_UNKNOWN {
+        allocate(
+          &mut out,
+          dst,
+          sites.of_ip[ip],
+          state.claimed_site(from),
+          state.claimed_num_site(from),
+        );
+      } else {
+        set_pt(&mut out, dst, PT_UNKNOWN);
+      }
     },
     Instr::MulImm { dst, a, .. } => {
-      allocate(&mut out, dst, sites.of_ip[ip], state.claimed_site(pt(a)));
+      if pt(a) != PT_UNKNOWN {
+        allocate(
+          &mut out,
+          dst,
+          sites.of_ip[ip],
+          state.claimed_site(pt(a)),
+          state.claimed_num_site(pt(a)),
+        );
+      } else {
+        set_pt(&mut out, dst, PT_UNKNOWN);
+      }
     },
 
     // The claim dies for the LIST, so every name for it loses the
     // claim at once. A store through a register naming no list in
     // particular could be hitting any of them.
     Instr::SetIndex { obj, idx: _, src } => {
+      // The numeric claim dies on a non-number, the analysis's own
+      // claim on anything it does not accept. A whole-number analysis
+      // storing `0.5` ends its integer claim while the list stays a
+      // list of numbers, so the two cannot share one kill.
+      if !is_num(src) {
+        match pt(obj) {
+          PT_UNSET => {},
+          PT_UNKNOWN => {
+            for (w, word) in out.ok_num.iter_mut().enumerate() {
+              let escaped = sites.escaped.get(w).copied().unwrap_or(u64::MAX);
+              *word &= !escaped;
+            }
+          },
+          site => out.set_site_num(site, false),
+        }
+      }
       if !accepted.get(src) {
         match pt(obj) {
           // Nothing has reached here yet to say which list this is;
@@ -946,6 +1212,7 @@ fn transfer_elem(
     | Instr::AssignGlobal { src, .. }
     | Instr::SetUpval { src, .. } => {
       out.set_site_ok(pt(src), false);
+      out.set_site_num(pt(src), false);
     },
 
     Instr::Invoke {
@@ -1012,14 +1279,224 @@ fn transfer_elem(
       }
     },
   }
+
+  // The numeric facts, kept only as wide as the override question
+  // above needs. A binary op on two numbers yields a number and never
+  // reaches user code; anything this cannot vouch for is left unknown,
+  // which costs precision and never soundness.
+  let const_is_number = |idx: u16| {
+    proto
+      .chunk
+      .constants
+      .get(idx as usize)
+      .map(|c| c.is_number())
+      .unwrap_or(false)
+  };
+  match *instr {
+    // A constant is whatever the pool holds; never a class instance.
+    Instr::LoadConst { dst, const_idx } => {
+      set_prim(&mut out, dst, true);
+      set_num(&mut out, dst, const_is_number(const_idx));
+    },
+    Instr::LoadNil { dst } | Instr::LoadBool { dst, .. } => {
+      set_prim(&mut out, dst, true);
+      set_num(&mut out, dst, false);
+    },
+    Instr::Move { dst, src } => {
+      set_prim(&mut out, dst, is_prim(src));
+      set_num(&mut out, dst, is_num(src));
+    },
+    // Reached only when no override ran, since one that could have is
+    // handled above; the builtin answer is a builtin value.
+    Instr::Neg { dst, src } | Instr::BitNot { dst, src } => {
+      set_prim(&mut out, dst, is_prim(src));
+      set_num(&mut out, dst, is_num(src));
+    },
+    Instr::Not { dst, src } => {
+      set_prim(&mut out, dst, is_prim(src));
+      set_num(&mut out, dst, false);
+    },
+    // Comparison and equality answer with a bool.
+    Instr::Eq { dst, .. } | Instr::Neq { dst, .. } => {
+      set_prim(&mut out, dst, true);
+      set_num(&mut out, dst, false);
+    },
+    Instr::EqImm { dst, .. } | Instr::NeqImm { dst, .. } => {
+      set_prim(&mut out, dst, true);
+      set_num(&mut out, dst, false);
+    },
+    Instr::Lt { dst, a, .. }
+    | Instr::Le { dst, a, .. }
+    | Instr::Gt { dst, a, .. }
+    | Instr::Ge { dst, a, .. }
+    | Instr::LtImm { dst, a, .. }
+    | Instr::LeImm { dst, a, .. }
+    | Instr::GtImm { dst, a, .. }
+    | Instr::GeImm { dst, a, .. } => {
+      set_prim(&mut out, dst, is_prim(a));
+      set_num(&mut out, dst, false);
+    },
+
+    // An element of a list claimed to hold numbers is a number. The
+    // whole-number analysis claims something strictly stronger, so
+    // this reads correctly under both.
+    Instr::GetIndex { dst, obj, .. } => {
+      let numeric = state.claimed_num(obj);
+      set_prim(&mut out, dst, numeric);
+      set_num(&mut out, dst, numeric);
+    },
+
+    Instr::Add { dst, a, b }
+    | Instr::Sub { dst, a, b }
+    | Instr::Mul { dst, a, b }
+    | Instr::Div { dst, a, b }
+    | Instr::Pow { dst, a, b }
+    | Instr::Floor { dst, a, b }
+    | Instr::Mod { dst, a, b }
+    | Instr::BitAnd { dst, a, b }
+    | Instr::BitOr { dst, a, b }
+    | Instr::BitXor { dst, a, b }
+    | Instr::BitShl { dst, a, b }
+    | Instr::BitShr { dst, a, b }
+    | Instr::BitUshr { dst, a, b } => {
+      set_prim(&mut out, dst, is_prim(a));
+      set_num(&mut out, dst, is_num(a) && is_num(b));
+    },
+
+    Instr::AddImm { dst, a, imm_const }
+    | Instr::SubImm { dst, a, imm_const }
+    | Instr::MulImm { dst, a, imm_const } => {
+      set_prim(&mut out, dst, is_prim(a));
+      set_num(&mut out, dst, is_num(a) && const_is_number(imm_const));
+    },
+
+    // A parameter checked as a number, an int or a float is one from
+    // here on; the check raises otherwise.
+    Instr::CheckParamType { reg, check_idx } => {
+      let check = &proto.chunk.param_checks[check_idx as usize];
+      let all_num = !check.nullable
+        && !check.types.is_empty()
+        && check
+          .types
+          .iter()
+          .all(|t| matches!(t, ParamType::Int | ParamType::Number));
+      // Every builtin type here rules out an instance; `Type` and
+      // `Any` do not, and neither does a nullable check on its own,
+      // since nil is fine but the annotated type may still be a class.
+      let all_prim = !check.types.is_empty()
+        && check.types.iter().all(|t| {
+          matches!(
+            t,
+            ParamType::Bool
+              | ParamType::Int
+              | ParamType::Number
+              | ParamType::BigInt
+              | ParamType::String
+              | ParamType::Bytes
+              | ParamType::List
+              | ParamType::Dict
+              | ParamType::Range
+          )
+        });
+      set_prim(&mut out, reg, all_prim);
+      set_num(&mut out, reg, all_num);
+    },
+
+    Instr::GetField {
+      dst,
+      obj,
+      name_const,
+    } => {
+      // Same test `transfer` applies: a name proven numeric on this
+      // method's own class counts when the receiver is `self`, and a
+      // name proven numeric everywhere counts whatever the receiver.
+      let numeric = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .map(|v| {
+          v.is_string()
+            && ((obj == 0 && proto.is_method && self_numeric_fields.contains(v.as_str()))
+              || numeric_fields.contains(v.as_str()))
+        })
+        .unwrap_or(false);
+      set_num(&mut out, dst, numeric);
+    },
+
+    Instr::GetGlobal { dst, name_const } => {
+      let numeric = proto
+        .chunk
+        .constants
+        .get(name_const as usize)
+        .map(|v| v.is_string() && global_numbers.contains(v.as_str()))
+        .unwrap_or(false);
+      set_num(&mut out, dst, numeric);
+    },
+
+    Instr::Invoke {
+      dst,
+      obj,
+      method_const,
+      num_args,
+    } => {
+      let method_name = proto
+        .chunk
+        .constants
+        .get(method_const as usize)
+        .and_then(|v| {
+          if v.is_string() {
+            Some(v.as_str())
+          } else {
+            None
+          }
+        })
+        .unwrap_or("");
+      // The same builtins `reads_only` above already trusts, asked now
+      // for what they RETURN rather than what they can touch. Without
+      // this a loop that rounds an index (`px.floor()`) or folds a
+      // running maximum would lose every claim at the next arithmetic
+      // instruction, purely because nothing said the result was a
+      // number.
+      let numeric = match method_name {
+        "length" => true,
+        "max" | "min" if num_args == 1 => is_num(obj) && is_num(obj + 2),
+        "abs" | "sign" | "floor" | "ceil" | "trunc" | "round" | "sqrt" | "to_number" => is_num(obj),
+        _ => false,
+      };
+      set_num(&mut out, dst, numeric);
+    },
+
+    Instr::MakeList { dst, .. }
+    | Instr::MakeDict { dst, .. }
+    | Instr::MakeRange { dst, .. }
+    | Instr::Concat { dst, .. }
+    | Instr::GetSlice { dst, .. } => {
+      set_prim(&mut out, dst, true);
+      set_num(&mut out, dst, false);
+    },
+
+    _ => {
+      if let Some(dst) = any_dst(instr) {
+        set_prim(&mut out, dst, false);
+        set_num(&mut out, dst, false);
+      }
+    },
+  }
+
   out
 }
 
 /// The state on entry to a function: the seeded parameters name their
 /// own lists and carry their claims, everything else names nothing in
 /// particular.
-fn elem_entry_state(num_registers: usize, sites: &ElemSites, seed_mask: u64) -> ElemState {
-  let mut state = ElemState::new(num_registers, sites.count, PT_UNKNOWN, false);
+fn elem_entry_state(
+  num_registers: usize,
+  sites: &ElemSites,
+  seed_mask: u64,
+  num_seed_mask: u64,
+  numeric_params: u64,
+) -> ElemState {
+  let mut state = ElemState::new(num_registers, sites.count, PT_UNKNOWN, false, false);
   for (r, &site) in sites.of_param.iter().enumerate() {
     if site < PT_UNKNOWN && r < num_registers {
       // Every list parameter gets its identity, so a store through one
@@ -1029,6 +1506,28 @@ fn elem_entry_state(num_registers: usize, sites: &ElemSites, seed_mask: u64) -> 
       if r < 64 && seed_mask & (1u64 << r) != 0 {
         state.set_site_ok(site, true);
       }
+      // Anything scanned as whole numbers is numbers, so the stronger
+      // bet seeds the weaker claim as well as its own.
+      if r < 64 && (seed_mask | num_seed_mask) & (1u64 << r) != 0 {
+        state.set_site_num(site, true);
+      }
+    }
+  }
+  // The parameters sampled as numbers. Sound to start from because the
+  // entry dispatch checks that bet before anything reaches this body,
+  // and worth having because a loop bound or a scale factor arriving
+  // as an argument is otherwise the first thing to end every claim the
+  // loop has.
+  for r in 0..num_registers.min(64) {
+    if numeric_params & (1u64 << r) != 0 {
+      state.num.set(r as u8, true);
+      state.prim.set(r as u8, true);
+    }
+  }
+  // A parameter proven to be a list is not an instance either.
+  for (r, &site) in sites.of_param.iter().enumerate() {
+    if site < PT_UNKNOWN && r < num_registers {
+      state.prim.set(r as u8, true);
     }
   }
   state
@@ -1291,6 +1790,11 @@ pub fn analyze_int(
   global_ints: &rustc_hash::FxHashSet<String>,
   list_facts: &ListFacts,
   speculative_lists: Option<u64>,
+  speculative_numbers: Option<u64>,
+  speculative_num_lists: Option<u64>,
+  self_numeric_fields: &rustc_hash::FxHashSet<String>,
+  numeric_fields: &rustc_hash::FxHashSet<String>,
+  global_numbers: &rustc_hash::FxHashSet<String>,
 ) -> IntFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -1360,7 +1864,7 @@ pub fn analyze_int(
   // before entering the specialized body.
   let sites = ElemSites::build(
     proto,
-    speculative_int_lists.unwrap_or(0),
+    speculative_int_lists.unwrap_or(0) | speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
   );
 
@@ -1374,13 +1878,21 @@ pub fn analyze_int(
     })
     .collect();
 
-  let entry_elem = elem_entry_state(num_registers, &sites, speculative_int_lists.unwrap_or(0));
+  let elem_self_numeric_fields = self_numeric_fields;
+  let elem_numeric_fields = numeric_fields;
+  let entry_elem = elem_entry_state(
+    num_registers,
+    &sites,
+    speculative_int_lists.unwrap_or(0),
+    speculative_num_lists.unwrap_or(0),
+    speculative_numbers.unwrap_or(0),
+  );
   let mut elem: Vec<ElemState> = (0..code_len)
     .map(|ip| {
       if ip == 0 {
         entry_elem.clone()
       } else {
-        ElemState::new(num_registers, sites.count, PT_UNSET, true)
+        ElemState::new(num_registers, sites.count, PT_UNSET, true, true)
       }
     })
     .collect();
@@ -1400,7 +1912,16 @@ pub fn analyze_int(
           global_ints,
         ),
         transfer_elem(
-          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+          &elem[ip],
+          &entry[ip],
+          &code[ip],
+          ip,
+          proto,
+          &sites,
+          list_facts,
+          elem_self_numeric_fields,
+          elem_numeric_fields,
+          global_numbers,
         ),
       )
     })
@@ -1425,7 +1946,7 @@ pub fn analyze_int(
       new_elem = None;
     }
     let mut new_elem =
-      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true));
+      new_elem.unwrap_or_else(|| ElemState::new(num_registers, sites.count, PT_UNSET, true, true));
     if ip == 0 {
       new_in = seed.clone().unwrap_or_else(|| RegSet::empty(num_registers));
       new_elem = entry_elem.clone();
@@ -1445,7 +1966,16 @@ pub fn analyze_int(
           global_ints,
         ),
         transfer_elem(
-          &elem[ip], &entry[ip], &code[ip], ip, proto, &sites, list_facts,
+          &elem[ip],
+          &entry[ip],
+          &code[ip],
+          ip,
+          proto,
+          &sites,
+          list_facts,
+          elem_self_numeric_fields,
+          elem_numeric_fields,
+          global_numbers,
         ),
       );
       for &s in &successors(ip, &code[ip], proto) {

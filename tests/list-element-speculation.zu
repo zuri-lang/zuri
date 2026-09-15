@@ -118,3 +118,97 @@ catch {
 } as e {
   echo 'own alias raised: ${e.message}'
 }
+
+# Arithmetic is not inert: `+`, `*` and `<` all fall back to a
+# user-defined operator override when an operand is not a builtin
+# value, and an override is ordinary Zuri code. One that writes a
+# fraction into a list the compiled caller is holding has to end the
+# claim on that list, wherever in the loop it runs.
+class Poker {
+  @new(target) {
+    self.target = target
+  }
+
+  @add(other) {
+    self.target[1] = 2.5
+    return 1
+  }
+
+  # Hands back the caller's own array rather than a product, so the
+  # store below goes through that array under a different name.
+  @mul(other) {
+    return self.target
+  }
+
+  @lt(other) {
+    self.target[1] = 2.5
+    return false
+  }
+}
+
+def override_probe(idx, data, poker, n) {
+  var total = 0
+  var junk = 0
+
+  iter var i = 0; i < n; i++ {
+    if i == 150_000 {
+      junk = poker + 1
+    }
+
+    total += data[idx[1]]
+  }
+
+  return total + junk
+}
+
+def compare_probe(idx, data, poker, n) {
+  var total = 0
+
+  iter var i = 0; i < n; i++ {
+    if i == 150_000 {
+      if poker < 1 {
+        total += 0
+      }
+    }
+
+    total += data[idx[1]]
+  }
+
+  return total
+}
+
+def mul_alias_probe(idx, data, poker, n) {
+  var total = 0
+
+  iter var i = 0; i < n; i++ {
+    if i == 150_000 {
+      var aliased = poker * 2
+      aliased[1] = 2.5
+    }
+
+    total += data[idx[1]]
+  }
+
+  return total
+}
+
+var over = [0, 1, 2, 3]
+catch {
+  echo override_probe(over, TABLE, Poker(over), 200_000)
+} as e {
+  echo 'override raised: ${e.message}'
+}
+
+var compared = [0, 1, 2, 3]
+catch {
+  echo compare_probe(compared, TABLE, Poker(compared), 200_000)
+} as e {
+  echo 'compare raised: ${e.message}'
+}
+
+var aliased = [0, 1, 2, 3]
+catch {
+  echo mul_alias_probe(aliased, TABLE, Poker(aliased), 200_000)
+} as e {
+  echo 'mul alias raised: ${e.message}'
+}

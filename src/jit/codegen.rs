@@ -1379,6 +1379,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       &facts.global_ints,
       &list_facts,
       None,
+      None,
+      None,
+      &no_self_numeric_fields,
+      &no_numeric_fields,
+      &facts.global_numbers,
     );
     let spec_int_facts = if speculative_ints.is_some() || speculative_int_lists.is_some() {
       Some(typeflow::analyze_int(
@@ -1390,6 +1395,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         &facts.global_ints,
         &spec_list_facts,
         facts.speculative_lists.filter(|&m| m != 0),
+        speculative_params,
+        speculative_num_lists,
+        &no_self_numeric_fields,
+        &no_numeric_fields,
+        &facts.global_numbers,
       ))
     } else {
       None
@@ -13443,7 +13453,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       } => {
         if crate::jit::log_facts_enabled() {
           eprintln!(
-            "[facts] {} ip={} GetIndex obj=r{} idx=r{} | idx: is_int={} tracked={} proven_int={} proven_num={} | obj: list={} int_list={} tf_num={}",
+            "[facts] {} ip={} GetIndex obj=r{} idx=r{} | idx: is_int={} tracked={} proven_int={} proven_num={} | obj: list={} int_list={} num_list={} tf_num={}",
             self.proto.display_name(),
             ip,
             obj,
@@ -13458,6 +13468,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             self.proven_numeric(ip, iidx),
             self.proven_list(ip, obj),
             self.int_facts.is_int_list(ip, obj),
+            self.type_facts.is_num_list(ip, obj),
             self.type_facts.is_numeric(ip, dst),
           );
         }
