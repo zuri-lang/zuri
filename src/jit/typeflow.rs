@@ -447,6 +447,7 @@ pub fn analyze(
     proto,
     speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
+    list_facts,
   );
   let elem_self_numeric_fields = self_numeric_fields;
   let elem_numeric_fields = numeric_fields;
@@ -635,7 +636,12 @@ struct ElemSites {
 }
 
 impl ElemSites {
-  fn build(proto: &ObjFunction, seed_mask: u64, list_mask: u64) -> ElemSites {
+  fn build(
+    proto: &ObjFunction,
+    seed_mask: u64,
+    list_mask: u64,
+    list_facts: &ListFacts,
+  ) -> ElemSites {
     let code = &proto.chunk.code;
     let mut of_ip = vec![PT_UNKNOWN; code.len()];
     let mut of_param = [PT_UNKNOWN; 64];
@@ -697,9 +703,19 @@ impl ElemSites {
     // caller does the real work, and so does the loop below.
     let num_registers = proto.num_registers as usize;
     let mut leaky = vec![false; num_registers.max(256)];
-    for instr in code.iter() {
-      for r in crate::jit::escape::escaping_reads(instr) {
-        leaky[r as usize] = true;
+    for (ip, instr) in code.iter().enumerate() {
+      // `escape` reports a multiply's operands as escaping because
+      // arithmetic can reach a `@mul` override. Repetition cannot: it
+      // reads the list and builds a new one, handing the original
+      // nowhere, so `[0] * n` does not escape its own allocation.
+      let repetition = match *instr {
+        Instr::Mul { a, .. } | Instr::MulImm { a, .. } => list_facts.is_list(ip, a),
+        _ => false,
+      };
+      if !repetition {
+        for r in crate::jit::escape::escaping_reads(instr) {
+          leaky[r as usize] = true;
+        }
       }
       // Capturing a local register hands it to a closure that may well
       // outlive this frame.
@@ -1075,7 +1091,13 @@ fn transfer_elem(
     _ => false,
   };
   if overload_possible {
-    out.clear_all_sites();
+    // Only the lists an override could actually reach. It is external
+    // code: it gets at a list by being handed one, so a list allocated
+    // here that never left these registers is not among them. Same
+    // reasoning as the unknown-receiver store below, and it is what
+    // lets a kernel that builds its own scratch arrays keep them
+    // across the arithmetic in its own loop.
+    out.clear_escaped_sites(sites);
   }
 
   // A fresh allocation at a site any register still names means those
@@ -1866,6 +1888,7 @@ pub fn analyze_int(
     proto,
     speculative_int_lists.unwrap_or(0) | speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
+    list_facts,
   );
 
   let mut entry: Vec<RegSet> = (0..code_len)
