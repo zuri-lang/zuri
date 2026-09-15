@@ -445,9 +445,9 @@ pub fn analyze(
   // read out of one is numeric even though no element of it is whole.
   let sites = ElemSites::build(
     proto,
+    preds,
     speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
-    list_facts,
   );
   let elem_self_numeric_fields = self_numeric_fields;
   let elem_numeric_fields = numeric_fields;
@@ -638,9 +638,9 @@ struct ElemSites {
 impl ElemSites {
   fn build(
     proto: &ObjFunction,
+    preds: &[Vec<usize>],
     seed_mask: u64,
     list_mask: u64,
-    list_facts: &ListFacts,
   ) -> ElemSites {
     let code = &proto.chunk.code;
     let mut of_ip = vec![PT_UNKNOWN; code.len()];
@@ -694,75 +694,64 @@ impl ElemSites {
       count += 1;
     }
 
-    // A site escapes if the register it was allocated into ever
-    // reaches somewhere this function cannot see. `escape`'s own
-    // reader is an exhaustive match over every instruction, so nothing
-    // is silently omitted there; `Closure` is the one arm it answers
-    // with nothing, because resolving a capture list needs the
-    // constant pool and that reader only sees the instruction. Its
-    // caller does the real work, and so does the loop below.
-    let num_registers = proto.num_registers as usize;
-    let mut leaky = vec![false; num_registers.max(256)];
-    for (ip, instr) in code.iter().enumerate() {
-      // `escape` reports a multiply's operands as escaping because
-      // arithmetic can reach a `@mul` override. Repetition cannot: it
-      // reads the list and builds a new one, handing the original
-      // nowhere, so `[0] * n` does not escape its own allocation.
-      let repetition = match *instr {
-        Instr::Mul { a, .. } | Instr::MulImm { a, .. } => list_facts.is_list(ip, a),
-        _ => false,
-      };
-      if !repetition {
-        for r in crate::jit::escape::escaping_reads(instr) {
-          leaky[r as usize] = true;
-        }
-      }
-      // Capturing a local register hands it to a closure that may well
-      // outlive this frame.
-      if let Instr::Closure { proto_const, .. } = *instr
-        && let Some(c) = proto.chunk.constants.get(proto_const as usize)
-        && c.is_func()
-      {
-        for desc in &c.as_func().upvalues {
-          if let crate::vm::object::UpvalueDescriptor::Local(n) = *desc {
-            leaky[n as usize] = true;
-          }
-        }
-      }
-    }
-    // A copy that escapes takes its source with it.
-    let mut changed = true;
-    while changed {
-      changed = false;
-      for instr in code.iter() {
-        if let Instr::Move { dst, src } = *instr
-          && leaky[dst as usize]
-          && !leaky[src as usize]
-        {
-          leaky[src as usize] = true;
-          changed = true;
-        }
-      }
-    }
-
+    // A site escapes if what was allocated there can be reached from
+    // outside this function. Answered by `escape`'s own per-allocation
+    // analysis rather than by a flat "is this register ever read by
+    // something that escapes" set.
+    //
+    // The flat version is wrong on a register machine, and expensively
+    // so. `[0] * n` compiles to `MakeList { dst: 1, start: 2 }` then
+    // `Mul { dst: 1, a: 1 }`, so register 2 gets marked as escaping
+    // because it briefly held the literal's element; register 2 then
+    // goes on to hold the NEXT array, which inherits an escape it has
+    // nothing to do with. Three arrays in, every one of them is
+    // considered reachable from outside and the analysis claims
+    // nothing. `escape::analyze_one_with_facts` tracks one allocation
+    // forward from its own site instead, so scratch reuse cannot
+    // poison it, and it resolves closure capture lists (which the bare
+    // instruction reader deliberately does not).
     let mut escaped: SmallVec<[u64; 4]> = smallvec![0u64; count.div_ceil(64).max(1)];
+
     let mark = |escaped: &mut SmallVec<[u64; 4]>, site: u16| {
       if site < PT_UNKNOWN {
         escaped[site as usize / 64] |= 1u64 << (site as usize % 64);
       }
     };
+    // Past this many, the per-site analysis is not worth its compile
+    // time and every site is simply assumed reachable.
+    const MAX_PRECISE_ESCAPE_SITES: usize = 64;
     // A parameter's list belongs to the caller, who can hand the same
     // list to anything else as well.
     for &site in of_param.iter() {
       mark(&mut escaped, site);
     }
-    for (ip, instr) in code.iter().enumerate() {
+    let precise = count <= MAX_PRECISE_ESCAPE_SITES;
+    let facts = precise.then(|| {
+      let self_ref = crate::jit::escape::self_reference_facts_with_preds(proto, preds);
+      let summary =
+        crate::jit::escape::compute_param_summary_with_facts(proto, None, preds, &self_ref);
+      (self_ref, summary)
+    });
+    for (ip, _) in code.iter().enumerate() {
       if of_ip[ip] >= PT_UNKNOWN {
         continue;
       }
-      if let Some(dst) = any_dst(instr)
-        && leaky[dst as usize]
-      {
+      let escapes = match &facts {
+        Some((self_ref, summary)) => {
+          crate::jit::escape::analyze_one_with_facts(
+            proto,
+            ip,
+            None,
+            None,
+            preds,
+            self_ref,
+            &summary.param_escapes,
+          )
+          .escapes
+        },
+        None => true,
+      };
+      if escapes {
         mark(&mut escaped, of_ip[ip]);
       }
     }
@@ -1886,9 +1875,9 @@ pub fn analyze_int(
   // before entering the specialized body.
   let sites = ElemSites::build(
     proto,
+    preds,
     speculative_int_lists.unwrap_or(0) | speculative_num_lists.unwrap_or(0),
     speculative_lists.unwrap_or(0),
-    list_facts,
   );
 
   let mut entry: Vec<RegSet> = (0..code_len)
