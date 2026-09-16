@@ -30,7 +30,7 @@
 import ..errors { ConnectionError, ProtocolError, AuthenticationError }
 import .auth
 import .errors { raise_for }
-import .packets { Cursor, PacketStream, Writer }
+import .packets { Cursor, MAX_PAYLOAD, PacketStream, Writer }
 import .types {
   UNSIGNED_FLAG, decode_binary, decode_text, parameter_type,
   write_parameter,
@@ -393,7 +393,7 @@ class Protocol {
     var packet = self._read(sql)
     var first = packet.length() > 0 ? packet[0] : 0
 
-    if first == 0xfe and packet.length() < 9 {
+    if _is_trailer(first, packet) {
       self._read_trailer(packet)
 
       return nil
@@ -486,7 +486,7 @@ class Protocol {
         self._raise(packet, nil)
       }
 
-      if first == 0xfe and packet.length() < 9 {
+      if _is_trailer(first, packet) {
         self._read_trailer(packet)
 
         return {
@@ -1104,4 +1104,17 @@ class Protocol {
       )
     }
   }
+}
+
+# Whether a packet in a result set ends the rows rather than being one.
+#
+# Both a row and the marker that ends them can begin `0xfe`, since that
+# byte also introduces a length of eight bytes. The length decides. The
+# obvious test, that a marker is under nine bytes, is wrong: with
+# session tracking negotiated the server appends what changed about the
+# session to it, and it grows well past that. A row beginning `0xfe`
+# means a first value of at least sixteen megabytes, which cannot fit
+# in one packet and so always arrives longer than the maximum.
+def _is_trailer(first: number, packet) {
+  return first == 0xfe and packet.length() < MAX_PAYLOAD
 }

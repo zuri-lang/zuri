@@ -519,6 +519,12 @@ class MariaDbDriver < MySqlDriver {
 
     caps.set('returning', true)
 
+    # MariaDB has no JSON type. `JSON` there is another name for
+    # LONGTEXT with a constraint that the contents parse, so a column
+    # declared that way arrives as the text it is rather than as lists
+    # and dictionaries.
+    caps.set('json', false)
+
     return caps
   }
 }

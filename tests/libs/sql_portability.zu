@@ -3,9 +3,10 @@
 # of code, run against every adapter available, asserting the same
 # things each time.
 #
-# SQLite always runs. PostgreSQL and MySQL join in when
-# ZURI_TEST_POSTGRES and ZURI_TEST_MYSQL name a server, which is what
-# CI does not have and a developer's machine usually does.
+# SQLite always runs. PostgreSQL, MySQL and MariaDB join in when
+# ZURI_TEST_POSTGRES, ZURI_TEST_MYSQL and ZURI_TEST_MARIADB name a
+# server, which is what CI does not have and a developer's machine
+# usually does.
 
 import os
 import sql
@@ -216,19 +217,19 @@ def test_postgres() {
   echo 'test_postgres passed'
 }
 
-def test_mysql() {
-  var dsn = os.get_env('ZURI_TEST_MYSQL', nil)
+def test_mysql_family(variable, label) {
+  var dsn = os.get_env(variable, nil)
 
   if dsn == nil or dsn == '' {
-    echo 'test_mysql skipped: set ZURI_TEST_MYSQL to a connection string'
+    echo '${label} skipped: set ${variable} to a connection string'
 
     return
   }
 
   var db = sql.open(dsn)
 
-  # MySQL selects no database unless the connection string names one,
-  # and this one has a database of its own either way.
+  # Neither selects a database unless the connection string names one,
+  # and this has a database of its own either way.
   db.exec_script('create database if not exists zuri_sql_portable')
   db.exec('use zuri_sql_portable', nil)
 
@@ -237,9 +238,10 @@ def test_mysql() {
   db.exec_script('drop database if exists zuri_sql_portable')
   db.close()
 
-  echo 'test_mysql passed'
+  echo '${label} passed'
 }
 
 test_sqlite()
 test_postgres()
-test_mysql()
+test_mysql_family('ZURI_TEST_MYSQL', 'test_mysql')
+test_mysql_family('ZURI_TEST_MARIADB', 'test_mariadb')

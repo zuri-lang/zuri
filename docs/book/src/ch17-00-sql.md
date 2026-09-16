@@ -6,12 +6,13 @@ design: `sql` defines what a database adapter has to provide, supplies
 everything that is the same whichever engine answers, and picks the
 adapter from the connection string.
 
-Three adapters ship with it. SQLite is a file-based database with
-no server to run and nothing to configure, which makes it the right
-choice for an application that ships with its data and for a test suite
-that wants a real database per run. PostgreSQL and MySQL are servers,
-for everything that outgrows a file, and the MySQL adapter drives
-MariaDB as well.
+Three adapters ship with it to support four major database engines
+&mdash; SQLite, PostgreSQL, MySQL and MariaDB. SQLite is a file-based
+database with no server to run and nothing to configure, which makes it
+the right choice for an application that ships with its data and for a
+test suite that wants a real database per run. PostgreSQL, MySQL, and
+MariaDB are servers, for everything that outgrows a file, and the MySQL 
+adapter is the same adapter that drives MariaDB as well.
 
 Changing from one to another means changing the connection string, and
 whatever SQL they genuinely spell differently.
@@ -1403,9 +1404,9 @@ true
 
 MySQL keeps `?` as it is written, and reports the id of an inserted row
 rather than returning it, so `insert()` reads the reported id instead of
-adding a `RETURNING` clause. MariaDB has `RETURNING`, which is the one
-capability where the two differ, and is why `mariadb://` is a scheme of
-its own.
+adding a `RETURNING` clause. MariaDB differs in two ways that change
+what the layer above generates, which is why `mariadb://` is a scheme
+of its own: it has `RETURNING`, and it has no JSON type.
 
 ### What arrives from where
 

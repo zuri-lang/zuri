@@ -569,6 +569,45 @@ def test_query_result() {
   echo 'test_query_result passed'
 }
 
+def test_long_trailer_is_not_a_row() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: '' })
+
+  var columns = p.Writer()
+  columns.lenenc_int(1)
+  stream.feed(columns.payload(), 1)
+  stream.feed(column_packet('name', t.TYPES.VAR_STRING, 0, nil), 2)
+
+  var row = p.Writer()
+  row.lenenc_string('alice')
+  stream.feed(row.payload(), 3)
+
+  # The packet that ends the rows, with what changed about the session
+  # appended to it. Session tracking makes this routine, and it pushes
+  # the packet well past the nine bytes an end marker used to be
+  # assumed to fit in. Read as a row it would run off the end.
+  var trailer = p.Writer()
+  trailer.byte(0xfe).lenenc_int(0).lenenc_int(0).int2(2).int2(0)
+  trailer.lenenc_string('')
+  trailer.lenenc_string('\x00\x0fsome_session_var')
+  trailer.raw(bytes(24))
+
+  assert trailer.length() > 9
+
+  stream.feed(trailer.payload(), 4)
+
+  var result = protocol.query('select name from t')
+
+  assert result.kind == 'rows'
+  assert result.rows.length() == 1
+  assert result.rows[0][0] == 'alice'
+
+  echo 'test_long_trailer_is_not_a_row passed'
+}
+
 def test_server_errors_map_to_classes() {
   var stream = ScriptedStream()
   stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
@@ -831,6 +870,7 @@ test_caching_sha2_fast_path()
 test_caching_sha2_full_path()
 test_auth_switch()
 test_query_result()
+test_long_trailer_is_not_a_row()
 test_server_errors_map_to_classes()
 test_local_infile_is_refused()
 test_ok_packet_reports_insert_id()

@@ -11,13 +11,19 @@
 # afterwards, so pointing this at a server that matters is safe.
 
 import date
+import json
 import os
 import sql
 
 var DATABASE = 'zuri_sql_test'
 
+# The server the tests below are running against. The same body runs
+# once per server that is configured, since MySQL and MariaDB speak the
+# same protocol and the adapter has to hold for both.
+var DSN = nil
+
 def connect() {
-  var db = sql.open(os.get_env('ZURI_TEST_MYSQL', nil), nil)
+  var db = sql.open(DSN, nil)
 
   db.exec_script('drop database if exists ${DATABASE}')
   db.exec_script('create database ${DATABASE}')
@@ -34,7 +40,7 @@ def finish(db) {
 def test_connection() {
   var db = connect()
 
-  assert db.driver_name() == 'mysql'
+  assert ['mysql', 'mariadb'].contains(db.driver_name())
   assert db.server_version() != 'unknown'
   assert db.fetch_value('select 1', nil, nil) == 1
   assert db.ping()
@@ -106,7 +112,15 @@ def test_types() {
   assert row.when_moment.microseconds == 123456
   assert row.when_moment.hour == 14
   assert row.span.total_seconds() == span.total_seconds()
-  assert row.document['a'][1] == 2
+  # MariaDB has no JSON type: there it is LONGTEXT with a constraint,
+  # so the column arrives as the text it is. The capability says which,
+  # and the adapter does not pretend otherwise.
+  if db.supports('json') {
+    assert row.document['a'][1] == 2
+  } else {
+    assert is_string(row.document)
+    assert json.decode(row.document)['a'][1] == 2
+  }
 
   # A NULL in every column is still a NULL on the way back.
   db.exec('insert into kinds (small) values (?)', [nil])
@@ -142,9 +156,9 @@ def test_inserts_and_ids() {
     ')'
   )
 
-  # MySQL reports the id rather than returning the row, and insert()
-  # picks between the two on its own.
-  assert !db.supports('returning')
+  # Both engines report the id of the row just inserted. MariaDB also
+  # has RETURNING and prefers it, which insert() picks between on its
+  # own, so what is asserted here is the id rather than how it arrived.
   assert db.supports('last_insert_id')
 
   assert db.insert('people', { name: 'alice', age: 30 }, nil) == 1
@@ -501,13 +515,14 @@ def test_schema() {
 
 def test_pool() {
   var db = connect()
+  var engine = db.driver_name()
   db.close()
 
   # MySQL selects no database unless one is named, and each connection
   # in the pool is opened fresh, so the database goes in the settings
   # rather than being selected once on a connection the pool lends out.
-  var settings = sql.driver('mysql').parse_dsn(os.get_env('ZURI_TEST_MYSQL', nil))
-  settings.set('driver', 'mysql')
+  var settings = sql.driver(engine).parse_dsn(DSN)
+  settings.set('driver', engine)
   settings.set('database', DATABASE)
 
   var pool = sql.pool(settings, { size: 3 })
@@ -535,20 +550,80 @@ def test_pool() {
   pool.exec('drop table zuri_pool_test', nil)
   pool.close()
 
-  var cleanup = sql.open(os.get_env('ZURI_TEST_MYSQL', nil), nil)
+  var cleanup = sql.open(DSN, nil)
   cleanup.exec_script('drop database if exists ${DATABASE}')
   cleanup.close()
 
   echo 'test_pool passed'
 }
 
-def run() {
-  if os.get_env('ZURI_TEST_MYSQL', nil) == nil {
-    echo 'mysql_integration skipped: set ZURI_TEST_MYSQL to a ' +
-      'connection string to run it'
+# MariaDB has RETURNING and MySQL does not, which is the one capability
+# that changes what the layer above generates, so it is checked where it
+# exists rather than assumed.
+def test_returning() {
+  var db = connect()
+
+  db.exec_script(
+    'create table returned (' +
+    '  id int auto_increment primary key,' +
+    '  word varchar(32) not null' +
+    ')'
+  )
+
+  assert db.supports('returning')
+
+  # insert() reads the id from the RETURNING clause here rather than
+  # from what the server reported, and the answer has to be the same.
+  assert db.insert('returned', { word: 'alpha' }, nil) == 1
+  assert db.insert('returned', { word: 'beta' }, nil) == 2
+
+  # And the clause works written out, which is what a program reaching
+  # past the helper would do.
+  var row = db.fetch_one(
+    "insert into returned (word) values (?) returning id, word", ['gamma']
+  )
+
+  assert row.id == 3
+  assert row.word == 'gamma'
+
+  finish(db)
+  echo 'test_returning passed'
+}
+
+# MariaDB's own authentication plugin. The signature is computed from a
+# key derived from the password, so nothing the server stores can be
+# replayed against it, and none of it is reachable through
+# crypto.ed25519.
+def test_ed25519() {
+  var dsn = os.get_env('ZURI_TEST_MARIADB_ED25519', nil)
+
+  if dsn == nil or dsn == '' {
+    echo 'test_ed25519 skipped: set ZURI_TEST_MARIADB_ED25519'
 
     return
   }
+
+  var db = sql.open(dsn, nil)
+
+  assert db.fetch_value('select 1', nil, nil) == 1
+  assert db.native().flavor() == 'mariadb'
+
+  # The server confirms which plugin actually authenticated this
+  # connection, so a fallback to a different one could not pass.
+  assert db.fetch_value(
+    'select plugin from mysql.user where user = current_user()' +
+    "  or concat(user, '@', host) = current_user()",
+    nil,
+    nil
+  ) == 'ed25519'
+
+  db.close()
+
+  echo 'test_ed25519 passed'
+}
+
+def run_against(dsn, label) {
+  DSN = dsn
 
   test_connection()
   test_types()
@@ -560,6 +635,33 @@ def run() {
   test_multiple_results()
   test_schema()
   test_pool()
+
+  echo '${label} passed every shared case'
+}
+
+def run() {
+  var mysql = os.get_env('ZURI_TEST_MYSQL', nil)
+  var mariadb = os.get_env('ZURI_TEST_MARIADB', nil)
+
+  if mysql == nil and mariadb == nil {
+    echo 'mysql_integration skipped: set ZURI_TEST_MYSQL or ' +
+      'ZURI_TEST_MARIADB to a connection string to run it'
+
+    return
+  }
+
+  if mysql != nil and mysql != '' {
+    run_against(mysql, 'mysql')
+  }
+
+  if mariadb != nil and mariadb != '' {
+    run_against(mariadb, 'mariadb')
+
+    DSN = mariadb
+    test_returning()
+  }
+
+  test_ed25519()
 }
 
 run()
