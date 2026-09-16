@@ -1,0 +1,1047 @@
+/**
+ * @module types
+ *
+ * Encoding and decoding PostgreSQL's binary value formats.
+ *
+ * PostgreSQL will send a value either as text or as the server's own
+ * binary representation, chosen per column. Binary is what this
+ * adapter asks for wherever it has a decoder, because it is exact:
+ * a `float8` arrives as the same eight bytes the server holds rather
+ * than as a decimal rendering that has to be parsed back, and a
+ * `numeric` arrives as its actual digits rather than as text that a
+ * double would round.
+ *
+ * Where there is no decoder, text is asked for instead and the value
+ * arrives as a string. That is the important half of the design: a
+ * type this adapter has never heard of, including one an extension
+ * added, still comes back as something readable rather than as bytes
+ * nobody can interpret.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+import json
+import struct
+
+import ..decimal { Decimal }
+import ..errors { QueryError }
+import ..types { to_iso }
+
+/**
+ * PostgreSQL's built-in type OIDs, by name.
+ *
+ * An array type has an OID of its own, listed here as `<Type>Array`.
+ */
+var OIDS = {
+  Bool: 16,
+  Bytea: 17,
+  Char: 18,
+  Name: 19,
+  Int8: 20,
+  Int2: 21,
+  Int4: 23,
+  Text: 25,
+  Oid: 26,
+  Json: 114,
+  Xml: 142,
+  Point: 600,
+  Lseg: 601,
+  Path: 602,
+  Box: 603,
+  Polygon: 604,
+  Cidr: 650,
+  Float4: 700,
+  Float8: 701,
+  Circle: 718,
+  Unknown: 705,
+  Macaddr: 829,
+  Inet: 869,
+  BpChar: 1042,
+  Varchar: 1043,
+  Date: 1082,
+  Time: 1083,
+  Timestamp: 1114,
+  Timestamptz: 1184,
+  Interval: 1186,
+  Timetz: 1266,
+  Bit: 1560,
+  Varbit: 1562,
+  Numeric: 1700,
+  Uuid: 2950,
+  Jsonb: 3802,
+  Void: 2278,
+
+  BoolArray: 1000,
+  ByteaArray: 1001,
+  CharArray: 1002,
+  NameArray: 1003,
+  Int2Array: 1005,
+  Int4Array: 1007,
+  TextArray: 1009,
+  BpCharArray: 1014,
+  VarcharArray: 1015,
+  Int8Array: 1016,
+  PointArray: 1017,
+  Float4Array: 1021,
+  Float8Array: 1022,
+  OidArray: 1028,
+  TimestampArray: 1115,
+  DateArray: 1182,
+  TimeArray: 1183,
+  TimestamptzArray: 1185,
+  IntervalArray: 1187,
+  NumericArray: 1231,
+  UuidArray: 2951,
+  JsonArray: 199,
+  JsonbArray: 3807,
+}
+
+/**
+ * The element type each array OID holds.
+ */
+var ARRAY_ELEMENTS = {
+  '1000': 16, '1001': 17, '1002': 18, '1003': 19,
+  '1005': 21, '1007': 23, '1009': 25, '1014': 1042,
+  '1015': 1043, '1016': 20, '1017': 600, '1021': 700,
+  '1022': 701, '1028': 26, '1115': 1114, '1182': 1082,
+  '1183': 1083, '1185': 1184, '1187': 1186, '1231': 1700,
+  '2951': 2950, '199': 114, '3807': 3802,
+}
+
+/**
+ * Seconds between the Unix epoch and PostgreSQL's, which is
+ * 2000-01-01 rather than 1970-01-01.
+ */
+var EPOCH_OFFSET = 946684800
+
+/**
+ * Reads a signed 16 bit big-endian integer.
+ *
+ * @param bytes buffer
+ * @param number at
+ * @returns number
+ */
+def read_int16(buffer, at: number) {
+  var value = (buffer[at] << 8) | buffer[at + 1]
+
+  return value >= 0x8000 ? value - 0x10000 : value
+}
+
+/**
+ * Reads an unsigned 16 bit big-endian integer.
+ *
+ * @param bytes buffer
+ * @param number at
+ * @returns number
+ */
+def read_uint16(buffer, at: number) {
+  return (buffer[at] << 8) | buffer[at + 1]
+}
+
+/**
+ * Reads a signed 32 bit big-endian integer.
+ *
+ * @param bytes buffer
+ * @param number at
+ * @returns number
+ */
+def read_int32(buffer, at: number) {
+  var value = read_uint32(buffer, at)
+
+  return value >= 0x80000000 ? value - 0x100000000 : value
+}
+
+/**
+ * Reads an unsigned 32 bit big-endian integer.
+ *
+ * @param bytes buffer
+ * @param number at
+ * @returns number
+ */
+def read_uint32(buffer, at: number) {
+  return (buffer[at] * 16777216) + (buffer[at + 1] << 16) +
+    (buffer[at + 2] << 8) + buffer[at + 3]
+}
+
+/**
+ * Reads a signed 64 bit big-endian integer.
+ *
+ * Built from the two halves rather than shifted in one go, because the
+ * top bits of a 64 bit value do not survive a bitwise shift on a
+ * double.
+ *
+ * @param bytes buffer
+ * @param number at
+ * @returns number
+ */
+def read_int64(buffer, at: number) {
+  var high = read_int32(buffer, at)
+  var low = read_uint32(buffer, at + 4)
+
+  return high * 4294967296 + low
+}
+
+/**
+ * Writes a signed 16 bit big-endian integer.
+ *
+ * @param number value
+ * @returns list[number]
+ */
+def write_int16(value: number) {
+  var v = value < 0 ? value + 0x10000 : value
+
+  return [(v >> 8) & 0xff, v & 0xff]
+}
+
+/**
+ * Writes a signed 32 bit big-endian integer.
+ *
+ * @param number value
+ * @returns list[number]
+ */
+def write_int32(value: number) {
+  var v = value < 0 ? value + 0x100000000 : value
+
+  return [
+    (v // 16777216) & 0xff,
+    (v >> 16) & 0xff,
+    (v >> 8) & 0xff,
+    v & 0xff,
+  ]
+}
+
+/**
+ * Writes a signed 64 bit big-endian integer.
+ *
+ * @param number value
+ * @returns list[number]
+ */
+def write_int64(value: number) {
+  var v = value
+  var negative = v < 0
+
+  if negative {
+    v = -v
+  }
+
+  var high = (v / 4294967296).floor()
+  var low = v - high * 4294967296
+
+  if negative {
+    if low == 0 {
+      high = -high
+    } else {
+      high = -high - 1
+      low = 4294967296 - low
+    }
+  }
+
+  return write_int32(high) + write_int32(low)
+}
+
+/**
+ * A `bytes` slice as a UTF-8 string.
+ *
+ * @param bytes buffer
+ * @returns string
+ */
+def text_of(buffer) {
+  return buffer.length() == 0 ? '' : buffer.to_string()
+}
+
+var _NAN = 0xC000
+var _NEGATIVE = 0x4000
+var _POSITIVE_INFINITY = 0xD000
+var _NEGATIVE_INFINITY = 0xF000
+
+/**
+ * Decodes PostgreSQL's `numeric` into an exact `Decimal`.
+ *
+ * The wire form is a count of base 10000 digits, the position of the
+ * first of them relative to the decimal point, a sign, the number of
+ * places to display, and then the digits. Reassembling it as text and
+ * handing that to `Decimal` keeps every digit; going through a double
+ * anywhere in here would defeat the point of the type.
+ *
+ * @param bytes buffer
+ * @returns Decimal|number
+ */
+def decode_numeric(buffer) {
+  var count = read_uint16(buffer, 0)
+  var weight = read_int16(buffer, 2)
+  var sign = read_uint16(buffer, 4)
+  var display_scale = read_uint16(buffer, 6)
+
+  # PostgreSQL can store these three, and none of them is a decimal.
+  # A number is the only Zuri value that can carry them.
+  if sign == _NAN {
+    return 0 / 0
+  }
+
+  if sign == _POSITIVE_INFINITY {
+    return 1 / 0
+  }
+
+  if sign == _NEGATIVE_INFINITY {
+    return -1 / 0
+  }
+
+  var digits = []
+
+  for index in 0..count {
+    digits.append(read_uint16(buffer, 8 + index * 2))
+  }
+
+  var whole = ''
+  var fraction = ''
+
+  # Digits at or before the point build the integer part; the rest
+  # build the fraction. A weight beyond the digits means trailing
+  # zeroes before the point, and a negative one means leading zeroes
+  # after it.
+  for index in 0..count {
+    var group = '${digits[index]}'
+
+    if index <= weight {
+      whole += index == 0 ? group : group.lpad(4, '0')
+    } else {
+      fraction += group.lpad(4, '0')
+    }
+  }
+
+  if weight >= count {
+    var padding = weight - count + 1
+
+    for _index in 0..padding {
+      whole += '0000'
+    }
+  }
+
+  if weight < 0 {
+    var leading = -weight - 1
+
+    for _index in 0..leading {
+      fraction = '0000' + fraction
+    }
+  }
+
+  if whole.is_empty() {
+    whole = '0'
+  }
+
+  # The display scale is what the column asks to show, which may be
+  # shorter or longer than the digits that happen to be stored.
+  while fraction.length() < display_scale {
+    fraction += '0'
+  }
+
+  fraction = fraction[0, display_scale]
+
+  var text = display_scale > 0 ? '${whole}.${fraction}' : whole
+
+  return Decimal(sign == _NEGATIVE ? '-${text}' : text)
+}
+
+/**
+ * Encodes a `Decimal`, a number or a bigint as `numeric`.
+ *
+ * @param Decimal|number|bigint value
+ * @returns list[number]
+ */
+def encode_numeric(value) {
+  var amount = instance_of(value, Decimal) ? value : Decimal('${value}')
+  var text = amount.to_string()
+  var negative = text.starts_with('-')
+
+  if negative {
+    text = text[1, text.length()]
+  }
+
+  var point = text.index_of('.')
+  var whole = point == -1 ? text : text[0, point]
+  var fraction = point == -1 ? '' : text[point + 1, text.length()]
+  var display_scale = fraction.length()
+
+  # Both halves are grouped into four digit units, the integer part
+  # from the right and the fraction from the left, which is how the
+  # base 10000 digits fall either side of the point.
+  var whole_groups = []
+  var at = whole.length()
+
+  while at > 0 {
+    var start = at - 4 < 0 ? 0 : at - 4
+    whole_groups.insert(whole[start, at].to_number(), 0)
+    at = start
+  }
+
+  while whole_groups.length() > 0 and whole_groups[0] == 0 {
+    whole_groups.remove_at(0)
+  }
+
+  var padded = fraction
+
+  while padded.length() % 4 != 0 {
+    padded += '0'
+  }
+
+  var fraction_groups = []
+  var index = 0
+
+  while index < padded.length() {
+    fraction_groups.append(padded[index, index + 4].to_number())
+    index += 4
+  }
+
+  while fraction_groups.length() > 0
+    and fraction_groups[fraction_groups.length() - 1] == 0 {
+    fraction_groups.pop()
+  }
+
+  var digits = whole_groups + fraction_groups
+  var weight = whole_groups.length() - 1
+
+  # A value below one has no integer digits, so the first stored digit
+  # sits after the point and the weight goes negative to say how far.
+  if whole_groups.is_empty() {
+    var leading = 0
+
+    while leading < fraction_groups.length() and fraction_groups[leading] == 0 {
+      leading++
+    }
+
+    digits = fraction_groups[leading, fraction_groups.length()]
+    weight = -leading - 1
+  }
+
+  var out = write_int16(digits.length()) +
+    write_int16(weight) +
+    write_int16(negative ? _NEGATIVE : 0) +
+    write_int16(display_scale)
+
+  for digit in digits {
+    out += write_int16(digit)
+  }
+
+  return out
+}
+
+/**
+ * Turns a count of microseconds since the PostgreSQL epoch into a
+ * `date.Date` in UTC.
+ *
+ * @param number micros
+ * @returns date.Date
+ */
+def date_from_micros(micros: number) {
+  var seconds = (micros / 1000000).floor()
+  var remainder = micros - seconds * 1000000
+  var moment = date.from_time(seconds + EPOCH_OFFSET)
+
+  return date.Date(
+    moment.year, moment.month, moment.day,
+    moment.hour, moment.minute, moment.seconds,
+    remainder, 0, false
+  )
+}
+
+/**
+ * The microseconds since the PostgreSQL epoch a `date.Date` stands
+ * for.
+ *
+ * @param date.Date moment
+ * @returns number
+ */
+def micros_from_date(moment) {
+  var seconds = moment.to_time().floor()
+
+  return (seconds - EPOCH_OFFSET) * 1000000 + moment.microseconds
+}
+
+/**
+ * A decoder reads one column value from its binary form.
+ *
+ * Each takes the value's bytes and the OID it arrived under, and
+ * returns a Zuri value.
+ */
+def decode_bool(buffer, _oid) {
+  return buffer[0] != 0
+}
+
+def decode_int2(buffer, _oid) {
+  return read_int16(buffer, 0)
+}
+
+def decode_int4(buffer, _oid) {
+  return read_int32(buffer, 0)
+}
+
+def decode_int8(buffer, _oid) {
+  return read_int64(buffer, 0)
+}
+
+def decode_oid(buffer, _oid) {
+  return read_uint32(buffer, 0)
+}
+
+def decode_float4(buffer, _oid) {
+  return struct.unpack('G', buffer)['1']
+}
+
+def decode_float8(buffer, _oid) {
+  return struct.unpack('E', buffer)['1']
+}
+
+def decode_text(buffer, _oid) {
+  return text_of(buffer)
+}
+
+def decode_bytea(buffer, _oid) {
+  return buffer
+}
+
+def decode_json(buffer, _oid) {
+  return json.decode(text_of(buffer))
+}
+
+/**
+ * `jsonb` carries a version byte in front of the text, which every
+ * server so far sets to 1.
+ */
+def decode_jsonb(buffer, _oid) {
+  return json.decode(text_of(buffer[1, buffer.length()]))
+}
+
+def decode_uuid(buffer, _oid) {
+  var hex = ''
+
+  for index in 0..16 {
+    hex += buffer[index].hex().lpad(2, '0')
+  }
+
+  return '${hex[0, 8]}-${hex[8, 12]}-${hex[12, 16]}-${hex[16, 20]}-${hex[20, 32]}'
+}
+
+def decode_numeric_value(buffer, _oid) {
+  return decode_numeric(buffer)
+}
+
+/**
+ * `date` is a count of days from 2000-01-01, with no time part.
+ */
+def decode_date(buffer, _oid) {
+  return date_from_micros(read_int32(buffer, 0) * 86400000000)
+}
+
+/**
+ * `time` is microseconds since midnight, with no date part. It comes
+ * back as a dictionary rather than a `date.Date`, because a time of
+ * day is not a point in time and giving it an arbitrary date would be
+ * inventing information.
+ */
+def decode_time(buffer, _oid) {
+  var micros = read_int64(buffer, 0)
+  var seconds = (micros / 1000000).floor()
+
+  return {
+    hour: (seconds / 3600).floor(),
+    minute: ((seconds % 3600) / 60).floor(),
+    seconds: seconds % 60,
+    microseconds: micros - seconds * 1000000,
+  }
+}
+
+/**
+ * `timetz` is a time followed by its offset in seconds west of UTC.
+ */
+def decode_timetz(buffer, _oid) {
+  var value = decode_time(buffer, _oid)
+  value.set('gmt_offset', -read_int32(buffer, 8))
+
+  return value
+}
+
+/**
+ * Both `timestamp` and `timestamptz` are microseconds from the
+ * PostgreSQL epoch.
+ *
+ * The server holds a `timestamptz` in UTC and converts on the way in
+ * and out, so what arrives is already UTC and is handed back as such.
+ * A `timestamp` has no zone at all; it is read as UTC because a
+ * `date.Date` has to say something, and UTC is the only answer that
+ * does not invent a zone the value never had.
+ */
+def decode_timestamp(buffer, _oid) {
+  return date_from_micros(read_int64(buffer, 0))
+}
+
+/**
+ * `interval` is a span rather than a point, so it comes back as its
+ * parts. Months and days are kept separate from the time because
+ * neither has a fixed length: a month is 28 to 31 days, and a day
+ * across a daylight saving change is not 24 hours.
+ */
+def decode_interval(buffer, _oid) {
+  return {
+    microseconds: read_int64(buffer, 0),
+    days: read_int32(buffer, 8),
+    months: read_int32(buffer, 12),
+  }
+}
+
+/**
+ * `inet` and `cidr` share a form: address family, prefix bits, a flag
+ * saying which of the two it is, then the address bytes.
+ */
+def decode_inet(buffer, _oid) {
+  var bits = buffer[1]
+  var size = buffer[3]
+  var parts = []
+
+  if size == 4 {
+    for index in 0..4 {
+      parts.append('${buffer[4 + index]}')
+    }
+
+    var address = '.'.join(parts)
+
+    return bits == 32 ? address : '${address}/${bits}'
+  }
+
+  for index in 0..8 {
+    var group = (buffer[4 + index * 2] << 8) | buffer[5 + index * 2]
+    parts.append(group.hex())
+  }
+
+  var address = ':'.join(parts)
+
+  return bits == 128 ? address : '${address}/${bits}'
+}
+
+def decode_macaddr(buffer, _oid) {
+  var parts = []
+
+  for index in 0..6 {
+    parts.append(buffer[index].hex().lpad(2, '0'))
+  }
+
+  return ':'.join(parts)
+}
+
+def decode_point(buffer, _oid) {
+  return {
+    x: struct.unpack('E', buffer[0, 8])['1'],
+    y: struct.unpack('E', buffer[8, 16])['1'],
+  }
+}
+
+def decode_lseg(buffer, _oid) {
+  return {
+    start: decode_point(buffer[0, 16], nil),
+    end: decode_point(buffer[16, 32], nil),
+  }
+}
+
+def decode_box(buffer, _oid) {
+  return {
+    high: decode_point(buffer[0, 16], nil),
+    low: decode_point(buffer[16, 32], nil),
+  }
+}
+
+def decode_circle(buffer, _oid) {
+  return {
+    center: decode_point(buffer[0, 16], nil),
+    radius: struct.unpack('E', buffer[16, 24])['1'],
+  }
+}
+
+/**
+ * An encoder turns a Zuri value into the bytes of its binary form.
+ */
+def encode_bool(value) {
+  return [value ? 1 : 0]
+}
+
+def encode_int2(value) {
+  return write_int16(_whole(value, 'an int2'))
+}
+
+def encode_int4(value) {
+  return write_int32(_whole(value, 'an int4'))
+}
+
+def encode_int8(value) {
+  return write_int64(_whole(value, 'an int8'))
+}
+
+def encode_float4(value) {
+  return struct.pack('G', value).to_list()
+}
+
+def encode_float8(value) {
+  return struct.pack('E', value).to_list()
+}
+
+def encode_text(value) {
+  return is_string(value) ? value.to_bytes().to_list() : '${value}'.to_bytes().to_list()
+}
+
+def encode_bytea(value) {
+  return is_bytes(value) ? value.to_list() : value.to_bytes().to_list()
+}
+
+def encode_json(value) {
+  return json.encode(value, false).to_bytes().to_list()
+}
+
+/**
+ * `jsonb` takes the same text behind the version byte the server
+ * expects.
+ */
+def encode_jsonb(value) {
+  return [1] + encode_json(value)
+}
+
+def encode_uuid(value) {
+  var hex = '${value}'.replace('-', '')
+
+  if hex.length() != 32 {
+    raise QueryError('${value} is not a uuid')
+  }
+
+  var out = []
+
+  for index in 0..16 {
+    out.append(_hex_byte(hex[index * 2, index * 2 + 2]))
+  }
+
+  return out
+}
+
+def encode_date(value) {
+  var micros = micros_from_date(_as_date(value, 'a date'))
+
+  return write_int32((micros / 86400000000).floor())
+}
+
+def encode_timestamp(value) {
+  return write_int64(micros_from_date(_as_date(value, 'a timestamp')))
+}
+
+/**
+ * Builds the binary form of an array.
+ *
+ * One dimension only. PostgreSQL's arrays can nest, but a nested Zuri
+ * list would have to be rectangular to become one, and quietly
+ * refusing a ragged list is worse than not offering it.
+ */
+def encode_array(value, element_oid, registry) {
+  if !is_list(value) {
+    raise QueryError('an array parameter takes a list, not ${typeof(value)}')
+  }
+
+  var out = write_int32(1) + write_int32(0) + write_int32(element_oid) +
+    write_int32(value.length()) + write_int32(1)
+
+  for item in value {
+    if item == nil {
+      out += write_int32(-1)
+      continue
+    }
+
+    var encoded = registry.encode(item, element_oid)
+    out += write_int32(encoded.length()) + encoded
+  }
+
+  return out
+}
+
+/**
+ * Reads an array back, however many dimensions it has.
+ */
+def decode_array(buffer, oid, registry) {
+  var dimensions = read_int32(buffer, 0)
+  var element_oid = read_int32(buffer, 8)
+
+  if dimensions == 0 {
+    return []
+  }
+
+  var lengths = []
+  var at = 12
+
+  for _index in 0..dimensions {
+    lengths.append(read_int32(buffer, at))
+    at += 8
+  }
+
+  var values = []
+  var total = 1
+
+  for length in lengths {
+    total *= length
+  }
+
+  for _index in 0..total {
+    var size = read_int32(buffer, at)
+    at += 4
+
+    if size == -1 {
+      values.append(nil)
+      continue
+    }
+
+    values.append(registry.decode(buffer[at, at + size], element_oid))
+    at += size
+  }
+
+  return _reshape(values, lengths, 0).value
+}
+
+# Folds a flat list back into the shape its dimensions describe.
+def _reshape(values, lengths, depth) {
+  if depth == lengths.length() - 1 {
+    return { value: values[0, lengths[depth]], rest: values[lengths[depth], values.length()] }
+  }
+
+  var out = []
+  var remaining = values
+
+  for _index in 0..(lengths[depth]) {
+    var taken = _reshape(remaining, lengths, depth + 1)
+    out.append(taken.value)
+    remaining = taken.rest
+  }
+
+  return { value: out, rest: remaining }
+}
+
+def _whole(value, what) {
+  var number = is_bigint(value) ? value.to_number() : value
+
+  if !is_number(number) or number != number.floor() {
+    raise QueryError('${what} takes a whole number, not ${value}')
+  }
+
+  return number
+}
+
+def _as_date(value, what) {
+  if instance_of(value, date.Date) {
+    return value
+  }
+
+  raise QueryError('${what} takes a date, not ${typeof(value)}')
+}
+
+var _HEX = '0123456789abcdef'
+
+def _hex_byte(pair) {
+  var high = _HEX.index_of(pair[0, 1].lower())
+  var low = _HEX.index_of(pair[1, 2].lower())
+
+  if high == -1 or low == -1 {
+    raise QueryError('${pair} is not a pair of hexadecimal digits')
+  }
+
+  return high * 16 + low
+}
+
+/**
+ * Which decoder and encoder each OID uses.
+ *
+ * A registry can be extended, which is how a program teaches the
+ * adapter about a type its database defines that PostgreSQL does not
+ * ship:
+ *
+ * ```zuri
+ * registry.register(oid, decoder, encoder)
+ * ```
+ *
+ * The important question a registry answers is `knows()`: the adapter
+ * asks for a column in binary only when the answer is yes, and asks
+ * for text otherwise, so an unregistered type arrives as a readable
+ * string rather than as bytes.
+ */
+class TypeRegistry {
+  var _decoders = {}
+  var _encoders = {}
+
+  @new() {
+    self._install_defaults()
+  }
+
+  /**
+   * Adds or replaces the codec for one OID.
+   *
+   * @param number oid
+   * @param function decoder Takes `(bytes, oid)` and returns a value.
+   * @param function encoder Takes a value and returns a list of bytes.
+   */
+  register(oid: number, decoder, encoder) {
+    if decoder != nil {
+      self._decoders.set('${oid}', decoder)
+    }
+
+    if encoder != nil {
+      self._encoders.set('${oid}', encoder)
+    }
+  }
+
+  /**
+   * Whether this registry can read `oid` in binary.
+   *
+   * @param number oid
+   * @returns bool
+   */
+  knows(oid: number) {
+    return self._decoders.contains('${oid}') or ARRAY_ELEMENTS.contains('${oid}')
+  }
+
+  /**
+   * Whether this registry can write `oid` in binary.
+   *
+   * A parameter whose type has no encoder is sent as text and left to
+   * the server to read, which it can do for every type it knows.
+   *
+   * @param number oid
+   * @returns bool
+   */
+  can_encode(oid: number) {
+    return self._encoders.contains('${oid}') or ARRAY_ELEMENTS.contains('${oid}')
+  }
+
+  /**
+   * Reads a value from its binary form.
+   *
+   * @param bytes buffer
+   * @param number oid
+   * @returns any
+   */
+  decode(buffer, oid: number) {
+    if ARRAY_ELEMENTS.contains('${oid}') {
+      return decode_array(buffer, oid, self)
+    }
+
+    var decoder = self._decoders.get('${oid}', nil)
+
+    if decoder == nil {
+      # Nothing knows this type, and the bytes are whatever the server
+      # holds. Text is the more useful of the two wrong answers.
+      return text_of(buffer)
+    }
+
+    return decoder(buffer, oid)
+  }
+
+  /**
+   * Writes a value in binary form.
+   *
+   * @param any value
+   * @param number oid
+   * @returns list[number]
+   */
+  encode(value, oid: number) {
+    var element = ARRAY_ELEMENTS.get('${oid}', nil)
+
+    if element != nil {
+      return encode_array(value, element, self)
+    }
+
+    var encoder = self._encoders.get('${oid}', nil)
+
+    if encoder == nil {
+      # With no encoder the value is sent as text and the server is
+      # left to read it, which it does for every type it knows.
+      return encode_text(value)
+    }
+
+    return encoder(value)
+  }
+
+  /**
+   * The OID that best carries `value` when the server has not said
+   * which type it expects.
+   *
+   * @param any value
+   * @returns number
+   */
+  infer(value) {
+    if value == nil {
+      return OIDS.Unspecified
+    }
+
+    if is_bool(value) {
+      return OIDS.Bool
+    }
+
+    if is_number(value) {
+      return value == value.floor() ? OIDS.Int8 : OIDS.Float8
+    }
+
+    if is_bigint(value) {
+      return OIDS.Int8
+    }
+
+    if is_bytes(value) {
+      return OIDS.Bytea
+    }
+
+    if instance_of(value, Decimal) {
+      return OIDS.Numeric
+    }
+
+    if instance_of(value, date.Date) {
+      return OIDS.Timestamptz
+    }
+
+    if is_list(value) or is_dict(value) {
+      return OIDS.Jsonb
+    }
+
+    return OIDS.Text
+  }
+
+  _install_defaults() {
+    self.register(OIDS.Bool, decode_bool, encode_bool)
+    self.register(OIDS.Int2, decode_int2, encode_int2)
+    self.register(OIDS.Int4, decode_int4, encode_int4)
+    self.register(OIDS.Int8, decode_int8, encode_int8)
+    self.register(OIDS.Oid, decode_oid, encode_int4)
+    self.register(OIDS.Float4, decode_float4, encode_float4)
+    self.register(OIDS.Float8, decode_float8, encode_float8)
+    self.register(OIDS.Numeric, decode_numeric_value, encode_numeric)
+
+    for oid in [OIDS.Text, OIDS.Varchar, OIDS.BpChar, OIDS.Char,
+      OIDS.Name, OIDS.Xml, OIDS.Unknown, OIDS.Bit, OIDS.Varbit] {
+      self.register(oid, decode_text, encode_text)
+    }
+
+    self.register(OIDS.Bytea, decode_bytea, encode_bytea)
+    self.register(OIDS.Json, decode_json, encode_json)
+    self.register(OIDS.Jsonb, decode_jsonb, encode_jsonb)
+    self.register(OIDS.Uuid, decode_uuid, encode_uuid)
+
+    self.register(OIDS.Date, decode_date, encode_date)
+    self.register(OIDS.Time, decode_time, nil)
+    self.register(OIDS.Timetz, decode_timetz, nil)
+    self.register(OIDS.Timestamp, decode_timestamp, encode_timestamp)
+    self.register(OIDS.Timestamptz, decode_timestamp, encode_timestamp)
+    self.register(OIDS.Interval, decode_interval, nil)
+
+    self.register(OIDS.Inet, decode_inet, nil)
+    self.register(OIDS.Cidr, decode_inet, nil)
+    self.register(OIDS.Macaddr, decode_macaddr, nil)
+
+    self.register(OIDS.Point, decode_point, nil)
+    self.register(OIDS.Lseg, decode_lseg, nil)
+    self.register(OIDS.Box, decode_box, nil)
+    self.register(OIDS.Circle, decode_circle, nil)
+  }
+}
+
+/**
+ * The registry every connection uses unless given one of its own.
+ */
+var DEFAULT_REGISTRY = TypeRegistry()

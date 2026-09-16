@@ -34,7 +34,7 @@
  * and `bigint.to_number()` in the other:
  *
  * ```zuri-repl
- * %> 2n * (3).to_bigint()
+ * %> 2n * 3.to_bigint()
  * 6n
  * %> (6n).to_number() * 3
  * 18

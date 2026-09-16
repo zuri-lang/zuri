@@ -1,0 +1,218 @@
+/**
+ * @module schema
+ *
+ * Asking a database what is in it.
+ *
+ * Every engine can list its tables and describe its columns, and every
+ * engine does it differently: PostgreSQL has `information_schema`,
+ * SQLite has `PRAGMA table_info`. The queries have nothing in common,
+ * so each adapter writes its own and they all return the same shape.
+ *
+ * ```zuri
+ * for table in db.schema.tables() {
+ *   echo table
+ * }
+ *
+ * for column in db.schema.columns('posts') {
+ *   echo '${column.name} ${column.type}${column.nullable ? "" : " not null"}'
+ * }
+ * ```
+ *
+ * This is what makes `insert()` portable: on an engine with no last
+ * insert id, the insert needs a `RETURNING` clause, and the column to
+ * return is the table's primary key, which is asked for here.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * The description of one column, as every adapter returns it.
+ *
+ * | Key | Meaning |
+ * | --- | ------- |
+ * | `name` | The column's name. |
+ * | `type` | The engine's own name for its type. |
+ * | `nullable` | Whether it accepts NULL. |
+ * | `default_value` | Its default as SQL text, or nil for none. |
+ * | `primary_key` | Whether it is part of the primary key. |
+ * | `position` | Its position in the table, counting from one. |
+ *
+ * @returns dict
+ */
+def column_shape() {
+  return {
+    name: '',
+    type: nil,
+    nullable: true,
+    default_value: nil,
+    primary_key: false,
+    position: 0,
+  }
+}
+
+/**
+ * Introspection for one connection.
+ *
+ * The methods here delegate to the adapter, which is where the queries
+ * that differ per engine live. An adapter that has not implemented
+ * introspection raises `NotSupportedError` rather than returning
+ * something empty, so "this engine cannot tell you" never looks like
+ * "there is nothing there".
+ *
+ * @printable
+ */
+class Schema {
+  var _connection
+
+  /**
+   * @param Connection connection
+   */
+  @new(connection) {
+    self._connection = connection
+  }
+
+  /**
+   * The names of the tables in the database.
+   *
+   * Tables the engine keeps for itself are left out, so what comes
+   * back is what the application created.
+   *
+   * @param string|nil schema Which schema to look in, on an engine
+   *    that has them. The default schema when nil.
+   * @returns list[string]
+   */
+  tables(schema) {
+    return self._ask('tables', @(adapter) => adapter.tables(schema))
+  }
+
+  /**
+   * The names of the views in the database.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  views(schema) {
+    return self._ask('views', @(adapter) => adapter.views(schema))
+  }
+
+  /**
+   * Whether `table` exists.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns bool
+   */
+  has_table(table: string, schema) {
+    return self.tables(schema).contains(table)
+  }
+
+  /**
+   * The columns of `table`, in order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict] Each as described by `column_shape()`.
+   */
+  columns(table: string, schema) {
+    return self._ask('columns', @(adapter) => adapter.columns(table, schema))
+  }
+
+  /**
+   * The names of `table`'s columns, in order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  column_names(table: string, schema) {
+    return self.columns(table, schema).map(@(column) => column.name)
+  }
+
+  /**
+   * Whether `table` has a column called `column`.
+   *
+   * @param string table
+   * @param string column
+   * @param string|nil schema
+   * @returns bool
+   */
+  has_column(table: string, column: string, schema) {
+    return self.column_names(table, schema).contains(column)
+  }
+
+  /**
+   * The name of `table`'s primary key column, or nil.
+   *
+   * Nil for a table with no primary key and for one whose primary key
+   * spans several columns, since neither has a single column to name.
+   * `primary_key_columns()` covers the composite case.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns string|nil
+   */
+  primary_key(table: string, schema) {
+    var columns = self.primary_key_columns(table, schema)
+
+    return columns.length() == 1 ? columns[0] : nil
+  }
+
+  /**
+   * The columns making up `table`'s primary key, in key order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  primary_key_columns(table: string, schema) {
+    return self._ask(
+      'primary_key_columns',
+      @(adapter) => adapter.primary_key_columns(table, schema)
+    )
+  }
+
+  /**
+   * The indexes on `table`.
+   *
+   * Each is `{ name, columns, unique }`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  indexes(table: string, schema) {
+    return self._ask('indexes', @(adapter) => adapter.indexes(table, schema))
+  }
+
+  /**
+   * The foreign keys declared on `table`.
+   *
+   * Each is `{ columns, references_table, references_columns,
+   * on_delete, on_update }`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  foreign_keys(table: string, schema) {
+    return self._ask(
+      'foreign_keys',
+      @(adapter) => adapter.foreign_keys(table, schema)
+    )
+  }
+
+  # Runs `body` against the adapter's introspection. An adapter with
+  # none raises from `schema_adapter()` itself, which is where the
+  # message naming the engine belongs.
+  _ask(what, body) {
+    return body(self._connection.driver_connection().schema_adapter())
+  }
+
+  to_string() {
+    return '<Schema for ${self._connection.driver_name()}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

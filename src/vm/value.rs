@@ -718,7 +718,7 @@ impl Value {
   }
 
   /// Convenience for a native that already knows the expected tag --
-  /// `v.is_ptr_type("sqlite3_connection")` before doing anything else
+  /// `v.is_ptr_type("zuri::sql::sqlite3::connection")` before doing anything else
   /// with `v`.
   pub fn is_ptr_type(&self, expected: &str) -> bool {
     self.ptr_type_name() == Some(expected)

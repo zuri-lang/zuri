@@ -1,0 +1,55 @@
+/**
+ * @module sqlite
+ *
+ * The SQLite adapter.
+ *
+ * SQLite is a database that is a file. There is no server to run, no
+ * port to open and no user to create, which is what makes it the right
+ * choice for an application that ships with its data, a test suite
+ * that wants a real database per run, and anything that would
+ * otherwise have invented a file format of its own.
+ *
+ * Reach it through `sql`, which is what makes the same program work
+ * against another engine later:
+ *
+ * ```zuri
+ * import sql
+ *
+ * var db = sql.open('sqlite://./app.db')
+ * ```
+ *
+ * The module underneath is here for the parts of SQLite that have no
+ * equivalent anywhere else: incremental blob access, online backup,
+ * functions and collations written in Zuri, and the hooks that report
+ * what the engine is doing.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.driver { SqliteDriver, MEMORY, MAX_PARAMETERS, DEFAULT_BUSY_TIMEOUT }
+import @.connection { SqliteConnection }
+import @.statement { SqliteStatement }
+import @.cursor { SqliteCursor }
+import @.errors { class_for, split_message, reraise }
+import @.types { conversion_for, base_type }
+
+/**
+ * The driver instance `sql` registers for this engine.
+ *
+ * A driver holds no state of its own, so one serves every connection.
+ */
+var DRIVER = SqliteDriver()
+
+/**
+ * Opens a SQLite database directly, without going through `sql`.
+ *
+ * Useful when a program has settled on SQLite and wants the adapter's
+ * own extras without the indirection. Anything meant to stay portable
+ * should use `sql.open()` instead.
+ *
+ * @param string|dict dsn A path, a `sqlite:` string, or options.
+ * @returns SqliteConnection
+ */
+def connect(dsn) {
+  return DRIVER.connect(DRIVER.parse_dsn(dsn))
+}

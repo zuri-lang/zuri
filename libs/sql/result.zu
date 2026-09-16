@@ -1,0 +1,282 @@
+/**
+ * @module result
+ *
+ * What a statement hands back: the rows of a query, or the count of a
+ * statement that changed something.
+ *
+ * Rows are dictionaries keyed by column name, which is what makes
+ * `row.title` read the way it does. Where that is not enough, because
+ * a join selected two columns of the same name or because position is
+ * what matters, `columns` and `tuples()` give the ordered view of the
+ * same result.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { QueryError }
+
+/**
+ * The rows a query returned, with the shape of the result beside them.
+ *
+ * Iterating a result set walks its rows, so the common case needs
+ * nothing else:
+ *
+ * ```zuri
+ * for row in db.query('select id, title from posts') {
+ *   echo '${row.id}: ${row.title}'
+ * }
+ * ```
+ *
+ * @iterable
+ * @printable
+ */
+class ResultSet {
+  /**
+   * The result's columns in order, each a dictionary with `name` and
+   * `type`.
+   *
+   * `type` is the engine's own name for the column's type, which for
+   * SQLite is what the table declared and for PostgreSQL is the type
+   * the server reports. It is `nil` for a column the engine cannot
+   * attribute to a type, such as an expression in SQLite.
+   *
+   * @type list[dict]
+   */
+  var columns = []
+
+  /**
+   * The rows, each a dictionary keyed by column name.
+   *
+   * Where two columns share a name the later one wins, which is worth
+   * knowing before selecting `id` from both sides of a join. Aliasing
+   * one of them in the query is the fix; `tuples()` is the escape
+   * hatch when it cannot be.
+   *
+   * @type list[dict]
+   */
+  var rows = []
+
+  /**
+   * The engine's description of what ran, such as `'SELECT 3'`, or nil
+   * for an engine that reports nothing.
+   *
+   * @default nil
+   */
+  var command
+
+  /**
+   * @param list columns Column descriptors.
+   * @param list rows Rows as lists of values, in column order.
+   * @param string|nil command The engine's command tag.
+   */
+  @new(columns, rows, command) {
+    self.columns = columns or []
+    self.command = command
+
+    var names = self.columns.map(@(column) => column.name)
+
+    self.rows = (rows or []).map(@(values) {
+      var row = {}
+
+      for index, name in names {
+        row.set(name, index < values.length() ? values[index] : nil)
+      }
+
+      return row
+    })
+  }
+
+  /**
+   * How many rows the result holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self.rows.length()
+  }
+
+  /**
+   * Whether the result holds no rows at all.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self.rows.is_empty()
+  }
+
+  /**
+   * The first row, or nil for an empty result.
+   *
+   * @returns dict|nil
+   */
+  first() {
+    return self.rows.is_empty() ? nil : self.rows[0]
+  }
+
+  /**
+   * The last row, or nil for an empty result.
+   *
+   * @returns dict|nil
+   */
+  last() {
+    return self.rows.is_empty() ? nil : self.rows[self.rows.length() - 1]
+  }
+
+  /**
+   * The names of the result's columns, in order.
+   *
+   * @returns list[string]
+   */
+  column_names() {
+    return self.columns.map(@(column) => column.name)
+  }
+
+  /**
+   * Every value of one column, in row order.
+   *
+   * @param string|number column A column name, or its position.
+   * @returns list
+   * @throws QueryError if the result has no such column.
+   */
+  column(column) {
+    var index = self._index_of(column)
+    var name = self.columns[index].name
+
+    return self.rows.map(@(row) => row.get(name, nil))
+  }
+
+  /**
+   * The first column of the first row, for a query written to return
+   * exactly one value.
+   *
+   * ```zuri
+   * var total = db.query('select count(*) from posts').scalar()
+   * ```
+   *
+   * @param any fallback What to return for an empty result.
+   * @returns any
+   */
+  scalar(fallback) {
+    if self.rows.is_empty() or self.columns.is_empty() {
+      return fallback
+    }
+
+    return self.rows[0].get(self.columns[0].name, fallback)
+  }
+
+  /**
+   * The rows as lists of values in column order, rather than as
+   * dictionaries.
+   *
+   * This is the view that survives duplicate column names.
+   *
+   * @returns list[list]
+   */
+  tuples() {
+    var names = self.column_names()
+
+    return self.rows.map(@(row) {
+      return names.map(@(name) => row.get(name, nil))
+    })
+  }
+
+  /**
+   * Resolves a column name or position to a position.
+   */
+  _index_of(column) {
+    if is_number(column) {
+      if column < 0 or column >= self.columns.length() {
+        raise QueryError(
+          'column ${column} is out of range for a result with ' +
+          '${self.columns.length()} columns'
+        )
+      }
+
+      return column
+    }
+
+    for index, descriptor in self.columns {
+      if descriptor.name == column {
+        return index
+      }
+    }
+
+    raise QueryError(
+      'this result has no column named ${column}; it has ' +
+      '${', '.join(self.column_names())}'
+    )
+  }
+
+  to_string() {
+    return '<ResultSet ${self.rows.length()} row' +
+      '${self.rows.length() == 1 ? "" : "s"}, ' +
+      '${self.columns.length()} column' +
+      '${self.columns.length() == 1 ? "" : "s"}>'
+  }
+
+  @key(previous) {
+    if previous == nil {
+      return self.rows.is_empty() ? nil : 0
+    }
+
+    var next = previous + 1
+    return next < self.rows.length() ? next : nil
+  }
+
+  @value(key) {
+    return self.rows[key]
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What a statement that changed something reports.
+ *
+ * @printable
+ */
+class ExecResult {
+  /**
+   * How many rows the statement inserted, updated or deleted.
+   *
+   * Zero for a statement that changes no rows, such as `CREATE TABLE`.
+   * Engines count only rows the statement itself touched, so rows a
+   * trigger or a cascade went on to change are not included.
+   *
+   * @type number
+   */
+  var rows_affected = 0
+
+  /**
+   * The id of the row just inserted, where the engine reports one.
+   *
+   * `nil` for statements that inserted nothing, and on engines that
+   * have no such concept. `Connection.insert()` is the portable way to
+   * get an id, since it falls back to `RETURNING` where it has to.
+   *
+   * @default nil
+   */
+  var last_insert_id
+
+  /**
+   * @param number rows_affected
+   * @param number|bigint|nil last_insert_id
+   */
+  @new(rows_affected, last_insert_id) {
+    self.rows_affected = rows_affected or 0
+    self.last_insert_id = last_insert_id
+  }
+
+  to_string() {
+    var id = self.last_insert_id != nil ? ', id ${self.last_insert_id}' : ''
+
+    return '<ExecResult ${self.rows_affected} row' +
+      '${self.rows_affected == 1 ? "" : "s"} affected${id}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

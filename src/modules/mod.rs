@@ -28,6 +28,8 @@ pub(crate) mod net_tls;
 mod net_udp;
 mod os;
 pub(crate) mod os_util;
+mod sqlite;
+pub(crate) mod sqlite_util;
 mod r#struct;
 mod zuri_compile;
 mod zuri_lex;
@@ -54,6 +56,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   json::MODULE,
   base64::MODULE,
   date::MODULE,
+  sqlite::MODULE,
   r#struct::MODULE,
   compress::MODULE,
   isolate::MODULE,

@@ -1,0 +1,265 @@
+/**
+ * @module statement
+ *
+ * A SQLite statement compiled once and run many times.
+ *
+ * Compiling a statement is the expensive half of running one, and a
+ * statement run in a loop pays that cost once here rather than on
+ * every pass. The saving is real enough to be worth the extra object:
+ * an insert of ten thousand rows through a prepared statement does one
+ * compile instead of ten thousand.
+ *
+ * A statement holds one native handle, so it can only be doing one
+ * thing at a time. Opening a cursor over it takes that handle until
+ * the cursor closes, and running it again in the meantime raises
+ * rather than silently resetting the cursor underneath.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..driver { DriverStatement }
+import ..errors { ClosedError, QueryError }
+import ..types { flatten }
+import .cursor { SqliteCursor }
+import .errors { reraise }
+import .types { conversions_for, decode_row }
+
+/**
+ * Describes the columns a compiled statement returns.
+ *
+ * @param ptr statement
+ * @returns dict `{ columns, conversions }`
+ */
+def describe(statement) {
+  var names = _sqlite.column_names(statement)
+  var declared = _sqlite.column_decltypes(statement)
+
+  var columns = []
+
+  for index, name in names {
+    columns.append({
+      name,
+      type: index < declared.length() ? declared[index] : nil,
+    })
+  }
+
+  return {
+    columns,
+    conversions: conversions_for(declared),
+  }
+}
+
+/**
+ * Binds `values` to a reset statement, in order.
+ *
+ * @param ptr statement
+ * @param list values
+ * @param string query For error messages.
+ * @throws QueryError if the count does not match what the statement
+ *    expects.
+ */
+def bind_all(statement, values: list, query: string) {
+  var expected = _sqlite.bind_parameter_count(statement)
+
+  if values.length() != expected {
+    raise QueryError(
+      'this statement binds ${expected} parameter' +
+      '${expected == 1 ? "" : "s"} and ${values.length()} ' +
+      '${values.length() == 1 ? "was" : "were"} given',
+      { driver: 'sqlite', query }
+    )
+  }
+
+  for index, value in values {
+    catch {
+      _sqlite.bind(statement, index + 1, flatten(value))
+    } as error {
+      reraise(error, query)
+    }
+  }
+}
+
+/**
+ * A prepared SQLite statement.
+ *
+ * @printable
+ */
+class SqliteStatement < DriverStatement {
+  var _connection
+  var _statement
+  var _query
+  var _columns = []
+  var _conversions = []
+  var _closed = false
+  var _lent = false
+
+  /**
+   * @param SqliteConnection connection The connection that owns this.
+   * @param ptr statement The compiled native statement.
+   * @param string query The statement text, as sent to the engine.
+   */
+  @new(connection, statement, query) {
+    self._connection = connection
+    self._statement = statement
+    self._query = query
+
+    var described = describe(statement)
+    self._columns = described.columns
+    self._conversions = described.conversions
+  }
+
+  columns() {
+    return self._columns
+  }
+
+  parameter_count() {
+    return _sqlite.bind_parameter_count(self._statement)
+  }
+
+  /**
+   * Runs the statement for its effect.
+   *
+   * @param list values
+   * @returns dict `{ rows_affected, last_insert_id }`
+   */
+  execute(values: list) {
+    self._ready()
+    _sqlite.reset(self._statement)
+    _sqlite.clear_bindings(self._statement)
+    bind_all(self._statement, values, self._query)
+
+    catch {
+      while _sqlite.step(self._statement) == 'row' {
+        # A statement run for its effect may still return rows, as an
+        # INSERT with a RETURNING clause does. They are stepped past
+        # here rather than collected; a caller that wants them runs
+        # the statement through select() instead.
+      }
+    } as error {
+      _sqlite.reset(self._statement)
+      reraise(error, self._query)
+    }
+
+    var affected = self._connection.changes()
+    var inserted = self._connection.last_insert_id()
+
+    _sqlite.reset(self._statement)
+
+    return {
+      rows_affected: affected,
+      last_insert_id: inserted,
+    }
+  }
+
+  /**
+   * Runs the statement and reads its whole result.
+   *
+   * @param list values
+   * @returns dict `{ columns, rows }`
+   */
+  select(values: list) {
+    self._ready()
+    _sqlite.reset(self._statement)
+    _sqlite.clear_bindings(self._statement)
+    bind_all(self._statement, values, self._query)
+
+    var rows = []
+
+    catch {
+      while _sqlite.step(self._statement) == 'row' {
+        rows.append(_sqlite.row(self._statement))
+      }
+    } as error {
+      _sqlite.reset(self._statement)
+      reraise(error, self._query)
+    }
+
+    _sqlite.reset(self._statement)
+
+    var conversions = self._conversions
+    var decoded = rows.map(@(row) => decode_row(row, conversions))
+
+    return {
+      columns: self._columns,
+      rows: decoded,
+    }
+  }
+
+  /**
+   * Runs the statement and hands back a cursor over its result.
+   *
+   * The cursor holds this statement until it closes.
+   *
+   * @param list values
+   * @param dict options Unused here; SQLite streams natively.
+   * @returns SqliteCursor
+   */
+  open_cursor(values: list, options: dict) {
+    self._ready()
+    _sqlite.reset(self._statement)
+    _sqlite.clear_bindings(self._statement)
+    bind_all(self._statement, values, self._query)
+
+    self._lent = true
+
+    return SqliteCursor(
+      self._statement,
+      self._columns,
+      self._conversions,
+      self._query,
+      false
+    )
+  }
+
+  /**
+   * Releases the statement. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._lent = false
+    _sqlite.finalize(self._statement)
+  }
+
+  /**
+   * Whether this statement has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  # Raises unless the statement is in a state to be run.
+  _ready() {
+    if self._closed {
+      raise ClosedError(
+        'this prepared statement was closed',
+        { driver: 'sqlite', query: self._query }
+      )
+    }
+
+    if self._lent and _sqlite.stmt_busy(self._statement) {
+      raise QueryError(
+        'a cursor is still reading this prepared statement; close it ' +
+        'before running the statement again',
+        { driver: 'sqlite', query: self._query }
+      )
+    }
+
+    self._lent = false
+  }
+
+  to_string() {
+    return '<SqliteStatement ${self._query}${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

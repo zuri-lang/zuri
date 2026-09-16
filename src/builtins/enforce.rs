@@ -51,9 +51,9 @@ pub enum ArgType {
   Nil,
   /// A `Ptr` wrapping specifically the resource named by the given
   /// tag (see `ObjPtr::type_name`); e.g.
-  /// `ArgType::PtrOf("sqlite3_connection")`. Distinct from a bare
+  /// `ArgType::PtrOf("zuri::sql::sqlite3::connection")`. Distinct from a bare
   /// "any Ptr" check: a `gd_image` handed to a function expecting a
-  /// `sqlite3_connection` should fail here, not at the `downcast`
+  /// `zuri::sql::sqlite3::connection` should fail here, not at the `downcast`
   /// call inside the native body.
   PtrOf(&'static str),
   /// Accepts anything; useful for `enforce_arg_types!`'s uniform
@@ -296,8 +296,8 @@ macro_rules! enforce_arg_type_any_of_opt {
 
 /// Like `enforce_arg_type!`, but specifically for `ArgType::PtrOf(tag)`;
 /// produces a message naming the ACTUAL wrapped type on a mismatch
-/// (e.g. "expects argument 1 to be a sqlite3_connection, got a
-/// gd_image") instead of the generic "a pointer" `ArgType::label`
+/// (e.g. "expects argument 1 to be a zuri::sql::sqlite3::connection, got a
+/// zuri::net::TcpStream") instead of the generic "a pointer" `ArgType::label`
 /// falls back to for this variant. Free-function form: see
 /// `enforce_method_arg_ptr!` below for the method-style counterpart.
 #[macro_export]

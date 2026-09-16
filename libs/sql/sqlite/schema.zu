@@ -1,0 +1,221 @@
+/**
+ * @module schema
+ *
+ * Introspection for SQLite, which answers through pragmas rather than
+ * through catalogue tables.
+ *
+ * `PRAGMA table_info`, `index_list`, `index_info` and `foreign_key_list`
+ * are functions that return result sets, so each of these is an
+ * ordinary query. The one catalogue table SQLite does have,
+ * `sqlite_master`, is where the list of tables comes from.
+ *
+ * SQLite has no schemas. It has attached databases, which the `schema`
+ * argument here names: `nil` and `'main'` both mean the database the
+ * connection opened, and `'temp'` holds temporary tables.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { SchemaAdapter }
+
+/**
+ * Answers introspection questions about a SQLite database.
+ */
+class SqliteSchema < SchemaAdapter {
+  var _connection
+
+  /**
+   * @param SqliteConnection connection
+   */
+  @new(connection) {
+    self._connection = connection
+  }
+
+  /**
+   * The tables the application created.
+   *
+   * SQLite keeps its own bookkeeping in tables whose names begin with
+   * `sqlite_`, so those are left out.
+   *
+   * @param string|nil schema An attached database name.
+   * @returns list[string]
+   */
+  tables(schema) {
+    return self._names('table', schema)
+  }
+
+  /**
+   * The views.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  views(schema) {
+    return self._names('view', schema)
+  }
+
+  /**
+   * The columns of `table`, in declaration order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  columns(table: string, schema) {
+    var rows = self._pragma('table_info', table, schema)
+    var columns = []
+
+    for row in rows {
+      columns.append({
+        name: row[1],
+        type: row[2] == nil or row[2] == '' ? nil : row[2],
+        nullable: row[3] == 0,
+        default_value: row[4],
+        primary_key: row[5] != 0,
+        position: row[0] + 1,
+      })
+    }
+
+    return columns
+  }
+
+  /**
+   * The primary key columns, in key order.
+   *
+   * `table_info` reports each key column's position within the key, so
+   * a composite key comes back in the order it was declared rather
+   * than in column order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  primary_key_columns(table: string, schema) {
+    var rows = self._pragma('table_info', table, schema)
+    var key = []
+
+    for row in rows {
+      if row[5] != 0 {
+        key.append({ position: row[5], name: row[1] })
+      }
+    }
+
+    key.sort()
+
+    return key.map(@(entry) => entry.name)
+  }
+
+  /**
+   * The indexes on `table`.
+   *
+   * The implicit index behind a column's `UNIQUE` or `PRIMARY KEY`
+   * declaration is included, as SQLite reports it, since it is a real
+   * index and constrains the table the same way a named one does.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  indexes(table: string, schema) {
+    var rows = self._pragma('index_list', table, schema)
+    var indexes = []
+
+    for row in rows {
+      var name = row[1]
+      var members = self._pragma('index_info', name, schema)
+
+      indexes.append({
+        name,
+        unique: row[2] != 0,
+        columns: members.map(@(member) => member[2]).compact(),
+      })
+    }
+
+    return indexes
+  }
+
+  /**
+   * The foreign keys declared on `table`.
+   *
+   * A key spanning several columns is reported by SQLite as one row
+   * per column sharing an id, so the rows are gathered back into one
+   * entry per key.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  foreign_keys(table: string, schema) {
+    var rows = self._pragma('foreign_key_list', table, schema)
+    var keys = {}
+    var order = []
+
+    for row in rows {
+      var id = '${row[0]}'
+
+      if !keys.contains(id) {
+        keys.set(id, {
+          columns: [],
+          references_table: row[2],
+          references_columns: [],
+          on_update: row[5],
+          on_delete: row[6],
+        })
+
+        order.append(id)
+      }
+
+      var key = keys[id]
+      key.columns.append(row[3])
+
+      # A key that names no column on the other side references that
+      # table's primary key, which is what SQLite means by null here.
+      if row[4] != nil {
+        key.references_columns.append(row[4])
+      }
+    }
+
+    return order.map(@(id) => keys[id])
+  }
+
+  # Runs a pragma that takes an argument and returns rows.
+  #
+  # A pragma cannot take a bound parameter, so the argument goes into
+  # the statement text. It is quoted as an identifier, which is what
+  # makes a table name containing a quote harmless rather than a way
+  # into the statement.
+  _pragma(name, argument, schema) {
+    var target = self._qualify(name, schema)
+    var quoted = self._connection.driver.quote_identifier(argument)
+
+    return self._connection.select('pragma ${target}(${quoted})', []).rows
+  }
+
+  # Lists the objects of one kind from the right database's catalogue.
+  _names(kind, schema) {
+    var database = schema == nil ?
+      nil :
+      self._connection.driver.quote_identifier(schema)
+
+    var master = database == nil ?
+      'sqlite_master' :
+      '${database}.sqlite_master'
+
+    var rows = self._connection.select(
+      'select name from ${master} where type = ?1 and name not like ' +
+      "'sqlite_%' order by name",
+      [kind]
+    ).rows
+
+    return rows.map(@(row) => row[0])
+  }
+
+  # Pragmas are addressed as `database.pragma_name`.
+  _qualify(name, schema) {
+    if schema == nil {
+      return name
+    }
+
+    return '${self._connection.driver.quote_identifier(schema)}.${name}'
+  }
+}

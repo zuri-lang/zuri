@@ -1,0 +1,287 @@
+/**
+ * @module errors
+ *
+ * Every error a database raises, under one root, in one shape,
+ * whatever engine it came from.
+ *
+ * This is the part of `sql` that pays for itself soonest. PostgreSQL
+ * reports a unique constraint violation as SQLSTATE `23505`; SQLite
+ * reports it as extended result code `2067`. Neither number means
+ * anything to the other, and code that matched on either would stop
+ * working the moment the adapter changed. Every adapter translates its
+ * engine's own vocabulary into the classes below, so a program catches
+ * `UniqueViolation` and keeps catching it after a migration.
+ *
+ * The original is never thrown away. `code` and `sqlstate` carry
+ * whatever the engine said, so anything genuinely engine specific is
+ * still reachable.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * Base class for every error this module and its adapters raise.
+ *
+ * Catch this to catch anything a database can do. The subclasses below
+ * separate the cases worth handling differently, and every one of them
+ * is a `SqlError`, so a broad catch never misses one.
+ *
+ * @printable
+ */
+class SqlError < Error {
+  /**
+   * The engine's own error code, as the engine spells it.
+   *
+   * A number for SQLite (an extended result code, such as `2067` for a
+   * unique constraint), a string for PostgreSQL (the SQLSTATE, such as
+   * `'23505'`). `nil` when the error came from `sql` itself rather than
+   * from an engine.
+   *
+   * @default nil
+   */
+  var code
+
+  /**
+   * The five character SQLSTATE, for engines that report one.
+   *
+   * PostgreSQL always does. SQLite has no such concept and leaves this
+   * `nil`, which is why matching on an error class is the portable
+   * choice and matching on `sqlstate` is not.
+   *
+   * @default nil
+   */
+  var sqlstate
+
+  /**
+   * Name of the adapter that raised this, such as `'sqlite'` or
+   * `'postgres'`.
+   *
+   * @default nil
+   */
+  var driver
+
+  /**
+   * The statement that failed, as it was sent to the engine.
+   *
+   * This is the translated statement, with the adapter's own
+   * placeholders in it, not the `?` form that was written. That is
+   * deliberate: it is the text the engine actually rejected, which is
+   * the text worth putting in a log.
+   *
+   * `nil` for errors raised outside the execution of a statement.
+   *
+   * @default nil
+   */
+  var query
+
+  /**
+   * Builds an error, optionally carrying the engine's own detail.
+   *
+   * `details` is a dictionary; any of `code`, `sqlstate`, `driver` and
+   * `query` it holds are copied onto the error and the rest ignored.
+   * Adapters fill it in. Application code raising one of these by hand
+   * can leave it out entirely.
+   *
+   * @param string message
+   * @param dict|nil details
+   */
+  @new(message, details) {
+    self.message = message or self.message
+
+    if details {
+      self.code = details.get('code', nil)
+      self.sqlstate = details.get('sqlstate', nil)
+      self.driver = details.get('driver', nil)
+      self.query = details.get('query', nil)
+    }
+  }
+
+  to_string() {
+    var where = self.driver ? ' [${self.driver}]' : ''
+    var code = self.code != nil ? ' (${self.code})' : ''
+
+    return '<${typeof(self)}${where}${code}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The database could not be reached, or the connection dropped.
+ *
+ * A network failure, a refused connection, a server that is not
+ * running, a database file that cannot be opened. Retrying is often
+ * reasonable; the same query against the same data may well succeed
+ * once the cause clears.
+ *
+ * @printable
+ */
+class ConnectionError < SqlError {}
+
+/**
+ * The server rejected the credentials.
+ *
+ * A `ConnectionError`, because the connection is what failed, but
+ * worth separating: no amount of retrying fixes a wrong password.
+ *
+ * @printable
+ */
+class AuthenticationError < ConnectionError {}
+
+/**
+ * The server sent something the adapter could not make sense of.
+ *
+ * A `ConnectionError` because that is what it means in practice: the
+ * conversation has lost its place, so nothing further on this
+ * connection can be trusted and a pool holding it should discard it
+ * rather than lend it out again.
+ *
+ * Seeing one means either a bug in the adapter or something between
+ * it and the server that is not the server.
+ *
+ * @printable
+ */
+class ProtocolError < ConnectionError {}
+
+/**
+ * An operation ran out of time.
+ *
+ * Raised for a connection that took too long to open, a statement that
+ * exceeded its deadline, and for SQLite's busy timeout expiring while
+ * another writer held the database.
+ *
+ * @printable
+ */
+class TimeoutError < ConnectionError {}
+
+/**
+ * The engine refused the statement.
+ *
+ * Bad syntax, an unknown table or column, a type the engine would not
+ * accept, a wrong number of parameters. These are programming errors:
+ * the same statement will fail the same way every time.
+ *
+ * @printable
+ */
+class QueryError < SqlError {}
+
+/**
+ * A constraint rejected the data.
+ *
+ * Catch this to handle any constraint violation without caring which;
+ * the subclasses are there when the difference matters, as it does
+ * when a duplicate key means "already exists" and a foreign key
+ * violation means "referenced row is gone".
+ *
+ * @printable
+ */
+class IntegrityError < SqlError {}
+
+/**
+ * A unique index or primary key already holds this value.
+ *
+ * @printable
+ */
+class UniqueViolation < IntegrityError {}
+
+/**
+ * A foreign key has no matching row, or a referenced row is still in
+ * use by another table.
+ *
+ * @printable
+ */
+class ForeignKeyViolation < IntegrityError {}
+
+/**
+ * A column declared NOT NULL was given nothing.
+ *
+ * @printable
+ */
+class NotNullViolation < IntegrityError {}
+
+/**
+ * A CHECK constraint rejected the row.
+ *
+ * @printable
+ */
+class CheckViolation < IntegrityError {}
+
+/**
+ * A transaction could not be carried out as asked.
+ *
+ * Raised for a commit that failed, a rollback with nothing to roll
+ * back, and for nesting mistakes such as releasing a savepoint that
+ * was never taken.
+ *
+ * @printable
+ */
+class TransactionError < SqlError {}
+
+/**
+ * Two transactions could not both be treated as though they ran alone.
+ *
+ * The engine gave up on one of them rather than produce a result that
+ * serial execution could not have produced. Retrying the whole
+ * transaction is the correct response, and usually succeeds.
+ *
+ * @printable
+ */
+class SerializationError < TransactionError {}
+
+/**
+ * Two transactions were each waiting on the other, and the engine
+ * broke the tie by aborting this one.
+ *
+ * As with `SerializationError`, the response is to retry the
+ * transaction from the beginning.
+ *
+ * @printable
+ */
+class DeadlockError < TransactionError {}
+
+/**
+ * Something went wrong with a connection pool rather than with a
+ * database.
+ *
+ * @printable
+ */
+class PoolError < SqlError {}
+
+/**
+ * Every connection was busy and none came free within the acquire
+ * timeout.
+ *
+ * Either the pool is too small for the load or connections are being
+ * held longer than they should be; a connection acquired and not
+ * released is the usual cause.
+ *
+ * @printable
+ */
+class PoolExhaustedError < PoolError {}
+
+/**
+ * The engine cannot do what was asked, and no approximation would be
+ * honest.
+ *
+ * Raised where an adapter would otherwise have to guess: asking
+ * PostgreSQL for a last insert id it does not report, asking SQLite
+ * for an isolation level it has no analogue for, connecting to
+ * PostgreSQL over a Unix domain socket. The message names both the
+ * adapter and the feature.
+ *
+ * @printable
+ */
+class NotSupportedError < SqlError {}
+
+/**
+ * The connection, statement, cursor, transaction or pool was already
+ * closed.
+ *
+ * Closing something twice is always allowed and never raises this.
+ * Using something after closing it is what does.
+ *
+ * @printable
+ */
+class ClosedError < SqlError {}

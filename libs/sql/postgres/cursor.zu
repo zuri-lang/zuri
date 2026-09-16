@@ -1,0 +1,139 @@
+/**
+ * @module cursor
+ *
+ * Reading a PostgreSQL result a batch at a time.
+ *
+ * The server holds the result in a portal and sends as many rows as
+ * each Execute asks for. When more remain it says so, and the next
+ * Execute continues where the last stopped. Nothing but the current
+ * batch is ever held on this side.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { DriverCursor }
+
+/**
+ * A portal being read.
+ *
+ * @printable
+ */
+class PostgresCursor < DriverCursor {
+  var _connection
+  var _portal
+  var _columns = []
+  var _raw_columns = []
+  var _batch = 256
+  var _sql
+  var _rows = []
+  var _at = 0
+  var _suspended = false
+  var _closed = false
+  var _owns_transaction = false
+
+  /**
+   * @param PostgresConnection connection
+   * @param dict state The portal's name, its columns, the first batch
+   *    of rows, whether more remain, and whether this cursor opened
+   *    the transaction it is running in.
+   */
+  @new(connection, state) {
+    self._connection = connection
+    self._portal = state.portal
+    self._columns = state.columns
+    self._raw_columns = state.raw_columns
+    self._rows = state.rows
+    self._suspended = state.suspended
+    self._batch = state.batch
+    self._sql = state.sql
+    self._owns_transaction = state.owns_transaction
+  }
+
+  columns() {
+    return self._columns
+  }
+
+  /**
+   * The next row as a list of values, or nil once the result is
+   * finished.
+   *
+   * @returns list|nil
+   */
+  next_row() {
+    if self._at < self._rows.length() {
+      var row = self._rows[self._at]
+      self._at++
+
+      return row
+    }
+
+    if !self._suspended or self._closed {
+      self.close()
+
+      return nil
+    }
+
+    var result = self._connection.resume_portal({
+      portal: self._portal,
+      columns: self._raw_columns,
+      limit: self._batch,
+      sql: self._sql,
+    })
+
+    self._rows = result.rows
+    self._suspended = result.suspended
+    self._at = 0
+
+    if self._rows.is_empty() {
+      self.close()
+
+      return nil
+    }
+
+    self._at = 1
+
+    return self._rows[0]
+  }
+
+  /**
+   * Releases the portal, and the transaction if this cursor opened
+   * one. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._rows = []
+    self._connection.release_portal(self._portal)
+
+    if self._owns_transaction {
+      catch {
+        self._connection.commit()
+      } as _error {
+        # The transaction existed only to keep the portal alive. A
+        # commit that fails at this point has nothing to undo, since a
+        # cursor only reads.
+      }
+    }
+  }
+
+  /**
+   * Whether the cursor has been closed or read to the end.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  to_string() {
+    return '<PostgresCursor ${self._portal}' +
+      '${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

@@ -1,0 +1,262 @@
+/**
+ * @module messages
+ *
+ * Framing for the PostgreSQL wire protocol, version 3.
+ *
+ * Every message is a one byte tag, a four byte big-endian length that
+ * counts itself, and then the body. The one exception is the startup
+ * message, which has no tag because the server has not yet been told
+ * which protocol version is in use.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ConnectionError }
+import .types { write_int16, write_int32, read_uint32 }
+
+/**
+ * Messages the server sends, by tag.
+ */
+var AUTHENTICATION = 'R'
+var BACKEND_KEY_DATA = 'K'
+var BIND_COMPLETE = '2'
+var CLOSE_COMPLETE = '3'
+var COMMAND_COMPLETE = 'C'
+var COPY_IN_RESPONSE = 'G'
+var COPY_OUT_RESPONSE = 'H'
+var COPY_DATA = 'd'
+var COPY_DONE = 'c'
+var DATA_ROW = 'D'
+var EMPTY_QUERY_RESPONSE = 'I'
+var ERROR_RESPONSE = 'E'
+var NO_DATA = 'n'
+var NOTICE_RESPONSE = 'N'
+var NOTIFICATION_RESPONSE = 'A'
+var PARAMETER_DESCRIPTION = 't'
+var PARAMETER_STATUS = 'S'
+var PARSE_COMPLETE = '1'
+var PORTAL_SUSPENDED = 's'
+var READY_FOR_QUERY = 'Z'
+var ROW_DESCRIPTION = 'T'
+
+/**
+ * Authentication requests, by the number that follows the tag.
+ */
+var AUTH_OK = 0
+var AUTH_CLEARTEXT = 3
+var AUTH_MD5 = 5
+var AUTH_SASL = 10
+var AUTH_SASL_CONTINUE = 11
+var AUTH_SASL_FINAL = 12
+
+/**
+ * The protocol version this adapter speaks: 3.0, as a single number
+ * with the major version in the high half.
+ */
+var PROTOCOL_VERSION = 196608
+
+/**
+ * The number the server recognises as a request to start TLS. It takes
+ * the place of a protocol version in a startup-shaped message.
+ */
+var SSL_REQUEST = 80877103
+
+/**
+ * Builds one outgoing message.
+ *
+ * Bytes accumulate in a list and `frame()` puts the tag and length on
+ * the front, since the length cannot be known until the body is
+ * finished.
+ */
+class Writer {
+  var _bytes = []
+
+  /**
+   * Appends one byte.
+   *
+   * @param number value
+   * @returns Writer This writer, so calls chain.
+   */
+  byte(value: number) {
+    self._bytes.append(value & 0xff)
+
+    return self
+  }
+
+  /**
+   * Appends a big-endian 16 bit integer.
+   *
+   * @param number value
+   * @returns Writer
+   */
+  int16(value: number) {
+    self._bytes += write_int16(value)
+
+    return self
+  }
+
+  /**
+   * Appends a big-endian 32 bit integer.
+   *
+   * @param number value
+   * @returns Writer
+   */
+  int32(value: number) {
+    self._bytes += write_int32(value)
+
+    return self
+  }
+
+  /**
+   * Appends a string and the zero byte that ends it.
+   *
+   * @param string value
+   * @returns Writer
+   */
+  cstring(value: string) {
+    self._bytes += value.to_bytes().to_list()
+    self._bytes.append(0)
+
+    return self
+  }
+
+  /**
+   * Appends raw bytes.
+   *
+   * @param list values
+   * @returns Writer
+   */
+  raw(values: list) {
+    self._bytes += values
+
+    return self
+  }
+
+  /**
+   * How many bytes the body holds so far.
+   *
+   * @returns number
+   */
+  length() {
+    return self._bytes.length()
+  }
+
+  /**
+   * The finished message, ready to send.
+   *
+   * @param string|nil tag The message's tag, or nil for a startup
+   *    message, which has none.
+   * @returns bytes
+   */
+  frame(tag) {
+    var out = []
+
+    if tag != nil {
+      out.append(tag.ord())
+    }
+
+    # The length counts itself but not the tag.
+    out += write_int32(self._bytes.length() + 4)
+    out += self._bytes
+
+    return bytes(out)
+  }
+}
+
+/**
+ * Reads framed messages from a connected stream.
+ *
+ * Works over a plain `TcpStream` or a `TlsStream` without caring
+ * which, since both read the same way.
+ */
+class Reader {
+  var _stream
+
+  /**
+   * @param TcpStream|TlsStream stream An already-connected stream.
+   */
+  @new(stream) {
+    self._stream = stream
+  }
+
+  /**
+   * Swaps the stream, for the point in the handshake where a plain
+   * connection becomes a TLS one.
+   *
+   * @param TlsStream stream
+   */
+  upgrade(stream) {
+    self._stream = stream
+  }
+
+  /**
+   * Reads exactly `count` bytes, waiting for as many as it takes.
+   *
+   * @param number count
+   * @returns bytes
+   * @throws ConnectionError if the server closes first.
+   */
+  read_exact(count: number) {
+    if count == 0 {
+      return bytes(0)
+    }
+
+    var chunk
+
+    catch {
+      chunk = self._stream.read_exact(count)
+    } as error {
+      raise ConnectionError(
+        'the connection to the server failed while reading: ' +
+        error.message,
+        { driver: 'postgres' }
+      )
+    }
+
+    if chunk == nil or chunk.length() < count {
+      raise ConnectionError(
+        'the server closed the connection', { driver: 'postgres' }
+      )
+    }
+
+    return chunk
+  }
+
+  /**
+   * Reads the next message.
+   *
+   * @returns dict `{ tag, payload }`
+   */
+  read_message() {
+    var header = self.read_exact(5)
+    var length = read_uint32(header, 1)
+
+    return {
+      tag: header[0].chr(),
+      payload: self.read_exact(length - 4),
+    }
+  }
+}
+
+/**
+ * Splits a run of zero-terminated strings.
+ *
+ * Several messages are built this way, including the error report,
+ * where each field is a one byte code followed by its text.
+ *
+ * @param bytes payload
+ * @param number at Where to start.
+ * @returns dict `{ value, next }`
+ */
+def read_cstring(payload, at: number) {
+  var end = at
+
+  while end < payload.length() and payload[end] != 0 {
+    end++
+  }
+
+  return {
+    value: end > at ? payload[at, end].to_string() : '',
+    next: end + 1,
+  }
+}

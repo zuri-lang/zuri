@@ -1,0 +1,736 @@
+/**
+ * @module connection
+ *
+ * The connection a program holds.
+ *
+ * Everything that is the same whichever database is underneath lives
+ * here: translating placeholders, shaping results, running
+ * transactions and their savepoints, generating the four statements
+ * that are always the same, and getting an id back from an insert on
+ * an engine that has no last insert id.
+ *
+ * What is left over is the adapter's, reachable through `native()` for
+ * the cases where an engine's own feature is the point.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .crud
+import .crud { raw }
+import .cursor { Cursor }
+import .errors { ClosedError, NotSupportedError, QueryError }
+import .params { scan, split_statements, translate }
+import .result { ResultSet, ExecResult }
+import .schema { Schema }
+import .statement { Statement }
+import .transaction { Transaction }
+
+/**
+ * An open connection to a database.
+ *
+ * @printable
+ */
+class Connection {
+  /**
+   * Introspection: what tables exist, what columns they have, and how
+   * they are indexed.
+   *
+   * @type Schema
+   */
+  var schema
+
+  var _connection
+  var _driver
+  var _style
+  var _closed = false
+  var _depth = 0
+  var _pool
+  var _released = false
+
+  # The pool's own record for this connection, when it came from one.
+  # Declared here because a class cannot grow a field at runtime, and
+  # the pool needs somewhere to keep what it knows about a connection
+  # it has lent out.
+  var _pool_entry
+
+  /**
+   * @param DriverConnection connection The adapter's own connection.
+   * @param Driver driver The driver that opened it.
+   */
+  @new(connection, driver) {
+    self._connection = connection
+    self._driver = driver
+    self._style = driver.capabilities().placeholder_style
+    self.schema = Schema(self)
+  }
+
+  /**
+   * The adapter's own connection, for the engine-specific things the
+   * shared contract does not cover.
+   *
+   * @returns DriverConnection
+   */
+  driver_connection() {
+    self._open()
+    return self._connection
+  }
+
+  /**
+   * The same thing, under the name that reads better at a call site.
+   *
+   * ```zuri
+   * db.native().create_function('slug', 1, @(text) => slugify(text))
+   * ```
+   *
+   * @returns DriverConnection
+   */
+  native() {
+    return self.driver_connection()
+  }
+
+  /**
+   * The driver behind this connection.
+   *
+   * @returns Driver
+   */
+  driver() {
+    return self._driver
+  }
+
+  /**
+   * The adapter's name, such as `'sqlite'`.
+   *
+   * @returns string
+   */
+  driver_name() {
+    return self._driver.name()
+  }
+
+  /**
+   * What this engine can do.
+   *
+   * @returns dict
+   */
+  capabilities() {
+    return self._driver.capabilities()
+  }
+
+  /**
+   * Whether this engine supports `flag`.
+   *
+   * ```zuri
+   * if db.supports('returning') {
+   *   ...
+   * }
+   * ```
+   *
+   * @param string flag
+   * @returns bool
+   */
+  supports(flag: string) {
+    return self._driver.supports(flag)
+  }
+
+  /**
+   * The engine's version, as it reports it.
+   *
+   * @returns string
+   */
+  server_version() {
+    self._open()
+    return self._connection.server_version()
+  }
+
+  /**
+   * Runs a query and reads its whole result.
+   *
+   * @param string sql Written with `?` or `:name` placeholders.
+   * @param list|dict|nil params
+   * @returns ResultSet
+   */
+  query(sql: string, params) {
+    self._open()
+
+    var prepared = self._translate(sql, params)
+    var result = self._connection.select(prepared.sql, prepared.values)
+
+    return ResultSet(result.columns, result.rows, result.get('command', nil))
+  }
+
+  /**
+   * Runs a statement for its effect.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns ExecResult
+   */
+  exec(sql: string, params) {
+    self._open()
+
+    var prepared = self._translate(sql, params)
+    var result = self._connection.execute(prepared.sql, prepared.values)
+
+    return ExecResult(
+      result.get('rows_affected', 0),
+      result.get('last_insert_id', nil)
+    )
+  }
+
+  /**
+   * The first row of a query, or nil when it returns none.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns dict|nil
+   */
+  fetch_one(sql: string, params) {
+    return self.query(sql, params).first()
+  }
+
+  /**
+   * Every row of a query.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns list[dict]
+   */
+  fetch_all(sql: string, params) {
+    return self.query(sql, params).rows
+  }
+
+  /**
+   * The first column of the first row, for a query written to return
+   * one value.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param any fallback What to return for an empty result.
+   * @returns any
+   */
+  fetch_value(sql: string, params, fallback) {
+    return self.query(sql, params).scalar(fallback)
+  }
+
+  /**
+   * One column's values, as a list.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param string|number|nil column Which column, the first by
+   *    default.
+   * @returns list
+   */
+  fetch_column(sql: string, params, column) {
+    return self.query(sql, params).column(column == nil ? 0 : column)
+  }
+
+  /**
+   * Runs a query and returns a cursor over its result rather than
+   * reading all of it.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param dict|nil options `{ batch }` on engines that fetch in
+   *    batches.
+   * @returns Cursor
+   */
+  stream(sql: string, params, options) {
+    self._open()
+
+    var prepared = self._translate(sql, params)
+
+    return Cursor(
+      self._connection.open_cursor(prepared.sql, prepared.values, options or {})
+    )
+  }
+
+  /**
+   * Compiles a statement for repeated use.
+   *
+   * @param string sql
+   * @returns Statement
+   */
+  prepare(sql: string) {
+    self._open()
+
+    if !self.supports('prepared_statements') {
+      raise NotSupportedError(
+        '${self.driver_name()} cannot prepare statements',
+        { driver: self.driver_name() }
+      )
+    }
+
+    # Translated once, here, so running the statement in a loop does no
+    # string work at all. Named parameters still resolve per call, but
+    # only to reorder values, never to rebuild the text.
+    var prepared = translate(sql, self._probe_params(sql), self._style)
+
+    return Statement(
+      self,
+      self._connection.prepare(prepared.sql),
+      sql,
+      prepared.sql,
+      self._style
+    )
+  }
+
+  /**
+   * Runs one or more statements for their effect, as a script.
+   *
+   * This is the path for a schema file or a batch of pragmas. It binds
+   * no parameters and returns no rows, and an engine that cannot run
+   * several statements at once runs them one at a time.
+   *
+   * @param string sql
+   */
+  exec_script(sql: string) {
+    self._open()
+
+    for statement in split_statements(sql) {
+      self._connection.execute(statement, [])
+    }
+  }
+
+  /**
+   * Inserts a row and returns its id.
+   *
+   * How the id comes back depends on the engine, which is the point of
+   * having this rather than writing the insert by hand. An engine with
+   * a last insert id reports one; an engine without gets a `RETURNING`
+   * clause added. An engine that can do neither raises rather than
+   * returning something that is not an id.
+   *
+   * ```zuri
+   * var id = db.insert('posts', { title: 'Hello', body: 'World' })
+   * ```
+   *
+   * @param string table
+   * @param dict values Column to value.
+   * @param dict|nil options `{ returning }` names the column to read
+   *    the id from, which matters on an engine using `RETURNING` when
+   *    the key is not called `id`.
+   * @returns any The new row's id, or nil where the engine reports
+   *    none and no returning column was named.
+   */
+  insert(table: string, values: dict, options) {
+    self._open()
+
+    var settings = options or {}
+    var returning = settings.get('returning', nil)
+
+    if !self.supports('last_insert_id') and returning == nil {
+      # The engine has no id to report unless the statement asks for
+      # one, so it is asked for. Guessing the primary key rather than
+      # raising is deliberate: `id` is right for the overwhelming
+      # majority of tables, and a table where it is not says so with
+      # the returning option.
+      returning = self.schema.primary_key(table) or 'id'
+    }
+
+    var built = crud.insert(self._driver, table, values, returning)
+
+    if returning != nil and self.supports('returning') {
+      var result = self._connection.select(built.sql, built.values)
+
+      if result.rows.is_empty() {
+        return nil
+      }
+
+      return result.rows[0][0]
+    }
+
+    var result = self._connection.execute(built.sql, built.values)
+    var id = result.get('last_insert_id', nil)
+
+    if id == nil and !self.supports('last_insert_id') {
+      raise NotSupportedError(
+        '${self.driver_name()} does not report the id of an inserted ' +
+        'row; name the column to read it from with the returning option',
+        { driver: self.driver_name(), query: built.sql }
+      )
+    }
+
+    return id
+  }
+
+  /**
+   * Inserts several rows in one statement.
+   *
+   * Every row has to name the same columns. Large batches are split so
+   * that no one statement binds more parameters than the engine
+   * allows.
+   *
+   * @param string table
+   * @param list rows Dictionaries of column to value.
+   * @returns number How many rows were inserted.
+   */
+  insert_many(table: string, rows: list) {
+    self._open()
+
+    if rows.is_empty() {
+      return 0
+    }
+
+    var inserted = 0
+
+    for batch in self._batches(rows) {
+      var built = crud.insert_many(self._driver, table, batch)
+      inserted += self._connection.execute(built.sql, built.values)
+        .get('rows_affected', 0)
+    }
+
+    return inserted
+  }
+
+  /**
+   * Updates the rows matching `where`.
+   *
+   * Passing `nil` for `where` updates every row, which has to be asked
+   * for rather than happening because a dictionary came out empty.
+   *
+   * @param string table
+   * @param dict values Column to new value.
+   * @param dict|nil where Column to value; a list matches any of them
+   *    and nil matches null.
+   * @returns number How many rows changed.
+   */
+  update(table: string, values: dict, where) {
+    self._open()
+
+    var built = crud.update(self._driver, table, values, where)
+
+    return self._connection.execute(built.sql, built.values)
+      .get('rows_affected', 0)
+  }
+
+  /**
+   * Deletes the rows matching `where`.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @returns number How many rows went.
+   */
+  delete(table: string, where) {
+    self._open()
+
+    var built = crud.delete(self._driver, table, where)
+
+    return self._connection.execute(built.sql, built.values)
+      .get('rows_affected', 0)
+  }
+
+  /**
+   * Selects the rows matching `where`.
+   *
+   * ```zuri
+   * db.find('posts', { published: true }, {
+   *   columns: ['id', 'title'],
+   *   order: ['created_at desc'],
+   *   limit: 10,
+   * })
+   * ```
+   *
+   * @param string table
+   * @param dict|nil where
+   * @param dict|nil options `columns`, `order`, `limit` and `offset`.
+   * @returns ResultSet
+   */
+  find(table: string, where, options) {
+    self._open()
+
+    var built = crud.select(self._driver, table, where, options)
+    var result = self._connection.select(built.sql, built.values)
+
+    return ResultSet(result.columns, result.rows, nil)
+  }
+
+  /**
+   * The first row matching `where`, or nil.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @param dict|nil options
+   * @returns dict|nil
+   */
+  find_one(table: string, where, options) {
+    var settings = (options or {}).clone()
+    settings.set('limit', 1)
+
+    return self.find(table, where, settings).first()
+  }
+
+  /**
+   * How many rows match `where`.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @returns number
+   */
+  count(table: string, where) {
+    var built = crud.select(self._driver, table, where, {
+      columns: [raw('count(*)')],
+    })
+
+    var result = self._connection.select(built.sql, built.values)
+
+    if result.rows.is_empty() {
+      return 0
+    }
+
+    return result.rows[0][0]
+  }
+
+  /**
+   * Runs `body` inside a transaction, committing when it returns and
+   * rolling back when it raises.
+   *
+   * ```zuri
+   * db.transaction(@(tx) {
+   *   tx.exec('insert into audit (what) values (?)', ['transfer'])
+   *   tx.update('accounts', { balance: 0 }, { id: 1 })
+   * })
+   * ```
+   *
+   * A `transaction()` called inside another takes a savepoint, so only
+   * the outermost commits and a failure inside undoes just that inner
+   * piece of work.
+   *
+   * @param function body Called with a `Transaction`.
+   * @param string|nil isolation One of the level constants, for the
+   *    outermost transaction only.
+   * @returns any Whatever `body` returned.
+   */
+  transaction(body: function, isolation) {
+    self._open()
+
+    var nested = self._depth > 0
+
+    self._connection.begin(nested ? nil : isolation)
+    self._depth++
+
+    var transaction = Transaction(self, nested)
+    var result
+
+    catch {
+      result = body(transaction)
+    } as error {
+      self._depth--
+
+      if !transaction.is_finished() {
+        # The rollback is allowed to fail: the connection may be gone,
+        # and in that case the error worth reporting is the one from
+        # the body, not the one from trying to tidy up after it.
+        catch {
+          self._connection.rollback()
+        } as _ignored {
+        }
+      }
+
+      raise error
+    }
+
+    self._depth--
+
+    if !transaction.is_finished() {
+      self._connection.commit()
+    }
+
+    return result
+  }
+
+  /**
+   * Opens a transaction to be committed or rolled back by hand.
+   *
+   * The closure form is safer and should be preferred. This exists for
+   * a transaction whose lifetime is not a block, such as one held open
+   * across an entire request.
+   *
+   * @param string|nil isolation
+   * @returns Transaction
+   */
+  begin(isolation) {
+    self._open()
+
+    var nested = self._depth > 0
+
+    self._connection.begin(nested ? nil : isolation)
+    self._depth++
+
+    return Transaction(self, nested)
+  }
+
+  /**
+   * Whether a transaction is open on this connection.
+   *
+   * @returns bool
+   */
+  in_transaction() {
+    self._open()
+    return self._connection.in_transaction()
+  }
+
+  /**
+   * Checks the connection is still usable.
+   *
+   * @returns bool
+   */
+  ping() {
+    if self._closed {
+      return false
+    }
+
+    return self._connection.ping()
+  }
+
+  /**
+   * Closes the connection, or returns it to its pool when it came from
+   * one.
+   *
+   * Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    if self._pool != nil and !self._released {
+      self._released = true
+      self._pool.release(self)
+
+      return
+    }
+
+    self._closed = true
+    self._connection.close()
+  }
+
+  /**
+   * Whether this connection has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed or self._connection.is_closed()
+  }
+
+  /**
+   * Binds this connection to the pool lending it out, so `close()`
+   * returns it instead of shutting it down.
+   *
+   * @internal Called by `Pool`. Zuri has no module-private method, so
+   *    this carries a plain name and says here that it is not part of
+   *    the API a program uses.
+   * @param Pool pool
+   * @param dict entry The pool's own record for this connection.
+   */
+  attach_to_pool(pool, entry) {
+    self._pool = pool
+    self._pool_entry = entry
+    self._released = false
+    self._depth = 0
+  }
+
+  /**
+   * Unbinds it again, for a connection the pool is discarding.
+   *
+   * @internal Called by `Pool`.
+   */
+  detach_from_pool() {
+    self._pool = nil
+    self._pool_entry = nil
+  }
+
+  /**
+   * The pool's record for this connection, or nil when it came from
+   * no pool.
+   *
+   * @internal Called by `Pool`.
+   * @returns dict|nil
+   */
+  pool_entry() {
+    return self._pool_entry
+  }
+
+  _translate(sql, params) {
+    return translate(sql, params == nil ? [] : params, self._style)
+  }
+
+  # A prepared statement is translated before it has values, so named
+  # parameters need a stand-in dictionary holding every name the
+  # statement mentions. The values are irrelevant; only the mapping
+  # from name to position survives.
+  _probe_params(sql) {
+    var found = scan(sql)
+
+    if found.names.is_empty() {
+      var probe = []
+
+      for index in 0..(found.positional) {
+        probe.append(nil)
+      }
+
+      return probe
+    }
+
+    var probe = {}
+
+    for name in found.names {
+      probe.set(name, nil)
+    }
+
+    return probe
+  }
+
+  # Splits `rows` so no statement binds more parameters than the engine
+  # allows.
+  _batches(rows) {
+    var limit = self.capabilities().get('max_parameters', nil)
+    var per_row = rows[0].length()
+
+    if limit == nil or per_row == 0 {
+      return [rows]
+    }
+
+    var per_batch = (limit / per_row).floor()
+
+    if per_batch < 1 {
+      raise QueryError(
+        'a row of ${per_row} columns binds more parameters than ' +
+        '${self.driver_name()} allows in one statement (${limit})',
+        { driver: self.driver_name() }
+      )
+    }
+
+    if rows.length() <= per_batch {
+      return [rows]
+    }
+
+    var batches = []
+    var index = 0
+
+    while index < rows.length() {
+      var end = index + per_batch
+      batches.append(rows[index, end > rows.length() ? rows.length() : end])
+      index = end
+    }
+
+    return batches
+  }
+
+  _open() {
+    if self.is_closed() {
+      raise ClosedError('this connection was closed', {
+        driver: self._driver.name(),
+      })
+    }
+  }
+
+  to_string() {
+    return '<Connection ${self._driver.name()}' +
+      '${self.is_closed() ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

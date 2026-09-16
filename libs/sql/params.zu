@@ -1,0 +1,530 @@
+/**
+ * @module params
+ *
+ * Rewriting a statement's placeholders into whatever the active
+ * adapter expects.
+ *
+ * Engines disagree about how a parameter is spelled. PostgreSQL wants
+ * `$1`, SQLite accepts `?1`, others want a bare `?`. Without a
+ * translation step, switching adapters would mean rewriting every
+ * statement in a program, which is most of what makes changing
+ * database an ordeal.
+ *
+ * So `sql` defines one spelling and translates. Statements are written
+ * with `?` for positional parameters or `:name` for named ones, and
+ * each adapter's driver declares which form it needs.
+ *
+ * ```zuri
+ * translate('select * from t where a = ? and b = ?', [1, 2], NUMBERED)
+ * # { sql: 'select * from t where a = $1 and b = $2', values: [1, 2] }
+ * ```
+ *
+ * The scanner understands enough SQL to know when a `?` or a `:` is
+ * not a placeholder: inside a string, a quoted identifier, a bracketed
+ * identifier, a comment, or a PostgreSQL dollar-quoted body, and in
+ * the `::` cast operator. A statement that needs the literal character
+ * rather than a placeholder writes `??`, which becomes a single `?`.
+ * That matters for PostgreSQL, where `?` is a JSON containment
+ * operator.
+ *
+ * Nothing here escapes a value or builds SQL out of one. Values are
+ * bound by the engine, always.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { QueryError }
+
+/**
+ * A bare `?` for every parameter, in order. MySQL and MariaDB.
+ */
+var QUESTION = 'question'
+
+/**
+ * `$1`, `$2` and so on, numbered from one in binding order.
+ * PostgreSQL.
+ */
+var NUMBERED = 'numbered'
+
+/**
+ * `?1`, `?2` and so on. SQLite, which accepts a bare `?` too but is
+ * given explicit indices so a repeated named parameter can be bound
+ * once rather than once per mention.
+ */
+var INDEXED = 'indexed'
+
+/**
+ * Every style a driver may declare.
+ */
+var STYLES = [QUESTION, NUMBERED, INDEXED]
+
+var _IDENT_START = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_'
+var _IDENT_REST = _IDENT_START + '0123456789'
+
+def _is_ident_start(ch) {
+  return _IDENT_START.index_of(ch) != -1
+}
+
+def _is_ident_rest(ch) {
+  return _IDENT_REST.index_of(ch) != -1
+}
+
+var _SPACE = ' \t\n\r'
+
+/**
+ * Strips whitespace from both ends.
+ *
+ * `trim()` takes one character and defaults to a space, so a statement
+ * that ends in a newline needs this rather than a chain of calls.
+ *
+ * @param string text
+ * @returns string
+ */
+def trim_space(text: string) {
+  var start = 0
+  var end = text.length()
+
+  while start < end and _SPACE.index_of(text[start]) != -1 {
+    start++
+  }
+
+  while end > start and _SPACE.index_of(text[end - 1]) != -1 {
+    end--
+  }
+
+  return text[start, end]
+}
+
+/**
+ * The placeholder text for the parameter at `position`, counting from
+ * one.
+ *
+ * Used by the statement builders in `crud`, which generate SQL and so
+ * need to spell placeholders themselves rather than translate them.
+ *
+ * @param string style One of `QUESTION`, `NUMBERED` or `INDEXED`.
+ * @param number position The parameter's 1 based binding position.
+ * @returns string
+ * @throws QueryError if `style` is not one this module defines.
+ */
+def placeholder(style: string, position: number) {
+  if style == QUESTION {
+    return '?'
+  }
+
+  if style == NUMBERED {
+    return '$${position}'
+  }
+
+  if style == INDEXED {
+    return '?${position}'
+  }
+
+  raise QueryError('unknown placeholder style ${style}')
+}
+
+/**
+ * Scans past a run that ends at the next unescaped `closer`, returning
+ * the index just after it.
+ *
+ * A doubled closer is an escaped one and does not end the run, which
+ * is how SQL escapes a quote inside a string and inside a quoted
+ * identifier alike.
+ */
+def _skip_quoted(sql, start, closer) {
+  var i = start + 1
+  var n = sql.length()
+
+  while i < n {
+    if sql[i] == closer {
+      if i + 1 < n and sql[i + 1] == closer {
+        i += 2
+        continue
+      }
+
+      return i + 1
+    }
+
+    i++
+  }
+
+  return n
+}
+
+/**
+ * Reads a PostgreSQL dollar-quote opener at `start`, returning the tag
+ * including both dollars, or `nil` when this is not one.
+ *
+ * `$$` and `$tag$` open a body in which nothing is escaped and nothing
+ * is a placeholder. A lone `$` followed by a digit is a PostgreSQL
+ * positional parameter rather than a tag, and is left alone.
+ */
+def _dollar_tag(sql, start) {
+  var n = sql.length()
+  var i = start + 1
+
+  while i < n and _is_ident_rest(sql[i]) {
+    i++
+  }
+
+  if i < n and sql[i] == '$' {
+    return sql[start, i + 1]
+  }
+
+  return nil
+}
+
+/**
+ * Splits `sql` into the pieces that matter, in order.
+ *
+ * Each token is a dictionary with a `kind`:
+ *
+ * - `'text'` is SQL to copy through, `text` holding it.
+ * - `'opaque'` is a run nothing inside counts in: a string, a quoted
+ *   or bracketed identifier, a comment, or a dollar-quoted body. Also
+ *   copied through, but never looked inside.
+ * - `'question'` is a positional placeholder.
+ * - `'named'` is a named one, `name` holding the name without its
+ *   colon.
+ * - `'separator'` is a semicolon at statement level.
+ *
+ * Everything in this module reads the same statement the same way
+ * because everything in this module goes through here.
+ *
+ * @param string sql
+ * @returns list[dict]
+ */
+def tokenize(sql: string) {
+  var tokens = []
+  var text = []
+
+  # Runs of ordinary SQL are gathered up and emitted as one token
+  # rather than one per character.
+  def flush() {
+    if !text.is_empty() {
+      tokens.append({ kind: 'text', text: ''.join(text) })
+      text = []
+    }
+  }
+
+  var i = 0
+  var n = sql.length()
+
+  while i < n {
+    var ch = sql[i]
+
+    if ch == "'" or ch == '"' or ch == '`' {
+      flush()
+      var end = _skip_quoted(sql, i, ch)
+      tokens.append({ kind: 'opaque', text: sql[i, end] })
+      i = end
+      continue
+    }
+
+    if ch == '[' {
+      # A bracketed identifier in SQLite, an array subscript in
+      # PostgreSQL. Neither holds a placeholder, and a slice such as
+      # `arr[1:3]` would otherwise read as a named one.
+      flush()
+      var end = sql.index_of(']', i)
+      end = end == -1 ? n : end + 1
+      tokens.append({ kind: 'opaque', text: sql[i, end] })
+      i = end
+      continue
+    }
+
+    if ch == '-' and i + 1 < n and sql[i + 1] == '-' {
+      flush()
+      var end = sql.index_of('\n', i)
+      end = end == -1 ? n : end
+      tokens.append({ kind: 'opaque', text: sql[i, end] })
+      i = end
+      continue
+    }
+
+    if ch == '/' and i + 1 < n and sql[i + 1] == '*' {
+      flush()
+      # PostgreSQL nests these, so depth is tracked rather than
+      # stopping at the first close.
+      var depth = 1
+      var j = i + 2
+
+      while j < n and depth > 0 {
+        if sql[j] == '/' and j + 1 < n and sql[j + 1] == '*' {
+          depth++
+          j += 2
+        } else if sql[j] == '*' and j + 1 < n and sql[j + 1] == '/' {
+          depth--
+          j += 2
+        } else {
+          j++
+        }
+      }
+
+      tokens.append({ kind: 'opaque', text: sql[i, j] })
+      i = j
+      continue
+    }
+
+    if ch == '$' {
+      var tag = _dollar_tag(sql, i)
+
+      if tag != nil {
+        flush()
+        var end = sql.index_of(tag, i + tag.length())
+        end = end == -1 ? n : end + tag.length()
+        tokens.append({ kind: 'opaque', text: sql[i, end] })
+        i = end
+        continue
+      }
+
+      text.append(ch)
+      i++
+      continue
+    }
+
+    if ch == '?' {
+      if i + 1 < n and sql[i + 1] == '?' {
+        # An escaped literal, for PostgreSQL's JSON operators.
+        text.append('?')
+        i += 2
+        continue
+      }
+
+      flush()
+      tokens.append({ kind: 'question' })
+      i++
+      continue
+    }
+
+    if ch == ':' {
+      if i + 1 < n and sql[i + 1] == ':' {
+        # PostgreSQL's cast operator, not a parameter.
+        text.append('::')
+        i += 2
+        continue
+      }
+
+      if i + 1 < n and _is_ident_start(sql[i + 1]) {
+        var j = i + 1
+
+        while j < n and _is_ident_rest(sql[j]) {
+          j++
+        }
+
+        flush()
+        tokens.append({ kind: 'named', name: sql[i + 1, j] })
+        i = j
+        continue
+      }
+    }
+
+    if ch == ';' {
+      flush()
+      tokens.append({ kind: 'separator' })
+      i++
+      continue
+    }
+
+    text.append(ch)
+    i++
+  }
+
+  flush()
+
+  return tokens
+}
+
+/**
+ * What placeholders `sql` uses, without needing any values.
+ *
+ * `prepare()` needs this: it translates a statement before it has
+ * anything to bind, so it has to know what the statement asks for.
+ *
+ * @param string sql
+ * @returns dict `{ positional, names }`, `positional` the count of `?`
+ *    and `names` the `:name` names in first-mention order.
+ */
+def scan(sql: string) {
+  var positional = 0
+  var names = []
+
+  for token in tokenize(sql) {
+    if token.kind == 'question' {
+      positional++
+    } else if token.kind == 'named' and !names.contains(token.name) {
+      names.append(token.name)
+    }
+  }
+
+  return { positional, names }
+}
+
+/**
+ * Splits a script into its statements.
+ *
+ * Only semicolons outside strings, identifiers and comments separate,
+ * so a semicolon inside a string literal or a trigger body does not
+ * split the statement it belongs to. Empty pieces, which a trailing
+ * semicolon leaves behind, are dropped.
+ *
+ * @param string sql
+ * @returns list[string]
+ */
+def split_statements(sql: string) {
+  var statements = []
+  var current = []
+
+  for token in tokenize(sql) {
+    if token.kind == 'separator' {
+      var text = trim_space(''.join(current))
+
+      if !text.is_empty() {
+        statements.append(text)
+      }
+
+      current = []
+      continue
+    }
+
+    if token.kind == 'question' {
+      current.append('?')
+    } else if token.kind == 'named' {
+      current.append(':' + token.name)
+    } else {
+      current.append(token.text)
+    }
+  }
+
+  var last = trim_space(''.join(current))
+
+  if !last.is_empty() {
+    statements.append(last)
+  }
+
+  return statements
+}
+
+/**
+ * Rewrites `sql` into `style` and puts the values in binding order.
+ *
+ * Accepts two forms, and only one of them per statement:
+ *
+ * - **Positional.** `?` in the statement, `params` a list. Values bind
+ *   in the order they appear.
+ * - **Named.** `:name` in the statement, `params` a dictionary. A name
+ *   used more than once binds once under `NUMBERED` and `INDEXED`, and
+ *   once per mention under `QUESTION`, which has no way to refer back.
+ *
+ * Mixing the two in one statement raises, as does supplying a list for
+ * a named statement or a dictionary for a positional one. Each of
+ * those is a mistake with a silent wrong answer available, so none of
+ * them is guessed at.
+ *
+ * @param string sql The statement, written with `?` or `:name`.
+ * @param list|dict|nil params The values to bind. `nil` means none.
+ * @param string style The active driver's placeholder style.
+ * @returns dict `{ sql, values }`, where `values` is always a list in
+ *    binding order.
+ * @throws QueryError if the two forms are mixed, if `params` is the
+ *    wrong shape for the form used, if a positional statement and its
+ *    list disagree about how many values there are, or if a named
+ *    statement mentions a name the dictionary does not hold.
+ */
+def translate(sql: string, params, style: string) {
+  if !STYLES.contains(style) {
+    raise QueryError('unknown placeholder style ${style}')
+  }
+
+  var out = []
+  var values = []
+
+  # Name to the position it was first bound at, so a repeated name
+  # reuses its placeholder instead of binding the same value twice.
+  var bound = {}
+
+  var positional = 0
+  var named = 0
+  var run = 0
+
+  for token in tokenize(sql) {
+    if token.kind == 'question' {
+      positional++
+      run++
+      out.append(placeholder(style, run))
+
+      if !is_list(params) {
+        raise QueryError(
+          'this statement uses ? placeholders, so its parameters have ' +
+          'to be a list, not ${typeof(params)}'
+        )
+      }
+
+      if positional > params.length() {
+        raise QueryError(
+          'the statement has more ? placeholders than the ' +
+          '${params.length()} values given'
+        )
+      }
+
+      values.append(params[positional - 1])
+      continue
+    }
+
+    if token.kind == 'named' {
+      named++
+
+      if !is_dict(params) {
+        raise QueryError(
+          'this statement uses :name placeholders, so its parameters ' +
+          'have to be a dictionary, not ${typeof(params)}'
+        )
+      }
+
+      if !params.contains(token.name) {
+        raise QueryError(
+          'the statement mentions :${token.name}, which the parameters ' +
+          'do not hold'
+        )
+      }
+
+      var reuse = bound.get(token.name, nil)
+
+      if reuse != nil and style != QUESTION {
+        out.append(placeholder(style, reuse))
+      } else {
+        run++
+        bound.set(token.name, run)
+        values.append(params[token.name])
+        out.append(placeholder(style, run))
+      }
+
+      continue
+    }
+
+    if token.kind == 'separator' {
+      out.append(';')
+      continue
+    }
+
+    out.append(token.text)
+  }
+
+  if positional > 0 and named > 0 {
+    raise QueryError(
+      'a statement uses either ? or :name placeholders, not both'
+    )
+  }
+
+  if positional > 0 and positional < params.length() {
+    raise QueryError(
+      '${params.length()} values were given for a statement with ' +
+      '${positional} ? placeholder${positional == 1 ? "" : "s"}'
+    )
+  }
+
+  return {
+    sql: ''.join(out),
+    values,
+  }
+}

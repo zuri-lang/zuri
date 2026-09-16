@@ -21,6 +21,18 @@ echo 1..10.step(3).get_step()
 Parenthesise only when the bounds are themselves expressions, since `..`
 takes primaries: `(n * 2)..(n * 3)`.
 
+> A property access and a call are expressions too, so `0..self.size`
+> and `0..items.length()` are `(0..self).size` and
+> `(0..items).length()`. Write `0..(self.size)` and
+> `0..(items.length())` when the bound is the property rather than the
+> range.
+>
+> This is the price of the line above it. `..` has to bind tighter than
+> `.` for `1..10.step(3)` to mean a range that steps, and once it does,
+> there is no way for `0..self.step(5)` to mean the instance's own
+> `step` instead. The parentheses say which one is meant, and the
+> compiler cannot guess.
+
 ```zuri
 var r = 1..10
 

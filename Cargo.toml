@@ -149,6 +149,26 @@ color_quant = "1.1"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
 
+# sql.sqlite (src/modules/sqlite.rs, src/modules/sqlite_util/)
+#
+# The raw C API rather than a safe wrapper on top of it. A Zuri cursor
+# holds a live sqlite3_stmt across separate calls from the VM and steps
+# it one row at a time, which a borrow-checked Statement<'conn> cannot
+# express without self-referential contortions; raw handles behind
+# Obj::Ptr are the shape the rest of this codebase already uses for
+# external resources.
+#
+# "bundled" compiles SQLite's own amalgamation, so there is no system
+# sqlite to find and no version skew between platforms. That does want a
+# C compiler, which aws-lc-sys (via rustls) already requires, so it adds
+# nothing to what a build of this crate needed anyway. "column_metadata"
+# turns on SQLITE_ENABLE_COLUMN_METADATA, without which a result column
+# cannot report the table it actually came from.
+libsqlite3-sys = { version = "0.38.2", features = [
+    "bundled",
+    "column_metadata",
+] }
+
 # --- io::TTY.getsize (src/modules/io.rs) -----------------------------------
 
 # The rest of io::TTY (raw mode, tcgetattr/tcsetattr) is genuinely termios-

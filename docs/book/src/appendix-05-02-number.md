@@ -96,9 +96,9 @@ Converts the number to a `bigint`, the counterpart to
 `bigint.to_number()`.
 
 ```zuri-repl
-%> (12345).to_bigint()
+%> 12345.to_bigint()
 12345n
-%> (2).to_bigint() ** (100).to_bigint()
+%> 2.to_bigint() ** 100.to_bigint()
 1267650600228229401496703205376n
 ```
 

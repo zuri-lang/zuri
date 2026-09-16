@@ -1,0 +1,488 @@
+/**
+ * @module decimal
+ *
+ * Exact decimal numbers, for the money column that must not be a
+ * float.
+ *
+ * PostgreSQL's `numeric` holds a decimal value exactly. A `number` in
+ * Zuri is a double, which holds `0.1` only approximately, so reading a
+ * balance of `0.10` into one and writing it back is not guaranteed to
+ * store what was there before. `Decimal` keeps the value as an integer
+ * and a scale, so `10.05` is exactly ten and five hundredths and stays
+ * that way through every read and write.
+ *
+ * ```zuri
+ * var price = Decimal('19.99')
+ * var tax = price.multiply(Decimal('0.20'))
+ *
+ * echo tax.to_string()
+ * # 3.9980
+ * ```
+ *
+ * Addition, subtraction and multiplication are exact. Division is not,
+ * in general, so it takes the number of decimal places to produce and
+ * rounds half away from zero, the rule money is normally counted by.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { QueryError }
+
+/**
+ * An exact decimal number.
+ *
+ * Held as an integer and a scale: `unscaled` is the digits with the
+ * point removed, `scale` is how many of them are after the point. So
+ * `1.05` is `105` at scale 2, and `1.050` is `1050` at scale 3. The
+ * two are equal in value and differ in how they print, which is what
+ * lets a column declared `numeric(10, 3)` round trip without gaining
+ * or losing a trailing zero.
+ *
+ * @printable
+ */
+class Decimal {
+  /**
+   * The digits, with the decimal point removed, as a bigint.
+   * @type bigint
+   */
+  var unscaled
+
+  /**
+   * How many digits are after the decimal point.
+   * @type number
+   */
+  var scale = 0
+
+  /**
+   * Builds a decimal.
+   *
+   * From text, which is the exact form and the one to prefer:
+   *
+   * ```zuri
+   * Decimal('19.99')
+   * Decimal('-0.0001')
+   * Decimal('1.2e3')
+   * ```
+   *
+   * From a number, which is only as exact as the double was:
+   *
+   * ```zuri
+   * Decimal(19.99)
+   * ```
+   *
+   * Or from the parts, which is what the PostgreSQL adapter uses:
+   *
+   * ```zuri
+   * Decimal(1999, 2)
+   * ```
+   *
+   * @param string|number|bigint value The value, or its unscaled
+   *    digits when `scale` is given.
+   * @param number|nil scale The number of decimal places, when
+   *    `value` is the unscaled integer.
+   * @throws QueryError if the text is not a number.
+   */
+  @new(value, scale) {
+    if scale != nil {
+      self.unscaled = is_bigint(value) ? value : value.to_bigint()
+      self.scale = scale
+
+      return
+    }
+
+    if is_string(value) {
+      var parsed = _parse(value)
+      self.unscaled = parsed.unscaled
+      self.scale = parsed.scale
+
+      return
+    }
+
+    if is_bigint(value) {
+      self.unscaled = value
+      self.scale = 0
+
+      return
+    }
+
+    if is_number(value) {
+      var parsed = _parse('${value}')
+      self.unscaled = parsed.unscaled
+      self.scale = parsed.scale
+
+      return
+    }
+
+    raise QueryError(
+      'a decimal is built from text, a number or a bigint, not ' +
+      '${typeof(value)}'
+    )
+  }
+
+  /**
+   * Whether this is negative.
+   *
+   * @returns bool
+   */
+  is_negative() {
+    return self.unscaled < 0n
+  }
+
+  /**
+   * Whether this is exactly zero, whatever its scale.
+   *
+   * @returns bool
+   */
+  is_zero() {
+    return self.unscaled == 0n
+  }
+
+  /**
+   * The same value at a different number of decimal places.
+   *
+   * Adding places is exact. Removing them rounds half away from zero,
+   * so `2.5` to no places is `3` and `-2.5` is `-3`.
+   *
+   * @param number places
+   * @returns Decimal
+   */
+  rescale(places: number) {
+    if places == self.scale {
+      return Decimal(self.unscaled, self.scale)
+    }
+
+    if places > self.scale {
+      var factor = _pow10(places - self.scale)
+
+      return Decimal(self.unscaled * factor, places)
+    }
+
+    var factor = _pow10(self.scale - places)
+    var quotient = self.unscaled / factor
+    var remainder = self.unscaled % factor
+    var half = factor / 2n
+
+    if remainder < 0n {
+      remainder = -remainder
+    }
+
+    if remainder >= half {
+      quotient += self.unscaled < 0n ? -1n : 1n
+    }
+
+    return Decimal(quotient, places)
+  }
+
+  /**
+   * The sum of this and `other`, exactly.
+   *
+   * The result carries the larger of the two scales, so no digit is
+   * lost.
+   *
+   * @param Decimal other
+   * @returns Decimal
+   */
+  add(other) {
+    var places = _wider(self, other)
+    var a = self.rescale(places)
+    var b = other.rescale(places)
+
+    return Decimal(a.unscaled + b.unscaled, places)
+  }
+
+  /**
+   * The difference, exactly.
+   *
+   * @param Decimal other
+   * @returns Decimal
+   */
+  subtract(other) {
+    var places = _wider(self, other)
+    var a = self.rescale(places)
+    var b = other.rescale(places)
+
+    return Decimal(a.unscaled - b.unscaled, places)
+  }
+
+  /**
+   * The product, exactly.
+   *
+   * The scales add, as they do when multiplying by hand: two places
+   * times two places is four places.
+   *
+   * @param Decimal other
+   * @returns Decimal
+   */
+  multiply(other) {
+    return Decimal(self.unscaled * other.unscaled, self.scale + other.scale)
+  }
+
+  /**
+   * The quotient to `places` decimal places, rounded half away from
+   * zero.
+   *
+   * Division is the one operation with no exact answer in general, so
+   * the number of places is required rather than guessed.
+   *
+   * @param Decimal other
+   * @param number places
+   * @returns Decimal
+   * @throws QueryError if `other` is zero.
+   */
+  divide(other, places: number) {
+    if other.is_zero() {
+      raise QueryError('cannot divide a decimal by zero')
+    }
+
+    # Computed one place wider than asked for, then rounded to the
+    # requested width, so the last digit is rounded rather than
+    # truncated.
+    var shift = _pow10(places + 1 + other.scale - self.scale + 1)
+    var scaled = self.unscaled * shift / other.unscaled
+
+    return Decimal(scaled, places + 2).rescale(places)
+  }
+
+  /**
+   * The value as a `number`, which is approximate for anything a
+   * double cannot hold exactly.
+   *
+   * @returns number
+   */
+  to_number() {
+    return self.to_string().to_number()
+  }
+
+  /**
+   * Compares this with `other`: negative, zero or positive, the same
+   * shape a sort comparator takes.
+   *
+   * @param Decimal other
+   * @returns number
+   */
+  compare(other) {
+    var places = _wider(self, other)
+    var a = self.rescale(places).unscaled
+    var b = other.rescale(places).unscaled
+
+    if a < b {
+      return -1
+    }
+
+    return a > b ? 1 : 0
+  }
+
+  /**
+   * Whether this and `other` are the same value, whatever their
+   * scales. `1.5` and `1.50` are equal.
+   *
+   * @param Decimal other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, Decimal) {
+      return false
+    }
+
+    return self.compare(other) == 0
+  }
+
+  /**
+   * The value written out, with exactly `scale` digits after the
+   * point.
+   *
+   * @returns string
+   */
+  to_string() {
+    var digits = '${self.unscaled}'
+    var negative = digits.starts_with('-')
+
+    if negative {
+      digits = digits[1, digits.length()]
+    }
+
+    # A bigint prints with an `n` suffix, which is not part of the
+    # number being represented here.
+    if digits.ends_with('n') {
+      digits = digits[0, digits.length() - 1]
+    }
+
+    var sign = negative ? '-' : ''
+
+    if self.scale <= 0 {
+      return sign + digits
+    }
+
+    while digits.length() <= self.scale {
+      digits = '0' + digits
+    }
+
+    var cut = digits.length() - self.scale
+
+    return '${sign}${digits[0, cut]}.${digits[cut, digits.length()]}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  @add(other) {
+    return self.add(other)
+  }
+
+  @sub(other) {
+    return self.subtract(other)
+  }
+
+  @mul(other) {
+    return self.multiply(other)
+  }
+
+  @lt(other) {
+    return self.compare(other) < 0
+  }
+
+  @lte(other) {
+    return self.compare(other) <= 0
+  }
+
+  @gt(other) {
+    return self.compare(other) > 0
+  }
+
+  @gte(other) {
+    return self.compare(other) >= 0
+  }
+}
+
+/**
+ * Builds a decimal, the same as `Decimal()` but as a function.
+ *
+ * @param string|number|bigint value
+ * @param number|nil scale
+ * @returns Decimal
+ */
+def decimal(value, scale) {
+  return Decimal(value, scale)
+}
+
+var _DIGITS = '0123456789'
+
+# Ten to the power of `n`, as a bigint.
+def _pow10(n) {
+  var result = 1n
+  var ten = 10n
+  var remaining = n
+
+  while remaining > 0 {
+    result *= ten
+    remaining--
+  }
+
+  return result
+}
+
+def _wider(a, b) {
+  return a.scale > b.scale ? a.scale : b.scale
+}
+
+# Reads decimal text into unscaled digits and a scale, accepting an
+# exponent so that the output of a float still parses.
+def _parse(text) {
+  var body = text.trim()
+
+  if body.is_empty() {
+    raise QueryError('a decimal cannot be built from empty text')
+  }
+
+  var sign = ''
+
+  if body.starts_with('-') or body.starts_with('+') {
+    sign = body[0, 1] == '-' ? '-' : ''
+    body = body[1, body.length()]
+  }
+
+  var exponent = 0
+  var marker = body.lower().index_of('e')
+
+  if marker != -1 {
+    var tail = body[marker + 1, body.length()]
+
+    if !_is_integer(tail) {
+      raise QueryError('${text} is not a decimal number')
+    }
+
+    exponent = tail.to_number()
+    body = body[0, marker]
+  }
+
+  var point = body.index_of('.')
+  var scale = 0
+
+  if point != -1 {
+    scale = body.length() - point - 1
+    body = body[0, point] + body[point + 1, body.length()]
+  }
+
+  if body.is_empty() or !_is_digits(body) {
+    raise QueryError('${text} is not a decimal number')
+  }
+
+  scale -= exponent
+
+  var unscaled = _digits_to_bigint(body)
+
+  if sign == '-' {
+    unscaled = -unscaled
+  }
+
+  # A negative scale means the exponent pushed digits above the point,
+  # which is written out rather than carried, so every decimal has a
+  # scale of zero or more.
+  if scale < 0 {
+    unscaled *= _pow10(-scale)
+    scale = 0
+  }
+
+  return { unscaled, scale }
+}
+
+# Builds a bigint from a run of decimal digits, one digit at a time.
+#
+# There is no text to bigint conversion in the language, and going via
+# a number would round anything past fifteen or so digits, which is
+# precisely the case a decimal exists to handle.
+def _digits_to_bigint(text) {
+  var result = 0n
+  var ten = 10n
+
+  for ch in text {
+    result = result * ten + _DIGITS.index_of(ch).to_bigint()
+  }
+
+  return result
+}
+
+def _is_digits(text) {
+  if text.is_empty() {
+    return false
+  }
+
+  for ch in text {
+    if _DIGITS.index_of(ch) == -1 {
+      return false
+    }
+  }
+
+  return true
+}
+
+def _is_integer(text) {
+  var body = text
+
+  if body.starts_with('-') or body.starts_with('+') {
+    body = body[1, body.length()]
+  }
+
+  return _is_digits(body)
+}

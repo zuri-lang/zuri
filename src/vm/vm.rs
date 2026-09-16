@@ -693,6 +693,29 @@ pub struct VM {
   /// moment the native that registered one returns, and these have to
   /// outlive that by the whole rest of the program.
   exit_handlers: Vec<Value>,
+  /// Zuri values a native module has handed over to keep alive for
+  /// longer than the one call that supplied them; SQLite's
+  /// user-defined functions, collations and hooks are the current
+  /// users, each of which has to stay callable for as long as the
+  /// connection it was registered on.
+  ///
+  /// A real GC root of its own, for the same reason `signal_callbacks`
+  /// and `exit_handlers` are: `gc_pins` is released the moment the
+  /// registering native returns. This is the general form of the same
+  /// idea, so the next module that needs it does not have to grow the
+  /// VM another field of its own.
+  ///
+  /// Slots are addressed by index and never move, so a native can hold
+  /// a plain `usize` across calls where holding a `Value` would be
+  /// unsound. Read one back with `native_root` at the point of use and
+  /// never cache the result: a collection in between relocates the
+  /// object and rewrites the slot, not whatever copy was taken earlier.
+  native_roots: Vec<Value>,
+  /// Indices in `native_roots` that `release_native_root` has freed,
+  /// handed back out before the vector is grown. Without this, a
+  /// program that registers and drops functions in a loop would leak a
+  /// slot per registration for the life of the VM.
+  native_roots_free: Vec<usize>,
   /// Set while `run_exit_handlers` is draining, so `os.exit()` called
   /// from inside a handler exits instead of starting the drain again.
   running_exit_handlers: bool,
@@ -906,6 +929,8 @@ impl VM {
       pending_error: None,
       signal_callbacks: Vec::new(),
       exit_handlers: Vec::new(),
+      native_roots: Vec::new(),
+      native_roots_free: Vec::new(),
       running_exit_handlers: false,
       pending_exit_code: None,
       jit_scalar_roots: Vec::new(),
@@ -2870,6 +2895,54 @@ impl VM {
     self.pending_error = Some(mark);
 
     self.describe_error(error)
+  }
+
+  /// Takes ownership of `value` as a long-lived GC root and hands back
+  /// the slot index that now names it. The caller is responsible for
+  /// giving the slot back with `release_native_root` once whatever
+  /// resource holds it is closed or dropped.
+  pub(crate) fn retain_native_root(&mut self, value: Value) -> usize {
+    if let Some(idx) = self.native_roots_free.pop() {
+      self.native_roots[idx] = value;
+      return idx;
+    }
+
+    self.native_roots.push(value);
+    self.native_roots.len() - 1
+  }
+
+  /// Reads slot `idx` back, fresh. `nil` for a slot that was already
+  /// released, which is what a native sees if it holds an index past
+  /// the lifetime of the resource that owned it.
+  #[inline]
+  pub(crate) fn native_root(&self, idx: usize) -> Value {
+    self.native_roots.get(idx).copied().unwrap_or(Value::nil())
+  }
+
+  /// Puts `value` in slot `idx`, dropping the VM's claim on whatever
+  /// was there. For a root that is updated repeatedly rather than
+  /// registered once: reusing the slot keeps a long fold to one slot
+  /// instead of one per step. No effect on a slot that was never
+  /// handed out.
+  pub(crate) fn replace_native_root(&mut self, idx: usize, value: Value) {
+    if idx >= self.native_roots.len() {
+      return;
+    }
+
+    self.native_roots[idx] = value;
+  }
+
+  /// Releases slot `idx`, dropping the VM's claim on whatever was
+  /// there and queueing the slot for reuse. Releasing a slot twice is
+  /// harmless on its own, but it would hand the same index out twice,
+  /// so callers clear their stored index as they release it.
+  pub(crate) fn release_native_root(&mut self, idx: usize) {
+    if idx >= self.native_roots.len() {
+      return;
+    }
+
+    self.native_roots[idx] = Value::nil();
+    self.native_roots_free.push(idx);
   }
 
   /// Registers `value` as the callback for signal index `idx` (a
@@ -5992,6 +6065,9 @@ impl VM {
     for v in &self.exit_handlers {
       Self::mark_root(*v, &mut worklist);
     }
+    for v in &self.native_roots {
+      Self::mark_root(*v, &mut worklist);
+    }
     // Each jit_scalar_roots entry is count ordinary Value slots with no
     // Obj/GcBox layer, so this is the same treatment as gc_pins just
     // above, reading through a raw pointer/count pair instead of a Vec.
@@ -6109,6 +6185,9 @@ impl VM {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     for v in &mut self.exit_handlers {
+      Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    for v in &mut self.native_roots {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
     // Same treatment as the gc_pins loop above: each entry is count live

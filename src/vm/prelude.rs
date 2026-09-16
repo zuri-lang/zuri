@@ -16,89 +16,34 @@ const PRELUDE_SOURCE: &str = r#"
 class Error {
   var message = 'An unexpected error has occurred'
   var stacktrace = []
-  var type = 'Error'
+  var type = typeof(self)
 
   @new(message) {
     self.message = message or self.message
   }
 }
 
-class TypeError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'TypeError'
-  }
-}
+class TypeError < Error {}
 
-class ValueError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'ValueError'
-  }
-}
+class ValueError < Error {}
 
-class NumericError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'NumericError'
-  }
-}
+class NumericError < Error {}
 
-class ArgumentError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'ArgumentError'
-  }
-}
+class ArgumentError < Error {}
 
-class NotImplementedError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'NotImplementedError'
-  }
-}
+class NotImplementedError < Error {}
 
-class RangeError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'RangeError'
-  }
-}
+class RangeError < Error {}
 
-class AccessError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'AccessError'
-  }
-}
+class AccessError < Error {}
 
-class AssertError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'AssertError'
-  }
-}
+class AssertError < Error {}
 
-class PropertyError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'PropertyError'
-  }
-}
+class PropertyError < Error {}
 
-class UndefinedError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'UndefinedError'
-  }
-}
+class UndefinedError < Error {}
 
-class ModuleNotFoundError < Error {
-  @new(message) {
-    self.message = message or self.message
-    self.type = 'ModuleNotFoundError'
-  }
-}
+class ModuleNotFoundError < Error {}
 "#;
 
 /// Names of every builtin error class, in declaration order (each

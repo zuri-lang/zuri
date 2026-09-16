@@ -1,0 +1,70 @@
+/**
+ * @module results
+ *
+ * Reading what the server says about a result it has just produced.
+ *
+ * These live apart from the connection so the statement can use them
+ * too. A statement that reached for them through the connection, which
+ * already reaches for the statement, would be a circular import.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .types { OIDS }
+
+/**
+ * The number of rows a command tag reports.
+ *
+ * The tag is the command's name followed by its counts. `INSERT 0 3`
+ * carries an unused OID before the row count and everything else
+ * carries the count alone, so the last field is the one to read. A tag
+ * with no count at all, as `CREATE TABLE` has, means no rows.
+ *
+ * @param string tag
+ * @returns number
+ */
+def affected_rows(tag) {
+  if !is_string(tag) or tag.is_empty() {
+    return 0
+  }
+
+  var parts = tag.split(' ')
+  var last = parts[parts.length() - 1]
+
+  return last.is_number() ? last.to_number() : 0
+}
+
+# Built on first use rather than at load, so a program that never reads
+# a result never pays for it.
+var _NAMES = {}
+
+/**
+ * The name of the type an OID stands for, or the OID as text for one
+ * this adapter has no name for, which is what an extension's type will
+ * be.
+ *
+ * @param number oid
+ * @returns string
+ */
+def type_name_of(oid: number) {
+  if _NAMES.is_empty() {
+    for name, value in OIDS {
+      _NAMES.set('${value}', name.lower())
+    }
+  }
+
+  return _NAMES.get('${oid}', '${oid}')
+}
+
+/**
+ * Reduces the server's column descriptors to the two fields the shared
+ * contract asks for.
+ *
+ * @param list columns
+ * @returns list[dict]
+ */
+def describe_columns(columns: list) {
+  return columns.map(@(column) {
+    return { name: column.name, type: type_name_of(column.oid) }
+  })
+}

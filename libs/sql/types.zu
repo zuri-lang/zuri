@@ -1,0 +1,171 @@
+/**
+ * @module types
+ *
+ * How Zuri values and database values correspond, for the parts that
+ * are the same whichever engine is underneath.
+ *
+ * Databases agree on very little. They all store numbers and text;
+ * past that, one has a native JSON type and another stores JSON in a
+ * text column, one has a date type with a time zone and another has no
+ * date type at all. The adapters differ where the engines differ, and
+ * share the conversions that do not have to.
+ *
+ * ### The correspondence
+ *
+ * | Zuri | Database |
+ * | ---- | -------- |
+ * | `nil` | NULL |
+ * | `bool` | a boolean where the engine has one, otherwise 0 and 1 |
+ * | `number` | an integer where the value is whole, otherwise a float |
+ * | `bigint` | a 64 bit integer, or an error if it will not fit in one |
+ * | `string` | text |
+ * | `bytes` | a blob |
+ * | `date.Date` | a timestamp, or ISO 8601 text on an engine with no date type |
+ * | `list`, `dict` | JSON, native where the engine has it and text where it does not |
+ *
+ * A value of any other type is refused rather than guessed at. An
+ * instance of a class in particular has no obvious storage form, and
+ * inventing one would make the round trip lossy in a way that only
+ * showed up on the way back out.
+ *
+ * ### Time
+ *
+ * Timestamps written as text use ISO 8601 with microseconds and an
+ * explicit offset, which every engine here parses and which sorts
+ * correctly as text. A `date.Date` carries an offset of its own, so
+ * nothing is assumed about the local zone at either end.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+import json
+
+import .errors { QueryError }
+
+/**
+ * The format this module writes timestamps in: ISO 8601 with
+ * microsecond precision and an explicit UTC offset.
+ */
+var ISO_FORMAT = 'Y-m-d\\TH:i:s.uP'
+
+/**
+ * The same, without the time, for a column that holds only a date.
+ */
+var ISO_DATE_FORMAT = 'Y-m-d'
+
+/**
+ * Whether `value` is a `date.Date`.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_temporal(value) {
+  return instance_of(value, date.Date)
+}
+
+/**
+ * Whether `value` is something this module stores as JSON.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_structured(value) {
+  return is_list(value) or is_dict(value)
+}
+
+/**
+ * Formats a `date.Date` as ISO 8601 text.
+ *
+ * @param date.Date value
+ * @returns string
+ */
+def to_iso(value) {
+  return value.format(ISO_FORMAT)
+}
+
+/**
+ * Reads ISO 8601 text back into a `date.Date`.
+ *
+ * Accepts what the engines actually write, which is more than one
+ * shape: with or without a `T`, with or without fractional seconds,
+ * and with or without an offset. Text that is not a timestamp at all
+ * comes back as `nil` rather than raising, so a column whose declared
+ * type promises a date but whose contents do not can still be read.
+ *
+ * @param string text
+ * @returns date.Date|nil
+ */
+def from_iso(text) {
+  if !is_string(text) or text.is_empty() {
+    return nil
+  }
+
+  catch {
+    return date.parse(text)
+  } as _error {
+    return nil
+  }
+}
+
+/**
+ * Encodes `value` as JSON text.
+ *
+ * @param list|dict value
+ * @returns string
+ */
+def to_json(value) {
+  return json.encode(value, false)
+}
+
+/**
+ * Decodes JSON text, returning `nil` for anything that will not parse.
+ *
+ * @param string text
+ * @returns any
+ */
+def from_json(text) {
+  if !is_string(text) {
+    return nil
+  }
+
+  catch {
+    return json.decode(text)
+  } as _error {
+    return nil
+  }
+}
+
+/**
+ * Reduces `value` to something an engine with no richer type can
+ * store: a timestamp becomes ISO text, a list or dictionary becomes
+ * JSON text, and everything else is already storable and passes
+ * through.
+ *
+ * Adapters for engines that do have those types encode them natively
+ * instead and never call this.
+ *
+ * @param any value
+ * @returns nil|bool|number|bigint|string|bytes
+ * @throws QueryError for a value with no storable form.
+ */
+def flatten(value) {
+  if value == nil or is_bool(value) or is_number(value)
+    or is_bigint(value) or is_string(value) or is_bytes(value) {
+    return value
+  }
+
+  if is_temporal(value) {
+    return to_iso(value)
+  }
+
+  if is_structured(value) {
+    return to_json(value)
+  }
+
+  raise QueryError(
+    'a ${typeof(value)} has no database representation; expected nil, ' +
+    'a bool, a number, a bigint, a string, bytes, a date or a list or ' +
+    'dictionary to store as JSON'
+  )
+}

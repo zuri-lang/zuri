@@ -1,0 +1,124 @@
+/**
+ * @module cursor
+ *
+ * Reading a SQLite result one row at a time.
+ *
+ * SQLite computes rows as they are asked for rather than building the
+ * whole result first, so a cursor here is the engine's own behaviour
+ * exposed rather than a batching scheme layered on top. A query over a
+ * large table holds one row at a time however long the table is.
+ *
+ * The statement a cursor is stepping belongs to it until it closes.
+ * That is why the connection compiles a separate statement for each
+ * cursor rather than lending one from its cache.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..driver { DriverCursor }
+import .errors { reraise }
+import .types { decode_row }
+
+/**
+ * A result being stepped.
+ *
+ * @printable
+ */
+class SqliteCursor < DriverCursor {
+  var _statement
+  var _columns = []
+  var _conversions = []
+  var _query
+  var _closed = false
+  var _owned = true
+
+  /**
+   * @param ptr statement A prepared native statement, already bound.
+   * @param list columns Column descriptors.
+   * @param list conversions Per column conversions.
+   * @param string query The statement, for error messages.
+   * @param bool owned Whether closing the cursor finalizes the
+   *    statement, which it does for a cursor the connection compiled
+   *    and does not for one belonging to a prepared statement the
+   *    caller still holds.
+   */
+  @new(statement, columns, conversions, query, owned) {
+    self._statement = statement
+    self._columns = columns
+    self._conversions = conversions
+    self._query = query
+    self._owned = owned
+  }
+
+  columns() {
+    return self._columns
+  }
+
+  /**
+   * The next row, or nil once the result is finished.
+   *
+   * Reaching the end closes the cursor, so a loop that runs to
+   * exhaustion releases the statement without having to remember to.
+   *
+   * @returns list|nil
+   */
+  next_row() {
+    if self._closed {
+      return nil
+    }
+
+    var outcome
+
+    catch {
+      outcome = _sqlite.step(self._statement)
+    } as error {
+      self.close()
+      reraise(error, self._query)
+    }
+
+    if outcome != 'row' {
+      self.close()
+      return nil
+    }
+
+    return decode_row(_sqlite.row(self._statement), self._conversions)
+  }
+
+  /**
+   * Releases the cursor. Safe to call more than once, and safe to call
+   * on a cursor that already ran to the end.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    if self._owned {
+      _sqlite.finalize(self._statement)
+    } else {
+      _sqlite.reset(self._statement)
+    }
+  }
+
+  /**
+   * Whether this cursor has been closed or run to exhaustion.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  to_string() {
+    return '<SqliteCursor ${self._columns.length()} columns' +
+      '${self._closed ? ", closed" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

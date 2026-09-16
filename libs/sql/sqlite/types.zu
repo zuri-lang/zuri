@@ -1,0 +1,154 @@
+/**
+ * @module types
+ *
+ * Reading SQLite values back as the types a column was declared to
+ * hold.
+ *
+ * SQLite stores five things and remembers nothing about intent. A
+ * boolean goes in as 1 and comes back as the number 1; a timestamp
+ * goes in as text and comes back as text. What it does keep is the
+ * type each column was *declared* with, and that is enough to put the
+ * value back the way it went in.
+ *
+ * So decoding here is driven by the declaration and never by the
+ * value. A column declared `BOOLEAN` yields `true` and `false`; one
+ * declared `INTEGER` yields the number 1 even when every row in it
+ * happens to be 0 or 1. Guessing from content would make the type of a
+ * result depend on the rows it happened to return, which is the kind
+ * of thing that works until the day a table has different data in it.
+ *
+ * A column with no declared type, which is what an expression has,
+ * comes back exactly as SQLite stored it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..types { from_iso, from_json }
+
+/**
+ * Declared types that mean a boolean.
+ */
+var BOOLEAN_TYPES = ['BOOLEAN', 'BOOL']
+
+/**
+ * Declared types that mean a point in time.
+ */
+var TEMPORAL_TYPES = ['DATE', 'DATETIME', 'TIMESTAMP', 'TIMESTAMPTZ']
+
+/**
+ * Declared types that mean JSON held in a text column.
+ */
+var JSON_TYPES = ['JSON', 'JSONB']
+
+/**
+ * The bare type name from a declaration, upper cased and without any
+ * size or precision.
+ *
+ * `VARCHAR(255)` is `VARCHAR`, `decimal(10, 2)` is `DECIMAL`, and an
+ * undeclared column is the empty string.
+ *
+ * @param string|nil declared
+ * @returns string
+ */
+def base_type(declared) {
+  if !is_string(declared) {
+    return ''
+  }
+
+  var open = declared.index_of('(')
+  var name = open == -1 ? declared : declared[0, open]
+
+  return name.trim().upper()
+}
+
+/**
+ * Which conversion a column's declaration calls for: `'bool'`,
+ * `'date'`, `'json'`, or `nil` for a column that needs none.
+ *
+ * @param string|nil declared The column's declared type.
+ * @returns string|nil
+ */
+def conversion_for(declared) {
+  var name = base_type(declared)
+
+  if BOOLEAN_TYPES.contains(name) {
+    return 'bool'
+  }
+
+  if TEMPORAL_TYPES.contains(name) {
+    return 'date'
+  }
+
+  if JSON_TYPES.contains(name) {
+    return 'json'
+  }
+
+  return nil
+}
+
+/**
+ * Applies one column's conversion to one stored value.
+ *
+ * NULL stays `nil` whatever the column was declared as. A value that
+ * will not convert, such as text in a `DATETIME` column that is not a
+ * timestamp, comes back as it was stored rather than as `nil`: losing
+ * the value would be a worse answer than handing back the text that is
+ * actually in the database.
+ *
+ * @param any value The value as SQLite stored it.
+ * @param string|nil conversion From `conversion_for()`.
+ * @returns any
+ */
+def decode(value, conversion) {
+  if value == nil or conversion == nil {
+    return value
+  }
+
+  if conversion == 'bool' {
+    if is_number(value) {
+      return value != 0
+    }
+
+    return value
+  }
+
+  if conversion == 'date' {
+    var parsed = from_iso(value)
+    return parsed != nil ? parsed : value
+  }
+
+  if conversion == 'json' {
+    var parsed = from_json(value)
+    return parsed != nil ? parsed : value
+  }
+
+  return value
+}
+
+/**
+ * The conversions for a whole result, one per column, worked out once
+ * so each row does not have to look at the declarations again.
+ *
+ * @param list declared The declared types, in column order.
+ * @returns list
+ */
+def conversions_for(declared: list) {
+  return declared.map(@(type) => conversion_for(type))
+}
+
+/**
+ * Applies a result's conversions to one row of stored values.
+ *
+ * @param list values
+ * @param list conversions
+ * @returns list
+ */
+def decode_row(values: list, conversions: list) {
+  var out = []
+
+  for index, value in values {
+    out.append(decode(value, index < conversions.length() ? conversions[index] : nil))
+  }
+
+  return out
+}

@@ -1,0 +1,141 @@
+/**
+ * @module errors
+ *
+ * Turning PostgreSQL's SQLSTATE codes into the shared error classes.
+ *
+ * Every error PostgreSQL reports carries a five character SQLSTATE.
+ * The first two characters are its class and the rest narrow it down,
+ * so `23505` is class 23, integrity constraint violation, specifically
+ * a unique violation. Mapping works on the specific code where one is
+ * worth telling apart and falls back to the class otherwise, which
+ * means a code this table has never seen still lands somewhere
+ * sensible.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors {
+  SqlError, ConnectionError, AuthenticationError, TimeoutError,
+  QueryError, IntegrityError, UniqueViolation, ForeignKeyViolation,
+  NotNullViolation, CheckViolation, TransactionError,
+  SerializationError, DeadlockError, NotSupportedError,
+}
+
+/**
+ * Codes specific enough to name a class of their own.
+ */
+var SPECIFIC = {
+  '23505': UniqueViolation,
+  '23503': ForeignKeyViolation,
+  '23502': NotNullViolation,
+  '23514': CheckViolation,
+  '40001': SerializationError,
+  '40P01': DeadlockError,
+
+  # A statement cancelled, which is what a statement_timeout produces.
+  '57014': TimeoutError,
+
+  # The server shut down, or an administrator ended the session.
+  '57P01': ConnectionError,
+  '57P02': ConnectionError,
+  '57P03': ConnectionError,
+
+  # Too many connections, which reads as a connection failure rather
+  # than as a failure of the statement that happened to hit it.
+  '53300': ConnectionError,
+}
+
+/**
+ * SQLSTATE classes, for codes the table above does not name.
+ */
+var CLASSES = {
+  # Connection exception.
+  '08': ConnectionError,
+
+  # Invalid authorization specification, and invalid password.
+  '28': AuthenticationError,
+
+  # Feature not supported.
+  '0A': NotSupportedError,
+
+  # Data exception, such as a value that will not fit its column.
+  '22': QueryError,
+
+  # Integrity constraint violation.
+  '23': IntegrityError,
+
+  # Invalid transaction state.
+  '25': TransactionError,
+
+  # Transaction rollback.
+  '40': TransactionError,
+
+  # Syntax error or access rule violation, which is most of what a
+  # wrong statement produces.
+  '42': QueryError,
+
+  # Object not in prerequisite state.
+  '55': QueryError,
+
+  # Insufficient resources, and operator intervention.
+  '53': ConnectionError,
+  '57': ConnectionError,
+
+  # System error, such as the server failing to read its own files.
+  '58': ConnectionError,
+}
+
+/**
+ * The class that best describes `sqlstate`.
+ *
+ * @param string|nil sqlstate
+ * @returns class
+ */
+def class_for(sqlstate) {
+  if !is_string(sqlstate) or sqlstate.length() < 2 {
+    return SqlError
+  }
+
+  var specific = SPECIFIC.get(sqlstate, nil)
+
+  if specific != nil {
+    return specific
+  }
+
+  return CLASSES.get(sqlstate[0, 2], SqlError)
+}
+
+/**
+ * Raises the right class for a server error report.
+ *
+ * @param dict report The fields the server sent, as
+ *    `protocol.parse_error()` returns them.
+ * @param string|nil query The statement that was running.
+ * @throws SqlError always.
+ */
+def raise_for(report: dict, query) {
+  var sqlstate = report.get('code', nil)
+  var kind = class_for(sqlstate)
+
+  # The server sends a short message and, often, a detail line and a
+  # hint. All three are worth having: the detail names the row or the
+  # constraint, and the hint is frequently the actual fix.
+  var text = report.get('message', 'the server reported an error')
+  var detail = report.get('detail', nil)
+  var hint = report.get('hint', nil)
+
+  if detail != nil and !detail.is_empty() {
+    text += '; ${detail}'
+  }
+
+  if hint != nil and !hint.is_empty() {
+    text += ' (${hint})'
+  }
+
+  raise kind(text, {
+    code: sqlstate,
+    sqlstate,
+    driver: 'postgres',
+    query,
+  })
+}

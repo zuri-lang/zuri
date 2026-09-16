@@ -1,0 +1,191 @@
+/**
+ * @module statement
+ *
+ * A PostgreSQL statement compiled once and run many times.
+ *
+ * Every statement this adapter runs is compiled on the server, so a
+ * prepared statement is not doing anything a plain query does not. The
+ * difference is ownership: this one has a name of its own and is
+ * released when the program says so, rather than living in the
+ * connection's cache and being evicted when the cache fills.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { DriverStatement }
+import ..errors { ClosedError }
+import .results { affected_rows, describe_columns }
+
+/**
+ * A compiled PostgreSQL statement.
+ *
+ * @printable
+ */
+class PostgresStatement < DriverStatement {
+  var _connection
+  var _name
+  var _sql
+  var _parameters = []
+  var _columns = []
+  var _closed = false
+
+  /**
+   * @param PostgresConnection connection
+   * @param dict compiled `name`, `sql`, `parameters` and `columns` as
+   *    the server described them.
+   */
+  @new(connection, compiled) {
+    self._connection = connection
+    self._name = compiled.name
+    self._sql = compiled.sql
+    self._parameters = compiled.parameters
+    self._columns = compiled.columns
+  }
+
+  columns() {
+    return describe_columns(self._columns)
+  }
+
+  parameter_count() {
+    return self._parameters.length()
+  }
+
+  /**
+   * Runs the statement for its effect.
+   *
+   * @param list values
+   * @returns dict `{ rows_affected, last_insert_id }`
+   */
+  execute(values: list) {
+    self._open()
+
+    var result = self._run(values, 0)
+
+    return {
+      rows_affected: affected_rows(result.tag),
+      last_insert_id: nil,
+    }
+  }
+
+  /**
+   * Runs the statement and reads its whole result.
+   *
+   * @param list values
+   * @returns dict `{ columns, rows }`
+   */
+  select(values: list) {
+    self._open()
+
+    var result = self._run(values, 0)
+
+    return {
+      columns: self.columns(),
+      rows: result.rows,
+      command: result.tag,
+    }
+  }
+
+  /**
+   * Runs the statement and hands back a cursor over its result.
+   *
+   * @param list values
+   * @param dict options `{ batch }`
+   * @returns PostgresCursor
+   */
+  open_cursor(values: list, options: dict) {
+    self._open()
+
+    return self._connection.open_cursor_for(self, values, options)
+  }
+
+  /**
+   * The statement's name on the server.
+   *
+   * @internal Used by the connection when opening a cursor over this.
+   * @returns string
+   */
+  name() {
+    return self._name
+  }
+
+  /**
+   * The parameter OIDs the server inferred.
+   *
+   * @internal
+   * @returns list[number]
+   */
+  parameters() {
+    return self._parameters
+  }
+
+  /**
+   * The server's own column descriptors.
+   *
+   * @internal
+   * @returns list[dict]
+   */
+  raw_columns() {
+    return self._columns
+  }
+
+  /**
+   * The statement text.
+   *
+   * @internal
+   * @returns string
+   */
+  sql() {
+    return self._sql
+  }
+
+  /**
+   * Releases the statement on the server. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._connection.release_statement(self._name)
+  }
+
+  /**
+   * Whether this statement has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  _run(values, limit) {
+    return self._connection.run_prepared({
+      statement: self._name,
+      portal: '',
+      values,
+      parameters: self._parameters,
+      columns: self._columns,
+      limit,
+      sql: self._sql,
+    })
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError(
+        'this prepared statement was closed',
+        { driver: 'postgres', query: self._sql }
+      )
+    }
+  }
+
+  to_string() {
+    return '<PostgresStatement ${self._sql}' +
+      '${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

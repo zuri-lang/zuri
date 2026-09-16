@@ -1,0 +1,211 @@
+/**
+ * @module auth
+ *
+ * The authentication exchanges a PostgreSQL server can ask for.
+ *
+ * Which one happens is the server's choice, made from its
+ * `pg_hba.conf`. A modern server asks for SCRAM-SHA-256; older ones
+ * ask for MD5, which PostgreSQL itself now discourages; and a server
+ * set to `trust` asks for nothing at all.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import base64
+import crypto
+import hash
+
+import ..errors { AuthenticationError }
+
+/**
+ * The mechanism this adapter implements. Channel binding is not
+ * offered, so the server sees plain SCRAM-SHA-256 rather than the
+ * `-PLUS` variant.
+ */
+var SCRAM_SHA_256 = 'SCRAM-SHA-256'
+
+/**
+ * Builds the response to an MD5 password request.
+ *
+ * The scheme is `md5(md5(password + user) + salt)`, hex encoded, with
+ * a literal `md5` in front. It is weak and PostgreSQL says so; it is
+ * here because servers still ask for it.
+ *
+ * @param string user
+ * @param string password
+ * @param bytes salt The four bytes the server sent.
+ * @returns string
+ */
+def md5_response(user: string, password: string, salt) {
+  var inner = hash.md5(password + user, false)
+  var salted = inner + salt.to_string()
+
+  return 'md5' + hash.md5(salted, false)
+}
+
+/**
+ * A fresh SCRAM nonce.
+ *
+ * It has to be unpredictable: the nonce is what stops a recorded
+ * exchange being replayed, so it comes from the system's random
+ * source rather than from `rand()`.
+ *
+ * @returns string
+ */
+def nonce() {
+  return base64.encode(crypto.random_bytes(24))
+}
+
+/**
+ * Splits a SCRAM message into its `key=value` parts.
+ *
+ * @param string message
+ * @returns dict
+ */
+def parse_scram(message: string) {
+  var parts = {}
+
+  for piece in message.split(',') {
+    var mark = piece.index_of('=')
+
+    if mark > 0 {
+      parts.set(piece[0, mark], piece[mark + 1, piece.length()])
+    }
+  }
+
+  return parts
+}
+
+/**
+ * Whether the server offered SCRAM-SHA-256 among its mechanisms.
+ *
+ * @param bytes payload The mechanism list, zero-terminated names.
+ * @returns bool
+ */
+def offers_scram(payload) {
+  return payload.to_string().contains(SCRAM_SHA_256)
+}
+
+/**
+ * The client's opening SCRAM message.
+ *
+ * The username is left empty, which is what PostgreSQL expects: it
+ * takes the user from the startup message and ignores this one.
+ *
+ * @param string client_nonce
+ * @returns dict `{ bare, full }`, the second with the channel binding
+ *    header the exchange is signed over.
+ */
+def client_first(client_nonce: string) {
+  var bare = 'n=,r=${client_nonce}'
+
+  return {
+    bare,
+    full: 'n,,${bare}',
+  }
+}
+
+/**
+ * Works out the client's proof from the server's challenge.
+ *
+ * This is SCRAM as RFC 5802 defines it: the password is salted and
+ * iterated into a salted password, which yields a client key, whose
+ * hash the server already holds. Signing the whole exchange with that
+ * hash and returning the signature XORed with the client key proves
+ * the password without sending it.
+ *
+ * @param string password
+ * @param string client_nonce The nonce sent in the first message.
+ * @param string client_first_bare The first message without its header.
+ * @param string server_first The server's reply, verbatim.
+ * @returns dict `{ message, server_signature }`, the message to send
+ *    and the signature the server's own reply has to match.
+ * @throws AuthenticationError if the server's reply is malformed or
+ *    its nonce does not extend the client's.
+ */
+def client_proof(password: string, client_nonce: string,
+  client_first_bare: string, server_first: string) {
+  var parts = parse_scram(server_first)
+  var server_nonce = parts.get('r', '')
+  var salt = parts.get('s', '')
+  var iterations = parts.get('i', '')
+
+  if server_nonce.is_empty() or salt.is_empty() or iterations.is_empty() {
+    raise AuthenticationError(
+      'the server sent a SCRAM challenge this adapter cannot read',
+      { driver: 'postgres' }
+    )
+  }
+
+  # The server's nonce has to begin with the one just sent, or this is
+  # not a reply to this exchange.
+  if !server_nonce.starts_with(client_nonce) {
+    raise AuthenticationError(
+      'the SCRAM nonce the server returned does not match the one sent',
+      { driver: 'postgres' }
+    )
+  }
+
+  var rounds = iterations.to_number()
+  var salted = hash.pbkdf2('sha256', password, base64.decode(salt), rounds, 32, true)
+
+  var client_key = hash.hmac_sha256(salted, 'Client Key', true)
+  var stored_key = hash.sha256(client_key, true)
+  var server_key = hash.hmac_sha256(salted, 'Server Key', true)
+
+  # `biws` is base64 of the `n,,` header, which is what a client that
+  # does not do channel binding sends here.
+  var without_proof = 'c=biws,r=${server_nonce}'
+  var auth_message = '${client_first_bare},${server_first},${without_proof}'
+
+  var client_signature = hash.hmac_sha256(stored_key, auth_message, true)
+  var proof = _xor(client_key, client_signature)
+
+  return {
+    message: '${without_proof},p=${base64.encode(proof)}',
+    server_signature: base64.encode(
+      hash.hmac_sha256(server_key, auth_message, true)
+    ),
+  }
+}
+
+/**
+ * Checks the server's closing message really is from a server that
+ * knows the password.
+ *
+ * Skipping this would leave the exchange one-way, proving the client
+ * to the server but not the server to the client.
+ *
+ * @param string server_final
+ * @param string expected From `client_proof()`.
+ * @throws AuthenticationError if the signature is absent or wrong.
+ */
+def verify_server(server_final: string, expected: string) {
+  var parts = parse_scram(server_final)
+  var signature = parts.get('v', '')
+
+  if signature.is_empty() {
+    raise AuthenticationError(
+      'the server finished SCRAM without proving itself',
+      { driver: 'postgres' }
+    )
+  }
+
+  if signature != expected {
+    raise AuthenticationError(
+      'the server failed to prove it knows this password',
+      { driver: 'postgres' }
+    )
+  }
+}
+
+# Bytewise XOR of two equal length byte strings.
+def _xor(left, right) {
+  var out = []
+
+  for index in 0..(left.length()) {
+    out.append(left[index] ^ right[index])
+  }
+
+  return bytes(out)
+}

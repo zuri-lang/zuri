@@ -1,0 +1,232 @@
+/**
+ * @module cursor
+ *
+ * Reading a result without holding all of it.
+ *
+ * `query()` builds the whole result in memory, which is the right
+ * thing for the hundreds of rows most queries return and the wrong
+ * thing for the millions some do. A cursor reads the same result a row
+ * at a time, so the memory a loop needs is the size of one row rather
+ * than of the table.
+ *
+ * ```zuri
+ * var cursor = db.stream('select * from events')
+ *
+ * for row in cursor {
+ *   handle(row)
+ * }
+ * ```
+ *
+ * Running to the end closes the cursor. A loop that stops early does
+ * not, so anything that might `break` should close it, which `using`
+ * makes hard to forget.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { ClosedError }
+
+/**
+ * A result being read a row at a time.
+ *
+ * @iterable
+ * @printable
+ */
+class Cursor {
+  var _cursor
+  var _names = []
+  var _columns = []
+  var _closed = false
+  var _read = 0
+  var _pending
+  var _has_pending = false
+
+  /**
+   * @param DriverCursor cursor The adapter's own cursor.
+   */
+  @new(cursor) {
+    self._cursor = cursor
+    self._columns = cursor.columns()
+    self._names = self._columns.map(@(column) => column.name)
+  }
+
+  /**
+   * The result's columns, each a dictionary with `name` and `type`.
+   *
+   * @returns list[dict]
+   */
+  columns() {
+    return self._columns
+  }
+
+  /**
+   * The names of the result's columns, in order.
+   *
+   * @returns list[string]
+   */
+  column_names() {
+    return self._names
+  }
+
+  /**
+   * How many rows have been read so far.
+   *
+   * @returns number
+   */
+  position() {
+    return self._read
+  }
+
+  /**
+   * The next row as a dictionary keyed by column name, or nil once the
+   * result is finished.
+   *
+   * @returns dict|nil
+   * @throws ClosedError if the cursor was closed.
+   */
+  next() {
+    if self._has_pending {
+      self._has_pending = false
+
+      var row = self._pending
+      self._pending = nil
+
+      return row
+    }
+
+    if self._closed {
+      raise ClosedError('this cursor was closed')
+    }
+
+    var values = self._cursor.next_row()
+
+    if values == nil {
+      self._closed = true
+      return nil
+    }
+
+    self._read++
+
+    var row = {}
+
+    for index, name in self._names {
+      row.set(name, index < values.length() ? values[index] : nil)
+    }
+
+    return row
+  }
+
+  /**
+   * The next `count` rows, or fewer at the end of the result.
+   *
+   * For work that batches naturally: inserting a thousand rows at a
+   * time into somewhere else, say.
+   *
+   * @param number count
+   * @returns list[dict]
+   */
+  take(count: number) {
+    var rows = []
+
+    while rows.length() < count {
+      var row = self.next()
+
+      if row == nil {
+        break
+      }
+
+      rows.append(row)
+    }
+
+    return rows
+  }
+
+  /**
+   * Reads whatever is left into a list.
+   *
+   * This gives up the point of a cursor, so it is for the case where a
+   * result turned out to be small after all.
+   *
+   * @returns list[dict]
+   */
+  rest() {
+    var rows = []
+
+    while true {
+      var row = self.next()
+
+      if row == nil {
+        break
+      }
+
+      rows.append(row)
+    }
+
+    return rows
+  }
+
+  /**
+   * Whether the cursor has been closed or read to the end.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed and !self._has_pending
+  }
+
+  /**
+   * Releases the cursor. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._has_pending = false
+    self._pending = nil
+    self._cursor.close()
+  }
+
+  to_string() {
+    return '<Cursor ${self._read} row${self._read == 1 ? "" : "s"} read' +
+      '${self._closed ? ", closed" : ""}>'
+  }
+
+  /**
+   * Iteration reads one row at a time, so `for row in cursor` holds
+   * one row rather than the whole result.
+   *
+   * The row is fetched by `@key` and handed back by `@value`, which is
+   * why it is parked here in between rather than fetched twice.
+   */
+  @key(previous) {
+    if self._closed and !self._has_pending {
+      return nil
+    }
+
+    var row = self.next()
+
+    if row == nil {
+      return nil
+    }
+
+    self._pending = row
+    self._has_pending = true
+
+    return previous == nil ? 0 : previous + 1
+  }
+
+  @value(key) {
+    self._has_pending = false
+
+    var row = self._pending
+    self._pending = nil
+
+    return row
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

@@ -8,7 +8,7 @@
  *
  * Like every other value in Zuri, numbers are objects with their
  * own methods. This is what lets you write `n.abs()` or
- * `(2).factorial()` directly instead of reaching for a free
+ * `2.factorial()` directly instead of reaching for a free
  * `abs(n)` function.
  *
  * For example:
@@ -22,13 +22,12 @@
  * 120
  * ```
  *
- * > A literal number followed directly by `.` reads as a decimal
- * > point, not a method call, so a negative or plain integer
- * > literal needs parentheses before calling a method on it
- * > directly, e.g. `(-5).abs()` rather than `-5.abs()`, and
- * > `(5).abs()` rather than `5.abs()` when `5` isn't already
- * > preceded by other syntax. `5.5.round()` works as written
- * > since `5.5` is unambiguous.
+ * > `-5.abs()` is `-5`, not `5`. The minus is not part of the
+ * > literal: it is applied to whatever follows it, so the method
+ * > runs first and the sign is applied to its result. Write
+ * > `(-5).abs()` when the method should see the negative value.
+ * > This is ordinary unary minus precedence and applies to any
+ * > expression, not just literals.
  *
  * ## Precision
  *
@@ -80,9 +79,9 @@ class number {
    * `bigint.to_number()`.
    *
    * ```zuri-repl
-   * %> (12345).to_bigint()
+   * %> 12345.to_bigint()
    * 12345n
-   * %> (2).to_bigint() ** (100).to_bigint()
+   * %> 2.to_bigint() ** 100.to_bigint()
    * 1267650600228229401496703205376n
    * ```
    *

@@ -1,0 +1,580 @@
+/**
+ * @module driver
+ *
+ * The contract every database adapter implements, and the capability
+ * flags that let one adapter differ from another without the code
+ * above them having to know which is in use.
+ *
+ * An adapter supplies four things: a `Driver` that knows how to read a
+ * connection string and open a connection, a `DriverConnection` that
+ * runs statements, a `DriverStatement` for a prepared one, and a
+ * `DriverCursor` for reading a result a batch at a time. Everything a
+ * program touches directly is built on top of these, so an adapter
+ * that implements them gets pooling, transactions, the CRUD helpers,
+ * placeholder translation and the error hierarchy without writing any
+ * of it.
+ *
+ * The methods here raise `NotImplementedError`. An adapter that
+ * forgets one fails where the gap is rather than somewhere further
+ * down, and an adapter for an engine that genuinely cannot do
+ * something raises `NotSupportedError` from its own override instead,
+ * which reads differently on purpose: the first is an unfinished
+ * adapter, the second is an honest limit of the engine.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { NotSupportedError }
+import .params { QUESTION, NUMBERED, INDEXED }
+
+/**
+ * Each transaction sees rows committed before its own statement
+ * started, and nothing a concurrent transaction commits afterwards
+ * within that statement.
+ */
+var READ_COMMITTED = 'read committed'
+
+/**
+ * A transaction reads the same rows throughout, whatever anyone else
+ * commits while it runs.
+ */
+var REPEATABLE_READ = 'repeatable read'
+
+/**
+ * Concurrent transactions produce a result some serial order of them
+ * could also have produced. The engine may abort one to keep that
+ * promise, which surfaces as `SerializationError`.
+ */
+var SERIALIZABLE = 'serializable'
+
+/**
+ * A transaction can see rows another has written and not committed.
+ * PostgreSQL accepts the name and gives read committed anyway, which
+ * its own documentation is explicit about.
+ */
+var READ_UNCOMMITTED = 'read uncommitted'
+
+/**
+ * The capability flags a driver reports, with the value each takes
+ * when a driver does not say otherwise.
+ *
+ * A driver's `capabilities()` starts from this and overrides what
+ * differs, so a flag added here later does not break an adapter
+ * written before it existed.
+ *
+ * | Flag | Meaning |
+ * | ---- | ------- |
+ * | `placeholder_style` | How the engine spells a parameter. |
+ * | `named_parameters` | Whether the engine binds parameters by name. |
+ * | `last_insert_id` | Whether the engine reports the id of the row just inserted. |
+ * | `returning` | Whether `INSERT ... RETURNING` works. |
+ * | `transactions` | Whether BEGIN, COMMIT and ROLLBACK work. |
+ * | `savepoints` | Whether SAVEPOINT works, which is what nested transactions are built on. |
+ * | `isolation_levels` | The levels the engine will accept. |
+ * | `server_side_cursors` | Whether a result can be read without the whole of it arriving first. |
+ * | `prepared_statements` | Whether a statement can be compiled once and run repeatedly. |
+ * | `multiple_statements` | Whether one call may carry several statements separated by semicolons. |
+ * | `arrays` | Whether the engine has an array type. |
+ * | `json` | Whether the engine has a JSON type, as opposed to storing JSON in text. |
+ * | `blobs` | Whether the engine stores binary values. |
+ * | `decimals` | Whether the engine has an exact decimal type. |
+ * | `booleans` | Whether the engine has a real boolean type. |
+ * | `upsert` | Whether `INSERT ... ON CONFLICT` works. |
+ * | `schemas` | Whether tables live in named schemas. |
+ * | `concurrent_writers` | Whether two connections can write at once. |
+ * | `max_parameters` | Most parameters one statement may bind, or nil for no practical limit. |
+ * | `identifier_quote` | The character an identifier is quoted with. |
+ * | `default_port` | The port used when a connection string omits one, or nil for an engine with no port. |
+ *
+ * @returns dict
+ */
+def default_capabilities() {
+  return {
+    placeholder_style: QUESTION,
+    named_parameters: false,
+    last_insert_id: false,
+    returning: false,
+    transactions: true,
+    savepoints: true,
+    isolation_levels: [READ_COMMITTED, SERIALIZABLE],
+    server_side_cursors: false,
+    prepared_statements: true,
+    multiple_statements: false,
+    arrays: false,
+    json: false,
+    blobs: true,
+    decimals: false,
+    booleans: false,
+    upsert: false,
+    schemas: false,
+    concurrent_writers: true,
+    max_parameters: nil,
+    identifier_quote: '"',
+    default_port: nil,
+  }
+}
+
+/**
+ * Opens connections to one kind of database.
+ *
+ * A driver holds no connection of its own and no state worth sharing,
+ * so one instance per engine is registered with `sql.register()` and
+ * reused for every connection it opens.
+ */
+class Driver {
+  /**
+   * The name this driver is registered under, such as `'sqlite'`.
+   *
+   * Appears on every error the adapter raises, so it wants to be the
+   * name a reader would recognise.
+   *
+   * @returns string
+   */
+  name() {
+    raise NotImplementedError('a driver has to implement name()')
+  }
+
+  /**
+   * The URL schemes this driver claims, without the `://`.
+   *
+   * `sql.open()` picks a driver by matching a connection string's
+   * scheme against these, which is what lets the same call open either
+   * engine. Several are allowed: PostgreSQL answers to both
+   * `postgres` and `postgresql`.
+   *
+   * @returns list[string]
+   */
+  schemes() {
+    raise NotImplementedError('a driver has to implement schemes()')
+  }
+
+  /**
+   * What this engine can and cannot do.
+   *
+   * Built from `default_capabilities()` with the differences applied.
+   *
+   * @returns dict
+   */
+  capabilities() {
+    return default_capabilities()
+  }
+
+  /**
+   * Turns a connection string or an options dictionary into the
+   * normalised options `connect()` takes.
+   *
+   * Each adapter reads the forms its own engine's tooling uses, so a
+   * connection string copied from somewhere else works unchanged.
+   *
+   * @param string|dict dsn
+   * @returns dict
+   */
+  parse_dsn(dsn) {
+    raise NotImplementedError('a driver has to implement parse_dsn()')
+  }
+
+  /**
+   * Opens a connection with options from `parse_dsn()`.
+   *
+   * @param dict options
+   * @returns DriverConnection
+   */
+  connect(options: dict) {
+    raise NotImplementedError('a driver has to implement connect()')
+  }
+
+  /**
+   * Quotes `name` so the engine reads it as an identifier whatever it
+   * contains or collides with.
+   *
+   * The default doubles the engine's own quote character, which is
+   * what the SQL standard says and what both built-in adapters do.
+   * An engine whose quoting differs overrides this.
+   *
+   * @param string name
+   * @returns string
+   */
+  quote_identifier(name: string) {
+    var quote = self.capabilities().identifier_quote
+
+    return quote + name.replace(quote, quote + quote) + quote
+  }
+
+  /**
+   * Whether this driver supports `flag`.
+   *
+   * @param string flag A key of `default_capabilities()`.
+   * @returns bool
+   */
+  supports(flag: string) {
+    return self.capabilities().get(flag, false) ? true : false
+  }
+}
+
+/**
+ * One open connection to a database, as the layer above it sees one.
+ *
+ * Adapters implement this; programs use `sql.Connection`, which wraps
+ * it and adds everything that is the same across engines.
+ */
+class DriverConnection {
+  /**
+   * The `Driver` that opened this connection.
+   * @type Driver
+   */
+  var driver
+
+  /**
+   * Runs a statement for its effect and reports what it did.
+   *
+   * @param string sql Already translated into this engine's own
+   *    placeholder style.
+   * @param list values Bound in order.
+   * @returns dict `{ rows_affected, last_insert_id }`, the second nil
+   *    on an engine that does not report one.
+   */
+  execute(sql: string, values: list) {
+    raise NotImplementedError('a connection has to implement execute()')
+  }
+
+  /**
+   * Runs a statement and reads its whole result.
+   *
+   * @param string sql
+   * @param list values
+   * @returns dict `{ columns, rows }`, where `columns` is a list of
+   *    `{ name, type }` dictionaries and `rows` a list of value lists
+   *    in the same order.
+   */
+  select(sql: string, values: list) {
+    raise NotImplementedError('a connection has to implement select()')
+  }
+
+  /**
+   * Runs a statement and returns a cursor over its result rather than
+   * reading all of it.
+   *
+   * On an engine without server side cursors this still avoids holding
+   * every row at once only as far as the engine allows; the capability
+   * flag says which.
+   *
+   * @param string sql
+   * @param list values
+   * @param dict options `{ batch }`, the rows to fetch at a time.
+   * @returns DriverCursor
+   */
+  open_cursor(sql: string, values: list, options: dict) {
+    raise NotImplementedError('a connection has to implement open_cursor()')
+  }
+
+  /**
+   * Compiles a statement for repeated use.
+   *
+   * @param string sql
+   * @returns DriverStatement
+   */
+  prepare(sql: string) {
+    raise NotImplementedError('a connection has to implement prepare()')
+  }
+
+  /**
+   * Opens a transaction.
+   *
+   * @param string|nil isolation One of the level constants, or nil for
+   *    the engine's default.
+   */
+  begin(isolation) {
+    raise NotImplementedError('a connection has to implement begin()')
+  }
+
+  /**
+   * Commits the open transaction.
+   */
+  commit() {
+    raise NotImplementedError('a connection has to implement commit()')
+  }
+
+  /**
+   * Rolls the open transaction back.
+   */
+  rollback() {
+    raise NotImplementedError('a connection has to implement rollback()')
+  }
+
+  /**
+   * Marks a point inside the open transaction that can be returned to.
+   *
+   * @param string name
+   */
+  savepoint(name: string) {
+    raise NotImplementedError('a connection has to implement savepoint()')
+  }
+
+  /**
+   * Discards a savepoint, keeping everything done since it was taken.
+   *
+   * @param string name
+   */
+  release_savepoint(name: string) {
+    raise NotImplementedError('a connection has to implement release_savepoint()')
+  }
+
+  /**
+   * Undoes everything done since `name` was taken, leaving the
+   * transaction open and the savepoint still in place.
+   *
+   * @param string name
+   */
+  rollback_to(name: string) {
+    raise NotImplementedError('a connection has to implement rollback_to()')
+  }
+
+  /**
+   * Whether a transaction is currently open on this connection.
+   *
+   * @returns bool
+   */
+  in_transaction() {
+    raise NotImplementedError('a connection has to implement in_transaction()')
+  }
+
+  /**
+   * The id of the row most recently inserted on this connection.
+   *
+   * Only meaningful where `last_insert_id` is supported; elsewhere it
+   * raises `NotSupportedError`, and `Connection.insert()` uses
+   * `RETURNING` instead.
+   *
+   * @returns number|bigint|nil
+   */
+  last_insert_id() {
+    raise NotImplementedError('a connection has to implement last_insert_id()')
+  }
+
+  /**
+   * Checks the connection is still usable, cheaply.
+   *
+   * A pool calls this before handing a connection out, so it wants to
+   * be the smallest round trip the engine offers.
+   *
+   * @returns bool
+   */
+  ping() {
+    raise NotImplementedError('a connection has to implement ping()')
+  }
+
+  /**
+   * The engine's version, as the engine reports it.
+   *
+   * @returns string
+   */
+  server_version() {
+    raise NotImplementedError('a connection has to implement server_version()')
+  }
+
+  /**
+   * This engine's introspection, which `Connection.schema` goes
+   * through.
+   *
+   * The default refuses, so an adapter that has not written the
+   * queries says so plainly rather than reporting an empty database.
+   *
+   * @returns SchemaAdapter
+   * @throws NotSupportedError if the adapter has no introspection.
+   */
+  schema_adapter() {
+    raise NotSupportedError(
+      'this adapter does not implement introspection'
+    )
+  }
+
+  /**
+   * Closes the connection. Calling this more than once does nothing.
+   */
+  close() {
+    raise NotImplementedError('a connection has to implement close()')
+  }
+
+  /**
+   * Whether this connection has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    raise NotImplementedError('a connection has to implement is_closed()')
+  }
+}
+
+/**
+ * A statement compiled once and run many times.
+ */
+class DriverStatement {
+  /**
+   * Runs the statement for its effect.
+   *
+   * @param list values
+   * @returns dict `{ rows_affected, last_insert_id }`
+   */
+  execute(values: list) {
+    raise NotImplementedError('a statement has to implement execute()')
+  }
+
+  /**
+   * Runs the statement and reads its whole result.
+   *
+   * @param list values
+   * @returns dict `{ columns, rows }`
+   */
+  select(values: list) {
+    raise NotImplementedError('a statement has to implement select()')
+  }
+
+  /**
+   * Runs the statement and returns a cursor over its result.
+   *
+   * @param list values
+   * @param dict options
+   * @returns DriverCursor
+   */
+  open_cursor(values: list, options: dict) {
+    raise NotImplementedError('a statement has to implement open_cursor()')
+  }
+
+  /**
+   * The columns this statement returns, as `{ name, type }`
+   * dictionaries.
+   *
+   * @returns list[dict]
+   */
+  columns() {
+    raise NotImplementedError('a statement has to implement columns()')
+  }
+
+  /**
+   * How many parameters this statement binds.
+   *
+   * @returns number
+   */
+  parameter_count() {
+    raise NotImplementedError('a statement has to implement parameter_count()')
+  }
+
+  /**
+   * Releases the statement. Calling this more than once does nothing.
+   */
+  close() {
+    raise NotImplementedError('a statement has to implement close()')
+  }
+}
+
+/**
+ * A result being read a batch at a time rather than all at once.
+ */
+class DriverCursor {
+  /**
+   * The columns of this result, as `{ name, type }` dictionaries.
+   *
+   * @returns list[dict]
+   */
+  columns() {
+    raise NotImplementedError('a cursor has to implement columns()')
+  }
+
+  /**
+   * The next row as a list of values, or nil once the result is
+   * exhausted.
+   *
+   * @returns list|nil
+   */
+  next_row() {
+    raise NotImplementedError('a cursor has to implement next_row()')
+  }
+
+  /**
+   * Releases the cursor. Calling this more than once does nothing.
+   */
+  close() {
+    raise NotImplementedError('a cursor has to implement close()')
+  }
+}
+
+/**
+ * The introspection queries for one engine.
+ *
+ * Every method returns the same shape whichever engine answered, which
+ * is the whole point of routing introspection through here rather than
+ * letting each program write its own `information_schema` query.
+ */
+class SchemaAdapter {
+  /**
+   * The names of the tables the application created, leaving out the
+   * ones the engine keeps for itself.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  tables(schema) {
+    raise NotImplementedError('a schema adapter has to implement tables()')
+  }
+
+  /**
+   * The names of the views.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  views(schema) {
+    raise NotImplementedError('a schema adapter has to implement views()')
+  }
+
+  /**
+   * The columns of `table`, in order, each shaped as
+   * `schema.column_shape()` describes.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  columns(table, schema) {
+    raise NotImplementedError('a schema adapter has to implement columns()')
+  }
+
+  /**
+   * The columns making up `table`'s primary key, in key order, or an
+   * empty list for a table with none.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  primary_key_columns(table, schema) {
+    raise NotImplementedError(
+      'a schema adapter has to implement primary_key_columns()'
+    )
+  }
+
+  /**
+   * The indexes on `table`, each `{ name, columns, unique }`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  indexes(table, schema) {
+    raise NotImplementedError('a schema adapter has to implement indexes()')
+  }
+
+  /**
+   * The foreign keys on `table`, each `{ columns, references_table,
+   * references_columns, on_delete, on_update }`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  foreign_keys(table, schema) {
+    raise NotImplementedError(
+      'a schema adapter has to implement foreign_keys()'
+    )
+  }
+}

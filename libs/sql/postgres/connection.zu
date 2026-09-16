@@ -1,0 +1,631 @@
+/**
+ * @module connection
+ *
+ * A PostgreSQL connection, as the layer above the adapters sees one.
+ *
+ * ### Statements are compiled once
+ *
+ * Every statement run here goes through the extended protocol, which
+ * compiles it on the server and then executes the compiled form. The
+ * compiled form is kept, keyed by the statement's text, so a statement
+ * run in a loop is compiled once. That is also what makes binary
+ * parameters and results possible: both need to know the types, and
+ * compiling is what reports them.
+ *
+ * ### Cursors need a transaction
+ *
+ * A PostgreSQL portal is destroyed when its transaction ends, and a
+ * statement outside a transaction is its own transaction. So a cursor
+ * opened outside one would be closed by the server before the first
+ * row was read. This opens a transaction for the cursor's own sake in
+ * that case and commits it when the cursor closes.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver {
+  DriverConnection, READ_COMMITTED, REPEATABLE_READ,
+  SERIALIZABLE, READ_UNCOMMITTED,
+}
+import ..errors { ClosedError, NotSupportedError, TransactionError }
+import .cursor { PostgresCursor }
+import .notify { Listener }
+import .protocol { Protocol }
+import .schema { PostgresSchema }
+import .results { affected_rows, describe_columns }
+import .statement { PostgresStatement }
+
+/**
+ * How many compiled statements a connection keeps.
+ */
+var CACHE_LIMIT = 64
+
+/**
+ * An open PostgreSQL connection.
+ *
+ * @printable
+ */
+class PostgresConnection < DriverConnection {
+  var _protocol
+  var _options = {}
+  var _closed = false
+
+  var _cache = {}
+  var _cache_order = []
+  var _counter = 0
+
+  var _savepoints = []
+  var _schema
+
+  /**
+   * @param Driver driver
+   * @param Protocol protocol An authenticated protocol.
+   * @param dict options
+   */
+  @new(driver, protocol, options) {
+    self.driver = driver
+    self._protocol = protocol
+    self._options = options or {}
+  }
+
+  /**
+   * The protocol underneath, for the PostgreSQL-only features that are
+   * not part of the shared contract.
+   *
+   * @returns Protocol
+   */
+  protocol() {
+    self._open()
+    return self._protocol
+  }
+
+  /**
+   * The settings the server reported when the connection opened.
+   *
+   * @returns dict
+   */
+  parameters() {
+    return self._protocol.parameters
+  }
+
+  /**
+   * This connection's introspection.
+   *
+   * @returns PostgresSchema
+   */
+  schema_adapter() {
+    if self._schema == nil {
+      self._schema = PostgresSchema(self)
+    }
+
+    return self._schema
+  }
+
+  /**
+   * Runs a statement for its effect.
+   *
+   * @param string sql
+   * @param list values
+   * @returns dict `{ rows_affected, last_insert_id }`
+   */
+  execute(sql: string, values: list) {
+    self._open()
+
+    var compiled = self._compile(sql)
+
+    var result = self._protocol.execute({
+      statement: compiled.name,
+      portal: '',
+      values,
+      parameters: compiled.parameters,
+      columns: compiled.columns,
+      limit: 0,
+      sql,
+    })
+
+    return {
+      rows_affected: affected_rows(result.tag),
+
+      # PostgreSQL has no last insert id. `Connection.insert()` adds a
+      # RETURNING clause instead, which is where an id actually comes
+      # from on this engine.
+      last_insert_id: nil,
+    }
+  }
+
+  /**
+   * Runs a statement and reads its whole result.
+   *
+   * @param string sql
+   * @param list values
+   * @returns dict `{ columns, rows }`
+   */
+  select(sql: string, values: list) {
+    self._open()
+
+    var compiled = self._compile(sql)
+
+    var result = self._protocol.execute({
+      statement: compiled.name,
+      portal: '',
+      values,
+      parameters: compiled.parameters,
+      columns: compiled.columns,
+      limit: 0,
+      sql,
+    })
+
+    return {
+      columns: describe_columns(result.columns),
+      rows: result.rows,
+      command: result.tag,
+    }
+  }
+
+  /**
+   * Runs a statement and hands back a cursor over its result.
+   *
+   * @param string sql
+   * @param list values
+   * @param dict options `{ batch }`, how many rows to fetch at a time.
+   *    Defaults to 256.
+   * @returns PostgresCursor
+   */
+  open_cursor(sql: string, values: list, options: dict) {
+    self._open()
+
+    var compiled = self._compile(sql)
+
+    return self._start_cursor({
+      name: compiled.name,
+      parameters: compiled.parameters,
+      columns: compiled.columns,
+      sql,
+    }, values, options)
+  }
+
+  /**
+   * Compiles a statement for repeated use.
+   *
+   * @param string sql
+   * @returns PostgresStatement
+   */
+  prepare(sql: string) {
+    self._open()
+
+    var name = self._next_name('statement')
+    var described = self._protocol.parse(name, sql)
+
+    return PostgresStatement(self, {
+      name,
+      sql,
+      parameters: described.parameters,
+      columns: described.columns,
+    })
+  }
+
+  /**
+   * Opens a transaction, or takes a savepoint when one is open.
+   *
+   * @param string|nil isolation
+   */
+  begin(isolation) {
+    self._open()
+
+    if self.in_transaction() {
+      var name = self._next_name('savepoint')
+      self._simple('savepoint ${name}')
+      self._savepoints.append(name)
+
+      return
+    }
+
+    self._simple('begin${self._isolation_clause(isolation)}')
+  }
+
+  /**
+   * Commits, or releases the innermost savepoint.
+   */
+  commit() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+      self._simple('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('commit')
+    self._simple('commit')
+  }
+
+  /**
+   * Rolls back, or undoes the innermost savepoint.
+   */
+  rollback() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+      self._simple('rollback to savepoint ${name}')
+      self._simple('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('rollback')
+    self._simple('rollback')
+  }
+
+  savepoint(name: string) {
+    self._open()
+    self._simple('savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  release_savepoint(name: string) {
+    self._open()
+    self._simple('release savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  rollback_to(name: string) {
+    self._open()
+    self._simple('rollback to savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  /**
+   * Whether a transaction is open.
+   *
+   * The server reports this with every result, so this is what it last
+   * said rather than a guess kept on this side.
+   *
+   * @returns bool
+   */
+  in_transaction() {
+    return self._protocol.status() != 'I'
+  }
+
+  /**
+   * Whether the open transaction has failed and can now only be rolled
+   * back, which is the state PostgreSQL puts one in after an error.
+   *
+   * @returns bool
+   */
+  in_failed_transaction() {
+    return self._protocol.status() == 'E'
+  }
+
+  /**
+   * Always raises: PostgreSQL does not report the id of an inserted
+   * row.
+   *
+   * @throws NotSupportedError always.
+   */
+  last_insert_id() {
+    raise NotSupportedError(
+      'postgres does not report a last insert id; an insert asks for ' +
+      'one with a RETURNING clause, which Connection.insert() adds',
+      { driver: 'postgres' }
+    )
+  }
+
+  /**
+   * Checks the connection is usable.
+   *
+   * @returns bool
+   */
+  ping() {
+    if self._closed {
+      return false
+    }
+
+    catch {
+      self._protocol.simple_query('select 1')
+    } as _error {
+      return false
+    }
+
+    return true
+  }
+
+  /**
+   * The server's version, such as `'17.2'`.
+   *
+   * @returns string
+   */
+  server_version() {
+    return self._protocol.parameters.get('server_version', 'unknown')
+  }
+
+  /**
+   * A listener for LISTEN and NOTIFY on this connection.
+   *
+   * ```zuri
+   * var listener = db.native().listener()
+   * listener.listen('jobs')
+   * ```
+   *
+   * @returns Listener
+   */
+  listener() {
+    self._open()
+
+    return Listener(self)
+  }
+
+  /**
+   * Notifications received on this connection since the last call.
+   *
+   * @returns list[dict] Each `{ channel, payload, pid }`.
+   */
+  notifications() {
+    return self._protocol.drain_notifications()
+  }
+
+  /**
+   * Closes the connection. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._cache = {}
+    self._cache_order = []
+    self._savepoints = []
+    self._protocol.terminate()
+  }
+
+  is_closed() {
+    return self._closed or self._protocol.is_closed()
+  }
+
+  /**
+   * Runs a statement through the simple protocol, with no parameters
+   * and no decoding.
+   *
+   * @internal Used by the cursor and the transaction helpers.
+   * @param string sql
+   */
+  run_simple(sql: string) {
+    self._simple(sql)
+  }
+
+  /**
+   * Continues a suspended portal.
+   *
+   * @internal Used by `PostgresCursor`.
+   * @param dict request
+   * @returns dict
+   */
+  resume_portal(request: dict) {
+    self._open()
+    return self._protocol.resume(request)
+  }
+
+  /**
+   * Releases a portal.
+   *
+   * @internal Used by `PostgresCursor`.
+   * @param string portal
+   */
+  release_portal(portal: string) {
+    if self._closed {
+      return
+    }
+
+    catch {
+      self._protocol.close_portal(portal)
+    } as _error {
+      # A portal whose transaction has already ended is gone anyway.
+    }
+  }
+
+  /**
+   * Releases a compiled statement.
+   *
+   * @internal Used by `PostgresStatement`.
+   * @param string name
+   */
+  release_statement(name: string) {
+    if self._closed {
+      return
+    }
+
+    catch {
+      self._protocol.close_statement(name)
+    } as _error {
+    }
+  }
+
+  /**
+   * Opens a cursor over a statement the caller prepared, rather than
+   * over one from this connection's cache.
+   *
+   * @internal Used by `PostgresStatement`.
+   * @param PostgresStatement statement
+   * @param list values
+   * @param dict options
+   * @returns PostgresCursor
+   */
+  open_cursor_for(statement, values: list, options: dict) {
+    self._open()
+
+    return self._start_cursor({
+      name: statement.name(),
+      parameters: statement.parameters(),
+      columns: statement.raw_columns(),
+      sql: statement.sql(),
+    }, values, options)
+  }
+
+  /**
+   * Runs a compiled statement.
+   *
+   * @internal Used by `PostgresStatement`.
+   * @param dict request
+   * @returns dict
+   */
+  run_prepared(request: dict) {
+    self._open()
+    return self._protocol.execute(request)
+  }
+
+  # Opens a portal over an already compiled statement and reads its
+  # first batch.
+  _start_cursor(compiled, values, options) {
+    var batch = options.get('batch', 256)
+
+    # A portal belongs to a transaction. Outside one, the cursor opens
+    # its own and closes it when it is finished with.
+    var owned = !self.in_transaction()
+
+    if owned {
+      self.begin(nil)
+    }
+
+    var portal = self._next_name('portal')
+
+    catch {
+      var first = self._protocol.execute({
+        statement: compiled.name,
+        portal,
+        values,
+        parameters: compiled.parameters,
+        columns: compiled.columns,
+        limit: batch,
+        sql: compiled.sql,
+      })
+
+      return PostgresCursor(self, {
+        portal,
+        columns: describe_columns(compiled.columns),
+        raw_columns: compiled.columns,
+        rows: first.rows,
+        suspended: first.suspended,
+        batch,
+        sql: compiled.sql,
+        owns_transaction: owned,
+      })
+    } as error {
+      if owned {
+        catch {
+          self.rollback()
+        } as _ignored {
+        }
+      }
+
+      raise error
+    }
+  }
+
+  _simple(sql) {
+    self._protocol.simple_query(sql)
+  }
+
+  # Compiles `sql`, reusing an already compiled copy when there is one.
+  _compile(sql) {
+    var cached = self._cache.get(sql, nil)
+
+    if cached != nil {
+      self._touch(sql)
+      return cached
+    }
+
+    var name = self._next_name('statement')
+    var described = self._protocol.parse(name, sql)
+
+    var compiled = {
+      name,
+      parameters: described.parameters,
+      columns: described.columns,
+    }
+
+    if self._cache_order.length() >= CACHE_LIMIT {
+      var oldest = self._cache_order[0]
+      self._cache_order = self._cache_order[1, self._cache_order.length()]
+
+      var evicted = self._cache.get(oldest, nil)
+
+      if evicted != nil {
+        self._cache.remove(oldest)
+        self.release_statement(evicted.name)
+      }
+    }
+
+    self._cache.set(sql, compiled)
+    self._cache_order.append(sql)
+
+    return compiled
+  }
+
+  _touch(sql) {
+    var at = self._cache_order.index_of(sql)
+
+    if at != -1 {
+      self._cache_order.remove_at(at)
+    }
+
+    self._cache_order.append(sql)
+  }
+
+  _next_name(kind) {
+    self._counter++
+    return 'zuri_${kind}_${self._counter}'
+  }
+
+  _isolation_clause(isolation) {
+    if isolation == nil {
+      return ''
+    }
+
+    if isolation == READ_UNCOMMITTED {
+      # PostgreSQL accepts the name and gives read committed, which its
+      # own documentation says plainly. Passing it through rather than
+      # refusing keeps a program that asks for it working, at the level
+      # the server will actually provide.
+      return ' isolation level read uncommitted'
+    }
+
+    for level in [READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE] {
+      if isolation == level {
+        return ' isolation level ${level}'
+      }
+    }
+
+    raise NotSupportedError(
+      'postgres has no ${isolation} isolation level',
+      { driver: 'postgres' }
+    )
+  }
+
+  _assert_in_transaction(what) {
+    if !self.in_transaction() {
+      raise TransactionError(
+        'there is no open transaction to ${what}',
+        { driver: 'postgres' }
+      )
+    }
+  }
+
+  _open() {
+    if self.is_closed() {
+      raise ClosedError(
+        'this postgres connection was closed', { driver: 'postgres' }
+      )
+    }
+  }
+
+  to_string() {
+    var where = self._options.get('host', 'localhost')
+    var database = self._options.get('database', '')
+
+    return '<PostgresConnection ${where}/${database}' +
+      '${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

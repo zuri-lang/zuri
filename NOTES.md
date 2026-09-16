@@ -14,9 +14,12 @@
 - The `ast` and the `reflect` module has been collapsed into a single module called `zuri`.
 - `template` module has been renamed and moved to `wire` module.
 - The `socket` module and `ssl` module has been dropped in favor of the `net` module.
+- The `postgres` and `sqlite` module have been replaced with the respective submodules of the new `sql` module. The `sql`
 
 
 # CHANGELOGS
 
 - [12-09-2026]
   - Change repository visibility from Private to Public.
+- [15-09-2026]
+  - Changed repository visibility back to Private. Not ready to become public until Nyssa or at least a prototype of it is ready.

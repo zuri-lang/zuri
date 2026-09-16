@@ -1309,7 +1309,7 @@ pub struct FileHandle {
 /// in ordinary Rust code.
 pub struct ObjPtr {
   /// A short, stable identifier for what's wrapped; e.g.
-  /// `"sqlite3_connection"`, `"gd_image"`, `"openssl_ctx"`. Checked
+  /// `"zuri::sql::sqlite3::connection"`, `"zuri::net::TcpStream"`. Checked
   /// by natives via `Value::ptr_type_name()`/`Value::is_ptr_type()`
   /// before downcasting: `Any::downcast` alone matches on `TypeId`,
   /// which is precise but gives an opaque failure mode when a native

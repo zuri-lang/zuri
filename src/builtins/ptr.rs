@@ -28,7 +28,7 @@ fn to_string_impl(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// `.ptr_type()`; lets Zuri code itself sanity-check what a Ptr
 /// wraps before handing it to a native that expects a specific kind
-/// (e.g. `if conn.ptr_type() != 'sqlite3_connection' raise TypeError(...)`).
+/// (e.g. `if conn.ptr_type() != 'zuri::sql::sqlite3::connection' raise TypeError(...)`).
 fn ptr_type(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   let name = ctx.args[0].ptr_type_name().unwrap_or("ptr");

@@ -1,0 +1,802 @@
+/**
+ * @module protocol
+ *
+ * The PostgreSQL frontend/backend protocol, version 3.
+ *
+ * A connection is a sequence of messages in both directions. The
+ * client sends a request and then a Sync, and the server answers with
+ * some number of messages ending in ReadyForQuery. Everything between
+ * those two points belongs to the request, and nothing else may be
+ * sent until it arrives, which is what makes this a state machine
+ * rather than a set of independent calls.
+ *
+ * ### Why statements are described before they are bound
+ *
+ * A value can be sent and received either as text or in the server's
+ * own binary form, chosen per parameter and per column, and the choice
+ * is made in the Bind message. To choose well, the types have to be
+ * known first, which is what Describe reports. So a statement is
+ * parsed and described once, and every execution after that reuses
+ * what was learned. A statement run in a loop pays for this once.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ConnectionError, ProtocolError, QueryError }
+import .auth
+import .errors { raise_for }
+import .messages { * }
+import .types { read_int16, read_int32, read_uint32, text_of }
+
+/**
+ * Drives one connection's conversation with the server.
+ *
+ * @internal Used by `PostgresConnection`, which is the class with a
+ *    public API.
+ */
+class Protocol {
+  /**
+   * The server's own settings, as it reported them: `server_version`,
+   * `client_encoding`, `TimeZone` and whatever else it volunteers.
+   *
+   * @type dict
+   */
+  var parameters = {}
+
+  /**
+   * Notifications received but not yet collected, each
+   * `{ channel, payload, pid }`.
+   *
+   * The server can send one at any point between messages, so they
+   * are gathered wherever they arrive rather than only when asked
+   * for.
+   *
+   * @type list
+   */
+  var notifications = []
+
+  /**
+   * Notices the server sent, each a dictionary of its fields.
+   *
+   * @type list
+   */
+  var notices = []
+
+  var _stream
+  var _reader
+  var _registry
+  var _pid
+  var _secret
+  var _status = 'I'
+  var _closed = false
+
+  /**
+   * @param TcpStream|TlsStream stream An already-connected stream.
+   * @param TypeRegistry registry
+   */
+  @new(stream, registry) {
+    self._stream = stream
+    self._reader = Reader(stream)
+    self._registry = registry
+  }
+
+  /**
+   * The process id the server gave this connection, which is what a
+   * cancellation request has to name.
+   *
+   * @returns number|nil
+   */
+  backend_pid() {
+    return self._pid
+  }
+
+  /**
+   * The secret that goes with the process id.
+   *
+   * @returns number|nil
+   */
+  backend_secret() {
+    return self._secret
+  }
+
+  /**
+   * The transaction status the server last reported: `'I'` for idle,
+   * `'T'` inside a transaction, and `'E'` inside one that has failed
+   * and can only be rolled back.
+   *
+   * @returns string
+   */
+  status() {
+    return self._status
+  }
+
+  /**
+   * Whether the connection has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  /**
+   * Sends the startup message and works through whatever
+   * authentication the server asks for.
+   *
+   * @param dict options `user`, `database`, `password` and any extra
+   *    startup parameters.
+   */
+  startup(options: dict) {
+    var writer = Writer()
+    writer.int32(PROTOCOL_VERSION)
+    writer.cstring('user')
+    writer.cstring(options.user)
+
+    if options.get('database', nil) != nil {
+      writer.cstring('database')
+      writer.cstring(options.database)
+    }
+
+    for name, value in options.get('parameters', {}) {
+      writer.cstring(name)
+      writer.cstring('${value}')
+    }
+
+    writer.byte(0)
+    self._send(writer.frame(nil))
+    self._authenticate(options)
+  }
+
+  /**
+   * Runs one or more statements through the simple query protocol,
+   * which takes no parameters and returns text.
+   *
+   * This is the path for a script and for the transaction control
+   * statements, where there is nothing to bind and nothing to decode.
+   *
+   * @param string sql
+   * @returns list[dict] One result per statement, each
+   *    `{ columns, rows, tag }`.
+   */
+  simple_query(sql: string) {
+    var writer = Writer()
+    writer.cstring(sql)
+    self._send(writer.frame('Q'))
+
+    var results = []
+    var columns = []
+    var rows = []
+    var failure = nil
+
+    while true {
+      var message = self._read()
+
+      if message.tag == ROW_DESCRIPTION {
+        columns = self._read_row_description(message.payload)
+        rows = []
+        continue
+      }
+
+      if message.tag == DATA_ROW {
+        rows.append(self._read_data_row(message.payload, columns, false))
+        continue
+      }
+
+      if message.tag == COMMAND_COMPLETE {
+        results.append({
+          columns,
+          rows,
+          tag: read_cstring(message.payload, 0).value,
+        })
+
+        columns = []
+        rows = []
+        continue
+      }
+
+      if message.tag == EMPTY_QUERY_RESPONSE {
+        results.append({ columns: [], rows: [], tag: '' })
+        continue
+      }
+
+      if message.tag == ERROR_RESPONSE {
+        failure = self._read_error(message.payload)
+        continue
+      }
+
+      if message.tag == READY_FOR_QUERY {
+        self._status = message.payload[0].chr()
+        break
+      }
+    }
+
+    if failure != nil {
+      raise_for(failure, sql)
+    }
+
+    return results
+  }
+
+  /**
+   * Compiles a statement on the server and reports what it takes and
+   * returns.
+   *
+   * @param string name The statement's name, or `''` for the unnamed
+   *    one, which the next Parse replaces.
+   * @param string sql
+   * @returns dict `{ parameters, columns }`, `parameters` the OIDs the
+   *    server inferred and `columns` its result description.
+   */
+  parse(name: string, sql: string) {
+    var parse = Writer()
+    parse.cstring(name)
+    parse.cstring(sql)
+    parse.int16(0)
+
+    var describe = Writer()
+    describe.byte('S'.ord())
+    describe.cstring(name)
+
+    self._send(parse.frame('P'))
+    self._send(describe.frame('D'))
+    self._send(Writer().frame('S'))
+
+    var parameters = []
+    var columns = []
+    var failure = nil
+
+    while true {
+      var message = self._read()
+
+      if message.tag == PARAMETER_DESCRIPTION {
+        var count = read_int16(message.payload, 0)
+
+        for index in 0..count {
+          parameters.append(read_uint32(message.payload, 2 + index * 4))
+        }
+
+        continue
+      }
+
+      if message.tag == ROW_DESCRIPTION {
+        columns = self._read_row_description(message.payload)
+        continue
+      }
+
+      if message.tag == ERROR_RESPONSE {
+        failure = self._read_error(message.payload)
+        continue
+      }
+
+      if message.tag == READY_FOR_QUERY {
+        self._status = message.payload[0].chr()
+        break
+      }
+    }
+
+    if failure != nil {
+      raise_for(failure, sql)
+    }
+
+    return { parameters, columns }
+  }
+
+  /**
+   * Binds values to a compiled statement and runs it.
+   *
+   * @param dict request `statement` and `portal` names, `values` to
+   *    bind, the `parameters` and `columns` from `parse()`, `limit`
+   *    for how many rows to return before suspending (zero for all),
+   *    and the `sql` for error messages.
+   * @returns dict `{ columns, rows, tag, suspended }`
+   */
+  execute(request: dict) {
+    self._send_bind(request)
+
+    var execute = Writer()
+    execute.cstring(request.get('portal', ''))
+    execute.int32(request.get('limit', 0))
+
+    self._send(execute.frame('E'))
+    self._send(Writer().frame('S'))
+
+    return self._collect(request)
+  }
+
+  /**
+   * Runs a portal that is already bound, for reading the next batch of
+   * a cursor.
+   *
+   * @param dict request As `execute()` takes.
+   * @returns dict `{ columns, rows, tag, suspended }`
+   */
+  resume(request: dict) {
+    var execute = Writer()
+    execute.cstring(request.get('portal', ''))
+    execute.int32(request.get('limit', 0))
+
+    self._send(execute.frame('E'))
+    self._send(Writer().frame('S'))
+
+    return self._collect(request)
+  }
+
+  /**
+   * Releases a compiled statement on the server.
+   *
+   * @param string name
+   */
+  close_statement(name: string) {
+    self._close('S', name)
+  }
+
+  /**
+   * Releases a portal on the server.
+   *
+   * @param string name
+   */
+  close_portal(name: string) {
+    self._close('P', name)
+  }
+
+  /**
+   * Reads any messages already waiting, which is how notifications
+   * arrive when nothing else is being asked of the connection.
+   *
+   * @returns list The notifications collected, oldest first.
+   */
+  drain_notifications() {
+    var collected = self.notifications
+    self.notifications = []
+
+    return collected
+  }
+
+  /**
+   * Tells the server the connection is finished with, and closes it.
+   *
+   * Safe to call more than once.
+   */
+  terminate() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    catch {
+      self._stream.write_all(Writer().frame('X'))
+      self._stream.close()
+    } as _error {
+      # The point of Terminate is politeness. A server that has
+      # already gone does not need to be told, and failing to tell it
+      # is not worth raising over.
+    }
+  }
+
+  # Sends the Bind message, choosing a format for every parameter and
+  # every result column.
+  _send_bind(request) {
+    var values = request.get('values', [])
+    var parameters = request.get('parameters', [])
+    var columns = request.get('columns', [])
+
+    var bind = Writer()
+    bind.cstring(request.get('portal', ''))
+    bind.cstring(request.get('statement', ''))
+
+    # A format code per parameter: binary where this adapter has an
+    # encoder for the type the server inferred, text otherwise.
+    bind.int16(values.length())
+
+    for index in 0..(values.length()) {
+      var oid = index < parameters.length() ? parameters[index] : 0
+      bind.int16(self._registry.can_encode(oid) ? 1 : 0)
+    }
+
+    bind.int16(values.length())
+
+    for index in 0..(values.length()) {
+      var value = values[index]
+
+      if value == nil {
+        bind.int32(-1)
+        continue
+      }
+
+      var oid = index < parameters.length() ? parameters[index] : 0
+      var encoded = self._registry.encode(value, oid)
+
+      bind.int32(encoded.length())
+      bind.raw(encoded)
+    }
+
+    # And a format code per result column, on the same rule.
+    bind.int16(columns.length())
+
+    for column in columns {
+      bind.int16(self._registry.knows(column.oid) ? 1 : 0)
+    }
+
+    self._send(bind.frame('B'))
+  }
+
+  # Reads everything up to ReadyForQuery, gathering rows.
+  _collect(request) {
+    var columns = request.get('columns', [])
+    var rows = []
+    var tag = ''
+    var suspended = false
+    var failure = nil
+
+    while true {
+      var message = self._read()
+
+      if message.tag == DATA_ROW {
+        rows.append(self._read_data_row(message.payload, columns, true))
+        continue
+      }
+
+      if message.tag == ROW_DESCRIPTION {
+        columns = self._read_row_description(message.payload)
+        continue
+      }
+
+      if message.tag == COMMAND_COMPLETE {
+        tag = read_cstring(message.payload, 0).value
+        continue
+      }
+
+      if message.tag == PORTAL_SUSPENDED {
+        suspended = true
+        continue
+      }
+
+      if message.tag == ERROR_RESPONSE {
+        failure = self._read_error(message.payload)
+        continue
+      }
+
+      if message.tag == READY_FOR_QUERY {
+        self._status = message.payload[0].chr()
+        break
+      }
+    }
+
+    if failure != nil {
+      raise_for(failure, request.get('sql', nil))
+    }
+
+    return { columns, rows, tag, suspended }
+  }
+
+  _close(kind, name) {
+    var close = Writer()
+    close.byte(kind.ord())
+    close.cstring(name)
+
+    self._send(close.frame('C'))
+    self._send(Writer().frame('S'))
+
+    var failure = nil
+
+    while true {
+      var message = self._read()
+
+      if message.tag == ERROR_RESPONSE {
+        failure = self._read_error(message.payload)
+        continue
+      }
+
+      if message.tag == READY_FOR_QUERY {
+        self._status = message.payload[0].chr()
+        break
+      }
+    }
+
+    if failure != nil {
+      raise_for(failure, nil)
+    }
+  }
+
+  # Reads a RowDescription into column descriptors.
+  _read_row_description(payload) {
+    var count = read_int16(payload, 0)
+    var columns = []
+    var at = 2
+
+    for _index in 0..count {
+      var name = read_cstring(payload, at)
+      at = name.next
+
+      columns.append({
+        name: name.value,
+        table_oid: read_uint32(payload, at),
+        column: read_int16(payload, at + 4),
+        oid: read_uint32(payload, at + 6),
+        size: read_int16(payload, at + 10),
+        modifier: read_int32(payload, at + 12),
+        format: read_int16(payload, at + 16),
+      })
+
+      at += 18
+    }
+
+    return columns
+  }
+
+  # Reads a DataRow into a list of values.
+  #
+  # The format of each column is the one this connection asked for in
+  # Bind, which is binary wherever the registry has a decoder. It is
+  # deliberately not read off the column descriptor: that descriptor
+  # comes from Describe, which runs before Bind and therefore always
+  # reports text, whatever the values actually arrive as.
+  _read_data_row(payload, columns, binary) {
+    var count = read_int16(payload, 0)
+    var values = []
+    var at = 2
+
+    for index in 0..count {
+      var size = read_int32(payload, at)
+      at += 4
+
+      if size == -1 {
+        values.append(nil)
+        continue
+      }
+
+      var slice = payload[at, at + size]
+      at += size
+
+      var column = index < columns.length() ? columns[index] : nil
+
+      if column == nil or !binary or !self._registry.knows(column.oid) {
+        values.append(text_of(slice))
+        continue
+      }
+
+      values.append(self._registry.decode(slice, column.oid))
+    }
+
+    return values
+  }
+
+  # Reads an ErrorResponse or NoticeResponse into its named fields.
+  _read_error(payload) {
+    var fields = {}
+    var at = 0
+
+    while at < payload.length() and payload[at] != 0 {
+      var code = payload[at].chr()
+      var text = read_cstring(payload, at + 1)
+      at = text.next
+
+      fields.set(_FIELD_NAMES.get(code, code), text.value)
+    }
+
+    return fields
+  }
+
+  # Sends bytes, turning a broken pipe into something that names the
+  # connection rather than the socket.
+  _send(payload) {
+    if self._closed {
+      raise ConnectionError(
+        'this connection has been closed', { driver: 'postgres' }
+      )
+    }
+
+    catch {
+      self._stream.write_all(payload)
+    } as error {
+      self._closed = true
+
+      raise ConnectionError(
+        'the connection to the server failed while writing: ' +
+        error.message,
+        { driver: 'postgres' }
+      )
+    }
+  }
+
+  # Reads the next message, absorbing the three the server may send at
+  # any point so that no caller has to expect them.
+  _read() {
+    while true {
+      var message = self._reader.read_message()
+
+      if message.tag == PARAMETER_STATUS {
+        var name = read_cstring(message.payload, 0)
+        var value = read_cstring(message.payload, name.next)
+        self.parameters.set(name.value, value.value)
+
+        continue
+      }
+
+      if message.tag == NOTICE_RESPONSE {
+        self.notices.append(self._read_error(message.payload))
+        continue
+      }
+
+      if message.tag == NOTIFICATION_RESPONSE {
+        var channel = read_cstring(message.payload, 4)
+        var body = read_cstring(message.payload, channel.next)
+
+        self.notifications.append({
+          pid: read_uint32(message.payload, 0),
+          channel: channel.value,
+          payload: body.value,
+        })
+
+        continue
+      }
+
+      if message.tag == BACKEND_KEY_DATA {
+        self._pid = read_uint32(message.payload, 0)
+        self._secret = read_uint32(message.payload, 4)
+
+        continue
+      }
+
+      return message
+    }
+  }
+
+  # Works through whatever the server asks for until it says the
+  # connection is ready.
+  _authenticate(options) {
+    var password = options.get('password', nil)
+    var scram = nil
+
+    while true {
+      var message = self._read()
+
+      if message.tag == ERROR_RESPONSE {
+        var failure = self._read_error(message.payload)
+        raise_for(failure, nil)
+      }
+
+      if message.tag == READY_FOR_QUERY {
+        self._status = message.payload[0].chr()
+        return
+      }
+
+      if message.tag != AUTHENTICATION {
+        continue
+      }
+
+      var kind = read_uint32(message.payload, 0)
+
+      if kind == AUTH_OK {
+        continue
+      }
+
+      if kind == AUTH_CLEARTEXT {
+        self._require_password(password, 'a password')
+        self._send_password(password)
+        continue
+      }
+
+      if kind == AUTH_MD5 {
+        self._require_password(password, 'a password')
+
+        var salt = message.payload[4, 8]
+        self._send_password(auth.md5_response(options.user, password, salt))
+
+        continue
+      }
+
+      if kind == AUTH_SASL {
+        self._require_password(password, 'a password')
+
+        if !auth.offers_scram(message.payload[4, message.payload.length()]) {
+          raise ProtocolError(
+            'the server offered no authentication mechanism this ' +
+            'adapter implements; it supports ${auth.SCRAM_SHA_256}',
+            { driver: 'postgres' }
+          )
+        }
+
+        scram = self._begin_scram()
+        continue
+      }
+
+      if kind == AUTH_SASL_CONTINUE {
+        var challenge = text_of(message.payload[4, message.payload.length()])
+        scram = self._answer_scram(scram, password, challenge)
+
+        continue
+      }
+
+      if kind == AUTH_SASL_FINAL {
+        var final = text_of(message.payload[4, message.payload.length()])
+        auth.verify_server(final, scram.server_signature)
+
+        continue
+      }
+
+      raise ProtocolError(
+        'the server asked for an authentication method this adapter ' +
+        'does not implement (${kind})',
+        { driver: 'postgres' }
+      )
+    }
+  }
+
+  _begin_scram() {
+    var client_nonce = auth.nonce()
+    var first = auth.client_first(client_nonce)
+    var body = first.full.to_bytes().to_list()
+
+    var writer = Writer()
+    writer.cstring(auth.SCRAM_SHA_256)
+    writer.int32(body.length())
+    writer.raw(body)
+
+    self._send(writer.frame('p'))
+
+    return {
+      nonce: client_nonce,
+      bare: first.bare,
+      server_signature: nil,
+    }
+  }
+
+  _answer_scram(scram, password, challenge) {
+    if scram == nil {
+      raise ProtocolError(
+        'the server continued a SCRAM exchange that never started',
+        { driver: 'postgres' }
+      )
+    }
+
+    var proof = auth.client_proof(password, scram.nonce, scram.bare, challenge)
+
+    var writer = Writer()
+    writer.raw(proof.message.to_bytes().to_list())
+    self._send(writer.frame('p'))
+
+    scram.set('server_signature', proof.server_signature)
+
+    return scram
+  }
+
+  _send_password(text) {
+    var writer = Writer()
+    writer.cstring(text)
+
+    self._send(writer.frame('p'))
+  }
+
+  _require_password(password, what) {
+    if password == nil or password == '' {
+      raise ConnectionError(
+        'the server asked for ${what} and none was given',
+        { driver: 'postgres' }
+      )
+    }
+  }
+}
+
+# The names the server's error and notice fields go by.
+var _FIELD_NAMES = {
+  'S': 'severity',
+  'V': 'severity_code',
+  'C': 'code',
+  'M': 'message',
+  'D': 'detail',
+  'H': 'hint',
+  'P': 'position',
+  'p': 'internal_position',
+  'q': 'internal_query',
+  'W': 'where',
+  's': 'schema',
+  't': 'table',
+  'c': 'column',
+  'd': 'data_type',
+  'n': 'constraint',
+  'F': 'file',
+  'L': 'line',
+  'R': 'routine',
+}

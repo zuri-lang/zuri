@@ -1,0 +1,568 @@
+/**
+ * @module connection
+ *
+ * A SQLite connection, as the layer above the adapters sees one.
+ *
+ * SQLite has no server, so a connection here is an open database file
+ * (or an in-memory database) and the handle onto it. That difference
+ * shows through in a few places, and this is where each of them is
+ * dealt with.
+ *
+ * ### Transactions
+ *
+ * SQLite has one transaction per connection and no nesting, so nested
+ * transactions are savepoints, as they are for every other adapter.
+ * Its isolation levels are not levels but locking modes: `BEGIN
+ * DEFERRED` takes no lock until the first statement, `BEGIN IMMEDIATE`
+ * takes the write lock at once. Serializable maps onto IMMEDIATE,
+ * which is what actually delivers it, and the levels SQLite cannot
+ * approximate raise rather than being quietly accepted.
+ *
+ * ### One writer
+ *
+ * A SQLite database takes one writer at a time. Where another engine
+ * would queue, SQLite returns `SQLITE_BUSY`, which this adapter turns
+ * into a `TimeoutError` once the busy timeout expires. Setting a busy
+ * timeout is what turns a burst of contention into a wait rather than
+ * an error, so connections open with one already set.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..driver {
+  DriverConnection, READ_COMMITTED, REPEATABLE_READ,
+  SERIALIZABLE, READ_UNCOMMITTED,
+}
+import ..errors { ClosedError, NotSupportedError, QueryError, TransactionError }
+import .cursor { SqliteCursor }
+import .errors { reraise }
+import .schema { SqliteSchema }
+import .statement { SqliteStatement, bind_all, describe }
+import .types { decode_row }
+
+/**
+ * How many compiled statements a connection keeps for reuse.
+ *
+ * Statements run through `execute()` and `select()` are cached by
+ * their text, since those compile, run and reset within the one call
+ * and are never handed out. A cursor's statement is never cached: it
+ * stays live between calls, and lending the same handle to two readers
+ * would have them stepping each other's result.
+ */
+var CACHE_LIMIT = 64
+
+/**
+ * An open SQLite database.
+ *
+ * @printable
+ */
+class SqliteConnection < DriverConnection {
+  var _handle
+  var _options = {}
+  var _closed = false
+
+  # Compiled statements held for reuse, and the order they were last
+  # used in, oldest first.
+  var _cache = {}
+  var _cache_order = []
+
+  # Names of the savepoints currently open, outermost first. Its length
+  # is the nesting depth.
+  var _savepoints = []
+  var _savepoint_counter = 0
+
+  var _schema
+
+  /**
+   * @param Driver driver The driver that opened this.
+   * @param ptr handle The native connection.
+   * @param dict options The options it was opened with.
+   */
+  @new(driver, handle, options) {
+    self.driver = driver
+    self._handle = handle
+    self._options = options or {}
+  }
+
+  /**
+   * The native handle, for the parts of SQLite that are not part of
+   * the shared contract: blobs, backups, user-defined functions and
+   * hooks.
+   *
+   * @returns ptr
+   */
+  handle() {
+    self._open()
+    return self._handle
+  }
+
+  /**
+   * This connection's introspection, built once and reused.
+   *
+   * @returns SqliteSchema
+   */
+  schema_adapter() {
+    if self._schema == nil {
+      self._schema = SqliteSchema(self)
+    }
+
+    return self._schema
+  }
+
+  /**
+   * Runs a statement for its effect.
+   *
+   * @param string sql
+   * @param list values
+   * @returns dict `{ rows_affected, last_insert_id }`
+   */
+  execute(sql: string, values: list) {
+    self._open()
+
+    var statement = self._compile(sql)
+
+    _sqlite.reset(statement)
+    _sqlite.clear_bindings(statement)
+    bind_all(statement, values, sql)
+
+    catch {
+      while _sqlite.step(statement) == 'row' {
+        # An INSERT with a RETURNING clause produces rows even though
+        # it was run for its effect. Stepping past them is what makes
+        # the statement actually finish.
+      }
+    } as error {
+      _sqlite.reset(statement)
+      reraise(error, sql)
+    }
+
+    var affected = self.changes()
+    var inserted = self.last_insert_id()
+
+    _sqlite.reset(statement)
+
+    return {
+      rows_affected: affected,
+      last_insert_id: inserted,
+    }
+  }
+
+  /**
+   * Runs a statement and reads its whole result.
+   *
+   * @param string sql
+   * @param list values
+   * @returns dict `{ columns, rows }`
+   */
+  select(sql: string, values: list) {
+    self._open()
+
+    var statement = self._compile(sql)
+
+    _sqlite.reset(statement)
+    _sqlite.clear_bindings(statement)
+    bind_all(statement, values, sql)
+
+    var described = describe(statement)
+    var rows = []
+
+    catch {
+      while _sqlite.step(statement) == 'row' {
+        rows.append(_sqlite.row(statement))
+      }
+    } as error {
+      _sqlite.reset(statement)
+      reraise(error, sql)
+    }
+
+    _sqlite.reset(statement)
+
+    var conversions = described.conversions
+
+    return {
+      columns: described.columns,
+      rows: rows.map(@(row) => decode_row(row, conversions)),
+    }
+  }
+
+  /**
+   * Runs a statement and hands back a cursor over its result.
+   *
+   * The statement is compiled fresh rather than taken from the cache,
+   * because the cursor keeps it for as long as it is reading.
+   *
+   * @param string sql
+   * @param list values
+   * @param dict options Unused; SQLite produces rows on demand
+   *    already, so there is no batch size to choose.
+   * @returns SqliteCursor
+   */
+  open_cursor(sql: string, values: list, options: dict) {
+    self._open()
+
+    var statement = self._prepare_raw(sql)
+
+    catch {
+      bind_all(statement, values, sql)
+    } as error {
+      _sqlite.finalize(statement)
+      reraise(error, sql)
+    }
+
+    var described = describe(statement)
+
+    return SqliteCursor(
+      statement,
+      described.columns,
+      described.conversions,
+      sql,
+      true
+    )
+  }
+
+  /**
+   * Compiles a statement for repeated use.
+   *
+   * @param string sql
+   * @returns SqliteStatement
+   */
+  prepare(sql: string) {
+    self._open()
+
+    return SqliteStatement(self, self._prepare_raw(sql), sql)
+  }
+
+  /**
+   * Opens a transaction, or takes a savepoint when one is already
+   * open.
+   *
+   * @param string|nil isolation
+   * @throws NotSupportedError for a level SQLite has no analogue for.
+   */
+  begin(isolation) {
+    self._open()
+
+    if !self._savepoints.is_empty() or !_sqlite.autocommit(self._handle) {
+      var name = self._next_savepoint()
+      self._run('savepoint ${name}')
+      self._savepoints.append(name)
+
+      return
+    }
+
+    self._run('begin ${self._locking_mode(isolation)}')
+  }
+
+  /**
+   * Commits the transaction, or releases the innermost savepoint.
+   */
+  commit() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+      self._run('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('commit')
+    self._run('commit')
+  }
+
+  /**
+   * Rolls the transaction back, or undoes the innermost savepoint.
+   */
+  rollback() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+
+      # Rolling back to a savepoint leaves it in place, so it is
+      # released straight after to actually leave the nesting level.
+      self._run('rollback to savepoint ${name}')
+      self._run('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('rollback')
+    self._run('rollback')
+  }
+
+  savepoint(name: string) {
+    self._open()
+    self._run('savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  release_savepoint(name: string) {
+    self._open()
+    self._run('release savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  rollback_to(name: string) {
+    self._open()
+    self._run('rollback to savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  /**
+   * Whether a transaction is open.
+   *
+   * @returns bool
+   */
+  in_transaction() {
+    self._open()
+    return !_sqlite.autocommit(self._handle)
+  }
+
+  /**
+   * How deeply transactions are currently nested: zero outside one,
+   * one inside the outermost, and one more per savepoint.
+   *
+   * @returns number
+   */
+  depth() {
+    if !self.in_transaction() {
+      return 0
+    }
+
+    return self._savepoints.length() + 1
+  }
+
+  /**
+   * How many rows the last statement changed.
+   *
+   * @returns number
+   */
+  changes() {
+    self._open()
+    return _sqlite.changes(self._handle)
+  }
+
+  /**
+   * The row id of the last insert on this connection, or nil if there
+   * has not been one.
+   *
+   * @returns number|bigint|nil
+   */
+  last_insert_id() {
+    self._open()
+
+    var id = _sqlite.last_insert_rowid(self._handle)
+
+    return id == 0 ? nil : id
+  }
+
+  /**
+   * Checks the connection is usable.
+   *
+   * @returns bool
+   */
+  ping() {
+    if self._closed {
+      return false
+    }
+
+    catch {
+      self.select('select 1', [])
+    } as _error {
+      return false
+    }
+
+    return true
+  }
+
+  /**
+   * SQLite's version, such as `'3.53.2'`.
+   *
+   * @returns string
+   */
+  server_version() {
+    return _sqlite.libversion()
+  }
+
+  /**
+   * Asks a running statement on this connection to stop.
+   *
+   * The statement fails rather than being killed, and the connection
+   * stays usable. Meant for a long query on a connection another
+   * isolate is waiting on.
+   */
+  interrupt() {
+    self._open()
+    _sqlite.interrupt(self._handle)
+  }
+
+  /**
+   * How long a statement waits for another writer before giving up.
+   *
+   * @param number milliseconds Zero waits not at all.
+   */
+  set_busy_timeout(milliseconds: number) {
+    self._open()
+    _sqlite.busy_timeout(self._handle, milliseconds)
+  }
+
+  /**
+   * Closes the connection, releasing every statement it cached.
+   *
+   * Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    for sql, statement in self._cache {
+      _sqlite.finalize(statement)
+    }
+
+    self._cache = {}
+    self._cache_order = []
+    self._savepoints = []
+
+    _sqlite.close(self._handle)
+  }
+
+  is_closed() {
+    return self._closed
+  }
+
+  # Runs a statement with no parameters and no result.
+  _run(sql) {
+    catch {
+      _sqlite.exec(self._handle, sql)
+    } as error {
+      reraise(error, sql)
+    }
+  }
+
+  # Compiles `sql`, reusing an already compiled copy when there is one.
+  _compile(sql) {
+    var cached = self._cache.get(sql, nil)
+
+    if cached != nil {
+      self._touch(sql)
+      return cached
+    }
+
+    var statement = self._prepare_raw(sql)
+
+    if self._cache_order.length() >= CACHE_LIMIT {
+      var oldest = self._cache_order[0]
+      self._cache_order = self._cache_order[1, self._cache_order.length()]
+
+      var evicted = self._cache.get(oldest, nil)
+
+      if evicted != nil {
+        _sqlite.finalize(evicted)
+        self._cache.remove(oldest)
+      }
+    }
+
+    self._cache.set(sql, statement)
+    self._cache_order.append(sql)
+
+    return statement
+  }
+
+  # Moves `sql` to the newest end of the reuse order.
+  _touch(sql) {
+    var at = self._cache_order.index_of(sql)
+
+    if at != -1 {
+      self._cache_order.remove_at(at)
+    }
+
+    self._cache_order.append(sql)
+  }
+
+  # Compiles one statement, refusing text that holds more than one.
+  _prepare_raw(sql) {
+    var prepared
+
+    catch {
+      prepared = _sqlite.prepare(self._handle, sql)
+    } as error {
+      reraise(error, sql)
+    }
+
+    if prepared.statement == nil {
+      raise QueryError(
+        'this text contains no statement to run',
+        { driver: 'sqlite', query: sql }
+      )
+    }
+
+    if !prepared.tail.trim().is_empty() {
+      _sqlite.finalize(prepared.statement)
+
+      raise QueryError(
+        'this text contains more than one statement; run them one at ' +
+        'a time, or use exec() for a script',
+        { driver: 'sqlite', query: sql }
+      )
+    }
+
+    return prepared.statement
+  }
+
+  _next_savepoint() {
+    self._savepoint_counter++
+    return 'zuri_sp_${self._savepoint_counter}'
+  }
+
+  # The BEGIN variant that delivers `isolation`, as closely as SQLite
+  # can.
+  _locking_mode(isolation) {
+    if isolation == nil {
+      return 'deferred'
+    }
+
+    if isolation == SERIALIZABLE or isolation == REPEATABLE_READ {
+      # Taking the write lock up front is what makes a transaction
+      # behave as though it ran alone. DEFERRED would let a read
+      # succeed and the later write fail, which neither level allows.
+      return 'immediate'
+    }
+
+    if isolation == READ_COMMITTED {
+      return 'deferred'
+    }
+
+    raise NotSupportedError(
+      'sqlite has no ${isolation} isolation; it offers read committed ' +
+      'and serializable',
+      { driver: 'sqlite' }
+    )
+  }
+
+  _assert_in_transaction(what) {
+    if _sqlite.autocommit(self._handle) {
+      raise TransactionError(
+        'there is no open transaction to ${what}',
+        { driver: 'sqlite' }
+      )
+    }
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError('this sqlite connection was closed', { driver: 'sqlite' })
+    }
+  }
+
+  to_string() {
+    var where = self._options.get('path', ':memory:')
+    return '<SqliteConnection ${where}${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

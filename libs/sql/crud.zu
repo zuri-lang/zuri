@@ -1,0 +1,431 @@
+/**
+ * @module crud
+ *
+ * Building the four statements that are the same everywhere.
+ *
+ * Inserting a row, updating rows that match, deleting rows that match
+ * and selecting rows that match are written the same way against every
+ * engine, apart from how identifiers are quoted and how placeholders
+ * are spelled. Both of those come from the driver, so these builders
+ * produce correct SQL for whichever adapter is active.
+ *
+ * This is not a query builder and is not trying to become one. There
+ * is no join here, no subquery, no expression tree. Anything past a
+ * flat list of equality where is written as SQL, which is a
+ * better language for it than any chain of method calls.
+ *
+ * Every value becomes a bound parameter. Nothing built here
+ * interpolates a value into the statement text, which is what makes
+ * these safe to hand user input.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { QueryError }
+import .params { placeholder }
+
+/**
+ * Marks a fragment of SQL to be used as written rather than bound.
+ *
+ * The escape hatch for the cases where a value is not a value:
+ *
+ * ```zuri
+ * db.update('posts', { views: sql.raw('views + 1') }, { id: 7 })
+ * ```
+ *
+ * It is exactly as dangerous as it sounds. A `Raw` built from anything
+ * a user supplied is a SQL injection, so build them from literals and
+ * keep values in the parameters where they belong.
+ *
+ * @printable
+ */
+class Raw {
+  /**
+   * The fragment, as it will appear in the statement.
+   * @type string
+   */
+  var sql
+
+  /**
+   * @param string sql
+   */
+  @new(sql) {
+    self.sql = sql
+  }
+
+  to_string() {
+    return self.sql
+  }
+
+  @to_string() {
+    return self.sql
+  }
+}
+
+/**
+ * Builds a `Raw`.
+ *
+ * @param string sql
+ * @returns Raw
+ */
+def raw(sql: string) {
+  return Raw(sql)
+}
+
+/**
+ * Renders a table name, which may carry a schema.
+ *
+ * `'public.users'` becomes `"public"."users"`, and a name with a dot
+ * that is genuinely part of it can be quoted by passing it already
+ * quoted.
+ *
+ * @param Driver driver
+ * @param string table
+ * @returns string
+ */
+def quote_table(driver, table: string) {
+  var quote = driver.capabilities().identifier_quote
+
+  if table.starts_with(quote) {
+    return table
+  }
+
+  return '.'.join(table.split('.').map(@(part) => driver.quote_identifier(part)))
+}
+
+/**
+ * Builds the `WHERE` clause for a dictionary of conditions.
+ *
+ * A value of `nil` becomes `IS NULL` rather than `= NULL`, which no
+ * row ever satisfies. A list becomes `IN (...)`, and an empty list
+ * becomes a condition no row satisfies, which is what "in nothing"
+ * means. A `Raw` is used as written.
+ *
+ * @param Driver driver
+ * @param dict|nil filter
+ * @param number start The binding position the first parameter takes.
+ * @returns dict `{ clause, values }`, the clause empty when there are
+ *    no conditions.
+ */
+def where(driver, filter, start: number) {
+  if filter == nil or filter.is_empty() {
+    return { clause: '', values: [] }
+  }
+
+  var style = driver.capabilities().placeholder_style
+  var parts = []
+  var values = []
+  var position = start
+
+  for column, value in filter {
+    var name = driver.quote_identifier(column)
+
+    if value == nil {
+      parts.append('${name} is null')
+      continue
+    }
+
+    if instance_of(value, Raw) {
+      parts.append('${name} = ${value.sql}')
+      continue
+    }
+
+    if is_list(value) {
+      if value.is_empty() {
+        # No row is in an empty set. Spelling it this way rather than
+        # raising lets a filter built from a list that happened to come
+        # back empty return nothing, which is the honest answer.
+        parts.append('1 = 0')
+        continue
+      }
+
+      var marks = []
+
+      for item in value {
+        marks.append(placeholder(style, position))
+        values.append(item)
+        position++
+      }
+
+      parts.append('${name} in (${', '.join(marks)})')
+      continue
+    }
+
+    parts.append('${name} = ${placeholder(style, position)}')
+    values.append(value)
+    position++
+  }
+
+  return {
+    clause: ' where ${' and '.join(parts)}',
+    values,
+  }
+}
+
+/**
+ * Builds an `INSERT`.
+ *
+ * @param Driver driver
+ * @param string table
+ * @param dict values
+ * @param string|nil returning A column to return, for engines that
+ *    report an inserted id that way rather than through a last insert
+ *    id. Ignored where the driver does not support `RETURNING`.
+ * @returns dict `{ sql, values }`
+ * @throws QueryError if `values` is empty.
+ */
+def insert(driver, table: string, values: dict, returning) {
+  if values.is_empty() {
+    raise QueryError('an insert needs at least one column')
+  }
+
+  var style = driver.capabilities().placeholder_style
+  var columns = []
+  var marks = []
+  var bound = []
+  var position = 1
+
+  for column, value in values {
+    columns.append(driver.quote_identifier(column))
+
+    if instance_of(value, Raw) {
+      marks.append(value.sql)
+      continue
+    }
+
+    marks.append(placeholder(style, position))
+    bound.append(value)
+    position++
+  }
+
+  var sql = 'insert into ${quote_table(driver, table)} ' +
+    '(${', '.join(columns)}) values (${', '.join(marks)})'
+
+  if returning != nil and driver.supports('returning') {
+    sql += ' returning ${driver.quote_identifier(returning)}'
+  }
+
+  return { sql, values: bound }
+}
+
+/**
+ * Builds an `INSERT` carrying several rows in one statement.
+ *
+ * Every row has to name the same columns, in any order; a row that
+ * names a different set raises rather than being padded with nulls,
+ * because a missing column and a null column mean different things.
+ *
+ * @param Driver driver
+ * @param string table
+ * @param list rows Dictionaries of column to value.
+ * @returns dict `{ sql, values }`
+ * @throws QueryError if `rows` is empty, a row has no columns, or the
+ *    rows disagree about which columns they have.
+ */
+def insert_many(driver, table: string, rows: list) {
+  if rows.is_empty() {
+    raise QueryError('an insert needs at least one row')
+  }
+
+  var columns = rows[0].keys()
+
+  if columns.is_empty() {
+    raise QueryError('an insert needs at least one column')
+  }
+
+  var style = driver.capabilities().placeholder_style
+  var quoted = columns.map(@(column) => driver.quote_identifier(column))
+  var groups = []
+  var bound = []
+  var position = 1
+
+  for index, row in rows {
+    if row.length() != columns.length() {
+      raise QueryError(
+        'row ${index + 1} names ${row.length()} column' +
+        '${row.length() == 1 ? "" : "s"} where the first names ' +
+        '${columns.length()}; every row of one insert has to name the ' +
+        'same columns'
+      )
+    }
+
+    var marks = []
+
+    for column in columns {
+      if !row.contains(column) {
+        raise QueryError(
+          'row ${index + 1} has no ${column}, which the first row has'
+        )
+      }
+
+      var value = row[column]
+
+      if instance_of(value, Raw) {
+        marks.append(value.sql)
+        continue
+      }
+
+      marks.append(placeholder(style, position))
+      bound.append(value)
+      position++
+    }
+
+    groups.append('(${', '.join(marks)})')
+  }
+
+  var sql = 'insert into ${quote_table(driver, table)} ' +
+    '(${', '.join(quoted)}) values ${', '.join(groups)}'
+
+  return { sql, values: bound }
+}
+
+/**
+ * Builds an `UPDATE`.
+ *
+ * An update with no where changes every row, which is
+ * occasionally what someone means and usually not, so it has to be
+ * asked for by passing `nil` rather than happening by default when a
+ * condition dictionary turns out empty.
+ *
+ * @param Driver driver
+ * @param string table
+ * @param dict values
+ * @param dict|nil filter
+ * @returns dict `{ sql, values }`
+ * @throws QueryError if `values` is empty.
+ */
+def update(driver, table: string, values: dict, filter) {
+  if values.is_empty() {
+    raise QueryError('an update needs at least one column to set')
+  }
+
+  var style = driver.capabilities().placeholder_style
+  var assignments = []
+  var bound = []
+  var position = 1
+
+  for column, value in values {
+    var name = driver.quote_identifier(column)
+
+    if instance_of(value, Raw) {
+      assignments.append('${name} = ${value.sql}')
+      continue
+    }
+
+    assignments.append('${name} = ${placeholder(style, position)}')
+    bound.append(value)
+    position++
+  }
+
+  var clause = where(driver, filter, position)
+
+  return {
+    sql: 'update ${quote_table(driver, table)} set ' +
+      '${', '.join(assignments)}${clause.clause}',
+    values: bound + clause.values,
+  }
+}
+
+/**
+ * Builds a `DELETE`.
+ *
+ * @param Driver driver
+ * @param string table
+ * @param dict|nil filter
+ * @returns dict `{ sql, values }`
+ */
+def delete(driver, table: string, filter) {
+  var clause = where(driver, filter, 1)
+
+  return {
+    sql: 'delete from ${quote_table(driver, table)}${clause.clause}',
+    values: clause.values,
+  }
+}
+
+/**
+ * Builds a `SELECT`.
+ *
+ * @param Driver driver
+ * @param string table
+ * @param dict|nil filter
+ * @param dict|nil options `columns` (a list of names, all of them by
+ *    default), `order` (a list of names, each optionally followed by
+ *    ` desc`), `limit` and `offset`.
+ * @returns dict `{ sql, values }`
+ */
+def select(driver, table: string, filter, options) {
+  var settings = options or {}
+  var columns = settings.get('columns', nil)
+
+  var projection = '*'
+
+  if columns != nil and !columns.is_empty() {
+    var rendered = columns.map(@(column) {
+      if instance_of(column, Raw) {
+        return column.sql
+      }
+
+      return driver.quote_identifier(column)
+    })
+
+    projection = ', '.join(rendered)
+  }
+
+  var clause = where(driver, filter, 1)
+  var sql = 'select ${projection} from ${quote_table(driver, table)}' +
+    clause.clause
+
+  var order = settings.get('order', nil)
+
+  if order != nil and !order.is_empty() {
+    sql += ' order by ${', '.join(order.map(@(term) => _order_term(driver, term)))}'
+  }
+
+  var limit = settings.get('limit', nil)
+
+  if limit != nil {
+    sql += ' limit ${_whole(limit, 'a limit')}'
+  }
+
+  var offset = settings.get('offset', nil)
+
+  if offset != nil {
+    sql += ' offset ${_whole(offset, 'an offset')}'
+  }
+
+  return { sql, values: clause.values }
+}
+
+# Renders one ordering term, keeping the direction and quoting the
+# column.
+def _order_term(driver, term) {
+  if instance_of(term, Raw) {
+    return term.sql
+  }
+
+  var text = term.trim()
+  var descending = text.lower().ends_with(' desc')
+  var ascending = text.lower().ends_with(' asc')
+
+  if descending or ascending {
+    var cut = text.last_index_of(' ')
+    var column = text[0, cut].trim()
+
+    return '${driver.quote_identifier(column)} ${descending ? "desc" : "asc"}'
+  }
+
+  return driver.quote_identifier(text)
+}
+
+# A limit or offset goes into the statement text rather than being
+# bound, because not every engine allows a parameter there. That makes
+# checking it a whole number the only thing standing between a caller's
+# value and the statement, so it is checked properly.
+def _whole(value, what) {
+  if !is_number(value) or value != value.floor() or value < 0 {
+    raise QueryError('${what} is a whole number of rows, not ${value}')
+  }
+
+  return '${value}'
+}

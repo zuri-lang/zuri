@@ -1,0 +1,197 @@
+/**
+ * @module notify
+ *
+ * LISTEN and NOTIFY, PostgreSQL's own publish and subscribe.
+ *
+ * A connection that has run `LISTEN channel` receives a message
+ * whenever anything runs `NOTIFY channel`, including from another
+ * connection or another process entirely. It is the one part of this
+ * adapter with no equivalent in SQLite, so it lives here rather than
+ * in the shared contract and is reached through `db.native()`.
+ *
+ * ```zuri
+ * var listener = db.native().listener()
+ *
+ * listener.listen('jobs')
+ *
+ * while true {
+ *   for message in listener.poll() {
+ *     handle(message.payload)
+ *   }
+ * }
+ * ```
+ *
+ * Notifications arrive between other messages, so a connection that is
+ * busy running statements collects them as it goes and `poll()` hands
+ * over whatever has accumulated. A connection doing nothing else has
+ * to ask, which is what `wait()` does.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ClosedError }
+
+/**
+ * Subscribes a connection to channels and collects what arrives.
+ *
+ * @printable
+ */
+class Listener {
+  var _connection
+  var _channels = []
+  var _closed = false
+
+  /**
+   * @param PostgresConnection connection
+   */
+  @new(connection) {
+    self._connection = connection
+  }
+
+  /**
+   * The channels this listener is subscribed to.
+   *
+   * @returns list[string]
+   */
+  channels() {
+    return self._channels.clone()
+  }
+
+  /**
+   * Subscribes to `channel`.
+   *
+   * @param string channel
+   */
+  listen(channel: string) {
+    self._open()
+
+    if self._channels.contains(channel) {
+      return
+    }
+
+    var name = self._connection.driver.quote_identifier(channel)
+    self._connection.run_simple('listen ${name}')
+    self._channels.append(channel)
+  }
+
+  /**
+   * Unsubscribes from `channel`.
+   *
+   * @param string channel
+   */
+  unlisten(channel: string) {
+    self._open()
+
+    var at = self._channels.index_of(channel)
+
+    if at == -1 {
+      return
+    }
+
+    var name = self._connection.driver.quote_identifier(channel)
+    self._connection.run_simple('unlisten ${name}')
+    self._channels.remove_at(at)
+  }
+
+  /**
+   * Sends a notification.
+   *
+   * The payload is bound rather than pasted in, so it can hold
+   * anything including quotes.
+   *
+   * @param string channel
+   * @param string|nil payload
+   */
+  notify(channel: string, payload) {
+    self._open()
+
+    var values = payload == nil ? [channel] : [channel, payload]
+    var sql = payload == nil ?
+      'select pg_notify($1, null)' :
+      'select pg_notify($1, $2)'
+
+    self._connection.select(sql, values)
+  }
+
+  /**
+   * Whatever has arrived since the last call, without waiting.
+   *
+   * @returns list[dict] Each `{ channel, payload, pid }`.
+   */
+  poll() {
+    self._open()
+
+    return self._connection.notifications()
+  }
+
+  /**
+   * Waits for at least one notification, checking the connection each
+   * time round.
+   *
+   * There is no way to block on a socket and a database at once here,
+   * so this asks the server a trivial question on each pass, which is
+   * what carries any pending notification back with it.
+   *
+   * @param number|nil rounds How many times to check before giving up.
+   *    Unlimited when nil.
+   * @returns list[dict] The notifications received, which is empty
+   *    only if `rounds` ran out.
+   */
+  wait(rounds) {
+    self._open()
+
+    var remaining = rounds
+    var waiting = self.poll()
+
+    while waiting.is_empty() {
+      if remaining != nil {
+        if remaining <= 0 {
+          return []
+        }
+
+        remaining--
+      }
+
+      self._connection.select('select 1', [])
+      waiting = self.poll()
+    }
+
+    return waiting
+  }
+
+  /**
+   * Unsubscribes from everything. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    catch {
+      if !self._connection.is_closed() {
+        self._connection.run_simple('unlisten *')
+      }
+    } as _error {
+    }
+
+    self._channels = []
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError('this listener was closed', { driver: 'postgres' })
+    }
+  }
+
+  to_string() {
+    return '<Listener ${self._channels.length()} channel' +
+      '${self._channels.length() == 1 ? "" : "s"}' +
+      '${self._closed ? ", closed" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

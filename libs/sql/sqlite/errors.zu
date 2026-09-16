@@ -1,0 +1,159 @@
+/**
+ * @module errors
+ *
+ * Turning SQLite's result codes into the shared error classes.
+ *
+ * SQLite reports failures as small integers. The native layer puts the
+ * extended code in front of every message it raises, in the form
+ * `[2067] UNIQUE constraint failed: t.a`, and this module reads it back
+ * out and picks the class that says the same thing in the vocabulary
+ * every adapter shares.
+ *
+ * Extended codes rather than primary ones, because the distinctions
+ * worth acting on live there: every constraint failure is the primary
+ * code 19, and only the extended code says whether it was a unique
+ * index, a foreign key or a NOT NULL column.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors {
+  SqlError, ConnectionError, TimeoutError, QueryError,
+  IntegrityError, UniqueViolation, ForeignKeyViolation,
+  NotNullViolation, CheckViolation,
+}
+
+/**
+ * An extended code's primary code, which is its low byte.
+ *
+ * @param number code
+ * @returns number
+ */
+def primary(code: number) {
+  return code & 0xff
+}
+
+var _CONSTRAINT = 19
+
+# Extended constraint codes, each the primary code 19 with a
+# distinguishing byte above it.
+var _CONSTRAINT_CHECK = 275
+var _CONSTRAINT_FOREIGNKEY = 787
+var _CONSTRAINT_NOTNULL = 1299
+var _CONSTRAINT_PRIMARYKEY = 1555
+var _CONSTRAINT_UNIQUE = 2067
+var _CONSTRAINT_ROWID = 2579
+
+/**
+ * The class that best describes `code`.
+ *
+ * @param number code An extended result code.
+ * @returns class
+ */
+def class_for(code: number) {
+  if primary(code) == _CONSTRAINT {
+    if code == _CONSTRAINT_UNIQUE or code == _CONSTRAINT_PRIMARYKEY
+      or code == _CONSTRAINT_ROWID {
+      return UniqueViolation
+    }
+
+    if code == _CONSTRAINT_FOREIGNKEY {
+      return ForeignKeyViolation
+    }
+
+    if code == _CONSTRAINT_NOTNULL {
+      return NotNullViolation
+    }
+
+    if code == _CONSTRAINT_CHECK {
+      return CheckViolation
+    }
+
+    return IntegrityError
+  }
+
+  using primary(code) {
+    # Another connection held the database longer than the busy
+    # timeout allowed, which is SQLite's only form of contention.
+    when 5 return TimeoutError
+    when 6 return TimeoutError
+
+    # The file could not be opened, read or written.
+    when 10 return ConnectionError
+    when 14 return ConnectionError
+    when 26 return ConnectionError
+    when 11 return ConnectionError
+    when 13 return ConnectionError
+
+    # A statement the engine would not run: bad syntax, a missing
+    # table, a value of the wrong type, a bad parameter index, a
+    # write to a read-only database, or a statement the authorizer
+    # refused.
+    when 1 return QueryError
+    when 8 return QueryError
+    when 20 return QueryError
+    when 23 return QueryError
+    when 25 return QueryError
+  }
+
+  return SqlError
+}
+
+/**
+ * Splits the `[code] message` form the native layer raises.
+ *
+ * A message without the prefix comes back with a nil code and its text
+ * unchanged, so an error raised anywhere other than the native layer
+ * still passes through this cleanly.
+ *
+ * @param string message
+ * @returns dict `{ code, text }`
+ */
+def split_message(message: string) {
+  if !message.starts_with('[') {
+    return { code: nil, text: message }
+  }
+
+  var close = message.index_of(']')
+
+  if close == -1 {
+    return { code: nil, text: message }
+  }
+
+  var digits = message[1, close]
+
+  if digits.is_empty() or !digits.is_number() {
+    return { code: nil, text: message }
+  }
+
+  return {
+    code: digits.to_number(),
+    text: message[close + 1, message.length()].ltrim(),
+  }
+}
+
+/**
+ * Re-raises an error from the native layer as the right class.
+ *
+ * Anything that is already a `SqlError` passes through untouched, so
+ * wrapping a call that itself went through here does not bury the
+ * specific class under a general one.
+ *
+ * @param Error error The error the native layer raised.
+ * @param string|nil query The statement that was running, for context.
+ * @throws SqlError always.
+ */
+def reraise(error, query) {
+  if instance_of(error, SqlError) {
+    raise error
+  }
+
+  var parts = split_message(error.message)
+  var kind = parts.code != nil ? class_for(parts.code) : SqlError
+
+  raise kind(parts.text, {
+    code: parts.code,
+    driver: 'sqlite',
+    query,
+  })
+}

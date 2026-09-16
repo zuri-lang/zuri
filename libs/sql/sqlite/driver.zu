@@ -1,0 +1,342 @@
+/**
+ * @module driver
+ *
+ * Opening SQLite databases: reading a connection string, choosing the
+ * open flags, and putting a new connection into a sane state.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..driver {
+  Driver, default_capabilities, READ_COMMITTED, SERIALIZABLE,
+}
+import ..errors { ConnectionError, QueryError }
+import ..params { INDEXED }
+import .connection { SqliteConnection }
+import .errors { reraise }
+
+/**
+ * The path that means a private database held in memory, which is
+ * discarded when the connection closes.
+ */
+var MEMORY = ':memory:'
+
+# sqlite3_open_v2 flags. Spelled out rather than imported because they
+# are part of SQLite's stable C interface and will not move.
+var OPEN_READONLY = 0x00000001
+var OPEN_READWRITE = 0x00000002
+var OPEN_CREATE = 0x00000004
+var OPEN_URI = 0x00000040
+var OPEN_MEMORY = 0x00000080
+var OPEN_NOMUTEX = 0x00008000
+var OPEN_FULLMUTEX = 0x00010000
+var OPEN_SHAREDCACHE = 0x00020000
+var OPEN_PRIVATECACHE = 0x00040000
+
+/**
+ * How long a statement waits for another writer by default.
+ *
+ * SQLite's own default is not to wait at all, which turns any
+ * contention into an immediate error. Five seconds is long enough to
+ * ride out the short bursts that make up most contention and short
+ * enough that a genuine deadlock still surfaces.
+ */
+var DEFAULT_BUSY_TIMEOUT = 5000
+
+/**
+ * Most parameters one statement can bind, which is SQLite's own limit.
+ */
+var MAX_PARAMETERS = 32766
+
+/**
+ * Opens SQLite databases.
+ */
+class SqliteDriver < Driver {
+  name() {
+    return 'sqlite'
+  }
+
+  schemes() {
+    return ['sqlite', 'sqlite3', 'file']
+  }
+
+  /**
+   * What SQLite can do.
+   *
+   * Two of these are worth reading twice. `concurrent_writers` is
+   * false: a SQLite database takes one writer at a time whatever the
+   * journal mode, and a pool over it serialises writes rather than
+   * parallelising them. `json` is false because SQLite has JSON
+   * *functions* but no JSON *type*, so a list or dictionary is stored
+   * as text and comes back as text unless the column says otherwise.
+   *
+   * @returns dict
+   */
+  capabilities() {
+    var caps = default_capabilities()
+
+    caps.set('placeholder_style', INDEXED)
+    caps.set('named_parameters', true)
+    caps.set('last_insert_id', true)
+    caps.set('returning', true)
+    caps.set('isolation_levels', [READ_COMMITTED, SERIALIZABLE])
+    caps.set('server_side_cursors', true)
+    caps.set('upsert', true)
+    caps.set('concurrent_writers', false)
+    caps.set('max_parameters', MAX_PARAMETERS)
+
+    return caps
+  }
+
+  /**
+   * Reads a connection string, or passes an options dictionary
+   * through with its defaults filled in.
+   *
+   * These all name the same database:
+   *
+   * ```
+   * ./app.db
+   * sqlite:app.db
+   * sqlite://./app.db
+   * sqlite:///absolute/path/app.db
+   * ```
+   *
+   * and these all mean a private in-memory database:
+   *
+   * ```
+   * :memory:
+   * sqlite::memory:
+   * sqlite://:memory:
+   * ```
+   *
+   * A `file:` URI is handed to SQLite's own URI handling, which is
+   * how the options SQLite spells itself are reached:
+   *
+   * ```
+   * file:app.db?mode=ro&cache=shared
+   * ```
+   *
+   * Anything after `?` on a non-URI form is read as this adapter's own
+   * options instead. The recognised keys are `mode` (`ro`, `rw`,
+   * `rwc` or `memory`), `busy_timeout` in milliseconds,
+   * `foreign_keys`, `journal_mode` and `cache` (`shared` or
+   * `private`).
+   *
+   * @param string|dict dsn
+   * @returns dict
+   * @throws ConnectionError if the string names no database.
+   */
+  parse_dsn(dsn) {
+    if is_dict(dsn) {
+      return self._defaults(dsn.clone())
+    }
+
+    if !is_string(dsn) {
+      raise ConnectionError(
+        'a sqlite connection string is a string or a dictionary, ' +
+        'not ${typeof(dsn)}',
+        { driver: 'sqlite' }
+      )
+    }
+
+    var text = dsn.trim()
+
+    if text.is_empty() {
+      raise ConnectionError(
+        'a sqlite connection string cannot be empty; use ${MEMORY} for ' +
+        'an in-memory database',
+        { driver: 'sqlite' }
+      )
+    }
+
+    # A file: URI is SQLite's own and is passed through whole, options
+    # and all.
+    if text.starts_with('file:') {
+      return self._defaults({ path: text, uri: true })
+    }
+
+    var rest = text
+
+    for scheme in ['sqlite3://', 'sqlite://', 'sqlite3:', 'sqlite:'] {
+      if rest.starts_with(scheme) {
+        rest = rest[scheme.length(), rest.length()]
+        break
+      }
+    }
+
+    if rest.is_empty() {
+      raise ConnectionError(
+        'this sqlite connection string names no database file',
+        { driver: 'sqlite' }
+      )
+    }
+
+    var options = {}
+    var query = rest.index_of('?')
+
+    if query != -1 {
+      options = self._parse_options(rest[query + 1, rest.length()])
+      rest = rest[0, query]
+    }
+
+    options.set('path', rest)
+
+    return self._defaults(options)
+  }
+
+  /**
+   * Opens the database and puts it into the state the options ask for.
+   *
+   * @param dict options From `parse_dsn()`.
+   * @returns SqliteConnection
+   */
+  connect(options: dict) {
+    var handle
+
+    catch {
+      handle = _sqlite.open(options.path, self._flags(options), nil)
+    } as error {
+      reraise(error, nil)
+    }
+
+    var connection = SqliteConnection(self, handle, options)
+
+    catch {
+      _sqlite.busy_timeout(handle, options.busy_timeout)
+
+      # SQLite leaves foreign keys unenforced unless asked, per
+      # connection, for backward compatibility with databases written
+      # before it had them. A database that declares them almost
+      # certainly means them, so they are on here unless turned off.
+      if options.foreign_keys {
+        _sqlite.exec(handle, 'pragma foreign_keys = on')
+      }
+
+      if options.journal_mode != nil {
+        _sqlite.exec(handle, 'pragma journal_mode = ${options.journal_mode}')
+      }
+
+      if options.synchronous != nil {
+        _sqlite.exec(handle, 'pragma synchronous = ${options.synchronous}')
+      }
+    } as error {
+      connection.close()
+      reraise(error, nil)
+    }
+
+    return connection
+  }
+
+  # Fills in everything the options did not say.
+  _defaults(options) {
+    if !options.contains('path') or !is_string(options.path) {
+      raise ConnectionError(
+        'sqlite connection options need a path; use ${MEMORY} for an ' +
+        'in-memory database',
+        { driver: 'sqlite' }
+      )
+    }
+
+    if !options.contains('mode') {
+      options.set('mode', options.path == MEMORY ? 'memory' : 'rwc')
+    }
+
+    if !options.contains('busy_timeout') {
+      options.set('busy_timeout', DEFAULT_BUSY_TIMEOUT)
+    }
+
+    if !options.contains('foreign_keys') {
+      options.set('foreign_keys', true)
+    }
+
+    if !options.contains('uri') {
+      options.set('uri', false)
+    }
+
+    if !options.contains('journal_mode') {
+      options.set('journal_mode', nil)
+    }
+
+    if !options.contains('synchronous') {
+      options.set('synchronous', nil)
+    }
+
+    if !options.contains('cache') {
+      options.set('cache', nil)
+    }
+
+    return options
+  }
+
+  # Reads `key=value&key=value` into a dictionary, converting the
+  # values whose types are known.
+  _parse_options(text) {
+    var options = {}
+
+    for pair in text.split('&') {
+      if pair.is_empty() {
+        continue
+      }
+
+      var split = pair.index_of('=')
+      var key = split == -1 ? pair : pair[0, split]
+      var value = split == -1 ? '' : pair[split + 1, pair.length()]
+
+      if key == 'busy_timeout' {
+        if !value.is_number() {
+          raise ConnectionError(
+            'busy_timeout is a number of milliseconds, not ${value}',
+            { driver: 'sqlite' }
+          )
+        }
+
+        options.set(key, value.to_number())
+        continue
+      }
+
+      if key == 'foreign_keys' {
+        options.set(key, value != 'false' and value != '0' and value != 'off')
+        continue
+      }
+
+      options.set(key, value)
+    }
+
+    return options
+  }
+
+  # The sqlite3_open_v2 flags the options add up to.
+  _flags(options) {
+    var flags = 0
+
+    using options.mode {
+      when 'ro' flags = OPEN_READONLY
+      when 'rw' flags = OPEN_READWRITE
+      when 'rwc' flags = OPEN_READWRITE | OPEN_CREATE
+      when 'memory' {
+        flags = OPEN_READWRITE | OPEN_CREATE | OPEN_MEMORY
+      }
+      default {
+        raise QueryError(
+          'unknown sqlite mode ${options.mode}; it is one of ro, rw, ' +
+          'rwc or memory',
+          { driver: 'sqlite' }
+        )
+      }
+    }
+
+    if options.uri {
+      flags |= OPEN_URI
+    }
+
+    if options.cache == 'shared' {
+      flags |= OPEN_SHAREDCACHE
+    } else if options.cache == 'private' {
+      flags |= OPEN_PRIVATECACHE
+    }
+
+    return flags
+  }
+}

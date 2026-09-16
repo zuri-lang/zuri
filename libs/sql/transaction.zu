@@ -1,0 +1,219 @@
+/**
+ * @module transaction
+ *
+ * Transactions, and the nesting that savepoints make possible.
+ *
+ * The shape worth using is the closure form, because it cannot be got
+ * wrong:
+ *
+ * ```zuri
+ * db.transaction(@(tx) {
+ *   tx.exec('update accounts set balance = balance - ? where id = ?', [100, 1])
+ *   tx.exec('update accounts set balance = balance + ? where id = ?', [100, 2])
+ * })
+ * ```
+ *
+ * It commits when the closure returns and rolls back when the closure
+ * raises, and there is no path through it that leaves a transaction
+ * open. The manual form exists for the cases the closure form cannot
+ * express, such as a transaction whose lifetime is a request rather
+ * than a block.
+ *
+ * ### Nesting
+ *
+ * No engine here supports a transaction inside a transaction, but both
+ * support savepoints, which is the same thing under a different name.
+ * A `transaction()` inside another takes a savepoint, so a helper that
+ * opens one works the same whether it was called on its own or from
+ * inside a larger piece of work. Only the outermost actually commits.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { TransactionError }
+
+/**
+ * An open transaction.
+ *
+ * It carries the same query and exec methods a connection does, so
+ * code inside a transaction reads the same as code outside one. Every
+ * statement it runs goes to the connection the transaction is on.
+ *
+ * @printable
+ */
+class Transaction {
+  /**
+   * The connection this transaction is running on.
+   * @type Connection
+   */
+  var connection
+
+  /**
+   * Whether this transaction is a savepoint inside another rather than
+   * a transaction of its own.
+   *
+   * @type bool
+   */
+  var nested = false
+
+  var _finished = false
+
+  /**
+   * @param Connection connection
+   * @param bool nested
+   */
+  @new(connection, nested) {
+    self.connection = connection
+    self.nested = nested ? true : false
+  }
+
+  /**
+   * Whether this transaction has already committed or rolled back.
+   *
+   * @returns bool
+   */
+  is_finished() {
+    return self._finished
+  }
+
+  /**
+   * Runs a query on this transaction's connection.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns ResultSet
+   */
+  query(sql: string, params) {
+    self._active()
+    return self.connection.query(sql, params)
+  }
+
+  /**
+   * Runs a statement for its effect.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns ExecResult
+   */
+  exec(sql: string, params) {
+    self._active()
+    return self.connection.exec(sql, params)
+  }
+
+  /**
+   * The first row of a query, or nil.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns dict|nil
+   */
+  fetch_one(sql: string, params) {
+    self._active()
+    return self.connection.fetch_one(sql, params)
+  }
+
+  /**
+   * Every row of a query.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns list[dict]
+   */
+  fetch_all(sql: string, params) {
+    self._active()
+    return self.connection.fetch_all(sql, params)
+  }
+
+  /**
+   * The first column of the first row.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param any fallback
+   * @returns any
+   */
+  fetch_value(sql: string, params, fallback) {
+    self._active()
+    return self.connection.fetch_value(sql, params, fallback)
+  }
+
+  /**
+   * Inserts a row and returns its id.
+   *
+   * @param string table
+   * @param dict values
+   * @param dict|nil options
+   * @returns any
+   */
+  insert(table: string, values: dict, options) {
+    self._active()
+    return self.connection.insert(table, values, options)
+  }
+
+  /**
+   * Updates the rows matching `where`.
+   *
+   * @param string table
+   * @param dict values
+   * @param dict|nil where
+   * @returns number
+   */
+  update(table: string, values: dict, where) {
+    self._active()
+    return self.connection.update(table, values, where)
+  }
+
+  /**
+   * Deletes the rows matching `where`.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @returns number
+   */
+  delete(table: string, where) {
+    self._active()
+    return self.connection.delete(table, where)
+  }
+
+  /**
+   * Commits this transaction, or releases its savepoint when it is
+   * nested.
+   *
+   * @throws TransactionError if it has already finished.
+   */
+  commit() {
+    self._active()
+    self._finished = true
+    self.connection.driver_connection().commit()
+  }
+
+  /**
+   * Rolls this transaction back, or undoes its savepoint when it is
+   * nested.
+   *
+   * @throws TransactionError if it has already finished.
+   */
+  rollback() {
+    self._active()
+    self._finished = true
+    self.connection.driver_connection().rollback()
+  }
+
+  _active() {
+    if self._finished {
+      raise TransactionError(
+        'this transaction has already ' +
+        '${self.nested ? "left its savepoint" : "finished"}'
+      )
+    }
+  }
+
+  to_string() {
+    var kind = self.nested ? 'savepoint' : 'transaction'
+    return '<Transaction ${kind}${self._finished ? " (finished)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

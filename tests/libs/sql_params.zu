@@ -1,0 +1,177 @@
+# Placeholder translation is what lets the same statement run on
+# either engine, so its scanner has to know when a `?` or a `:` is
+# part of the SQL rather than a parameter.
+
+import sql.params { * }
+import sql.errors { QueryError }
+
+def test_positional() {
+  var numbered = translate('select * from t where a = ? and b = ?', [1, 2], NUMBERED)
+  assert numbered.sql == 'select * from t where a = $1 and b = $2'
+  assert numbered.values == [1, 2]
+
+  var indexed = translate('select * from t where a = ?', ['x'], INDEXED)
+  assert indexed.sql == 'select * from t where a = ?1'
+
+  var question = translate('select * from t where a = ?', ['x'], QUESTION)
+  assert question.sql == 'select * from t where a = ?'
+
+  echo 'test_positional passed'
+}
+
+def test_named() {
+  var numbered = translate('select :a, :b', { a: 1, b: 2 }, NUMBERED)
+  assert numbered.sql == 'select $1, $2'
+  assert numbered.values == [1, 2]
+
+  # A name used twice binds once where the engine can refer back to a
+  # parameter by position.
+  var repeated = translate('select :a, :b, :a', { a: 'x', b: 'y' }, NUMBERED)
+  assert repeated.sql == 'select $1, $2, $1'
+  assert repeated.values == ['x', 'y']
+
+  # A bare `?` cannot refer back, so the value goes again.
+  var flat = translate('select :a, :b, :a', { a: 'x', b: 'y' }, QUESTION)
+  assert flat.sql == 'select ?, ?, ?'
+  assert flat.values == ['x', 'y', 'x']
+
+  echo 'test_named passed'
+}
+
+def test_not_placeholders() {
+  # Inside a string, a quoted identifier or a backtick, nothing counts.
+  var quoted = translate("select '?', \"a?b\", `c?d`, :x", { x: 1 }, NUMBERED)
+  assert quoted.sql == "select '?', \"a?b\", `c?d`, $1"
+
+  # A doubled quote escapes rather than ending the string.
+  var escaped = translate("select 'it''s ? here', ?", [1], NUMBERED)
+  assert escaped.sql == "select 'it''s ? here', $1"
+
+  # PostgreSQL's cast operator is two colons, not a parameter.
+  var cast = translate('select a::text where b = ?', [1], NUMBERED)
+  assert cast.sql == 'select a::text where b = $1'
+
+  # A dollar-quoted body is opaque.
+  var dollar = translate('select $tag$ ? :x $tag$, ?', [1], NUMBERED)
+  assert dollar.sql == 'select $tag$ ? :x $tag$, $1'
+
+  # An array subscript that looks like a named parameter is not one.
+  var slice = translate('select arr[1:3] where id = ?', [7], NUMBERED)
+  assert slice.sql == 'select arr[1:3] where id = $1'
+
+  # Comments, including the nested block comments PostgreSQL allows.
+  var line = translate('select 1 -- ? and :x\n, ?', [2], NUMBERED)
+  assert line.sql == 'select 1 -- ? and :x\n, $1'
+
+  var block = translate('select /* ? /* :x */ ? */ ?', [3], NUMBERED)
+  assert block.sql == 'select /* ? /* :x */ ? */ $1'
+
+  echo 'test_not_placeholders passed'
+}
+
+def test_escape() {
+  # `?` is a JSON operator in PostgreSQL, so a literal one is doubled.
+  var escaped = translate('select data ?? $1 from t where id = ?', [7], NUMBERED)
+  assert escaped.sql == 'select data ? $1 from t where id = $1'
+  assert escaped.values == [7]
+
+  echo 'test_escape passed'
+}
+
+def test_mistakes() {
+  var mixed = false
+
+  catch {
+    translate('select ? and :a', [1], NUMBERED)
+  } as error {
+    mixed = instance_of(error, QueryError)
+  }
+
+  assert mixed
+
+  var wrong_shape = false
+
+  catch {
+    translate('select ?', { a: 1 }, NUMBERED)
+  } as error {
+    wrong_shape = instance_of(error, QueryError)
+  }
+
+  assert wrong_shape
+
+  var too_few = false
+
+  catch {
+    translate('select ?, ?', [1], NUMBERED)
+  } as error {
+    too_few = instance_of(error, QueryError)
+  }
+
+  assert too_few
+
+  var too_many = false
+
+  catch {
+    translate('select ?', [1, 2], NUMBERED)
+  } as error {
+    too_many = instance_of(error, QueryError)
+  }
+
+  assert too_many
+
+  var missing_name = false
+
+  catch {
+    translate('select :a', { b: 1 }, NUMBERED)
+  } as error {
+    missing_name = instance_of(error, QueryError)
+  }
+
+  assert missing_name
+
+  echo 'test_mistakes passed'
+}
+
+def test_scan() {
+  assert scan('select ?, ?').positional == 2
+  assert scan('select :a, :b, :a').names == ['a', 'b']
+  assert scan("select '?'").positional == 0
+
+  echo 'test_scan passed'
+}
+
+def test_split_statements() {
+  var script = "create table a (id integer);\n" +
+    "insert into a values (1);\n" +
+    "-- a comment with ; in it\n" +
+    "insert into a values (';');\n"
+
+  var statements = split_statements(script)
+
+  assert statements.length() == 3
+  assert statements[0] == 'create table a (id integer)'
+  assert statements[2].ends_with("values (';')")
+
+  # A trailing semicolon leaves nothing behind.
+  assert split_statements('select 1;').length() == 1
+  assert split_statements('   ').length() == 0
+
+  echo 'test_split_statements passed'
+}
+
+def test_placeholder() {
+  assert placeholder(NUMBERED, 3) == '$3'
+  assert placeholder(INDEXED, 3) == '?3'
+  assert placeholder(QUESTION, 3) == '?'
+
+  echo 'test_placeholder passed'
+}
+
+test_positional()
+test_named()
+test_not_placeholders()
+test_escape()
+test_mistakes()
+test_scan()
+test_split_statements()
+test_placeholder()

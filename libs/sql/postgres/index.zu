@@ -1,0 +1,59 @@
+/**
+ * @module postgres
+ *
+ * The PostgreSQL adapter.
+ *
+ * Reach it through `sql`, which is what keeps a program portable:
+ *
+ * ```zuri
+ * import sql
+ *
+ * var db = sql.open('postgres://alice:secret@localhost/app')
+ * ```
+ *
+ * The module underneath is here for the parts of PostgreSQL that have
+ * no equivalent elsewhere: LISTEN and NOTIFY, the server's own
+ * settings, and the type registry, which is how a program teaches the
+ * adapter about a type its database defines.
+ *
+ * ### What this adapter speaks
+ *
+ * Version 3 of the wire protocol, over TCP, optionally under TLS. Unix
+ * domain sockets are not supported; a `host` that names a directory
+ * raises rather than silently connecting somewhere else.
+ *
+ * Statements go through the extended protocol, which compiles them on
+ * the server and binds values rather than substituting them. Values
+ * travel in the server's own binary form wherever this adapter has a
+ * codec for the type, and as text otherwise, so a type it has never
+ * heard of still arrives readable.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.driver { PostgresDriver, DEFAULT_PORT, MAX_PARAMETERS, SSL_MODES }
+import @.connection { PostgresConnection }
+import @.statement { PostgresStatement }
+import @.cursor { PostgresCursor }
+import @.notify { Listener }
+import @.protocol { Protocol }
+import @.types { TypeRegistry, DEFAULT_REGISTRY, OIDS }
+import @.errors { class_for, raise_for }
+import @.results { affected_rows, describe_columns, type_name_of }
+
+/**
+ * The driver instance `sql` registers for this engine.
+ */
+var DRIVER = PostgresDriver()
+
+/**
+ * Opens a PostgreSQL connection directly, without going through `sql`.
+ *
+ * Anything meant to stay portable should use `sql.open()` instead.
+ *
+ * @param string|dict dsn A connection string or options.
+ * @returns PostgresConnection
+ */
+def connect(dsn) {
+  return DRIVER.connect(DRIVER.parse_dsn(dsn))
+}

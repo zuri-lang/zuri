@@ -1,0 +1,529 @@
+/**
+ * @module pool
+ *
+ * Keeping connections open and lending them out.
+ *
+ * Opening a connection is expensive: for PostgreSQL it is a TCP
+ * connection, a TLS handshake and an authentication exchange before
+ * the first statement runs. A server that opened one per request would
+ * spend most of its time connecting. A pool opens a few and lends them
+ * out.
+ *
+ * ```zuri
+ * var db = sql.pool('postgres://localhost/app', { max: 10 })
+ *
+ * var posts = db.fetch_all('select * from posts')
+ * ```
+ *
+ * Used that way the pool takes a connection, runs the statement and
+ * gives it back. Where several statements have to run on the same
+ * connection, which a transaction requires, `acquire()` holds one until
+ * it is released and `with_connection()` does the releasing.
+ *
+ * ### Sizing
+ *
+ * A pool wants to be as small as the work allows. Connections are not
+ * free at the other end either, and a pool larger than the database
+ * can usefully serve turns a queue in the application into a queue in
+ * the database, where it is harder to see.
+ *
+ * SQLite wants a smaller pool than a server engine does. Readers are
+ * concurrent but writers are not, so past a handful of connections the
+ * writes queue on the database's own lock rather than running. An
+ * in-memory SQLite database goes further: it belongs to the connection
+ * that opened it, so a pool of several would be several different
+ * empty databases. The pool clamps that case to one connection.
+ *
+ * ### Isolates
+ *
+ * A pool belongs to the isolate that made it. An isolate that needs
+ * database access makes its own.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+
+import .connection { Connection }
+import .errors { ClosedError, PoolExhaustedError, SqlError }
+
+/**
+ * How many connections a pool opens at most, when it is not told.
+ */
+var DEFAULT_MAX = 10
+
+/**
+ * How long an idle connection is kept before being closed, in
+ * milliseconds. Zero keeps them indefinitely.
+ */
+var DEFAULT_IDLE_TIMEOUT = 300000
+
+/**
+ * How long any connection is kept before being replaced, in
+ * milliseconds. Zero keeps them indefinitely.
+ *
+ * Recycling connections on a schedule is what stops a pool holding one
+ * that a database restart, a failover or a firewall has quietly
+ * invalidated.
+ */
+var DEFAULT_MAX_LIFETIME = 1800000
+
+/**
+ * A pool of connections to one database.
+ *
+ * @printable
+ */
+class Pool {
+  var _driver
+  var _options
+  var _settings
+
+  # Connections not currently lent out, each with the times it was
+  # opened and last returned.
+  var _idle = []
+
+  # How many exist in total, lent out or not.
+  var _size = 0
+
+  var _closed = false
+
+  /**
+   * @param Driver driver
+   * @param dict options The adapter's connection options.
+   * @param dict settings The pool's own settings: `min`, `max`,
+   *    `idle_timeout`, `max_lifetime`, `validate_on_acquire` and
+   *    `on_connect`.
+   */
+  @new(driver, options, settings) {
+    self._driver = driver
+    self._options = options
+    self._settings = self._defaults(settings or {})
+
+    for index in 0..(self._settings.min) {
+      self._idle.append(self._open())
+      self._size++
+    }
+  }
+
+  /**
+   * How many connections exist, lent out or not.
+   *
+   * @returns number
+   */
+  size() {
+    return self._size
+  }
+
+  /**
+   * How many are available right now.
+   *
+   * @returns number
+   */
+  available() {
+    return self._idle.length()
+  }
+
+  /**
+   * How many are currently lent out.
+   *
+   * @returns number
+   */
+  in_use() {
+    return self._size - self._idle.length()
+  }
+
+  /**
+   * A snapshot of the pool: `{ size, idle, in_use, max }`.
+   *
+   * @returns dict
+   */
+  stats() {
+    return {
+      size: self._size,
+      idle: self._idle.length(),
+      in_use: self.in_use(),
+      max: self._settings.max,
+    }
+  }
+
+  /**
+   * Takes a connection, waiting for one if they are all busy.
+   *
+   * The caller has to give it back. `close()` on the connection does
+   * that, which is what makes a pooled connection a drop-in for one
+   * that is not pooled, and `with_connection()` does it whatever
+   * happens.
+   *
+   * There is no waiting when the pool is empty, and no timeout to set.
+   * A pool belongs to one isolate, so nothing else can release a
+   * connection while this call is running; blocking would never end.
+   * Running out means the pool is too small for the work or a
+   * connection is being held longer than it should be, and both of
+   * those are better reported than waited on.
+   *
+   * @returns Connection
+   * @throws PoolExhaustedError if every connection is in use.
+   * @throws ClosedError if the pool has been closed.
+   */
+  acquire() {
+    self._open_pool()
+
+    var connection = self._take()
+
+    if connection != nil {
+      return connection
+    }
+
+    if self._size < self._settings.max {
+      var entry = self._open()
+      self._size++
+
+      return self._lend(entry)
+    }
+
+    raise PoolExhaustedError(
+      'all ${self._settings.max} connections are in use; release one ' +
+      'before acquiring another, or raise the pool maximum',
+      { driver: self._driver.name() }
+    )
+  }
+
+  /**
+   * Gives a connection back.
+   *
+   * Called for you by `Connection.close()` on a pooled connection, so
+   * there is rarely a reason to call it directly.
+   *
+   * A connection that has been closed for real, or that has outlived
+   * `max_lifetime`, is discarded rather than kept.
+   *
+   * @param Connection connection
+   */
+  release(connection) {
+    var entry = connection.pool_entry()
+
+    if entry == nil {
+      return
+    }
+
+    connection.detach_from_pool()
+
+    if self._closed or connection.is_closed() or self._expired(entry) {
+      self._discard(entry)
+
+      return
+    }
+
+    # A connection handed back mid-transaction would lend its
+    # transaction to whoever gets it next, so anything still open is
+    # rolled back before it goes in the pool.
+    catch {
+      if entry.connection.in_transaction() {
+        entry.connection.driver_connection().rollback()
+      }
+    } as _error {
+      self._discard(entry)
+
+      return
+    }
+
+    entry.set('released_at', _now())
+    self._idle.append(entry)
+    self._sweep()
+  }
+
+  /**
+   * Runs `body` with a connection, giving it back whatever happens.
+   *
+   * ```zuri
+   * db.with_connection(@(connection) {
+   *   connection.transaction(@(tx) {
+   *     tx.exec('...')
+   *   })
+   * })
+   * ```
+   *
+   * @param function body Called with a `Connection`.
+   * @returns any Whatever `body` returned.
+   */
+  with_connection(body: function) {
+    var connection = self.acquire()
+
+    catch {
+      var result = body(connection)
+      self.release(connection)
+
+      return result
+    } as error {
+      self.release(connection)
+      raise error
+    }
+  }
+
+  /**
+   * Runs `body` in a transaction on a connection of its own.
+   *
+   * @param function body Called with a `Transaction`.
+   * @param string|nil isolation
+   * @returns any Whatever `body` returned.
+   */
+  transaction(body: function, isolation) {
+    return self.with_connection(@(connection) {
+      return connection.transaction(body, isolation)
+    })
+  }
+
+  /**
+   * Runs a query on a connection from the pool.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns ResultSet
+   */
+  query(sql: string, params) {
+    return self.with_connection(@(connection) => connection.query(sql, params))
+  }
+
+  /**
+   * Runs a statement for its effect on a connection from the pool.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns ExecResult
+   */
+  exec(sql: string, params) {
+    return self.with_connection(@(connection) => connection.exec(sql, params))
+  }
+
+  /**
+   * The first row of a query, or nil.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns dict|nil
+   */
+  fetch_one(sql: string, params) {
+    return self.with_connection(@(connection) => connection.fetch_one(sql, params))
+  }
+
+  /**
+   * Every row of a query.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @returns list[dict]
+   */
+  fetch_all(sql: string, params) {
+    return self.with_connection(@(connection) => connection.fetch_all(sql, params))
+  }
+
+  /**
+   * The first column of the first row.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param any fallback
+   * @returns any
+   */
+  fetch_value(sql: string, params, fallback) {
+    return self.with_connection(
+      @(connection) => connection.fetch_value(sql, params, fallback)
+    )
+  }
+
+  /**
+   * Closes every connection and refuses further use.
+   *
+   * Connections currently lent out are closed as they come back.
+   *
+   * Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    for entry in self._idle {
+      catch {
+        entry.connection.close()
+      } as _error {
+      }
+    }
+
+    self._size -= self._idle.length()
+    self._idle = []
+  }
+
+  /**
+   * Whether this pool has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  # Takes an idle connection that is still good, discarding any that
+  # are not.
+  _take() {
+    while !self._idle.is_empty() {
+      var entry = self._idle.pop()
+
+      if self._expired(entry) or entry.connection.is_closed() {
+        self._discard(entry)
+        continue
+      }
+
+      if self._settings.validate_on_acquire and !entry.connection.ping() {
+        self._discard(entry)
+        continue
+      }
+
+      return self._lend(entry)
+    }
+
+    return nil
+  }
+
+  # Hands `entry` out, wrapping its driver connection in a Connection
+  # that returns itself to this pool when closed.
+  _lend(entry) {
+    var connection = entry.connection
+
+    connection.attach_to_pool(self, entry)
+
+    return connection
+  }
+
+  # Opens one connection and records when.
+  _open() {
+    var driver_connection = self._driver.connect(self._options)
+    var connection = Connection(driver_connection, self._driver)
+    var now = _now()
+
+    if self._settings.on_connect != nil {
+      self._settings.on_connect(connection)
+    }
+
+    return {
+      connection,
+      opened_at: now,
+      released_at: now,
+    }
+  }
+
+  _discard(entry) {
+    catch {
+      entry.connection.detach_from_pool()
+      entry.connection.close()
+    } as _error {
+    }
+
+    self._size--
+
+    if self._size < 0 {
+      self._size = 0
+    }
+  }
+
+  # Closes idle connections that have been sitting longer than the
+  # idle timeout, keeping at least `min` of them.
+  _sweep() {
+    var timeout = self._settings.idle_timeout
+
+    if timeout <= 0 {
+      return
+    }
+
+    var cutoff = _now() - timeout
+    var kept = []
+
+    for entry in self._idle {
+      if kept.length() < self._settings.min or entry.released_at >= cutoff {
+        kept.append(entry)
+        continue
+      }
+
+      self._discard(entry)
+    }
+
+    self._idle = kept
+  }
+
+  _expired(entry) {
+    var lifetime = self._settings.max_lifetime
+
+    return lifetime > 0 and _now() - entry.opened_at >= lifetime
+  }
+
+  _open_pool() {
+    if self._closed {
+      raise ClosedError('this pool was closed', { driver: self._driver.name() })
+    }
+  }
+
+  _defaults(settings) {
+    var filled = settings.clone()
+
+    if !filled.contains('max') {
+      filled.set('max', DEFAULT_MAX)
+    }
+
+    # An in-memory SQLite database belongs to the connection that
+    # opened it, so a second connection would not be a second handle on
+    # the same data but a different, empty database. One is the only
+    # size that means anything.
+    #
+    # A file-backed one is not clamped. SQLite takes a single writer at
+    # a time, but readers are concurrent, and serialising the writes is
+    # the busy timeout's job rather than the pool's.
+    if self._options.get('mode', nil) == 'memory' {
+      filled.set('max', 1)
+    }
+
+    if !filled.contains('min') {
+      filled.set('min', 0)
+    }
+
+    if filled.min > filled.max {
+      raise SqlError(
+        'a pool cannot keep ${filled.min} connections open when its ' +
+        'maximum is ${filled.max}'
+      )
+    }
+
+    if !filled.contains('idle_timeout') {
+      filled.set('idle_timeout', DEFAULT_IDLE_TIMEOUT)
+    }
+
+    if !filled.contains('max_lifetime') {
+      filled.set('max_lifetime', DEFAULT_MAX_LIFETIME)
+    }
+
+    if !filled.contains('validate_on_acquire') {
+      filled.set('validate_on_acquire', false)
+    }
+
+    if !filled.contains('on_connect') {
+      filled.set('on_connect', nil)
+    }
+
+    return filled
+  }
+
+  to_string() {
+    return '<Pool ${self._driver.name()} ${self.in_use()}/${self._size} in use' +
+      '${self._closed ? ", closed" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Milliseconds since the epoch, for the pool's own ageing.
+def _now() {
+  return date.Date().to_time() * 1000
+}

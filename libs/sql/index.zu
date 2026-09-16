@@ -1,0 +1,281 @@
+/**
+ * @module sql
+ *
+ * One way to talk to a relational database, whichever one it is.
+ *
+ * `sql` is the entry point for every database Zuri supports. It
+ * defines what a database adapter has to provide, supplies everything
+ * that is the same whichever engine answers, and picks the adapter
+ * from the connection string. Changing database means changing that
+ * string, and whatever SQL the two engines genuinely spell
+ * differently.
+ *
+ * ```zuri
+ * import sql
+ *
+ * var db = sql.open('sqlite://./app.db')
+ *
+ * db.exec('create table posts (id integer primary key, title text)')
+ *
+ * var id = db.insert('posts', { title: 'Hello' })
+ *
+ * for post in db.query('select * from posts where id = ?', [id]) {
+ *   echo post.title
+ * }
+ *
+ * db.close()
+ * ```
+ *
+ * The only line above that names an engine is the first. Point it at
+ * `postgres://localhost/app` and the rest runs unchanged: the `?`
+ * becomes `$1`, the insert gets a `RETURNING` clause because
+ * PostgreSQL has no last insert id, and a unique key violation still
+ * arrives as `UniqueViolation`.
+ *
+ * ### What is here
+ *
+ * | | |
+ * | --- | --- |
+ * | `open()` | opens a connection from a connection string |
+ * | `pool()` | opens a pool of them |
+ * | `register()` | adds an adapter of your own |
+ * | `Connection` | what a program holds and runs statements on |
+ * | `Transaction` | an open transaction, and the savepoints inside it |
+ * | `Statement` | a statement compiled once and run many times |
+ * | `Cursor` | a result read a row at a time |
+ * | `ResultSet` | the rows a query returned |
+ * | `Schema` | what tables exist and what is in them |
+ * | `SqlError` | the root of every error a database raises |
+ *
+ * ### Parameters
+ *
+ * Values are bound, never pasted into the statement. Write `?` for
+ * positional parameters or `:name` for named ones and `sql` translates
+ * them into whatever the adapter wants:
+ *
+ * ```zuri
+ * db.query('select * from posts where author = ? and year = ?', [name, 2026])
+ * db.query('select * from posts where author = :who', { who: name })
+ * ```
+ *
+ * ### Errors
+ *
+ * Every error is a `SqlError`. The subclasses are the same on every
+ * engine, so the code that handles a duplicate key does not change
+ * when the engine does:
+ *
+ * ```zuri
+ * catch {
+ *   db.insert('users', { email: address })
+ * } as error {
+ *   if instance_of(error, sql.UniqueViolation) {
+ *     echo 'that address is already registered'
+ *   } else {
+ *     raise error
+ *   }
+ * }
+ * ```
+ *
+ * ### Isolates
+ *
+ * A connection belongs to the isolate that opened it and cannot be
+ * shared with another. An isolate that needs a database opens its own
+ * connection or its own pool.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.errors { * }
+import @.driver {
+  Driver, DriverConnection, DriverStatement, DriverCursor, SchemaAdapter,
+  default_capabilities,
+  READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+}
+import @.params { translate, scan, split_statements, placeholder,
+  QUESTION, NUMBERED, INDEXED }
+import @.result { ResultSet, ExecResult }
+import @.cursor { Cursor }
+import @.statement { Statement }
+import @.transaction { Transaction }
+import @.schema { Schema, column_shape }
+import @.crud { Raw, raw }
+import @.connection { Connection }
+import @.pool { Pool }
+
+import .sqlite
+import .postgres
+
+/**
+ * The adapters known to `sql`, by the name each registered under.
+ *
+ * The two built in ones are here from the start. `register()` adds to
+ * it and `drivers()` reads it.
+ */
+var _REGISTRY = {}
+
+/**
+ * Registers an adapter, so `open()` recognises its connection strings.
+ *
+ * An adapter is anything implementing `Driver`. Registering one under
+ * a name already taken replaces it, which is how a program swaps in an
+ * adapter of its own for an engine `sql` already knows.
+ *
+ * ```zuri
+ * sql.register(MyMySqlDriver())
+ *
+ * var db = sql.open('mysql://localhost/app')
+ * ```
+ *
+ * @param Driver driver
+ * @returns Driver The driver, so a registration can be an expression.
+ * @throws SqlError if `driver` is not one.
+ */
+def register(driver) {
+  if !instance_of(driver, Driver) {
+    raise SqlError(
+      'a driver has to extend sql.Driver, and ${typeof(driver)} does not'
+    )
+  }
+
+  _REGISTRY.set(driver.name(), driver)
+
+  return driver
+}
+
+/**
+ * The names of every registered adapter.
+ *
+ * @returns list[string]
+ */
+def drivers() {
+  return _REGISTRY.keys()
+}
+
+/**
+ * The adapter registered under `name`.
+ *
+ * @param string name
+ * @returns Driver
+ * @throws SqlError if nothing is registered under that name.
+ */
+def driver(name: string) {
+  var found = _REGISTRY.get(name, nil)
+
+  if found == nil {
+    raise SqlError(
+      'no database adapter called ${name} is registered; there ' +
+      '${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+      '${', '.join(_REGISTRY.keys())}'
+    )
+  }
+
+  return found
+}
+
+/**
+ * The adapter a connection string names.
+ *
+ * The scheme decides: `sqlite://` and `postgres://` reach the adapters
+ * of those names, and a string with no scheme at all is taken as a
+ * SQLite path, which is the only form that could not be anything else.
+ *
+ * @param string dsn
+ * @returns Driver
+ * @throws SqlError if no adapter claims the scheme.
+ */
+def driver_for(dsn: string) {
+  var scheme = _scheme_of(dsn)
+
+  if scheme == nil {
+    return driver('sqlite')
+  }
+
+  for name, candidate in _REGISTRY {
+    if candidate.schemes().contains(scheme) {
+      return candidate
+    }
+  }
+
+  raise SqlError(
+    'no database adapter handles ${scheme}:// connection strings; ' +
+    '${', '.join(_REGISTRY.keys())} ${_REGISTRY.length() == 1 ? "is" : "are"} ' +
+    'registered'
+  )
+}
+
+/**
+ * Opens a connection.
+ *
+ * ```zuri
+ * sql.open('sqlite://./app.db')
+ * sql.open('postgres://alice:secret@localhost/app')
+ * sql.open('./app.db')
+ * ```
+ *
+ * An options dictionary works too, and needs `driver` to say which
+ * adapter it is for:
+ *
+ * ```zuri
+ * sql.open({ driver: 'sqlite', path: './app.db', journal_mode: 'wal' })
+ * ```
+ *
+ * @param string|dict dsn A connection string, or options.
+ * @param dict|nil options Extra options, merged over whatever the
+ *    connection string carried. Anything an adapter accepts in its own
+ *    options goes here.
+ * @returns Connection
+ * @throws ConnectionError if the database cannot be reached.
+ */
+def open(dsn, options) {
+  var chosen = is_dict(dsn) ? driver(dsn.get('driver', 'sqlite')) : driver_for(dsn)
+  var settings = chosen.parse_dsn(dsn)
+
+  if options != nil {
+    settings.extend(options)
+  }
+
+  return Connection(chosen.connect(settings), chosen)
+}
+
+/**
+ * Opens a pool of connections.
+ *
+ * @param string|dict dsn As `open()` takes.
+ * @param dict|nil options The pool's own settings, and any the adapter
+ *    accepts. See `Pool` for what the pool reads.
+ * @returns Pool
+ */
+def pool(dsn, options) {
+  var chosen = is_dict(dsn) ? driver(dsn.get('driver', 'sqlite')) : driver_for(dsn)
+
+  return Pool(chosen, chosen.parse_dsn(dsn), options or {})
+}
+
+# The scheme of a connection string, or nil for one that has none.
+#
+# A Windows path such as `C:\\app.db` has a colon in it and no scheme,
+# so a single letter is not read as one.
+def _scheme_of(dsn) {
+  if !is_string(dsn) {
+    return nil
+  }
+
+  var mark = dsn.index_of(':')
+
+  if mark < 2 {
+    return nil
+  }
+
+  var scheme = dsn[0, mark].lower()
+
+  for ch in scheme {
+    if !'abcdefghijklmnopqrstuvwxyz0123456789+.-'.contains(ch) {
+      return nil
+    }
+  }
+
+  return scheme
+}
+
+register(sqlite.DRIVER)
+register(postgres.DRIVER)

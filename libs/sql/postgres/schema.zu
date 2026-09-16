@@ -1,0 +1,233 @@
+/**
+ * @module schema
+ *
+ * Introspection for PostgreSQL, through the standard
+ * `information_schema` views and the catalogue behind them.
+ *
+ * `information_schema` covers tables, views and columns and is the SQL
+ * standard, so those queries would work on other engines too.
+ * Constraints and indexes are read from `pg_catalog` instead, because
+ * the standard views describe them in a form that loses which columns
+ * an index actually covers and in what order.
+ *
+ * Where a caller names no schema, the server's own `search_path`
+ * decides, which is what makes an unqualified table name mean the same
+ * here as it does in a query.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { SchemaAdapter }
+
+/**
+ * Answers introspection questions about a PostgreSQL database.
+ */
+class PostgresSchema < SchemaAdapter {
+  var _connection
+
+  /**
+   * @param PostgresConnection connection
+   */
+  @new(connection) {
+    self._connection = connection
+  }
+
+  /**
+   * The tables the application created.
+   *
+   * @param string|nil schema The schema to look in, or nil for
+   *    whatever `search_path` resolves to.
+   * @returns list[string]
+   */
+  tables(schema) {
+    return self._relations('BASE TABLE', schema)
+  }
+
+  /**
+   * The views.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  views(schema) {
+    return self._relations('VIEW', schema)
+  }
+
+  /**
+   * The columns of `table`, in order.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  columns(table: string, schema) {
+    var key = self.primary_key_columns(table, schema)
+
+    var rows = self._query(
+      'select column_name, data_type, is_nullable, column_default, ' +
+      'ordinal_position ' +
+      'from information_schema.columns ' +
+      'where table_name = $1 and table_schema = ' +
+      'coalesce($2, current_schema()) ' +
+      'order by ordinal_position',
+      [table, schema]
+    )
+
+    return rows.map(@(row) {
+      return {
+        name: row[0],
+        type: row[1],
+        nullable: row[2] == 'YES',
+        default_value: row[3],
+        primary_key: key.contains(row[0]),
+        position: row[4],
+      }
+    })
+  }
+
+  /**
+   * The primary key columns, in key order.
+   *
+   * `pg_index` records the key's own column order, which is not the
+   * table's, so the order here is the one the index was declared with.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  primary_key_columns(table: string, schema) {
+    var rows = self._query(
+      'select attribute.attname ' +
+      'from pg_index as index ' +
+      'join pg_class as relation on relation.oid = index.indrelid ' +
+      'join pg_namespace as space on space.oid = relation.relnamespace ' +
+      'join unnest(index.indkey) with ordinality as key(column_id, position) ' +
+      '  on true ' +
+      'join pg_attribute as attribute ' +
+      '  on attribute.attrelid = relation.oid ' +
+      '  and attribute.attnum = key.column_id ' +
+      'where index.indisprimary and relation.relname = $1 ' +
+      '  and space.nspname = coalesce($2, current_schema()) ' +
+      'order by key.position',
+      [table, schema]
+    )
+
+    return rows.map(@(row) => row[0])
+  }
+
+  /**
+   * The indexes on `table`, each `{ name, columns, unique }`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  indexes(table: string, schema) {
+    var rows = self._query(
+      'select index_class.relname, index.indisunique, ' +
+      '  array_agg(attribute.attname order by key.position) ' +
+      'from pg_index as index ' +
+      'join pg_class as relation on relation.oid = index.indrelid ' +
+      'join pg_class as index_class on index_class.oid = index.indexrelid ' +
+      'join pg_namespace as space on space.oid = relation.relnamespace ' +
+      'join unnest(index.indkey) with ordinality as key(column_id, position) ' +
+      '  on true ' +
+      'join pg_attribute as attribute ' +
+      '  on attribute.attrelid = relation.oid ' +
+      '  and attribute.attnum = key.column_id ' +
+      'where relation.relname = $1 ' +
+      '  and space.nspname = coalesce($2, current_schema()) ' +
+      'group by index_class.relname, index.indisunique ' +
+      'order by index_class.relname',
+      [table, schema]
+    )
+
+    return rows.map(@(row) {
+      return { name: row[0], unique: row[1], columns: row[2] }
+    })
+  }
+
+  /**
+   * The foreign keys declared on `table`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  foreign_keys(table: string, schema) {
+    var rows = self._query(
+      'select ' +
+      '  array_agg(source.attname order by source_key.position), ' +
+      '  target_relation.relname, ' +
+      '  array_agg(target.attname order by target_key.position), ' +
+      '  constraint_row.confupdtype, constraint_row.confdeltype ' +
+      'from pg_constraint as constraint_row ' +
+      'join pg_class as relation on relation.oid = constraint_row.conrelid ' +
+      'join pg_namespace as space on space.oid = relation.relnamespace ' +
+      'join pg_class as target_relation ' +
+      '  on target_relation.oid = constraint_row.confrelid ' +
+      'join unnest(constraint_row.conkey) with ordinality ' +
+      '  as source_key(column_id, position) on true ' +
+      'join pg_attribute as source ' +
+      '  on source.attrelid = relation.oid ' +
+      '  and source.attnum = source_key.column_id ' +
+      'join unnest(constraint_row.confkey) with ordinality ' +
+      '  as target_key(column_id, position) ' +
+      '  on target_key.position = source_key.position ' +
+      'join pg_attribute as target ' +
+      '  on target.attrelid = target_relation.oid ' +
+      '  and target.attnum = target_key.column_id ' +
+      "where constraint_row.contype = 'f' and relation.relname = $1 " +
+      '  and space.nspname = coalesce($2, current_schema()) ' +
+      'group by constraint_row.oid, target_relation.relname, ' +
+      '  constraint_row.confupdtype, constraint_row.confdeltype',
+      [table, schema]
+    )
+
+    return rows.map(@(row) {
+      return {
+        columns: row[0],
+        references_table: row[1],
+        references_columns: row[2],
+        on_update: _action(row[3]),
+        on_delete: _action(row[4]),
+      }
+    })
+  }
+
+  _relations(kind, schema) {
+    var rows = self._query(
+      'select table_name from information_schema.tables ' +
+      'where table_type = $1 and table_schema = ' +
+      'coalesce($2, current_schema()) order by table_name',
+      [kind, schema]
+    )
+
+    return rows.map(@(row) => row[0])
+  }
+
+  # These queries are written with the server's own placeholders and go
+  # straight to the adapter, since they are not user SQL and have
+  # nothing to translate.
+  _query(sql, values) {
+    return self._connection.select(sql, values).rows
+  }
+}
+
+/**
+ * The referential action a single-character code stands for.
+ *
+ * @param string code
+ * @returns string
+ */
+def _action(code) {
+  using code {
+    when 'a' return 'NO ACTION'
+    when 'r' return 'RESTRICT'
+    when 'c' return 'CASCADE'
+    when 'n' return 'SET NULL'
+    when 'd' return 'SET DEFAULT'
+  }
+
+  return 'NO ACTION'
+}

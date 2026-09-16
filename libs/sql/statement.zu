@@ -1,0 +1,233 @@
+/**
+ * @module statement
+ *
+ * A statement compiled once and run many times.
+ *
+ * Every engine here splits running a statement into compiling it and
+ * executing it, and the compile is the expensive half. A statement run
+ * in a loop should pay for it once:
+ *
+ * ```zuri
+ * var insert = db.prepare('insert into points (x, y) values (?, ?)')
+ *
+ * for point in points {
+ *   insert.exec([point.x, point.y])
+ * }
+ *
+ * insert.close()
+ * ```
+ *
+ * The placeholders are translated once, when the statement is
+ * prepared, so the loop does no string work at all.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .cursor { Cursor }
+import .errors { ClosedError }
+import .params { translate }
+import .result { ResultSet, ExecResult }
+
+/**
+ * A prepared statement.
+ *
+ * @printable
+ */
+class Statement {
+  var _statement
+  var _connection
+  var _sql
+  var _source
+  var _style
+  var _closed = false
+
+  /**
+   * @param Connection connection The connection that prepared this.
+   * @param DriverStatement statement The adapter's own statement.
+   * @param string source The statement as it was written.
+   * @param string sql The statement as the engine received it.
+   * @param string style The driver's placeholder style.
+   */
+  @new(connection, statement, source, sql, style) {
+    self._connection = connection
+    self._statement = statement
+    self._source = source
+    self._sql = sql
+    self._style = style
+  }
+
+  /**
+   * The statement as it was written, with `?` or `:name` in it.
+   *
+   * @returns string
+   */
+  source() {
+    return self._source
+  }
+
+  /**
+   * The statement as the engine received it, with the engine's own
+   * placeholders.
+   *
+   * @returns string
+   */
+  sql() {
+    return self._sql
+  }
+
+  /**
+   * The columns this statement returns, each a dictionary with `name`
+   * and `type`. Empty for a statement that returns no rows.
+   *
+   * @returns list[dict]
+   */
+  columns() {
+    self._open()
+    return self._statement.columns()
+  }
+
+  /**
+   * How many parameters this statement binds.
+   *
+   * @returns number
+   */
+  parameter_count() {
+    self._open()
+    return self._statement.parameter_count()
+  }
+
+  /**
+   * Runs the statement and reads its whole result.
+   *
+   * @param list|dict|nil params
+   * @returns ResultSet
+   */
+  query(params) {
+    self._open()
+
+    var result = self._statement.select(self._bind(params))
+
+    return ResultSet(result.columns, result.rows, result.get('command', nil))
+  }
+
+  /**
+   * Runs the statement for its effect.
+   *
+   * @param list|dict|nil params
+   * @returns ExecResult
+   */
+  exec(params) {
+    self._open()
+
+    var result = self._statement.execute(self._bind(params))
+
+    return ExecResult(
+      result.get('rows_affected', 0),
+      result.get('last_insert_id', nil)
+    )
+  }
+
+  /**
+   * Runs the statement and returns a cursor over its result.
+   *
+   * The cursor holds this statement until it closes, so the statement
+   * cannot be run again in the meantime.
+   *
+   * @param list|dict|nil params
+   * @param dict|nil options `{ batch }` on engines that fetch in
+   *    batches; ignored where the engine streams already.
+   * @returns Cursor
+   */
+  stream(params, options) {
+    self._open()
+
+    return Cursor(self._statement.open_cursor(self._bind(params), options or {}))
+  }
+
+  /**
+   * The first row, or nil when the statement returns none.
+   *
+   * @param list|dict|nil params
+   * @returns dict|nil
+   */
+  fetch_one(params) {
+    return self.query(params).first()
+  }
+
+  /**
+   * Every row, as dictionaries.
+   *
+   * @param list|dict|nil params
+   * @returns list[dict]
+   */
+  fetch_all(params) {
+    return self.query(params).rows
+  }
+
+  /**
+   * The first column of the first row.
+   *
+   * @param list|dict|nil params
+   * @param any fallback What to return when the statement returns no
+   *    rows.
+   * @returns any
+   */
+  fetch_value(params, fallback) {
+    return self.query(params).scalar(fallback)
+  }
+
+  /**
+   * Releases the statement. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._statement.close()
+  }
+
+  /**
+   * Whether this statement has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  # Turns the caller's parameters into the list the adapter binds.
+  #
+  # The statement text was translated when it was prepared, so only the
+  # values are worked out here. Named parameters still go through the
+  # translator, since the mapping from names to positions is what it
+  # produced in the first place.
+  _bind(params) {
+    if params == nil {
+      return []
+    }
+
+    if is_list(params) {
+      return params
+    }
+
+    return translate(self._source, params, self._style).values
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError('this prepared statement was closed', {
+        query: self._sql,
+      })
+    }
+  }
+
+  to_string() {
+    return '<Statement ${self._source}${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
