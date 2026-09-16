@@ -4,6 +4,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::LazyLock;
 
+use num_bigint::BigInt;
+use num_traits::Zero;
 use rustc_hash::FxHashMap;
 
 use pcre2::bytes::{CaptureLocations, Match, Regex, RegexBuilder};
@@ -48,6 +50,7 @@ pub static STRING_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("contains", 1, contains),
     method_n("count", 1, count),
     method_opt("to_number", 0, to_number),
+    method_opt("to_bigint", 0, to_bigint),
     method("to_list", to_list),
     method("to_bytes", to_bytes),
     method_opt("lpad", 1, lpad),
@@ -712,6 +715,96 @@ fn count(ctx: &mut ZuriContext) -> Result<Value, String> {
   ))
 }
 
+/// Finds the first number written in `s` and returns just that part of
+/// it, so `"427 and 12"` yields `"427"`.
+///
+/// A number starts at a digit, or at a sign or decimal point
+/// immediately in front of one. That is what keeps the `-` of `"a-42"`
+/// attached to the 42 and the `-` of `"a - 42"` separate from it, and
+/// what lets `".5"` read as a half.
+///
+/// `real` allows the full spelling of a float: a fractional part and an
+/// exponent. Only base ten has one, and only `to_number` reads one, so
+/// `to_bigint` and every other base stop at the digits. A `.` or an `e`
+/// that is not followed by digits belongs to the surrounding text
+/// rather than to the number, so `"1."` reads as 1 and so does `"1e"`.
+///
+/// Scanning byte by byte is safe despite `s` being UTF-8: everything
+/// matched here is ASCII, so a multi-byte character's bytes can never
+/// match and the returned slice always begins and ends on a character
+/// boundary.
+fn first_number(s: &str, base: u32, real: bool) -> Option<&str> {
+  let bytes = s.as_bytes();
+  let digit = |b: u8| (b as char).to_digit(base).is_some();
+
+  // A run of digits starting at `from`, or `from` itself if there are
+  // none, which is how each optional part below tests whether it is
+  // really there.
+  let digits_from = |from: usize| {
+    let mut at = from;
+
+    while at < bytes.len() && digit(bytes[at]) {
+      at += 1;
+    }
+
+    at
+  };
+
+  let mut i = 0;
+
+  while i < bytes.len() {
+    let mut head = i;
+
+    if matches!(bytes[head], b'-' | b'+') {
+      head += 1;
+    }
+
+    // A point may lead, as in ".5", in which case the number has had
+    // its one point already.
+    let mut pointed = false;
+
+    if real && head < bytes.len() && bytes[head] == b'.' {
+      head += 1;
+      pointed = true;
+    }
+
+    if head >= bytes.len() || !digit(bytes[head]) {
+      i += 1;
+      continue;
+    }
+
+    let start = i;
+
+    i = digits_from(head);
+
+    if real && !pointed && i < bytes.len() && bytes[i] == b'.' {
+      let after = digits_from(i + 1);
+
+      if after > i + 1 {
+        i = after;
+      }
+    }
+
+    if real && i < bytes.len() && matches!(bytes[i], b'e' | b'E') {
+      let mut at = i + 1;
+
+      if at < bytes.len() && matches!(bytes[at], b'-' | b'+') {
+        at += 1;
+      }
+
+      let after = digits_from(at);
+
+      if after > at {
+        i = after;
+      }
+    }
+
+    return Some(&s[start..i]);
+  }
+
+  None
+}
+
 fn to_number(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
 
@@ -723,13 +816,58 @@ fn to_number(ctx: &mut ZuriContext) -> Result<Value, String> {
     10
   };
 
-  if s.contains(".") && base == 10 {
-    Ok(Value::number(s.parse::<f64>().unwrap_or(0.0)))
-  } else {
-    Ok(Value::number(
-      i64::from_str_radix(s, base).unwrap_or(0) as f64
-    ))
+  if !(2..=36).contains(&base) {
+    return Err(format!(
+      "to_number() expects a base between 2 and 36, got {}",
+      base
+    ));
   }
+
+  let found = match first_number(s, base, base == 10) {
+    Some(text) => text,
+    None => return Ok(Value::number(0.0)),
+  };
+
+  // Base ten goes through the float parser so that a fractional value
+  // survives and a run of digits too long for an integer becomes the
+  // nearest double rather than nothing at all.
+  let value = if base == 10 {
+    found.parse::<f64>().unwrap_or(0.0)
+  } else {
+    i64::from_str_radix(found, base).unwrap_or(0) as f64
+  };
+
+  Ok(Value::number(value))
+}
+
+/// `to_number`'s counterpart for integers past what a double holds
+/// exactly. Parsing "9007199254740993" through `to_number` rounds it
+/// down by one; this keeps every digit.
+fn to_bigint(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_range!(ctx, 0, 1);
+
+  let base = if ctx.args.len() == 2 {
+    enforce_method_arg_type!(ctx, 1, ArgType::Number);
+    ctx.args[1].as_number() as u32
+  } else {
+    10
+  };
+
+  if !(2..=36).contains(&base) {
+    return Err(format!(
+      "to_bigint() expects a base between 2 and 36, got {}",
+      base
+    ));
+  }
+
+  // Finds its number the same way `to_number` does, so the two stay
+  // swappable when a caller discovers its values have outgrown a
+  // number. No fractional part: this reads integers, so "12.5" is 12.
+  let value = first_number(ctx.args[0].as_str(), base, false)
+    .and_then(|text| BigInt::parse_bytes(text.trim_start_matches('+').as_bytes(), base))
+    .unwrap_or_else(BigInt::zero);
+
+  Ok(ctx.vm.heap_mut().alloc_bigint(value))
 }
 
 fn to_list(ctx: &mut ZuriContext) -> Result<Value, String> {

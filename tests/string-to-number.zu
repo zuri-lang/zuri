@@ -1,0 +1,39 @@
+# The first number written in a string, whatever surrounds it.
+
+echo '123.0 hell'.to_number()
+echo '427 and 12'.to_number()
+echo '96.3 of 31'.to_number()
+echo 'error'.to_number()
+
+echo '42'.to_number()
+echo '  42'.to_number()
+echo '-42'.to_number()
+echo 'a-42'.to_number()
+echo 'a - 42'.to_number()
+
+# Floats, in every spelling one has.
+echo '3.14'.to_number()
+echo '.5'.to_number()
+echo '-.5'.to_number()
+echo '1.0e3'.to_number()
+echo '2.5E-2'.to_number()
+echo '-1.5e-3'.to_number()
+
+# A point or an exponent with nothing after it belongs to the text.
+echo '1.'.to_number()
+echo '1e'.to_number()
+echo '1.2.3'.to_number()
+
+# Other bases, where no point and no exponent are read.
+echo 'ff'.to_number(16)
+echo '1010'.to_number(2)
+echo '1.5'.to_number(16)
+
+# A base the digits could not be written in is refused.
+catch {
+  '10'.to_number(1)
+} as e {
+  echo e.message
+}
+
+echo ''.to_number()

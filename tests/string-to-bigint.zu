@@ -1,0 +1,37 @@
+# Integers read from text past the point a number stays exact.
+
+echo '9007199254740993'.to_bigint()
+echo '9007199254740993'.to_number()
+
+echo '0'.to_bigint()
+echo '-42'.to_bigint()
+echo '+42'.to_bigint()
+echo '18446744073709551615'.to_bigint()
+echo ('9' * 40).to_bigint()
+
+# Other bases, as to_number takes.
+echo 'ff'.to_bigint(16)
+echo 'FF'.to_bigint(16)
+echo '1010'.to_bigint(2)
+echo 'zz'.to_bigint(36)
+
+# The number is found the same way to_number finds it, so text around
+# it is ignored and text without one gives zero.
+echo '12abc'.to_bigint()
+echo 'row 427 of 12'.to_bigint()
+echo '12.5'.to_bigint()
+echo 'abc'.to_bigint()
+echo ''.to_bigint()
+
+# A base the digits could not be written in is refused.
+catch {
+  '10'.to_bigint(99)
+} as e {
+  echo e.message
+}
+
+# Round trips with bigint.to_string() whichever base is used.
+var value = 123456789012345678901234567890n
+
+echo value.to_string(16).to_bigint(16) == value
+echo value.to_string(36).to_bigint(36) == value

@@ -976,9 +976,50 @@ class string {
    * 0
    * ```
    *
+   * @param {number} base - The base the digits are in, from 2 to 36.
+   *    Defaults to `10`. A fractional part is only read in base 10,
+   *    since no other base spells one.
    * @returns {number}
+   * @raises {RangeError} if `base` is outside 2 to 36.
    */
-  to_number() {}
+  to_number(base) {}
+
+
+  /**
+   * Returns the integer value of the string as a `bigint`, or `0n`
+   * if the string does not spell one.
+   *
+   * This is `to_number()` for integers too large to be a number.
+   * A number is exact only up to 2^53; past that, digits are lost,
+   * and an id or a `BIGINT UNSIGNED` read from a database routinely
+   * runs past it. Every digit survives here however long the run.
+   *
+   * ```zuri-repl
+   * %> '9007199254740993'.to_bigint()
+   * 9007199254740993n
+   * %> '9007199254740993'.to_number()   # rounded down by one
+   * 9007199254740992
+   * %> '-42'.to_bigint()
+   * -42n
+   * %> 'ff'.to_bigint(16)
+   * 255n
+   * %> 'row 427 of 12'.to_bigint()
+   * 427n
+   * %> 'error'.to_bigint()
+   * 0n
+   * ```
+   *
+   * The number is found exactly as `to_number()` finds it: the first
+   * one written in the string, with any text around it ignored. No
+   * fractional part is read, since this produces an integer, so
+   * `'12.5'.to_bigint()` is `12n`.
+   *
+   * @param {number} base - The base the digits are in, from 2 to 36.
+   *    Defaults to `10`.
+   * @returns {bigint}
+   * @raises {RangeError} if `base` is outside 2 to 36.
+   */
+  to_bigint(base) {}
 
 
   /**

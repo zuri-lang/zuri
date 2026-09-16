@@ -34,6 +34,7 @@ use p256::pkcs8::LineEnding;
 use rand::rngs::OsRng;
 use rand_core::RngCore;
 use rsa::signature::{RandomizedSigner, SignatureEncoding, Verifier as RsaVerifierTrait};
+use sha1::Sha1;
 use sha2::{Sha256, Sha384, Sha512};
 
 use crate::builtins::enforce::ArgType;
@@ -86,13 +87,15 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "rsa_generate",
       native(vm, "rsa_generate", 1, false, rsa_generate_fn),
     ),
+    // Both carry the same optional trailing OAEP digest argument as the
+    // signing pair below, so both are variadic for the same reason.
     (
       "rsa_encrypt",
-      native(vm, "rsa_encrypt", 2, false, rsa_encrypt_fn),
+      native(vm, "rsa_encrypt", 2, true, rsa_encrypt_fn),
     ),
     (
       "rsa_decrypt",
-      native(vm, "rsa_decrypt", 2, false, rsa_decrypt_fn),
+      native(vm, "rsa_decrypt", 2, true, rsa_decrypt_fn),
     ),
     // min_arity is a floor, not an exact count, once `variadic` is set --
     // the trailing hash-algorithm arg is optional (defaults to sha256 in
@@ -560,14 +563,20 @@ fn rsa_encrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::pkcs8::DecodePublicKey;
   use rsa::{Oaep, RsaPublicKey};
 
-  enforce_arg_count!(ctx, 2);
+  enforce_arg_range!(ctx, 2, 3);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
+  let hash = oaep_hash_arg(ctx, 2)?;
 
   let pub_key = RsaPublicKey::from_public_key_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid public key", e))?;
   let ct = ctx.args[1]
-    .with_bytes(|pt| pub_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), pt))
+    .with_bytes(|pt| match hash {
+      "sha1" => pub_key.encrypt(&mut OsRng, Oaep::new::<Sha1>(), pt),
+      "sha384" => pub_key.encrypt(&mut OsRng, Oaep::new::<Sha384>(), pt),
+      "sha512" => pub_key.encrypt(&mut OsRng, Oaep::new::<Sha512>(), pt),
+      _ => pub_key.encrypt(&mut OsRng, Oaep::new::<Sha256>(), pt),
+    })
     .map_err(|e| crypto_err("encryption failed", e))?;
   Ok(ctx.heap().alloc_bytes(ct))
 }
@@ -576,16 +585,54 @@ fn rsa_decrypt_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::pkcs8::DecodePrivateKey;
   use rsa::{Oaep, RsaPrivateKey};
 
-  enforce_arg_count!(ctx, 2);
+  enforce_arg_range!(ctx, 2, 3);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
+  let hash = oaep_hash_arg(ctx, 2)?;
 
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
   let pt = ctx.args[1]
-    .with_bytes(|ct| priv_key.decrypt(Oaep::new::<Sha256>(), ct))
+    .with_bytes(|ct| match hash {
+      "sha1" => priv_key.decrypt(Oaep::new::<Sha1>(), ct),
+      "sha384" => priv_key.decrypt(Oaep::new::<Sha384>(), ct),
+      "sha512" => priv_key.decrypt(Oaep::new::<Sha512>(), ct),
+      _ => priv_key.decrypt(Oaep::new::<Sha256>(), ct),
+    })
     .map_err(|e| crypto_err("decryption failed", e))?;
   Ok(ctx.heap().alloc_bytes(pt))
+}
+
+/// The OAEP digest argument shared by `rsa_encrypt` and `rsa_decrypt`.
+///
+/// Wider than `rsa_hash_arg` by one name: OAEP over SHA-1 is still what
+/// several protocols specify on the wire (MySQL's `caching_sha2_password`
+/// is the one that brought it here), and refusing it would mean a client
+/// simply cannot talk to those servers. It stays out of `rsa_hash_arg`
+/// deliberately, so the choice is available where interoperability
+/// demands it without becoming available for signing, where nothing
+/// demands it and SHA-1's collision resistance is what would be at stake.
+fn oaep_hash_arg(ctx: &ZuriContext, idx: usize) -> Result<&'static str, String> {
+  match ctx.args.get(idx) {
+    None => Ok("sha256"),
+    Some(v) if v.is_nil() => Ok("sha256"),
+    Some(v) if !v.is_string() => Err(format!(
+      "{}() expects argument {} to be a string, got {}",
+      ctx.name,
+      idx + 1,
+      v.type_name()
+    )),
+    Some(v) => match v.as_str() {
+      "sha1" => Ok("sha1"),
+      "sha256" => Ok("sha256"),
+      "sha384" => Ok("sha384"),
+      "sha512" => Ok("sha512"),
+      other => Err(format!(
+        "{}(): hash must be \"sha1\", \"sha256\", \"sha384\", or \"sha512\", got \"{}\"",
+        ctx.name, other
+      )),
+    },
+  }
 }
 
 /// Reads an optional trailing hash-algorithm-name argument

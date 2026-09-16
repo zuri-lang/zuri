@@ -454,16 +454,26 @@ class _Rsa {
   }
 
   /**
-   * Encrypts plaintext with RSA-OAEP (SHA-256).
+   * Encrypts plaintext with RSA-OAEP.
    *
    * @param string public_pem PEM-encoded public key.
    * @param bytes plaintext Must fit within the key's OAEP
-   *    capacity.
+   *    capacity: the key size in bytes, less twice the digest
+   *    size, less two. A 2048-bit key under SHA-256 therefore
+   *    carries 190 bytes, and under SHA-1, 214.
+   * @param ?string hash The digest used for both the OAEP label
+   *    and MGF1: one of `"sha1"`, `"sha256"`, `"sha384"`,
+   *    `"sha512"`. Default: `"sha256"`.
+   *
+   *    Choose `"sha1"` only to interoperate with a protocol that
+   *    specifies it, such as MySQL's `caching_sha2_password`
+   *    exchange. For anything you control both ends of, the
+   *    default is the right choice.
    * @return bytes Encrypted ciphertext.
    * @throws CryptoError
    */
-  encrypt(public_pem, plaintext) {
-    return _crypto.rsa_encrypt(public_pem, plaintext)
+  encrypt(public_pem, plaintext, hash) {
+    return _crypto.rsa_encrypt(public_pem, plaintext, hash)
   }
 
   /**
@@ -471,11 +481,14 @@ class _Rsa {
    *
    * @param string private_pem PEM-encoded private key.
    * @param bytes ciphertext
+   * @param ?string hash The digest `encrypt()` was called with.
+   *    Default: `"sha256"`. A mismatch fails to decrypt rather
+   *    than returning wrong plaintext.
    * @return bytes Decrypted plaintext.
    * @throws CryptoError
    */
-  decrypt(private_pem, ciphertext) {
-    return _crypto.rsa_decrypt(private_pem, ciphertext)
+  decrypt(private_pem, ciphertext, hash) {
+    return _crypto.rsa_decrypt(private_pem, ciphertext, hash)
   }
 
   /**

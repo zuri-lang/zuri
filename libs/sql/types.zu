@@ -21,6 +21,7 @@
  * | `string` | text |
  * | `bytes` | a blob |
  * | `date.Date` | a timestamp, or ISO 8601 text on an engine with no date type |
+ * | `Time` | a time interval on an engine that has one, otherwise text |
  * | `list`, `dict` | JSON, native where the engine has it and text where it does not |
  *
  * A value of any other type is refused rather than guessed at. An
@@ -62,6 +63,16 @@ var ISO_DATE_FORMAT = 'Y-m-d'
  */
 def is_temporal(value) {
   return instance_of(value, date.Date)
+}
+
+/**
+ * Whether `value` is a `Time`.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_interval(value) {
+  return instance_of(value, Time)
 }
 
 /**
@@ -159,13 +170,333 @@ def flatten(value) {
     return to_iso(value)
   }
 
+  if is_interval(value) {
+    return value.to_string()
+  }
+
   if is_structured(value) {
     return to_json(value)
   }
 
   raise QueryError(
     'a ${typeof(value)} has no database representation; expected nil, ' +
-    'a bool, a number, a bigint, a string, bytes, a date or a list or ' +
-    'dictionary to store as JSON'
+    'a bool, a number, a bigint, a string, bytes, a date, a time ' +
+    'interval, or a list or dictionary to store as JSON'
   )
+}
+
+/**
+ * A signed span of time, as a SQL `TIME` column holds one.
+ *
+ * A `TIME` is not a point in the day. MySQL's range runs from
+ * `-838:59:59.999999` to `838:59:59.999999`, so a value can be
+ * negative and can exceed twenty four hours, and reading one into a
+ * `date.Date` would quietly lose both of those. It is a duration: the
+ * length of a shift, the lateness of a delivery, the gap between two
+ * events.
+ *
+ * The parts are kept as they were written rather than normalised, so a
+ * value built as 90 minutes stays 90 minutes and does not silently
+ * become an hour and a half. `total_seconds()` is there for arithmetic
+ * and comparison, and `compare()` uses it, so two values that mean the
+ * same length compare equal whichever way each was built.
+ */
+class Time {
+  /**
+   * Whether the span runs backwards.
+   * @type bool
+   * @default false
+   */
+  var negative = false
+
+  /**
+   * Whole hours. Not limited to 24.
+   * @type number
+   * @default 0
+   */
+  var hours = 0
+
+  /**
+   * @type number
+   * @default 0
+   */
+  var minutes = 0
+
+  /**
+   * @type number
+   * @default 0
+   */
+  var seconds = 0
+
+  /**
+   * Fractional seconds, in millionths.
+   * @type number
+   * @default 0
+   */
+  var microseconds = 0
+
+  /**
+   * @param number|nil hours
+   * @param number|nil minutes
+   * @param number|nil seconds
+   * @param number|nil microseconds
+   * @param bool|nil negative
+   */
+  @new(hours, minutes, seconds, microseconds, negative) {
+    self.hours = hours == nil ? 0 : hours
+    self.minutes = minutes == nil ? 0 : minutes
+    self.seconds = seconds == nil ? 0 : seconds
+    self.microseconds = microseconds == nil ? 0 : microseconds
+    self.negative = negative == nil ? false : negative
+  }
+
+  /**
+   * The whole span in seconds, negative where the span is.
+   *
+   * @returns number Fractional where there are microseconds.
+   */
+  total_seconds() {
+    var total = self.hours * 3600 + self.minutes * 60 + self.seconds +
+      self.microseconds / 1000000
+
+    return self.negative ? -total : total
+  }
+
+  /**
+   * Whether the span runs backwards.
+   *
+   * A zero span is never negative, whichever way it was built.
+   *
+   * @returns bool
+   */
+  is_negative() {
+    return self.negative and !self.is_zero()
+  }
+
+  /**
+   * Whether the span is of no length.
+   *
+   * @returns bool
+   */
+  is_zero() {
+    return self.hours == 0 and self.minutes == 0 and self.seconds == 0
+      and self.microseconds == 0
+  }
+
+  /**
+   * Orders this span against another by length.
+   *
+   * @param Time other
+   * @returns number Negative, zero or positive.
+   */
+  compare(other) {
+    var mine = self.total_seconds()
+    var theirs = other.total_seconds()
+
+    if mine < theirs {
+      return -1
+    }
+
+    return mine > theirs ? 1 : 0
+  }
+
+  /**
+   * Whether two spans are of the same length, however each was built.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !is_interval(other) {
+      return false
+    }
+
+    return self.compare(other) == 0
+  }
+
+  /**
+   * The span as a SQL `TIME` literal, such as `'-12:30:00'`.
+   *
+   * Microseconds appear only where there are some, which is the same
+   * choice the engines make when they print one.
+   *
+   * @returns string
+   */
+  to_string() {
+    var sign = self.is_negative() ? '-' : ''
+    var text = '${sign}${self.hours.to_string().lpad(2, '0')}:' +
+      '${self.minutes.to_string().lpad(2, '0')}:' +
+      '${self.seconds.to_string().lpad(2, '0')}'
+
+    if self.microseconds != 0 {
+      text += '.${self.microseconds.to_string().lpad(6, '0')}'
+    }
+
+    return text
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Builds a `Time`.
+ *
+ * @param number|nil hours
+ * @param number|nil minutes
+ * @param number|nil seconds
+ * @param number|nil microseconds
+ * @param bool|nil negative
+ * @returns Time
+ */
+def time(hours, minutes, seconds, microseconds, negative) {
+  return Time(hours, minutes, seconds, microseconds, negative)
+}
+
+/**
+ * Builds a `Time` of `total` seconds, splitting it into parts.
+ *
+ * @param number total Negative for a span that runs backwards.
+ * @returns Time
+ */
+def time_from_seconds(total: number) {
+  var negative = total < 0
+  var whole = total.abs()
+  var seconds = whole.floor()
+  var micros = ((whole - seconds) * 1000000).round()
+
+  # Rounding can carry into the next second, which has to be taken
+  # rather than left as a million microseconds.
+  if micros >= 1000000 {
+    seconds++
+    micros -= 1000000
+  }
+
+  return Time(
+    (seconds / 3600).floor(),
+    (seconds / 60).floor() % 60,
+    seconds % 60,
+    micros,
+    negative
+  )
+}
+
+/**
+ * Reads a SQL `TIME` literal.
+ *
+ * Accepts `HH:MM:SS`, `HH:MM`, and either with fractional seconds, in
+ * each case optionally signed. Text that is not a time comes back as
+ * `nil` rather than raising, matching `from_iso()`.
+ *
+ * @param string text
+ * @returns Time|nil
+ */
+def parse_time(text) {
+  if !is_string(text) or text.is_empty() {
+    return nil
+  }
+
+  var body = text
+  var negative = false
+
+  if body.starts_with('-') {
+    negative = true
+    body = body[1, body.length()]
+  } else if body.starts_with('+') {
+    body = body[1, body.length()]
+  }
+
+  var micros = 0
+  var dot = body.index_of('.')
+
+  if dot > 0 {
+    var fraction = body[dot + 1, body.length()]
+
+    if !_is_digits(fraction) {
+      return nil
+    }
+
+    # A column declared with fewer than six digits of precision prints
+    # only those, so the fraction is scaled rather than read as a count
+    # of microseconds.
+    micros = (fraction + '0' * 6)[0, 6].to_number()
+    body = body[0, dot]
+  }
+
+  var parts = body.split(':')
+
+  if parts.length() < 2 or parts.length() > 3 {
+    return nil
+  }
+
+  for part in parts {
+    if !_is_digits(part) {
+      return nil
+    }
+  }
+
+  return Time(
+    parts[0].to_number(),
+    parts[1].to_number(),
+    parts.length() > 2 ? parts[2].to_number() : 0,
+    micros,
+    negative
+  )
+}
+
+var _DIGITS = '0123456789'
+
+/**
+ * Reads an integer, however long, as a number where one holds it
+ * exactly and a bigint where it does not.
+ *
+ * @param string text An optionally signed run of digits.
+ * @returns number|bigint|nil nil where `text` is not an integer.
+ */
+def integer_from_text(text) {
+  if !is_string(text) {
+    return nil
+  }
+
+  var body = text
+  var negative = false
+
+  if body.starts_with('-') {
+    negative = true
+    body = body[1, body.length()]
+  } else if body.starts_with('+') {
+    body = body[1, body.length()]
+  }
+
+  if !_is_digits(body) {
+    return nil
+  }
+
+  # Sixteen digits is the first length at which a decimal integer can
+  # exceed what a number holds exactly, so shorter ones skip the bigint
+  # entirely.
+  if body.length() < 16 {
+    var small = body.to_number()
+
+    return negative ? -small : small
+  }
+
+  var large = text.to_bigint()
+
+  return large.abs() < 9007199254740992n ? large.to_number() : large
+}
+
+def _is_digits(text) {
+  if text.is_empty() {
+    return false
+  }
+
+  for ch in text {
+    if _DIGITS.index_of(ch) == -1 {
+      return false
+    }
+  }
+
+  return true
 }

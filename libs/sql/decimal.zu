@@ -430,7 +430,7 @@ def _parse(text) {
 
   scale -= exponent
 
-  var unscaled = _digits_to_bigint(body)
+  var unscaled = body.to_bigint()
 
   if sign == '-' {
     unscaled = -unscaled
@@ -445,22 +445,6 @@ def _parse(text) {
   }
 
   return { unscaled, scale }
-}
-
-# Builds a bigint from a run of decimal digits, one digit at a time.
-#
-# There is no text to bigint conversion in the language, and going via
-# a number would round anything past fifteen or so digits, which is
-# precisely the case a decimal exists to handle.
-def _digits_to_bigint(text) {
-  var result = 0n
-  var ten = 10n
-
-  for ch in text {
-    result = result * ten + _DIGITS.index_of(ch).to_bigint()
-  }
-
-  return result
 }
 
 def _is_digits(text) {

@@ -95,6 +95,7 @@ import @.driver {
 import @.params { translate, scan, split_statements, placeholder,
   QUESTION, NUMBERED, INDEXED }
 import @.decimal { Decimal, decimal }
+import @.types { Time, time, time_from_seconds, parse_time }
 import @.result { ResultSet, ExecResult }
 import @.cursor { Cursor }
 import @.statement { Statement }
