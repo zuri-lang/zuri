@@ -1,0 +1,124 @@
+# A decimal has to be exact, because the reason to use one instead of a
+# number is that a double is not.
+
+import sql { Decimal }
+import sql.errors { QueryError }
+
+def test_parsing() {
+  assert Decimal('19.99').to_string() == '19.99'
+  assert Decimal('-0.0001').to_string() == '-0.0001'
+  assert Decimal('0').to_string() == '0'
+  assert Decimal('+5').to_string() == '5'
+
+  # An exponent moves the point rather than being carried along.
+  assert Decimal('1.2e3').to_string() == '1200'
+  assert Decimal('5e-3').to_string() == '0.005'
+
+  # The unscaled form is what the postgres adapter builds them from.
+  assert Decimal(1999, 2).to_string() == '19.99'
+  assert Decimal(5, 0).to_string() == '5'
+
+  echo 'test_parsing passed'
+}
+
+def test_exactness() {
+  # The digits survive well past what a double holds.
+  var long = '123456789012345678901234567890.123456789'
+  assert Decimal(long).to_string() == long
+
+  # And a value a double cannot represent stays itself.
+  var tenth = Decimal('0.1')
+  var sum = tenth.add(tenth).add(tenth)
+  assert sum.to_string() == '0.3'
+
+  echo 'test_exactness passed'
+}
+
+def test_arithmetic() {
+  assert Decimal('19.99').add(Decimal('0.01')).to_string() == '20.00'
+  assert Decimal('19.99').subtract(Decimal('20')).to_string() == '-0.01'
+
+  # Scales add when multiplying, as they do by hand.
+  assert Decimal('19.99').multiply(Decimal('0.20')).to_string() == '3.9980'
+
+  # Division has no exact answer in general, so the places are given.
+  assert Decimal('10').divide(Decimal('3'), 5).to_string() == '3.33333'
+  assert Decimal('1').divide(Decimal('8'), 3).to_string() == '0.125'
+
+  # The operators go through the same methods.
+  assert (Decimal('1.5') + Decimal('2.25')).to_string() == '3.75'
+  assert (Decimal('3') - Decimal('1.5')).to_string() == '1.5'
+  assert (Decimal('2') * Decimal('2.5')).to_string() == '5.0'
+
+  echo 'test_arithmetic passed'
+}
+
+def test_rounding() {
+  # Half away from zero, which is how money is normally counted.
+  assert Decimal('2.5').rescale(0).to_string() == '3'
+  assert Decimal('-2.5').rescale(0).to_string() == '-3'
+  assert Decimal('2.4').rescale(0).to_string() == '2'
+  assert Decimal('2.6').rescale(0).to_string() == '3'
+
+  # Widening is exact and shows the extra places.
+  assert Decimal('1.5').rescale(4).to_string() == '1.5000'
+
+  echo 'test_rounding passed'
+}
+
+def test_comparison() {
+  # Equal in value, different in scale.
+  assert Decimal('1.5').equals(Decimal('1.50'))
+  assert Decimal('1.5').compare(Decimal('1.50')) == 0
+
+  assert Decimal('1.5').compare(Decimal('1.51')) < 0
+  assert Decimal('1.51').compare(Decimal('1.5')) > 0
+
+  assert Decimal('1.5') < Decimal('2')
+  assert Decimal('2') >= Decimal('2.0')
+
+  assert !Decimal('1.5').equals('1.5')
+
+  echo 'test_comparison passed'
+}
+
+def test_properties() {
+  assert Decimal('-1').is_negative()
+  assert !Decimal('0').is_negative()
+  assert Decimal('0.000').is_zero()
+  assert Decimal('19.99').to_number() == 19.99
+
+  echo 'test_properties passed'
+}
+
+def test_refusals() {
+  var refused = false
+
+  catch {
+    Decimal('not a number')
+  } as error {
+    refused = instance_of(error, QueryError)
+  }
+
+  assert refused
+
+  var by_zero = false
+
+  catch {
+    Decimal('1').divide(Decimal('0'), 2)
+  } as error {
+    by_zero = instance_of(error, QueryError)
+  }
+
+  assert by_zero
+
+  echo 'test_refusals passed'
+}
+
+test_parsing()
+test_exactness()
+test_arithmetic()
+test_rounding()
+test_comparison()
+test_properties()
+test_refusals()

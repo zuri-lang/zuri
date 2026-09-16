@@ -9,7 +9,7 @@
  * at a time, so the memory a loop needs is the size of one row rather
  * than of the table.
  *
- * ```zuri
+ * ```zuri,ignore
  * var cursor = db.stream('select * from events')
  *
  * for row in cursor {
@@ -37,6 +37,13 @@ class Cursor {
   var _names = []
   var _columns = []
   var _closed = false
+
+  # Reaching the end of a result is not the same as closing the
+  # cursor. A finished cursor keeps answering nil, because running out
+  # of rows is the ordinary way a loop ends; a closed one raises,
+  # because using it afterwards is a mistake worth seeing.
+  var _exhausted = false
+
   var _read = 0
   var _pending
   var _has_pending = false
@@ -94,6 +101,10 @@ class Cursor {
       return row
     }
 
+    if self._exhausted {
+      return nil
+    }
+
     if self._closed {
       raise ClosedError('this cursor was closed')
     }
@@ -101,7 +112,9 @@ class Cursor {
     var values = self._cursor.next_row()
 
     if values == nil {
-      self._closed = true
+      self._exhausted = true
+      self._cursor.close()
+
       return nil
     }
 
@@ -171,7 +184,7 @@ class Cursor {
    * @returns bool
    */
   is_closed() {
-    return self._closed and !self._has_pending
+    return (self._closed or self._exhausted) and !self._has_pending
   }
 
   /**
@@ -190,7 +203,7 @@ class Cursor {
 
   to_string() {
     return '<Cursor ${self._read} row${self._read == 1 ? "" : "s"} read' +
-      '${self._closed ? ", closed" : ""}>'
+      '${self.is_closed() ? ", closed" : ""}>'
   }
 
   /**
@@ -201,7 +214,7 @@ class Cursor {
    * why it is parked here in between rather than fetched twice.
    */
   @key(previous) {
-    if self._closed and !self._has_pending {
+    if (self._closed or self._exhausted) and !self._has_pending {
       return nil
     }
 

@@ -70,7 +70,13 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `test` | suites, matchers, test doubles, snapshots and reports | [19](ch19-00-testing.md) |
+| `test` | suites, matchers, test doubles, snapshots and reports | [20](ch20-00-testing.md) |
+
+## Databases
+
+| Module | What it is for | Book |
+| --- | --- | --- |
+| `sql` | one contract for every relational database, with SQLite and PostgreSQL adapters | [17](ch17-00-sql.md) |
 
 ## The Network
 
@@ -89,7 +95,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `zuri` | lexing, parsing, compiling and runtime reflection | [17](ch17-00-metaprogramming.md) |
+| `zuri` | lexing, parsing, compiling and runtime reflection | [18](ch18-00-metaprogramming.md) |
 | `math` | the mathematical constants | [4](ch04-02-numbers.md) |
 
 ## Packages and Their Submodules
@@ -244,6 +250,26 @@ One module per element width, each exporting a single class.
 | `os.process` | process identity, subprocesses, signals |
 | `os.system` | facts about the process, the runtime and the machine |
 | `os.tempfile` | the temporary directory, and scratch files in it |
+
+### `sql`
+
+| Submodule | What it is for |
+| --- | --- |
+| `sql.driver` | the contract an adapter implements, and the capability flags |
+| `sql.errors` | every error a database raises, under one root |
+| `sql.params` | rewriting `?` and `:name` into whatever an engine wants |
+| `sql.types` | how Zuri values and database values correspond |
+| `sql.decimal` | `Decimal`, for a column a float must not hold |
+| `sql.result` | `ResultSet` and `ExecResult` |
+| `sql.cursor` | reading a result a row at a time |
+| `sql.statement` | a statement compiled once and run many times |
+| `sql.transaction` | `Transaction`, and the savepoints inside it |
+| `sql.connection` | the `Connection` a program holds |
+| `sql.crud` | building the four statements that are always the same |
+| `sql.schema` | asking a database what is in it |
+| `sql.pool` | keeping connections open and lending them out |
+| `sql.sqlite` | the SQLite adapter, and its blobs, backups and hooks |
+| `sql.postgres` | the PostgreSQL adapter, and LISTEN/NOTIFY |
 
 ### `test`
 

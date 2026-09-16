@@ -10,7 +10,8 @@
 import _sqlite
 
 import ..driver {
-  Driver, default_capabilities, READ_COMMITTED, SERIALIZABLE,
+  Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
+  SERIALIZABLE,
 }
 import ..errors { ConnectionError, QueryError }
 import ..params { INDEXED }
@@ -81,7 +82,7 @@ class SqliteDriver < Driver {
     caps.set('named_parameters', true)
     caps.set('last_insert_id', true)
     caps.set('returning', true)
-    caps.set('isolation_levels', [READ_COMMITTED, SERIALIZABLE])
+    caps.set('isolation_levels', [READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE])
     caps.set('server_side_cursors', true)
     caps.set('upsert', true)
     caps.set('concurrent_writers', false)

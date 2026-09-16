@@ -13,7 +13,7 @@
  * ```zuri
  * import sql
  *
- * var db = sql.open('sqlite://./app.db')
+ * var db = sql.open(':memory:')
  *
  * db.exec('create table posts (id integer primary key, title text)')
  *
@@ -35,7 +35,7 @@
  * ### What is here
  *
  * | | |
- * | --- | --- |
+ * | - | - |
  * | `open()` | opens a connection from a connection string |
  * | `pool()` | opens a pool of them |
  * | `register()` | adds an adapter of your own |
@@ -44,6 +44,7 @@
  * | `Statement` | a statement compiled once and run many times |
  * | `Cursor` | a result read a row at a time |
  * | `ResultSet` | the rows a query returned |
+ * | `Decimal` | an exact decimal, for a column a float must not hold |
  * | `Schema` | what tables exist and what is in them |
  * | `SqlError` | the root of every error a database raises |
  *
@@ -53,7 +54,7 @@
  * positional parameters or `:name` for named ones and `sql` translates
  * them into whatever the adapter wants:
  *
- * ```zuri
+ * ```zuri,ignore
  * db.query('select * from posts where author = ? and year = ?', [name, 2026])
  * db.query('select * from posts where author = :who', { who: name })
  * ```
@@ -64,7 +65,7 @@
  * engine, so the code that handles a duplicate key does not change
  * when the engine does:
  *
- * ```zuri
+ * ```zuri,ignore
  * catch {
  *   db.insert('users', { email: address })
  * } as error {
@@ -93,6 +94,7 @@ import @.driver {
 }
 import @.params { translate, scan, split_statements, placeholder,
   QUESTION, NUMBERED, INDEXED }
+import @.decimal { Decimal, decimal }
 import @.result { ResultSet, ExecResult }
 import @.cursor { Cursor }
 import @.statement { Statement }
@@ -120,7 +122,7 @@ var _REGISTRY = {}
  * a name already taken replaces it, which is how a program swaps in an
  * adapter of its own for an engine `sql` already knows.
  *
- * ```zuri
+ * ```zuri,ignore
  * sql.register(MyMySqlDriver())
  *
  * var db = sql.open('mysql://localhost/app')
@@ -206,7 +208,7 @@ def driver_for(dsn: string) {
 /**
  * Opens a connection.
  *
- * ```zuri
+ * ```zuri,ignore
  * sql.open('sqlite://./app.db')
  * sql.open('postgres://alice:secret@localhost/app')
  * sql.open('./app.db')
@@ -215,7 +217,7 @@ def driver_for(dsn: string) {
  * An options dictionary works too, and needs `driver` to say which
  * adapter it is for:
  *
- * ```zuri
+ * ```zuri,ignore
  * sql.open({ driver: 'sqlite', path: './app.db', journal_mode: 'wal' })
  * ```
  *

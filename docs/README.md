@@ -13,10 +13,10 @@ Zuri programs that generate and check them.
 ## The Book
 
 [**The Zuri Programming Language**](book/src/SUMMARY.md) is the main text:
-twenty chapters from installation to a full-stack web application, plus
-eight appendices covering keywords, operators, decorated methods, every
-built-in function, every method on every built-in type, the standard
-library index, and the error hierarchy.
+twenty-two chapters from installation to a full-stack web application,
+plus eight appendices covering keywords, operators, decorated methods,
+every built-in function, every method on every built-in type, the
+standard library index, and the error hierarchy.
 
 It is written as mdBook source under [`book/`](book), so it reads fine as
 plain markdown on GitHub and renders to a searchable site with
@@ -32,7 +32,7 @@ what you need:
 | look up syntax | [Common Programming Concepts](book/src/ch03-00-common-concepts.md) |
 | look up a method | [Appendix E](book/src/appendix-05-type-methods.md) |
 | find a module | [Appendix F](book/src/appendix-06-stdlib-index.md) |
-| understand the JIT | [Performance and the JIT](book/src/ch18-00-performance.md) |
+| understand the JIT | [Performance and the JIT](book/src/ch19-00-performance.md) |
 | port habits from another language | [Appendix H](book/src/appendix-08-coming-from.md) |
 
 ## The Standard Library Reference

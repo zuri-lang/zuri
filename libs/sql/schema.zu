@@ -8,7 +8,7 @@
  * SQLite has `PRAGMA table_info`. The queries have nothing in common,
  * so each adapter writes its own and they all return the same shape.
  *
- * ```zuri
+ * ```zuri,ignore
  * for table in db.schema.tables() {
  *   echo table
  * }
@@ -29,7 +29,7 @@
  * The description of one column, as every adapter returns it.
  *
  * | Key | Meaning |
- * | --- | ------- |
+ * | - | - |
  * | `name` | The column's name. |
  * | `type` | The engine's own name for its type. |
  * | `nullable` | Whether it accepts NULL. |

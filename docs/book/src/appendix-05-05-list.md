@@ -20,7 +20,7 @@ thing.
 | [`remove_at(index: int)`](#remove_at) | `any` | Removes the item at the specified index in the list and returns it. |
 | [`remove(value)`](#remove) | `any` | Removes the first occurrence of item _x_ from the list. |
 | [`reverse()`](#reverse) | `list` | Returns a new list containing the items in the original list in reverse order. |
-| [`sort()`](#sort) | `list` | Sorts the items in the list in-place and returns the sorted list. |
+| [`sort()`](#sort) | `list` | Sorts the items in the list in-place and returns the sorted list, in its own order or in one a comparator decides. |
 | [`contains(value)`](#contains) | `boolean` | Returns `true` if the list contains the item _x_ or `false` otherwise. |
 | [`delete(start: int, end: int)`](#delete) | `number` | Deletes a range of items from the list starting from the start to the end limit and returns the number of items removed. |
 | [`first()`](#first) | `any` | Returns the first item in the list or `nil` if the list is empty. |
@@ -428,7 +428,7 @@ For example:
 ## `sort()`
 
 ```zuri,ignore
-sort() -> list
+sort([comparator: function]) -> list
 ```
 
 Sorts the items in the list in-place and returns the sorted list.
@@ -457,6 +457,38 @@ For example:
 > the number in turn precedes the string and the strings in
 > turn, precedes the list in the result. Also, note that the
 > items of the inner list is sorted.
+
+### Sorting by something else
+
+Pass a comparator to decide the order yourself. It is given two items
+and returns a negative number to put the first one first, a positive
+number to put the second one first, and zero to leave them as they
+are:
+
+```zuri-repl
+%> [3, 1, 2].sort(@(a, b) => b - a)
+[3, 2, 1]
+%> ['pear', 'fig', 'banana'].sort(@(a, b) => a.length() - b.length())
+['fig', 'pear', 'banana']
+```
+
+The sort is stable, so items the comparator calls equal keep the order
+they were already in. That is what lets a list be sorted by one thing
+and then another to order by both:
+
+```zuri,ignore
+people.sort(@(a, b) => a.name.compare(b.name))
+people.sort(@(a, b) => a.age - b.age)
+```
+
+leaves people of the same age in name order.
+
+> A comparator sorts only the list it is given. The inner lists that
+> `sort()` sorts on its own are left alone, since only the comparator
+> knows what their order is meant to be.
+>
+> A comparator that contradicts itself produces some order rather than
+> an error, because there is no arrangement that satisfies it.
 
 **Returns** `list`
 

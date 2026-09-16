@@ -1,0 +1,188 @@
+# Prepared statements and cursors, both of which hold engine resources
+# and so have to release them properly.
+
+import sql
+import sql.errors { ClosedError, QueryError }
+
+def seeded() {
+  var db = sql.open(':memory:')
+  db.exec('create table t (id integer primary key, name text)', nil)
+
+  for name in ['a', 'b', 'c', 'd', 'e'] {
+    db.insert('t', { name }, nil)
+  }
+
+  return db
+}
+
+def test_prepared() {
+  var db = seeded()
+
+  var insert = db.prepare('insert into t (name) values (?)')
+  assert insert.parameter_count() == 1
+  assert insert.source() == 'insert into t (name) values (?)'
+  assert insert.sql() == 'insert into t (name) values (?1)'
+
+  for name in ['f', 'g'] {
+    var result = insert.exec([name])
+    assert result.rows_affected == 1
+  }
+
+  insert.close()
+  assert db.count('t', nil) == 7
+
+  # Closing twice is allowed; using it afterwards is not.
+  insert.close()
+
+  var reused = false
+  catch {
+    insert.exec(['h'])
+  } as error {
+    reused = instance_of(error, ClosedError)
+  }
+  assert reused
+
+  db.close()
+  echo 'test_prepared passed'
+}
+
+def test_prepared_queries() {
+  var db = seeded()
+
+  var byname = db.prepare('select id, name from t where name = ?')
+  assert byname.columns().map(@(c) => c.name) == ['id', 'name']
+
+  assert byname.fetch_value(['c'], nil) == 3
+  assert byname.fetch_one(['d']).name == 'd'
+  assert byname.fetch_all(['e']).length() == 1
+  assert byname.query(['a']).length() == 1
+
+  # The same statement runs again with different values.
+  assert byname.fetch_value(['b'], nil) == 2
+
+  byname.close()
+
+  var named = db.prepare('select name from t where id = :id')
+  assert named.fetch_value({ id: 2 }, nil) == 'b'
+  named.close()
+
+  db.close()
+  echo 'test_prepared_queries passed'
+}
+
+def test_cursor() {
+  var db = seeded()
+
+  var cursor = db.stream('select name from t order by name', nil, nil)
+  assert cursor.column_names() == ['name']
+
+  var seen = []
+  for row in cursor {
+    seen.append(row.name)
+  }
+
+  assert seen == ['a', 'b', 'c', 'd', 'e']
+  assert cursor.position() == 5
+
+  # Running to the end closes it, so a loop needs no cleanup.
+  assert cursor.is_closed()
+
+  db.close()
+  echo 'test_cursor passed'
+}
+
+def test_cursor_piecewise() {
+  var db = seeded()
+
+  var cursor = db.stream('select name from t order by name', nil, nil)
+
+  assert cursor.next().name == 'a'
+  assert cursor.take(2).map(@(r) => r.name) == ['b', 'c']
+  assert cursor.rest().map(@(r) => r.name) == ['d', 'e']
+  assert cursor.next() == nil
+
+  cursor.close()
+
+  # A cursor abandoned partway has to be closed by hand, and closing
+  # twice is allowed.
+  var partial = db.stream('select name from t', nil, nil)
+  partial.next()
+  partial.close()
+  partial.close()
+
+  var used = false
+  catch {
+    partial.next()
+  } as error {
+    used = instance_of(error, ClosedError)
+  }
+  assert used
+
+  db.close()
+  echo 'test_cursor_piecewise passed'
+}
+
+def test_cursor_holds_its_statement() {
+  var db = seeded()
+
+  var statement = db.prepare('select name from t order by id')
+  var cursor = statement.stream(nil, nil)
+
+  assert cursor.next().name == 'a'
+
+  # The cursor is still reading, so the statement cannot be run again
+  # underneath it.
+  var busy = false
+  catch {
+    statement.exec(nil)
+  } as error {
+    busy = instance_of(error, QueryError)
+  }
+  assert busy
+
+  cursor.close()
+
+  # Once the cursor lets go, the statement works again.
+  assert statement.fetch_value(nil, nil) == 'a'
+
+  statement.close()
+  db.close()
+  echo 'test_cursor_holds_its_statement passed'
+}
+
+def test_result_shapes() {
+  var db = seeded()
+
+  var result = db.query('select id, name from t order by id limit 2', nil)
+
+  assert result.length() == 2
+  assert !result.is_empty()
+  assert result.first().id == 1
+  assert result.last().id == 2
+  assert result.scalar(nil) == 1
+  assert result.column(1) == ['a', 'b']
+
+  var missing = false
+  catch {
+    result.column('nope')
+  } as error {
+    missing = instance_of(error, QueryError)
+  }
+  assert missing
+
+  var empty = db.query('select id from t where 0', nil)
+  assert empty.is_empty()
+  assert empty.first() == nil
+  assert empty.last() == nil
+  assert empty.scalar('fallback') == 'fallback'
+
+  db.close()
+  echo 'test_result_shapes passed'
+}
+
+test_prepared()
+test_prepared_queries()
+test_cursor()
+test_cursor_piecewise()
+test_cursor_holds_its_statement()
+test_result_shapes()

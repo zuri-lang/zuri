@@ -1,0 +1,302 @@
+# The parts of SQLite with no equivalent in the shared contract:
+# functions and collations written in Zuri, the hooks that report what
+# the engine is doing, incremental blob access, and online backup.
+
+import os
+import sql
+import sql.errors { SqlError, ClosedError }
+
+# A directory of its own, so nothing depends on what is already in the
+# checkout and nothing is left behind in it.
+var ROOT = os.create_temp_dir('zuri-sql-sqlite-')
+
+def test_scalar_functions() {
+  var db = sql.open(':memory:')
+  var engine = db.native()
+
+  db.exec('create table t (word text)', nil)
+  db.exec("insert into t values ('alpha'), ('bee'), ('gamma')", nil)
+
+  engine.create_function('shout', 1, @(word) => word.upper() + '!', nil)
+  assert db.fetch_value("select shout('hi')", nil, nil) == 'HI!'
+
+  # A function used across a whole column, which is the point of
+  # running it inside the engine rather than over the result.
+  assert db.fetch_column('select shout(word) from t order by word', nil, nil) ==
+    ['ALPHA!', 'BEE!', 'GAMMA!']
+
+  # Any number of arguments.
+  engine.create_function('joined', -1, @(...parts) {
+    return '|'.join(parts.map(@(part) => '${part}'))
+  }, nil)
+  assert db.fetch_value("select joined(1, 'a', 2.5)", nil, nil) == '1|a|2.5'
+
+  engine.delete_function('shout', 1)
+
+  var gone = false
+  catch {
+    db.query("select shout('hi')", nil)
+  } as error {
+    gone = instance_of(error, SqlError)
+  }
+  assert gone
+
+  db.close()
+  echo 'test_scalar_functions passed'
+}
+
+def test_function_errors() {
+  var db = sql.open(':memory:')
+
+  # An error raised inside a function cannot be thrown from where it
+  # happens, so it is parked and re-raised once SQLite has finished.
+  # What matters is that the class survives the trip.
+  db.native().create_function('explode', 0, @() {
+    raise sql.NotSupportedError('from inside the engine')
+  }, nil)
+
+  var caught = nil
+  catch {
+    db.query('select explode()', nil)
+  } as error {
+    caught = error
+  }
+
+  assert instance_of(caught, sql.NotSupportedError)
+  assert caught.message == 'from inside the engine'
+
+  # And the connection is still usable afterwards.
+  assert db.fetch_value('select 1', nil, nil) == 1
+
+  db.close()
+  echo 'test_function_errors passed'
+}
+
+def test_aggregates() {
+  var db = sql.open(':memory:')
+
+  db.exec('create table t (word text, grp integer)', nil)
+  db.exec("insert into t values ('a', 1), ('bbb', 1), ('cc', 2)", nil)
+
+  db.native().create_aggregate('longest', 1, @(longest, word) {
+    if longest == nil or word.length() > longest.length() {
+      return word
+    }
+
+    return longest
+  }, @(longest) => longest)
+
+  assert db.fetch_value('select longest(word) from t', nil, nil) == 'bbb'
+
+  var grouped = db.fetch_all(
+    'select grp, longest(word) as w from t group by grp order by grp', nil
+  )
+  assert grouped[0].w == 'bbb'
+  assert grouped[1].w == 'cc'
+
+  # A group with no rows never steps, so the accumulator is still nil.
+  assert db.fetch_value('select longest(word) from t where 0', nil, 'none') == nil
+
+  db.close()
+  echo 'test_aggregates passed'
+}
+
+def test_collations() {
+  var db = sql.open(':memory:')
+
+  db.exec('create table t (word text)', nil)
+  db.exec("insert into t values ('pear'), ('fig'), ('banana')", nil)
+
+  db.native().create_collation('bylen', @(a, b) => a.length() - b.length())
+
+  assert db.fetch_column('select word from t order by word collate bylen', nil, nil) ==
+    ['fig', 'pear', 'banana']
+
+  db.close()
+  echo 'test_collations passed'
+}
+
+def test_hooks() {
+  var db = sql.open(':memory:')
+  var engine = db.native()
+
+  db.exec('create table t (id integer primary key, n integer)', nil)
+
+  var changes = []
+  engine.on_change(@(operation, database, table, rowid) {
+    changes.append('${operation}:${table}:${rowid}')
+  })
+
+  db.exec('insert into t (n) values (1)', nil)
+  db.exec('update t set n = 2 where id = 1', nil)
+  db.exec('delete from t where id = 1', nil)
+
+  engine.on_change(nil)
+  assert changes == ['insert:t:1', 'update:t:1', 'delete:t:1']
+
+  # Cleared, so nothing more is recorded.
+  db.exec('insert into t (n) values (3)', nil)
+  assert changes.length() == 3
+
+  var events = []
+  engine.on_commit(@() {
+    events.append('commit')
+    return true
+  })
+  engine.on_rollback(@() {
+    events.append('rollback')
+  })
+
+  db.transaction(@(tx) {
+    tx.exec('insert into t (n) values (4)', nil)
+  }, nil)
+
+  catch {
+    db.transaction(@(tx) {
+      tx.exec('insert into t (n) values (5)', nil)
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+
+  engine.on_commit(nil)
+  engine.on_rollback(nil)
+
+  assert events.contains('commit')
+  assert events.contains('rollback')
+
+  db.close()
+  echo 'test_hooks passed'
+}
+
+def test_authorizer() {
+  var db = sql.open(':memory:')
+  var engine = db.native()
+
+  db.exec('create table secret (id integer, value text)', nil)
+  db.exec("insert into secret values (1, 'hidden')", nil)
+
+  # Action 20 is SQLITE_READ, whose first string is the table name.
+  engine.set_authorizer(@(action, first, second, database, trigger) {
+    if action == 20 and first == 'secret' {
+      return 'deny'
+    }
+
+    return 'allow'
+  })
+
+  var denied = false
+  catch {
+    db.query('select value from secret', nil)
+  } as error {
+    denied = instance_of(error, SqlError)
+  }
+  assert denied
+
+  engine.set_authorizer(nil)
+  assert db.fetch_value('select value from secret', nil, nil) == 'hidden'
+
+  db.close()
+  echo 'test_authorizer passed'
+}
+
+def test_blobs() {
+  var db = sql.open(':memory:')
+  var engine = db.native()
+
+  db.exec('create table files (id integer primary key, body blob)', nil)
+  db.exec('insert into files (body) values (zeroblob(16))', nil)
+  db.exec('insert into files (body) values (zeroblob(4))', nil)
+
+  var blob = engine.blob('main', 'files', 'body', 1, true)
+  assert blob.length() == 16
+  assert blob.is_writable()
+
+  blob.write(bytes([1, 2, 3, 4]), 0)
+  assert blob.read(0, 4) == bytes([1, 2, 3, 4])
+  assert blob.read(4, 2) == bytes([0, 0])
+
+  # A window past the end is refused rather than truncated.
+  var overrun = false
+  catch {
+    blob.read(14, 8)
+  } as error {
+    overrun = instance_of(error, SqlError)
+  }
+  assert overrun
+
+  # The same handle can move to another row.
+  blob.reopen(2)
+  assert blob.length() == 4
+
+  blob.close()
+  blob.close()
+
+  var used = false
+  catch {
+    blob.length()
+  } as error {
+    used = instance_of(error, ClosedError)
+  }
+  assert used
+
+  # And the write actually reached the database.
+  var stored = db.fetch_value('select body from files where id = 1', nil, nil)
+  assert stored[0] == 1
+  assert stored[3] == 4
+
+  db.close()
+  echo 'test_blobs passed'
+}
+
+def test_backup() {
+  var path = os.join_paths(ROOT, 'backup.db')
+  var handle = file(path)
+
+  if handle.exists() {
+    handle.delete()
+  }
+
+  var db = sql.open(':memory:')
+  db.exec('create table t (id integer primary key, n integer)', nil)
+
+  for n in 0..(10) {
+    db.insert('t', { n }, nil)
+  }
+
+  db.native().backup_to(path, nil)
+
+  var copy = sql.open('sqlite://${path}')
+  assert copy.count('t', nil) == 10
+  assert copy.fetch_value('select n from t where id = 5', nil, nil) == 4
+  copy.close()
+
+  # A backup taken in steps reports its own progress.
+  var destination = sql.open(':memory:')
+  var copying = db.native().backup(destination.native(), nil)
+
+  assert copying.total() == 0
+  copying.step(1)
+  assert copying.total() > 0
+  copying.run(-1, nil)
+  copying.close()
+
+  assert destination.count('t', nil) == 10
+  destination.close()
+
+  db.close()
+  file(path).delete()
+
+  echo 'test_backup passed'
+}
+
+test_scalar_functions()
+test_function_errors()
+test_aggregates()
+test_collations()
+test_hooks()
+test_authorizer()
+test_blobs()
+test_backup()
+
+os.remove_dir(ROOT, true)

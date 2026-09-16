@@ -1,0 +1,433 @@
+# The PostgreSQL adapter against a real server.
+#
+# Nothing here can be checked without one: authentication, the type
+# system as the server actually reports it, portals, and the SQLSTATE
+# codes a real engine produces. Set ZURI_TEST_POSTGRES to a connection
+# string to run it.
+#
+#   ZURI_TEST_POSTGRES=postgres://user:pass@localhost/db
+#
+# Everything is created in a schema of its own and dropped afterwards,
+# so pointing this at a database that matters is safe.
+
+import os
+import sql
+import date
+
+var SCHEMA = 'zuri_sql_test'
+
+def connect() {
+  var dsn = os.get_env('ZURI_TEST_POSTGRES', nil)
+
+  if dsn == nil or dsn == '' {
+    return nil
+  }
+
+  var db = sql.open(dsn)
+
+  db.exec_script('drop schema if exists ${SCHEMA} cascade')
+  db.exec_script('create schema ${SCHEMA}')
+  db.exec('set search_path to ${SCHEMA}', nil)
+
+  return db
+}
+
+def finish(db) {
+  db.exec_script('drop schema if exists ${SCHEMA} cascade')
+  db.close()
+}
+
+def test_connection() {
+  var db = connect()
+
+  assert db.driver_name() == 'postgres'
+  assert db.server_version() != 'unknown'
+  assert db.fetch_value('select 1', nil, nil) == 1
+  assert db.ping()
+
+  # The settings the server volunteered on the way in.
+  assert db.native().parameters().contains('server_version')
+
+  finish(db)
+  echo 'test_connection passed'
+}
+
+def test_types() {
+  var db = connect()
+
+  db.exec_script(
+    'create table kinds (' +
+    '  id serial primary key,' +
+    '  n integer, big bigint, r double precision,' +
+    '  money numeric(20, 4), s text, b bytea, ok boolean,' +
+    '  tags text[], doc jsonb, at timestamptz, day date, u uuid' +
+    ')'
+  )
+
+  var moment = date.Date(2026, 9, 16, 14, 30, 45, 123456, 0, false)
+  var uuid = '550e8400-e29b-41d4-a716-446655440000'
+
+  db.insert('kinds', {
+    n: -42,
+    big: 9007199254740992,
+    r: 3.5,
+    money: sql.Decimal('12345.6789'),
+    s: 'héllo',
+    b: bytes([1, 2, 255]),
+    ok: true,
+    tags: ['a', 'b'],
+    doc: { k: [1, 2] },
+    at: moment,
+    day: date.Date(2026, 9, 16, 0, 0, 0, 0, 0, false),
+    u: uuid,
+  }, nil)
+
+  var row = db.fetch_one('select * from kinds', nil)
+
+  assert row.n == -42
+  assert row.big == 9007199254740992
+  assert row.r == 3.5
+  assert instance_of(row.money, sql.Decimal)
+  assert row.money.to_string() == '12345.6789'
+  assert row.s == 'héllo'
+  assert is_bytes(row.b)
+  assert row.b == bytes([1, 2, 255])
+  assert row.ok == true
+  assert row.tags == ['a', 'b']
+  assert row.doc == { k: [1, 2] }
+  assert typeof(row.at) == 'Date'
+  assert row.at.year == 2026
+  assert row.at.microseconds == 123456
+  assert typeof(row.day) == 'Date'
+  assert row.u == uuid
+
+  # A null in every column, which is a different path from a value.
+  db.exec('insert into kinds (n) values (null)', nil)
+  var empty = db.fetch_one('select * from kinds order by id desc limit 1', nil)
+  assert empty.n == nil
+  assert empty.tags == nil
+  assert empty.at == nil
+
+  finish(db)
+  echo 'test_types passed'
+}
+
+def test_inserts_and_ids() {
+  var db = connect()
+
+  db.exec_script('create table t (id serial primary key, name text not null)')
+
+  # PostgreSQL reports no last insert id, so the insert asks for one
+  # with RETURNING. The caller never sees the difference.
+  var first = db.insert('t', { name: 'a' }, nil)
+  var second = db.insert('t', { name: 'b' }, nil)
+
+  assert first == 1
+  assert second == 2
+
+  # A key that is not called `id` is found rather than assumed.
+  db.exec_script('create table other (code serial primary key, name text)')
+  assert db.insert('other', { name: 'x' }, nil) == 1
+
+  # And a column can be named outright.
+  db.exec_script('create table named (k serial primary key, name text)')
+  assert db.insert('named', { name: 'y' }, { returning: 'k' }) == 1
+
+  assert db.insert_many('t', [{ name: 'c' }, { name: 'd' }]) == 2
+  assert db.count('t', nil) == 4
+
+  finish(db)
+  echo 'test_inserts_and_ids passed'
+}
+
+def test_transactions() {
+  var db = connect()
+  db.exec_script('create table t (id serial primary key, name text)')
+
+  db.transaction(@(tx) {
+    tx.insert('t', { name: 'kept' }, nil)
+  }, nil)
+  assert db.count('t', nil) == 1
+
+  catch {
+    db.transaction(@(tx) {
+      tx.insert('t', { name: 'lost' }, nil)
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+  assert db.count('t', nil) == 1
+  assert !db.in_transaction()
+
+  # A nested transaction is a savepoint, so its failure undoes only
+  # its own work.
+  db.transaction(@(outer) {
+    outer.insert('t', { name: 'outer' }, nil)
+
+    catch {
+      db.transaction(@(inner) {
+        inner.insert('t', { name: 'inner' }, nil)
+        raise Error('stop')
+      }, nil)
+    } as _error {
+    }
+  }, nil)
+
+  var names = db.fetch_column('select name from t order by name', nil, nil)
+  assert names.contains('outer')
+  assert !names.contains('inner')
+
+  # Every level PostgreSQL offers.
+  for level in [sql.READ_COMMITTED, sql.REPEATABLE_READ, sql.SERIALIZABLE] {
+    db.transaction(@(tx) {
+      tx.fetch_value('select 1', nil, nil)
+    }, level)
+  }
+
+  finish(db)
+  echo 'test_transactions passed'
+}
+
+def test_cursors() {
+  var db = connect()
+  db.exec_script('create table t (id serial primary key, n integer)')
+
+  for n in 0..(25) {
+    db.insert('t', { n }, nil)
+  }
+
+  # A portal is destroyed with its transaction, so a cursor opened
+  # outside one has to keep a transaction of its own alive.
+  var cursor = db.stream('select n from t order by n', nil, { batch: 4 })
+  var seen = []
+
+  for row in cursor {
+    seen.append(row.n)
+  }
+
+  assert seen.length() == 25
+  assert seen[0] == 0
+  assert seen[24] == 24
+  assert !db.in_transaction()
+
+  # And one opened inside a transaction uses that one.
+  db.transaction(@(tx) {
+    var inner = db.stream('select n from t order by n', nil, { batch: 10 })
+    assert inner.take(3).length() == 3
+    inner.close()
+  }, nil)
+
+  # Abandoned partway, then closed.
+  var partial = db.stream('select n from t order by n', nil, { batch: 2 })
+  assert partial.next().n == 0
+  partial.close()
+  assert !db.in_transaction()
+
+  finish(db)
+  echo 'test_cursors passed'
+}
+
+def test_prepared() {
+  var db = connect()
+  db.exec_script('create table t (id serial primary key, name text)')
+
+  var insert = db.prepare('insert into t (name) values (?)')
+  assert insert.parameter_count() == 1
+
+  for name in ['a', 'b', 'c'] {
+    assert insert.exec([name]).rows_affected == 1
+  }
+
+  insert.close()
+
+  var lookup = db.prepare('select name from t where id = ?')
+  assert lookup.fetch_value([2], nil) == 'b'
+  assert lookup.columns().map(@(c) => c.name) == ['name']
+  lookup.close()
+
+  finish(db)
+  echo 'test_prepared passed'
+}
+
+def test_errors() {
+  var db = connect()
+
+  db.exec_script(
+    'create table parents (id serial primary key, name text not null unique);' +
+    'create table children (' +
+    '  id serial primary key,' +
+    '  parent_id integer not null references parents(id),' +
+    '  n integer check (n > 0)' +
+    ')'
+  )
+
+  db.insert('parents', { name: 'taken' }, nil)
+
+  var duplicate = nil
+  catch {
+    db.insert('parents', { name: 'taken' }, nil)
+  } as error {
+    duplicate = error
+  }
+  assert instance_of(duplicate, sql.UniqueViolation)
+  assert duplicate.sqlstate == '23505'
+
+  var orphan = nil
+  catch {
+    db.insert('children', { parent_id: 9999, n: 1 }, nil)
+  } as error {
+    orphan = error
+  }
+  assert instance_of(orphan, sql.ForeignKeyViolation)
+  assert orphan.sqlstate == '23503'
+
+  var empty = nil
+  catch {
+    db.exec('insert into parents (name) values (null)', nil)
+  } as error {
+    empty = error
+  }
+  assert instance_of(empty, sql.NotNullViolation)
+
+  var checked = nil
+  catch {
+    db.insert('children', { parent_id: 1, n: -1 }, nil)
+  } as error {
+    checked = error
+  }
+  assert instance_of(checked, sql.CheckViolation)
+
+  var nonsense = nil
+  catch {
+    db.query('select * from no_such_table', nil)
+  } as error {
+    nonsense = error
+  }
+  assert instance_of(nonsense, sql.QueryError)
+  assert nonsense.sqlstate == '42P01'
+
+  # An error leaves the transaction unusable until it is rolled back,
+  # which PostgreSQL enforces and the adapter reports.
+  db.native().run_simple('begin')
+  catch {
+    db.query('select * from no_such_table', nil)
+  } as _error {
+  }
+  assert db.native().in_failed_transaction()
+  db.native().run_simple('rollback')
+  assert db.fetch_value('select 1', nil, nil) == 1
+
+  finish(db)
+  echo 'test_errors passed'
+}
+
+def test_schema() {
+  var db = connect()
+
+  db.exec_script(
+    'create table authors (id serial primary key, name text not null unique);' +
+    'create table posts (' +
+    '  id bigserial primary key,' +
+    '  author_id integer not null references authors(id) on delete cascade,' +
+    '  title text not null,' +
+    '  views integer not null default 0' +
+    ');' +
+    'create index posts_author on posts (author_id);' +
+    'create view recent as select * from posts;'
+  )
+
+  assert db.schema.tables(SCHEMA) == ['authors', 'posts']
+  assert db.schema.views(SCHEMA) == ['recent']
+  assert db.schema.column_names('posts', SCHEMA) ==
+    ['id', 'author_id', 'title', 'views']
+
+  var columns = db.schema.columns('posts', SCHEMA)
+  assert columns[0].primary_key
+  assert !columns[2].nullable
+  assert columns[3].default_value != nil
+
+  assert db.schema.primary_key('posts', SCHEMA) == 'id'
+
+  var indexes = db.schema.indexes('posts', SCHEMA)
+  assert indexes.map(@(i) => i.name).contains('posts_author')
+
+  var keys = db.schema.foreign_keys('posts', SCHEMA)
+  assert keys.length() == 1
+  assert keys[0].references_table == 'authors'
+  assert keys[0].references_columns == ['id']
+  assert keys[0].on_delete == 'CASCADE'
+
+  finish(db)
+  echo 'test_schema passed'
+}
+
+def test_listen_notify() {
+  var db = connect()
+  var listener = db.native().listener()
+
+  listener.listen('zuri_test_channel')
+  assert listener.channels() == ['zuri_test_channel']
+
+  listener.notify('zuri_test_channel', "a payload with ' a quote")
+
+  var received = listener.wait(20)
+  assert received.length() >= 1
+  assert received[0].channel == 'zuri_test_channel'
+  assert received[0].payload.contains('a quote')
+
+  listener.unlisten('zuri_test_channel')
+  assert listener.channels() == []
+
+  listener.close()
+  finish(db)
+  echo 'test_listen_notify passed'
+}
+
+def test_pool() {
+  var dsn = os.get_env('ZURI_TEST_POSTGRES', nil)
+  var pool = sql.pool(dsn, { max: 3 })
+
+  pool.exec('drop table if exists zuri_pool_test', nil)
+  pool.exec('create table zuri_pool_test (id serial primary key, n integer)', nil)
+
+  pool.transaction(@(tx) {
+    tx.exec('insert into zuri_pool_test (n) values (?)', [1])
+    tx.exec('insert into zuri_pool_test (n) values (?)', [2])
+  }, nil)
+
+  assert pool.fetch_value('select count(*) from zuri_pool_test', nil, nil) == 2
+
+  var a = pool.acquire()
+  var b = pool.acquire()
+  assert pool.in_use() == 2
+  a.close()
+  b.close()
+  assert pool.in_use() == 0
+
+  pool.exec('drop table zuri_pool_test', nil)
+  pool.close()
+
+  echo 'test_pool passed'
+}
+
+def run() {
+  if os.get_env('ZURI_TEST_POSTGRES', nil) == nil {
+    echo 'postgres_integration skipped: set ZURI_TEST_POSTGRES to a ' +
+      'connection string to run it'
+
+    return
+  }
+
+  test_connection()
+  test_types()
+  test_inserts_and_ids()
+  test_transactions()
+  test_cursors()
+  test_prepared()
+  test_errors()
+  test_schema()
+  test_listen_notify()
+  test_pool()
+}
+
+run()

@@ -5,7 +5,7 @@
  *
  * Reach it through `sql`, which is what keeps a program portable:
  *
- * ```zuri
+ * ```zuri,ignore
  * import sql
  *
  * var db = sql.open('postgres://alice:secret@localhost/app')

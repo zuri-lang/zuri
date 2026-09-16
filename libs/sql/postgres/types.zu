@@ -855,7 +855,7 @@ def _hex_byte(pair) {
  * adapter about a type its database defines that PostgreSQL does not
  * ship:
  *
- * ```zuri
+ * ```zuri,ignore
  * registry.register(oid, decoder, encoder)
  * ```
  *

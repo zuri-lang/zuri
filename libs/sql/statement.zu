@@ -7,7 +7,7 @@
  * executing it, and the compile is the expensive half. A statement run
  * in a loop should pay for it once:
  *
- * ```zuri
+ * ```zuri,ignore
  * var insert = db.prepare('insert into points (x, y) values (?, ?)')
  *
  * for point in points {

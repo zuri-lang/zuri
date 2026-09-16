@@ -1,0 +1,259 @@
+# A pool over SQLite, which is the engine a test can rely on being
+# there. What is exercised is the pool's own behaviour rather than the
+# engine's: lending, returning, sizing, recycling and shutdown.
+
+import os
+import sql
+import sql.errors { PoolExhaustedError, ClosedError }
+
+# A directory of its own, so the tests never depend on what is already
+# in the checkout and never leave anything behind in it.
+var ROOT = os.create_temp_dir('zuri-sql-pool-')
+var PATH = os.join_paths(ROOT, 'pool.db')
+
+def scrub() {
+  var handle = file(PATH)
+
+  if handle.exists() {
+    handle.delete()
+  }
+}
+
+def test_lending() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 3 })
+  assert pool.stats() == { size: 0, idle: 0, in_use: 0, max: 3 }
+
+  # A statement run through the pool takes a connection and gives it
+  # back, so nothing is left held.
+  pool.exec('create table t (v integer)', nil)
+  assert pool.stats().in_use == 0
+  assert pool.stats().size == 1
+
+  var first = pool.acquire()
+  assert pool.in_use() == 1
+
+  var second = pool.acquire()
+  assert pool.in_use() == 2
+  assert pool.size() == 2
+
+  # Closing a pooled connection returns it rather than shutting it
+  # down, which is what lets the same code work pooled or not.
+  first.close()
+  assert pool.in_use() == 1
+  assert pool.available() == 1
+
+  second.close()
+  assert pool.in_use() == 0
+
+  pool.close()
+  scrub()
+
+  echo 'test_lending passed'
+}
+
+def test_exhaustion() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 1 })
+  var held = pool.acquire()
+
+  # A pool belongs to one isolate, so nothing can release a connection
+  # while this call is running. Waiting would never end, so it says so
+  # instead.
+  var exhausted = false
+
+  catch {
+    pool.acquire()
+  } as error {
+    exhausted = instance_of(error, PoolExhaustedError)
+  }
+
+  assert exhausted
+
+  held.close()
+  assert pool.acquire() != nil
+
+  pool.close()
+  scrub()
+
+  echo 'test_exhaustion passed'
+}
+
+def test_in_memory_is_clamped() {
+  # Each connection to an in-memory database gets its own database, so
+  # a pool of several would be several different empty ones.
+  var pool = sql.pool(':memory:', { max: 10 })
+  assert pool.stats().max == 1
+
+  pool.exec('create table t (v integer)', nil)
+  pool.exec('insert into t values (1)', nil)
+
+  # The same connection every time, so the table is still there.
+  assert pool.fetch_value('select v from t', nil, nil) == 1
+
+  pool.close()
+  echo 'test_in_memory_is_clamped passed'
+}
+
+def test_minimum() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 4, min: 2 })
+  assert pool.stats().size == 2
+  assert pool.stats().idle == 2
+
+  pool.close()
+  assert pool.stats().size == 0
+
+  scrub()
+  echo 'test_minimum passed'
+}
+
+def test_with_connection() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 2 })
+  pool.exec('create table t (v integer)', nil)
+
+  var returned = pool.with_connection(@(connection) {
+    connection.insert('t', { v: 1 }, nil)
+
+    return 'done'
+  })
+
+  assert returned == 'done'
+  assert pool.in_use() == 0
+
+  # The connection goes back even when the body raises.
+  catch {
+    pool.with_connection(@(connection) {
+      raise Error('stop')
+    })
+  } as _error {
+  }
+
+  assert pool.in_use() == 0
+
+  pool.close()
+  scrub()
+
+  echo 'test_with_connection passed'
+}
+
+def test_transaction_pins_one_connection() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 2 })
+  pool.exec('create table t (v integer)', nil)
+
+  pool.transaction(@(tx) {
+    tx.exec('insert into t values (1)', nil)
+    tx.exec('insert into t values (2)', nil)
+  }, nil)
+
+  assert pool.fetch_value('select count(*) from t', nil, nil) == 2
+
+  catch {
+    pool.transaction(@(tx) {
+      tx.exec('insert into t values (3)', nil)
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+
+  assert pool.fetch_value('select count(*) from t', nil, nil) == 2
+  assert pool.in_use() == 0
+
+  pool.close()
+  scrub()
+
+  echo 'test_transaction_pins_one_connection passed'
+}
+
+def test_open_transaction_does_not_travel() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 1 })
+  pool.exec('create table t (v integer)', nil)
+
+  # A connection handed back mid-transaction would lend its transaction
+  # to whoever got it next, so the pool rolls back anything still open.
+  var connection = pool.acquire()
+  connection.begin(nil)
+  connection.exec('insert into t values (99)', nil)
+  connection.close()
+
+  var next = pool.acquire()
+  assert !next.in_transaction()
+  assert next.count('t', nil) == 0
+  next.close()
+
+  pool.close()
+  scrub()
+
+  echo 'test_open_transaction_does_not_travel passed'
+}
+
+def test_closed_pool() {
+  scrub()
+
+  var pool = sql.pool('sqlite://${PATH}', { max: 1 })
+  pool.close()
+  assert pool.is_closed()
+
+  # Closing twice is allowed; using it afterwards is not.
+  pool.close()
+
+  var used = false
+
+  catch {
+    pool.acquire()
+  } as error {
+    used = instance_of(error, ClosedError)
+  }
+
+  assert used
+
+  scrub()
+  echo 'test_closed_pool passed'
+}
+
+def test_on_connect() {
+  scrub()
+
+  var prepared = 0
+
+  var pool = sql.pool('sqlite://${PATH}', {
+    max: 2,
+    on_connect: @(connection) {
+      prepared++
+      connection.exec('pragma journal_mode = wal', nil)
+    },
+  })
+
+  var a = pool.acquire()
+  var b = pool.acquire()
+
+  assert prepared == 2
+
+  a.close()
+  b.close()
+  pool.close()
+  scrub()
+
+  echo 'test_on_connect passed'
+}
+
+test_lending()
+test_exhaustion()
+test_in_memory_is_clamped()
+test_minimum()
+test_with_connection()
+test_transaction_pins_one_connection()
+test_open_transaction_does_not_travel()
+test_closed_pool()
+test_on_connect()
+
+os.remove_dir(ROOT, true)

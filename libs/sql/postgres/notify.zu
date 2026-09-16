@@ -9,7 +9,7 @@
  * adapter with no equivalent in SQLite, so it lives here rather than
  * in the shared contract and is reached through `db.native()`.
  *
- * ```zuri
+ * ```zuri,ignore
  * var listener = db.native().listener()
  *
  * listener.listen('jobs')

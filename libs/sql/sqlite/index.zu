@@ -12,7 +12,7 @@
  * Reach it through `sql`, which is what makes the same program work
  * against another engine later:
  *
- * ```zuri
+ * ```zuri,ignore
  * import sql
  *
  * var db = sql.open('sqlite://./app.db')
@@ -30,6 +30,8 @@ import @.driver { SqliteDriver, MEMORY, MAX_PARAMETERS, DEFAULT_BUSY_TIMEOUT }
 import @.connection { SqliteConnection }
 import @.statement { SqliteStatement }
 import @.cursor { SqliteCursor }
+import @.blob { Blob }
+import @.backup { Backup }
 import @.errors { class_for, split_message, reraise }
 import @.types { conversion_for, base_type }
 

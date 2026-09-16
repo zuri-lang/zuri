@@ -762,5 +762,5 @@ anything.
 The module's own documentation carries the full matcher list with each
 one's edge cases, every option `run()` and `conduct()` accept, and the
 snapshot file format. [Appendix F](appendix-06-stdlib-index.md) lists
-the submodules. [Chapter 20](ch20-00-debugging.md) is what to do once a
+the submodules. [Chapter 21](ch21-00-debugging.md) is what to do once a
 test has told you something is wrong.

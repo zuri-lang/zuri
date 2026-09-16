@@ -1,0 +1,222 @@
+# The SQLite adapter end to end: opening, running statements, and
+# reading values back as the types their columns were declared with.
+
+import sql
+import sql.errors { * }
+
+def test_connection_strings() {
+  # Every one of these names an in-memory database.
+  for dsn in [':memory:', 'sqlite::memory:', 'sqlite://:memory:'] {
+    var db = sql.open(dsn)
+    assert db.driver_name() == 'sqlite'
+    assert db.fetch_value('select 1', nil, nil) == 1
+    db.close()
+  }
+
+  # A bare path is taken as SQLite, since nothing else it could be.
+  assert sql.driver_for('./app.db').name() == 'sqlite'
+  assert sql.driver_for('sqlite://x.db').name() == 'sqlite'
+
+  echo 'test_connection_strings passed'
+}
+
+def test_exec_and_query() {
+  var db = sql.open(':memory:')
+
+  db.exec('create table t (id integer primary key, name text)', nil)
+
+  var inserted = db.exec("insert into t (name) values ('one')", nil)
+  assert inserted.rows_affected == 1
+  assert inserted.last_insert_id == 1
+
+  db.exec('insert into t (name) values (?)', ['two'])
+
+  var result = db.query('select id, name from t order by id', nil)
+  assert result.length() == 2
+  assert result.first().name == 'one'
+  assert result.column('name') == ['one', 'two']
+  assert result.column_names() == ['id', 'name']
+  assert result.tuples() == [[1, 'one'], [2, 'two']]
+
+  # Iterating a result walks its rows.
+  var seen = []
+  for row in result {
+    seen.append(row.name)
+  }
+  assert seen == ['one', 'two']
+
+  assert db.fetch_one('select name from t where id = ?', [2]).name == 'two'
+  assert db.fetch_value('select count(*) from t', nil, 0) == 2
+  assert db.fetch_column('select name from t order by id', nil, nil) == ['one', 'two']
+  assert db.fetch_all('select id from t', nil).length() == 2
+
+  # An empty result gives back the fallback rather than raising.
+  assert db.fetch_value('select 1 where 0', nil, 'none') == 'none'
+  assert db.fetch_one('select 1 where 0', nil) == nil
+
+  db.close()
+  echo 'test_exec_and_query passed'
+}
+
+def test_declared_types() {
+  var db = sql.open(':memory:')
+
+  db.exec(
+    'create table t (n integer, r real, s text, b blob, ok boolean, ' +
+    'at datetime, j json)',
+    nil
+  )
+
+  db.exec('insert into t values (?, ?, ?, ?, ?, ?, ?)', [
+    42, 3.5, 'text', bytes([1, 2]), true,
+    '2026-09-16T10:00:00.000000+00:00', '{"a":1}',
+  ])
+
+  var row = db.fetch_one('select * from t', nil)
+
+  assert row.n == 42
+  assert row.r == 3.5
+  assert row.s == 'text'
+  assert is_bytes(row.b)
+
+  # These three are the ones SQLite itself would hand back as a number
+  # and two strings; the declared type is what says otherwise.
+  assert row.ok == true
+  assert typeof(row.at) == 'Date'
+  assert row.at.year == 2026
+  assert row.j == { a: 1 }
+
+  # A column with no declared type is an expression, and is left alone.
+  var expression = db.fetch_one("select 1 as n, '{\"a\":1}' as j", nil)
+  assert expression.n == 1
+  assert is_string(expression.j)
+
+  db.close()
+  echo 'test_declared_types passed'
+}
+
+def test_large_integers() {
+  var db = sql.open(':memory:')
+  db.exec('create table t (n integer)', nil)
+
+  # Past what a double holds exactly, so it has to come back a bigint
+  # rather than silently rounded.
+  db.exec('insert into t values (9223372036854775807)', nil)
+
+  var value = db.fetch_value('select n from t', nil, nil)
+  assert is_bigint(value)
+  assert '${value}' == '9223372036854775807n'
+
+  db.close()
+  echo 'test_large_integers passed'
+}
+
+def test_parameters() {
+  var db = sql.open(':memory:')
+  db.exec('create table t (a text, b text)', nil)
+
+  db.exec('insert into t values (?, ?)', ['one', 'two'])
+  db.exec('insert into t values (:a, :b)', { a: 'three', b: 'four' })
+
+  assert db.count('t', nil) == 2
+  assert db.fetch_value('select a from t where b = ?', ['four'], nil) == 'three'
+
+  # A value is bound, never pasted, so this is data rather than SQL.
+  db.exec('insert into t values (?, ?)', ["'; drop table t; --", 'x'])
+  assert db.count('t', nil) == 3
+
+  db.close()
+  echo 'test_parameters passed'
+}
+
+def test_errors() {
+  var db = sql.open(':memory:')
+  db.exec('create table t (id integer primary key, name text not null unique)', nil)
+  db.exec("insert into t (name) values ('taken')", nil)
+
+  var unique = nil
+  catch {
+    db.exec("insert into t (name) values ('taken')", nil)
+  } as error {
+    unique = error
+  }
+
+  assert instance_of(unique, UniqueViolation)
+  assert instance_of(unique, IntegrityError)
+  assert instance_of(unique, SqlError)
+  assert unique.driver == 'sqlite'
+  assert unique.code == 2067
+
+  var not_null = nil
+  catch {
+    db.exec('insert into t (name) values (null)', nil)
+  } as error {
+    not_null = error
+  }
+  assert instance_of(not_null, NotNullViolation)
+
+  var missing = nil
+  catch {
+    db.query('select * from nope', nil)
+  } as error {
+    missing = error
+  }
+  assert instance_of(missing, QueryError)
+
+  # Using a connection after closing it says so plainly.
+  db.close()
+
+  var closed = nil
+  catch {
+    db.query('select 1', nil)
+  } as error {
+    closed = error
+  }
+  assert instance_of(closed, ClosedError)
+
+  # Closing twice is always allowed.
+  db.close()
+
+  echo 'test_errors passed'
+}
+
+def test_capabilities() {
+  var db = sql.open(':memory:')
+
+  assert db.supports('last_insert_id')
+  assert db.supports('returning')
+  assert db.supports('savepoints')
+  assert !db.supports('arrays')
+  assert !db.supports('concurrent_writers')
+  assert db.capabilities().placeholder_style == 'indexed'
+
+  db.close()
+  echo 'test_capabilities passed'
+}
+
+def test_exec_script() {
+  var db = sql.open(':memory:')
+
+  db.exec_script("
+    create table a (id integer primary key);
+    create table b (id integer primary key);
+    insert into a values (1);
+    -- a comment holding a ; does not split anything
+    insert into a values (2);
+  ")
+
+  assert db.schema.tables(nil) == ['a', 'b']
+  assert db.count('a', nil) == 2
+
+  db.close()
+  echo 'test_exec_script passed'
+}
+
+test_connection_strings()
+test_exec_and_query()
+test_declared_types()
+test_large_integers()
+test_parameters()
+test_errors()
+test_capabilities()
+test_exec_script()

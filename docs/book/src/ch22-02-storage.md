@@ -127,7 +127,7 @@ class NotFoundError < Error {
 A custom error class, four lines, and it earns them. Every layer above can
 say `instance_of(error, NotFoundError)` instead of matching on a message
 string, and the middleware in
-[Middleware, Logging and Errors](ch21-06-middleware.md) turns exactly this
+[Middleware, Logging and Errors](ch22-06-middleware.md) turns exactly this
 class into a 404. Had `get()` raised a plain `Error('not found')`, that
 mapping would be a substring search.
 
@@ -226,7 +226,7 @@ columns and produce them in whatever order the data happened to be in.
 
 **It returns `to_view()` results, not `Task` objects.** A view carries the
 formatted date and the `is_done` flag already computed, so the template
-never has to. [Server-Rendered Pages](ch21-05-pages.md) explains why that
+never has to. [Server-Rendered Pages](ch22-05-pages.md) explains why that
 matters for templates specifically.
 
 **`{ name, tasks }` uses the shorthand.** Both keys match the variables
@@ -346,8 +346,8 @@ The whole board is held in memory and rewritten in full after every change.
 For a board a team can read on one screen, that is the right trade: the
 code is simple enough to hold in your head, and a full rewrite of a few
 kilobytes is immaterial. It is also the first assumption to revisit if this
-ever has to hold a hundred thousand tasks, at which point the answer is a
-real database rather than a cleverer file format.
+ever has to hold a hundred thousand tasks, at which point the answer is
+[a real database](ch17-00-sql.md) rather than a cleverer file format.
 
 ## Concurrency
 
@@ -357,4 +357,4 @@ rename does not fix that: it guarantees the file is never half-written, not
 that two writers agree.
 
 This application runs one server process, so the question does not arise.
-[Running It for Real](ch21-07-running-it.md) is where it does.
+[Running It for Real](ch22-07-running-it.md) is where it does.

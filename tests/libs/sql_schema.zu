@@ -1,0 +1,161 @@
+# Introspection returns one shape whichever engine answered, so the
+# code above it does not have to know which did.
+
+import sql
+import sql.schema { column_shape }
+
+def built() {
+  var db = sql.open(':memory:')
+
+  db.exec_script("
+    create table authors (
+      id integer primary key,
+      name text not null unique
+    );
+
+    create table posts (
+      id integer primary key,
+      author_id integer not null references authors(id) on delete cascade,
+      title text not null,
+      views integer not null default 0,
+      note text
+    );
+
+    create index posts_author on posts (author_id);
+    create unique index posts_title on posts (title);
+
+    create view recent as select * from posts;
+  ")
+
+  return db
+}
+
+def test_tables_and_views() {
+  var db = built()
+
+  assert db.schema.tables(nil) == ['authors', 'posts']
+  assert db.schema.views(nil) == ['recent']
+  assert db.schema.has_table('posts', nil)
+  assert !db.schema.has_table('nope', nil)
+
+  db.close()
+  echo 'test_tables_and_views passed'
+}
+
+def test_columns() {
+  var db = built()
+
+  var columns = db.schema.columns('posts', nil)
+  assert columns.length() == 5
+  assert db.schema.column_names('posts', nil) ==
+    ['id', 'author_id', 'title', 'views', 'note']
+
+  # Every column carries the same keys whichever engine answered.
+  for key in column_shape().keys() {
+    assert columns[0].contains(key)
+  }
+
+  var title = columns[2]
+  assert title.name == 'title'
+  assert title.type == 'text'
+  assert !title.nullable
+  assert !title.primary_key
+  assert title.position == 3
+
+  var note = columns[4]
+  assert note.nullable
+
+  var views = columns[3]
+  assert views.default_value == '0'
+
+  assert columns[0].primary_key
+  assert db.schema.has_column('posts', 'title', nil)
+  assert !db.schema.has_column('posts', 'missing', nil)
+
+  db.close()
+  echo 'test_columns passed'
+}
+
+def test_keys() {
+  var db = built()
+
+  assert db.schema.primary_key('posts', nil) == 'id'
+  assert db.schema.primary_key_columns('posts', nil) == ['id']
+
+  var keys = db.schema.foreign_keys('posts', nil)
+  assert keys.length() == 1
+  assert keys[0].columns == ['author_id']
+  assert keys[0].references_table == 'authors'
+  assert keys[0].references_columns == ['id']
+  assert keys[0].on_delete == 'CASCADE'
+
+  # A table with no foreign keys reports none rather than failing.
+  assert db.schema.foreign_keys('authors', nil) == []
+
+  db.close()
+  echo 'test_keys passed'
+}
+
+def test_indexes() {
+  var db = built()
+
+  var indexes = db.schema.indexes('posts', nil)
+  var names = indexes.map(@(index) => index.name)
+
+  assert names.contains('posts_author')
+  assert names.contains('posts_title')
+
+  for index in indexes {
+    if index.name == 'posts_author' {
+      assert index.columns == ['author_id']
+      assert !index.unique
+    }
+
+    if index.name == 'posts_title' {
+      assert index.columns == ['title']
+      assert index.unique
+    }
+  }
+
+  db.close()
+  echo 'test_indexes passed'
+}
+
+def test_composite_key() {
+  var db = sql.open(':memory:')
+
+  db.exec(
+    'create table pairs (a integer, b integer, note text, primary key (b, a))',
+    nil
+  )
+
+  # In key order, which is not the table's column order.
+  assert db.schema.primary_key_columns('pairs', nil) == ['b', 'a']
+
+  # No single column names the key, so there is no single answer.
+  assert db.schema.primary_key('pairs', nil) == nil
+
+  db.close()
+  echo 'test_composite_key passed'
+}
+
+def test_insert_uses_the_key() {
+  var db = sql.open(':memory:')
+
+  # A table whose key is not called `id` still gets an id back, because
+  # the key is looked up rather than assumed.
+  db.exec('create table things (code integer primary key, name text)', nil)
+
+  var id = db.insert('things', { name: 'first' }, nil)
+  assert id == 1
+
+  db.close()
+  echo 'test_insert_uses_the_key passed'
+}
+
+test_tables_and_views()
+test_columns()
+test_keys()
+test_indexes()
+test_composite_key()
+test_insert_uses_the_key()

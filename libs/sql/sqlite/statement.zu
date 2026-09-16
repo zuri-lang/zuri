@@ -39,9 +39,16 @@ def describe(statement) {
   var columns = []
 
   for index, name in names {
+    # Lower cased for the same reason the schema adapter does it:
+    # SQLite reports a declared type exactly as it was written, so
+    # `TEXT` and `text` are both possible and neither matches what
+    # another engine would say. Case carries no meaning in a SQL type
+    # name.
+    var type = index < declared.length() ? declared[index] : nil
+
     columns.append({
       name,
-      type: index < declared.length() ? declared[index] : nil,
+      type: type == nil ? nil : type.lower(),
     })
   }
 

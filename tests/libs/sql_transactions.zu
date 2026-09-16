@@ -1,0 +1,181 @@
+# Transactions, and the savepoints that make nesting work. Run against
+# SQLite, which is the engine a test can rely on being there; the
+# postgres side of the same behaviour is covered by the integration
+# suite.
+
+import sql
+import sql.errors { TransactionError, ClosedError }
+
+def fresh() {
+  var db = sql.open(':memory:')
+  db.exec('create table t (id integer primary key, name text)', nil)
+
+  return db
+}
+
+def test_commit_and_rollback() {
+  var db = fresh()
+
+  db.transaction(@(tx) {
+    tx.insert('t', { name: 'kept' }, nil)
+  }, nil)
+
+  assert db.count('t', nil) == 1
+
+  catch {
+    db.transaction(@(tx) {
+      tx.insert('t', { name: 'discarded' }, nil)
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+
+  assert db.count('t', nil) == 1
+  assert !db.in_transaction()
+
+  # Whatever the body returns comes back out.
+  assert db.transaction(@(tx) => 'result', nil) == 'result'
+
+  db.close()
+  echo 'test_commit_and_rollback passed'
+}
+
+def test_nesting() {
+  var db = fresh()
+
+  db.transaction(@(outer) {
+    outer.insert('t', { name: 'outer' }, nil)
+
+    # An inner transaction is a savepoint, so its failure undoes only
+    # its own work and the outer one carries on.
+    catch {
+      db.transaction(@(inner) {
+        inner.insert('t', { name: 'inner' }, nil)
+        raise Error('inner fails')
+      }, nil)
+    } as _error {
+    }
+
+    outer.insert('t', { name: 'after' }, nil)
+  }, nil)
+
+  var names = db.fetch_column('select name from t order by name', nil, nil)
+  assert names == ['after', 'outer']
+
+  db.close()
+  echo 'test_nesting passed'
+}
+
+def test_manual() {
+  var db = fresh()
+
+  var tx = db.begin(nil)
+  tx.insert('t', { name: 'one' }, nil)
+  assert db.in_transaction()
+  tx.commit()
+  assert !db.in_transaction()
+  assert db.count('t', nil) == 1
+
+  var second = db.begin(nil)
+  second.insert('t', { name: 'two' }, nil)
+  second.rollback()
+  assert db.count('t', nil) == 1
+
+  # A transaction that has finished refuses to be used again.
+  var reused = false
+
+  catch {
+    second.commit()
+  } as error {
+    reused = instance_of(error, TransactionError)
+  }
+
+  assert reused
+
+  db.close()
+  echo 'test_manual passed'
+}
+
+def test_isolation() {
+  var db = fresh()
+
+  # SQLite has no levels of its own, so these map onto its locking
+  # modes: serializable takes the write lock up front.
+  db.transaction(@(tx) {
+    tx.insert('t', { name: 'a' }, nil)
+  }, sql.SERIALIZABLE)
+
+  db.transaction(@(tx) {
+    tx.insert('t', { name: 'b' }, nil)
+  }, sql.READ_COMMITTED)
+
+  assert db.count('t', nil) == 2
+
+  # Repeatable read is served by the same mode: SQLite has nothing
+  # between the two, and serializable is the stronger.
+  db.transaction(@(tx) => nil, sql.REPEATABLE_READ)
+  assert db.capabilities().isolation_levels.contains(sql.REPEATABLE_READ)
+
+  # A level it genuinely cannot offer says so rather than pretending.
+  var refused = false
+
+  catch {
+    db.transaction(@(tx) => nil, sql.READ_UNCOMMITTED)
+  } as error {
+    refused = instance_of(error, sql.NotSupportedError)
+  }
+
+  assert refused
+
+  db.close()
+  echo 'test_isolation passed'
+}
+
+def test_savepoints_by_name() {
+  var db = fresh()
+  var connection = db.native()
+
+  connection.begin(nil)
+  db.insert('t', { name: 'first' }, nil)
+
+  connection.savepoint('mark')
+  db.insert('t', { name: 'second' }, nil)
+  assert db.count('t', nil) == 2
+
+  connection.rollback_to('mark')
+  assert db.count('t', nil) == 1
+
+  connection.release_savepoint('mark')
+  connection.commit()
+
+  assert db.count('t', nil) == 1
+
+  db.close()
+  echo 'test_savepoints_by_name passed'
+}
+
+def test_transaction_helpers() {
+  var db = fresh()
+
+  db.transaction(@(tx) {
+    var id = tx.insert('t', { name: 'x' }, nil)
+    assert tx.fetch_value('select name from t where id = ?', [id], nil) == 'x'
+    assert tx.update('t', { name: 'y' }, { id }) == 1
+    assert tx.fetch_one('select name from t where id = ?', [id]).name == 'y'
+    assert tx.query('select * from t', nil).length() == 1
+    assert tx.fetch_all('select * from t', nil).length() == 1
+    assert tx.delete('t', { id }) == 1
+  }, nil)
+
+  assert db.count('t', nil) == 0
+
+  db.close()
+  echo 'test_transaction_helpers passed'
+}
+
+test_commit_and_rollback()
+test_nesting()
+test_manual()
+test_isolation()
+test_savepoints_by_name()
+test_transaction_helpers()

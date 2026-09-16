@@ -66,11 +66,21 @@ class SqliteSchema < SchemaAdapter {
     var columns = []
 
     for row in rows {
+      # Two of these need tidying before they leave. SQLite reports the
+      # declared type exactly as it was written, so `TEXT` and `text`
+      # are both possible and neither matches what another engine
+      # would say; lower casing makes the two agree, and case carries
+      # no meaning in a SQL type name. And a default comes back as
+      # whatever the pragma's own untyped column held, which for `0`
+      # is a number, where the contract asks for SQL text.
+      var declared = row[2] == nil or row[2] == '' ? nil : row[2].lower()
+      var fallback = row[4] == nil ? nil : '${row[4]}'
+
       columns.append({
         name: row[1],
-        type: row[2] == nil or row[2] == '' ? nil : row[2],
+        type: declared,
         nullable: row[3] == 0,
-        default_value: row[4],
+        default_value: fallback,
         primary_key: row[5] != 0,
         position: row[0] + 1,
       })
@@ -91,18 +101,14 @@ class SqliteSchema < SchemaAdapter {
    * @returns list[string]
    */
   primary_key_columns(table: string, schema) {
-    var rows = self._pragma('table_info', table, schema)
-    var key = []
+    # The pragma reports each key column's place within the key, which
+    # for a composite key is not the table's column order.
+    var key = self._pragma('table_info', table, schema)
+      .filter(@(row) => row[5] != 0)
 
-    for row in rows {
-      if row[5] != 0 {
-        key.append({ position: row[5], name: row[1] })
-      }
-    }
+    key.sort(@(a, b) => a[5] - b[5])
 
-    key.sort()
-
-    return key.map(@(entry) => entry.name)
+    return key.map(@(row) => row[1])
   }
 
   /**

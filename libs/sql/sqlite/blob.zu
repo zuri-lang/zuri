@@ -1,0 +1,173 @@
+/**
+ * @module blob
+ *
+ * Reading and writing a single blob-valued cell a piece at a time.
+ *
+ * A large value stored in a database is usually read with a `select`,
+ * which means the whole of it arrives at once. For a hundred megabyte
+ * file that is a hundred megabytes of memory to move a copy from one
+ * place to another. A blob handle opens one cell and reads or writes
+ * windows of it, so the memory needed is the size of the window.
+ *
+ * ```zuri,ignore
+ * var blob = db.native().blob('main', 'files', 'content', id, false)
+ *
+ * var at = 0
+ * while at < blob.length() {
+ *   var chunk = blob.read(at, 65536.min(blob.length() - at))
+ *   out.write(chunk)
+ *   at += chunk.length()
+ * }
+ *
+ * blob.close()
+ * ```
+ *
+ * The cell has to exist and already be the right size: SQLite cannot
+ * grow a blob through this interface. The usual approach is to insert
+ * `zeroblob(n)` for the final size and then write into it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..errors { ClosedError }
+import .errors { reraise }
+
+/**
+ * An open blob handle.
+ *
+ * @printable
+ */
+class Blob {
+  var _handle
+  var _closed = false
+  var _writable = false
+
+  /**
+   * @param ptr handle The native blob handle.
+   * @param bool writable Whether it was opened for writing.
+   */
+  @new(handle, writable) {
+    self._handle = handle
+    self._writable = writable
+  }
+
+  /**
+   * How many bytes the blob holds. Fixed for the handle's lifetime.
+   *
+   * @returns number
+   */
+  length() {
+    self._open()
+
+    return _sqlite.blob_bytes(self._handle)
+  }
+
+  /**
+   * Whether this handle may write.
+   *
+   * @returns bool
+   */
+  is_writable() {
+    return self._writable
+  }
+
+  /**
+   * Reads `length` bytes starting at `offset`.
+   *
+   * @param number offset
+   * @param number length
+   * @returns bytes
+   * @throws SqlError if the window runs past the end of the blob.
+   */
+  read(offset: number, length: number) {
+    self._open()
+
+    catch {
+      return _sqlite.blob_read(self._handle, offset, length)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Reads the whole blob. Defeats the point of a blob handle, and is
+   * here for the case where one turns out to be small.
+   *
+   * @returns bytes
+   */
+  read_all() {
+    return self.read(0, self.length())
+  }
+
+  /**
+   * Writes `data` starting at `offset`.
+   *
+   * @param bytes data
+   * @param number offset
+   * @throws SqlError if the handle is read-only or the write would run
+   *    past the end.
+   */
+  write(data, offset: number) {
+    self._open()
+
+    catch {
+      _sqlite.blob_write(self._handle, offset, data)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Points this handle at the same column of a different row.
+   *
+   * Cheaper than closing and opening again, which is why it exists.
+   *
+   * @param number rowid
+   */
+  reopen(rowid: number) {
+    self._open()
+
+    catch {
+      _sqlite.blob_reopen(self._handle, rowid)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Releases the handle. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    _sqlite.blob_close(self._handle)
+  }
+
+  /**
+   * Whether this handle has been closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError('this blob handle was closed', { driver: 'sqlite' })
+    }
+  }
+
+  to_string() {
+    return '<Blob${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

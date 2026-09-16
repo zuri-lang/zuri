@@ -38,7 +38,7 @@ pub static LIST_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
     method_n("remove_at", 1, remove_at),
     method_n("remove", 1, remove),
     method("reverse", reverse),
-    method("sort", sort),
+    method_opt("sort", 0, sort),
     method_n("contains", 1, contains),
     method_n("delete", 2, delete),
     method("first", first),
@@ -344,21 +344,153 @@ fn compare_values(a: &Value, b: &Value) -> Ordering {
 /// Sorts in-place and returns the (same) list; also sorting any
 /// directly-nested lists' own items, matching the documented example.
 fn sort(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_method_arg_count!(ctx, 0);
-  with_list_mut(ctx.args[0], |v| {
-    for item in v.iter() {
-      if item.is_list() {
-        let mut inner = item.as_list();
-        inner.sort_by(compare_values);
-        with_list_mut(*item, |iv| {
-          iv.clear();
-          iv.extend(inner);
-        });
+  enforce_method_arg_range!(ctx, 0, 1);
+
+  let list_val = ctx.args[0];
+  let comparator = ctx.args.get(1).copied().unwrap_or(Value::nil());
+
+  if comparator.is_nil() {
+    with_list_mut(list_val, |v| {
+      for item in v.iter() {
+        if item.is_list() {
+          let mut inner = item.as_list();
+          inner.sort_by(compare_values);
+          with_list_mut(*item, |iv| {
+            iv.clear();
+            iv.extend(inner);
+          });
+        }
       }
-    }
-    v.sort_by(compare_values);
+      v.sort_by(compare_values);
+    });
+
+    return Ok(list_val);
+  }
+
+  enforce_method_arg_type!(ctx, 1, ArgType::Function);
+
+  sort_with(ctx, list_val, comparator)
+}
+
+/// Sorts through a Zuri comparator.
+///
+/// The comparator is ordinary Zuri code, so calling it can collect,
+/// which relocates both the list and every element in it. Everything
+/// therefore goes into `gc_pins` first and is read back from there on
+/// each comparison rather than from a local that a collection has no
+/// way to update.
+///
+/// The sort itself is written out rather than handed to `sort_by`,
+/// which is documented to panic when a comparator does not implement a
+/// total order. A comparator here is whatever the program wrote, so an
+/// inconsistent one has to produce an arbitrary order, not bring down
+/// the runtime. A merge sort gives that for free, and is stable, so
+/// elements the comparator calls equal keep the order they were in.
+fn sort_with(ctx: &mut ZuriContext, list_val: Value, comparator: Value) -> Result<Value, String> {
+  let items: Vec<Value> = list_val.as_list().iter().copied().collect();
+  let count = items.len();
+
+  if count < 2 {
+    return Ok(list_val);
+  }
+
+  // `mark` holds the list, `mark + 1` the comparator, and
+  // `mark + 2 + i` element `i`.
+  let mark = ctx.vm.pin_values(
+    std::iter::once(list_val)
+      .chain(std::iter::once(comparator))
+      .chain(items),
+  );
+
+  let mut failure: Option<Value> = None;
+  let order: Vec<usize> = (0..count).collect();
+  let sorted = merge_sort(ctx, mark, &order, &mut failure);
+
+  let ranked: Vec<Value> = sorted
+    .iter()
+    .map(|index| ctx.vm.pinned(mark + 2 + index))
+    .collect();
+
+  let list_now = ctx.vm.pinned(mark);
+  ctx.vm.unpin(mark);
+
+  if let Some(error) = failure {
+    return Err(ctx.vm.rethrow(error));
+  }
+
+  with_list_mut(list_now, |v| {
+    v.clear();
+    v.extend(ranked);
   });
-  Ok(ctx.args[0])
+
+  Ok(list_now)
+}
+
+fn merge_sort(
+  ctx: &mut ZuriContext,
+  mark: usize,
+  order: &[usize],
+  failure: &mut Option<Value>,
+) -> Vec<usize> {
+  if order.len() < 2 {
+    return order.to_vec();
+  }
+
+  let middle = order.len() / 2;
+  let left = merge_sort(ctx, mark, &order[..middle], failure);
+  let right = merge_sort(ctx, mark, &order[middle..], failure);
+
+  let mut merged = Vec::with_capacity(order.len());
+  let mut a = 0;
+  let mut b = 0;
+
+  while a < left.len() && b < right.len() {
+    // `<= 0` rather than `< 0` keeps the sort stable: an element the
+    // comparator calls equal to another stays behind it.
+    if compare_through(ctx, mark, left[a], right[b], failure) <= 0.0 {
+      merged.push(left[a]);
+      a += 1;
+    } else {
+      merged.push(right[b]);
+      b += 1;
+    }
+  }
+
+  merged.extend_from_slice(&left[a..]);
+  merged.extend_from_slice(&right[b..]);
+
+  merged
+}
+
+/// Asks the comparator about two elements.
+///
+/// Once the comparator has raised, every later comparison answers
+/// "equal" without calling it again: the sort has to finish so the
+/// pins can be released in order, and running more of the program's
+/// code after it has already failed would only bury the first error.
+fn compare_through(
+  ctx: &mut ZuriContext,
+  mark: usize,
+  left: usize,
+  right: usize,
+  failure: &mut Option<Value>,
+) -> f64 {
+  if failure.is_some() {
+    return 0.0;
+  }
+
+  let callback = ctx.vm.pinned(mark + 1);
+  let a = ctx.vm.pinned(mark + 2 + left);
+  let b = ctx.vm.pinned(mark + 2 + right);
+
+  match ctx.vm.call_value(callback, &[a, b]) {
+    Ok(result) if result.is_number() => result.as_number(),
+    Ok(_) => 0.0,
+    Err(error) => {
+      *failure = Some(error);
+      0.0
+    },
+  }
 }
 
 fn contains(ctx: &mut ZuriContext) -> Result<Value, String> {

@@ -1,0 +1,379 @@
+# The parts of the PostgreSQL adapter that can be checked without a
+# server: how a connection string is read, how values cross the wire,
+# how a result code becomes an error class, and whether the
+# authentication exchange matches the specification.
+#
+# Everything needing a live server is in postgres_integration.zu.
+
+import sql
+import sql.postgres { DRIVER }
+import sql.postgres.auth
+import sql.postgres.errors as pg_errors
+import sql.postgres.messages { Writer, Reader, read_cstring, PROTOCOL_VERSION }
+import sql.postgres.results { affected_rows, describe_columns, type_name_of }
+import sql.postgres.types { * }
+import sql.errors { * }
+import sql.decimal { Decimal }
+
+def test_uri_strings() {
+  var simple = DRIVER.parse_dsn('postgres://localhost/app')
+  assert simple.host == 'localhost'
+  assert simple.port == 5432
+  assert simple.database == 'app'
+  assert simple.user == 'postgres'
+  assert simple.sslmode == 'prefer'
+
+  var full = DRIVER.parse_dsn(
+    'postgres://alice:secret@db.example.com:6543/shop?sslmode=require'
+  )
+  assert full.user == 'alice'
+  assert full.password == 'secret'
+  assert full.host == 'db.example.com'
+  assert full.port == 6543
+  assert full.database == 'shop'
+  assert full.sslmode == 'require'
+
+  # With no database named, libpq uses the user's name, and so does this.
+  var implied = DRIVER.parse_dsn('postgresql://alice@localhost')
+  assert implied.database == 'alice'
+
+  # A password with a `@` or a `/` in it has to be percent-encoded, and
+  # has to come back out.
+  var encoded = DRIVER.parse_dsn('postgres://alice:p%40ss%2Fword@localhost/app')
+  assert encoded.password == 'p@ss/word'
+
+  # An IPv6 address is bracketed, so the port is not the last colon.
+  var six = DRIVER.parse_dsn('postgres://[::1]:5433/app')
+  assert six.host == '::1'
+  assert six.port == 5433
+
+  echo 'test_uri_strings passed'
+}
+
+def test_keyword_strings() {
+  var parsed = DRIVER.parse_dsn(
+    'host=db.internal port=6000 dbname=app user=bob password=hunter2'
+  )
+
+  assert parsed.host == 'db.internal'
+  assert parsed.port == 6000
+  assert parsed.database == 'app'
+  assert parsed.user == 'bob'
+  assert parsed.password == 'hunter2'
+
+  # A dictionary works too, and accepts either spelling of the name.
+  var direct = DRIVER.parse_dsn({ host: 'h', database: 'd', user: 'u' })
+  assert direct.database == 'd'
+
+  var libpq = DRIVER.parse_dsn({ host: 'h', dbname: 'd', user: 'u' })
+  assert libpq.database == 'd'
+
+  echo 'test_keyword_strings passed'
+}
+
+def test_bad_strings() {
+  for bad in ['', 'postgres://localhost/app?sslmode=maybe', 'nonsense'] {
+    var refused = false
+
+    catch {
+      DRIVER.parse_dsn(bad)
+    } as error {
+      refused = instance_of(error, ConnectionError)
+    }
+
+    assert refused
+  }
+
+  echo 'test_bad_strings passed'
+}
+
+def test_capabilities() {
+  var caps = DRIVER.capabilities()
+
+  assert caps.placeholder_style == 'numbered'
+  assert !caps.last_insert_id
+  assert caps.returning
+  assert caps.arrays
+  assert caps.json
+  assert caps.decimals
+  assert caps.schemas
+  assert caps.default_port == 5432
+  assert DRIVER.schemes() == ['postgres', 'postgresql']
+
+  echo 'test_capabilities passed'
+}
+
+def test_integers() {
+  # The protocol is big-endian throughout, and the 64 bit path cannot
+  # go through a shift, which a double would lose the top bits to.
+  assert read_int16(bytes(write_int16(-1234)), 0) == -1234
+  assert read_int16(bytes(write_int16(32767)), 0) == 32767
+  assert read_int32(bytes(write_int32(-123456)), 0) == -123456
+  assert read_int32(bytes(write_int32(2147483647)), 0) == 2147483647
+  assert read_uint32(bytes(write_int32(-1)), 0) == 4294967295
+  assert read_int64(bytes(write_int64(-1234567890123)), 0) == -1234567890123
+  assert read_int64(bytes(write_int64(9007199254740992)), 0) == 9007199254740992
+
+  echo 'test_integers passed'
+}
+
+def test_value_codecs() {
+  var registry = DEFAULT_REGISTRY
+
+  def roundtrip(value, oid) {
+    return registry.decode(bytes(registry.encode(value, oid)), oid)
+  }
+
+  assert roundtrip(true, OIDS.Bool) == true
+  assert roundtrip(-42, OIDS.Int4) == -42
+  assert roundtrip(32000, OIDS.Int2) == 32000
+  assert roundtrip(9007199254740992, OIDS.Int8) == 9007199254740992
+  assert roundtrip(3.5, OIDS.Float8) == 3.5
+  assert roundtrip('héllo', OIDS.Text) == 'héllo'
+  assert roundtrip(bytes([1, 2, 255]), OIDS.Bytea) == bytes([1, 2, 255])
+  assert roundtrip({ a: [1, 2] }, OIDS.Jsonb) == { a: [1, 2] }
+  assert roundtrip({ a: 1 }, OIDS.Json) == { a: 1 }
+
+  var uuid = '550e8400-e29b-41d4-a716-446655440000'
+  assert roundtrip(uuid, OIDS.Uuid) == uuid
+
+  # Arrays, including the nulls a list may hold.
+  assert roundtrip([1, 2, 3], OIDS.Int4Array) == [1, 2, 3]
+  assert roundtrip(['a', nil, 'c'], OIDS.TextArray) == ['a', nil, 'c']
+  assert roundtrip([], OIDS.Int4Array) == []
+
+  echo 'test_value_codecs passed'
+}
+
+def test_numeric() {
+  var registry = DEFAULT_REGISTRY
+
+  # The reason `numeric` exists is that a double cannot hold these
+  # exactly, so the codec must not put one in the middle.
+  for text in ['0', '1', '-1', '19.99', '-0.0001', '1000000',
+    '123456789.123456789', '0.10', '99999999999999999999.99'] {
+    var original = Decimal(text)
+    var back = registry.decode(
+      bytes(registry.encode(original, OIDS.Numeric)), OIDS.Numeric
+    )
+
+    assert instance_of(back, Decimal)
+    assert back.to_string() == original.to_string()
+  }
+
+  echo 'test_numeric passed'
+}
+
+def test_unknown_types() {
+  var registry = DEFAULT_REGISTRY
+
+  # A type this adapter knows is asked for in binary.
+  assert registry.knows(OIDS.Text)
+  assert registry.knows(OIDS.Int4Array)
+
+  # One it does not is asked for as text instead, so a type an
+  # extension added still arrives readable rather than as bytes.
+  assert !registry.knows(999999)
+  assert registry.decode('some text'.to_bytes(), 999999) == 'some text'
+
+  echo 'test_unknown_types passed'
+}
+
+def test_temporal() {
+  # PostgreSQL counts from 2000, not 1970.
+  var moment = date_from_micros(0)
+  assert moment.year == 2000
+  assert moment.month == 1
+  assert moment.day == 1
+
+  assert micros_from_date(moment) == 0
+
+  var later = date_from_micros(86400000000)
+  assert later.day == 2
+
+  echo 'test_temporal passed'
+}
+
+def test_error_classes() {
+  assert pg_errors.class_for('23505') == UniqueViolation
+  assert pg_errors.class_for('23503') == ForeignKeyViolation
+  assert pg_errors.class_for('23502') == NotNullViolation
+  assert pg_errors.class_for('23514') == CheckViolation
+  assert pg_errors.class_for('40001') == SerializationError
+  assert pg_errors.class_for('40P01') == DeadlockError
+  assert pg_errors.class_for('57014') == TimeoutError
+  assert pg_errors.class_for('28P01') == AuthenticationError
+  assert pg_errors.class_for('42P01') == QueryError
+  assert pg_errors.class_for('08006') == ConnectionError
+  assert pg_errors.class_for('0A000') == NotSupportedError
+
+  # A code with no entry falls back to its class, and one with neither
+  # still lands somewhere sensible.
+  assert pg_errors.class_for('23999') == IntegrityError
+  assert pg_errors.class_for('ZZ999') == SqlError
+  assert pg_errors.class_for(nil) == SqlError
+
+  # The report's detail and hint are worth having, so they are kept.
+  var raised = nil
+
+  catch {
+    pg_errors.raise_for({
+      code: '23505',
+      message: 'duplicate key value violates unique constraint',
+      detail: 'Key (email)=(a@b.c) already exists.',
+      hint: 'try another address',
+    }, 'insert into users ...')
+  } as error {
+    raised = error
+  }
+
+  assert instance_of(raised, UniqueViolation)
+  assert raised.sqlstate == '23505'
+  assert raised.driver == 'postgres'
+  assert raised.query == 'insert into users ...'
+  assert raised.message.contains('already exists')
+  assert raised.message.contains('try another address')
+
+  echo 'test_error_classes passed'
+}
+
+def test_framing() {
+  var writer = Writer()
+  writer.int32(PROTOCOL_VERSION)
+  writer.cstring('user')
+  writer.cstring('alice')
+  writer.byte(0)
+
+  # A startup message has no tag, and its length counts itself.
+  var startup = writer.frame(nil)
+  assert read_uint32(startup, 0) == startup.length()
+
+  var tagged = Writer()
+  tagged.cstring('select 1')
+  var query = tagged.frame('Q')
+
+  assert query[0].chr() == 'Q'
+  assert read_uint32(query, 1) == query.length() - 1
+
+  # Strings are read back by the zero that ends them.
+  var first = read_cstring(query, 5)
+  assert first.value == 'select 1'
+  assert first.next == query.length()
+
+  echo 'test_framing passed'
+}
+
+def test_command_tags() {
+  # The last field is the row count, whatever came before it.
+  assert affected_rows('INSERT 0 3') == 3
+  assert affected_rows('UPDATE 2') == 2
+  assert affected_rows('DELETE 1') == 1
+  assert affected_rows('SELECT 5') == 5
+
+  # A statement that changes nothing reports nothing.
+  assert affected_rows('CREATE TABLE') == 0
+  assert affected_rows('') == 0
+  assert affected_rows(nil) == 0
+
+  assert type_name_of(OIDS.Text) == 'text'
+  assert type_name_of(OIDS.Int4) == 'int4'
+  assert type_name_of(999999) == '999999'
+
+  assert describe_columns([{ name: 'a', oid: OIDS.Text }]) ==
+    [{ name: 'a', type: 'text' }]
+
+  echo 'test_command_tags passed'
+}
+
+def test_scram() {
+  # The exchange from RFC 7677, which is the specification's own worked
+  # example for SCRAM-SHA-256.
+  var client_nonce = 'rOprNGfwEbeRWgbNEkqO'
+  var server_first = 'r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,' +
+    's=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096'
+
+  var proof = auth.client_proof(
+    'pencil', client_nonce, 'n=user,r=' + client_nonce, server_first
+  )
+
+  assert proof.message ==
+    'c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,' +
+    'p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ='
+
+  assert proof.server_signature == '6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4='
+
+  # The server proves itself too, and a wrong signature is rejected.
+  auth.verify_server('v=${proof.server_signature}', proof.server_signature)
+
+  var rejected = false
+
+  catch {
+    auth.verify_server('v=AAAA', proof.server_signature)
+  } as error {
+    rejected = instance_of(error, AuthenticationError)
+  }
+
+  assert rejected
+
+  # As is a server whose nonce does not extend the one just sent, which
+  # is what stops a recorded exchange being replayed.
+  var replayed = false
+
+  catch {
+    auth.client_proof('pencil', client_nonce, 'n=,r=' + client_nonce,
+      'r=somethingelse,s=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096')
+  } as error {
+    replayed = instance_of(error, AuthenticationError)
+  }
+
+  assert replayed
+
+  echo 'test_scram passed'
+}
+
+def test_nonce() {
+  # The nonce is what makes each exchange its own, so it has to be
+  # unpredictable rather than merely different.
+  var seen = []
+
+  for index in 0..(50) {
+    var value = auth.nonce()
+    assert !seen.contains(value)
+    assert value.length() >= 24
+    seen.append(value)
+  }
+
+  echo 'test_nonce passed'
+}
+
+def test_unix_sockets_are_refused() {
+  # This adapter speaks TCP. A host that names a socket directory is
+  # told so rather than being quietly connected somewhere else.
+  var refused = false
+
+  catch {
+    DRIVER.connect(DRIVER.parse_dsn('host=/var/run/postgresql dbname=app'))
+  } as error {
+    refused = instance_of(error, NotSupportedError)
+  }
+
+  assert refused
+
+  echo 'test_unix_sockets_are_refused passed'
+}
+
+test_uri_strings()
+test_keyword_strings()
+test_bad_strings()
+test_capabilities()
+test_integers()
+test_value_codecs()
+test_numeric()
+test_unknown_types()
+test_temporal()
+test_error_classes()
+test_framing()
+test_command_tags()
+test_scram()
+test_nonce()
+test_unix_sockets_are_refused()

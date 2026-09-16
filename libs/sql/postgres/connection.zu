@@ -340,7 +340,7 @@ class PostgresConnection < DriverConnection {
   /**
    * A listener for LISTEN and NOTIFY on this connection.
    *
-   * ```zuri
+   * ```zuri,ignore
    * var listener = db.native().listener()
    * listener.listen('jobs')
    * ```

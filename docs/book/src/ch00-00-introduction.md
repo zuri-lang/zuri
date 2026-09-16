@@ -95,15 +95,16 @@ Read these in order.
 and byte streams, isolates and concurrency, sockets and networking, and a
 tour of the standard library.
 
-**Three large modules**, Chapters 14 to 16. Wire for templating, HTTP for
-clients and servers, and Imagine for images. Each is big enough to need a
-chapter of its own, and each is a reference you will come back to.
+**Four large modules**, Chapters 14 to 17. Wire for templating, HTTP for
+clients and servers, Imagine for images, and SQL for databases. Each is
+big enough to need a chapter of its own, and each is a reference you will
+come back to.
 
-**Depth**, Chapters 17 to 19. Reflection and the compiler API, how Zuri
-executes your code and how to make it faster, and how to debug a program
-that is doing something you did not expect.
+**Depth**, Chapters 18 to 21. Reflection and the compiler API, how Zuri
+executes your code and how to make it faster, how to test it, and how to
+debug a program that is doing something you did not expect.
 
-**The capstone**, Chapter 20. One application, built in seven steps, using
+**The capstone**, Chapter 22. One application, built in seven steps, using
 almost everything the book has covered.
 
 **Appendices.** Keywords, operators and precedence, decorated methods,

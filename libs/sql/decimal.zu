@@ -11,7 +11,7 @@
  * and a scale, so `10.05` is exactly ten and five hundredths and stays
  * that way through every read and write.
  *
- * ```zuri
+ * ```zuri,ignore
  * var price = Decimal('19.99')
  * var tax = price.multiply(Decimal('0.20'))
  *
@@ -58,7 +58,7 @@ class Decimal {
    *
    * From text, which is the exact form and the one to prefer:
    *
-   * ```zuri
+   * ```zuri,ignore
    * Decimal('19.99')
    * Decimal('-0.0001')
    * Decimal('1.2e3')
@@ -66,13 +66,13 @@ class Decimal {
    *
    * From a number, which is only as exact as the double was:
    *
-   * ```zuri
+   * ```zuri,ignore
    * Decimal(19.99)
    * ```
    *
    * Or from the parts, which is what the PostgreSQL adapter uses:
    *
-   * ```zuri
+   * ```zuri,ignore
    * Decimal(1999, 2)
    * ```
    *

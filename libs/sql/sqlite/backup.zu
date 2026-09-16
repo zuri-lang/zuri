@@ -1,0 +1,176 @@
+/**
+ * @module backup
+ *
+ * Copying a live SQLite database without stopping it.
+ *
+ * Copying the file with the filesystem is only safe when nothing is
+ * writing, which for a running application is never guaranteed.
+ * SQLite's backup interface copies page by page and notices when the
+ * source changes underneath, restarting the copy rather than producing
+ * a file that is half of one state and half of another.
+ *
+ * ```zuri,ignore
+ * db.native().backup_to('./snapshot.db')
+ * ```
+ *
+ * That copies everything in one call. For a large database where the
+ * pause matters, `Backup` copies in steps so other work can happen in
+ * between.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _sqlite
+
+import ..errors { ClosedError, SqlError }
+import .errors { reraise }
+
+/**
+ * How many pages a step copies when no size is given.
+ */
+var DEFAULT_PAGES = 256
+
+/**
+ * A copy in progress between two connections.
+ *
+ * @printable
+ */
+class Backup {
+  var _handle
+  var _closed = false
+
+  /**
+   * @param ptr handle The native backup handle.
+   */
+  @new(handle) {
+    self._handle = handle
+  }
+
+  /**
+   * Copies up to `pages` pages.
+   *
+   * @param number|nil pages How many, or nil for `DEFAULT_PAGES`. A
+   *    negative number copies everything remaining.
+   * @returns string `'done'` when the copy is complete, `'ok'` when
+   *    more remains, and `'busy'` or `'locked'` when the source moved
+   *    and the step should be tried again.
+   */
+  step(pages) {
+    self._open()
+
+    catch {
+      return _sqlite.backup_step(self._handle, pages == nil ? DEFAULT_PAGES : pages)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Pages still to copy, as of the last step.
+   *
+   * @returns number
+   */
+  remaining() {
+    self._open()
+
+    return _sqlite.backup_remaining(self._handle)
+  }
+
+  /**
+   * Pages in the source, as of the last step.
+   *
+   * @returns number
+   */
+  total() {
+    self._open()
+
+    return _sqlite.backup_pagecount(self._handle)
+  }
+
+  /**
+   * How much of the copy is done, from 0 to 1.
+   *
+   * @returns number
+   */
+  progress() {
+    var total = self.total()
+
+    return total == 0 ? 1 : (total - self.remaining()) / total
+  }
+
+  /**
+   * Runs the copy to completion, retrying the steps the source
+   * interrupts.
+   *
+   * @param number|nil pages How many pages per step.
+   * @param number|nil attempts How many times to retry a busy step
+   *    before giving up. 100 when nil.
+   * @throws SqlError if the source stays busy for that many attempts.
+   */
+  run(pages, attempts) {
+    var remaining_attempts = attempts == nil ? 100 : attempts
+
+    while true {
+      var outcome = self.step(pages)
+
+      if outcome == 'done' {
+        return
+      }
+
+      if outcome == 'ok' {
+        continue
+      }
+
+      remaining_attempts--
+
+      if remaining_attempts <= 0 {
+        raise SqlError(
+          'the source database stayed busy for the whole backup',
+          { driver: 'sqlite' }
+        )
+      }
+    }
+  }
+
+  /**
+   * Ends the copy. Safe to call more than once, and legitimate on an
+   * unfinished copy, which abandons it and leaves the destination as
+   * it was.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+
+    catch {
+      _sqlite.backup_finish(self._handle)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Whether this backup has finished or been abandoned.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  _open() {
+    if self._closed {
+      raise ClosedError('this backup has already finished', { driver: 'sqlite' })
+    }
+  }
+
+  to_string() {
+    return '<Backup${self._closed ? " (finished)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

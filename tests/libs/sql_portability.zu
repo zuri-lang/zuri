@@ -1,0 +1,210 @@
+# The claim `sql` makes is that a program moves between engines by
+# changing its connection string. This is that claim, tested: one body
+# of code, run against every adapter available, asserting the same
+# things each time.
+#
+# SQLite always runs. PostgreSQL joins in when ZURI_TEST_POSTGRES names
+# a server, which is what CI does not have and a developer's machine
+# usually does.
+
+import os
+import sql
+
+# The work itself, written once. Nothing in here names an engine.
+def exercise(db) {
+  db.exec_script('drop table if exists portable_posts')
+  db.exec_script('drop table if exists portable_authors')
+
+  db.exec_script(
+    'create table portable_authors (' +
+    '  id ' + serial_type(db) + ' primary key,' +
+    '  name varchar(100) not null unique' +
+    ')'
+  )
+
+  db.exec_script(
+    'create table portable_posts (' +
+    '  id ' + serial_type(db) + ' primary key,' +
+    '  author_id integer not null references portable_authors(id),' +
+    '  title varchar(200) not null,' +
+    '  views integer not null default 0' +
+    ')'
+  )
+
+  # Inserting and getting an id back, which each engine does its own
+  # way underneath and neither way appears here.
+  var ada = db.insert('portable_authors', { name: 'Ada' }, nil)
+  var grace = db.insert('portable_authors', { name: 'Grace' }, nil)
+
+  assert ada != nil
+  assert grace != nil
+  assert ada != grace
+
+  db.insert_many('portable_posts', [
+    { author_id: ada, title: 'On Engines', views: 10 },
+    { author_id: ada, title: 'On Looms', views: 3 },
+    { author_id: grace, title: 'On Bugs', views: 42 },
+  ])
+
+  # Counting, with equality, with a list, and with an empty list.
+  assert db.count('portable_posts', nil) == 3
+  assert db.count('portable_posts', { author_id: ada }) == 2
+  assert db.count('portable_posts', { author_id: [ada, grace] }) == 3
+  assert db.count('portable_posts', { author_id: [] }) == 0
+
+  # Positional and named parameters, in the one spelling both engines
+  # are given.
+  assert db.fetch_value(
+    'select title from portable_posts where views = ?', [42], nil
+  ) == 'On Bugs'
+
+  assert db.fetch_value(
+    'select title from portable_posts where views = :views',
+    { views: 3 },
+    nil
+  ) == 'On Looms'
+
+  # Selecting, ordering and limiting.
+  var found = db.find('portable_posts', { author_id: ada }, {
+    columns: ['title'],
+    order: ['views desc'],
+    limit: 1,
+  })
+  assert found.column('title') == ['On Engines']
+
+  # Updating with a fragment that reads the column it writes.
+  var quoted = db.driver().quote_identifier('views')
+  db.update('portable_posts', { views: sql.raw('${quoted} + 1') }, { views: 42 })
+  assert db.fetch_value(
+    'select views from portable_posts where title = ?', ['On Bugs'], nil
+  ) == 43
+
+  assert db.delete('portable_posts', { title: 'On Looms' }) == 1
+  assert db.count('portable_posts', nil) == 2
+
+  # Transactions, and the savepoints a nested one becomes.
+  db.transaction(@(tx) {
+    tx.insert('portable_posts', { author_id: ada, title: 'Kept' }, nil)
+  }, nil)
+  assert db.count('portable_posts', nil) == 3
+
+  catch {
+    db.transaction(@(tx) {
+      tx.insert('portable_posts', { author_id: ada, title: 'Dropped' }, nil)
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+  assert db.count('portable_posts', nil) == 3
+
+  db.transaction(@(outer) {
+    outer.insert('portable_posts', { author_id: ada, title: 'Outer' }, nil)
+
+    catch {
+      db.transaction(@(inner) {
+        inner.insert('portable_posts', { author_id: ada, title: 'Inner' }, nil)
+        raise Error('stop')
+      }, nil)
+    } as _error {
+    }
+  }, nil)
+
+  var titles = db.fetch_column(
+    'select title from portable_posts order by title', nil, nil
+  )
+  assert titles.contains('Outer')
+  assert !titles.contains('Inner')
+
+  # Streaming, which is a portal on one engine and the engine's own
+  # row-at-a-time behaviour on the other.
+  var cursor = db.stream(
+    'select title from portable_posts order by title', nil, { batch: 2 }
+  )
+  var streamed = []
+  for row in cursor {
+    streamed.append(row.title)
+  }
+  assert streamed == titles
+
+  # Prepared statements.
+  var statement = db.prepare(
+    'select title from portable_posts where author_id = ? order by title'
+  )
+  assert statement.fetch_all([ada]).length() >= 1
+  assert statement.fetch_all([grace]).length() == 1
+  statement.close()
+
+  # The same error class from either engine, for the same mistake.
+  var duplicate = nil
+  catch {
+    db.insert('portable_authors', { name: 'Ada' }, nil)
+  } as error {
+    duplicate = error
+  }
+  assert instance_of(duplicate, sql.UniqueViolation)
+  assert instance_of(duplicate, sql.IntegrityError)
+  assert instance_of(duplicate, sql.SqlError)
+
+  var orphan = nil
+  catch {
+    db.insert('portable_posts', { author_id: 987654, title: 'Orphan' }, nil)
+  } as error {
+    orphan = error
+  }
+  assert instance_of(orphan, sql.ForeignKeyViolation)
+
+  var nonsense = nil
+  catch {
+    db.query('select * from no_such_table_here', nil)
+  } as error {
+    nonsense = error
+  }
+  assert instance_of(nonsense, sql.QueryError)
+
+  # Introspection, in the one shape both engines answer in.
+  assert db.schema.has_table('portable_posts', nil)
+  assert db.schema.column_names('portable_posts', nil) ==
+    ['id', 'author_id', 'title', 'views']
+  assert db.schema.primary_key('portable_posts', nil) == 'id'
+
+  var keys = db.schema.foreign_keys('portable_posts', nil)
+  assert keys.length() == 1
+  assert keys[0].references_table == 'portable_authors'
+
+  db.exec_script('drop table portable_posts')
+  db.exec_script('drop table portable_authors')
+}
+
+# The one thing the two engines genuinely spell differently. An
+# auto-incrementing key is not part of standard SQL, so each names it
+# its own way, and this is the sort of difference the module does not
+# pretend away.
+def serial_type(db) {
+  return db.driver_name() == 'postgres' ? 'serial' : 'integer'
+}
+
+def test_sqlite() {
+  var db = sql.open(':memory:')
+  exercise(db)
+  db.close()
+
+  echo 'test_sqlite passed'
+}
+
+def test_postgres() {
+  var dsn = os.get_env('ZURI_TEST_POSTGRES', nil)
+
+  if dsn == nil or dsn == '' {
+    echo 'test_postgres skipped: set ZURI_TEST_POSTGRES to a connection string'
+    return
+  }
+
+  var db = sql.open(dsn)
+  exercise(db)
+  db.close()
+
+  echo 'test_postgres passed'
+}
+
+test_sqlite()
+test_postgres()

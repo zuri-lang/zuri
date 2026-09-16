@@ -456,13 +456,13 @@ captured 12 characters
 
 Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
 for when the body might raise and you want its output anyway. This is
-what lets [Chapter 19](ch19-00-testing.md) assert on what a function
+what lets [Chapter 20](ch20-00-testing.md) assert on what a function
 prints, and keep a passing test's output out of the report.
 
 ### `test`
 
 Suites, matchers, mocks, snapshots and reports. Covered in
-[Chapter 19](ch19-00-testing.md).
+[Chapter 20](ch20-00-testing.md).
 
 ```zuri,ignore
 import test { * }
@@ -540,7 +540,31 @@ Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
 reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
 fully in [Chapter 15](ch15-00-http.md), and used throughout
-[Chapter 20](ch21-00-task-board.md).
+[Chapter 22](ch22-00-task-board.md).
+
+## Databases
+
+### `sql`
+
+One way to talk to a relational database, whichever one it is. `sql`
+defines what an adapter has to provide and supplies everything that is
+the same across engines: parameters, transactions and savepoints,
+cursors, pooling, introspection, and one error hierarchy. SQLite and
+PostgreSQL adapters ship with it, and changing between them means
+changing the connection string.
+
+```zuri,ignore
+import sql
+
+var db = sql.open('sqlite://./app.db')
+var id = db.insert('posts', { title: 'Hello' })
+
+for post in db.query('select * from posts where id = ?', [id]) {
+  echo post.title
+}
+```
+
+Covered in [Chapter 17](ch17-00-sql.md).
 
 ## Compression
 
@@ -599,7 +623,7 @@ true
 list
 ```
 
-[Chapter 17](ch17-00-metaprogramming.md) is the full treatment.
+[Chapter 18](ch18-00-metaprogramming.md) is the full treatment.
 
 ### `math`
 

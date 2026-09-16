@@ -9,7 +9,7 @@
  * spend most of its time connecting. A pool opens a few and lends them
  * out.
  *
- * ```zuri
+ * ```zuri,ignore
  * var db = sql.pool('postgres://localhost/app', { max: 10 })
  *
  * var posts = db.fetch_all('select * from posts')
@@ -235,7 +235,7 @@ class Pool {
   /**
    * Runs `body` with a connection, giving it back whatever happens.
    *
-   * ```zuri
+   * ```zuri,ignore
    * db.with_connection(@(connection) {
    *   connection.transaction(@(tx) {
    *     tx.exec('...')
@@ -403,8 +403,13 @@ class Pool {
     var connection = Connection(driver_connection, self._driver)
     var now = _now()
 
-    if self._settings.on_connect != nil {
-      self._settings.on_connect(connection)
+    # Bound to a local before it is called: `settings.on_connect(x)`
+    # reads as a method call on the dictionary, not as a call of the
+    # function it holds.
+    var prepare = self._settings.on_connect
+
+    if prepare != nil {
+      prepare(connection)
     }
 
     return {

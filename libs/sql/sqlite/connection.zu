@@ -36,6 +36,8 @@ import ..driver {
   SERIALIZABLE, READ_UNCOMMITTED,
 }
 import ..errors { ClosedError, NotSupportedError, QueryError, TransactionError }
+import .backup { Backup }
+import .blob { Blob }
 import .cursor { SqliteCursor }
 import .errors { reraise }
 import .schema { SqliteSchema }
@@ -407,6 +409,269 @@ class SqliteConnection < DriverConnection {
   }
 
   /**
+   * Opens one blob-valued cell for piecewise reading and writing.
+   *
+   * @param string database The attached database, usually `'main'`.
+   * @param string table
+   * @param string column
+   * @param number rowid
+   * @param bool|nil writable Read-only when nil or false.
+   * @returns Blob
+   */
+  blob(database: string, table: string, column: string, rowid: number, writable) {
+    self._open()
+
+    var wanted = writable ? true : false
+    var handle
+
+    catch {
+      handle = _sqlite.blob_open(self._handle, database, table, column, rowid, wanted)
+    } as error {
+      reraise(error, nil)
+    }
+
+    return Blob(handle, wanted)
+  }
+
+  /**
+   * Starts a copy of this database into `destination`.
+   *
+   * @param SqliteConnection destination An open connection to copy
+   *    into, which must not be this one.
+   * @param dict|nil options `source` and `target` name which attached
+   *    database on each side; both default to `'main'`.
+   * @returns Backup
+   */
+  backup(destination, options) {
+    self._open()
+
+    var settings = options or {}
+    var handle
+
+    catch {
+      handle = _sqlite.backup_init(
+        destination.handle(),
+        settings.get('target', 'main'),
+        self._handle,
+        settings.get('source', 'main')
+      )
+    } as error {
+      reraise(error, nil)
+    }
+
+    return Backup(handle)
+  }
+
+  /**
+   * Copies this database to a file, all in one call.
+   *
+   * The file is created if it is not there. An existing one is copied
+   * over rather than appended to, so a snapshot taken repeatedly to
+   * the same path replaces itself.
+   *
+   * ```zuri,ignore
+   * db.native().backup_to('./snapshot.db', nil)
+   * ```
+   *
+   * For a copy that is not a file, or one taken in steps, open the
+   * destination yourself and use `backup()`.
+   *
+   * @param string path
+   * @param dict|nil options As `backup()` takes.
+   */
+  backup_to(path: string, options) {
+    var destination = self.driver.connect(self.driver.parse_dsn(path))
+    var copy = self.backup(destination, options)
+
+    catch {
+      copy.run(-1, nil)
+      copy.close()
+      destination.close()
+    } as error {
+      copy.close()
+      destination.close()
+
+      raise error
+    }
+  }
+
+  /**
+   * Adds a function to this connection, written in Zuri.
+   *
+   * ```zuri,ignore
+   * db.native().create_function('initials', 1, @(name) {
+   *   return name.split(' ').map(@(part) => part[0, 1]).join('')
+   * })
+   *
+   * db.query('select initials(name) from authors')
+   * ```
+   *
+   * The function runs inside the engine, once per row, so it can be
+   * used anywhere an expression can. It must not touch the connection
+   * it was registered on; SQLite is in the middle of a statement when
+   * it calls, and reentering would deadlock.
+   *
+   * @param string name
+   * @param number arity How many arguments, or -1 for any number.
+   * @param function body
+   * @param dict|nil options `deterministic` says the result depends
+   *    only on the arguments, which lets SQLite use the function in an
+   *    index and hoist it out of loops. True unless said otherwise.
+   */
+  create_function(name: string, arity: number, body: function, options) {
+    self._open()
+
+    var settings = options or {}
+    var deterministic = settings.contains('deterministic') ?
+      settings.deterministic :
+      true
+
+    catch {
+      _sqlite.create_function(self._handle, name, arity, deterministic, body)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Adds an aggregate function, written as a fold.
+   *
+   * `step` is called once per row with the accumulator so far followed
+   * by the row's arguments, and returns the next accumulator. `finish`
+   * is called once per group with the last accumulator and returns the
+   * group's value. The accumulator starts as nil, which is also what
+   * `finish` sees for a group with no rows in it.
+   *
+   * ```zuri,ignore
+   * db.native().create_aggregate('longest', 1,
+   *   @(longest, word) {
+   *     if longest == nil or word.length() > longest.length() {
+   *       return word
+   *     }
+   *
+   *     return longest
+   *   },
+   *   @(longest) => longest
+   * )
+   * ```
+   *
+   * @param string name
+   * @param number arity
+   * @param function step
+   * @param function finish
+   */
+  create_aggregate(name: string, arity: number, step: function, finish: function) {
+    self._open()
+
+    catch {
+      _sqlite.create_aggregate(self._handle, name, arity, step, finish)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Adds a collation, which is an ordering for text.
+   *
+   * The callable is passed two strings and returns a negative number,
+   * zero or a positive number, the same shape a sort comparator takes.
+   * A statement reaches it with `order by column collate name`.
+   *
+   * @param string name
+   * @param function compare
+   */
+  create_collation(name: string, compare: function) {
+    self._open()
+
+    catch {
+      _sqlite.create_collation(self._handle, name, compare)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Removes a function or aggregate registered under this name and
+   * arity.
+   *
+   * @param string name
+   * @param number arity
+   */
+  delete_function(name: string, arity: number) {
+    self._open()
+
+    catch {
+      _sqlite.delete_function(self._handle, name, arity)
+    } as error {
+      reraise(error, nil)
+    }
+  }
+
+  /**
+   * Called after each row an INSERT, UPDATE or DELETE changes, with
+   * the operation name, the database, the table and the row id.
+   *
+   * Only changes statements make directly are reported. What a trigger
+   * or a foreign key action goes on to change is not, and neither is
+   * anything later rolled back.
+   *
+   * @param function|nil handler Nil clears it.
+   */
+  on_change(handler) {
+    self._open()
+    _sqlite.set_update_hook(self._handle, handler)
+  }
+
+  /**
+   * Called just before each commit. Returning `false` turns the commit
+   * into a rollback.
+   *
+   * @param function|nil handler Nil clears it.
+   */
+  on_commit(handler) {
+    self._open()
+    _sqlite.set_commit_hook(self._handle, handler)
+  }
+
+  /**
+   * Called whenever a transaction rolls back, however it was caused.
+   *
+   * @param function|nil handler Nil clears it.
+   */
+  on_rollback(handler) {
+    self._open()
+    _sqlite.set_rollback_hook(self._handle, handler)
+  }
+
+  /**
+   * Consulted for every action a statement wants to take, as the
+   * statement is compiled rather than as it runs.
+   *
+   * The callable is passed the action code and the four strings SQLite
+   * supplies about it, and answers `'allow'`, `'deny'` or `'ignore'`.
+   * Anything else counts as denial, so a handler that falls off the
+   * end fails closed.
+   *
+   * @param function|nil handler Nil clears it.
+   */
+  set_authorizer(handler) {
+    self._open()
+    _sqlite.set_authorizer(self._handle, handler)
+  }
+
+  /**
+   * Called every `instructions` steps of a long statement. Returning
+   * `false` interrupts it.
+   *
+   * @param number instructions
+   * @param function|nil handler Nil clears it.
+   */
+  on_progress(instructions: number, handler) {
+    self._open()
+    _sqlite.set_progress_handler(self._handle, instructions, handler)
+  }
+
+  /**
    * Closes the connection, releasing every statement it cached.
    *
    * Safe to call more than once.
@@ -528,6 +793,11 @@ class SqliteConnection < DriverConnection {
       # Taking the write lock up front is what makes a transaction
       # behave as though it ran alone. DEFERRED would let a read
       # succeed and the later write fail, which neither level allows.
+      #
+      # Repeatable read is served by the same mode. SQLite offers
+      # nothing between the two, and serializable is the stronger of
+      # them, so a caller asking for the weaker one gets more than it
+      # asked for rather than less.
       return 'immediate'
     }
 
@@ -536,8 +806,8 @@ class SqliteConnection < DriverConnection {
     }
 
     raise NotSupportedError(
-      'sqlite has no ${isolation} isolation; it offers read committed ' +
-      'and serializable',
+      'sqlite has no ${isolation} isolation; it offers read committed, ' +
+      'repeatable read and serializable',
       { driver: 'sqlite' }
     )
   }

@@ -26,20 +26,20 @@ No dependencies. Nothing to install. `zuri taskboard` and it runs.
 
 Each section builds one layer, from the inside out:
 
-1. [Laying Out the Project](ch21-01-project-layout.md): the directory
+1. [Laying Out the Project](ch22-01-project-layout.md): the directory
    structure and why it is shaped this way.
-2. [The Storage Layer](ch21-02-storage.md): the JSON file and the board
+2. [The Storage Layer](ch22-02-storage.md): the JSON file and the board
    that sits on top of it.
-3. [Validation and the Domain Model](ch21-03-domain.md): the `Task` class,
+3. [Validation and the Domain Model](ch22-03-domain.md): the `Task` class,
    which owns every rule about what a task is.
-4. [The JSON API](ch21-04-api.md): six routes over the board.
-5. [Server-Rendered Pages with Wire](ch21-05-pages.md): the templates, the
+4. [The JSON API](ch22-04-api.md): six routes over the board.
+5. [Server-Rendered Pages with Wire](ch22-05-pages.md): the templates, the
    forms and the redirect-after-post pattern.
-6. [Middleware, Logging and Errors](ch21-06-middleware.md): the two pieces
+6. [Middleware, Logging and Errors](ch22-06-middleware.md): the two pieces
    of cross-cutting behaviour every request goes through.
-7. [Running It for Real](ch21-07-running-it.md): configuration, signals and
+7. [Running It for Real](ch22-07-running-it.md): configuration, signals and
    what changes when you want more than one core.
-8. [Testing the Board](ch21-08-testing.md): a suite over all three layers,
+8. [Testing the Board](ch22-08-testing.md): a suite over all three layers,
    and what the layering bought.
 
 Read it in order. Each section assumes the previous one exists.

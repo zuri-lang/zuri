@@ -14,7 +14,7 @@
  * with `?` for positional parameters or `:name` for named ones, and
  * each adapter's driver declares which form it needs.
  *
- * ```zuri
+ * ```zuri,ignore
  * translate('select * from t where a = ? and b = ?', [1, 2], NUMBERED)
  * # { sql: 'select * from t where a = $1 and b = $2', values: [1, 2] }
  * ```

@@ -367,7 +367,7 @@ myapp/
     _json_store.zu  # private: the leading underscore says so
 ```
 
-Run it with `zuri myapp`. The capstone in [Chapter 20](ch21-00-task-board.md)
+Run it with `zuri myapp`. The capstone in [Chapter 22](ch22-00-task-board.md)
 is laid out exactly this way.
 
 ### A Package, End to End

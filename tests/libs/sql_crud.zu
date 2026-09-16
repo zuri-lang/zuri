@@ -1,0 +1,180 @@
+# The generated statements have to be correct for whichever adapter is
+# active, which means the right quoting and the right placeholders, and
+# every value bound rather than pasted in.
+
+import sql
+import sql.crud
+import sql.errors { QueryError }
+
+var postgres = sql.driver('postgres')
+var sqlite = sql.driver('sqlite')
+
+def test_insert() {
+  var built = crud.insert(sqlite, 'posts', { title: 'Hello', views: 0 }, nil)
+  assert built.sql == 'insert into "posts" ("title", "views") values (?1, ?2)'
+  assert built.values == ['Hello', 0]
+
+  # The same call against postgres numbers its placeholders instead.
+  var other = crud.insert(postgres, 'posts', { title: 'Hello', views: 0 }, nil)
+  assert other.sql == 'insert into "posts" ("title", "views") values ($1, $2)'
+  assert other.values == ['Hello', 0]
+
+  # A returning column is added only where the engine supports it.
+  var returning = crud.insert(postgres, 'posts', { title: 'Hello' }, 'id')
+  assert returning.sql.ends_with('returning "id"')
+
+  # A raw fragment is written out; everything else is bound.
+  var raw = crud.insert(sqlite, 'posts', { title: 'Hi', at: sql.raw('now()') }, nil)
+  assert raw.sql == 'insert into "posts" ("title", "at") values (?1, now())'
+  assert raw.values == ['Hi']
+
+  echo 'test_insert passed'
+}
+
+def test_insert_many() {
+  var built = crud.insert_many(sqlite, 'points', [
+    { x: 1, y: 2 },
+    { x: 3, y: 4 },
+  ])
+
+  assert built.sql ==
+    'insert into "points" ("x", "y") values (?1, ?2), (?3, ?4)'
+  assert built.values == [1, 2, 3, 4]
+
+  # Every row has to name the same columns, since a missing column and
+  # a null column are not the same thing.
+  var ragged = false
+
+  catch {
+    crud.insert_many(sqlite, 'points', [{ x: 1, y: 2 }, { x: 3 }])
+  } as error {
+    ragged = instance_of(error, QueryError)
+  }
+
+  assert ragged
+
+  var empty = false
+
+  catch {
+    crud.insert_many(sqlite, 'points', [])
+  } as error {
+    empty = instance_of(error, QueryError)
+  }
+
+  assert empty
+
+  echo 'test_insert_many passed'
+}
+
+def test_where() {
+  # Equality, and the values bound in order after whatever came before.
+  var simple = crud.where(sqlite, { a: 1, b: 'x' }, 1)
+  assert simple.clause == ' where "a" = ?1 and "b" = ?2'
+  assert simple.values == [1, 'x']
+
+  # nil means IS NULL, because `= NULL` matches nothing.
+  var missing = crud.where(sqlite, { a: nil }, 1)
+  assert missing.clause == ' where "a" is null'
+  assert missing.values == []
+
+  # A list means IN, and each member is bound.
+  var any_of = crud.where(sqlite, { a: [1, 2, 3] }, 1)
+  assert any_of.clause == ' where "a" in (?1, ?2, ?3)'
+  assert any_of.values == [1, 2, 3]
+
+  # In nothing matches nothing, which is the honest reading of a filter
+  # built from a list that came back empty.
+  var none = crud.where(sqlite, { a: [] }, 1)
+  assert none.clause == ' where 1 = 0'
+
+  # No conditions at all produces no clause.
+  assert crud.where(sqlite, nil, 1).clause == ''
+  assert crud.where(sqlite, {}, 1).clause == ''
+
+  echo 'test_where passed'
+}
+
+def test_update() {
+  var built = crud.update(sqlite, 'posts', { title: 'New' }, { id: 7 })
+  assert built.sql == 'update "posts" set "title" = ?1 where "id" = ?2'
+  assert built.values == ['New', 7]
+
+  # A raw fragment on the left of an assignment reads the column.
+  var bumped = crud.update(sqlite, 'posts', { views: sql.raw('"views" + 1') }, { id: 7 })
+  assert bumped.sql == 'update "posts" set "views" = "views" + 1 where "id" = ?1'
+  assert bumped.values == [7]
+
+  var nothing = false
+
+  catch {
+    crud.update(sqlite, 'posts', {}, { id: 1 })
+  } as error {
+    nothing = instance_of(error, QueryError)
+  }
+
+  assert nothing
+
+  echo 'test_update passed'
+}
+
+def test_delete() {
+  var built = crud.delete(sqlite, 'posts', { id: 7 })
+  assert built.sql == 'delete from "posts" where "id" = ?1'
+  assert built.values == [7]
+
+  # No conditions deletes everything, which has to be asked for rather
+  # than happening because a dictionary came out empty.
+  assert crud.delete(sqlite, 'posts', nil).sql == 'delete from "posts"'
+
+  echo 'test_delete passed'
+}
+
+def test_select() {
+  assert crud.select(sqlite, 'posts', nil, nil).sql == 'select * from "posts"'
+
+  var built = crud.select(sqlite, 'posts', { ok: true }, {
+    columns: ['id', 'title'],
+    order: ['title desc', 'id'],
+    limit: 10,
+    offset: 5,
+  })
+
+  # A term that names no direction is left without one, since SQL
+  # already orders ascending by default.
+  assert built.sql ==
+    'select "id", "title" from "posts" where "ok" = ?1 ' +
+    'order by "title" desc, "id" limit 10 offset 5'
+  assert built.values == [true]
+
+  # A limit goes into the statement text rather than being bound, since
+  # not every engine allows a parameter there, so it is checked.
+  var bad_limit = false
+
+  catch {
+    crud.select(sqlite, 'posts', nil, { limit: '; drop table posts' })
+  } as error {
+    bad_limit = instance_of(error, QueryError)
+  }
+
+  assert bad_limit
+
+  echo 'test_select passed'
+}
+
+def test_quoting() {
+  # A table name carrying a schema is quoted a part at a time.
+  assert crud.quote_table(postgres, 'public.users') == '"public"."users"'
+
+  # And a quote inside a name is doubled rather than ending it.
+  assert sqlite.quote_identifier('odd"name') == '"odd""name"'
+
+  echo 'test_quoting passed'
+}
+
+test_insert()
+test_insert_many()
+test_where()
+test_update()
+test_delete()
+test_select()
+test_quoting()

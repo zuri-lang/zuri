@@ -21,7 +21,7 @@ import .errors { QueryError }
  * Iterating a result set walks its rows, so the common case needs
  * nothing else:
  *
- * ```zuri
+ * ```zuri,ignore
  * for row in db.query('select id, title from posts') {
  *   echo '${row.id}: ${row.title}'
  * }
@@ -149,7 +149,7 @@ class ResultSet {
    * The first column of the first row, for a query written to return
    * exactly one value.
    *
-   * ```zuri
+   * ```zuri,ignore
    * var total = db.query('select count(*) from posts').scalar()
    * ```
    *

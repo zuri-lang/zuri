@@ -29,7 +29,7 @@ import .params { placeholder }
  *
  * The escape hatch for the cases where a value is not a value:
  *
- * ```zuri
+ * ```zuri,ignore
  * db.update('posts', { views: sql.raw('views + 1') }, { id: 7 })
  * ```
  *

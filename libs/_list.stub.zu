@@ -490,9 +490,42 @@ class list {
    * > turn, precedes the list in the result. Also, note that the
    * > items of the inner list is sorted.
    *
+   * ## Sorting by something else
+   *
+   * Pass a comparator to decide the order yourself. It is given
+   * two items and returns a negative number to put the first
+   * one first, a positive number to put the second one first,
+   * and zero to leave them as they are:
+   *
+   * ```zuri-repl
+   * %> [3, 1, 2].sort(@(a, b) => b - a)
+   * [3, 2, 1]
+   * %> ['pear', 'fig', 'banana'].sort(@(a, b) => a.length() - b.length())
+   * ['fig', 'pear', 'banana']
+   * ```
+   *
+   * The sort is stable, so items the comparator calls equal keep
+   * the order they were already in. That is what lets a list be
+   * sorted by one thing and then another to order by both:
+   *
+   * ```zuri
+   * people.sort(@(a, b) => a.name.compare(b.name))
+   * people.sort(@(a, b) => a.age - b.age)
+   * ```
+   *
+   * leaves people of the same age in name order.
+   *
+   * @note A comparator sorts only the list it is given. The
+   *    inner lists that `sort()` sorts on its own are left
+   *    alone, since only the comparator knows what the order
+   *    is meant to be.
+   * @note A comparator that contradicts itself produces some
+   *    order rather than an error; there is no arrangement that
+   *    satisfies it.
+   * @param {function} comparator
    * @return {list}
    */
-  sort() {}
+  sort(comparator: ?function) {}
 
 
   /**

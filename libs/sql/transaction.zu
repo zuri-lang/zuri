@@ -6,7 +6,7 @@
  * The shape worth using is the closure form, because it cannot be got
  * wrong:
  *
- * ```zuri
+ * ```zuri,ignore
  * db.transaction(@(tx) {
  *   tx.exec('update accounts set balance = balance - ? where id = ?', [100, 1])
  *   tx.exec('update accounts set balance = balance + ? where id = ?', [100, 2])

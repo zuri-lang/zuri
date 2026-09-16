@@ -63,7 +63,7 @@ var READ_UNCOMMITTED = 'read uncommitted'
  * written before it existed.
  *
  * | Flag | Meaning |
- * | ---- | ------- |
+ * | - | - |
  * | `placeholder_style` | How the engine spells a parameter. |
  * | `named_parameters` | Whether the engine binds parameters by name. |
  * | `last_insert_id` | Whether the engine reports the id of the row just inserted. |
@@ -73,7 +73,8 @@ var READ_UNCOMMITTED = 'read uncommitted'
  * | `isolation_levels` | The levels the engine will accept. |
  * | `server_side_cursors` | Whether a result can be read without the whole of it arriving first. |
  * | `prepared_statements` | Whether a statement can be compiled once and run repeatedly. |
- * | `multiple_statements` | Whether one call may carry several statements separated by semicolons. |
+ * | `multiple_statements` | Whether one call may carry several
+ *   statements separated by semicolons. |
  * | `arrays` | Whether the engine has an array type. |
  * | `json` | Whether the engine has a JSON type, as opposed to storing JSON in text. |
  * | `blobs` | Whether the engine stores binary values. |
@@ -84,7 +85,8 @@ var READ_UNCOMMITTED = 'read uncommitted'
  * | `concurrent_writers` | Whether two connections can write at once. |
  * | `max_parameters` | Most parameters one statement may bind, or nil for no practical limit. |
  * | `identifier_quote` | The character an identifier is quoted with. |
- * | `default_port` | The port used when a connection string omits one, or nil for an engine with no port. |
+ * | `default_port` | The port used when a connection string omits
+ *   one, or nil for an engine with no port. |
  *
  * @returns dict
  */
