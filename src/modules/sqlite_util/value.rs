@@ -168,7 +168,7 @@ pub fn column(ctx: &mut ZuriContext, stmt: *mut ffi::sqlite3_stmt, index: c_int)
     ffi::SQLITE_INTEGER => {
       let n = unsafe { ffi::sqlite3_column_int64(stmt, index) };
       integer_value(ctx, n)
-    }
+    },
     ffi::SQLITE_FLOAT => Value::number(unsafe { ffi::sqlite3_column_double(stmt, index) }),
     ffi::SQLITE_BLOB => {
       let len = unsafe { ffi::sqlite3_column_bytes(stmt, index) } as usize;
@@ -183,11 +183,11 @@ pub fn column(ctx: &mut ZuriContext, stmt: *mut ffi::sqlite3_stmt, index: c_int)
       };
 
       ctx.heap().alloc_bytes(data)
-    }
+    },
     _ => {
       let text = column_text(stmt, index);
       ctx.heap().alloc_string(text)
-    }
+    },
   }
 }
 
@@ -213,7 +213,7 @@ pub fn argument(vm: &mut VM, arg: *mut ffi::sqlite3_value) -> Value {
     ffi::SQLITE_INTEGER => {
       let n = unsafe { ffi::sqlite3_value_int64(arg) };
       integer_value_vm(vm, n)
-    }
+    },
     ffi::SQLITE_FLOAT => Value::number(unsafe { ffi::sqlite3_value_double(arg) }),
     ffi::SQLITE_BLOB => {
       let len = unsafe { ffi::sqlite3_value_bytes(arg) } as usize;
@@ -226,7 +226,7 @@ pub fn argument(vm: &mut VM, arg: *mut ffi::sqlite3_value) -> Value {
       };
 
       vm.heap_mut().alloc_bytes(data)
-    }
+    },
     _ => {
       let len = unsafe { ffi::sqlite3_value_bytes(arg) } as usize;
       let ptr = unsafe { ffi::sqlite3_value_text(arg) };
@@ -239,7 +239,7 @@ pub fn argument(vm: &mut VM, arg: *mut ffi::sqlite3_value) -> Value {
       };
 
       vm.heap_mut().alloc_string(text)
-    }
+    },
   }
 }
 
@@ -254,7 +254,7 @@ pub fn result(context: *mut ffi::sqlite3_context, value: Value) {
     Err(message) => {
       set_error(context, &message);
       return;
-    }
+    },
   };
 
   match bound {

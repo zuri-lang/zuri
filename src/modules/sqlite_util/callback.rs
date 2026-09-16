@@ -144,7 +144,7 @@ impl Registration {
         }
 
         self.kind == kind && self.name == name && self.arity == arity
-      }
+      },
       _ => self.kind == kind,
     }
   }
@@ -205,7 +205,7 @@ fn invoke(registration: &Registration, slot: usize, args: Vec<Value>) -> Option<
       Err(error) => {
         trap(registration, vm, error);
         None
-      }
+      },
     }
   })
   .flatten()
@@ -261,13 +261,13 @@ pub unsafe extern "C" fn scalar(
       Some(result) => {
         value::result(context, result);
         true
-      }
+      },
       None => false,
     }
   }));
 
   match outcome {
-    Ok(true) => {}
+    Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
     Err(_) => value::set_error(context, CALLBACK_PANICKED),
   }
@@ -359,7 +359,7 @@ pub unsafe extern "C" fn aggregate_step(
   }));
 
   match outcome {
-    Ok(true) => {}
+    Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
     Err(_) => value::set_error(context, CALLBACK_PANICKED),
   }
@@ -414,13 +414,13 @@ pub unsafe extern "C" fn aggregate_final(context: *mut ffi::sqlite3_context) {
       Some(result) => {
         value::result(context, result);
         true
-      }
+      },
       None => false,
     }
   }));
 
   match outcome {
-    Ok(true) => {}
+    Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
     Err(_) => value::set_error(context, CALLBACK_PANICKED),
   }
@@ -473,7 +473,7 @@ pub unsafe extern "C" fn collation(
         } else {
           0
         }
-      }
+      },
       _ => 0,
     }
   }));
@@ -554,7 +554,7 @@ pub unsafe extern "C" fn commit_hook(data: *mut c_void) -> c_int {
         } else {
           0
         }
-      }
+      },
       // The callback failed. Vetoing the commit is the safe reading:
       // the error is about to be raised, and letting a transaction
       // through on the back of a failed check would be worse.
@@ -655,7 +655,7 @@ pub unsafe extern "C" fn progress(data: *mut c_void) -> c_int {
         } else {
           0
         }
-      }
+      },
       None => 1,
     }
   }));

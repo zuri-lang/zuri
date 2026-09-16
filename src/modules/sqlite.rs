@@ -17,7 +17,6 @@ use libsqlite3_sys as ffi;
 use crate::builtins::enforce::{
   ArgType, enforce_method_arg_count, enforce_method_arg_range, enforce_method_arg_type,
 };
-use crate::{enforce_arg_count, enforce_arg_range, enforce_arg_type};
 use crate::modules::sqlite_util::{
   self as util, BACKUP, BACKUP_CLOSED, BLOB, BLOB_CLOSED, CONNECTION, CONNECTION_CLOSED, STATEMENT,
   STATEMENT_CLOSED, SqliteBackup, SqliteBlob, SqliteConn, SqliteStmt, callback, value,
@@ -26,6 +25,7 @@ use crate::modules::{BuiltinModuleDef, native, optional_bool, optional_number};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
+use crate::{enforce_arg_count, enforce_arg_range, enforce_arg_type};
 
 pub static MODULE: BuiltinModuleDef = BuiltinModuleDef {
   name: "_sqlite",
@@ -123,7 +123,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ("blob_bytes", native(vm, "blob_bytes", 1, false, blob_bytes)),
     ("blob_read", native(vm, "blob_read", 3, false, blob_read)),
     ("blob_write", native(vm, "blob_write", 3, false, blob_write)),
-    ("blob_reopen", native(vm, "blob_reopen", 2, false, blob_reopen)),
+    (
+      "blob_reopen",
+      native(vm, "blob_reopen", 2, false, blob_reopen),
+    ),
     ("blob_close", native(vm, "blob_close", 1, false, blob_close)),
     // Online backup.
     (
@@ -468,9 +471,9 @@ fn errcode(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(CONNECTION));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_extended_errcode(db_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_extended_errcode(db_of(ctx)) } as f64,
+  ))
 }
 
 fn errmsg(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -613,7 +616,7 @@ fn step(ctx: &mut ZuriContext) -> Result<Value, String> {
     _ => {
       let db = unsafe { ffi::sqlite3_db_handle(stmt) };
       Err(util::last_error(db))
-    }
+    },
   }
 }
 
@@ -644,9 +647,9 @@ fn bind_parameter_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(STATEMENT));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_bind_parameter_count(stmt_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_bind_parameter_count(stmt_of(ctx)) } as f64,
+  ))
 }
 
 /// The index of a named parameter, or 0 when the statement has no such
@@ -688,9 +691,9 @@ fn column_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(STATEMENT));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_column_count(stmt_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_column_count(stmt_of(ctx)) } as f64,
+  ))
 }
 
 /// Every column's name, in order.
@@ -805,11 +808,7 @@ fn column_origin(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let mut pairs = Vec::with_capacity(3);
 
-  for (name, ptr) in [
-    ("database", database),
-    ("table", table),
-    ("column", column),
-  ] {
+  for (name, ptr) in [("database", database), ("table", table), ("column", column)] {
     let key = ctx.heap().alloc_string(name);
 
     let value = if ptr.is_null() {
@@ -832,9 +831,9 @@ fn data_count(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(STATEMENT));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_data_count(stmt_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_data_count(stmt_of(ctx)) } as f64,
+  ))
 }
 
 fn stmt_sql(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -958,9 +957,9 @@ fn blob_bytes(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BLOB));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_blob_bytes(blob_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_blob_bytes(blob_of(ctx)) } as f64,
+  ))
 }
 
 /// Reads `length` bytes from `offset`. Both are checked against the
@@ -1152,9 +1151,9 @@ fn backup_remaining(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BACKUP));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_backup_remaining(backup_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_backup_remaining(backup_of(ctx)) } as f64,
+  ))
 }
 
 /// Pages in the source database, as of the last step.
@@ -1162,9 +1161,9 @@ fn backup_pagecount(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(BACKUP));
 
-  Ok(Value::number(unsafe {
-    ffi::sqlite3_backup_pagecount(backup_of(ctx))
-  } as f64))
+  Ok(Value::number(
+    unsafe { ffi::sqlite3_backup_pagecount(backup_of(ctx)) } as f64,
+  ))
 }
 
 /// Ends the backup, reporting any error the copy accumulated.

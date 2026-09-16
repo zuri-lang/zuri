@@ -291,7 +291,9 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
     return String::new();
   }
 
-  unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+  unsafe { CStr::from_ptr(ptr) }
+    .to_string_lossy()
+    .into_owned()
 }
 
 /// Turns a Rust string into one SQLite can take.
@@ -300,8 +302,7 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 /// which for a SQL string would mean running a prefix of what the
 /// program asked for.
 pub fn to_cstring(what: &str, text: &str) -> Result<CString, String> {
-  CString::new(text)
-    .map_err(|_| format!("{what} cannot contain a null character"))
+  CString::new(text).map_err(|_| format!("{what} cannot contain a null character"))
 }
 
 /// The current error on `db`, as a message with its extended result

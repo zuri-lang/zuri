@@ -4340,6 +4340,33 @@ mod ref_classify_tests {
     }
   }
 
+  /// `analyze` with nothing speculated and nothing known from outside
+  /// the function.
+  ///
+  /// Every test here is about what the dataflow proves from the
+  /// bytecode alone, so all of `analyze`'s other inputs are empty.
+  /// Going through one helper also means a change to that signature
+  /// lands in one place rather than in every test below.
+  fn analyze_plain(f: &ObjFunction) -> TypeFacts {
+    let preds = build_predecessors(f);
+    let nothing = rustc_hash::FxHashSet::default();
+    let list_facts = analyze_list(f, &preds, None, &nothing);
+
+    analyze(
+      f,
+      &preds,
+      &nothing,
+      None,
+      None,
+      &nothing,
+      &nothing,
+      None,
+      None,
+      &list_facts,
+      None,
+    )
+  }
+
   #[test]
   fn nil_and_bool_never_reference() {
     let code = vec![
@@ -4348,15 +4375,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0));
     assert!(refs.is_never_ref(2, 1));
@@ -4381,15 +4400,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![Value::number(3.0), string_val], 2);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(refs.is_never_ref(2, 0), "numeric constant is never a ref");
     assert!(
@@ -4415,15 +4426,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![Value::number(1.0), Value::number(2.0)], 3);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(3, 2),
@@ -4452,15 +4455,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![name_val, Value::number(2.0)], 3);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(
       !refs.is_never_ref(3, 2),
@@ -4490,15 +4485,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![name_val, Value::number(2.0)], 3);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(4, 2),
@@ -4533,15 +4520,7 @@ mod ref_classify_tests {
       Instr::Return { src: 2 },
     ];
     let f = make_func(code, vec![name_val0, name_val1], 3);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(3, 2),
@@ -4561,15 +4540,7 @@ mod ref_classify_tests {
       Instr::Return { src: 0 },
     ];
     let f = make_func(code, vec![], 2);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(!refs.is_never_ref(2, 0), "MakeList always allocates a ref");
     assert!(!refs.is_never_ref(2, 1), "Concat always allocates a String");
@@ -4586,15 +4557,7 @@ mod ref_classify_tests {
       Instr::Return { src: 1 },
     ];
     let f = make_func(code, vec![Value::number(4.0)], 2);
-    let types = analyze(
-      &f,
-      &build_predecessors(&f),
-      None,
-      None,
-      &rustc_hash::FxHashSet::default(),
-      &rustc_hash::FxHashSet::default(),
-      None,
-    );
+    let types = analyze_plain(&f);
     let refs = classify_refs(&f, &types);
     assert!(
       refs.is_never_ref(2, 1),
