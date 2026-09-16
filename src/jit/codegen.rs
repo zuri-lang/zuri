@@ -923,6 +923,13 @@ struct FuncCompiler<'a, 'b> {
   /// before the call to load the class. The plan has to outlive that;
   /// the OSR entry paths are built from it.
   planned_scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
+  /// Construct sites whose GC root is registered once in the entry
+  /// block rather than on every execution. Only sites inside a loop
+  /// qualify: registering the same unchanging slot address on every
+  /// trip is what makes that worth doing, and a site outside a loop
+  /// runs at most once per call, where hoisting would only move the
+  /// cost onto calls that never reach the construct at all.
+  hoisted_scalar_roots: FxHashSet<usize>,
   /// Can any upvalue ever be OPEN over this frame's own registers?
   ///
   /// Only `Instr::Closure` opens one (it is the sole caller of
@@ -1503,6 +1510,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       scalar_instances: FxHashMap::default(),
       scalar_fields: FxHashMap::default(),
       planned_scalar_instances: FxHashMap::default(),
+      hoisted_scalar_roots: FxHashSet::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
         .chunk
@@ -2053,6 +2061,25 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       }
     }
 
+    // A backward branch of any kind closes a loop; everything between
+    // its target and itself is loop-resident.
+    let mut in_loop = vec![false; self.proto.chunk.code.len()];
+    for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
+      let offset = match *instr {
+        Instr::Jmp { offset } => offset,
+        Instr::JmpIfFalse { offset, .. } => offset,
+        Instr::JmpIfTrue { offset, .. } => offset,
+        _ => continue,
+      };
+      if offset < 0 {
+        let target = (ip as isize + 1 + offset as isize).max(0) as usize;
+        for flag in in_loop.iter_mut().take(ip + 1).skip(target) {
+          *flag = true;
+        }
+      }
+    }
+    let mut hoisted: Vec<(StackSlot, u16)> = Vec::new();
+
     // Scalar-replaced instances are registered here, alongside the
     // lists, and NOT where the construct is emitted. `emit_entry_
     // dispatch` below writes the OSR entry paths, and those have to
@@ -2072,6 +2099,40 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           3,
         ));
         self.planned_scalar_instances.insert(dst, (s, ip));
+        if in_loop[ip] {
+          self.hoisted_scalar_roots.insert(ip);
+          hoisted.push((s, info.field_count));
+        }
+      }
+    }
+
+    // One registration per slot for the whole frame. The address never
+    // changes, so re-registering it on every trip through the loop was
+    // only ever appending the same pointer again.
+    //
+    // The nil fill is what makes registering this early legal: from
+    // here on a root scan may run at any safepoint and it reads every
+    // slot, so none may still hold whatever the native stack frame
+    // started with. The construct refills the slot when it runs.
+    if !hoisted.is_empty() {
+      let nil = self.u64c(crate::vm::value::Value::nil().to_bits());
+      for &(slot, field_count) in &hoisted {
+        for i in 0..field_count {
+          self
+            .fb
+            .ins()
+            .stack_store(types::I64, nil, slot, (i as i32) * 8);
+        }
+      }
+      for (slot, field_count) in hoisted {
+        let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+        let count_c = self.u64c(field_count as u64);
+        // `call_helper`, not `call_checked`: this helper returns OK
+        // unconditionally, so the checked form's error branch is dead,
+        // and it touches only `jit_scalar_roots`, never
+        // `VM::registers`, so there is nothing for `refresh_regs` to
+        // re-read either. Both cost a block split at every site.
+        self.call_helper("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
       }
     }
 
@@ -4066,11 +4127,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// into a stack slot, and no object, no `@new` call, and no GC work
   /// happen at all.
   ///
-  /// Every slot is initialized; the ones the constructor writes from
-  /// its arguments, and any remaining declared field to nil; before
-  /// the slot is registered as a GC root, for the same reason
-  /// `emit_scalar_make_list` populates first: an uninitialized slot is
-  /// not a valid `Value` for a root scan to walk.
+  /// Every slot ends up initialized: the ones the constructor writes
+  /// from its arguments, and any remaining declared field to nil. That
+  /// has to hold before the slot is reachable by a root scan, since an
+  /// uninitialized stack slot is not a valid `Value` to walk.
+  ///
+  /// Where the registration happens depends on the site. A construct
+  /// inside a loop had its slot nil-filled and registered once in the
+  /// entry block, so it is already a root before this runs and only
+  /// the refill happens here. Anywhere else the registration follows
+  /// the stores, as it always did.
   fn emit_scalar_construct(&mut self, ip: usize, dst: u8, func: u8, num_args: u8) {
     let (field_count, param_slots) = {
       let info = &self.construct_info[&ip];
@@ -4094,8 +4160,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .expect("scalar construct slot registered in the pre-pass");
     debug_assert_eq!(site, ip, "one scalar construct site per register");
 
+    // Only the fields the constructor leaves alone need the nil. The
+    // ones it writes are stored below, in this same straight-line run
+    // with no call and so no safepoint in between, which makes a nil
+    // for them a store nothing can ever observe. For a class whose
+    // constructor fills every field (`Vec3` and friends) that is the
+    // whole pre-fill gone.
+    let mut written = vec![false; field_count as usize];
+    for (param, &field_slot) in param_slots.iter().enumerate() {
+      if param >= num_args as usize {
+        break;
+      }
+      if let Some(w) = written.get_mut(field_slot as usize) {
+        *w = true;
+      }
+    }
+
     let nil = self.u64c(crate::vm::value::Value::nil().to_bits());
     for i in 0..field_count {
+      if written[i as usize] {
+        continue;
+      }
       self
         .fb
         .ins()
@@ -4125,9 +4210,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // anything traceable is not knowable from the constructor's own
     // arguments: `SetField` can store a reference into the slot later,
     // and nothing in `scalar_construct_eligible` forbids it.
-    let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
-    let count_c = self.u64c(field_count as u64);
-    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    if !self.hoisted_scalar_roots.contains(&ip) {
+      let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let count_c = self.u64c(field_count as u64);
+      self.call_helper("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    }
     self.scalar_instances.insert(dst, (slot, ip));
     for (field_slot, v) in seeded {
       self.scalar_fields.insert((dst, field_slot), v);
@@ -11540,7 +11627,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
     let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
     let count_c = self.u64c(count as u64);
-    self.call_checked("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+    self.call_helper("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
   }
 
   fn emit_inline_make_list(&mut self, _ip: usize, dst: u8, start: u8, count: u8) {
