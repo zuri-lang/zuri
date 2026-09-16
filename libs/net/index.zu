@@ -7,6 +7,8 @@
  *
  * - `TcpStream` communicates over TCP.
  * - `UdpSocket` communicates over UDP.
+ * - `UnixStream` communicates over a unix domain socket, which is a
+ *   path on the filesystem rather than an address on the network.
  * - `Ip` parses, formats and classifies IP addresses.
  * - `SocketAddr` pairs an IP address with a port.
  * - `net.tls` wraps a `TcpStream` in Transport Layer Security.
@@ -18,6 +20,7 @@
 
 import @.tcp { * }
 import @.udp { * }
+import @.unix { * }
 import @.ip { * }
 import @.addr { * }
 import @.poll { * }

@@ -10,6 +10,7 @@
 
 import net
 import net.tcp
+import net.unix
 import url
 
 import ..driver {
@@ -179,17 +180,20 @@ class MySqlDriver < Driver {
    * @returns MySqlConnection
    */
   connect(options: dict) {
-    if options.host.starts_with('/') {
-      raise NotSupportedError(
-        'this adapter connects over TCP, and ${options.host} is a unix ' +
-        'socket; give it a host name or address instead',
-        { driver: self.name() }
-      )
-    }
+    var socket = self._socket_path(options)
 
-    var stream = self._open_socket(options)
+    var stream = socket != nil ?
+      self._open_unix(socket, options) :
+      self._open_socket(options)
+
     var protocol = Protocol(PacketStream(stream))
-    var mode = options.sslmode
+
+    # Nothing sits between the two ends of a unix socket, so there is
+    # nothing for TLS to protect it from, and the server does not offer
+    # it there. That also makes the connection private, which is what
+    # decides whether a plugin may send the password rather than a
+    # proof of it.
+    var mode = socket != nil ? 'disable' : options.sslmode
 
     catch {
       protocol.handshake(
@@ -206,7 +210,7 @@ class MySqlDriver < Driver {
           compress_level: options.get('compress_level', 3),
           public_key: options.get('public_key', nil),
           program: options.get('program', 'zuri'),
-          private: false,
+          private: socket != nil,
         },
         @(_capabilities) {
           return self._upgrade(stream, options)
@@ -222,6 +226,48 @@ class MySqlDriver < Driver {
     self._configure(connection, options)
 
     return connection
+  }
+
+  # The socket to connect over, or nil to go by TCP.
+  #
+  # MySQL's tooling spells this as a `socket` option, and a host that
+  # is a path means the same thing. Unlike PostgreSQL the path names
+  # the socket itself rather than the directory holding it.
+  _socket_path(options) {
+    var named = options.get('socket', nil)
+
+    if is_string(named) and !named.is_empty() {
+      return named
+    }
+
+    var host = options.get('host', '')
+
+    return is_string(host) and host.starts_with('/') ? host : nil
+  }
+
+  _open_unix(path, options) {
+    if !unix.is_supported() {
+      raise NotSupportedError(
+        'this platform has no unix domain sockets; connect over TCP ' +
+        'by giving a host name or address instead of ${path}',
+        { driver: self.name() }
+      )
+    }
+
+    var stream = unix.UnixStream()
+
+    catch {
+      stream.connect(path)
+      stream.set_read_timeout(options.timeout)
+      stream.set_write_timeout(options.timeout)
+    } as error {
+      raise ConnectionError(
+        'could not connect to ${path}: ${error.message}',
+        { driver: self.name() }
+      )
+    }
+
+    return stream
   }
 
   _open_socket(options) {

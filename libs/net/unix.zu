@@ -1,0 +1,355 @@
+/**
+ * @module unix
+ *
+ * Unix domain sockets: the same stream interface as `tcp`, over a path
+ * on the filesystem rather than an address on the network.
+ *
+ * A unix socket is how two programs on one machine usually talk when
+ * one of them is a server. It skips the network stack, so there is no
+ * port to collide with and nothing to reach it from another host. And
+ * because the socket is a file, the filesystem decides who may connect:
+ * a socket in a directory only one user can enter is reachable by only
+ * that user, which is a stronger answer than binding to loopback and
+ * trusting everyone on the machine.
+ *
+ * ```zuri,ignore
+ * import net
+ *
+ * var client = net.UnixStream()
+ * client.connect('/var/run/mysqld/mysqld.sock')
+ * client.write_all('hello')
+ *
+ * echo client.read(5)
+ * client.close()
+ * ```
+ *
+ * A server binds a path and accepts on it:
+ *
+ * ```zuri,ignore
+ * import net
+ * import os
+ *
+ * var server = net.UnixStream()
+ * server.bind('/run/app.sock')
+ *
+ * while true {
+ *   var client = server.accept()
+ *   client.write_all('hello\n')
+ *   client.close()
+ * }
+ * ```
+ *
+ * ### Binding leaves a file behind
+ *
+ * `bind()` creates the path and refuses if something is already there,
+ * including a socket left by a process that has since died. Closing the
+ * socket frees the descriptor but does not remove the file, because by
+ * then another process may have bound the same path and removing it
+ * would break them. A server that expects to be restarted deletes a
+ * stale path itself before binding.
+ *
+ * ### Windows
+ *
+ * Windows has unix sockets, but they are not reachable from Zuri. Every
+ * call here raises there rather than the module being absent, so a
+ * program fails where it tries to connect, saying why, instead of
+ * failing at import. `is_supported()` answers the question in advance.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _net_unix
+
+/**
+ * Whether unix domain sockets work on this machine.
+ *
+ * False on Windows and true everywhere else. A program that can fall
+ * back to TCP tests this rather than catching the error.
+ *
+ * @returns bool
+ */
+def is_supported() {
+  return _net_unix.unix_is_supported()
+}
+
+/**
+ * Two sockets already connected to each other, with no path and
+ * nothing on the filesystem.
+ *
+ * This is the way to hand one end to a child process, or to talk
+ * between threads over a real socket without choosing a name that
+ * something else might collide with.
+ *
+ * @returns list[UnixStream] The two ends, which are interchangeable.
+ * @throws Error if the pair cannot be created.
+ */
+def pair() {
+  return _net_unix.unix_pair().map(@(handle) {
+    return UnixStream(handle)
+  })
+}
+
+/**
+ * A unix domain socket, connected or listening.
+ *
+ * One class covers both, as `TcpStream` does: `connect()` makes it a
+ * stream and `bind()` makes it a listener, and the methods that do not
+ * apply raise rather than doing something surprising.
+ *
+ * @printable
+ */
+class UnixStream {
+  var _ptr
+
+  /**
+   * @param Ptr|nil _ptr An existing native handle, as `accept()` and
+   *    `pair()` produce. A new socket when nil.
+   */
+  @new(_ptr) {
+    self._ptr = _ptr == nil ?
+      _net_unix.unix_new() :
+      _ptr
+  }
+
+  /**
+   * Hands out the underlying native handle, the same way `TcpStream`
+   * does, so a sibling module can wrap an already-connected socket
+   * without belonging to this class.
+   *
+   * @returns Ptr
+   */
+  native_ptr() {
+    return self._ptr
+  }
+
+  /**
+   * Connects to the socket at `path`.
+   *
+   * There is no timeout: a unix socket connect either succeeds at once
+   * or fails at once, since there is no network in between. Use
+   * `set_read_timeout()` and `set_write_timeout()` to bound the
+   * conversation that follows.
+   *
+   * @param string path
+   * @throws Error if nothing is listening there, if the path does not
+   *    exist, or if this process may not open it.
+   */
+  connect(path: string) {
+    _net_unix.unix_connect(self._ptr, path)
+  }
+
+  /**
+   * Creates the socket at `path` and starts listening on it.
+   *
+   * @param string path
+   * @throws Error if something already exists at that path, including
+   *    a socket a dead process left behind, or if the directory is not
+   *    writable.
+   */
+  bind(path: string) {
+    _net_unix.unix_bind(self._ptr, path)
+  }
+
+  /**
+   * Waits for a connection and returns it.
+   *
+   * Blocks until someone connects, unless `set_non_blocking(true)` was
+   * called, in which case it raises when nobody is waiting.
+   *
+   * @returns UnixStream The connected end of the new conversation.
+   * @throws Error if this socket is not listening.
+   */
+  accept() {
+    return UnixStream(_net_unix.unix_accept(self._ptr))
+  }
+
+  /**
+   * The path the other end is bound to.
+   *
+   * `nil` for a socket that has no path, which is what both ends of a
+   * `pair()` are and what a client that never bound one is.
+   *
+   * @returns string|nil
+   */
+  peer_address() {
+    return _net_unix.unix_peer_address(self._ptr)
+  }
+
+  /**
+   * The path this socket is bound to, or `nil` where it has none.
+   *
+   * @returns string|nil
+   */
+  local_address() {
+    return _net_unix.unix_local_address(self._ptr)
+  }
+
+  /**
+   * Closes both directions without releasing the handle, so a read at
+   * the other end returns nothing rather than blocking.
+   *
+   * @throws Error if this socket is not connected.
+   */
+  shutdown() {
+    _net_unix.unix_shutdown(self._ptr)
+  }
+
+  /**
+   * Gives up on a read that takes longer than `timeout`.
+   *
+   * @param number timeout Milliseconds. Zero means wait forever.
+   */
+  set_read_timeout(timeout: number) {
+    _net_unix.unix_set_read_timeout(self._ptr, timeout)
+  }
+
+  /**
+   * The read timeout in milliseconds, zero for none.
+   *
+   * @returns number
+   */
+  get_read_timeout() {
+    return _net_unix.unix_get_read_timeout(self._ptr)
+  }
+
+  /**
+   * Gives up on a write that takes longer than `timeout`.
+   *
+   * @param number timeout Milliseconds. Zero means wait forever.
+   */
+  set_write_timeout(timeout: number) {
+    _net_unix.unix_set_write_timeout(self._ptr, timeout)
+  }
+
+  /**
+   * The write timeout in milliseconds, zero for none.
+   *
+   * @returns number
+   */
+  get_write_timeout() {
+    return _net_unix.unix_get_write_timeout(self._ptr)
+  }
+
+  /**
+   * Whether reads and writes return at once rather than waiting.
+   *
+   * A non-blocking socket raises where it would have blocked, which is
+   * what `net.poll` is for: wait there, then read here.
+   *
+   * @param bool nonblocking
+   */
+  set_non_blocking(nonblocking: bool) {
+    _net_unix.unix_set_non_blocking(self._ptr, nonblocking)
+  }
+
+  /**
+   * Reads up to `length` bytes, returning what arrived.
+   *
+   * A shorter result than asked for is normal and does not mean the
+   * conversation is over; an empty one does.
+   *
+   * @param number length
+   * @returns bytes
+   */
+  read(length: number) {
+    return _net_unix.unix_read(self._ptr, length)
+  }
+
+  /**
+   * Reads exactly `length` bytes, waiting for as many as it takes.
+   *
+   * @param number length
+   * @returns bytes
+   * @throws Error if the other end closes before that many arrive.
+   */
+  read_exact(length: number) {
+    return _net_unix.unix_read_exact(self._ptr, length)
+  }
+
+  /**
+   * Reads until the other end closes.
+   *
+   * @returns bytes
+   */
+  read_all() {
+    return _net_unix.unix_read_all(self._ptr)
+  }
+
+  /**
+   * Reads until the other end closes and decodes the result as text.
+   *
+   * @returns string
+   * @throws Error if what arrived is not valid UTF-8.
+   */
+  read_as_string() {
+    return _net_unix.unix_read_as_string(self._ptr)
+  }
+
+  /**
+   * Writes what it can and reports how much that was.
+   *
+   * @param bytes|string data
+   * @returns number Bytes written, which may be fewer than given.
+   */
+  write(data) {
+    return _net_unix.unix_write(self._ptr, data)
+  }
+
+  /**
+   * Writes everything, however many attempts that takes.
+   *
+   * @param bytes|string data
+   */
+  write_all(data) {
+    _net_unix.unix_write_all(self._ptr, data)
+  }
+
+  /**
+   * Pushes out anything held back.
+   */
+  flush() {
+    _net_unix.unix_flush(self._ptr)
+  }
+
+  /**
+   * Whether this socket is connected to another.
+   *
+   * @returns bool
+   */
+  is_connected() {
+    return _net_unix.unix_is_connected(self._ptr)
+  }
+
+  /**
+   * Whether this socket is listening on a path.
+   *
+   * @returns bool
+   */
+  is_bound() {
+    return _net_unix.unix_is_bound(self._ptr)
+  }
+
+  /**
+   * Closes the socket. The handle cannot be used afterwards.
+   *
+   * A path this socket was bound to stays on the filesystem, since by
+   * now another process may have bound it.
+   */
+  close() {
+    _net_unix.unix_close(self._ptr)
+  }
+
+  to_string() {
+    if self.is_bound() {
+      return '<UnixStream listening on ${self.local_address()}>'
+    }
+
+    return self.is_connected() ?
+      '<UnixStream connected>' :
+      '<UnixStream>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

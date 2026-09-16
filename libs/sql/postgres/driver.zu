@@ -10,6 +10,8 @@
 
 import net
 import net.tcp
+import net.unix
+import os
 
 import ..driver {
   Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
@@ -153,16 +155,16 @@ class PostgresDriver < Driver {
    * @returns PostgresConnection
    */
   connect(options: dict) {
-    if options.host.starts_with('/') {
-      raise NotSupportedError(
-        'this adapter connects over TCP, and ${options.host} is a unix ' +
-        'socket directory; give it a host name or address instead',
-        { driver: 'postgres' }
-      )
-    }
+    var socket = self._socket_path(options)
 
-    var stream = self._open_socket(options)
-    var secured = self._maybe_upgrade(stream, options)
+    # TLS over a unix socket is neither offered nor wanted: nothing is
+    # in between to protect it from, and the server refuses the request
+    # outright. `sslmode` is ignored there, which is what libpq does.
+    var stream = socket != nil ?
+      self._open_unix(socket, options) :
+      self._open_socket(options)
+
+    var secured = socket != nil ? stream : self._maybe_upgrade(stream, options)
 
     var protocol = Protocol(secured, options.get('registry', DEFAULT_REGISTRY))
 
@@ -179,6 +181,50 @@ class PostgresDriver < Driver {
     }
 
     return PostgresConnection(self, protocol, options)
+  }
+
+  # The socket to connect over, or nil to go by TCP.
+  #
+  # A host beginning with a slash is a directory, which is how libpq
+  # spells this, and the socket inside it is named after the port. A
+  # path that already names the socket itself is taken as given, since
+  # that is what a program that found the file rather than the
+  # directory would have.
+  _socket_path(options) {
+    var host = options.get('host', '')
+
+    if !is_string(host) or !host.starts_with('/') {
+      return nil
+    }
+
+    var name = '.s.PGSQL.${options.port}'
+
+    return host.ends_with(name) ? host : os.join_paths(host, name)
+  }
+
+  _open_unix(path, options) {
+    if !unix.is_supported() {
+      raise NotSupportedError(
+        'this platform has no unix domain sockets; connect over TCP ' +
+        'by giving a host name or address instead of ${path}',
+        { driver: 'postgres' }
+      )
+    }
+
+    var stream = unix.UnixStream()
+
+    catch {
+      stream.connect(path)
+      stream.set_read_timeout(options.timeout)
+      stream.set_write_timeout(options.timeout)
+    } as error {
+      raise ConnectionError(
+        'could not connect to ${path}: ${error.message}',
+        { driver: 'postgres' }
+      )
+    }
+
+    return stream
   }
 
   _open_socket(options) {

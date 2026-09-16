@@ -18,9 +18,11 @@
  *
  * ### What this adapter speaks
  *
- * Version 3 of the wire protocol, over TCP, optionally under TLS. Unix
- * domain sockets are not supported; a `host` that names a directory
- * raises rather than silently connecting somewhere else.
+ * Version 3 of the wire protocol, over TCP, optionally under TLS, or
+ * over a unix domain socket. A `host` beginning with a slash is a
+ * socket directory, as libpq spells it, and the socket inside it is
+ * named after the port. TLS is neither offered nor wanted there, since
+ * nothing sits in between, so `sslmode` is ignored.
  *
  * Statements go through the extended protocol, which compiles them on
  * the server and binds values rather than substituting them. Values

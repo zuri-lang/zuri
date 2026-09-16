@@ -346,20 +346,45 @@ def test_nonce() {
   echo 'test_nonce passed'
 }
 
-def test_unix_sockets_are_refused() {
-  # This adapter speaks TCP. A host that names a socket directory is
-  # told so rather than being quietly connected somewhere else.
-  var refused = false
+def test_unix_socket_paths() {
+  # A host beginning with a slash is a socket directory, which is how
+  # libpq spells it, and the socket inside is named after the port.
+  var options = DRIVER.parse_dsn('host=/nonexistent/socket/dir dbname=app')
+
+  assert options.host == '/nonexistent/socket/dir'
+  assert options.port == 5432
+
+  # Nothing is listening there, and the failure has to name the socket
+  # the directory and port resolved to rather than the directory, or
+  # there would be no way to tell which file was looked for.
+  var failed = nil
 
   catch {
-    DRIVER.connect(DRIVER.parse_dsn('host=/var/run/postgresql dbname=app'))
+    DRIVER.connect(options)
   } as error {
-    refused = instance_of(error, NotSupportedError)
+    failed = error
   }
 
-  assert refused
+  assert failed != nil
+  assert instance_of(failed, ConnectionError)
+  assert !instance_of(failed, NotSupportedError)
+  assert failed.message.index_of('/nonexistent/socket/dir/.s.PGSQL.5432') > -1
 
-  echo 'test_unix_sockets_are_refused passed'
+  # A path that already names the socket is taken as given rather than
+  # having the port appended to it a second time.
+  var direct = DRIVER.parse_dsn(
+    'host=/nonexistent/socket/dir/.s.PGSQL.5432 dbname=app'
+  )
+
+  catch {
+    DRIVER.connect(direct)
+  } as error {
+    failed = error
+  }
+
+  assert failed.message.index_of('.s.PGSQL.5432/.s.PGSQL.5432') == -1
+
+  echo 'test_unix_socket_paths passed'
 }
 
 test_uri_strings()
@@ -376,4 +401,4 @@ test_framing()
 test_command_tags()
 test_scram()
 test_nonce()
-test_unix_sockets_are_refused()
+test_unix_socket_paths()

@@ -172,7 +172,8 @@ class Poller {
 
     if !is_instance(socket) {
       raise TypeError(
-        'add() expects a TcpStream or TlsStream, got ${typeof(socket)}'
+        'add() expects a TcpStream, UnixStream or TlsStream, got ' +
+        '${typeof(socket)}'
       )
     }
 

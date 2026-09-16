@@ -18,9 +18,11 @@
  * ### What this adapter speaks
  *
  * The client/server protocol over TCP, optionally under TLS and
- * optionally compressed with zlib or zstd. Unix domain sockets are not
- * supported; a `host` that names a socket path raises rather than
- * silently connecting somewhere else.
+ * optionally compressed with zlib or zstd, or over a unix domain
+ * socket. A `socket` option names one, and so does a `host` beginning
+ * with a slash. TLS is neither offered nor wanted there, since nothing
+ * sits in between, and the connection counts as private, which is what
+ * decides whether a plugin may send the password itself.
  *
  * A statement with no values is sent as text, which is one round trip.
  * A statement with values is prepared, so that the values travel in

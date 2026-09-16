@@ -1,0 +1,307 @@
+# @platform: unix
+#
+# Unix domain sockets.
+#
+# The fixture is gated to unix at compile time rather than skipped at
+# run time: on Windows the module refuses every call, so there is
+# nothing here that could be made to pass, and a test that cannot exist
+# is better than one that is always skipped.
+#
+# The database adapters reach their servers over these too. Those parts
+# need a socket path that differs per machine, so they sit behind
+# ZURI_TEST_MYSQL_SOCKET and ZURI_TEST_POSTGRES_SOCKET and do nothing
+# when neither is set.
+
+import net
+import os
+import sql
+
+def socket_path(name) {
+  return os.join_paths(os.temp_dir(), 'zuri_test_${name}_${os.pid()}.sock')
+}
+
+def clean(path) {
+  if file(path).exists() {
+    file(path).delete()
+  }
+}
+
+def test_supported() {
+  # The gate above means this fixture only runs where they work.
+  assert net.is_supported()
+
+  echo 'test_supported passed'
+}
+
+def test_pair() {
+  var ends = net.pair()
+
+  assert ends.length() == 2
+
+  ends[0].write_all('ping')
+  assert ends[1].read_exact(4) == 'ping'.to_bytes()
+
+  ends[1].write_all('pong')
+  assert ends[0].read_exact(4) == 'pong'.to_bytes()
+
+  # Neither end has a path, so neither has an address.
+  assert ends[0].local_address() == nil
+  assert ends[1].peer_address() == nil
+
+  assert ends[0].is_connected()
+  assert !ends[0].is_bound()
+
+  ends[0].close()
+  ends[1].close()
+
+  echo 'test_pair passed'
+}
+
+def test_bind_and_connect() {
+  var path = socket_path('basic')
+  clean(path)
+
+  var server = net.UnixStream()
+  server.bind(path)
+
+  assert server.is_bound()
+  assert !server.is_connected()
+  assert server.local_address() == path
+  assert file(path).exists()
+
+  var client = net.UnixStream()
+  client.connect(path)
+
+  assert client.is_connected()
+  assert !client.is_bound()
+
+  var accepted = server.accept()
+
+  # Both directions, and a read shorter than asked for is still a read.
+  client.write_all('hello over a path')
+  assert accepted.read_exact(17) == 'hello over a path'.to_bytes()
+
+  accepted.write_all('and back')
+  assert client.read_exact(8).to_string() == 'and back'
+
+  client.write_all('xyz')
+  var partial = accepted.read(64)
+  assert partial.length() == 3
+  assert partial.to_string() == 'xyz'
+
+  # The accepted end knows the path it was reached through; the client
+  # never bound one, so it has none of its own.
+  assert accepted.local_address() == path
+  assert client.peer_address() == path
+  assert client.local_address() == nil
+
+  accepted.close()
+  client.close()
+  server.close()
+
+  # Closing frees the descriptor and deliberately leaves the path, so
+  # that a socket another process has since bound is not removed.
+  assert file(path).exists()
+  clean(path)
+
+  echo 'test_bind_and_connect passed'
+}
+
+def test_shutdown_ends_the_conversation() {
+  var ends = net.pair()
+
+  ends[0].write_all('last')
+  ends[0].shutdown()
+
+  # Everything written before the shutdown still arrives, and then the
+  # reader sees the end rather than waiting for more.
+  assert ends[1].read_all().to_string() == 'last'
+
+  ends[0].close()
+  ends[1].close()
+
+  echo 'test_shutdown_ends_the_conversation passed'
+}
+
+def test_timeouts() {
+  var ends = net.pair()
+
+  ends[0].set_read_timeout(50)
+  assert ends[0].get_read_timeout() == 50
+
+  ends[0].set_write_timeout(75)
+  assert ends[0].get_write_timeout() == 75
+
+  # Nothing was written, so the read gives up rather than hanging.
+  var timed_out = false
+
+  catch {
+    ends[0].read_exact(1)
+  } as error {
+    timed_out = true
+  }
+
+  assert timed_out
+
+  # Zero means wait forever, which is how a timeout is cleared.
+  ends[0].set_read_timeout(0)
+  assert ends[0].get_read_timeout() == 0
+
+  ends[0].close()
+  ends[1].close()
+
+  echo 'test_timeouts passed'
+}
+
+def test_refusals() {
+  var path = socket_path('refusals')
+  clean(path)
+
+  # Nothing is listening there.
+  var refused = false
+
+  catch {
+    net.UnixStream().connect(path)
+  } as error {
+    refused = true
+  }
+
+  assert refused
+
+  var server = net.UnixStream()
+  server.bind(path)
+
+  # A path that already exists is not silently taken over.
+  var taken = false
+
+  catch {
+    net.UnixStream().bind(path)
+  } as error {
+    taken = true
+  }
+
+  assert taken
+
+  # A listening socket is not a stream and says so.
+  var wrong = false
+
+  catch {
+    server.write_all('nowhere')
+  } as error {
+    wrong = true
+  }
+
+  assert wrong
+
+  server.close()
+
+  # And a closed handle cannot be used again.
+  var closed = false
+
+  catch {
+    server.is_bound()
+  } as error {
+    closed = true
+  }
+
+  assert closed
+  clean(path)
+
+  echo 'test_refusals passed'
+}
+
+def test_poll_accepts_a_unix_socket() {
+  var ends = net.pair()
+
+  ends[0].set_non_blocking(true)
+
+  var poll = net.Poller()
+  poll.add(ends[1], 1, net.READABLE)
+
+  # Nothing written yet, so nothing is ready.
+  assert poll.wait(20).is_empty()
+
+  ends[0].write_all('ready')
+
+  var ready = poll.wait(200)
+  assert ready.length() == 1
+  assert ready[0][0] == 1
+  assert ready[0][1] & net.READABLE != 0
+  assert ends[1].read_exact(5).to_string() == 'ready'
+
+  ends[0].close()
+  ends[1].close()
+
+  echo 'test_poll_accepts_a_unix_socket passed'
+}
+
+def test_mysql_over_a_socket() {
+  var path = os.get_env('ZURI_TEST_MYSQL_SOCKET', nil)
+
+  if path == nil or path == '' {
+    echo 'test_mysql_over_a_socket skipped: set ZURI_TEST_MYSQL_SOCKET'
+
+    return
+  }
+
+  var db = sql.open({
+    driver: 'mysql',
+    socket: path,
+    user: os.get_env('ZURI_TEST_MYSQL_USER', 'root'),
+    password: os.get_env('ZURI_TEST_MYSQL_PASSWORD', ''),
+  }, nil)
+
+  assert db.fetch_value('select 1', nil, nil) == 1
+  assert db.server_version() != 'unknown'
+
+  # A unix socket has nothing in between to protect it from, so TLS is
+  # not attempted and the connection counts as private, which is what
+  # lets an authentication plugin send the password itself.
+  assert db.native().protocol().is_private()
+
+  db.close()
+
+  echo 'test_mysql_over_a_socket passed'
+}
+
+def test_postgres_over_a_socket() {
+  var directory = os.get_env('ZURI_TEST_POSTGRES_SOCKET', nil)
+
+  if directory == nil or directory == '' {
+    echo 'test_postgres_over_a_socket skipped: set ZURI_TEST_POSTGRES_SOCKET'
+
+    return
+  }
+
+  var db = sql.open({
+    driver: 'postgres',
+    host: directory,
+    user: os.get_env('ZURI_TEST_POSTGRES_USER', 'postgres'),
+    password: os.get_env('ZURI_TEST_POSTGRES_PASSWORD', ''),
+    database: os.get_env('ZURI_TEST_POSTGRES_DB', 'postgres'),
+  }, nil)
+
+  assert db.fetch_value('select 1', nil, nil) == 1
+
+  # The server agrees it is a local connection: a client address is
+  # only recorded for one that arrived over the network.
+  assert db.fetch_value(
+    'select client_addr from pg_stat_activity where pid = pg_backend_pid()',
+    nil,
+    nil
+  ) == nil
+
+  db.close()
+
+  echo 'test_postgres_over_a_socket passed'
+}
+
+test_supported()
+test_pair()
+test_bind_and_connect()
+test_shutdown_ends_the_conversation()
+test_timeouts()
+test_refusals()
+test_poll_accepts_a_unix_socket()
+test_mysql_over_a_socket()
+test_postgres_over_a_socket()

@@ -1,7 +1,7 @@
 # Networking
 
-The `net` module is the socket layer: TCP, UDP, TLS, DTLS, address parsing
-and polling. The `http` module sits on top of it and gives you a client and
+The `net` module is the socket layer: TCP, UDP, unix domain sockets, TLS,
+DTLS, address parsing and polling. The `http` module sits on top of it and gives you a client and
 a server that speak HTTP/1.1 and HTTP/2.
 
 Every example in this chapter runs a server in an isolate and a client in
@@ -164,6 +164,70 @@ discarded. Size the buffer for your protocol's largest message.
 
 There is also `connect()` to fix a peer, `set_broadcast()`, and
 `join_multicast_v4()` / `join_multicast_v6()`.
+
+## Unix Sockets
+
+A unix domain socket is a path on the filesystem rather than an address
+on the network. It is how two programs on one machine usually talk when
+one of them is a server: databases, message brokers and system daemons
+nearly all listen on one.
+
+There is no port to collide with and nothing to reach it from another
+host. And because the socket is a file, the filesystem decides who may
+connect — a socket in a directory only one user can enter is reachable
+by only that user, which is a stronger answer than binding to loopback
+and trusting everyone on the machine.
+
+`pair()` gives two sockets already connected to each other, with no
+path and nothing left on disk:
+
+```zuri
+import net
+
+var ends = net.pair()
+
+ends[0].write_all('ping')
+echo ends[1].read_exact(4)
+
+ends[1].write_all('pong')
+echo ends[0].read_exact(4).to_string()
+
+ends[0].close()
+ends[1].close()
+```
+
+```console
+(70 69 6e 67)
+pong
+```
+
+A server binds a path and accepts on it, exactly as a `TcpStream`
+binds an address:
+
+```zuri,ignore
+import net
+
+var server = net.UnixStream()
+server.bind('/run/app.sock')
+
+while true {
+  var client = server.accept()
+  client.write_all('hello\n')
+  client.close()
+}
+```
+
+Two things differ from TCP and both come from the socket being a file.
+`bind()` refuses a path that already exists, including one a crashed
+process left behind, so a server that expects to be restarted deletes
+a stale path first. And closing frees the descriptor without removing
+the file, because by then another process may have bound the same path
+and removing it would break them.
+
+`net.is_supported()` is false on Windows, where these are not
+available. Every call raises there rather than the module being
+missing, so a program that can fall back to TCP tests it rather than
+catching an error.
 
 ## Addresses
 
@@ -394,7 +458,7 @@ name.
 
 `net.poll` answers "which of these sockets can I read right now?" without a
 thread per socket, which is how you serve many connections from one
-isolate. `net.addr` and `net.ip` parse, format and classify addresses —
+isolate. It takes a `UnixStream` alongside a `TcpStream` or a `TlsStream`. `net.addr` and `net.ip` parse, format and classify addresses —
 `is_private()`, `is_loopback()`, `is_multicast()` and the rest — which is
 what you want before trusting an address a client sent you. `net.dtls` is
 TLS over UDP.

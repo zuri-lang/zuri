@@ -82,7 +82,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `net` | TCP, UDP, TLS, DTLS, addresses and polling | [12](ch12-00-networking.md) |
+| `net` | TCP, UDP, unix sockets, TLS, DTLS, addresses and polling | [12](ch12-00-networking.md) |
 | `http` | an HTTP/1.1 and HTTP/2 client and server | [15](ch15-00-http.md) |
 
 ## Graphics
@@ -234,6 +234,7 @@ One module per element width, each exporting a single class.
 | --- | --- |
 | `net.tcp` | `TcpSocket` and `TcpStream` |
 | `net.udp` | `UdpSocket` |
+| `net.unix` | `UnixStream`, over a path rather than an address |
 | `net.tls` | TLS over a TCP stream |
 | `net.dtls` | DTLS over a UDP socket |
 | `net.ip` | parsing, formatting and classifying IP addresses |

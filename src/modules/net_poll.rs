@@ -83,10 +83,14 @@ type Descriptor = std::os::windows::io::RawSocket;
 /// The descriptor behind whichever kind of socket handle this is, or
 /// `None` when the handle cannot supply one - it was closed, consumed
 /// by a TLS upgrade, or moved to another isolate. Both a `TcpStream`
-/// and a `TlsStream` wrapping one are pollable; for TLS this is the
-/// socket underneath, which is what readiness actually describes.
+/// A `TcpStream`, a `UnixStream`, and a `TlsStream` wrapping a socket
+/// are all pollable; for TLS this is the socket underneath, which is
+/// what readiness actually describes.
 fn descriptor_of(value: Value) -> Option<Descriptor> {
   if let Some(fd) = crate::modules::net_tcp::descriptor_of(value) {
+    return Some(fd);
+  }
+  if let Some(fd) = crate::modules::net_unix::descriptor_of(value) {
     return Some(fd);
   }
   crate::modules::net_tls::descriptor_of(value)

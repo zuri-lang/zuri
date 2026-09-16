@@ -531,8 +531,8 @@ Concurrency. Covered in [Chapter 11](ch11-00-isolates.md).
 
 ### `net`
 
-TCP, UDP, TLS, DTLS, addresses and polling. Covered in
-[Chapter 12](ch12-00-networking.md).
+TCP, UDP, unix domain sockets, TLS, DTLS, addresses and polling. Covered
+in [Chapter 12](ch12-00-networking.md).
 
 ### `http`
 

@@ -1290,9 +1290,20 @@ db.native().on_progress(1000, @() => keep_going())
 
 ## PostgreSQL Specifics
 
-The adapter speaks version 3 of the wire protocol over TCP, optionally
-under TLS. Unix domain sockets are not supported; a `host` naming a
-directory raises rather than silently connecting somewhere else.
+The adapter speaks version 3 of the wire protocol, over TCP or over a
+unix domain socket, optionally under TLS.
+
+A `host` beginning with a slash is a socket directory, which is how
+libpq spells it, and the socket inside is named after the port:
+`/var/run/postgresql` with port 5432 means
+`/var/run/postgresql/.s.PGSQL.5432`. A path that already names the
+socket is taken as given. TLS is neither offered nor wanted over a
+socket, since nothing sits in between, so `sslmode` is ignored there.
+
+```zuri,ignore
+sql.open('postgres:///app?host=/var/run/postgresql')
+sql.open({ driver: 'postgres', host: '/var/run/postgresql', database: 'app' })
+```
 
 `sslmode` chooses how TLS is used: `disable` never, `prefer` when the
 server offers it, and `require` always, failing when the server
@@ -1344,11 +1355,25 @@ unexciting.
 
 ## MySQL Specifics
 
-The adapter speaks the client/server protocol directly, over TCP and
-optionally under TLS, with no client library underneath it. Unix domain
-sockets are not supported; a `host` naming a socket path raises rather
-than silently connecting somewhere else. MariaDB speaks the same
-protocol and the same adapter drives it.
+The adapter speaks the client/server protocol directly, over TCP or
+over a unix domain socket, optionally under TLS, with no client library
+underneath it. MariaDB speaks the same protocol and the same adapter
+drives it.
+
+A `socket` option names a socket, and so does a `host` beginning with a
+slash. Unlike PostgreSQL the path names the socket itself rather than
+the directory holding it:
+
+```zuri,ignore
+sql.open({ driver: 'mysql', socket: '/var/run/mysqld/mysqld.sock', user: 'app' })
+sql.open('socket=/var/run/mysqld/mysqld.sock user=app database=shop')
+sql.open('mysql://app@localhost/shop?socket=/var/run/mysqld/mysqld.sock')
+```
+
+TLS is neither offered nor wanted there, since nothing sits in between.
+The connection does count as private, which is what lets
+`caching_sha2_password` and `sha256_password` send the password itself
+rather than encrypting it to the server's public key.
 
 A statement with no values is sent as text, which is one round trip. A
 statement with values is prepared, so the values travel in the server's

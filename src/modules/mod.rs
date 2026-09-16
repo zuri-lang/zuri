@@ -24,6 +24,7 @@ mod math;
 mod net_dtls;
 mod net_poll;
 pub(crate) mod net_tcp;
+pub(crate) mod net_unix;
 pub(crate) mod net_tls;
 mod net_udp;
 mod os;
@@ -63,6 +64,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   net_dtls::MODULE,
   net_poll::MODULE,
   net_tcp::MODULE,
+  net_unix::MODULE,
   net_tls::MODULE,
   net_udp::MODULE,
   zuri_compile::MODULE,
