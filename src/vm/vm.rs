@@ -711,11 +711,18 @@ pub struct VM {
   /// an extra `gc_pins` run: `forward_slot`/`mark_root` applied directly to
   /// each slot.
   jit_scalar_roots: Vec<(*mut Value, usize)>,
-  /// Mirrors `jit_scalar_roots.len()`, updated at every one of its
-  /// mutation sites (`push_scalar_root`, `pop_frame_inner`'s truncate,
-  /// the catch-handler unwind truncate, `clear_frames`). `jit::codegen`'s
-  /// inline call fast path reads this directly to fill a freshly pushed
-  /// `CallFrame::scalar_roots_mark` with no helper call.
+  /// How many of `jit_scalar_roots`' entries are live. This, NOT
+  /// `jit_scalar_roots.len()`, is the authoritative count: the `Vec` is
+  /// only the backing store, and retiring entries lowers this without
+  /// shrinking it, so the allocation is reused by the next call instead
+  /// of being handed back and reallocated.
+  ///
+  /// It has to be the authority because `jit::codegen`'s inline call
+  /// fast path retires a frame's entries with a single store to this
+  /// field (`emit_pop_top_frame`) and cannot call into `Vec` at all.
+  /// When `Vec::len` was the authority that store did nothing, so
+  /// nothing was ever retired on the compiled path and the vector grew
+  /// for the life of the process.
   jit_scalar_roots_len: Cell<usize>,
   /// Active `catch` handlers, innermost last.
   catch_stack: Vec<CatchHandler>,
@@ -1397,7 +1404,7 @@ impl VM {
       ip: 0,
       base: 0,
       dst_in_caller: 0,
-      scalar_roots_mark: self.jit_scalar_roots.len(),
+      scalar_roots_mark: self.jit_scalar_roots_len.get(),
       compiled: false,
     });
     let res = self.run_until(0);
@@ -1494,7 +1501,7 @@ impl VM {
       ip: 0,
       base: new_base,
       dst_in_caller: 0,
-      scalar_roots_mark: self.jit_scalar_roots.len(),
+      scalar_roots_mark: self.jit_scalar_roots_len.get(),
       compiled: false,
     });
     self.run_frame(stop_depth, proto, callee)
@@ -3291,8 +3298,7 @@ impl VM {
   /// frame-pop path that also needs this same cleanup.
   fn pop_frame_inner(&mut self) -> CallFrame {
     let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
-    self.jit_scalar_roots.truncate(frame.scalar_roots_mark);
-    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
+    self.jit_scalar_roots_len.set(frame.scalar_roots_mark);
     let new_len = self.frames.len();
     while matches!(self.catch_stack.last(), Some(h) if h.frame_depth > new_len) {
       self.catch_stack.pop();
@@ -3314,8 +3320,13 @@ impl VM {
   /// could safely inspect. Retired automatically via
   /// `CallFrame::scalar_roots_mark`.
   pub(crate) fn push_scalar_root(&mut self, ptr: *mut Value, count: usize) {
-    self.jit_scalar_roots.push((ptr, count));
-    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
+    let len = self.jit_scalar_roots_len.get();
+    if len < self.jit_scalar_roots.len() {
+      self.jit_scalar_roots[len] = (ptr, count);
+    } else {
+      self.jit_scalar_roots.push((ptr, count));
+    }
+    self.jit_scalar_roots_len.set(len + 1);
   }
 
   /// Is the native call stack shallow enough for one more nested compiled
@@ -3407,7 +3418,7 @@ impl VM {
       ip: 0,
       base: new_base,
       dst_in_caller,
-      scalar_roots_mark: self.jit_scalar_roots.len(),
+      scalar_roots_mark: self.jit_scalar_roots_len.get(),
       compiled: false,
     });
   }
@@ -5984,10 +5995,11 @@ impl VM {
     // Each jit_scalar_roots entry is count ordinary Value slots with no
     // Obj/GcBox layer, so this is the same treatment as gc_pins just
     // above, reading through a raw pointer/count pair instead of a Vec.
-    for &(ptr, count) in &self.jit_scalar_roots {
-      // SAFETY: every entry is live for as long as its owning CallFrame is
-      // still on self.frames, and every frame on self.frames right now is
-      // by definition still executing.
+    for &(ptr, count) in &self.jit_scalar_roots[..self.jit_scalar_roots_len.get()] {
+      // SAFETY: every entry below the live count belongs to a frame still
+      // on self.frames, and every frame on self.frames right now is by
+      // definition still executing. Entries above it are retired: their
+      // stack memory is gone, so they must not be walked.
       let slice = unsafe { std::slice::from_raw_parts(ptr, count) };
       for &v in slice {
         Self::mark_root(v, &mut worklist);
@@ -6101,10 +6113,10 @@ impl VM {
     }
     // Same treatment as the gc_pins loop above: each entry is count live
     // ordinary Value slots, forwarded in place like any other root.
-    for &(ptr, count) in &self.jit_scalar_roots {
-      // SAFETY: every entry is live for as long as its owning CallFrame is
-      // still on self.frames, and every frame on self.frames right now is
-      // by definition still executing.
+    for &(ptr, count) in &self.jit_scalar_roots[..self.jit_scalar_roots_len.get()] {
+      // SAFETY: as in the marking scan, and doubly so here: this one
+      // WRITES the forwarded pointer back through ptr, so walking a
+      // retired entry would scribble into a returned frame's stack.
       let slice = unsafe { std::slice::from_raw_parts_mut(ptr, count) };
       for v in slice {
         Self::forward_slot(&mut self.heap, v, &mut worklist);
@@ -6527,10 +6539,9 @@ impl VM {
       .frames
       .get(handler.frame_depth)
       .map(|f| f.scalar_roots_mark)
-      .unwrap_or(self.jit_scalar_roots.len());
+      .unwrap_or(self.jit_scalar_roots_len.get());
     self.frames.truncate(handler.frame_depth);
-    self.jit_scalar_roots.truncate(scalar_roots_mark);
-    self.jit_scalar_roots_len.set(self.jit_scalar_roots.len());
+    self.jit_scalar_roots_len.set(scalar_roots_mark);
     let top = self.frames.last_mut().expect("catch handler left no frame");
     top.ip = handler.resume_ip;
     let top_base = top.base;

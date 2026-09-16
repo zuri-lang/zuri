@@ -3516,7 +3516,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Pops `VM::frames`' own top entry and restores `VM::
   /// jit_scalar_roots_len` to what it held before that frame was
-  /// pushed; the exact two-step `VM::pop_frame_inner` does, inlined.
+  /// pushed, retiring every scalar root the frame registered. That one
+  /// store IS the retirement: `jit_scalar_roots_len` is the
+  /// authoritative live count and the vector behind it is only
+  /// backing store, which is what lets this path do the job without
+  /// calling into the VM at all.
   /// Shared by `emit_inline_frame_finish` and
   /// `emit_inline_construct_finish`, which differ only in what they do
   /// with the frame's own former caller-return-value slot afterward.
