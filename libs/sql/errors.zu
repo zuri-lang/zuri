@@ -33,9 +33,10 @@ class SqlError < Error {
    * The engine's own error code, as the engine spells it.
    *
    * A number for SQLite (an extended result code, such as `2067` for a
-   * unique constraint), a string for PostgreSQL (the SQLSTATE, such as
-   * `'23505'`). `nil` when the error came from `sql` itself rather than
-   * from an engine.
+   * unique constraint) and for MySQL (its own error number, such as
+   * `1062` for a duplicate key), a string for PostgreSQL (the SQLSTATE,
+   * such as `'23505'`). `nil` when the error came from `sql` itself
+   * rather than from an engine.
    *
    * @default nil
    */
@@ -44,17 +45,17 @@ class SqlError < Error {
   /**
    * The five character SQLSTATE, for engines that report one.
    *
-   * PostgreSQL always does. SQLite has no such concept and leaves this
-   * `nil`, which is why matching on an error class is the portable
-   * choice and matching on `sqlstate` is not.
+   * PostgreSQL and MySQL always do. SQLite has no such concept and
+   * leaves this `nil`, which is why matching on an error class is the
+   * portable choice and matching on `sqlstate` is not.
    *
    * @default nil
    */
   var sqlstate
 
   /**
-   * Name of the adapter that raised this, such as `'sqlite'` or
-   * `'postgres'`.
+   * Name of the adapter that raised this, such as `'sqlite'`,
+   * `'postgres'` or `'mysql'`.
    *
    * @default nil
    */

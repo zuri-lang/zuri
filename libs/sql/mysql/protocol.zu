@@ -1,0 +1,1107 @@
+/**
+ * @module protocol
+ *
+ * The MySQL client/server protocol: the handshake that opens a
+ * connection and the command exchange that runs everything after it.
+ *
+ * A connection is strictly one command at a time. The client sends a
+ * command packet, the server answers with one of three shapes, and
+ * nothing else may be sent until that answer is complete:
+ *
+ * | Answer | Shape |
+ * | - | - |
+ * | OK | The command did something and returned no rows. |
+ * | ERR | The command failed, with a number and a SQLSTATE. |
+ * | A result set | A column count, the columns, then the rows. |
+ *
+ * ### Why the end of a result set is awkward
+ *
+ * A row and the marker that ends the rows are told apart by their
+ * first byte, and `0xfe` means both "the rows are over" and "a length
+ * encoded integer of eight bytes follows". The length decides: a
+ * genuine end marker is short, and a row that happens to start `0xfe`
+ * is not. Servers that negotiate `CLIENT_DEPRECATE_EOF` send an OK
+ * packet there instead, which is what this adapter asks for, but the
+ * ambiguity has to be handled anyway for the ones that do not.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { ConnectionError, ProtocolError, AuthenticationError }
+import .auth
+import .errors { raise_for }
+import .packets { Cursor, PacketStream, Writer }
+import .types {
+  UNSIGNED_FLAG, decode_binary, decode_text, parameter_type,
+  write_parameter,
+}
+
+/** What the client asks for and what the server offers. */
+var CAPABILITIES = {
+  LONG_PASSWORD: 0x00000001,
+  FOUND_ROWS: 0x00000002,
+  LONG_FLAG: 0x00000004,
+  CONNECT_WITH_DB: 0x00000008,
+  COMPRESS: 0x00000020,
+  LOCAL_FILES: 0x00000080,
+  IGNORE_SPACE: 0x00000100,
+  PROTOCOL_41: 0x00000200,
+  INTERACTIVE: 0x00000400,
+  SSL: 0x00000800,
+  TRANSACTIONS: 0x00002000,
+  SECURE_CONNECTION: 0x00008000,
+  MULTI_STATEMENTS: 0x00010000,
+  MULTI_RESULTS: 0x00020000,
+  PS_MULTI_RESULTS: 0x00040000,
+  PLUGIN_AUTH: 0x00080000,
+  CONNECT_ATTRS: 0x00100000,
+  PLUGIN_AUTH_LENENC_DATA: 0x00200000,
+  SESSION_TRACK: 0x00800000,
+  DEPRECATE_EOF: 0x01000000,
+  ZSTD: 0x04000000,
+}
+
+/** What the server says about the session after each command. */
+var STATUS = {
+  IN_TRANSACTION: 0x0001,
+  AUTOCOMMIT: 0x0002,
+  MORE_RESULTS: 0x0008,
+  CURSOR_EXISTS: 0x0040,
+  LAST_ROW_SENT: 0x0080,
+}
+
+/** The commands this adapter sends. */
+var COMMANDS = {
+  QUIT: 0x01,
+  INIT_DB: 0x02,
+  QUERY: 0x03,
+  PING: 0x0e,
+  STMT_PREPARE: 0x16,
+  STMT_EXECUTE: 0x17,
+  STMT_SEND_LONG_DATA: 0x18,
+  STMT_CLOSE: 0x19,
+  STMT_RESET: 0x1a,
+  SET_OPTION: 0x1b,
+  STMT_FETCH: 0x1c,
+  RESET_CONNECTION: 0x1f,
+}
+
+/** Asks the server to keep the result open rather than send it all. */
+var CURSOR_READ_ONLY = 0x01
+
+/** No cursor: the whole result comes back at once. */
+var CURSOR_NONE = 0x00
+
+# utf8mb4_general_ci, which every server since 5.5 has.
+var _CHARSET = 45
+
+# The client never needs a packet larger than the protocol allows.
+var _MAX_PACKET = 0xffffff
+
+/**
+ * One connection's conversation with the server.
+ *
+ * @internal Used by `MySqlConnection`, which is the class with a
+ *    public API.
+ */
+class Protocol {
+  /**
+   * What the server said about itself in its greeting.
+   * @type dict
+   */
+  var parameters = {}
+
+  var _stream
+  var _capabilities = 0
+  var _server_capabilities = 0
+  var _status = 0
+  var _warnings = 0
+  var _connection_id = 0
+  var _version = ''
+  var _flavor = 'mysql'
+  var _closed = false
+  var _private = false
+  var _local_infile = false
+
+  /**
+   * @param PacketStream stream
+   */
+  @new(stream) {
+    self._stream = stream
+  }
+
+  /**
+   * The id the server gave this connection, which is what `KILL`
+   * names.
+   *
+   * @returns number
+   */
+  connection_id() {
+    return self._connection_id
+  }
+
+  /**
+   * The server's version string, as it reported it.
+   *
+   * @returns string
+   */
+  server_version() {
+    return self._version
+  }
+
+  /**
+   * Which server this is: `'mysql'` or `'mariadb'`.
+   *
+   * MariaDB reports a version beginning `5.5.5-` for the benefit of
+   * clients that predate it, with its real version after the dash.
+   *
+   * @returns string
+   */
+  flavor() {
+    return self._flavor
+  }
+
+  /**
+   * Whether a transaction is open, as the server last reported.
+   *
+   * @returns bool
+   */
+  in_transaction() {
+    return (self._status & STATUS.IN_TRANSACTION) != 0
+  }
+
+  /**
+   * Whether another result follows the one just read.
+   *
+   * @returns bool
+   */
+  more_results() {
+    return (self._status & STATUS.MORE_RESULTS) != 0
+  }
+
+  /**
+   * Warnings the last command raised.
+   *
+   * @returns number
+   */
+  warnings() {
+    return self._warnings
+  }
+
+  /**
+   * Whether the connection is closed.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  /**
+   * Whether the connection cannot be read by anyone in between, which
+   * is what decides whether a plugin may send the password.
+   *
+   * @returns bool
+   */
+  is_private() {
+    return self._private
+  }
+
+  /**
+   * Whether a capability was negotiated.
+   *
+   * @param number flag
+   * @returns bool
+   */
+  has(flag: number) {
+    return (self._capabilities & flag) != 0
+  }
+
+  /**
+   * Opens the connection: reads the greeting, negotiates, upgrades to
+   * TLS if asked, and authenticates.
+   *
+   * @param dict options
+   * @param function|nil upgrade Called with the chosen capabilities
+   *    when TLS is to be started; returns the encrypted stream.
+   * @throws AuthenticationError, ConnectionError, ProtocolError
+   */
+  handshake(options: dict, upgrade) {
+    var greeting = self._read_greeting()
+
+    self._private = options.get('private', false)
+    self._local_infile = options.get('local_infile', false)
+
+    var wanted = self._wanted_capabilities(options, greeting)
+    self._capabilities = wanted
+
+    if (wanted & CAPABILITIES.SSL) != 0 {
+      self._send_ssl_request(wanted)
+      self._stream.upgrade(upgrade(wanted))
+      self._private = true
+    }
+
+    var plugin = greeting.plugin
+    var scramble = greeting.scramble
+    var password = options.get('password', '') or ''
+
+    self._send_handshake_response(options, wanted, plugin, scramble, password)
+    self._finish_authentication(plugin, scramble, password, options)
+
+    # Compression only begins once the server has accepted the
+    # connection; the handshake itself is never compressed.
+    if (wanted & CAPABILITIES.ZSTD) != 0 {
+      self._stream.compress_with('zstd', options.get('compress_level', 3))
+    } else if (wanted & CAPABILITIES.COMPRESS) != 0 {
+      self._stream.compress_with('zlib', 6)
+    }
+  }
+
+  /**
+   * Sends a command with no arguments beyond its byte.
+   *
+   * @param number command
+   * @param bytes|nil payload
+   */
+  send_command(command: number, payload) {
+    self._require_open()
+    self._stream.reset_sequence()
+
+    var writer = Writer()
+    writer.byte(command)
+
+    if payload != nil {
+      writer.raw(payload)
+    }
+
+    self._stream.write_packet(writer.payload())
+  }
+
+  /**
+   * Runs a statement as text and reads whatever it produces.
+   *
+   * @param string sql
+   * @returns dict `{ kind, ... }` as `read_response()` describes.
+   */
+  query(sql: string) {
+    self.send_command(COMMANDS.QUERY, sql.to_bytes())
+
+    return self.read_response(sql, false)
+  }
+
+  /**
+   * Reads the answer to a command that has just been sent.
+   *
+   * @param string|nil sql The statement, for the error if one comes.
+   * @param bool binary Whether rows arrive in the binary encoding.
+   * @returns dict Either `{ kind: 'ok', affected_rows, last_insert_id,
+   *    warnings, info }` or `{ kind: 'rows', columns, rows }`.
+   */
+  read_response(sql, binary: bool) {
+    var packet = self._read(sql)
+    var first = packet.length() > 0 ? packet[0] : 0
+
+    if first == 0x00 {
+      var result = self._read_ok(Cursor(packet).skip(1))
+      self._drain(binary)
+
+      return result
+    }
+
+    # The server wants a file from this machine before it can carry on.
+    if first == 0xfb {
+      return self._answer_local_infile(packet, sql)
+    }
+
+    var count = Cursor(packet).lenenc_int()
+    var columns = self.read_columns(count, false)
+    var rows = []
+    var row = self.read_row(columns, binary, sql)
+
+    while row != nil {
+      rows.append(row)
+      row = self.read_row(columns, binary, sql)
+    }
+
+    self._drain(binary)
+
+    return { kind: 'rows', columns, rows }
+  }
+
+  # Reads and discards whatever else the statement produced.
+  #
+  # One statement can answer with more than one result: a stored
+  # procedure sends a result set per select and an OK at the end. The
+  # contract above hands back a single result, so the rest have to be
+  # read anyway. Leaving them would not lose them, it would give them
+  # to the next statement, which would then answer with this
+  # statement's rows.
+  _drain(binary: bool) {
+    while self.more_results() {
+      var packet = self._read(nil)
+      var first = packet.length() > 0 ? packet[0] : 0
+
+      if first == 0x00 {
+        self._read_ok(Cursor(packet).skip(1))
+
+        continue
+      }
+
+      var columns = self.read_columns(Cursor(packet).lenenc_int(), false)
+      var row = self.read_row(columns, binary, nil)
+
+      while row != nil {
+        row = self.read_row(columns, binary, nil)
+      }
+    }
+  }
+
+  /**
+   * Reads the column definitions of a result that has just started.
+   *
+   * @param number count
+   * @returns list[dict]
+   */
+  read_columns(count, trailer) {
+    var columns = []
+
+    for _ in 0..count {
+      columns.append(self._read_column(self._read(nil)))
+    }
+
+    # A plain result set runs its rows straight on from the column
+    # definitions once EOF packets are deprecated, so there is nothing
+    # to consume. A cursor has no rows following, so its metadata is
+    # always closed off and that packet carries the status saying the
+    # cursor is open.
+    if trailer or !self.has(CAPABILITIES.DEPRECATE_EOF) {
+      self._read_trailer(self._read(nil))
+    }
+
+    return columns
+  }
+
+  /**
+   * Reads the next row, or nil once the result is over.
+   *
+   * @param list columns
+   * @param bool binary
+   * @param string|nil sql
+   * @returns list|nil
+   */
+  read_row(columns: list, binary: bool, sql) {
+    var packet = self._read(sql)
+    var first = packet.length() > 0 ? packet[0] : 0
+
+    if first == 0xfe and packet.length() < 9 {
+      self._read_trailer(packet)
+
+      return nil
+    }
+
+    return binary ?
+      self._read_binary_row(packet, columns) :
+      self._read_text_row(packet, columns)
+  }
+
+  /**
+   * Compiles a statement on the server.
+   *
+   * @param string sql
+   * @returns dict `{ id, parameters, columns }`
+   */
+  prepare(sql: string) {
+    self.send_command(COMMANDS.STMT_PREPARE, sql.to_bytes())
+
+    var packet = self._read(sql)
+
+    if packet.length() > 0 and packet[0] == 0xff {
+      self._raise(packet, sql)
+    }
+
+    var cursor = Cursor(packet).skip(1)
+    var id = cursor.int4()
+    var column_count = cursor.int2()
+    var parameter_count = cursor.int2()
+
+    var parameters = parameter_count > 0 ? self.read_columns(parameter_count, false) : []
+    var columns = column_count > 0 ? self.read_columns(column_count, false) : []
+
+    return { id, parameters, columns, parameter_count }
+  }
+
+  /**
+   * Runs a prepared statement.
+   *
+   * @param number id
+   * @param list values
+   * @param number cursor_type `CURSOR_NONE` or `CURSOR_READ_ONLY`.
+   * @param list columns The statement's columns, known from preparing
+   *    it, which a cursor needs before any row arrives.
+   * @param string|nil sql
+   * @returns dict
+   */
+  execute(id: number, values: list, cursor_type: number, columns: list, sql) {
+    self.send_command(COMMANDS.STMT_EXECUTE, self._execute_payload(id, values, cursor_type))
+
+    if cursor_type == CURSOR_NONE {
+      return self.read_response(sql, true)
+    }
+
+    # A cursor answers with the column definitions and nothing else;
+    # the rows come later, a batch at a time.
+    var packet = self._read(sql)
+    var first = packet.length() > 0 ? packet[0] : 0
+
+    if first == 0x00 {
+      return self._read_ok(Cursor(packet).skip(1))
+    }
+
+    var count = Cursor(packet).lenenc_int()
+
+    return { kind: 'cursor', columns: self.read_columns(count, true) }
+  }
+
+  /**
+   * Asks an open cursor for more rows.
+   *
+   * @param number id
+   * @param list columns
+   * @param number count
+   * @returns dict `{ rows, done }`
+   */
+  fetch(id: number, columns: list, count: number) {
+    var writer = Writer()
+    writer.int4(id).int4(count)
+
+    self.send_command(COMMANDS.STMT_FETCH, writer.payload())
+
+    var rows = []
+
+    while true {
+      var packet = self._read(nil)
+      var first = packet.length() > 0 ? packet[0] : 0
+
+      if first == 0xff {
+        self._raise(packet, nil)
+      }
+
+      if first == 0xfe and packet.length() < 9 {
+        self._read_trailer(packet)
+
+        return {
+          rows,
+          done: (self._status & STATUS.LAST_ROW_SENT) != 0,
+        }
+      }
+
+      rows.append(self._read_binary_row(packet, columns))
+    }
+  }
+
+  /**
+   * Releases a prepared statement. The server sends nothing back.
+   *
+   * @param number id
+   */
+  close_statement(id: number) {
+    if self._closed {
+      return
+    }
+
+    var writer = Writer()
+    writer.int4(id)
+
+    catch {
+      self.send_command(COMMANDS.STMT_CLOSE, writer.payload())
+    } as _error {
+      # A statement on a connection that has already failed needs no
+      # releasing, and saying so would replace a useful error.
+    }
+  }
+
+  /**
+   * Discards a prepared statement's state without releasing it.
+   *
+   * @param number id
+   */
+  reset_statement(id: number) {
+    var writer = Writer()
+    writer.int4(id)
+
+    self.send_command(COMMANDS.STMT_RESET, writer.payload())
+    self.read_response(nil, false)
+  }
+
+  /**
+   * The smallest round trip the protocol has.
+   *
+   * @returns bool
+   */
+  ping() {
+    self.send_command(COMMANDS.PING, nil)
+    self.read_response(nil, false)
+
+    return true
+  }
+
+  /**
+   * Returns the session to the state it had when it opened, which is
+   * what a pool wants before handing a connection to someone else.
+   */
+  reset_connection() {
+    self.send_command(COMMANDS.RESET_CONNECTION, nil)
+    self.read_response(nil, false)
+  }
+
+  /**
+   * Says goodbye and closes the stream.
+   */
+  quit() {
+    if self._closed {
+      return
+    }
+
+    catch {
+      self.send_command(COMMANDS.QUIT, nil)
+    } as _error {
+      # The server may have gone already, which is not worth reporting
+      # from a close.
+    }
+
+    self._closed = true
+    self._stream.close()
+  }
+
+  # Reads the server's opening greeting, which is the only packet that
+  # arrives before anything has been sent.
+  _read_greeting() {
+    var packet = self._stream.read_packet()
+
+    if packet.length() > 0 and packet[0] == 0xff {
+      self._raise(packet, nil)
+    }
+
+    var cursor = Cursor(packet)
+    var version = cursor.byte()
+
+    if version != 10 {
+      raise ProtocolError(
+        'the server speaks handshake version ${version}; this adapter ' +
+        'speaks version 10',
+        { driver: 'mysql' }
+      )
+    }
+
+    self._version = cursor.cstring()
+    self._connection_id = cursor.int4()
+
+    # MariaDB announces itself as 5.5.5 so that clients written before
+    # it existed do not refuse the version, with its own after the dash.
+    if self._version.starts_with('5.5.5-') {
+      self._flavor = 'mariadb'
+      self._version = self._version[6, self._version.length()]
+    } else if self._version.lower().index_of('mariadb') > -1 {
+      self._flavor = 'mariadb'
+    }
+
+    var scramble = cursor.fixed(8)
+    cursor.skip(1)
+
+    var low = cursor.int2()
+    var charset = cursor.byte()
+    self._status = cursor.int2()
+    var high = cursor.int2()
+
+    self._server_capabilities = low | (high << 16)
+
+    var scramble_length = cursor.byte()
+    cursor.skip(10)
+
+    # The rest of the scramble, whose length the server reports one too
+    # long, and which this adapter takes without the trailing zero.
+    if (self._server_capabilities & CAPABILITIES.SECURE_CONNECTION) != 0 {
+      var rest = scramble_length > 8 ? scramble_length - 8 : 12
+      scramble = scramble + cursor.fixed(rest.max(13) - 1)
+      cursor.skip(1)
+    }
+
+    var plugin = auth.NATIVE
+
+    if (self._server_capabilities & CAPABILITIES.PLUGIN_AUTH) != 0 {
+      plugin = cursor.cstring()
+    }
+
+    self.parameters.set('server_version', self._version)
+    self.parameters.set('connection_id', self._connection_id)
+    self.parameters.set('flavor', self._flavor)
+    self.parameters.set('charset', charset)
+
+    return { scramble, plugin }
+  }
+
+  # What this adapter asks for, kept to what the server also offers.
+  _wanted_capabilities(options: dict, greeting: dict) {
+    var wanted = CAPABILITIES.PROTOCOL_41 | CAPABILITIES.SECURE_CONNECTION |
+      CAPABILITIES.LONG_PASSWORD | CAPABILITIES.LONG_FLAG |
+      CAPABILITIES.TRANSACTIONS | CAPABILITIES.PLUGIN_AUTH |
+      CAPABILITIES.PLUGIN_AUTH_LENENC_DATA | CAPABILITIES.MULTI_RESULTS |
+      CAPABILITIES.PS_MULTI_RESULTS | CAPABILITIES.DEPRECATE_EOF |
+      CAPABILITIES.SESSION_TRACK | CAPABILITIES.CONNECT_ATTRS
+
+    if options.get('database', nil) {
+      wanted |= CAPABILITIES.CONNECT_WITH_DB
+    }
+
+    if options.get('multiple_statements', false) {
+      wanted |= CAPABILITIES.MULTI_STATEMENTS
+    }
+
+    if options.get('local_infile', false) {
+      wanted |= CAPABILITIES.LOCAL_FILES
+    }
+
+    if options.get('found_rows', false) {
+      wanted |= CAPABILITIES.FOUND_ROWS
+    }
+
+    if options.get('tls', false) {
+      wanted |= CAPABILITIES.SSL
+    }
+
+    var compression = options.get('compression', 'none')
+
+    if compression == 'zstd' {
+      wanted |= CAPABILITIES.ZSTD
+    } else if compression == 'zlib' {
+      wanted |= CAPABILITIES.COMPRESS
+    }
+
+    var agreed = wanted & self._server_capabilities
+
+    # A caller that insisted on TLS and cannot have it is told so
+    # rather than quietly given a readable connection. One that merely
+    # preferred it carries on without.
+    if (agreed & CAPABILITIES.SSL) == 0 and options.get('tls_required', false) {
+      raise ConnectionError(
+        'this server does not offer tls', { driver: 'mysql' }
+      )
+    }
+
+    if compression != 'none' and (agreed & (CAPABILITIES.ZSTD | CAPABILITIES.COMPRESS)) == 0 {
+      raise ConnectionError(
+        'this server does not offer ${compression} compression',
+        { driver: 'mysql' }
+      )
+    }
+
+    return agreed
+  }
+
+  # The first 32 bytes of a handshake response, which is all the server
+  # reads before starting TLS.
+  _send_ssl_request(capabilities: number) {
+    var writer = Writer()
+    writer.int4(capabilities).int4(_MAX_PACKET).byte(_CHARSET).zeros(23)
+
+    self._stream.write_packet(writer.payload())
+  }
+
+  _send_handshake_response(options: dict, capabilities: number, plugin: string,
+    scramble, password: string) {
+    var response = auth.response_for(plugin, password, scramble, self._private)
+
+    var writer = Writer()
+    writer.int4(capabilities)
+      .int4(_MAX_PACKET)
+      .byte(_CHARSET)
+      .zeros(23)
+      .cstring(options.get('user', '') or '')
+
+    if (capabilities & CAPABILITIES.PLUGIN_AUTH_LENENC_DATA) != 0 {
+      writer.lenenc_string(response)
+    } else {
+      writer.byte(response.length()).raw(response)
+    }
+
+    if (capabilities & CAPABILITIES.CONNECT_WITH_DB) != 0 {
+      writer.cstring(options.get('database', '') or '')
+    }
+
+    if (capabilities & CAPABILITIES.PLUGIN_AUTH) != 0 {
+      writer.cstring(plugin)
+    }
+
+    if (capabilities & CAPABILITIES.CONNECT_ATTRS) != 0 {
+      writer.lenenc_string(self._attributes(options))
+    }
+
+    if (capabilities & CAPABILITIES.ZSTD) != 0 {
+      writer.byte(options.get('compress_level', 3))
+    }
+
+    self._stream.write_packet(writer.payload())
+  }
+
+  # The name and value pairs a server shows in performance_schema, so a
+  # connection can be recognised there.
+  _attributes(options: dict) {
+    var writer = Writer()
+
+    writer.lenenc_string('_client_name').lenenc_string('zuri')
+    writer.lenenc_string('_client_version').lenenc_string('1')
+    writer.lenenc_string('program_name')
+      .lenenc_string(options.get('program', 'zuri') or 'zuri')
+
+    return writer.payload()
+  }
+
+  # Works through whatever else the server asks for until it either
+  # accepts the connection or refuses it.
+  _finish_authentication(plugin: string, scramble, password: string, options: dict) {
+    var current = plugin
+    var nonce = scramble
+
+    while true {
+      var packet = self._read(nil)
+      var first = packet.length() > 0 ? packet[0] : 0
+
+      if first == 0x00 {
+        self._read_ok(Cursor(packet).skip(1))
+
+        return
+      }
+
+      if first == 0xff {
+        self._raise(packet, nil)
+      }
+
+      # The server wants a different plugin than the one it named in
+      # its greeting, and sends a fresh scramble with it.
+      if first == 0xfe {
+        var cursor = Cursor(packet).skip(1)
+        current = cursor.cstring()
+        nonce = cursor.rest()
+
+        if nonce.length() > 0 and nonce[nonce.length() - 1] == 0 {
+          nonce = nonce[0, nonce.length() - 1]
+        }
+
+        self._send_auth(auth.response_for(current, password, nonce, self._private))
+
+        continue
+      }
+
+      if first == 0x01 {
+        self._continue_authentication(current, packet, password, nonce, options)
+
+        continue
+      }
+
+      raise ProtocolError(
+        'the server sent an unexpected packet while authenticating',
+        { driver: 'mysql' }
+      )
+    }
+  }
+
+  # The plugin specific middle of an exchange, which only the two RSA
+  # plugins have.
+  _continue_authentication(plugin: string, packet, password: string, scramble,
+    options: dict) {
+    var body = packet[1, packet.length()]
+
+    if plugin == auth.CACHING_SHA2 and body.length() == 1 {
+      var marker = body[0]
+
+      # 3 means the server had this account's hash cached and the fast
+      # exchange has already succeeded; the OK packet follows.
+      if marker == 3 {
+        return
+      }
+
+      if marker != 4 {
+        raise ProtocolError(
+          'the server asked for something this adapter does not ' +
+          'understand while authenticating',
+          { driver: 'mysql' }
+        )
+      }
+
+      # 4 means it did not, and needs the password itself.
+      if self._private {
+        self._send_auth(auth.clear_password(password))
+
+        return
+      }
+
+      var key = options.get('public_key', nil)
+
+      if key == nil {
+        self._send_auth(bytes([2]))
+        key = self._read_public_key()
+      }
+
+      self._send_auth(auth.encrypt_password(password, scramble, key))
+
+      return
+    }
+
+    # sha256_password answers a public key request the same way, having
+    # already asked for it as its first response.
+    self._send_auth(auth.encrypt_password(password, scramble, body.to_string()))
+  }
+
+  _read_public_key() {
+    var packet = self._read(nil)
+
+    if packet.length() < 2 or packet[0] != 0x01 {
+      raise AuthenticationError(
+        'the server did not send the public key this exchange needs',
+        { driver: 'mysql' }
+      )
+    }
+
+    return packet[1, packet.length()].to_string()
+  }
+
+  _send_auth(payload) {
+    self._stream.write_packet(payload)
+  }
+
+  # The server asked for a file from this machine. Refusing still means
+  # answering, because the server waits for the file either way and a
+  # silent client would leave the connection stuck.
+  _answer_local_infile(packet, sql) {
+    var name = packet[1, packet.length()].to_string()
+
+    if !self._local_infile {
+      self._stream.write_packet(bytes(0))
+      self.read_response(sql, false)
+
+      raise ProtocolError(
+        'the server asked this client to send the file ${name}, which ' +
+        'is refused; pass local_infile to allow it, and only to a ' +
+        'server you trust with the files this process can read',
+        { driver: 'mysql' }
+      )
+    }
+
+    var reader = self._local_infile
+
+    if !is_function(reader) {
+      self._stream.write_packet(bytes(0))
+      self.read_response(sql, false)
+
+      raise ProtocolError(
+        'local_infile has to be a function taking a file name and ' +
+        'returning its contents, not ${typeof(reader)}',
+        { driver: 'mysql' }
+      )
+    }
+
+    catch {
+      var content = reader(name)
+
+      if content != nil and content.length() > 0 {
+        self._stream.write_packet(is_bytes(content) ? content : content.to_bytes())
+      }
+    } as error {
+      self._stream.write_packet(bytes(0))
+      self.read_response(sql, false)
+
+      raise ProtocolError(
+        'the file ${name} could not be sent: ' + error.message,
+        { driver: 'mysql' }
+      )
+    }
+
+    # An empty packet says the file is over.
+    self._stream.write_packet(bytes(0))
+
+    return self.read_response(sql, false)
+  }
+
+  _read_ok(cursor) {
+    var affected = cursor.lenenc_int()
+    var insert_id = cursor.lenenc_int()
+
+    if self.has(CAPABILITIES.PROTOCOL_41) {
+      self._status = cursor.int2()
+      self._warnings = cursor.int2()
+    }
+
+    return {
+      kind: 'ok',
+      affected_rows: affected == nil ? 0 : affected,
+      last_insert_id: insert_id == nil or insert_id == 0 ? nil : insert_id,
+      warnings: self._warnings,
+      info: cursor.at_end() ? '' : cursor.rest().to_string(),
+    }
+  }
+
+  # The packet that ends a run of rows, which is an OK packet on a
+  # server that deprecated the older marker and the older marker
+  # otherwise.
+  _read_trailer(packet) {
+    var cursor = Cursor(packet).skip(1)
+
+    if self.has(CAPABILITIES.DEPRECATE_EOF) {
+      cursor.lenenc_int()
+      cursor.lenenc_int()
+
+      if self.has(CAPABILITIES.PROTOCOL_41) {
+        self._status = cursor.int2()
+        self._warnings = cursor.int2()
+      }
+
+      return
+    }
+
+    if self.has(CAPABILITIES.PROTOCOL_41) {
+      self._warnings = cursor.int2()
+      self._status = cursor.int2()
+    }
+  }
+
+  _read_column(packet) {
+    var cursor = Cursor(packet)
+
+    cursor.lenenc_bytes()
+    var schema = cursor.lenenc_string()
+    var table = cursor.lenenc_string()
+    var org_table = cursor.lenenc_string()
+    var name = cursor.lenenc_string()
+    var org_name = cursor.lenenc_string()
+
+    cursor.lenenc_int()
+
+    var charset = cursor.int2()
+    var length = cursor.int4()
+    var type = cursor.byte()
+    var flags = cursor.int2()
+    var decimals = cursor.byte()
+
+    return {
+      name,
+      org_name,
+      table,
+      org_table,
+      schema,
+      charset,
+      length,
+      type,
+      flags,
+      decimals,
+    }
+  }
+
+  _read_text_row(packet, columns: list) {
+    var cursor = Cursor(packet)
+    var row = []
+
+    for column in columns {
+      row.append(decode_text(cursor.lenenc_bytes(), column))
+    }
+
+    return row
+  }
+
+  # A binary row leads with a bitmap of which values are NULL, offset by
+  # two bits that the protocol reserves.
+  _read_binary_row(packet, columns: list) {
+    var cursor = Cursor(packet).skip(1)
+    var size = ((columns.length() + 7 + 2) / 8).floor()
+    var nulls = cursor.fixed(size)
+    var row = []
+
+    iter var index = 0; index < columns.length(); index++ {
+      var bit = index + 2
+      var absent = (nulls[(bit / 8).floor()] & (1 << (bit % 8))) != 0
+
+      row.append(absent ? nil : decode_binary(cursor, columns[index]))
+    }
+
+    return row
+  }
+
+  # The body of a COM_STMT_EXECUTE: which parameters are NULL, then
+  # every parameter's type, then every parameter's value.
+  _execute_payload(id: number, values: list, cursor_type: number) {
+    var writer = Writer()
+    writer.int4(id).byte(cursor_type).int4(1)
+
+    if values.is_empty() {
+      return writer.payload()
+    }
+
+    var size = ((values.length() + 7) / 8).floor()
+    var nulls = bytes(size)
+
+    iter var index = 0; index < values.length(); index++ {
+      if values[index] == nil {
+        nulls[(index / 8).floor()] = nulls[(index / 8).floor()] | (1 << (index % 8))
+      }
+    }
+
+    writer.raw(nulls)
+
+    # 1 says the types that follow are being sent this time round. They
+    # could be left out when re-running a statement with the same
+    # types, but sending them always costs two bytes each and removes a
+    # way for the two ends to disagree.
+    writer.byte(1)
+
+    var kinds = values.map(@(value) {
+      return parameter_type(value)
+    })
+
+    for kind in kinds {
+      writer.byte(kind.type).byte(kind.unsigned ? UNSIGNED_FLAG : 0)
+    }
+
+    for value in values {
+      write_parameter(writer, value)
+    }
+
+    return writer.payload()
+  }
+
+  _read(sql) {
+    self._require_open()
+
+    var packet = self._stream.read_packet()
+
+    if packet.length() > 0 and packet[0] == 0xff {
+      self._raise(packet, sql)
+    }
+
+    return packet
+  }
+
+  _raise(packet, sql) {
+    var cursor = Cursor(packet).skip(1)
+    var code = cursor.int2()
+    var sqlstate = nil
+
+    # The marker is a literal '#', and only a server speaking the 4.1
+    # protocol sends one.
+    if cursor.peek() == 35 {
+      cursor.skip(1)
+      sqlstate = cursor.fixed(5).to_string()
+    }
+
+    raise_for(
+      { code, sqlstate, message: cursor.rest().to_string() },
+      sql
+    )
+  }
+
+  _require_open() {
+    if self._closed {
+      raise ConnectionError(
+        'this connection has been closed', { driver: 'mysql' }
+      )
+    }
+  }
+}

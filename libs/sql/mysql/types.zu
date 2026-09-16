@@ -1,0 +1,651 @@
+/**
+ * @module types
+ *
+ * What MySQL's column types mean in Zuri, in both directions and in
+ * both of the protocol's two encodings.
+ *
+ * ### Two encodings for the same values
+ *
+ * A statement sent as text answers with every value as text, however
+ * it is declared: an `INT` arrives as `'42'`. A prepared statement
+ * answers in the binary encoding instead, where an `INT` is four
+ * bytes. Both reach the same Zuri values, and the two paths are
+ * checked against each other rather than written to agree by hand:
+ * dates and times decode by way of the same text form whichever
+ * encoding carried them.
+ *
+ * ### Where a type has no Zuri counterpart
+ *
+ * `BIT` and `GEOMETRY` arrive as bytes, since neither has a shape Zuri
+ * could represent without inventing one. `SET` arrives as the comma
+ * separated text the server stores rather than as a list, because a
+ * list going back in would be written as JSON and the column would
+ * quietly stop matching.
+ *
+ * ### Time zones
+ *
+ * A `DATETIME` has no zone and a `TIMESTAMP` is converted to the
+ * session's. The adapter puts the session in UTC when it connects, so
+ * both arrive as UTC and a `date.Date` written back converts from
+ * whatever offset it carries. Turning that off is what the
+ * `time_zone` connection option is for.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+import struct
+
+import ..decimal { Decimal, decimal }
+import ..errors { QueryError }
+import ..types {
+  Time, is_interval, is_structured, is_temporal, from_json, to_json,
+  integer_from_text, parse_time,
+}
+
+/**
+ * The type byte the server puts on a column, and that a parameter
+ * carries back.
+ */
+var TYPES = {
+  DECIMAL: 0x00,
+  TINY: 0x01,
+  SHORT: 0x02,
+  LONG: 0x03,
+  FLOAT: 0x04,
+  DOUBLE: 0x05,
+  NULL: 0x06,
+  TIMESTAMP: 0x07,
+  LONGLONG: 0x08,
+  INT24: 0x09,
+  DATE: 0x0a,
+  TIME: 0x0b,
+  DATETIME: 0x0c,
+  YEAR: 0x0d,
+  VARCHAR: 0x0f,
+  BIT: 0x10,
+  JSON: 0xf5,
+  NEWDECIMAL: 0xf6,
+  ENUM: 0xf7,
+  SET: 0xf8,
+  TINY_BLOB: 0xf9,
+  MEDIUM_BLOB: 0xfa,
+  LONG_BLOB: 0xfb,
+  BLOB: 0xfc,
+  VAR_STRING: 0xfd,
+  STRING: 0xfe,
+  GEOMETRY: 0xff,
+}
+
+/**
+ * What the server says about a column beyond its type.
+ */
+var FLAGS = {
+  NOT_NULL: 1,
+  PRIMARY_KEY: 2,
+  UNIQUE_KEY: 4,
+  MULTIPLE_KEY: 8,
+  BLOB: 16,
+  UNSIGNED: 32,
+  ZEROFILL: 64,
+  BINARY: 128,
+  ENUM: 256,
+  AUTO_INCREMENT: 512,
+  TIMESTAMP: 1024,
+  SET: 2048,
+  NUM: 32768,
+}
+
+/**
+ * The collation id that means a column holds bytes rather than text.
+ * It is the only thing separating `BLOB` from `TEXT` on the wire, and
+ * `BINARY` from `CHAR`.
+ */
+var BINARY_CHARSET = 63
+
+/**
+ * The flag byte that goes with a parameter's type to mark it unsigned.
+ */
+var UNSIGNED_FLAG = 0x80
+
+# The largest value each width holds, for turning an unsigned reading
+# into a signed one.
+var _WIDTHS = {
+  1: 256,
+  2: 65536,
+  3: 16777216,
+  4: 4294967296,
+}
+
+var _SIGN_LIMIT = 9223372036854775808n
+var _WRAP = 18446744073709551616n
+var _EXACT = 9007199254740992n
+
+var _NAMES = {
+  0x00: 'decimal',
+  0x01: 'tinyint',
+  0x02: 'smallint',
+  0x03: 'int',
+  0x04: 'float',
+  0x05: 'double',
+  0x06: 'null',
+  0x07: 'timestamp',
+  0x08: 'bigint',
+  0x09: 'mediumint',
+  0x0a: 'date',
+  0x0b: 'time',
+  0x0c: 'datetime',
+  0x0d: 'year',
+  0x0f: 'varchar',
+  0x10: 'bit',
+  0xf5: 'json',
+  0xf6: 'decimal',
+  0xf7: 'enum',
+  0xf8: 'set',
+  0xf9: 'tinyblob',
+  0xfa: 'mediumblob',
+  0xfb: 'longblob',
+  0xfc: 'blob',
+  0xfd: 'varchar',
+  0xfe: 'char',
+  0xff: 'geometry',
+}
+
+# The text types and the byte types share type bytes, so which a column
+# is depends on its collation.
+var _BINARY_NAMES = {
+  0xf9: 'tinyblob',
+  0xfa: 'mediumblob',
+  0xfb: 'longblob',
+  0xfc: 'blob',
+  0xfd: 'varbinary',
+  0xfe: 'binary',
+}
+
+var _TEXT_NAMES = {
+  0xf9: 'tinytext',
+  0xfa: 'mediumtext',
+  0xfb: 'longtext',
+  0xfc: 'text',
+}
+
+/**
+ * Whether a column holds bytes rather than text.
+ *
+ * @param dict column
+ * @returns bool
+ */
+def is_binary(column: dict) {
+  return column.get('charset', 0) == BINARY_CHARSET
+}
+
+/**
+ * Whether a column's values are unsigned.
+ *
+ * @param dict column
+ * @returns bool
+ */
+def is_unsigned(column: dict) {
+  return (column.get('flags', 0) & FLAGS.UNSIGNED) != 0
+}
+
+/**
+ * The name of a column's type, as MySQL itself would write it.
+ *
+ * @param dict column
+ * @returns string
+ */
+def type_name_of(column: dict) {
+  var type = column.get('type', TYPES.NULL)
+  var flags = column.get('flags', 0)
+
+  if (flags & FLAGS.ENUM) != 0 {
+    return 'enum'
+  }
+
+  if (flags & FLAGS.SET) != 0 {
+    return 'set'
+  }
+
+  var name = nil
+
+  if is_binary(column) {
+    name = _BINARY_NAMES.get(type, nil)
+  } else {
+    name = _TEXT_NAMES.get(type, nil)
+  }
+
+  if name == nil {
+    name = _NAMES.get(type, '${type}')
+  }
+
+  return is_unsigned(column) and (flags & FLAGS.NUM) != 0 ?
+    '${name} unsigned' :
+    name
+}
+
+/**
+ * Reduces the server's column descriptors to the two fields the shared
+ * contract asks for.
+ *
+ * @param list columns
+ * @returns list[dict]
+ */
+def describe_columns(columns: list) {
+  return columns.map(@(column) {
+    return { name: column.name, type: type_name_of(column) }
+  })
+}
+
+/**
+ * Reads one value out of a text protocol row.
+ *
+ * @param bytes|nil raw The value as the server wrote it, or nil for
+ *    NULL.
+ * @param dict column
+ * @returns any
+ */
+def decode_text(raw, column: dict) {
+  if raw == nil {
+    return nil
+  }
+
+  var type = column.get('type', TYPES.NULL)
+
+  if _is_byte_column(type, column) {
+    return raw
+  }
+
+  var text = raw.to_string()
+
+  if _is_integer(type) {
+    return integer_from_text(text)
+  }
+
+  if type == TYPES.FLOAT or type == TYPES.DOUBLE {
+    return text.to_number()
+  }
+
+  if type == TYPES.DECIMAL or type == TYPES.NEWDECIMAL {
+    return decimal(text, nil)
+  }
+
+  if type == TYPES.DATE or type == TYPES.DATETIME or type == TYPES.TIMESTAMP {
+    return _date_from_text(text)
+  }
+
+  if type == TYPES.TIME {
+    return parse_time(text)
+  }
+
+  if type == TYPES.JSON {
+    return from_json(text)
+  }
+
+  return text
+}
+
+/**
+ * Reads one value out of a binary protocol row.
+ *
+ * The NULL bitmap is the caller's business; this is only reached for a
+ * value that is present.
+ *
+ * @param Cursor cursor Positioned at the value.
+ * @param dict column
+ * @returns any
+ */
+def decode_binary(cursor, column: dict) {
+  var type = column.get('type', TYPES.NULL)
+  var unsigned = is_unsigned(column)
+
+  if type == TYPES.TINY {
+    return _signed(cursor.byte(), 1, unsigned)
+  }
+
+  if type == TYPES.SHORT or type == TYPES.YEAR {
+    return _signed(cursor.int2(), 2, unsigned)
+  }
+
+  if type == TYPES.LONG or type == TYPES.INT24 {
+    return _signed(cursor.int4(), 4, unsigned)
+  }
+
+  if type == TYPES.LONGLONG {
+    return _signed64(cursor.int8(), unsigned)
+  }
+
+  if type == TYPES.FLOAT {
+    return struct.unpack('g', cursor.fixed(4))['1']
+  }
+
+  if type == TYPES.DOUBLE {
+    return struct.unpack('e', cursor.fixed(8))['1']
+  }
+
+  if type == TYPES.DATE or type == TYPES.DATETIME or type == TYPES.TIMESTAMP {
+    return _read_binary_date(cursor)
+  }
+
+  if type == TYPES.TIME {
+    return _read_binary_time(cursor)
+  }
+
+  # Everything else arrives with its length in front of it, which is
+  # the same shape the text protocol uses, so it decodes the same way.
+  return decode_text(cursor.lenenc_bytes(), column)
+}
+
+/**
+ * The type byte and flag a value is sent as.
+ *
+ * `write_parameter()` has to agree with this exactly, since a
+ * statement sends every type first and then every value.
+ *
+ * @param any value
+ * @returns dict `{ type, unsigned }`
+ * @throws QueryError for a value with no MySQL representation.
+ */
+def parameter_type(value) {
+  if value == nil {
+    return { type: TYPES.NULL, unsigned: false }
+  }
+
+  if is_bool(value) {
+    return { type: TYPES.TINY, unsigned: false }
+  }
+
+  if is_number(value) {
+    return value.floor() == value and value.abs() < _EXACT.to_number() ?
+      { type: TYPES.LONGLONG, unsigned: false } :
+      { type: TYPES.DOUBLE, unsigned: false }
+  }
+
+  if is_bigint(value) {
+    return { type: TYPES.LONGLONG, unsigned: value >= _SIGN_LIMIT }
+  }
+
+  if is_bytes(value) {
+    return { type: TYPES.BLOB, unsigned: false }
+  }
+
+  if is_temporal(value) {
+    return { type: TYPES.DATETIME, unsigned: false }
+  }
+
+  if is_interval(value) {
+    return { type: TYPES.TIME, unsigned: false }
+  }
+
+  if instance_of(value, Decimal) or is_string(value) or is_structured(value) {
+    return { type: TYPES.VAR_STRING, unsigned: false }
+  }
+
+  raise QueryError(
+    'a ${typeof(value)} has no MySQL representation; expected nil, a ' +
+    'bool, a number, a bigint, a string, bytes, a date, a time ' +
+    'interval, a decimal, or a list or dictionary to store as JSON',
+    { driver: 'mysql' }
+  )
+}
+
+/**
+ * Appends a value in the form its type byte promises.
+ *
+ * @param Writer writer
+ * @param any value
+ */
+def write_parameter(writer, value) {
+  if value == nil {
+    return
+  }
+
+  if is_bool(value) {
+    writer.byte(value ? 1 : 0)
+
+    return
+  }
+
+  if is_number(value) {
+    if value.floor() == value and value.abs() < _EXACT.to_number() {
+      writer.int8(value)
+    } else {
+      writer.raw(struct.pack('e', value))
+    }
+
+    return
+  }
+
+  if is_bigint(value) {
+    if value >= _SIGN_LIMIT or value < -_SIGN_LIMIT {
+      if value >= _WRAP or value < -_SIGN_LIMIT {
+        raise QueryError(
+          'the value ${value} is too large for a MySQL integer, which ' +
+          'holds 64 bits',
+          { driver: 'mysql' }
+        )
+      }
+    }
+
+    writer.int8(value < 0n ? value + _WRAP : value)
+
+    return
+  }
+
+  if is_bytes(value) {
+    writer.lenenc_string(value)
+
+    return
+  }
+
+  if is_temporal(value) {
+    _write_date(writer, value)
+
+    return
+  }
+
+  if is_interval(value) {
+    _write_time(writer, value)
+
+    return
+  }
+
+  if instance_of(value, Decimal) {
+    writer.lenenc_string(value.to_string())
+
+    return
+  }
+
+  if is_structured(value) {
+    writer.lenenc_string(to_json(value))
+
+    return
+  }
+
+  writer.lenenc_string(value)
+}
+
+# Whether a column's values are whole numbers.
+def _is_integer(type: number) {
+  return type == TYPES.TINY or type == TYPES.SHORT or type == TYPES.LONG
+    or type == TYPES.LONGLONG or type == TYPES.INT24 or type == TYPES.YEAR
+}
+
+# Whether a column holds bytes this adapter passes through untouched.
+def _is_byte_column(type: number, column: dict) {
+  if type == TYPES.BIT or type == TYPES.GEOMETRY {
+    return true
+  }
+
+  return is_binary(column) and (
+    type == TYPES.BLOB or type == TYPES.TINY_BLOB or
+    type == TYPES.MEDIUM_BLOB or type == TYPES.LONG_BLOB or
+    type == TYPES.VAR_STRING or type == TYPES.STRING or
+    type == TYPES.VARCHAR
+  )
+}
+
+# An unsigned reading turned signed, for the widths that fit a number.
+def _signed(value, width: number, unsigned: bool) {
+  if unsigned {
+    return value
+  }
+
+  var limit = _WIDTHS[width]
+
+  return value >= limit / 2 ? value - limit : value
+}
+
+# The same for 64 bits, where the value may already be a bigint.
+def _signed64(value, unsigned: bool) {
+  if !is_bigint(value) {
+    # Below 2^53, so nowhere near the sign bit either way.
+    return value
+  }
+
+  if unsigned {
+    return value
+  }
+
+  var signed = value >= _SIGN_LIMIT ? value - _WRAP : value
+
+  return signed.abs() < _EXACT ? signed.to_number() : signed
+}
+
+# MySQL writes a date it considers absent as zeros, which is not a date
+# any calendar has. It comes back as nil rather than as year zero.
+def _date_from_text(text: string) {
+  if text.starts_with('0000-00-00') {
+    return nil
+  }
+
+  var parts = text.split(' ')
+  var day = parts[0].split('-')
+
+  if day.length() != 3 {
+    return nil
+  }
+
+  var hour = 0
+  var minute = 0
+  var second = 0
+  var micros = 0
+
+  if parts.length() > 1 {
+    var clock = parts[1].split(':')
+
+    if clock.length() == 3 {
+      hour = clock[0].to_number()
+      minute = clock[1].to_number()
+
+      var dot = clock[2].index_of('.')
+
+      if dot > 0 {
+        second = clock[2][0, dot].to_number()
+        micros = (clock[2][dot + 1, clock[2].length()] + '000000')[0, 6].to_number()
+      } else {
+        second = clock[2].to_number()
+      }
+    }
+  }
+
+  return _make_date(
+    day[0].to_number(), day[1].to_number(), day[2].to_number(),
+    hour, minute, second, micros
+  )
+}
+
+# The binary form of a date: a length, then as much of the value as
+# that length covers, everything after it being zero.
+def _read_binary_date(cursor) {
+  var length = cursor.byte()
+
+  if length == 0 {
+    return nil
+  }
+
+  var year = cursor.int2()
+  var month = cursor.byte()
+  var day = cursor.byte()
+
+  var hour = 0
+  var minute = 0
+  var second = 0
+  var micros = 0
+
+  if length > 4 {
+    hour = cursor.byte()
+    minute = cursor.byte()
+    second = cursor.byte()
+  }
+
+  if length > 7 {
+    micros = cursor.int4()
+  }
+
+  if year == 0 and month == 0 and day == 0 {
+    return nil
+  }
+
+  return _make_date(year, month, day, hour, minute, second, micros)
+}
+
+# The binary form of a time, which counts whole days separately because
+# the hour field is one byte and the range reaches 838 hours.
+def _read_binary_time(cursor) {
+  var length = cursor.byte()
+
+  if length == 0 {
+    return Time(0, 0, 0, 0, false)
+  }
+
+  var negative = cursor.byte() == 1
+  var days = cursor.int4()
+  var hours = cursor.byte()
+  var minutes = cursor.byte()
+  var seconds = cursor.byte()
+  var micros = length > 8 ? cursor.int4() : 0
+
+  return Time(days * 24 + hours, minutes, seconds, micros, negative)
+}
+
+def _make_date(year, month, day, hour, minute, second, micros) {
+  catch {
+    return date.Date(year, month, day, hour, minute, second, micros, 0, false)
+  } as error {
+    # A date the calendar does not have, which a column filled under a
+    # permissive sql_mode can hold. Refusing to read the row over it
+    # would be worse than saying the value is not a date.
+    return nil
+  }
+}
+
+def _write_date(writer, moment) {
+  writer.byte(11)
+    .int2(moment.year)
+    .byte(moment.month)
+    .byte(moment.day)
+    .byte(moment.hour)
+    .byte(moment.minute)
+    .byte(moment.seconds)
+    .int4(moment.microseconds)
+}
+
+def _write_time(writer, span) {
+  var total = span.total_seconds().abs()
+  var whole = total.floor()
+  var micros = ((total - whole) * 1000000).round()
+
+  if micros >= 1000000 {
+    whole++
+    micros -= 1000000
+  }
+
+  writer.byte(12)
+    .byte(span.is_negative() ? 1 : 0)
+    .int4((whole / 86400).floor())
+    .byte((whole / 3600).floor() % 24)
+    .byte((whole / 60).floor() % 60)
+    .byte(whole % 60)
+    .int4(micros)
+}

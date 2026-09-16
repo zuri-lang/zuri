@@ -1,0 +1,207 @@
+/**
+ * @module ed25519
+ *
+ * Ed25519 signing over a key derived from a password, which is what
+ * MariaDB's `client_ed25519` authentication is built on.
+ *
+ * ### Why this is not `crypto.ed25519`
+ *
+ * An ordinary Ed25519 private key is a 32 byte seed, and signing
+ * begins by hashing that seed into the 64 bytes the signature is
+ * actually computed from. MariaDB skips the seed: it hashes the
+ * password into those 64 bytes directly, so the user's password takes
+ * the place of the expanded key rather than the place of the seed.
+ *
+ * Nothing in `crypto.ed25519` can express that, since it takes a
+ * PEM-encoded key and does its own expansion internally. So the curve
+ * arithmetic lives here, where the one thing that needs it is.
+ *
+ * ### Correctness
+ *
+ * Everything below the password derivation is Ed25519 exactly as
+ * RFC 8032 specifies it, and is checked against that document's test
+ * vectors and against `crypto.ed25519` over random keys.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import hash
+
+/** The field prime, 2^255 - 19. */
+var P = (2n ** 255n) - 19n
+
+/** The order of the base point's subgroup. */
+var L = (2n ** 252n) + 27742317777372353535851937790883648493n
+
+/** The curve constant, -121665/121666. */
+var D = 37095705934669439343138083508754565189542113879843219016388785533085940283555n
+
+/** Twice the curve constant, which is what the addition uses. */
+var D2 = (2n * D) % P
+
+# The base point, in the affine coordinates RFC 8032 publishes.
+var _BASE_X = 15112221349535400772501151409588531511454012693041857206046113283949847762202n
+var _BASE_Y = 46316835694926478169428394003475163141307993866256225615783033603165251855960n
+
+/**
+ * Expands a password into the 64 bytes MariaDB signs with.
+ *
+ * @param string password
+ * @returns bytes
+ */
+def password_key(password: string) {
+  return hash.sha512(password, true)
+}
+
+/**
+ * The public key matching an expanded key.
+ *
+ * @param bytes expanded The 64 bytes from `password_key()`.
+ * @returns bytes The 32 byte encoded public key.
+ */
+def public_key(expanded) {
+  return _encode(_scalar_mult(_base(), _secret_scalar(expanded)))
+}
+
+/**
+ * Signs `message` with an expanded key.
+ *
+ * @param bytes expanded The 64 bytes from `password_key()`.
+ * @param bytes message
+ * @returns bytes The 64 byte signature.
+ */
+def sign(expanded, message) {
+  var secret = _secret_scalar(expanded)
+  var public = _encode(_scalar_mult(_base(), secret))
+
+  # The nonce comes from the second half of the expanded key and the
+  # message, so it is unpredictable to anyone without the key and yet
+  # reproducible, which is what makes Ed25519 deterministic.
+  var prefix = expanded[32, 64]
+  var nonce = _reduce(hash.sha512(prefix + message, true))
+  var commitment = _encode(_scalar_mult(_base(), nonce))
+
+  var challenge = _reduce(
+    hash.sha512(commitment + public + message, true)
+  )
+
+  var scalar = (nonce + challenge * secret) % L
+
+  return commitment + _scalar_bytes(scalar)
+}
+
+# The base point in the extended coordinates the arithmetic uses.
+def _base() {
+  return {
+    x: _BASE_X,
+    y: _BASE_Y,
+    z: 1n,
+    t: (_BASE_X * _BASE_Y) % P,
+  }
+}
+
+# The signing scalar: the low half of the expanded key, with the bits
+# RFC 8032 pins down. Clearing the low three keeps the scalar in the
+# prime order subgroup, and forcing bit 254 fixes its length so that
+# the scalar multiplication below always runs the same number of
+# rounds.
+def _secret_scalar(expanded) {
+  var clamped = expanded[0, 32].clone()
+
+  clamped[0] = clamped[0] & 248
+  clamped[31] = (clamped[31] & 63) | 64
+
+  return _little_endian(clamped)
+}
+
+# Adds two points in extended coordinates. The formula is complete for
+# this curve: there is no pair of points it gets wrong, including a
+# point added to itself, so doubling needs no separate case.
+def _add(a, b) {
+  var m = _field((a.y - a.x) * (b.y - b.x))
+  var n = _field((a.y + a.x) * (b.y + b.x))
+  var o = _field(_field(a.t * D2) * b.t)
+  var p = _field(a.z * 2n * b.z)
+
+  var e = n - m
+  var f = p - o
+  var g = p + o
+  var h = n + m
+
+  return {
+    x: _field(e * f),
+    y: _field(g * h),
+    t: _field(e * h),
+    z: _field(f * g),
+  }
+}
+
+# Reduces into the field. Zuri's remainder keeps the sign of its left
+# operand, so the subtractions above can land below zero and have to be
+# brought back up rather than simply masked.
+def _field(value) {
+  var reduced = value % P
+
+  return reduced < 0n ? reduced + P : reduced
+}
+
+# Multiplies a point by a scalar, most significant bit first.
+def _scalar_mult(point, scalar) {
+  var result = { x: 0n, y: 1n, z: 1n, t: 0n }
+  var index = 254
+
+  while index >= 0 {
+    result = _add(result, result)
+
+    if scalar.bit(index) {
+      result = _add(result, point)
+    }
+
+    index--
+  }
+
+  return result
+}
+
+# Encodes a point as 32 bytes: the y coordinate little-endian, with the
+# lowest bit of x in the top bit, which is enough to recover x.
+def _encode(point) {
+  var inverse = point.z.modinv(P)
+  var x = _field(point.x * inverse)
+  var y = _field(point.y * inverse)
+
+  var out = _scalar_bytes(y)
+  out[31] = out[31] | ((x % 2n == 1n ? 1 : 0) << 7)
+
+  return out
+}
+
+# A non-negative bigint as exactly 32 little-endian bytes.
+def _scalar_bytes(value) {
+  var raw = value.to_bytes('little')
+  var out = bytes(32)
+
+  for index in 0..(raw.length().min(32)) {
+    out[index] = raw[index]
+  }
+
+  return out
+}
+
+# Little-endian bytes as a bigint.
+def _little_endian(raw) {
+  var value = 0n
+  var index = raw.length() - 1
+
+  while index >= 0 {
+    value = value * 256n + raw[index].to_bigint()
+    index--
+  }
+
+  return value
+}
+
+# A 64 byte hash reduced into a scalar.
+def _reduce(digest) {
+  return _little_endian(digest) % L
+}

@@ -1,0 +1,131 @@
+/**
+ * @module cursor
+ *
+ * Reading a MySQL result a batch at a time.
+ *
+ * The server keeps the result and sends as many rows as each fetch
+ * asks for, so nothing but the current batch is ever held on this
+ * side. Only a prepared statement can be read this way, which is why a
+ * cursor over a statement written as text still prepares it first.
+ *
+ * ### One at a time
+ *
+ * A cursor holds the connection: the server is part way through
+ * answering, and no other command may be sent until it has finished.
+ * Running a statement on the same connection while a cursor is open
+ * raises rather than corrupting the exchange.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { DriverCursor }
+import .types { describe_columns }
+
+/**
+ * A result being read in batches.
+ *
+ * @printable
+ */
+class MySqlCursor < DriverCursor {
+  var _connection
+  var _statement
+  var _columns = []
+  var _raw_columns = []
+  var _rows = []
+  var _at = 0
+  var _batch = 256
+  var _done = false
+  var _closed = false
+  var _owns_statement = false
+
+  /**
+   * @param MySqlConnection connection
+   * @param dict state The statement to fetch from, its columns, the
+   *    batch size, whether there is anything to fetch at all, and
+   *    whether this cursor prepared the statement and so has to
+   *    release it.
+   */
+  @new(connection, state) {
+    self._connection = connection
+    self._statement = state.statement
+    self._raw_columns = state.columns
+    self._columns = describe_columns(state.columns)
+    self._batch = state.batch
+    self._owns_statement = state.owns_statement
+    self._done = state.done
+  }
+
+  columns() {
+    return self._columns
+  }
+
+  /**
+   * The next row as a list of values, or nil once the result is
+   * finished.
+   *
+   * @returns list|nil
+   */
+  next_row() {
+    if self._at < self._rows.length() {
+      var row = self._rows[self._at]
+      self._at++
+
+      return row
+    }
+
+    if self._done or self._closed {
+      self.close()
+
+      return nil
+    }
+
+    var batch = self._connection.fetch_batch(
+      self._statement, self._raw_columns, self._batch
+    )
+
+    self._rows = batch.rows
+    self._done = batch.done
+    self._at = 0
+
+    if self._rows.is_empty() {
+      self.close()
+
+      return nil
+    }
+
+    self._at = 1
+
+    return self._rows[0]
+  }
+
+  /**
+   * Releases the cursor, and the statement if this cursor prepared
+   * one. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._rows = []
+    self._connection.release_cursor(self._statement, self._owns_statement)
+  }
+
+  /**
+   * Whether the cursor has been closed or read to the end.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  to_string() {
+    return '<MySqlCursor${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

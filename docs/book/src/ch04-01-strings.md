@@ -1196,7 +1196,8 @@ string and gives its code point; `chr()` on a number goes the other way.
 ### `to_number()` Never Fails
 
 This is the one conversion behaviour worth memorising. `to_number()` does
-not raise, and it does not produce `NaN`. Text it cannot parse becomes
+not raise, and it does not produce `NaN`. It reads the first number
+written in the string, and text with no number in it at all becomes
 **zero**:
 
 ```zuri
@@ -1207,6 +1208,7 @@ echo 'eighty'.to_number()
 echo ''.to_number()
 echo '12abc'.to_number()
 echo '  7  '.to_number()
+echo '96.3 of 31'.to_number()
 ```
 
 ```console
@@ -1215,17 +1217,24 @@ echo '  7  '.to_number()
 -5
 0
 0
-0
-0
+12
+7
+96.3
 ```
 
-Look at the last three. `'12abc'` is not read as `12` and stopped; it is
-zero. And `'  7  '` is zero as well, because the surrounding spaces are not
-trimmed for you.
+Look at the last three. What surrounds the number is ignored, so `'12abc'`
+is `12`, the spaces around `'  7  '` are simply not part of it, and only
+the first number is read however many follow.
+
+That cuts both ways. `'3 apples'` giving `3` is usually what was meant;
+`'2026-09-16'` giving `2026` usually is not. A number is taken to start at
+a digit, or at a sign or decimal point directly in front of one, so `'-5'`
+is negative five and `'a - 42'`, where the sign stands apart, is `42`.
 
 There is no error to catch and no sentinel to test, so a form field a user
-left blank and a form field they filled with `'0'` produce the same number.
-When the difference matters, check the text before converting it:
+left blank and a form field they filled with `'0'` produce the same number,
+and so do `'eighty'` and `'0'`. When the difference matters, check the text
+before converting it:
 
 ```zuri
 def to_count(text) {

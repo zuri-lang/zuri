@@ -1,0 +1,838 @@
+# The MySQL adapter's wire layer, with no server involved.
+#
+# Everything here is checkable without one: the packet codecs, the
+# framing rules, the authentication plugins, and the shape of the
+# conversation itself, which is driven against a scripted stream that
+# hands back packets a real server would have sent. What cannot be
+# checked this way lives in mysql_integration.zu.
+
+import crypto
+import date
+import hash
+import sql
+import sql.mysql.auth as auth
+import sql.mysql.ed25519 as ed
+import sql.mysql.packets as p
+import sql.mysql.protocol as proto
+import sql.mysql.types as t
+import sql.errors { AuthenticationError, ProtocolError, UniqueViolation }
+
+# A stream that replays packets a server would have sent and keeps
+# whatever the client wrote, so an exchange can be inspected after it.
+class ScriptedStream {
+  var written = bytes(0)
+  var _incoming = bytes(0)
+  var _at = 0
+
+  feed(payload, sequence) {
+    var size = payload.length()
+
+    self._incoming.extend(bytes([
+      size & 0xff,
+      (size >> 8) & 0xff,
+      (size >> 16) & 0xff,
+      sequence,
+    ]))
+
+    self._incoming.extend(payload)
+
+    return self
+  }
+
+  write_all(data) {
+    self.written.extend(data)
+  }
+
+  # Replays bytes captured from another stream, for checking that what
+  # the framing wrote is what it reads back.
+  replay(data) {
+    self._incoming = data
+    self._at = 0
+
+    return self
+  }
+
+  read_exact(count) {
+    if self._at + count > self._incoming.length() {
+      return nil
+    }
+
+    var chunk = self._incoming[self._at, self._at + count]
+    self._at += count
+
+    return chunk
+  }
+
+  close() {}
+}
+
+# The packets the client sent, split back out of the stream it wrote.
+def sent_packets(stream) {
+  var out = []
+  var at = 0
+
+  while at + 4 <= stream.written.length() {
+    var size = stream.written[at] + stream.written[at + 1] * 256 +
+      stream.written[at + 2] * 65536
+
+    out.append({
+      sequence: stream.written[at + 3],
+      payload: stream.written[at + 4, at + 4 + size],
+    })
+
+    at += 4 + size
+  }
+
+  return out
+}
+
+var SCRAMBLE = bytes([
+  0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71, 0x02, 0x13,
+  0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x0a, 0x1b, 0x2c, 0x3d,
+])
+
+# A handshake v10 greeting, as a server opens with.
+def greeting(version, plugin, capabilities) {
+  var w = p.Writer()
+
+  w.byte(10).cstring(version).int4(7)
+  w.raw(SCRAMBLE[0, 8]).byte(0)
+  w.int2(capabilities & 0xffff).byte(45).int2(2)
+  w.int2((capabilities >> 16) & 0xffff)
+  w.byte(21).zeros(10)
+  w.raw(SCRAMBLE[8, 20]).byte(0)
+  w.cstring(plugin)
+
+  return w.payload()
+}
+
+def ok_packet(affected, insert_id, status) {
+  var w = p.Writer()
+
+  w.byte(0x00).lenenc_int(affected).lenenc_int(insert_id)
+  w.int2(status == nil ? 2 : status).int2(0)
+
+  return w.payload()
+}
+
+# What ends a run of rows on a server that deprecated the older EOF
+# marker: an OK packet, told apart from a row by being short.
+def eof_packet(status) {
+  var w = p.Writer()
+
+  w.byte(0xfe).lenenc_int(0).lenenc_int(0)
+  w.int2(status == nil ? 2 : status).int2(0)
+
+  return w.payload()
+}
+
+def err_packet(code, sqlstate, message) {
+  var w = p.Writer()
+
+  w.byte(0xff).int2(code).byte('#'.ord()).string(sqlstate).string(message)
+
+  return w.payload()
+}
+
+def column_packet(name, type, flags, charset) {
+  var w = p.Writer()
+
+  w.lenenc_string('def').lenenc_string('').lenenc_string('tbl')
+  w.lenenc_string('tbl').lenenc_string(name).lenenc_string(name)
+  w.lenenc_int(0x0c).int2(charset == nil ? 33 : charset).int4(64)
+  w.byte(type).int2(flags == nil ? 0 : flags).byte(0).int2(0)
+
+  return w.payload()
+}
+
+# The capabilities a modern server advertises.
+var SERVER_CAPS = proto.CAPABILITIES.PROTOCOL_41 |
+  proto.CAPABILITIES.SECURE_CONNECTION | proto.CAPABILITIES.PLUGIN_AUTH |
+  proto.CAPABILITIES.PLUGIN_AUTH_LENENC_DATA |
+  proto.CAPABILITIES.DEPRECATE_EOF | proto.CAPABILITIES.CONNECT_WITH_DB |
+  proto.CAPABILITIES.TRANSACTIONS | proto.CAPABILITIES.SESSION_TRACK |
+  proto.CAPABILITIES.CONNECT_ATTRS | proto.CAPABILITIES.MULTI_RESULTS |
+  proto.CAPABILITIES.PS_MULTI_RESULTS | proto.CAPABILITIES.LONG_FLAG |
+  proto.CAPABILITIES.LONG_PASSWORD
+
+def connected(stream, options) {
+  var protocol = proto.Protocol(p.PacketStream(stream))
+
+  protocol.handshake(options, @(_caps) => stream)
+
+  return protocol
+}
+
+def test_packet_codecs() {
+  var w = p.Writer()
+  w.byte(0x5a).int2(0xbeef).int3(0xc0ffee).int4(0xdeadbeef)
+  w.int8(0x0001020304050607)
+
+  var c = p.Cursor(w.payload())
+  assert c.byte() == 0x5a
+  assert c.int2() == 0xbeef
+  assert c.int3() == 0xc0ffee
+  assert c.int4() == 0xdeadbeef
+  assert c.int8() == 0x0001020304050607
+  assert c.at_end()
+
+  # Length-encoded integers pick the shortest form that holds them.
+  var widths = {}
+
+  for value in [250, 251, 65536, 16777216] {
+    var one = p.Writer()
+    one.lenenc_int(value)
+    widths.set(value, one.length())
+
+    assert p.Cursor(one.payload()).lenenc_int() == value
+  }
+
+  assert widths[250] == 1
+  assert widths[251] == 3
+  assert widths[65536] == 4
+  assert widths[16777216] == 9
+
+  # Past what a number holds exactly, a value has to stay a bigint or
+  # an id would come back altered.
+  var big = p.Writer()
+  big.lenenc_int(18446744073709551615n)
+  var back = p.Cursor(big.payload()).lenenc_int()
+
+  assert is_bigint(back)
+  assert back == 18446744073709551615n
+
+  # A NULL column is not a zero.
+  var n = p.Writer()
+  n.byte(p.LENENC_NULL)
+  assert p.Cursor(n.payload()).lenenc_int() == nil
+
+  # A packet that stops mid-value is an error, not a short read.
+  var truncated = false
+
+  catch {
+    p.Cursor(bytes([1, 2])).int4()
+  } as e {
+    truncated = true
+  }
+
+  assert truncated
+
+  echo 'test_packet_codecs passed'
+}
+
+def test_framing() {
+  var one = ScriptedStream()
+  var stream = p.PacketStream(one)
+  stream.write_packet('hello'.to_bytes())
+
+  assert one.written.length() == 9
+  assert one.written[0] == 5
+  assert one.written[3] == 0
+  assert one.written[4, 9].to_string() == 'hello'
+
+  # A message of exactly the maximum is followed by an empty packet, or
+  # the far end waits forever for the rest of it.
+  var exact = ScriptedStream()
+  p.PacketStream(exact).write_packet(bytes(p.MAX_PAYLOAD))
+
+  assert exact.written.length() == 4 + p.MAX_PAYLOAD + 4
+  assert exact.written[p.MAX_PAYLOAD + 4, p.MAX_PAYLOAD + 8] == bytes([0, 0, 0, 1])
+
+  var rejoined = ScriptedStream().replay(exact.written)
+  assert p.PacketStream(rejoined).read_packet().length() == p.MAX_PAYLOAD
+
+  # One that overflows splits, and arrives in one piece.
+  var split = ScriptedStream()
+  p.PacketStream(split).write_packet(bytes(p.MAX_PAYLOAD + 10))
+
+  var joined = ScriptedStream().replay(split.written)
+  assert p.PacketStream(joined).read_packet().length() == p.MAX_PAYLOAD + 10
+
+  # Compression is transparent to everything above it.
+  for algorithm in ['zlib', 'zstd'] {
+    var sink = ScriptedStream()
+    var writer = p.PacketStream(sink)
+    writer.compress_with(algorithm, 3)
+
+    var message = ('select * from a_table where a_column = 1 ' * 40).to_bytes()
+    writer.write_packet(message)
+
+    assert sink.written.length() < message.length(), algorithm
+
+    var reader = p.PacketStream(ScriptedStream().replay(sink.written))
+    reader.compress_with(algorithm, 3)
+
+    assert reader.read_packet() == message, algorithm
+  }
+
+  echo 'test_framing passed'
+}
+
+def test_auth_plugins() {
+  # Undoing the mask has to give back SHA1(password), whose own hash is
+  # what the server stores.
+  var token = auth.native_password('secret', SCRAMBLE)
+  var stage1 = hash.sha1('secret', true)
+  var stage2 = hash.sha1(stage1, true)
+  var mask = hash.sha1(SCRAMBLE + stage2, true)
+  var unmasked = bytes(20)
+
+  for i in 0..20 {
+    unmasked[i] = token[i] ^ mask[i]
+  }
+
+  assert unmasked == stage1
+  assert hash.sha1(unmasked, true) == stage2
+
+  # An account with no password answers with nothing at all.
+  assert auth.native_password('', SCRAMBLE).length() == 0
+  assert auth.caching_sha2_password('', SCRAMBLE).length() == 0
+
+  var caching = auth.caching_sha2_password('secret', SCRAMBLE)
+  var d1 = hash.sha256('secret', true)
+  var d2 = hash.sha256(d1, true)
+  var caching_mask = hash.sha256(d2 + SCRAMBLE, true)
+  var recovered = bytes(32)
+
+  for i in 0..32 {
+    recovered[i] = caching[i] ^ caching_mask[i]
+  }
+
+  assert recovered == d1
+
+  # The masked password is recoverable with the scramble and differs
+  # between scrambles, so a captured exchange cannot be replayed.
+  var masked = auth.obfuscate('secret', SCRAMBLE)
+  var plain = ''
+
+  for i in 0..6 {
+    plain += (masked[i] ^ SCRAMBLE[i % 20]).chr()
+  }
+
+  assert plain == 'secret'
+  assert masked[6] ^ SCRAMBLE[6] == 0
+  assert auth.obfuscate('secret', bytes(20)) != masked
+
+  # A password longer than the scramble wraps around it.
+  assert auth.obfuscate('x' * 64, SCRAMBLE).length() == 65
+
+  # Clear text is refused where anyone could read it.
+  var refused = false
+
+  catch {
+    auth.response_for(auth.CLEAR, 'secret', SCRAMBLE, false)
+  } as e {
+    refused = true
+    assert instance_of(e, AuthenticationError)
+  }
+
+  assert refused
+  assert auth.response_for(auth.CLEAR, 'secret', SCRAMBLE, true) ==
+    auth.clear_password('secret')
+
+  # A plugin this adapter cannot answer names itself.
+  var unknown = false
+
+  catch {
+    auth.response_for('auth_gssapi_client', 'secret', SCRAMBLE, true)
+  } as e {
+    unknown = true
+    assert e.message.index_of('auth_gssapi_client') > 0
+  }
+
+  assert unknown
+
+  echo 'test_auth_plugins passed'
+}
+
+def test_ed25519() {
+  # RFC 8032, section 7.1, test 1. The seed is expanded the standard
+  # way; MariaDB differs only in expanding a password instead.
+  var seed = bytes([
+    0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60, 0xba, 0x84, 0x4a, 0xf4,
+    0x92, 0xec, 0x2c, 0xc4, 0x44, 0x49, 0xc5, 0x69, 0x7b, 0x32, 0x69, 0x19,
+    0x70, 0x3b, 0xac, 0x03, 0x1c, 0xae, 0x7f, 0x60,
+  ])
+
+  var expanded = hash.sha512(seed, true)
+
+  assert _hex(ed.public_key(expanded)) ==
+    'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+
+  assert _hex(ed.sign(expanded, bytes(0))) ==
+    'e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155' +
+    '5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b'
+
+  # And it agrees with the implementation the rest of the language
+  # uses, over keys neither of them chose.
+  for round in 0..4 {
+    var pair = crypto.ed25519.generate()
+    var key = hash.sha512(_seed_of(pair.private_pem), true)
+    var message = crypto.random_bytes(1 + round * 17)
+
+    assert ed.sign(key, message) == crypto.ed25519.sign(pair.private_pem, message)
+    assert crypto.ed25519.verify(pair.public_pem, message, ed.sign(key, message))
+  }
+
+  # The signature MariaDB asks for is over the scramble, and is
+  # reproducible for a password but differs between passwords.
+  var signed = auth.ed25519_password('secret', bytes(32))
+
+  assert signed.length() == 64
+  assert signed == auth.ed25519_password('secret', bytes(32))
+  assert signed != auth.ed25519_password('other', bytes(32))
+
+  echo 'test_ed25519 passed'
+}
+
+def test_handshake() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, {
+    user: 'alice',
+    password: 'secret',
+    database: 'app',
+  })
+
+  assert protocol.server_version() == '8.0.36'
+  assert protocol.flavor() == 'mysql'
+  assert protocol.connection_id() == 7
+  assert !protocol.in_transaction()
+
+  # The response continues the server's numbering rather than starting
+  # its own, or the server rejects it as out of order.
+  var sent = sent_packets(stream)
+  assert sent.length() == 1
+  assert sent[0].sequence == 1
+
+  var cursor = p.Cursor(sent[0].payload)
+  var capabilities = cursor.int4()
+
+  assert (capabilities & proto.CAPABILITIES.PROTOCOL_41) != 0
+  assert (capabilities & proto.CAPABILITIES.SECURE_CONNECTION) != 0
+
+  # Never asked for, so never agreed, whatever the server offers.
+  assert (capabilities & proto.CAPABILITIES.MULTI_STATEMENTS) == 0
+  assert (capabilities & proto.CAPABILITIES.LOCAL_FILES) == 0
+
+  cursor.int4()
+  cursor.byte()
+  cursor.skip(23)
+
+  assert cursor.cstring() == 'alice'
+
+  var response = cursor.lenenc_bytes()
+  assert response == auth.native_password('secret', SCRAMBLE)
+  assert cursor.cstring() == 'app'
+  assert cursor.cstring() == auth.NATIVE
+
+  echo 'test_handshake passed'
+}
+
+def test_mariadb_is_recognised() {
+  var stream = ScriptedStream()
+
+  # MariaDB opens by claiming to be 5.5.5 so that clients written
+  # before it existed do not refuse the version.
+  stream.feed(greeting('5.5.5-10.11.6-MariaDB', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: 'secret' })
+
+  assert protocol.flavor() == 'mariadb'
+  assert protocol.server_version() == '10.11.6-MariaDB'
+
+  echo 'test_mariadb_is_recognised passed'
+}
+
+def test_caching_sha2_fast_path() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.CACHING_SHA2, SERVER_CAPS), 0)
+
+  # 3 means the server had this account's hash and is satisfied.
+  stream.feed(bytes([0x01, 0x03]), 2)
+  stream.feed(ok_packet(0, 0, 2), 3)
+
+  var protocol = connected(stream, { user: 'alice', password: 'secret' })
+
+  assert !protocol.is_closed()
+
+  var sent = sent_packets(stream)
+  assert sent.length() == 1
+
+  var cursor = p.Cursor(sent[0].payload)
+  cursor.int4()
+  cursor.int4()
+  cursor.byte()
+  cursor.skip(23)
+  cursor.cstring()
+
+  assert cursor.lenenc_bytes() == auth.caching_sha2_password('secret', SCRAMBLE)
+
+  echo 'test_caching_sha2_fast_path passed'
+}
+
+def test_caching_sha2_full_path() {
+  var pair = crypto.rsa.generate(2048)
+  var stream = ScriptedStream()
+
+  stream.feed(greeting('8.0.36', auth.CACHING_SHA2, SERVER_CAPS), 0)
+
+  # 4 means it did not, and needs the password itself.
+  stream.feed(bytes([0x01, 0x04]), 2)
+  stream.feed(bytes([0x01]) + pair.public_pem.to_bytes(), 4)
+  stream.feed(ok_packet(0, 0, 2), 6)
+
+  var protocol = connected(stream, { user: 'alice', password: 'secret' })
+
+  var sent = sent_packets(stream)
+  assert sent.length() == 3
+
+  # The second packet asks for the public key.
+  assert sent[1].payload == bytes([2])
+
+  # The third is the password encrypted to it, which only the server
+  # can undo, and which is the masked form rather than the password.
+  var plain = crypto.rsa.decrypt(pair.private_pem, sent[2].payload, 'sha1')
+
+  assert plain == auth.obfuscate('secret', SCRAMBLE)
+  assert plain != auth.clear_password('secret')
+
+  echo 'test_caching_sha2_full_path passed'
+}
+
+def test_auth_switch() {
+  var stream = ScriptedStream()
+  var other = bytes(20)
+  other[0] = 0x99
+
+  stream.feed(greeting('8.0.36', auth.CACHING_SHA2, SERVER_CAPS), 0)
+
+  # The server changes its mind, and sends a fresh scramble with the
+  # plugin it would rather use.
+  var switch = p.Writer()
+  switch.byte(0xfe).cstring(auth.NATIVE).raw(other).byte(0)
+  stream.feed(switch.payload(), 2)
+  stream.feed(ok_packet(0, 0, 2), 4)
+
+  connected(stream, { user: 'alice', password: 'secret' })
+
+  var sent = sent_packets(stream)
+  assert sent.length() == 2
+
+  # The answer uses the new plugin and the new scramble, not the ones
+  # from the greeting.
+  assert sent[1].payload == auth.native_password('secret', other)
+  assert sent[1].payload != auth.native_password('secret', SCRAMBLE)
+
+  echo 'test_auth_switch passed'
+}
+
+def test_query_result() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: '' })
+
+  var columns = p.Writer()
+  columns.lenenc_int(2)
+
+  stream.feed(columns.payload(), 1)
+  stream.feed(column_packet('id', t.TYPES.LONGLONG, t.FLAGS.NUM, nil), 2)
+  stream.feed(column_packet('name', t.TYPES.VAR_STRING, 0, nil), 3)
+
+  var first = p.Writer()
+  first.lenenc_string('42').lenenc_string('alice')
+  stream.feed(first.payload(), 4)
+
+  # A NULL is a single byte that is not a length.
+  var second = p.Writer()
+  second.lenenc_string('43').byte(p.LENENC_NULL)
+  stream.feed(second.payload(), 5)
+
+  # With EOF deprecated the rows end with an OK packet.
+  stream.feed(eof_packet(2), 6)
+
+  var result = protocol.query('select id, name from t')
+
+  assert result.kind == 'rows'
+  assert result.columns.length() == 2
+  assert result.columns[0].name == 'id'
+  assert t.type_name_of(result.columns[0]) == 'bigint'
+  assert result.rows.length() == 2
+  assert result.rows[0] == [42, 'alice']
+  assert result.rows[1][1] == nil
+
+  echo 'test_query_result passed'
+}
+
+def test_server_errors_map_to_classes() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: '' })
+
+  stream.feed(
+    err_packet(1062, '23000', "Duplicate entry 'a' for key 't.name'"), 1
+  )
+
+  var raised = nil
+
+  catch {
+    protocol.query('insert into t values (1)')
+  } as e {
+    raised = e
+  }
+
+  assert raised != nil
+  assert instance_of(raised, UniqueViolation)
+  assert raised.code == 1062
+  assert raised.sqlstate == '23000'
+  assert raised.driver == 'mysql'
+  assert raised.query == 'insert into t values (1)'
+  assert raised.message.index_of('Duplicate entry') == 0
+
+  echo 'test_server_errors_map_to_classes passed'
+}
+
+def test_local_infile_is_refused() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: '' })
+
+  # The server asks the client to send it a file.
+  stream.feed(bytes([0xfb]) + '/etc/passwd'.to_bytes(), 1)
+  stream.feed(ok_packet(0, 0, 2), 3)
+
+  var raised = nil
+
+  catch {
+    protocol.query("load data local infile '/etc/passwd' into table t")
+  } as e {
+    raised = e
+  }
+
+  assert raised != nil
+  assert instance_of(raised, ProtocolError)
+  assert raised.message.index_of('/etc/passwd') > 0
+  assert raised.message.index_of('refused') > 0
+
+  # Refusing still means answering: an empty packet says there is no
+  # file, and without it the server would wait forever.
+  var sent = sent_packets(stream)
+  assert sent[sent.length() - 1].payload.length() == 0
+
+  echo 'test_local_infile_is_refused passed'
+}
+
+def test_ok_packet_reports_insert_id() {
+  var stream = ScriptedStream()
+  stream.feed(greeting('8.0.36', auth.NATIVE, SERVER_CAPS), 0)
+  stream.feed(ok_packet(0, 0, 2), 2)
+
+  var protocol = connected(stream, { user: 'alice', password: '' })
+
+  stream.feed(ok_packet(3, 9007199254740993n, 3), 1)
+
+  var result = protocol.query('insert into t values (1), (2), (3)')
+
+  assert result.kind == 'ok'
+  assert result.affected_rows == 3
+
+  # An id past what a number holds exactly has to survive as a bigint,
+  # or the row just written could not be found again.
+  assert is_bigint(result.last_insert_id)
+  assert result.last_insert_id == 9007199254740993n
+
+  # The server reported a transaction open, and the protocol believed
+  # it rather than tracking its own idea.
+  assert protocol.in_transaction()
+
+  echo 'test_ok_packet_reports_insert_id passed'
+}
+
+def test_types_round_trip() {
+  def column(type, flags, charset) {
+    return {
+      name: 'c',
+      type,
+      flags: flags == nil ? 0 : flags,
+      charset: charset == nil ? 33 : charset,
+    }
+  }
+
+  def round_trip(value, type) {
+    var w = p.Writer()
+    t.write_parameter(w, value)
+
+    return t.decode_binary(p.Cursor(w.payload()), column(type, nil, nil))
+  }
+
+  assert round_trip(42, t.TYPES.LONGLONG) == 42
+  assert round_trip(-42, t.TYPES.LONGLONG) == -42
+  assert round_trip(42.5, t.TYPES.DOUBLE) == 42.5
+  assert round_trip(9223372036854775807n, t.TYPES.LONGLONG) == 9223372036854775807n
+  assert round_trip(-9223372036854775808n, t.TYPES.LONGLONG) == -9223372036854775808n
+
+  var w = p.Writer()
+  t.write_parameter(w, 18446744073709551615n)
+
+  assert t.decode_binary(
+    p.Cursor(w.payload()),
+    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil)
+  ) == 18446744073709551615n
+
+  var moment = date.Date(2026, 9, 16, 14, 30, 45, 123456, 0, false)
+  var back = round_trip(moment, t.TYPES.DATETIME)
+
+  assert back.year == 2026 and back.month == 9 and back.day == 16
+  assert back.hour == 14 and back.minute == 30 and back.seconds == 45
+  assert back.microseconds == 123456
+
+  # An interval keeps its sign and its range past a day, neither of
+  # which a date could have held.
+  for span in [
+    sql.time(838, 59, 59, 999999, true),
+    sql.time(0, 0, 0, 0, false),
+    sql.time(25, 1, 2, 0, false),
+    sql.time(0, 0, 1, 500000, true),
+  ] {
+    assert round_trip(span, t.TYPES.TIME).total_seconds() == span.total_seconds(),
+      span.to_string()
+  }
+
+  # Text decoding, which is what an unprepared statement produces.
+  assert t.decode_text(nil, column(t.TYPES.LONG, nil, nil)) == nil
+  assert t.decode_text('18446744073709551615'.to_bytes(),
+    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED, nil)) == 18446744073709551615n
+  assert t.decode_text('12.75'.to_bytes(),
+    column(t.TYPES.NEWDECIMAL, nil, nil)).to_string() == '12.75'
+  assert t.decode_text('-838:59:59'.to_bytes(),
+    column(t.TYPES.TIME, nil, nil)).to_string() == '-838:59:59'
+
+  # A date the calendar does not have is not a date.
+  assert t.decode_text('0000-00-00'.to_bytes(),
+    column(t.TYPES.DATE, nil, nil)) == nil
+
+  # A blob and a text column share a type byte; only the collation
+  # separates them.
+  assert is_bytes(t.decode_text('x'.to_bytes(),
+    column(t.TYPES.BLOB, nil, t.BINARY_CHARSET)))
+  assert is_string(t.decode_text('x'.to_bytes(), column(t.TYPES.BLOB, nil, 33)))
+  assert t.type_name_of(column(t.TYPES.BLOB, nil, t.BINARY_CHARSET)) == 'blob'
+  assert t.type_name_of(column(t.TYPES.BLOB, nil, 33)) == 'text'
+  assert t.type_name_of(column(t.TYPES.STRING, t.FLAGS.ENUM, nil)) == 'enum'
+  assert t.type_name_of(
+    column(t.TYPES.LONGLONG, t.FLAGS.UNSIGNED | t.FLAGS.NUM, nil)
+  ) == 'bigint unsigned'
+
+  echo 'test_types_round_trip passed'
+}
+
+def test_dsn() {
+  var d = sql.driver('mysql')
+
+  var full = d.parse_dsn(
+    'mysql://alice:s%40cret@db.example.com:3307/app?sslmode=verify&compression=zstd'
+  )
+
+  assert full.host == 'db.example.com'
+  assert full.port == 3307
+  assert full.user == 'alice'
+  assert full.password == 's@cret'
+  assert full.database == 'app'
+  assert full.sslmode == 'verify'
+  assert full.compression == 'zstd'
+
+  var bare = d.parse_dsn('mysql://localhost/app')
+  assert bare.port == 3306
+  assert bare.user == 'root'
+  assert bare.sslmode == 'prefer'
+  assert bare.compression == 'none'
+
+  # Keywords, as my.cnf spells them, and the other spellings tooling
+  # uses for the same things.
+  var kw = d.parse_dsn('host=db port=3307 user=alice password=secret database=app')
+  assert kw.host == 'db' and kw.port == 3307 and kw.database == 'app'
+  assert d.parse_dsn('host=db dbname=app').database == 'app'
+  assert d.parse_dsn('host=db username=bob').user == 'bob'
+
+  # MySQL's own ssl mode names, including the two that verify.
+  assert d.parse_dsn('host=db ssl_mode=DISABLED').sslmode == 'disable'
+  assert d.parse_dsn('host=db ssl_mode=REQUIRED').sslmode == 'require'
+  assert d.parse_dsn('host=db ssl_mode=VERIFY_IDENTITY').sslmode == 'verify'
+
+  # A query string has no types, so flags arrive as text.
+  assert d.parse_dsn('mysql://h/?found_rows=yes').found_rows == true
+  assert d.parse_dsn('host=db multiple_statements=0').multiple_statements == false
+
+  for bad in ['host=db sslmode=maybe', 'host=db compression=gzip', 'host=db oops'] {
+    var caught = false
+
+    catch {
+      d.parse_dsn(bad)
+    } as e {
+      caught = true
+    }
+
+    assert caught, bad
+  }
+
+  # The scheme picks the adapter, and MariaDB differs where it can do
+  # something MySQL cannot.
+  assert sql.driver_for('mysql://localhost/app').name() == 'mysql'
+  assert sql.driver_for('mariadb://localhost/app').name() == 'mariadb'
+  assert sql.driver('mysql').capabilities().returning == false
+  assert sql.driver('mariadb').capabilities().returning == true
+  assert sql.driver('mysql').quote_identifier('we`ird') == '`we``ird`'
+
+  echo 'test_dsn passed'
+}
+
+def _hex(raw) {
+  var out = []
+
+  for b in raw {
+    out.append(b.hex().lpad(2, '0'))
+  }
+
+  return ''.join(out)
+}
+
+# The 32 byte seed inside a PKCS#8 v2 key, which carries the public key
+# after it and so cannot simply be read from the end.
+def _seed_of(pem) {
+  var body = ''
+
+  for line in pem.split('\n') {
+    if !line.starts_with('-') and !line.is_empty() {
+      body += line
+    }
+  }
+
+  import base64
+
+  return base64.decode(body)[16, 48]
+}
+
+test_packet_codecs()
+test_framing()
+test_auth_plugins()
+test_ed25519()
+test_handshake()
+test_mariadb_is_recognised()
+test_caching_sha2_fast_path()
+test_caching_sha2_full_path()
+test_auth_switch()
+test_query_result()
+test_server_errors_map_to_classes()
+test_local_infile_is_refused()
+test_ok_packet_reports_insert_id()
+test_types_round_trip()
+test_dsn()

@@ -76,7 +76,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `sql` | one contract for every relational database, with SQLite and PostgreSQL adapters | [17](ch17-00-sql.md) |
+| `sql` | one contract for every relational database, with SQLite, PostgreSQL and MySQL adapters | [17](ch17-00-sql.md) |
 
 ## The Network
 
@@ -270,6 +270,7 @@ One module per element width, each exporting a single class.
 | `sql.pool` | keeping connections open and lending them out |
 | `sql.sqlite` | the SQLite adapter, and its blobs, backups and hooks |
 | `sql.postgres` | the PostgreSQL adapter, and LISTEN/NOTIFY |
+| `sql.mysql` | the MySQL and MariaDB adapter |
 
 ### `test`
 

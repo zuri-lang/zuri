@@ -1,0 +1,220 @@
+/**
+ * @module schema
+ *
+ * Introspection for MySQL, through `information_schema`.
+ *
+ * ### A schema is a database
+ *
+ * MySQL has no layer between the server and a database: what the SQL
+ * standard calls a schema is what MySQL calls a database, and
+ * `information_schema.table_schema` holds the database name. So the
+ * `schema` argument every method here takes names a database, and
+ * leaving it out means the one the connection is using.
+ *
+ * ### Why nothing is grouped by the server
+ *
+ * An index over several columns arrives as one row per column, and the
+ * obvious `group_concat` would gather them server side. It also
+ * truncates silently at `group_concat_max_len`, which is a kilobyte by
+ * default, so a wide index would come back missing columns with
+ * nothing to say it had. The rows are grouped here instead.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { SchemaAdapter }
+
+/**
+ * Answers introspection questions about a MySQL database.
+ */
+class MySqlSchema < SchemaAdapter {
+  var _connection
+
+  /**
+   * @param MySqlConnection connection
+   */
+  @new(connection) {
+    self._connection = connection
+  }
+
+  /**
+   * The tables the application created.
+   *
+   * @param string|nil schema The database to look in, or nil for the
+   *    one in use.
+   * @returns list[string]
+   */
+  tables(schema) {
+    return self._relations('BASE TABLE', schema)
+  }
+
+  /**
+   * The views.
+   *
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  views(schema) {
+    return self._relations('VIEW', schema)
+  }
+
+  /**
+   * The columns of `table`, in order.
+   *
+   * The type is the one the table was declared with, `varchar(64)`
+   * rather than `varchar`, since on MySQL the width is frequently the
+   * part worth knowing.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  columns(table: string, schema) {
+    var key = self.primary_key_columns(table, schema)
+
+    var rows = self._query(
+      'select column_name, column_type, is_nullable, column_default, ' +
+      '  ordinal_position ' +
+      'from information_schema.columns ' +
+      'where table_name = ? and table_schema = coalesce(?, database()) ' +
+      'order by ordinal_position',
+      [table, schema]
+    )
+
+    return rows.map(@(row) {
+      return {
+        name: row[0],
+        type: row[1],
+        nullable: row[2] == 'YES',
+        default_value: row[3],
+        primary_key: key.contains(row[0]),
+        position: row[4],
+      }
+    })
+  }
+
+  /**
+   * The primary key columns, in key order.
+   *
+   * MySQL names every primary key `PRIMARY`, whatever the table.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[string]
+   */
+  primary_key_columns(table: string, schema) {
+    var rows = self._query(
+      'select column_name from information_schema.key_column_usage ' +
+      "where table_name = ? and table_schema = coalesce(?, database()) " +
+      "  and constraint_name = 'PRIMARY' " +
+      'order by ordinal_position',
+      [table, schema]
+    )
+
+    return rows.map(@(row) => row[0])
+  }
+
+  /**
+   * The indexes on `table`, each `{ name, columns, unique }`.
+   *
+   * The primary key is among them, under the name MySQL gives it.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  indexes(table: string, schema) {
+    var rows = self._query(
+      'select index_name, non_unique, column_name ' +
+      'from information_schema.statistics ' +
+      'where table_name = ? and table_schema = coalesce(?, database()) ' +
+      'order by index_name, seq_in_index',
+      [table, schema]
+    )
+
+    var found = []
+    var by_name = {}
+
+    for row in rows {
+      var name = row[0]
+
+      if !by_name.contains(name) {
+        by_name.set(name, { name, unique: row[1] == 0, columns: [] })
+        found.append(name)
+      }
+
+      by_name[name].columns.append(row[2])
+    }
+
+    return found.map(@(name) => by_name[name])
+  }
+
+  /**
+   * The foreign keys declared on `table`.
+   *
+   * @param string table
+   * @param string|nil schema
+   * @returns list[dict]
+   */
+  foreign_keys(table: string, schema) {
+    var rows = self._query(
+      'select key_columns.constraint_name, key_columns.column_name, ' +
+      '  key_columns.referenced_table_name, ' +
+      '  key_columns.referenced_column_name, ' +
+      '  constraint_rules.update_rule, constraint_rules.delete_rule ' +
+      'from information_schema.key_column_usage as key_columns ' +
+      'join information_schema.referential_constraints as constraint_rules ' +
+      '  on constraint_rules.constraint_name = ' +
+      '    key_columns.constraint_name ' +
+      '  and constraint_rules.constraint_schema = ' +
+      '    key_columns.table_schema ' +
+      'where key_columns.table_name = ? ' +
+      '  and key_columns.table_schema = coalesce(?, database()) ' +
+      '  and key_columns.referenced_table_name is not null ' +
+      'order by key_columns.constraint_name, key_columns.ordinal_position',
+      [table, schema]
+    )
+
+    var found = []
+    var by_name = {}
+
+    for row in rows {
+      var name = row[0]
+
+      if !by_name.contains(name) {
+        by_name.set(name, {
+          columns: [],
+          references_table: row[2],
+          references_columns: [],
+          on_update: row[4],
+          on_delete: row[5],
+        })
+
+        found.append(name)
+      }
+
+      by_name[name].columns.append(row[1])
+      by_name[name].references_columns.append(row[3])
+    }
+
+    return found.map(@(name) => by_name[name])
+  }
+
+  _relations(kind, schema) {
+    var rows = self._query(
+      'select table_name from information_schema.tables ' +
+      'where table_type = ? and table_schema = coalesce(?, database()) ' +
+      'order by table_name',
+      [kind, schema]
+    )
+
+    return rows.map(@(row) => row[0])
+  }
+
+  # These go straight to the adapter: they are not user SQL and already
+  # carry the server's own placeholders, so there is nothing to
+  # translate.
+  _query(sql, values) {
+    return self._connection.select(sql, values).rows
+  }
+}

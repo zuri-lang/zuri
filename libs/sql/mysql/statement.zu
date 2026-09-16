@@ -1,0 +1,138 @@
+/**
+ * @module statement
+ *
+ * A statement compiled once on the server and run many times.
+ *
+ * Preparing sends the statement, and the server answers with the types
+ * it will bind and the columns it will return. Every execution after
+ * that sends only the values, in the binary encoding, which is both
+ * smaller than the text one and free of any question of quoting.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver { DriverStatement }
+import ..errors { ClosedError }
+import .types { describe_columns }
+
+/**
+ * A prepared statement.
+ *
+ * @printable
+ */
+class MySqlStatement < DriverStatement {
+  var _connection
+  var _id
+  var _sql
+  var _columns = []
+  var _raw_columns = []
+  var _parameters = []
+  var _closed = false
+
+  /**
+   * @param MySqlConnection connection
+   * @param dict prepared What the server said when it compiled the
+   *    statement.
+   * @param string sql
+   */
+  @new(connection, prepared, sql) {
+    self._connection = connection
+    self._id = prepared.id
+    self._raw_columns = prepared.columns
+    self._columns = describe_columns(prepared.columns)
+    self._parameters = prepared.parameters
+    self._sql = sql
+  }
+
+  /**
+   * The statement's id on the server.
+   *
+   * @returns number
+   */
+  id() {
+    return self._id
+  }
+
+  /**
+   * The statement as it was compiled.
+   *
+   * @returns string
+   */
+  sql() {
+    return self._sql
+  }
+
+  /**
+   * The columns as the server described them, with everything it said
+   * about each rather than the two fields the contract asks for.
+   *
+   * @returns list[dict]
+   */
+  raw_columns() {
+    return self._raw_columns
+  }
+
+  columns() {
+    return self._columns
+  }
+
+  parameter_count() {
+    return self._parameters.length()
+  }
+
+  execute(values: list) {
+    self._require_open()
+
+    return self._connection.run_statement(self, values)
+  }
+
+  select(values: list) {
+    self._require_open()
+
+    return self._connection.select_statement(self, values)
+  }
+
+  open_cursor(values: list, options: dict) {
+    self._require_open()
+
+    return self._connection.cursor_for_statement(self, values, options, false)
+  }
+
+  /**
+   * Releases the statement on the server. Safe to call more than once.
+   */
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._connection.release_statement(self._id)
+  }
+
+  /**
+   * Whether this statement has been released.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  _require_open() {
+    if self._closed {
+      raise ClosedError(
+        'this statement has been closed',
+        { driver: 'mysql', query: self._sql }
+      )
+    }
+  }
+
+  to_string() {
+    return '<MySqlStatement ${self._id}${self._closed ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

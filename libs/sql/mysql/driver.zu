@@ -1,0 +1,526 @@
+/**
+ * @module driver
+ *
+ * Opening MySQL and MariaDB connections: reading a connection string,
+ * establishing the socket, upgrading it to TLS when asked, and
+ * authenticating.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import net
+import net.tcp
+import url
+
+import ..driver {
+  Driver, default_capabilities, READ_COMMITTED, REPEATABLE_READ,
+  SERIALIZABLE, READ_UNCOMMITTED,
+}
+import ..errors { ConnectionError, NotSupportedError }
+import ..params { QUESTION }
+import .connection { MySqlConnection }
+import .packets { PacketStream }
+import .protocol { Protocol }
+
+/**
+ * The port a MySQL server listens on unless told otherwise.
+ */
+var DEFAULT_PORT = 3306
+
+/**
+ * How long to wait for the socket and for each read, in milliseconds.
+ */
+var DEFAULT_TIMEOUT = 30000
+
+/**
+ * Most parameters one statement can bind. The protocol counts them in
+ * a 16 bit field, so this is a hard limit rather than a configured
+ * one.
+ */
+var MAX_PARAMETERS = 65535
+
+/**
+ * What `sslmode` can be.
+ *
+ * | Mode | Meaning |
+ * | - | - |
+ * | `disable` | Never use TLS. |
+ * | `prefer` | Where the server offers it, unverified; in the clear where it does not. |
+ * | `require` | Insist on TLS, without checking who the server is. |
+ * | `verify` | Insist on TLS and check the server's certificate and host name. |
+ *
+ * MySQL's own spellings are accepted too. `DISABLED`, `PREFERRED` and
+ * `REQUIRED` mean what they say; `VERIFY_CA` and `VERIFY_IDENTITY`
+ * both become `verify`. That makes `VERIFY_CA` stricter here than on
+ * the command line, where it checks the certificate but not the name:
+ * the difference can only cause a connection to be refused, never to
+ * be wrongly trusted.
+ */
+var SSL_MODES = ['disable', 'prefer', 'require', 'verify']
+
+var _SSL_ALIASES = {
+  'disabled': 'disable',
+  'preferred': 'prefer',
+  'required': 'require',
+  'verify_ca': 'verify',
+  'verify-ca': 'verify',
+  'verify_identity': 'verify',
+  'verify-identity': 'verify',
+}
+
+/**
+ * Opens MySQL connections.
+ */
+class MySqlDriver < Driver {
+  name() {
+    return 'mysql'
+  }
+
+  schemes() {
+    return ['mysql']
+  }
+
+  /**
+   * What MySQL can do.
+   *
+   * `last_insert_id` is true and `returning` is false, which together
+   * are the most visible difference from PostgreSQL: an insert that
+   * wants its id back reads it from what the server reported rather
+   * than from a `RETURNING` clause, and `Connection.insert()` picks
+   * between the two on its own.
+   *
+   * @returns dict
+   */
+  capabilities() {
+    var caps = default_capabilities()
+
+    caps.set('placeholder_style', QUESTION)
+    caps.set('named_parameters', false)
+    caps.set('last_insert_id', true)
+    caps.set('returning', false)
+    caps.set('isolation_levels', [
+      READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
+    ])
+    caps.set('server_side_cursors', true)
+    caps.set('json', true)
+    caps.set('decimals', true)
+
+    # MySQL has no boolean: BOOLEAN is TINYINT(1), and a value written
+    # as true comes back as 1.
+    caps.set('booleans', false)
+    caps.set('upsert', true)
+
+    # A schema and a database are the same thing here, so a table can
+    # be qualified with one but there is no layer above it.
+    caps.set('schemas', true)
+    caps.set('max_parameters', MAX_PARAMETERS)
+    caps.set('identifier_quote', '`')
+    caps.set('default_port', DEFAULT_PORT)
+
+    return caps
+  }
+
+  /**
+   * Reads a connection string, in either of the two forms MySQL's own
+   * tooling accepts.
+   *
+   * A URI:
+   *
+   * ```
+   * mysql://alice:secret@db.example.com:3306/app?sslmode=verify
+   * mysql://localhost/app
+   * ```
+   *
+   * Or keywords, as `my.cnf` spells them:
+   *
+   * ```
+   * host=localhost port=3306 database=app user=alice password=secret
+   * ```
+   *
+   * Anything absent is filled in the way the command line client fills
+   * it: the user defaults to `root`, the host to `127.0.0.1` and the
+   * port to 3306. No database is selected unless one is named.
+   *
+   * @param string|dict dsn
+   * @returns dict
+   * @throws ConnectionError if the string cannot be read.
+   */
+  parse_dsn(dsn) {
+    if is_dict(dsn) {
+      return self._defaults(dsn.clone())
+    }
+
+    if !is_string(dsn) {
+      raise ConnectionError(
+        'a ${self.name()} connection string is a string or a ' +
+        'dictionary, not ${typeof(dsn)}',
+        { driver: self.name() }
+      )
+    }
+
+    var text = dsn.trim()
+
+    if text.is_empty() {
+      raise ConnectionError(
+        'a ${self.name()} connection string cannot be empty',
+        { driver: self.name() }
+      )
+    }
+
+    return self._defaults(
+      text.contains('://') ? self._parse_uri(text) : self._parse_keywords(text)
+    )
+  }
+
+  /**
+   * Opens the connection and authenticates.
+   *
+   * @param dict options From `parse_dsn()`.
+   * @returns MySqlConnection
+   */
+  connect(options: dict) {
+    if options.host.starts_with('/') {
+      raise NotSupportedError(
+        'this adapter connects over TCP, and ${options.host} is a unix ' +
+        'socket; give it a host name or address instead',
+        { driver: self.name() }
+      )
+    }
+
+    var stream = self._open_socket(options)
+    var protocol = Protocol(PacketStream(stream))
+    var mode = options.sslmode
+
+    catch {
+      protocol.handshake(
+        {
+          user: options.user,
+          password: options.get('password', ''),
+          database: options.get('database', nil),
+          tls: mode != 'disable',
+          tls_required: mode != 'disable' and mode != 'prefer',
+          multiple_statements: options.get('multiple_statements', false),
+          local_infile: options.get('local_infile', false),
+          found_rows: options.get('found_rows', false),
+          compression: options.get('compression', 'none'),
+          compress_level: options.get('compress_level', 3),
+          public_key: options.get('public_key', nil),
+          program: options.get('program', 'zuri'),
+          private: false,
+        },
+        @(_capabilities) {
+          return self._upgrade(stream, options)
+        }
+      )
+    } as error {
+      protocol.quit()
+
+      raise error
+    }
+
+    var connection = MySqlConnection(self, protocol, options)
+    self._configure(connection, options)
+
+    return connection
+  }
+
+  _open_socket(options) {
+    var address = '${options.host}:${options.port}'
+    var stream = tcp.TcpStream()
+
+    catch {
+      stream.connect(tcp.resolve(address)[0], options.timeout)
+      stream.set_read_timeout(options.timeout)
+      stream.set_write_timeout(options.timeout)
+
+      # Statements are small and latency matters more than packing
+      # them, so the delay Nagle's algorithm would add is not wanted.
+      stream.set_nodelay(true)
+    } as error {
+      raise ConnectionError(
+        'could not connect to ${address}: ${error.message}',
+        { driver: self.name() }
+      )
+    }
+
+    return stream
+  }
+
+  # Starts TLS on a socket the handshake has already asked to secure.
+  _upgrade(stream, options) {
+    var config = net.tls.TlsConfig()
+
+    if options.get('ssl_ca', nil) != nil {
+      config.add_ca_pem(options.ssl_ca)
+    }
+
+    if options.get('ssl_cert', nil) != nil and options.get('ssl_key', nil) != nil {
+      config.set_cert_chain(options.ssl_cert, options.ssl_key)
+    }
+
+    # Only `verify` claims to have checked who is on the other end.
+    # The other two encrypt and say no more than that.
+    if options.sslmode != 'verify' {
+      config.set_insecure(true)
+    }
+
+    catch {
+      return net.tls.TlsStream.connect(stream, config, options.host)
+    } as error {
+      raise ConnectionError(
+        'the TLS handshake with ${options.host} failed: ${error.message}',
+        { driver: self.name() }
+      )
+    }
+  }
+
+  # Puts the session into a known state, so that what a program reads
+  # does not depend on how the server happens to be configured.
+  _configure(connection, options) {
+    var zone = options.get('time_zone', '+00:00')
+
+    # A caller that wants the server's own zone passes nil, and then
+    # nothing is set and a TIMESTAMP arrives in whatever zone the
+    # session is already in.
+    if zone != nil and zone != false {
+      catch {
+        connection.run_simple("set session time_zone = '${zone}'")
+      } as error {
+        connection.close()
+
+        raise ConnectionError(
+          'could not set the session time zone to ${zone}: ' +
+          error.message,
+          { driver: self.name() }
+        )
+      }
+    }
+
+    var statements = options.get('init', nil)
+
+    if statements != nil {
+      for statement in is_list(statements) ? statements : [statements] {
+        connection.run_simple(statement)
+      }
+    }
+  }
+
+  _parse_uri(text) {
+    var parsed
+
+    catch {
+      parsed = url.parse(text)
+    } as error {
+      raise ConnectionError(
+        'could not read the connection string: ${error.message}',
+        { driver: self.name() }
+      )
+    }
+
+    var options = {}
+
+    if parsed.host != nil and !parsed.host.is_empty() {
+      options.set('host', parsed.host)
+    }
+
+    if parsed.port != nil {
+      options.set('port', parsed.port)
+    }
+
+    if parsed.username != nil and !parsed.username.is_empty() {
+      options.set('user', url.decode(parsed.username))
+    }
+
+    if parsed.password != nil {
+      options.set('password', url.decode(parsed.password))
+    }
+
+    # The path is the database, with the slash that introduces it
+    # dropped. A URI with no path names no database.
+    var path = parsed.path == nil ? '' : parsed.path
+
+    if path.starts_with('/') {
+      path = path[1, path.length()]
+    }
+
+    if !path.is_empty() {
+      options.set('database', url.decode(path))
+    }
+
+    # A query string may repeat a key, so every value arrives as a
+    # list. An option only ever has one value, and the last one written
+    # is the one meant.
+    if parsed.query != nil and !parsed.query.is_empty() {
+      for key, values in url.parse_query(parsed.query) {
+        var value = is_list(values) ?
+          (values.is_empty() ? '' : values[values.length() - 1]) :
+          values
+
+        options.set(key, value)
+      }
+    }
+
+    return options
+  }
+
+  _parse_keywords(text) {
+    var options = {}
+
+    for pair in text.split(' ') {
+      if pair.is_empty() {
+        continue
+      }
+
+      var mark = pair.index_of('=')
+
+      if mark == -1 {
+        raise ConnectionError(
+          'the connection string has "${pair}" where a name=value pair ' +
+          'was expected',
+          { driver: self.name() }
+        )
+      }
+
+      options.set(pair[0, mark], pair[mark + 1, pair.length()])
+    }
+
+    return options
+  }
+
+  _defaults(options) {
+    # MySQL's tooling spells the same options more than one way, and a
+    # string copied from elsewhere should not have to be edited. This
+    # runs before anything is defaulted, or a default would already
+    # hold the place the alias was meant to fill.
+    for name, canonical in {
+      dbname: 'database',
+      db: 'database',
+      username: 'user',
+      passwd: 'password',
+      ssl_mode: 'sslmode',
+      ssl_ca_file: 'ssl_ca',
+    } {
+      if options.contains(name) and !options.contains(canonical) {
+        options.set(canonical, options[name])
+      }
+    }
+
+    if !options.contains('host') or options.host == nil or options.host.is_empty() {
+      options.set('host', '127.0.0.1')
+    }
+
+    # The keyword form and a URI query both arrive as text, so anything
+    # that has to be a number or a flag is converted once, here.
+    options.set('port', _number_of(options.get('port', nil), DEFAULT_PORT))
+    options.set('timeout', _number_of(options.get('timeout', nil), DEFAULT_TIMEOUT))
+    options.set('compress_level', _number_of(options.get('compress_level', nil), 3))
+
+    if !options.contains('user') or options.user == nil {
+      options.set('user', 'root')
+    }
+
+    options.set('sslmode', _ssl_mode_of(options.get('sslmode', nil), self.name()))
+
+    for flag in ['multiple_statements', 'found_rows'] {
+      options.set(flag, _flag_of(options.get(flag, false)))
+    }
+
+    var compression = options.get('compression', 'none')
+
+    if compression == true {
+      compression = 'zlib'
+    }
+
+    if compression == false or compression == nil {
+      compression = 'none'
+    }
+
+    if !['none', 'zlib', 'zstd'].contains(compression) {
+      raise ConnectionError(
+        'compression is none, zlib or zstd, not ${compression}',
+        { driver: self.name() }
+      )
+    }
+
+    options.set('compression', compression)
+
+    return options
+  }
+}
+
+/**
+ * Opens MariaDB connections.
+ *
+ * MariaDB speaks the same protocol, so everything about the exchange
+ * is shared. It differs in what it can be asked to do: `RETURNING`
+ * works there and does not on MySQL, which is the one capability that
+ * changes what the layer above generates.
+ *
+ * A MariaDB server reached through `mysql://` works, and simply
+ * reports the smaller set of capabilities.
+ */
+class MariaDbDriver < MySqlDriver {
+  name() {
+    return 'mariadb'
+  }
+
+  schemes() {
+    return ['mariadb']
+  }
+
+  capabilities() {
+    var caps = parent.capabilities()
+
+    caps.set('returning', true)
+
+    return caps
+  }
+}
+
+def _number_of(value, fallback) {
+  if value == nil {
+    return fallback
+  }
+
+  if is_number(value) {
+    return value
+  }
+
+  var parsed = '${value}'.to_number()
+
+  return parsed == 0 and '${value}' != '0' ? fallback : parsed
+}
+
+def _flag_of(value) {
+  if is_bool(value) {
+    return value
+  }
+
+  return ['true', '1', 'yes', 'on'].contains('${value}'.lower())
+}
+
+def _ssl_mode_of(value, driver) {
+  if value == nil {
+    return 'prefer'
+  }
+
+  if value == true {
+    return 'verify'
+  }
+
+  if value == false {
+    return 'disable'
+  }
+
+  var mode = '${value}'.lower()
+  mode = _SSL_ALIASES.get(mode, mode)
+
+  if !SSL_MODES.contains(mode) {
+    raise ConnectionError(
+      'sslmode is one of ${", ".join(SSL_MODES)}, not ${value}',
+      { driver }
+    )
+  }
+
+  return mode
+}

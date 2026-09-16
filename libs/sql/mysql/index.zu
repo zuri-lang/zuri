@@ -1,0 +1,75 @@
+/**
+ * @module mysql
+ *
+ * The MySQL and MariaDB adapter.
+ *
+ * Reach it through `sql`, which is what keeps a program portable:
+ *
+ * ```zuri,ignore
+ * import sql
+ *
+ * var db = sql.open('mysql://alice:secret@localhost/app')
+ * ```
+ *
+ * The module underneath is here for the parts of MySQL that have no
+ * equivalent elsewhere: the server's own settings, the connection's
+ * id, and which of the two servers answered.
+ *
+ * ### What this adapter speaks
+ *
+ * The client/server protocol over TCP, optionally under TLS and
+ * optionally compressed with zlib or zstd. Unix domain sockets are not
+ * supported; a `host` that names a socket path raises rather than
+ * silently connecting somewhere else.
+ *
+ * A statement with no values is sent as text, which is one round trip.
+ * A statement with values is prepared, so that the values travel in
+ * the server's binary encoding rather than being written into the SQL.
+ * Prepared statements are kept and reused, so a query run in a loop is
+ * compiled once.
+ *
+ * ### Authentication
+ *
+ * `mysql_native_password`, `caching_sha2_password` (both the cached
+ * exchange and the slower one behind it), `sha256_password`,
+ * `mysql_clear_password` and MariaDB's `client_ed25519`. On a
+ * connection that is not private, the two plugins that need the
+ * password itself encrypt it to the server's public key rather than
+ * sending it, and `mysql_clear_password` is refused outright.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.driver {
+  MariaDbDriver, MySqlDriver, DEFAULT_PORT, MAX_PARAMETERS, SSL_MODES,
+}
+import @.connection { MySqlConnection }
+import @.statement { MySqlStatement }
+import @.cursor { MySqlCursor }
+import @.protocol { CAPABILITIES, COMMANDS, Protocol }
+import @.packets { PacketStream }
+import @.types { FLAGS, TYPES, type_name_of }
+import @.errors { class_for, raise_for }
+import @.auth { CACHING_SHA2, CLEAR, ED25519, NATIVE, SHA256 }
+
+/**
+ * The driver instance `sql` registers for MySQL.
+ */
+var DRIVER = MySqlDriver()
+
+/**
+ * The driver instance `sql` registers for MariaDB.
+ */
+var MARIADB_DRIVER = MariaDbDriver()
+
+/**
+ * Opens a MySQL connection directly, without going through `sql`.
+ *
+ * Anything meant to stay portable should use `sql.open()` instead.
+ *
+ * @param string|dict dsn A connection string or options.
+ * @returns MySqlConnection
+ */
+def connect(dsn) {
+  return DRIVER.connect(DRIVER.parse_dsn(dsn))
+}

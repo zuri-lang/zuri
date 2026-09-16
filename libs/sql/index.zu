@@ -7,8 +7,7 @@
  * defines what a database adapter has to provide, supplies everything
  * that is the same whichever engine answers, and picks the adapter
  * from the connection string. Changing database means changing that
- * string, and whatever SQL the two engines genuinely spell
- * differently.
+ * string, and whatever SQL the engines genuinely spell differently.
  *
  * ```zuri
  * import sql
@@ -27,10 +26,11 @@
  * ```
  *
  * The only line above that names an engine is the first. Point it at
- * `postgres://localhost/app` and the rest runs unchanged: the `?`
- * becomes `$1`, the insert gets a `RETURNING` clause because
- * PostgreSQL has no last insert id, and a unique key violation still
- * arrives as `UniqueViolation`.
+ * `postgres://localhost/app` or `mysql://localhost/app` and the rest
+ * runs unchanged: the `?` becomes `$1` on PostgreSQL and stays `?` on
+ * MySQL, the insert gets a `RETURNING` clause where the engine has no
+ * last insert id, and a unique key violation still arrives as
+ * `UniqueViolation`.
  *
  * ### What is here
  *
@@ -45,6 +45,7 @@
  * | `Cursor` | a result read a row at a time |
  * | `ResultSet` | the rows a query returned |
  * | `Decimal` | an exact decimal, for a column a float must not hold |
+ * | `Time` | a signed span of time, as a `TIME` column holds one |
  * | `Schema` | what tables exist and what is in them |
  * | `SqlError` | the root of every error a database raises |
  *
@@ -107,12 +108,13 @@ import @.pool { Pool }
 
 import .sqlite
 import .postgres
+import .mysql
 
 /**
  * The adapters known to `sql`, by the name each registered under.
  *
- * The two built in ones are here from the start. `register()` adds to
- * it and `drivers()` reads it.
+ * The built in ones are here from the start. `register()` adds to it
+ * and `drivers()` reads it.
  */
 var _REGISTRY = {}
 
@@ -124,9 +126,9 @@ var _REGISTRY = {}
  * adapter of its own for an engine `sql` already knows.
  *
  * ```zuri,ignore
- * sql.register(MyMySqlDriver())
+ * sql.register(MyOracleDriver())
  *
- * var db = sql.open('mysql://localhost/app')
+ * var db = sql.open('oracle://localhost/app')
  * ```
  *
  * @param Driver driver
@@ -282,3 +284,5 @@ def _scheme_of(dsn) {
 
 register(sqlite.DRIVER)
 register(postgres.DRIVER)
+register(mysql.DRIVER)
+register(mysql.MARIADB_DRIVER)

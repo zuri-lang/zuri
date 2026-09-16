@@ -1,0 +1,259 @@
+/**
+ * @module auth
+ *
+ * The authentication plugins a MySQL or MariaDB server can ask for.
+ *
+ * Every one of them works from the same starting point: the server
+ * sends a random scramble in its greeting, and the client answers with
+ * something that proves it knows the password without containing it.
+ * What differs is the proof.
+ *
+ * | Plugin | Proof |
+ * | - | - |
+ * | `mysql_native_password` | SHA-1 of the password, masked with the scramble. |
+ * | `caching_sha2_password` | The same in SHA-256, with a fallback for an uncached password. |
+ * | `sha256_password` | The password itself, under TLS or RSA. |
+ * | `client_ed25519` | A signature over the scramble, by a key derived from the password. |
+ * | `mysql_clear_password` | The password itself. Refused unless the connection is private. |
+ *
+ * ### The two that send the password
+ *
+ * `sha256_password` and the slow half of `caching_sha2_password` send
+ * the password rather than a proof, because the server needs it to
+ * compute the hash it will cache. That is safe over TLS and over a
+ * unix socket, and over neither otherwise, so on a plain TCP
+ * connection the password is encrypted to a public key the server
+ * hands over first. `mysql_clear_password` has no such fallback and is
+ * refused on a connection that is not already private.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import crypto
+import hash
+
+import ..errors { AuthenticationError }
+import .ed25519
+
+/** MySQL's original plugin, and still MariaDB's default. */
+var NATIVE = 'mysql_native_password'
+
+/** The default since MySQL 8.0. */
+var CACHING_SHA2 = 'caching_sha2_password'
+
+/** MySQL 5.7's stronger option, superseded by the caching one. */
+var SHA256 = 'sha256_password'
+
+/** Sends the password as it is. Needs a private connection. */
+var CLEAR = 'mysql_clear_password'
+
+/** MariaDB's signature-based plugin. */
+var ED25519 = 'client_ed25519'
+
+/** Named in a handshake by a server that wants no password at all. */
+var NONE = 'mysql_old_password'
+
+/**
+ * The plugins this adapter can answer.
+ */
+var SUPPORTED = [NATIVE, CACHING_SHA2, SHA256, CLEAR, ED25519]
+
+/**
+ * Whether `plugin` is one this adapter knows how to answer.
+ *
+ * @param string plugin
+ * @returns bool
+ */
+def supports(plugin: string) {
+  return SUPPORTED.contains(plugin)
+}
+
+/**
+ * The `mysql_native_password` response.
+ *
+ * The server stores SHA-1 of SHA-1 of the password. Hashing the
+ * scramble together with what the server stores produces a mask that
+ * both sides can compute, and the client returns its own first stage
+ * hash under that mask. The server unmasks it, hashes it once more,
+ * and compares. The password never crosses the wire and neither does
+ * anything that would work a second time.
+ *
+ * @param string password
+ * @param bytes scramble The 20 bytes from the greeting.
+ * @returns bytes The 20 byte response, or nothing for an empty
+ *    password, which is what the server expects for an account with
+ *    none.
+ */
+def native_password(password: string, scramble) {
+  if password.is_empty() {
+    return bytes(0)
+  }
+
+  var stage1 = hash.sha1(password, true)
+  var stage2 = hash.sha1(stage1, true)
+
+  return _xor(stage1, hash.sha1(scramble + stage2, true))
+}
+
+/**
+ * The fast `caching_sha2_password` response.
+ *
+ * The same construction in SHA-256, with the scramble on the other
+ * side of the hash. It only succeeds where the server already holds
+ * this account's hash in memory; a server that does not answers with a
+ * request for the password itself.
+ *
+ * @param string password
+ * @param bytes scramble
+ * @returns bytes The 32 byte response, or nothing for an empty
+ *    password.
+ */
+def caching_sha2_password(password: string, scramble) {
+  if password.is_empty() {
+    return bytes(0)
+  }
+
+  var digest1 = hash.sha256(password, true)
+  var digest2 = hash.sha256(digest1, true)
+
+  return _xor(digest1, hash.sha256(digest2 + scramble, true))
+}
+
+/**
+ * The `client_ed25519` response, which MariaDB uses.
+ *
+ * The password is hashed into an Ed25519 key and the scramble is
+ * signed with it. The server holds only the matching public key, so
+ * unlike every hash based plugin here, what the server stores cannot
+ * be replayed against it.
+ *
+ * @param string password
+ * @param bytes scramble
+ * @returns bytes The 64 byte signature.
+ */
+def ed25519_password(password: string, scramble) {
+  return ed25519.sign(ed25519.password_key(password), scramble)
+}
+
+/**
+ * The password as the server reads it when it is sent outright: the
+ * bytes and the zero that ends them.
+ *
+ * @param string password
+ * @returns bytes
+ */
+def clear_password(password: string) {
+  return password.to_bytes() + bytes([0])
+}
+
+/**
+ * The password masked with the scramble, which is the form the two
+ * RSA plugins encrypt.
+ *
+ * Masking adds nothing against someone who can read the ciphertext,
+ * since they cannot. It matters because the scramble differs every
+ * connection, so the same password never encrypts to the same bytes
+ * twice, and a captured exchange cannot be replayed.
+ *
+ * @param string password
+ * @param bytes scramble
+ * @returns bytes
+ */
+def obfuscate(password: string, scramble) {
+  var plain = clear_password(password)
+  var out = bytes(plain.length())
+
+  for index in 0..(plain.length()) {
+    out[index] = plain[index] ^ scramble[index % scramble.length()]
+  }
+
+  return out
+}
+
+/**
+ * The password encrypted to the server's public key, for the plugins
+ * that need the password itself over a connection that is not private.
+ *
+ * MySQL decrypts this with OAEP under SHA-1, which is what its own
+ * server links against. The choice is the server's, not this
+ * adapter's.
+ *
+ * @param string password
+ * @param bytes scramble
+ * @param string public_pem The key the server sent.
+ * @returns bytes
+ * @throws AuthenticationError if the key will not parse.
+ */
+def encrypt_password(password: string, scramble, public_pem: string) {
+  catch {
+    return crypto.rsa.encrypt(public_pem, obfuscate(password, scramble), 'sha1')
+  } as error {
+    raise AuthenticationError(
+      'the public key the server sent could not be used: ' + error.message,
+      { driver: 'mysql' }
+    )
+  }
+}
+
+/**
+ * The first response to send for `plugin`, before any back and forth.
+ *
+ * @param string plugin
+ * @param string password
+ * @param bytes scramble
+ * @param bool private Whether the connection is already private, which
+ *    decides whether a plugin may send the password outright.
+ * @returns bytes
+ * @throws AuthenticationError if the plugin is one this adapter cannot
+ *    answer, or would have to answer unsafely.
+ */
+def response_for(plugin: string, password: string, scramble, private: bool) {
+  if plugin == NATIVE or plugin == NONE {
+    return native_password(password, scramble)
+  }
+
+  if plugin == CACHING_SHA2 {
+    return caching_sha2_password(password, scramble)
+  }
+
+  if plugin == ED25519 {
+    return ed25519_password(password, scramble)
+  }
+
+  if plugin == SHA256 {
+    # Under TLS the password goes as it is. Otherwise this is only the
+    # opening move: a single byte asking for the public key, which the
+    # exchange in `protocol` carries on from.
+    return private ? clear_password(password) : bytes([1])
+  }
+
+  if plugin == CLEAR {
+    if !private {
+      raise AuthenticationError(
+        'the server asked for ${CLEAR}, which sends the password with ' +
+        'nothing protecting it; connect with tls, or over a unix ' +
+        'socket, or use a different plugin',
+        { driver: 'mysql' }
+      )
+    }
+
+    return clear_password(password)
+  }
+
+  raise AuthenticationError(
+    'the server asked for the ${plugin} authentication plugin, which ' +
+    'this adapter does not implement',
+    { driver: 'mysql' }
+  )
+}
+
+# Bytewise XOR of two equal length byte strings.
+def _xor(left, right) {
+  var out = bytes(left.length())
+
+  for index in 0..(left.length()) {
+    out[index] = left[index] ^ right[index]
+  }
+
+  return out
+}

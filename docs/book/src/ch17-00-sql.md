@@ -6,14 +6,15 @@ design: `sql` defines what a database adapter has to provide, supplies
 everything that is the same whichever engine answers, and picks the
 adapter from the connection string.
 
-Two adapters ship with it. SQLite is a database that is a file, with no
-server to run and nothing to configure, which makes it the right choice
-for an application that ships with its data and for a test suite that
-wants a real database per run. PostgreSQL is the server, for everything
-that outgrows a file.
+Three adapters ship with it. SQLite is a file-based database with
+no server to run and nothing to configure, which makes it the right
+choice for an application that ships with its data and for a test suite
+that wants a real database per run. PostgreSQL and MySQL are servers,
+for everything that outgrows a file, and the MySQL adapter drives
+MariaDB as well.
 
-Changing from one to the other means changing the connection string,
-and whatever SQL the two genuinely spell differently.
+Changing from one to another means changing the connection string, and
+whatever SQL they genuinely spell differently.
 
 - [Following Along](#following-along)
 - [Introduction](#introduction)
@@ -32,6 +33,7 @@ and whatever SQL the two genuinely spell differently.
 - [Switching Databases](#switching-databases)
 - [SQLite Specifics](#sqlite-specifics)
 - [PostgreSQL Specifics](#postgresql-specifics)
+- [MySQL Specifics](#mysql-specifics)
 - [Writing Your Own Adapter](#writing-your-own-adapter)
 - [What the Module Refuses](#what-the-module-refuses)
 - [Module Reference](#module-reference)
@@ -39,8 +41,8 @@ and whatever SQL the two genuinely spell differently.
 > Blocks on this page that list several calls together are **reference
 > listings**, not programs: they show the shape of each call rather
 > than a sequence to run. Anything presented as a complete program runs
-> as written. The PostgreSQL examples need a server, so they are shown
-> rather than run.
+> as written. The PostgreSQL and MySQL examples need a server, so they
+> are shown rather than run.
 
 ## Following Along
 
@@ -119,11 +121,13 @@ On Bugs: 1290
 On Compilers: 640
 ```
 
-Point the first line at `postgres://localhost/app` and the rest runs
-unchanged. The `?` becomes `$1` because that is what PostgreSQL wants.
-An insert asking for its new id gets a `RETURNING` clause, because
-PostgreSQL has no last insert id and SQLite does. A duplicate key
-arrives as `UniqueViolation` from either.
+Point the first line at `postgres://localhost/app` or
+`mysql://localhost/app` and the rest runs unchanged. The `?` becomes
+`$1` on PostgreSQL because that is what PostgreSQL wants, and stays `?`
+on MySQL because that is what MySQL wants. An insert asking for its new
+id gets a `RETURNING` clause on PostgreSQL, because PostgreSQL has no
+last insert id and the other two do. A duplicate key arrives as
+`UniqueViolation` from all three.
 
 What it does not do is pretend the engines are the same. They disagree
 about auto-incrementing keys, about which functions exist, about a
@@ -141,6 +145,9 @@ sql.open('./app.db')                   # a bare path is SQLite
 sql.open('postgres://localhost/app')
 sql.open('postgres://alice:secret@db.internal:5432/shop?sslmode=require')
 sql.open('host=localhost dbname=app user=alice')
+sql.open('mysql://localhost/app')
+sql.open('mysql://alice:secret@db.internal:3306/shop?sslmode=verify')
+sql.open('mariadb://localhost/app')
 ```
 
 The scheme picks the adapter. A string with no scheme at all is taken
@@ -326,8 +333,9 @@ db.close()
 ```
 
 `sql` rewrites these into whatever the adapter wants: `$1` and `$2` for
-PostgreSQL, `?1` and `?2` for SQLite. The scanner knows when a `?` or a
-`:` is not a placeholder, so none of these are touched:
+PostgreSQL, `?1` and `?2` for SQLite, and `?` unchanged for MySQL, which
+already spells them that way. The scanner knows when a `?` or a `:` is
+not a placeholder, so none of these are touched:
 
 ```zuri,ignore
 "a ? inside a string"      -- a string
@@ -395,7 +403,13 @@ Values correspond like this:
 | `string` | text |
 | `bytes` | a blob |
 | `date.Date` | a timestamp |
+| `sql.Time` | a `TIME` interval, on an engine that has one |
 | `list`, `dict` | JSON |
+
+Not every engine has every one of those. PostgreSQL has a real boolean
+and MySQL does not, so a `true` written to MySQL comes back as `1`.
+`db.supports()` answers that sort of question without guessing, and
+each engine's own section below says where it differs.
 
 An integer too large for a double comes back as a `bigint` rather than
 silently rounded:
@@ -475,9 +489,9 @@ echo Decimal('0.1').add(Decimal('0.2')).to_string()
 0.3
 ```
 
-PostgreSQL's `numeric` columns read and write as `Decimal`
-automatically. SQLite has no exact decimal type, so store one as text
-or as an integer count of the smallest unit.
+PostgreSQL's `numeric` and MySQL's `DECIMAL` columns read and write as
+`Decimal` automatically. SQLite has no exact decimal type, so store one
+as text or as an integer count of the smallest unit.
 
 ## Inserting and Ids
 
@@ -501,12 +515,12 @@ db.close()
 2
 ```
 
-This is the call that hides the largest difference between the two
-engines. SQLite reports the id of the row it just inserted; PostgreSQL
-does not, and an insert that wants one has to ask with a `RETURNING`
-clause naming the primary key. `insert()` does whichever applies, and
-finds the key by asking the schema rather than assuming it is called
-`id`.
+This is the call that hides the largest difference between the engines.
+SQLite and MySQL report the id of the row just inserted; PostgreSQL does
+not, and an insert that wants one has to ask with a `RETURNING` clause
+naming the primary key. MariaDB has both and uses `RETURNING`.
+`insert()` does whichever applies, and finds the key by asking the
+schema rather than assuming it is called `id`.
 
 Where the key is not the column to return, name it:
 
@@ -723,10 +737,10 @@ db.transaction(@(tx) { ... }, sql.SERIALIZABLE)
 
 | | |
 | --- | --- |
-| `sql.READ_UNCOMMITTED` | PostgreSQL accepts it and gives read committed |
-| `sql.READ_COMMITTED` | both |
-| `sql.REPEATABLE_READ` | both |
-| `sql.SERIALIZABLE` | both |
+| `sql.READ_UNCOMMITTED` | MySQL honours it; PostgreSQL accepts it and gives read committed |
+| `sql.READ_COMMITTED` | everywhere |
+| `sql.REPEATABLE_READ` | everywhere, and MySQL's default |
+| `sql.SERIALIZABLE` | everywhere |
 
 `begin()` opens one to be committed or rolled back by hand, for a
 transaction whose lifetime is not a block. The closure form is safer
@@ -794,10 +808,15 @@ db.close()
 []
 ```
 
-On PostgreSQL this is a server-side portal, fetched in batches that
-`{ batch: n }` sizes. On SQLite it is the engine's own behaviour: rows
-are computed as they are asked for, so nothing is held but the current
-one.
+On PostgreSQL this is a server-side portal and on MySQL a server-side
+cursor, both fetched in batches that `{ batch: n }` sizes. On SQLite it
+is the engine's own behaviour: rows are computed as they are asked for,
+so nothing is held but the current one.
+
+A server-side cursor holds its connection while it is open, since the
+server is part way through answering. Running another statement on that
+connection before the cursor is read to the end or closed raises rather
+than letting the exchange fall out of step.
 
 ## Prepared Statements
 
@@ -832,7 +851,7 @@ the same query and fetch methods a connection does.
 
 ## Connection Pools
 
-Opening a connection is expensive: for PostgreSQL it is a TCP
+Opening a connection is expensive: for PostgreSQL and MySQL it is a TCP
 connection, a TLS handshake and an authentication exchange before the
 first statement runs. A server that opened one per request would spend
 most of its time connecting.
@@ -917,9 +936,10 @@ Error
 ```
 
 The classes are the same on every engine, which is the point. A unique
-constraint is SQLSTATE `23505` on PostgreSQL and extended result code
-`2067` on SQLite; neither number means anything to the other, and code
-matching on either would stop working the moment the adapter changed.
+constraint is SQLSTATE `23505` on PostgreSQL, error number `1062` on
+MySQL, and extended result code `2067` on SQLite; no one of those means
+anything to the others, and code matching on any of them would stop
+working the moment the adapter changed.
 
 ```zuri
 import sql
@@ -985,6 +1005,12 @@ running the whole transaction again usually succeeds.
 queries underneath are entirely different per engine, and the answers
 are the same shape.
 
+Every method takes an optional schema to look in. PostgreSQL has
+schemas inside a database and resolves the default through
+`search_path`; MySQL calls a database a schema and has no layer above
+it, so naming one there names a database; SQLite has neither and
+ignores the argument.
+
 ```zuri
 import sql
 
@@ -1047,6 +1073,11 @@ This is also what makes `insert()` portable: on an engine with no last
 insert id the insert needs a `RETURNING` clause, and the column to
 return is the table's primary key, which is asked for here.
 
+One caution when moving a schema between engines: MySQL parses a
+column level `references` clause and then ignores it, so a foreign key
+declared that way exists on the other two and not there. Declared at
+table level it exists on all three.
+
 ## Switching Databases
 
 The claim this module makes is that a program moves between engines by
@@ -1072,7 +1103,13 @@ def report(db) {
 }
 
 def key_type(db) {
-  return db.driver_name() == 'postgres' ? 'serial' : 'integer'
+  using db.driver_name() {
+    when 'postgres' return 'serial'
+    when 'mysql' return 'integer auto_increment'
+    when 'mariadb' return 'integer auto_increment'
+  }
+
+  return 'integer'
 }
 
 var sqlite = sql.open(':memory:')
@@ -1085,18 +1122,20 @@ sqlite.close()
 sqlite: [alpha, beta, gamma] (last id 3)
 ```
 
-The same `report()` runs against PostgreSQL by opening a different
-connection, and prints the same list.
+The same `report()` runs against PostgreSQL or MySQL by opening a
+different connection, and prints the same list.
 
 Three things did have to be written twice, and they are the three that
 are genuinely different:
 
 - **The connection string**, which is the point.
 - **An auto-incrementing key**, which is not standard SQL. PostgreSQL
-  spells it `serial`, SQLite `integer primary key`.
+  spells it `serial`, MySQL `auto_increment`, SQLite `integer primary
+  key`.
 - **Any SQL only one of them has.** `sql` does not parse or rewrite
-  statements beyond their placeholders, so a PostgreSQL array operator
-  or a SQLite `json_extract` stays what it is.
+  statements beyond their placeholders, so a PostgreSQL array operator,
+  a MySQL `on duplicate key update` or a SQLite `json_extract` stays
+  what it is.
 
 `db.supports()` is how a program asks rather than assumes:
 
@@ -1303,6 +1342,217 @@ DEFAULT_REGISTRY.register(oid, decoder, encoder)
 Until it is taught, such a column arrives as text, which is correct if
 unexciting.
 
+## MySQL Specifics
+
+The adapter speaks the client/server protocol directly, over TCP and
+optionally under TLS, with no client library underneath it. Unix domain
+sockets are not supported; a `host` naming a socket path raises rather
+than silently connecting somewhere else. MariaDB speaks the same
+protocol and the same adapter drives it.
+
+A statement with no values is sent as text, which is one round trip. A
+statement with values is prepared, so the values travel in the server's
+binary encoding instead of being written into the SQL, and the question
+of quoting never arises. Compiled statements are kept and reused, so a
+query run in a loop is compiled once.
+
+```zuri
+import sql
+
+var mysql = sql.driver('mysql')
+
+echo mysql.capabilities().placeholder_style
+echo mysql.capabilities().last_insert_id
+echo mysql.capabilities().returning
+echo mysql.quote_identifier('order by')
+echo sql.driver('mariadb').capabilities().returning
+```
+
+```console
+question
+true
+false
+`order by`
+true
+```
+
+MySQL keeps `?` as it is written, and reports the id of an inserted row
+rather than returning it, so `insert()` reads the reported id instead of
+adding a `RETURNING` clause. MariaDB has `RETURNING`, which is the one
+capability where the two differ, and is why `mariadb://` is a scheme of
+its own.
+
+### What arrives from where
+
+`DECIMAL` columns arrive as `sql.Decimal`, `JSON` as lists and
+dictionaries, `DATE` and `DATETIME` and `TIMESTAMP` as `date.Date`, and
+`TIME` as `sql.Time`.
+
+MySQL has no boolean. `BOOLEAN` is another name for `TINYINT(1)`, so a
+value written as `true` comes back as `1`, and `db.supports('booleans')`
+is false to say so.
+
+`BLOB` and `TEXT` share a type on the wire and are told apart only by
+the column's collation, which the adapter reads: a binary column
+arrives as `bytes` and a text one as a string. `BIT` and `GEOMETRY`
+arrive as `bytes`, having no shape Zuri could represent without
+inventing one. `SET` arrives as the comma separated text the server
+stores rather than as a list, because a list written back would be
+encoded as JSON and the column would quietly stop matching.
+
+A date MySQL considers absent is written as zeros, and `0000-00-00` is
+not a date any calendar has. It arrives as `nil`.
+
+### A TIME is a span, not a clock
+
+A `TIME` column runs from `-838:59:59.999999` to `838:59:59.999999`. It
+is a duration rather than a point in the day, so it can be negative and
+can exceed twenty four hours, and neither of those would survive being
+read into a `date.Date`. `sql.Time` holds it:
+
+```zuri
+import sql
+
+var shift = sql.time(9, 30, 0)
+var late = sql.time(0, 0, 30, 0, true)
+
+echo shift.to_string()
+echo shift.total_seconds()
+echo late.to_string()
+echo late.total_seconds()
+
+# Two spans of the same length are equal however each was built.
+echo sql.time(1, 30).equals(sql.time(0, 90))
+
+# And the parts are kept as they were written.
+echo sql.time(0, 90).minutes
+
+echo sql.parse_time('-838:59:59.999999').to_string()
+echo sql.time_from_seconds(-5400).to_string()
+```
+
+```console
+09:30:00
+34200
+-00:00:30
+-30
+true
+90
+-838:59:59.999999
+-01:30:00
+```
+
+### Time zones
+
+A `DATETIME` carries no zone, and a `TIMESTAMP` is converted to and
+from whatever zone the session is in. So the session's zone decides
+what a timestamp means, and leaving it to the server's configuration
+would make the same database read differently from two machines.
+
+The adapter sets the session to UTC when it connects. Every timestamp
+then arrives as UTC, and a `date.Date` written back is converted from
+whatever offset it carries. To leave the server's own setting alone,
+pass `time_zone` as `nil`, or name a zone to use instead:
+
+```zuri,ignore
+sql.open('mysql://localhost/app', { time_zone: nil })
+sql.open('mysql://localhost/app', { time_zone: '+01:00' })
+```
+
+### Authentication
+
+`caching_sha2_password`, which is the default from MySQL 8.0 onwards,
+`mysql_native_password`, `sha256_password`, `mysql_clear_password`, and
+MariaDB's `client_ed25519`.
+
+Two of those need the password itself rather than a proof of it, the
+first time an account authenticates. Over TLS the password is sent as
+it is. Over a plain connection it is encrypted to a public key the
+server hands over first, so it is never readable in transit.
+`mysql_clear_password` has no such fallback and is refused outright on
+a connection that is not private, since it sends the password with
+nothing protecting it.
+
+### TLS
+
+`sslmode` chooses how TLS is used:
+
+| Mode | Meaning |
+| --- | --- |
+| `disable` | Never. |
+| `prefer` | When the server offers it, without checking who the server is. The default. |
+| `require` | Always, without checking who the server is. |
+| `verify` | Always, checking the server's certificate and host name. |
+
+MySQL's own spellings are accepted too. `DISABLED`, `PREFERRED` and
+`REQUIRED` mean what they say, and both `VERIFY_CA` and
+`VERIFY_IDENTITY` become `verify`. That makes `VERIFY_CA` stricter here
+than on the command line, where it checks the certificate but not the
+name: the difference can only cause a connection to be refused, never
+one to be wrongly trusted.
+
+`ssl_ca` names a certificate authority to trust, and `ssl_cert` with
+`ssl_key` present a client certificate.
+
+### Compression
+
+The protocol can compress everything after the handshake:
+
+```zuri,ignore
+sql.open('mysql://localhost/app', { compression: 'zlib' })
+sql.open('mysql://localhost/app', { compression: 'zstd' })
+```
+
+It is worth it for large results over a slow link and costs more than
+it saves on a local socket, so it is off unless asked for. A packet too
+small to benefit is sent uncompressed regardless, which the protocol
+allows for.
+
+### Sending a file
+
+`LOAD DATA LOCAL INFILE` has the server name a file and the client send
+it. The file is read from the machine the program runs on, chosen by
+the server, so a hostile or compromised server could ask for anything
+the process can read. It is refused unless a reader is supplied:
+
+```zuri,ignore
+import os
+
+var db = sql.open('mysql://localhost/app', {
+  local_infile: @(name) {
+    return os.file(name).read()
+  },
+})
+```
+
+The reader decides what may be sent, which is where that decision
+belongs. Refusing still answers the server, so the connection stays
+usable afterwards rather than waiting for a file that will never come.
+
+### Statements that answer more than once
+
+A stored procedure sends one result set per `select` inside it, then an
+OK packet. `query()` hands back the first and reads the rest, because
+leaving them unread would not lose them: it would give them to the next
+statement, which would then answer with this one's rows.
+
+```zuri,ignore
+var first = db.query('call two_results()')
+```
+
+A routine's body has semicolons in it, and `exec_script()` splits a
+script on semicolons. So a `create procedure` goes through `exec()` as
+a single statement rather than through `exec_script()`.
+
+### Reaching the adapter
+
+```zuri,ignore
+db.native().flavor()          # 'mysql' or 'mariadb'
+db.native().connection_id()   # what KILL names
+db.native().parameters()      # what the server said about itself
+db.native().reset()           # back to a fresh session
+```
+
 ## Writing Your Own Adapter
 
 An adapter for another engine implements four things: a `Driver` that
@@ -1312,14 +1562,14 @@ that runs statements, a `DriverStatement`, and a `DriverCursor`.
 ```zuri,ignore
 import sql
 
-class MySqlDriver < sql.Driver {
-  name() { return 'mysql' }
-  schemes() { return ['mysql', 'mariadb'] }
+class DuckDbDriver < sql.Driver {
+  name() { return 'duckdb' }
+  schemes() { return ['duckdb'] }
 
   capabilities() {
     var caps = sql.default_capabilities()
     caps.set('placeholder_style', sql.QUESTION)
-    caps.set('last_insert_id', true)
+    caps.set('returning', true)
 
     return caps
   }
@@ -1328,9 +1578,9 @@ class MySqlDriver < sql.Driver {
   connect(options) { ... }
 }
 
-sql.register(MySqlDriver())
+sql.register(DuckDbDriver())
 
-var db = sql.open('mysql://localhost/app')
+var db = sql.open('duckdb://./app.duckdb')
 ```
 
 Everything above the adapter comes for free: pooling, transactions and
@@ -1376,6 +1626,8 @@ shape of the module:
 | `sql.drivers()` | what is registered |
 | `sql.raw(fragment)` | marks SQL to be used as written |
 | `sql.Decimal(text)` | an exact decimal |
+| `sql.time(h, m, s)` | a signed span, as a `TIME` column holds one |
+| `sql.parse_time(text)` | the same, read from text |
 
 On a `Connection`:
 

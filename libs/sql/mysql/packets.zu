@@ -1,0 +1,788 @@
+/**
+ * @module packets
+ *
+ * The MySQL packet layer: framing, sequence numbering, compression and
+ * the integer and string encodings every message above is built from.
+ *
+ * A MySQL connection is a stream of packets, each a three byte
+ * little-endian length, a one byte sequence number, and that many
+ * bytes of payload. The sequence number restarts at zero with every
+ * command a client sends and increments for each packet either side
+ * writes until that command is answered, which is how both ends notice
+ * a packet that went missing or arrived twice.
+ *
+ * ### Why a packet is not always a message
+ *
+ * The length field is three bytes, so a payload of 16777215 bytes is
+ * the largest that can be described. A message that long is split, and
+ * the split is signalled by a packet of exactly that size: the reader
+ * has to keep reading until it sees a shorter one. A message whose
+ * length is an exact multiple of the maximum therefore ends with an
+ * empty packet, which exists only to say the message is over.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import compress.zlib
+import compress.zstd
+
+import ..errors { ConnectionError, ProtocolError }
+
+/**
+ * The largest payload a single packet can carry. A payload of exactly
+ * this size is always continued in the next packet.
+ */
+var MAX_PAYLOAD = 0xffffff
+
+/**
+ * Below this, a compressed packet is sent uncompressed instead. Small
+ * payloads grow rather than shrink under zlib, and the protocol allows
+ * either, so the choice is the sender's.
+ */
+var COMPRESS_THRESHOLD = 50
+
+/**
+ * The first byte of a length-encoded integer that means the value is
+ * NULL. Only meaningful where a column value is expected.
+ */
+var LENENC_NULL = 0xfb
+
+/**
+ * Largest integer a Zuri number holds exactly. A wider value read off
+ * the wire becomes a bigint rather than quietly losing its low bits.
+ */
+var EXACT_INTEGER_LIMIT = 9007199254740992
+
+/**
+ * Builds one packet payload.
+ *
+ * Bytes accumulate in a list, which `payload()` turns into the real
+ * thing. Every appending method returns the writer so that building a
+ * message reads as one expression.
+ */
+class Writer {
+  var _bytes = bytes(0)
+
+  /**
+   * Appends one byte.
+   *
+   * @param number value Only the low eight bits are used.
+   * @returns Writer
+   */
+  byte(value: number) {
+    self._bytes.append(value & 0xff)
+
+    return self
+  }
+
+  /**
+   * Appends a little-endian 16 bit integer.
+   *
+   * @param number value
+   * @returns Writer
+   */
+  int2(value: number) {
+    return self.byte(value).byte(value >> 8)
+  }
+
+  /**
+   * Appends a little-endian 24 bit integer.
+   *
+   * @param number value
+   * @returns Writer
+   */
+  int3(value: number) {
+    return self.byte(value).byte(value >> 8).byte(value >> 16)
+  }
+
+  /**
+   * Appends a little-endian 32 bit integer.
+   *
+   * Values are written unsigned. A negative number is written as its
+   * two's complement, which is what the protocol expects wherever a
+   * signed field appears.
+   *
+   * @param number value
+   * @returns Writer
+   */
+  int4(value: number) {
+    return self.int2(value).int2(value >> 16)
+  }
+
+  /**
+   * Appends a little-endian 64 bit integer.
+   *
+   * @param number|bigint value
+   * @returns Writer
+   */
+  int8(value) {
+    if is_bigint(value) {
+      var raw = value.to_bytes('little').to_list()
+
+      for index in 0..8 {
+        self.byte(index < raw.length() ? raw[index] : 0)
+      }
+
+      return self
+    }
+
+    # Shifting past 32 bits is not reliable on a double, so the high
+    # half is taken by division instead.
+    self.int4(value)
+
+    return self.int4((value / 4294967296).floor())
+  }
+
+  /**
+   * Appends a length-encoded integer, in the shortest form that holds
+   * it.
+   *
+   * @param number|bigint value
+   * @returns Writer
+   */
+  lenenc_int(value) {
+    if is_bigint(value) or value >= 16777216 {
+      return self.byte(0xfe).int8(value)
+    }
+
+    if value < 251 {
+      return self.byte(value)
+    }
+
+    if value < 65536 {
+      return self.byte(0xfc).int2(value)
+    }
+
+    return self.byte(0xfd).int3(value)
+  }
+
+  /**
+   * Appends a string with its length in front of it.
+   *
+   * @param string|bytes value
+   * @returns Writer
+   */
+  lenenc_string(value) {
+    var raw = is_bytes(value) ? value : value.to_bytes()
+
+    return self.lenenc_int(raw.length()).raw(raw)
+  }
+
+  /**
+   * Appends a string and the zero byte that ends it.
+   *
+   * @param string value
+   * @returns Writer
+   */
+  cstring(value: string) {
+    return self.raw(value.to_bytes()).byte(0)
+  }
+
+  /**
+   * Appends a string with no length and no terminator, which only
+   * works where the reader knows the length some other way.
+   *
+   * @param string|bytes value
+   * @returns Writer
+   */
+  string(value) {
+    return self.raw(is_bytes(value) ? value : value.to_bytes())
+  }
+
+  /**
+   * Appends `count` zero bytes, for the filler fields the protocol
+   * reserves and does not use.
+   *
+   * @param number count
+   * @returns Writer
+   */
+  zeros(count: number) {
+    self._bytes.extend(bytes(count))
+
+    return self
+  }
+
+  /**
+   * Appends raw bytes.
+   *
+   * @param bytes|list values
+   * @returns Writer
+   */
+  raw(values) {
+    self._bytes.extend(is_bytes(values) ? values : bytes(values))
+
+    return self
+  }
+
+  /**
+   * How many bytes have accumulated.
+   *
+   * @returns number
+   */
+  length() {
+    return self._bytes.length()
+  }
+
+  /**
+   * The finished payload.
+   *
+   * The buffer itself, not a copy, so the writer is done once this has
+   * been called.
+   *
+   * @returns bytes
+   */
+  payload() {
+    return self._bytes
+  }
+}
+
+/**
+ * Reads values out of one packet payload, keeping its own position.
+ *
+ * Every read advances past what it read, so a message is decoded by
+ * naming its fields in order rather than by tracking offsets.
+ */
+class Cursor {
+  var _data
+  var _at = 0
+
+  /**
+   * @param bytes data One packet's payload.
+   */
+  @new(data) {
+    self._data = data
+  }
+
+  /**
+   * How many bytes are left unread.
+   *
+   * @returns number
+   */
+  remaining() {
+    return self._data.length() - self._at
+  }
+
+  /**
+   * Whether everything has been read.
+   *
+   * @returns bool
+   */
+  at_end() {
+    return self.remaining() <= 0
+  }
+
+  /**
+   * The next byte without consuming it, or nil at the end.
+   *
+   * @returns number|nil
+   */
+  peek() {
+    return self.at_end() ? nil : self._data[self._at]
+  }
+
+  /**
+   * Skips `count` bytes.
+   *
+   * @param number count
+   * @returns Cursor
+   */
+  skip(count: number) {
+    self._at += count
+
+    return self
+  }
+
+  /**
+   * Reads one byte.
+   *
+   * @returns number
+   */
+  byte() {
+    self._need(1)
+
+    var value = self._data[self._at]
+    self._at++
+
+    return value
+  }
+
+  /**
+   * Reads a little-endian 16 bit integer.
+   *
+   * @returns number
+   */
+  int2() {
+    return self._little(2)
+  }
+
+  /**
+   * Reads a little-endian 24 bit integer.
+   *
+   * @returns number
+   */
+  int3() {
+    return self._little(3)
+  }
+
+  /**
+   * Reads a little-endian 32 bit integer, unsigned.
+   *
+   * @returns number
+   */
+  int4() {
+    return self._little(4)
+  }
+
+  /**
+   * Reads a little-endian 64 bit integer, unsigned.
+   *
+   * @returns number|bigint A bigint where the value will not fit in a
+   *    number exactly.
+   */
+  int8() {
+    return self._little(8)
+  }
+
+  /**
+   * Reads a length-encoded integer.
+   *
+   * @returns number|bigint|nil nil where the value is NULL, which only
+   *    happens in a row.
+   */
+  lenenc_int() {
+    var first = self.byte()
+
+    if first < 251 {
+      return first
+    }
+
+    if first == LENENC_NULL {
+      return nil
+    }
+
+    if first == 0xfc {
+      return self.int2()
+    }
+
+    if first == 0xfd {
+      return self.int3()
+    }
+
+    if first == 0xfe {
+      return self.int8()
+    }
+
+    raise ProtocolError(
+      'the server sent a length-encoded integer starting ${first}, ' +
+      'which is not a length',
+      { driver: 'mysql' }
+    )
+  }
+
+  /**
+   * Reads a length-encoded string as raw bytes.
+   *
+   * @returns bytes|nil
+   */
+  lenenc_bytes() {
+    var length = self.lenenc_int()
+
+    if length == nil {
+      return nil
+    }
+
+    return self.fixed(is_bigint(length) ? length.to_number() : length)
+  }
+
+  /**
+   * Reads a length-encoded string as text.
+   *
+   * @returns string|nil
+   */
+  lenenc_string() {
+    var raw = self.lenenc_bytes()
+
+    return raw == nil ? nil : raw.to_string()
+  }
+
+  /**
+   * Reads up to the next zero byte, and past it.
+   *
+   * A payload that simply ends is treated as terminated, since several
+   * messages end with a string whose terminator the server omits when
+   * nothing follows it.
+   *
+   * @returns string
+   */
+  cstring() {
+    var end = self._at
+
+    while end < self._data.length() and self._data[end] != 0 {
+      end++
+    }
+
+    var value = end > self._at ? self._data[self._at, end].to_string() : ''
+    self._at = end + 1
+
+    return value
+  }
+
+  /**
+   * Reads exactly `count` bytes.
+   *
+   * @param number count
+   * @returns bytes
+   */
+  fixed(count: number) {
+    self._need(count)
+
+    var value = count == 0 ?
+      bytes(0) :
+      self._data[self._at, self._at + count]
+
+    self._at += count
+
+    return value
+  }
+
+  /**
+   * Reads everything that is left.
+   *
+   * @returns bytes
+   */
+  rest() {
+    return self.fixed(self.remaining())
+  }
+
+  # Reads a little-endian integer of `width` bytes, widening to a
+  # bigint only once a number would start losing the low bits.
+  _little(width: number) {
+    self._need(width)
+
+    var value = 0
+    var scale = 1
+
+    for index in 0..width {
+      value += self._data[self._at + index] * scale
+      scale *= 256
+    }
+
+    if value >= EXACT_INTEGER_LIMIT {
+      value = self._exact(width)
+    }
+
+    self._at += width
+
+    return value
+  }
+
+  # The same read, done in bigint so that nothing is lost.
+  _exact(width: number) {
+    var value = 0n
+    var scale = 1n
+
+    for index in 0..width {
+      value += self._data[self._at + index].to_bigint() * scale
+      scale *= 256n
+    }
+
+    return value
+  }
+
+  _need(count: number) {
+    if count < 0 or self._at + count > self._data.length() {
+      raise ProtocolError(
+        'the server sent a packet that ended in the middle of a value',
+        { driver: 'mysql' }
+      )
+    }
+  }
+}
+
+/**
+ * Packets over a connected stream, in both directions.
+ *
+ * Owns the sequence number and the compression setting, because both
+ * are properties of the conversation rather than of any one message.
+ *
+ * @internal Used by `Protocol`, which is the class with the MySQL
+ *    semantics.
+ */
+class PacketStream {
+  var _stream
+  var _sequence = 0
+  var _compressed_sequence = 0
+  var _compression = 'none'
+  var _level = 3
+  var _pending = bytes(0)
+
+  /**
+   * @param TcpStream|TlsStream|UnixStream stream An already-connected
+   *    stream.
+   */
+  @new(stream) {
+    self._stream = stream
+  }
+
+  /**
+   * Swaps the stream for the point in the handshake where a plain
+   * connection becomes a TLS one.
+   *
+   * @param TlsStream stream
+   */
+  upgrade(stream) {
+    self._stream = stream
+  }
+
+  /**
+   * Turns compression on for everything sent and received after this
+   * point, which is where the server switches too.
+   *
+   * @param string algorithm `'zlib'` or `'zstd'`.
+   * @param number level The zstd level; ignored for zlib.
+   */
+  compress_with(algorithm: string, level: number) {
+    self._compression = algorithm
+    self._level = level
+    self._compressed_sequence = 0
+  }
+
+  /**
+   * Whether packets are being compressed.
+   *
+   * @returns bool
+   */
+  is_compressed() {
+    return self._compression != 'none'
+  }
+
+  /**
+   * Starts a new command, which is what resets the sequence.
+   */
+  reset_sequence() {
+    self._sequence = 0
+    self._compressed_sequence = 0
+  }
+
+  /**
+   * The sequence number the next packet sent will carry.
+   *
+   * @returns number
+   */
+  sequence() {
+    return self._sequence
+  }
+
+  /**
+   * Sets the sequence number explicitly, for the handshake, where the
+   * client's first packet has to continue the server's numbering
+   * rather than start its own.
+   *
+   * @param number value
+   */
+  set_sequence(value: number) {
+    self._sequence = value
+  }
+
+  /**
+   * Sends one message, splitting it if it is too long for a single
+   * packet.
+   *
+   * @param bytes payload
+   */
+  write_packet(payload) {
+    var frame = bytes(0)
+    var total = payload.length()
+    var at = 0
+
+    # The loop runs at least once, and once more after a chunk of
+    # exactly the maximum, so a message that divides evenly ends with
+    # the empty packet that says it is finished.
+    var more = true
+
+    while more {
+      var size = total - at
+
+      if size > MAX_PAYLOAD {
+        size = MAX_PAYLOAD
+      }
+
+      frame.extend(self._header(size))
+
+      if size > 0 {
+        frame.extend(payload[at, at + size])
+      }
+
+      at += size
+      more = size == MAX_PAYLOAD
+    }
+
+    self._transmit(frame)
+  }
+
+  /**
+   * Reads one whole message, joining the packets of a split one.
+   *
+   * @returns bytes
+   */
+  read_packet() {
+    var parts = bytes(0)
+    var size = MAX_PAYLOAD
+
+    while size == MAX_PAYLOAD {
+      var header = self._receive(4)
+      size = header[0] + header[1] * 256 + header[2] * 65536
+
+      # The server's numbering is what the next packet sent has to
+      # continue from.
+      self._sequence = (header[3] + 1) & 0xff
+
+      if size > 0 {
+        parts.extend(self._receive(size))
+      }
+    }
+
+    return parts
+  }
+
+  /**
+   * Closes the underlying stream.
+   */
+  close() {
+    catch {
+      self._stream.close()
+    } as error {
+      # A connection being torn down has nothing useful to report.
+    }
+  }
+
+  # The four byte header for a packet of `size` bytes, consuming one
+  # sequence number.
+  _header(size: number) {
+    var head = bytes([
+      size & 0xff,
+      (size >> 8) & 0xff,
+      (size >> 16) & 0xff,
+      self._sequence,
+    ])
+
+    self._sequence = (self._sequence + 1) & 0xff
+
+    return head
+  }
+
+  # Writes to the stream, wrapping in a compressed packet where
+  # compression is on.
+  _transmit(frame) {
+    var payload = self.is_compressed() ? self._deflate(frame) : frame
+
+    catch {
+      self._stream.write_all(payload)
+    } as error {
+      raise ConnectionError(
+        'the connection to the server failed while writing: ' +
+        error.message,
+        { driver: 'mysql' }
+      )
+    }
+  }
+
+  # Wraps one or more packets in a compressed packet: the compressed
+  # length, a sequence of its own, then the uncompressed length, which
+  # is zero when the body was left alone.
+  _deflate(frame) {
+    var body = frame
+    var original = 0
+
+    if frame.length() >= COMPRESS_THRESHOLD {
+      body = self._compression == 'zstd' ?
+        zstd.compress(frame, self._level) :
+        zlib.compress(frame, 6, nil, nil, nil)
+      original = frame.length()
+    }
+
+    var head = bytes([
+      body.length() & 0xff,
+      (body.length() >> 8) & 0xff,
+      (body.length() >> 16) & 0xff,
+      self._compressed_sequence,
+      original & 0xff,
+      (original >> 8) & 0xff,
+      (original >> 16) & 0xff,
+    ])
+
+    self._compressed_sequence = (self._compressed_sequence + 1) & 0xff
+
+    return head + body
+  }
+
+  # Reads `count` bytes of packet stream, which under compression means
+  # reading and expanding compressed packets until that many are held.
+  _receive(count: number) {
+    if !self.is_compressed() {
+      return self._read_exact(count)
+    }
+
+    while self._buffered() < count {
+      self._inflate()
+    }
+
+    return self._take(count)
+  }
+
+  _buffered() {
+    return self._pending.length()
+  }
+
+  _take(count: number) {
+    var taken = self._pending[0, count]
+    self._pending = self._pending[count, self._pending.length()]
+
+    return taken
+  }
+
+  # Reads one compressed packet and adds what it held to the buffer.
+  _inflate() {
+    var header = self._read_exact(7)
+    var size = header[0] + header[1] * 256 + header[2] * 65536
+    var original = header[4] + header[5] * 256 + header[6] * 65536
+
+    self._compressed_sequence = (header[3] + 1) & 0xff
+
+    var body = size == 0 ? bytes(0) : self._read_exact(size)
+
+    if original > 0 {
+      body = self._compression == 'zstd' ?
+        zstd.decompress(body) :
+        zlib.decompress(body, nil)
+    }
+
+    self._pending.extend(body)
+  }
+
+  _read_exact(count: number) {
+    if count == 0 {
+      return bytes(0)
+    }
+
+    var chunk
+
+    catch {
+      chunk = self._stream.read_exact(count)
+    } as error {
+      raise ConnectionError(
+        'the connection to the server failed while reading: ' +
+        error.message,
+        { driver: 'mysql' }
+      )
+    }
+
+    if chunk == nil or chunk.length() < count {
+      raise ConnectionError(
+        'the server closed the connection', { driver: 'mysql' }
+      )
+    }
+
+    return chunk
+  }
+}

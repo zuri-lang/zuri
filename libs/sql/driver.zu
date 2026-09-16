@@ -80,7 +80,8 @@ var READ_UNCOMMITTED = 'read uncommitted'
  * | `blobs` | Whether the engine stores binary values. |
  * | `decimals` | Whether the engine has an exact decimal type. |
  * | `booleans` | Whether the engine has a real boolean type. |
- * | `upsert` | Whether `INSERT ... ON CONFLICT` works. |
+ * | `upsert` | Whether an insert can update the row it collided
+ *   with, however the engine spells it. |
  * | `schemas` | Whether tables live in named schemas. |
  * | `concurrent_writers` | Whether two connections can write at once. |
  * | `max_parameters` | Most parameters one statement may bind, or nil for no practical limit. |
@@ -140,8 +141,8 @@ class Driver {
    * The URL schemes this driver claims, without the `://`.
    *
    * `sql.open()` picks a driver by matching a connection string's
-   * scheme against these, which is what lets the same call open either
-   * engine. Several are allowed: PostgreSQL answers to both
+   * scheme against these, which is what lets the same call open any of
+   * the engines. Several are allowed: PostgreSQL answers to both
    * `postgres` and `postgresql`.
    *
    * @returns list[string]
@@ -190,7 +191,8 @@ class Driver {
    * contains or collides with.
    *
    * The default doubles the engine's own quote character, which is
-   * what the SQL standard says and what both built-in adapters do.
+   * what the SQL standard says and what the built-in adapters do,
+   * MySQL included once its quote character is taken into account.
    * An engine whose quoting differs overrides this.
    *
    * @param string name

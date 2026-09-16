@@ -3,9 +3,9 @@
 # of code, run against every adapter available, asserting the same
 # things each time.
 #
-# SQLite always runs. PostgreSQL joins in when ZURI_TEST_POSTGRES names
-# a server, which is what CI does not have and a developer's machine
-# usually does.
+# SQLite always runs. PostgreSQL and MySQL join in when
+# ZURI_TEST_POSTGRES and ZURI_TEST_MYSQL name a server, which is what
+# CI does not have and a developer's machine usually does.
 
 import os
 import sql
@@ -25,9 +25,13 @@ def exercise(db) {
   db.exec_script(
     'create table portable_posts (' +
     '  id ' + serial_type(db) + ' primary key,' +
-    '  author_id integer not null references portable_authors(id),' +
+    '  author_id integer not null,' +
     '  title varchar(200) not null,' +
-    '  views integer not null default 0' +
+    '  views integer not null default 0,' +
+    # Declared at table level rather than on the column: MySQL parses a
+    # column level REFERENCES and then ignores it, so the key would
+    # simply not exist there.
+    '  foreign key (author_id) references portable_authors (id)' +
     ')'
   )
 
@@ -175,12 +179,18 @@ def exercise(db) {
   db.exec_script('drop table portable_authors')
 }
 
-# The one thing the two engines genuinely spell differently. An
+# The one thing the engines genuinely spell differently. An
 # auto-incrementing key is not part of standard SQL, so each names it
 # its own way, and this is the sort of difference the module does not
 # pretend away.
 def serial_type(db) {
-  return db.driver_name() == 'postgres' ? 'serial' : 'integer'
+  using db.driver_name() {
+    when 'postgres' return 'serial'
+    when 'mysql' return 'integer auto_increment'
+    when 'mariadb' return 'integer auto_increment'
+  }
+
+  return 'integer'
 }
 
 def test_sqlite() {
@@ -206,5 +216,30 @@ def test_postgres() {
   echo 'test_postgres passed'
 }
 
+def test_mysql() {
+  var dsn = os.get_env('ZURI_TEST_MYSQL', nil)
+
+  if dsn == nil or dsn == '' {
+    echo 'test_mysql skipped: set ZURI_TEST_MYSQL to a connection string'
+
+    return
+  }
+
+  var db = sql.open(dsn)
+
+  # MySQL selects no database unless the connection string names one,
+  # and this one has a database of its own either way.
+  db.exec_script('create database if not exists zuri_sql_portable')
+  db.exec('use zuri_sql_portable', nil)
+
+  exercise(db)
+
+  db.exec_script('drop database if exists zuri_sql_portable')
+  db.close()
+
+  echo 'test_mysql passed'
+}
+
 test_sqlite()
 test_postgres()
+test_mysql()

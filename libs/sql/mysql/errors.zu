@@ -1,0 +1,180 @@
+/**
+ * @module errors
+ *
+ * Turning MySQL's error numbers into the shared error classes.
+ *
+ * MySQL reports two things about a failure: its own error number, such
+ * as 1062 for a duplicate key, and a five character SQLSTATE. The
+ * number is the specific one and the SQLSTATE is the portable one, so
+ * mapping works on the number where a case is worth telling apart and
+ * falls back to the SQLSTATE class otherwise. An error number this
+ * table has never seen still lands somewhere sensible.
+ *
+ * MariaDB shares both schemes and most of the numbers, and the few it
+ * adds sit in the same SQLSTATE classes, so nothing here needs to know
+ * which server answered.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors {
+  SqlError, ConnectionError, AuthenticationError, TimeoutError,
+  QueryError, IntegrityError, UniqueViolation, ForeignKeyViolation,
+  NotNullViolation, CheckViolation, TransactionError,
+  SerializationError, DeadlockError, NotSupportedError,
+}
+
+/**
+ * Error numbers specific enough to name a class of their own.
+ */
+var SPECIFIC = {
+  # Duplicate entry, under the three numbers the server picks between
+  # depending on how much it knows about the key.
+  1062: UniqueViolation,
+  1169: UniqueViolation,
+  1586: UniqueViolation,
+
+  # A row that is still referenced, and a reference to a row that is
+  # not there.
+  1451: ForeignKeyViolation,
+  1452: ForeignKeyViolation,
+  1216: ForeignKeyViolation,
+  1217: ForeignKeyViolation,
+  1830: ForeignKeyViolation,
+  1834: ForeignKeyViolation,
+
+  # A NULL in a column that refuses one, and a row that left out a
+  # column with no default, which is the same mistake.
+  1048: NotNullViolation,
+  1364: NotNullViolation,
+
+  # CHECK constraints, added in 8.0.16 under a number of their own.
+  3819: CheckViolation,
+  4025: CheckViolation,
+
+  # Deadlock found, which the server has already rolled one side of
+  # back by the time this arrives.
+  1213: DeadlockError,
+
+  # Lock wait timeout. The statement waited for a lock another
+  # transaction held and gave up; the transaction is still open.
+  1205: TimeoutError,
+
+  # max_execution_time elapsed.
+  3024: TimeoutError,
+
+  # Serialization failure under a strict isolation level.
+  1614: SerializationError,
+
+  # Too many connections, which is a failure to connect rather than a
+  # failure of whatever statement happened to hit it.
+  1040: ConnectionError,
+  1203: ConnectionError,
+
+  # The server is going away, or this session was killed.
+  1053: ConnectionError,
+  1927: ConnectionError,
+
+  # Access denied, with and without a password offered.
+  1044: AuthenticationError,
+  1045: AuthenticationError,
+  1698: AuthenticationError,
+  1130: AuthenticationError,
+  1129: AuthenticationError,
+
+  # Writing inside a transaction that was started read only.
+  1792: TransactionError,
+
+  # A statement the server's own configuration forbids, which in
+  # practice is nearly always a write to a read-only replica.
+  1290: QueryError,
+}
+
+/**
+ * SQLSTATE classes, for numbers the table above does not name.
+ */
+var CLASSES = {
+  # Connection exception.
+  '08': ConnectionError,
+
+  # Invalid authorization specification.
+  '28': AuthenticationError,
+
+  # Feature not supported.
+  '0A': NotSupportedError,
+
+  # Cardinality violation, such as a subquery returning more than one
+  # row where one was required.
+  '21': QueryError,
+
+  # Data exception: a value that will not fit, a bad cast, division by
+  # zero under a strict mode.
+  '22': QueryError,
+
+  # Integrity constraint violation.
+  '23': IntegrityError,
+
+  # Invalid transaction state.
+  '25': TransactionError,
+
+  # Invalid SQL statement name, which is what a prepared statement
+  # that has gone away reports.
+  '26': QueryError,
+
+  # Transaction rollback.
+  '40': TransactionError,
+
+  # Syntax error or access rule violation, which covers most of what a
+  # wrong statement produces.
+  '42': QueryError,
+
+  # Syntax error in a stored routine.
+  '44': QueryError,
+}
+
+/**
+ * The class that best describes an error the server reported.
+ *
+ * @param number|nil code MySQL's own error number.
+ * @param string|nil sqlstate
+ * @returns class
+ */
+def class_for(code, sqlstate) {
+  var specific = is_number(code) ? SPECIFIC.get(code, nil) : nil
+
+  if specific != nil {
+    return specific
+  }
+
+  if !is_string(sqlstate) or sqlstate.length() < 2 {
+    return SqlError
+  }
+
+  # HY000 is MySQL's general error state, which says nothing beyond
+  # "something went wrong", so a code carrying it is left as the base
+  # class rather than being forced into one that would read as more
+  # specific than the server was.
+  return CLASSES.get(sqlstate[0, 2], SqlError)
+}
+
+/**
+ * Raises the right class for a server error report.
+ *
+ * @param dict report `{ code, sqlstate, message }`, as
+ *    `protocol.parse_error()` returns it.
+ * @param string|nil query The statement that was running.
+ * @throws SqlError always.
+ */
+def raise_for(report: dict, query) {
+  var code = report.get('code', nil)
+  var sqlstate = report.get('sqlstate', nil)
+
+  var kind = class_for(code, sqlstate)
+
+  raise kind(report.get('message', 'the server reported an error'), {
+    code,
+    sqlstate,
+    driver: 'mysql',
+    query,
+  })
+}

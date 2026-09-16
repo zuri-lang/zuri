@@ -549,9 +549,9 @@ fully in [Chapter 15](ch15-00-http.md), and used throughout
 One way to talk to a relational database, whichever one it is. `sql`
 defines what an adapter has to provide and supplies everything that is
 the same across engines: parameters, transactions and savepoints,
-cursors, pooling, introspection, and one error hierarchy. SQLite and
-PostgreSQL adapters ship with it, and changing between them means
-changing the connection string.
+cursors, pooling, introspection, and one error hierarchy. SQLite,
+PostgreSQL and MySQL adapters ship with it, and changing between them
+means changing the connection string.
 
 ```zuri,ignore
 import sql

@@ -1,0 +1,56 @@
+/**
+ * @module results
+ *
+ * Turning what the server answered into the shapes the shared contract
+ * asks for.
+ *
+ * These live apart from the connection so the statement can use them
+ * too. A statement that reached for them through the connection, which
+ * already reaches for the statement, would be a circular import.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { QueryError }
+import .types { describe_columns }
+
+/**
+ * What a statement run for its effect reports.
+ *
+ * A statement that returned rows still has to answer this, since
+ * `execute()` may be called on anything. Its row count is zero, which
+ * is true: it changed nothing.
+ *
+ * @param dict response From `Protocol.read_response()`.
+ * @returns dict `{ rows_affected, last_insert_id }`
+ */
+def exec_result(response: dict) {
+  if response.kind != 'ok' {
+    return { rows_affected: 0, last_insert_id: nil }
+  }
+
+  return {
+    rows_affected: response.affected_rows,
+    last_insert_id: response.last_insert_id,
+  }
+}
+
+/**
+ * What a statement run for its rows reports.
+ *
+ * A statement that returned none still answers with the same shape and
+ * an empty result, so a caller never has to tell the two apart.
+ *
+ * @param dict response From `Protocol.read_response()`.
+ * @returns dict `{ columns, rows }`
+ */
+def select_result(response: dict) {
+  if response.kind != 'rows' {
+    return { columns: [], rows: [] }
+  }
+
+  return {
+    columns: describe_columns(response.columns),
+    rows: response.rows,
+  }
+}

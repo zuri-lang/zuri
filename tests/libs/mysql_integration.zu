@@ -1,0 +1,565 @@
+# The MySQL adapter against a real server.
+#
+# Nothing here can be checked without one: authentication as the server
+# actually performs it, the type system as it actually reports it,
+# cursors, and the error numbers a real engine produces. Set
+# ZURI_TEST_MYSQL to a connection string to run it.
+#
+#   ZURI_TEST_MYSQL=mysql://user:pass@127.0.0.1:3306
+#
+# Everything is created in a database of its own and dropped
+# afterwards, so pointing this at a server that matters is safe.
+
+import date
+import os
+import sql
+
+var DATABASE = 'zuri_sql_test'
+
+def connect() {
+  var db = sql.open(os.get_env('ZURI_TEST_MYSQL', nil), nil)
+
+  db.exec_script('drop database if exists ${DATABASE}')
+  db.exec_script('create database ${DATABASE}')
+  db.exec('use ${DATABASE}', nil)
+
+  return db
+}
+
+def finish(db) {
+  db.exec_script('drop database if exists ${DATABASE}')
+  db.close()
+}
+
+def test_connection() {
+  var db = connect()
+
+  assert db.driver_name() == 'mysql'
+  assert db.server_version() != 'unknown'
+  assert db.fetch_value('select 1', nil, nil) == 1
+  assert db.ping()
+
+  # The adapter puts the session in UTC so that a TIMESTAMP means the
+  # same thing whatever the server was configured with.
+  assert db.fetch_value('select @@session.time_zone', nil, nil) == '+00:00'
+
+  assert db.native().parameters().contains('server_version')
+  assert ['mysql', 'mariadb'].contains(db.native().flavor())
+  assert db.native().connection_id() > 0
+
+  finish(db)
+  echo 'test_connection passed'
+}
+
+def test_types() {
+  var db = connect()
+
+  db.exec_script(
+    'create table kinds (' +
+    '  id int auto_increment primary key,' +
+    '  small smallint,' +
+    '  big bigint,' +
+    '  unsigned_big bigint unsigned,' +
+    '  real_number double,' +
+    '  exact decimal(20, 6),' +
+    '  words varchar(64),' +
+    '  long_text text,' +
+    '  raw blob,' +
+    '  flag tinyint(1),' +
+    '  when_day date,' +
+    '  when_moment datetime(6),' +
+    '  span time(6),' +
+    '  document json' +
+    ')'
+  )
+
+  var moment = date.Date(2026, 9, 16, 14, 30, 45, 123456, 0, false)
+  var span = sql.time(838, 59, 59, 999999, true)
+
+  db.exec(
+    'insert into kinds (small, big, unsigned_big, real_number, exact, ' +
+    '  words, long_text, raw, flag, when_day, when_moment, span, document) ' +
+    'values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      -32768, 9007199254740993n, 18446744073709551615n, 0.125,
+      sql.decimal('12345678901234.567890', nil),
+      'hello', 'a longer piece of text', bytes([0, 1, 2, 255]),
+      true, moment, moment, span, { a: [1, 2], b: 'c' },
+    ]
+  )
+
+  var row = db.fetch_one('select * from kinds', nil)
+
+  assert row.small == -32768
+  assert row.big == 9007199254740993n
+  assert row.unsigned_big == 18446744073709551615n
+  assert row.real_number == 0.125
+  assert row.exact.to_string() == '12345678901234.567890'
+  assert row.words == 'hello'
+  assert row.long_text == 'a longer piece of text'
+  assert row.raw == bytes([0, 1, 2, 255])
+
+  # MySQL has no boolean, so a flag comes back as the number it is.
+  assert row.flag == 1
+
+  assert row.when_day.year == 2026 and row.when_day.month == 9
+  assert row.when_moment.microseconds == 123456
+  assert row.when_moment.hour == 14
+  assert row.span.total_seconds() == span.total_seconds()
+  assert row.document['a'][1] == 2
+
+  # A NULL in every column is still a NULL on the way back.
+  db.exec('insert into kinds (small) values (?)', [nil])
+
+  var empty = db.fetch_one('select * from kinds where small is null', nil)
+  assert empty.big == nil
+  assert empty.when_moment == nil
+  assert empty.document == nil
+
+  # The same values read through a text result rather than a prepared
+  # one have to agree, since the two encodings are entirely separate
+  # paths through the adapter.
+  var text_row = db.fetch_one('select * from kinds where id = 1', nil)
+  assert text_row.big == row.big
+  assert text_row.unsigned_big == row.unsigned_big
+  assert text_row.exact.to_string() == row.exact.to_string()
+  assert text_row.when_moment.microseconds == row.when_moment.microseconds
+  assert text_row.span.total_seconds() == row.span.total_seconds()
+  assert text_row.raw == row.raw
+
+  finish(db)
+  echo 'test_types passed'
+}
+
+def test_inserts_and_ids() {
+  var db = connect()
+
+  db.exec_script(
+    'create table people (' +
+    '  id bigint auto_increment primary key,' +
+    '  name varchar(64) not null,' +
+    '  age int' +
+    ')'
+  )
+
+  # MySQL reports the id rather than returning the row, and insert()
+  # picks between the two on its own.
+  assert !db.supports('returning')
+  assert db.supports('last_insert_id')
+
+  assert db.insert('people', { name: 'alice', age: 30 }, nil) == 1
+  assert db.insert('people', { name: 'bob', age: 41 }, nil) == 2
+
+  assert db.insert_many('people', [
+    { name: 'carol', age: 22 },
+    { name: 'dan', age: 35 },
+  ]) == 2
+
+  assert db.count('people', nil) == 4
+  assert db.find_one('people', { name: 'carol' }, nil).age == 22
+
+  assert db.update('people', { age: 23 }, { name: 'carol' }) == 1
+  assert db.find_one('people', { name: 'carol' }, nil).age == 23
+
+  assert db.delete('people', { name: 'dan' }) == 1
+  assert db.count('people', nil) == 3
+
+  # The id is also readable from the connection itself, which is what
+  # an insert written by hand rather than through insert() needs.
+  db.exec('insert into people (name) values (?)', ['erin'])
+  assert db.native().last_insert_id() == 5
+
+  var ordered = db.find('people', nil, { order: ['name'], limit: 2 })
+  assert ordered.length() == 2
+  assert ordered.first().name == 'alice'
+  assert ordered.last().name == 'bob'
+
+  finish(db)
+  echo 'test_inserts_and_ids passed'
+}
+
+def test_transactions() {
+  var db = connect()
+
+  db.exec_script('create table counters (n int) engine = innodb')
+
+  db.transaction(@(tx) {
+    tx.exec('insert into counters values (?)', [1])
+  }, nil)
+
+  assert db.fetch_value('select count(*) from counters', nil, nil) == 1
+
+  # A transaction whose body raises leaves nothing behind.
+  var raised = false
+
+  catch {
+    db.transaction(@(tx) {
+      tx.exec('insert into counters values (?)', [2])
+
+      raise Error('no')
+    }, nil)
+  } as e {
+    raised = true
+  }
+
+  assert raised
+  assert db.fetch_value('select count(*) from counters', nil, nil) == 1
+
+  # Savepoints, which a nested transaction is built on.
+  db.begin(nil)
+  db.exec('insert into counters values (?)', [3])
+  db.begin(nil)
+  db.exec('insert into counters values (?)', [4])
+  db.native().rollback()
+  db.native().commit()
+
+  assert db.fetch_value('select count(*) from counters', nil, nil) == 2
+  assert !db.in_transaction()
+
+  # Every isolation level MySQL names is accepted.
+  for level in db.capabilities().isolation_levels {
+    db.transaction(@(tx) {
+      tx.fetch_value('select 1', nil, nil)
+    }, level)
+  }
+
+  finish(db)
+  echo 'test_transactions passed'
+}
+
+def test_cursors() {
+  var db = connect()
+
+  db.exec_script('create table many (n int)')
+
+  for batch in 0..10 {
+    var rows = []
+
+    for index in 0..100 {
+      rows.append({ n: batch * 100 + index })
+    }
+
+    db.insert_many('many', rows)
+  }
+
+  assert db.count('many', nil) == 1000
+
+  var cursor = db.stream('select n from many order by n', nil, { batch: 64 })
+  var seen = 0
+  var last = -1
+
+  for row in cursor {
+    assert row.n == last + 1
+    last = row.n
+    seen++
+  }
+
+  assert seen == 1000
+  assert last == 999
+
+  # A cursor holds the connection while it is open, and says so rather
+  # than letting the exchange fall out of step.
+  var busy = db.stream('select n from many order by n', nil, { batch: 8 })
+  busy.next()
+
+  var refused = false
+
+  catch {
+    db.fetch_value('select 1', nil, nil)
+  } as e {
+    refused = true
+  }
+
+  assert refused
+  busy.close()
+  assert db.fetch_value('select 1', nil, nil) == 1
+
+  # A cursor over a statement that matches nothing, and one over a
+  # statement that is not a query at all. Neither opens a cursor on the
+  # server, so both have to report themselves finished rather than
+  # fetching from something that was never opened.
+  var empty = db.stream('select n from many where n > ?', [10000], { batch: 8 })
+  var none_seen = 0
+
+  for row in empty {
+    none_seen++
+  }
+
+  assert none_seen == 0
+
+  var written = db.stream('insert into many values (?)', [5000], { batch: 8 })
+
+  for row in written {
+    assert false, 'an insert returns no rows'
+  }
+
+  assert db.count('many', nil) == 1001
+
+  finish(db)
+  echo 'test_cursors passed'
+}
+
+def test_prepared() {
+  var db = connect()
+
+  db.exec_script('create table squares (n int, square int)')
+
+  var statement = db.prepare('insert into squares values (?, ?)')
+
+  for n in 1..11 {
+    statement.exec([n, n * n])
+  }
+
+  statement.close()
+
+  assert db.fetch_value('select count(*) from squares', nil, nil) == 10
+  assert db.fetch_value('select square from squares where n = ?', [7], nil) == 49
+
+  var reader = db.prepare('select n, square from squares where n > ?')
+  assert reader.parameter_count() == 1
+  assert reader.columns().length() == 2
+  assert reader.columns()[0].name == 'n'
+
+  var rows = reader.fetch_all([8])
+  assert rows.length() == 2
+  assert reader.fetch_value([9], nil) == 10
+  reader.close()
+
+  # A statement used after it was released says so.
+  var closed = false
+
+  catch {
+    reader.fetch_all([1])
+  } as e {
+    closed = true
+    assert instance_of(e, sql.ClosedError)
+  }
+
+  assert closed
+
+  # The same statement run repeatedly is compiled once, which is what
+  # the connection's cache is for. Running it many times has to give
+  # the same answer every time.
+  for round in 0..50 {
+    assert db.fetch_value('select square from squares where n = ?', [3], nil) == 9
+  }
+
+  finish(db)
+  echo 'test_prepared passed'
+}
+
+def test_errors() {
+  var db = connect()
+
+  db.exec_script(
+    'create table unique_names (' +
+    '  name varchar(64) not null,' +
+    '  parent varchar(64),' +
+    '  unique key by_name (name)' +
+    ') engine = innodb'
+  )
+
+  db.exec('insert into unique_names (name) values (?)', ['alice'])
+
+  var duplicate = nil
+
+  catch {
+    db.exec('insert into unique_names (name) values (?)', ['alice'])
+  } as e {
+    duplicate = e
+  }
+
+  assert duplicate != nil
+  assert instance_of(duplicate, sql.UniqueViolation)
+  assert duplicate.code == 1062
+  assert duplicate.sqlstate == '23000'
+  assert duplicate.driver == 'mysql'
+
+  var missing = nil
+
+  catch {
+    db.exec('insert into unique_names (name) values (?)', [nil])
+  } as e {
+    missing = e
+  }
+
+  assert missing != nil
+  assert instance_of(missing, sql.NotNullViolation)
+
+  var wrong = nil
+
+  catch {
+    db.fetch_all('select * from a_table_that_is_not_there', nil)
+  } as e {
+    wrong = e
+  }
+
+  assert wrong != nil
+  assert instance_of(wrong, sql.QueryError)
+  assert wrong.sqlstate == '42S02'
+
+  # The connection is still usable after each of those.
+  assert db.fetch_value('select 1', nil, nil) == 1
+
+  finish(db)
+  echo 'test_errors passed'
+}
+
+def test_multiple_results() {
+  var db = connect()
+
+  # A routine body has semicolons in it, so it goes as one statement
+  # rather than through exec_script, which splits on those.
+  db.exec(
+    'create procedure two_results() begin ' +
+    '  select 1 as a; select 2 as b; ' +
+    'end',
+    nil
+  )
+
+  # The call answers with a result set per select and an OK after
+  # them. Only the first is handed back, and the rest have to be read
+  # anyway: left unread they would be given to the next statement,
+  # which would answer with this one's rows.
+  var result = db.query('call two_results()', nil)
+
+  assert result.first().a == 1
+  assert db.fetch_value('select 42', nil, nil) == 42
+  assert db.fetch_value('select 7', nil, nil) == 7
+
+  # The same through a prepared statement, which uses the binary
+  # encoding for every one of those results.
+  var again = db.query('call two_results()', nil)
+  assert again.first().a == 1
+  assert db.fetch_value('select ?', [99], nil) == 99
+
+  finish(db)
+  echo 'test_multiple_results passed'
+}
+
+def test_schema() {
+  var db = connect()
+
+  db.exec_script(
+    'create table owners (' +
+    '  id int auto_increment primary key,' +
+    '  label varchar(32) not null unique' +
+    ') engine = innodb'
+  )
+
+  db.exec_script(
+    'create table owned (' +
+    '  id int auto_increment primary key,' +
+    '  owner_id int not null,' +
+    '  note varchar(64) default \'none\',' +
+    '  constraint owned_owner foreign key (owner_id) references owners (id)' +
+    '    on delete cascade' +
+    ') engine = innodb'
+  )
+
+  db.exec_script('create view owned_view as select id, note from owned')
+
+  var schema = db.schema
+
+  assert schema.tables(nil).contains('owners')
+  assert schema.tables(nil).contains('owned')
+  assert !schema.tables(nil).contains('owned_view')
+  assert schema.views(nil).contains('owned_view')
+
+  var columns = schema.columns('owned', nil)
+  assert columns.length() == 3
+  assert columns[0].name == 'id'
+  assert columns[0].primary_key
+  assert !columns[1].nullable
+  assert columns[2].type.starts_with('varchar')
+  assert columns[2].position == 3
+
+  assert schema.primary_key_columns('owned', nil) == ['id']
+
+  var indexes = schema.indexes('owners', nil)
+  var by_name = {}
+
+  for index in indexes {
+    by_name.set(index.name, index)
+  }
+
+  assert by_name.contains('PRIMARY')
+  assert by_name['PRIMARY'].unique
+  assert by_name['PRIMARY'].columns == ['id']
+  assert by_name['label'].unique
+
+  var keys = schema.foreign_keys('owned', nil)
+  assert keys.length() == 1
+  assert keys[0].columns == ['owner_id']
+  assert keys[0].references_table == 'owners'
+  assert keys[0].references_columns == ['id']
+  assert keys[0].on_delete == 'CASCADE'
+
+  finish(db)
+  echo 'test_schema passed'
+}
+
+def test_pool() {
+  var db = connect()
+  db.close()
+
+  # MySQL selects no database unless one is named, and each connection
+  # in the pool is opened fresh, so the database goes in the settings
+  # rather than being selected once on a connection the pool lends out.
+  var settings = sql.driver('mysql').parse_dsn(os.get_env('ZURI_TEST_MYSQL', nil))
+  settings.set('driver', 'mysql')
+  settings.set('database', DATABASE)
+
+  var pool = sql.pool(settings, { size: 3 })
+
+  pool.exec('create table zuri_pool_test (n int)', nil)
+
+  for n in 0..10 {
+    pool.exec('insert into zuri_pool_test values (?)', [n])
+  }
+
+  assert pool.fetch_value('select count(*) from zuri_pool_test', nil, nil) == 10
+  assert pool.size() <= 3
+
+  var a = pool.acquire()
+  var b = pool.acquire()
+
+  assert pool.in_use() == 2
+  assert a.fetch_value('select 1', nil, nil) == 1
+  assert b.fetch_value('select 1', nil, nil) == 1
+
+  a.close()
+  b.close()
+  assert pool.in_use() == 0
+
+  pool.exec('drop table zuri_pool_test', nil)
+  pool.close()
+
+  var cleanup = sql.open(os.get_env('ZURI_TEST_MYSQL', nil), nil)
+  cleanup.exec_script('drop database if exists ${DATABASE}')
+  cleanup.close()
+
+  echo 'test_pool passed'
+}
+
+def run() {
+  if os.get_env('ZURI_TEST_MYSQL', nil) == nil {
+    echo 'mysql_integration skipped: set ZURI_TEST_MYSQL to a ' +
+      'connection string to run it'
+
+    return
+  }
+
+  test_connection()
+  test_types()
+  test_inserts_and_ids()
+  test_transactions()
+  test_cursors()
+  test_prepared()
+  test_errors()
+  test_multiple_results()
+  test_schema()
+  test_pool()
+}
+
+run()

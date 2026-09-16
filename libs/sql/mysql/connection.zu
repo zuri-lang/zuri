@@ -1,0 +1,573 @@
+/**
+ * @module connection
+ *
+ * One open MySQL connection, as the layer above it sees one.
+ *
+ * ### Why a statement with values is always prepared
+ *
+ * MySQL has two ways to run a statement. Sent as text it is one round
+ * trip, but there is nowhere to put a value: it would have to be
+ * written into the SQL, which means quoting it, which means being
+ * wrong about quoting it eventually. Prepared, the values travel
+ * separately in the binary encoding and the question never arises.
+ *
+ * So a statement with no values goes as text and a statement with
+ * values is prepared. Preparing costs a round trip, which is why a
+ * connection keeps the statements it has compiled and reuses them: a
+ * query run in a loop pays for it once.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..driver {
+  DriverConnection, READ_COMMITTED, READ_UNCOMMITTED, REPEATABLE_READ,
+  SERIALIZABLE,
+}
+import ..errors { ClosedError, NotSupportedError, TransactionError }
+import .cursor { MySqlCursor }
+import .protocol { CURSOR_NONE, CURSOR_READ_ONLY, Protocol }
+import .results { exec_result, select_result }
+import .schema { MySqlSchema }
+import .statement { MySqlStatement }
+
+/**
+ * How many compiled statements a connection keeps before releasing the
+ * one it has gone longest without using.
+ *
+ * Each costs a little memory on the server, so this is a ceiling
+ * rather than a target.
+ */
+var CACHE_LIMIT = 64
+
+/**
+ * A connection to MySQL or MariaDB.
+ *
+ * @printable
+ */
+class MySqlConnection < DriverConnection {
+  var _protocol
+  var _options = {}
+  var _closed = false
+
+  var _cache = {}
+  var _cache_order = []
+  var _counter = 0
+
+  var _savepoints = []
+  var _schema
+  var _last_insert_id
+  var _cursor_open = false
+
+  /**
+   * @param Driver driver
+   * @param Protocol protocol An authenticated protocol.
+   * @param dict options
+   */
+  @new(driver, protocol, options) {
+    self.driver = driver
+    self._protocol = protocol
+    self._options = options or {}
+  }
+
+  /**
+   * The protocol underneath, for the MySQL-only features that are not
+   * part of the shared contract.
+   *
+   * @returns Protocol
+   */
+  protocol() {
+    return self._protocol
+  }
+
+  /**
+   * What the server said about itself when it answered.
+   *
+   * @returns dict
+   */
+  parameters() {
+    return self._protocol.parameters
+  }
+
+  /**
+   * Which server this is: `'mysql'` or `'mariadb'`.
+   *
+   * @returns string
+   */
+  flavor() {
+    return self._protocol.flavor()
+  }
+
+  /**
+   * The id the server gave this connection.
+   *
+   * This is what `KILL` names, and what a connection shows as in
+   * `SHOW PROCESSLIST`, so it is the handle for stopping a statement
+   * running on this connection from another one.
+   *
+   * @returns number
+   */
+  connection_id() {
+    return self._protocol.connection_id()
+  }
+
+  schema_adapter() {
+    if self._schema == nil {
+      self._schema = MySqlSchema(self)
+    }
+
+    return self._schema
+  }
+
+  execute(sql: string, values: list) {
+    self._open()
+
+    if values == nil or values.is_empty() {
+      return exec_result(self._query(sql))
+    }
+
+    var compiled = self._compile(sql)
+    var response = self._run(compiled, values, CURSOR_NONE, sql)
+
+    return self._remember(exec_result(response))
+  }
+
+  select(sql: string, values: list) {
+    self._open()
+
+    if values == nil or values.is_empty() {
+      return select_result(self._query(sql))
+    }
+
+    var compiled = self._compile(sql)
+
+    return select_result(self._run(compiled, values, CURSOR_NONE, sql))
+  }
+
+  open_cursor(sql: string, values: list, options: dict) {
+    self._open()
+
+    # Only a prepared statement can be read in batches, so one written
+    # as text is compiled here and released when the cursor closes.
+    var statement = self.prepare(sql)
+
+    return self.cursor_for_statement(statement, values or [], options or {}, true)
+  }
+
+  prepare(sql: string) {
+    self._open()
+
+    return MySqlStatement(self, self._protocol.prepare(sql), sql)
+  }
+
+  /**
+   * Opens a transaction, or takes a savepoint inside the one already
+   * open.
+   *
+   * @param string|nil isolation
+   */
+  begin(isolation) {
+    self._open()
+
+    if self.in_transaction() {
+      var name = self._next_name('savepoint')
+      self._query('savepoint ${name}')
+      self._savepoints.append(name)
+
+      return
+    }
+
+    # MySQL sets the level for the next transaction as a statement of
+    # its own rather than as part of the one that starts it.
+    if isolation != nil {
+      self._query('set transaction isolation level ${self._isolation(isolation)}')
+    }
+
+    self._query('start transaction')
+  }
+
+  /**
+   * Commits, or releases the innermost savepoint.
+   */
+  commit() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+      self._query('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('commit')
+    self._query('commit')
+  }
+
+  /**
+   * Rolls back, or returns to the innermost savepoint and discards it.
+   */
+  rollback() {
+    self._open()
+
+    if !self._savepoints.is_empty() {
+      var name = self._savepoints.pop()
+      self._query('rollback to savepoint ${name}')
+      self._query('release savepoint ${name}')
+
+      return
+    }
+
+    self._assert_in_transaction('roll back')
+    self._query('rollback')
+  }
+
+  savepoint(name: string) {
+    self._open()
+    self._assert_in_transaction('take a savepoint in')
+    self._query('savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  release_savepoint(name: string) {
+    self._open()
+    self._assert_in_transaction('release a savepoint in')
+    self._query('release savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  rollback_to(name: string) {
+    self._open()
+    self._assert_in_transaction('roll back within')
+    self._query('rollback to savepoint ${self.driver.quote_identifier(name)}')
+  }
+
+  in_transaction() {
+    return !self._closed and self._protocol.in_transaction()
+  }
+
+  /**
+   * The id generated by the last insert on this connection.
+   *
+   * Zero means the last statement generated none, which is what an
+   * insert into a table with no auto increment column reports, so it
+   * comes back as nil rather than as a row that does not exist.
+   *
+   * @returns number|bigint|nil
+   */
+  last_insert_id() {
+    return self._last_insert_id
+  }
+
+  ping() {
+    if self._closed {
+      return false
+    }
+
+    catch {
+      return self._protocol.ping()
+    } as _error {
+      return false
+    }
+  }
+
+  server_version() {
+    var version = self._protocol.server_version()
+
+    return version.is_empty() ? 'unknown' : version
+  }
+
+  /**
+   * Returns the session to the state it had when it opened.
+   *
+   * A pool calls this before handing the connection on, so that
+   * temporary tables, session variables and an unfinished transaction
+   * cannot leak from one borrower to the next.
+   */
+  reset() {
+    self._open()
+    self._release_cache()
+    self._savepoints = []
+    self._protocol.reset_connection()
+  }
+
+  close() {
+    if self._closed {
+      return
+    }
+
+    self._closed = true
+    self._cache = {}
+    self._cache_order = []
+    self._protocol.quit()
+  }
+
+  is_closed() {
+    return self._closed or self._protocol.is_closed()
+  }
+
+  /**
+   * Runs a statement as text, for the cases that have no values and so
+   * need no preparing.
+   *
+   * @param string sql
+   * @returns dict
+   */
+  run_simple(sql: string) {
+    self._open()
+
+    return self._query(sql)
+  }
+
+  /**
+   * @internal Used by `MySqlStatement.execute()`.
+   */
+  run_statement(statement, values: list) {
+    self._open()
+
+    var response = self._run(
+      self._compiled_of(statement), values or [], CURSOR_NONE, statement.sql()
+    )
+
+    return self._remember(exec_result(response))
+  }
+
+  /**
+   * @internal Used by `MySqlStatement.select()`.
+   */
+  select_statement(statement, values: list) {
+    self._open()
+
+    return select_result(self._run(
+      self._compiled_of(statement), values or [], CURSOR_NONE, statement.sql()
+    ))
+  }
+
+  /**
+   * @internal Used by `MySqlStatement.open_cursor()` and by
+   *    `open_cursor()`, which differ only in who releases the
+   *    statement afterwards.
+   */
+  cursor_for_statement(statement, values: list, options: dict, owns: bool) {
+    self._open()
+    self._assert_no_cursor()
+
+    var batch = options.get('batch', 256)
+
+    if !is_number(batch) or batch < 1 {
+      batch = 256
+    }
+
+    var response = self._run(
+      self._compiled_of(statement), values or [], CURSOR_READ_ONLY,
+      statement.sql()
+    )
+
+    # A statement that returns nothing answers with an OK packet and
+    # opens no cursor on the server. An empty cursor is the honest way
+    # to report that, and it has to know it is already finished or its
+    # first read would fetch from a cursor that was never opened.
+    var opened = response.kind == 'cursor'
+    self._cursor_open = opened
+
+    return MySqlCursor(self, {
+      statement,
+      columns: opened ? response.columns : [],
+      batch,
+      owns_statement: owns,
+      done: !opened,
+    })
+  }
+
+  /**
+   * @internal Used by `MySqlCursor.next_row()`.
+   */
+  fetch_batch(statement, columns: list, batch: number) {
+    self._open()
+
+    return self._protocol.fetch(statement.id(), columns, batch)
+  }
+
+  /**
+   * @internal Used by `MySqlCursor.close()`.
+   */
+  release_cursor(statement, owns: bool) {
+    self._cursor_open = false
+
+    if owns and !self._closed {
+      catch {
+        statement.close()
+      } as _error {
+        # A statement on a connection that has already failed needs no
+        # releasing.
+      }
+    }
+  }
+
+  /**
+   * @internal Used by `MySqlStatement.close()`.
+   */
+  release_statement(id: number) {
+    if self._closed {
+      return
+    }
+
+    # A statement the cache is holding stays alive; the cache released
+    # it when it evicted it, and releasing it twice would free an id
+    # the server may since have reused.
+    for _, compiled in self._cache {
+      if compiled.id == id {
+        return
+      }
+    }
+
+    self._protocol.close_statement(id)
+  }
+
+  # Runs a compiled statement, whether it came from the cache or from a
+  # statement the caller holds.
+  _run(compiled, values: list, cursor_type: number, sql) {
+    self._assert_no_cursor()
+
+    return self._protocol.execute(
+      compiled.id, values, cursor_type, compiled.columns, sql
+    )
+  }
+
+  # A statement object described the way the cache describes one.
+  _compiled_of(statement) {
+    return {
+      id: statement.id(),
+      columns: statement.raw_columns(),
+    }
+  }
+
+  _query(sql) {
+    self._assert_no_cursor()
+
+    var response = self._protocol.query(sql)
+
+    if response.kind == 'ok' {
+      self._remember(exec_result(response))
+    }
+
+    return response
+  }
+
+  # Keeps the id an insert generated, and passes the result through so
+  # this can sit in the middle of a return.
+  _remember(result) {
+    if result.last_insert_id != nil {
+      self._last_insert_id = result.last_insert_id
+    }
+
+    return result
+  }
+
+  # Compiles `sql`, reusing an already compiled copy when there is one.
+  _compile(sql) {
+    var cached = self._cache.get(sql, nil)
+
+    if cached != nil {
+      self._touch(sql)
+
+      return cached
+    }
+
+    var prepared = self._protocol.prepare(sql)
+    var compiled = { id: prepared.id, columns: prepared.columns }
+
+    if self._cache_order.length() >= CACHE_LIMIT {
+      var oldest = self._cache_order[0]
+      self._cache_order = self._cache_order[1, self._cache_order.length()]
+
+      var evicted = self._cache.get(oldest, nil)
+
+      if evicted != nil {
+        self._cache.remove(oldest)
+        self._protocol.close_statement(evicted.id)
+      }
+    }
+
+    self._cache.set(sql, compiled)
+    self._cache_order.append(sql)
+
+    return compiled
+  }
+
+  _touch(sql) {
+    var at = self._cache_order.index_of(sql)
+
+    if at != -1 {
+      self._cache_order.remove_at(at)
+    }
+
+    self._cache_order.append(sql)
+  }
+
+  _release_cache() {
+    for _, compiled in self._cache {
+      catch {
+        self._protocol.close_statement(compiled.id)
+      } as _error {
+        # Nothing useful to do about a statement that will not release.
+      }
+    }
+
+    self._cache = {}
+    self._cache_order = []
+  }
+
+  _next_name(kind) {
+    self._counter++
+
+    return 'zuri_${kind}_${self._counter}'
+  }
+
+  _isolation(isolation) {
+    for level in [READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE, READ_UNCOMMITTED] {
+      if isolation == level {
+        return level
+      }
+    }
+
+    raise NotSupportedError(
+      'mysql has no ${isolation} isolation level',
+      { driver: 'mysql' }
+    )
+  }
+
+  _assert_in_transaction(what) {
+    if !self.in_transaction() {
+      raise TransactionError(
+        'there is no open transaction to ${what}',
+        { driver: 'mysql' }
+      )
+    }
+  }
+
+  # The server is part way through answering a cursor, so nothing else
+  # may be sent until it has finished.
+  _assert_no_cursor() {
+    if self._cursor_open {
+      raise TransactionError(
+        'this connection has a cursor open; read it to the end or ' +
+        'close it before running anything else on this connection',
+        { driver: 'mysql' }
+      )
+    }
+  }
+
+  _open() {
+    if self.is_closed() {
+      raise ClosedError(
+        'this mysql connection was closed', { driver: 'mysql' }
+      )
+    }
+  }
+
+  to_string() {
+    return '<MySqlConnection ${self.server_version()}' +
+      '${self.is_closed() ? " (closed)" : ""}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
