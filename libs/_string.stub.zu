@@ -1032,7 +1032,7 @@ class string {
    *
    * ```zuri-repl
    * %> 'Zuri'.to_list()
-   * [B, l, a, d, e]
+   * [Z, u, r, i]
    * %> 'Plantation'.to_list()
    * [P, l, a, n, t, a, t, i, o, n]
    * ```
