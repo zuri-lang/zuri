@@ -1302,13 +1302,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           },
           crate::jit::ResolvedGlobal::Native {
             guard_fn,
-            native_ptr,
+            native_name,
           } => {
             targets.insert(
               ip,
               CallTarget::KnownNative {
                 guard_fn: *guard_fn,
-                native_ptr: *native_ptr,
+                native_name,
               },
             );
             break;
@@ -5494,18 +5494,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     func: u8,
     num_args: u8,
     guard_fn: u64,
-    native_ptr: usize,
+    native_name: &'static str,
   ) {
-    // SAFETY: `native_ptr` is only ever dereferenced HERE, during this
-    // compilation, to read the native's name. `VM::resolve_call_targets`
-    // produced it moments ago on this same thread and the native is
-    // permanently reachable from a global, so it is live for this read.
-    // It is deliberately NOT baked into generated code: natives are
-    // young allocations (see `Heap::alloc_native`) and relocate on
-    // promotion, so a baked address would dangle at runtime.
-    let native = unsafe { &*(native_ptr as *const object::NativeFunction) };
+    // The name was read on the VM thread when the job was built, back
+    // when the `NativeFunction` was provably live; reading it there
+    // rather than dereferencing a raw pointer here is what keeps a
+    // minor collection on that thread from relocating the object out
+    // from under this compilation.
     let intrinsic = (num_args == 1)
-      .then(|| Self::native_intrinsic(native.name))
+      .then(|| Self::native_intrinsic(native_name))
       .flatten();
 
     let callee_val = self.load_reg(func);
@@ -13197,8 +13194,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           Some(CallTarget::Known { .. }) => self.emit_generic_call(dst, func, num_args),
           Some(CallTarget::KnownNative {
             guard_fn,
-            native_ptr,
-          }) => self.emit_known_native_call(dst, func, num_args, guard_fn, native_ptr),
+            native_name,
+          }) => self.emit_known_native_call(dst, func, num_args, guard_fn, native_name),
           Some(CallTarget::Construct) => self.emit_construct_call(dst, func, num_args),
           Some(CallTarget::ConstructKnown {
             guard_bits,

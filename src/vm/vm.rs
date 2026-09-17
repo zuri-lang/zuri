@@ -16,8 +16,8 @@ use crate::jit::{CompileFacts, EntryFn, background, escape, typeflow};
 use crate::vm::chunk::{Instr, JumpKey, ParamType};
 use crate::vm::natives;
 use crate::vm::object::{
-  Heap, ListStorage, NativeFunction, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding,
-  UpvalueDescriptor, UpvalueState, ZuriContext, write_barrier,
+  Heap, ListStorage, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor,
+  UpvalueState, ZuriContext, write_barrier,
 };
 use crate::vm::value::{
   Value, big_div, big_floordiv, big_pow, big_rem, num_rem, num_to_wrapped_i64,
@@ -2318,7 +2318,11 @@ impl VM {
           name,
           crate::jit::ResolvedGlobal::Native {
             guard_fn: n.func as usize as u64,
-            native_ptr: n as *const NativeFunction as usize,
+            // Read the name here, on the thread that owns `n`, rather
+            // than handing its address to the compiler thread to read
+            // later: a minor collection could relocate the native in
+            // between. The name itself is `'static` and safe to carry.
+            native_name: n.name,
           },
         );
       } else if resolved.is_closure() {

@@ -275,17 +275,18 @@ pub enum CallTarget {
     /// pointer, unaffected by relocation. See
     /// `object::obj_native_func_offset`.
     guard_fn: u64,
-    /// The `NativeFunction` itself, as a raw pointer, used only during
-    /// compilation to read the native's name when choosing an
-    /// intrinsic.
+    /// The native's name, needed only to decide whether it has an
+    /// inline intrinsic body.
     ///
-    /// Never baked into generated code and never dereferenced at
-    /// runtime: the object is a young allocation that relocates on
-    /// promotion (see `Heap::alloc_native`), so an address that
-    /// outlived this compilation would dangle. The runtime helper
-    /// re-reads the callee from its register instead, which the guard
-    /// has already proven is this native.
-    native_ptr: usize,
+    /// Carried as the `&'static str` itself rather than as a pointer to
+    /// the `NativeFunction` it lives on. That object is a young
+    /// allocation and relocates when a minor collection promotes it
+    /// (see `Heap::alloc_native`); since compilation runs on the
+    /// background thread, a minor collection on the main thread can move
+    /// it out from under a raw pointer between the moment the job is
+    /// built and the moment the compiler reads it. The name string is
+    /// `'static` and never moves, so it is safe to hand across.
+    native_name: &'static str,
   },
   Construct,
   ConstructKnown {
@@ -321,7 +322,7 @@ pub enum ResolvedGlobal {
   },
   Native {
     guard_fn: u64,
-    native_ptr: usize,
+    native_name: &'static str,
   },
   Closure {
     entry: usize,
