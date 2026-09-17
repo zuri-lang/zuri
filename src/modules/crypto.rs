@@ -708,9 +708,15 @@ fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
   let sig = ctx.args[1].with_bytes(|message| match (padding, hash) {
-    ("pkcs1", "sha384") => Pkcs1SigningKey::<Sha384>::new(priv_key).sign(message).to_vec(),
-    ("pkcs1", "sha512") => Pkcs1SigningKey::<Sha512>::new(priv_key).sign(message).to_vec(),
-    ("pkcs1", _) => Pkcs1SigningKey::<Sha256>::new(priv_key).sign(message).to_vec(),
+    ("pkcs1", "sha384") => Pkcs1SigningKey::<Sha384>::new(priv_key)
+      .sign(message)
+      .to_vec(),
+    ("pkcs1", "sha512") => Pkcs1SigningKey::<Sha512>::new(priv_key)
+      .sign(message)
+      .to_vec(),
+    ("pkcs1", _) => Pkcs1SigningKey::<Sha256>::new(priv_key)
+      .sign(message)
+      .to_vec(),
     (_, "sha384") => SigningKey::<Sha384>::new(priv_key)
       .sign_with_rng(&mut OsRng, message)
       .to_vec(),
@@ -753,10 +759,8 @@ fn rsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
           RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha512>::new(pub_key), &message, &sig)
             .is_ok()
         },
-        _ => {
-          RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha256>::new(pub_key), &message, &sig)
-            .is_ok()
-        },
+        _ => RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha256>::new(pub_key), &message, &sig)
+          .is_ok(),
       },
       Err(_) => false,
     };
