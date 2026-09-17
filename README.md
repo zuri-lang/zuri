@@ -87,9 +87,9 @@ Every module in it was built by the same hands:
 
 | | |
 | --- | --- |
-| **The web** | `http` (server, client, HTTP/2, WebSocket), `wire` (templates), `html`, `url`, `mime` |
+| **The web** | `http` (server, client, HTTP/2, WebSocket), `wire` (templates), `html`, `mail` (SMTP, IMAP, POP3), `url`, `mime` |
 | **Networking** | `net` (TCP, UDP, TLS, DTLS, addresses, polling) |
-| **Data** | `json`, `yaml`, `csv`, `struct`, `base64`, `convert` |
+| **Data** | `sql` (SQLite, PostgreSQL, MySQL, MariaDB), `json`, `yaml`, `csv`, `struct`, `base64`, `convert` |
 | **Correctness** | `validate`, `types`, `enum` |
 | **Security** | `crypto`, `hash`, `bcrypt`, `jwt`, `uuid` |
 | **The machine** | `os`, `io`, `args`, `log`, `date` |
@@ -97,7 +97,7 @@ Every module in it was built by the same hands:
 | **Numbers** | `math`, `stat`, `array`, `set` |
 | **Archives** | `compress` (gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip) |
 | **Images** | `imagine` (decode, draw, filter, encode) |
-| **Itself** | `zuri` (the lexer, parser, compiler and reflection, as a library) |
+| **Unit Testing** | `test` |
 
 Because every one of them was designed together, moving between a
 database query, a hash and an HTTP response costs you no mental
