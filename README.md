@@ -155,22 +155,22 @@ Syntax highlighting, from the same hands as everything else.
 Already here:
 
 - [x] The language, complete and self-hosting enough to parse, compile
-      and reflect on itself
-- [x] A Just-In-Time compiler
-- [x] A standard library covering the whole stack bar the data layer
-- [x] Two books, one of them generated from the library itself
+      and reflect on itself.
+- [x] A Just-In-Time compiler.
+- [x] A standard library covering the whole stack bar the data layer.
+- [x] Two books, one of them generated from the library itself.
+- [x] **Database & ORM**, so that persisting a record never means reaching
+      outside the language.
+- [x] **A test runner.**
 
 On the way, in the order it matters:
 
-- [ ] **Database & ORM**, so that persisting a record never means reaching
-      outside the language.
 - [ ] **Nyssa package manager**, for the code that is genuinely
       third-party. A complete standard library is not an argument
       against sharing.
 - [ ] **A self-hosted repository server** bundled with `Nyssa` that allows 
       public and private organizations to share Zuri packages whichever way 
       they like.
-- [ ] **A test runner.**
 - [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
 - [ ] **C and Rust compatible FFI interop.**
 
