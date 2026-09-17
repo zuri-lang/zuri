@@ -588,12 +588,12 @@ impl<'a> Compiler<'a> {
     self.compile_statement(body);
 
     // if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
-      // Make appending a return unconditional so that we can catch 
-      // functions that don't return anything but whose last instruction 
-      // is a Instr::Return.
-      let nil_reg = self.alloc_reg();
-      self.emit(Instr::LoadNil { dst: nil_reg });
-      self.emit(Instr::Return { src: nil_reg });
+    // Make appending a return unconditional so that we can catch
+    // functions that don't return anything but whose last instruction
+    // is a Instr::Return.
+    let nil_reg = self.alloc_reg();
+    self.emit(Instr::LoadNil { dst: nil_reg });
+    self.emit(Instr::Return { src: nil_reg });
     // }
 
     let finished = self.scopes.pop().unwrap();
@@ -735,13 +735,13 @@ impl<'a> Compiler<'a> {
     self.compile_statement(body);
 
     // if !matches!(self.cur().chunk.code.last(), Some(Instr::Return { .. })) {
-      // Same as the reason for the compile_function_prototype 
-      // unconditional return: if the last instruction is a return, 
-      // we don't want to add another one, but if it's not, we need 
-      // to ensure that the function returns nil.
-      let nil_reg = self.alloc_reg();
-      self.emit(Instr::LoadNil { dst: nil_reg });
-      self.emit(Instr::Return { src: nil_reg });
+    // Same as the reason for the compile_function_prototype
+    // unconditional return: if the last instruction is a return,
+    // we don't want to add another one, but if it's not, we need
+    // to ensure that the function returns nil.
+    let nil_reg = self.alloc_reg();
+    self.emit(Instr::LoadNil { dst: nil_reg });
+    self.emit(Instr::Return { src: nil_reg });
     // }
 
     let finished = self.scopes.pop().unwrap();

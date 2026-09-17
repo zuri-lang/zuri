@@ -167,6 +167,12 @@ def decode_base64(text) {
     return bytes(0)
   }
 
+  return _decoded_base64(clean)
+}
+
+# The decode on its own, so the byte loop above stays in a function the
+# JIT will take.
+def _decoded_base64(clean: bytes) {
   catch {
     return base64.decode(clean.to_string())
   } as error {
@@ -613,15 +619,24 @@ def _scan_word(text: string, start: number) {
     return nil
   }
 
-  var decoded = nil
+  var decoded = _decoded_word(kind, body)
 
-  catch {
-    decoded = kind == 'B' ? decode_base64(body) : _q_decode(body)
-  } as error {
+  if decoded == nil {
     return nil
   }
 
   return { text: decode_text(decoded, charset), end: close + 2 }
+}
+
+# The bytes an encoded word stands for, or nil when it does not decode.
+# Separate from the scanning above so that scanning stays eligible for
+# the JIT.
+def _decoded_word(kind: string, body: string) {
+  catch {
+    return kind == 'B' ? decode_base64(body) : _q_decode(body)
+  } as error {
+    return nil
+  }
 }
 
 # Q decoding differs from quoted-printable in one place: an underscore

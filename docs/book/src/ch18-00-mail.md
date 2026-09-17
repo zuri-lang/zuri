@@ -1184,9 +1184,23 @@ echo store.messages('ada', 'INBOX')[0].uid
 ### Maildir
 
 Each account is a directory, holding its INBOX directly and every other
-mailbox beside it, which is the Maildir++ arrangement every other mail
-tool understands. A mailbox written by this server can be read by
-anything else, and mail delivered by anything else turns up here.
+mailbox beside it under a leading dot, which is the Maildir++ arrangement
+every other mail tool understands. A mailbox written by this server can be
+read by anything else, and mail delivered by anything else turns up here.
+
+Every mailbox is the three directories Maildir defines. A message is
+written into `tmp`, where nothing reads from, and only moved into place
+once it is whole, so a reader never sees half of one. `new` is where a
+delivery agent leaves mail nobody has looked at yet, and `cur` is where a
+message lives once a client has seen the mailbox, with its flags recorded
+in the filename after `:2,`. So an account on disk looks like this:
+
+```text
+ada/
+  cur/   new/   tmp/   zuri-uidlist
+  .Archive/
+    cur/   new/   tmp/   zuri-uidlist
+```
 
 That interoperability is the reason to choose it. A delivery agent can
 drop a message in and the server finds it on the next look, with no

@@ -1331,13 +1331,21 @@ def _read_path(rest: string) {
     return { address: nil, empty: true, parameters }
   }
 
-  var address = nil
+  var address = _read_address(inside)
 
-  catch {
-    address = Address(inside, nil)
-  } as error {
+  if address == nil {
     return nil
   }
 
   return { address, empty: false, parameters }
+}
+
+# The address on its own, nil when it will not parse. Kept out of the
+# reader above so that the reader stays eligible for the JIT.
+def _read_address(inside: string) {
+  catch {
+    return Address(inside, nil)
+  } as error {
+    return nil
+  }
 }

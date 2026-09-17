@@ -102,7 +102,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   vec![
     ("unix_new", native(vm, "@new", 0, false, unix_new)),
     ("unix_pair", native(vm, "pair", 0, false, unix_pair)),
-    ("unix_connect", native(vm, "connect", 2, false, unix_connect)),
+    (
+      "unix_connect",
+      native(vm, "connect", 2, false, unix_connect),
+    ),
     ("unix_bind", native(vm, "bind", 2, false, unix_bind)),
     ("unix_accept", native(vm, "accept", 1, false, unix_accept)),
     (
@@ -273,7 +276,9 @@ fn unix_pair(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
 
   let (left, right) = UnixStream::pair().map_err(|e| e.to_string())?;
-  let first = ctx.heap().alloc_ptr(UNIX_STREAM, ZuriUnix::with_stream(left));
+  let first = ctx
+    .heap()
+    .alloc_ptr(UNIX_STREAM, ZuriUnix::with_stream(left));
   let second = ctx
     .heap()
     .alloc_ptr(UNIX_STREAM, ZuriUnix::with_stream(right));
@@ -475,7 +480,10 @@ fn unix_get_write_timeout(ctx: &mut ZuriContext) -> Result<Value, String> {
   let socket = ptr.downcast_ref::<ZuriUnix>().unwrap();
 
   Ok(millis_of(
-    socket.stream()?.write_timeout().map_err(|e| e.to_string())?,
+    socket
+      .stream()?
+      .write_timeout()
+      .map_err(|e| e.to_string())?,
   ))
 }
 
@@ -491,7 +499,9 @@ fn unix_set_non_blocking(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   match (&socket.stream, &socket.listener) {
     (Some(stream), _) => stream.set_nonblocking(wanted).map_err(|e| e.to_string())?,
-    (None, Some(listener)) => listener.set_nonblocking(wanted).map_err(|e| e.to_string())?,
+    (None, Some(listener)) => listener
+      .set_nonblocking(wanted)
+      .map_err(|e| e.to_string())?,
     _ => return Err(INVALID_STREAM_ERR.to_string()),
   }
 
