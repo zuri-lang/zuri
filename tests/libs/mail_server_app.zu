@@ -1,9 +1,10 @@
 /**
  * The servers `mail_server.zu` runs, each in an isolate of its own.
  *
- * They live in a module because an isolate resolves a module's
- * function by name on its own side; a closure defined in the test
- * itself could not cross.
+ * They sit in their own file so the test that drives them stays about
+ * the assertions rather than the server bodies. `isolate.spawn` takes
+ * any function, so where these are defined is a matter of tidiness,
+ * not a requirement.
  */
 
 import mail

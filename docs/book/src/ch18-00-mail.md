@@ -1263,9 +1263,10 @@ import .my_server
 pool.serve(my_server.build, { host: '0.0.0.0', port: 143, workers: 8 })
 ```
 
-`build` is a function in a module of its own rather than a closure,
-because each worker resolves it by name on its own side and builds its
-own server there:
+`build` runs inside each worker to construct that worker's own server,
+since isolates share nothing and each needs its own. It can be any
+function; keeping it in a module of its own is just a tidy place for a
+worker's setup to live:
 
 ```zuri,ignore
 # my_server.zu
