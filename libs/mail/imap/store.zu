@@ -282,6 +282,17 @@ class MailStore {
   }
 }
 
+# The machine's name, with the two characters Maildir gives a meaning
+# to taken out of it. A machine that will not say its name gets the
+# stand-in.
+def _host_name() {
+  catch {
+    return os.hostname().replace('/[\/:]/', '-')
+  } as error {
+    return 'localhost'
+  }
+}
+
 # A unique enough name for one message file, built the way Maildir
 # says: the time it arrived, something no other process would produce,
 # and the machine's name.
@@ -294,15 +305,7 @@ def _unique_name() {
     text.append('0123456789abcdef'[value & 0x0f])
   }
 
-  var host = 'localhost'
-
-  catch {
-    host = os.hostname().replace('/[\/:]/', '-')
-  } as error {
-    # A machine that will not say its name gets the stand-in.
-  }
-
-  return '${time().floor()}.M${os.pid()}Q${''.join(text)}.${host}'
+  return '${time().floor()}.M${os.pid()}Q${''.join(text)}.${_host_name()}'
 }
 
 # The letters that record a message's flags, in the order Maildir wants

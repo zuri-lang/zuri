@@ -835,13 +835,19 @@ class ImapClient {
     }
 
     if self._on_event != nil {
-      var listener = self._on_event
+      self._notify(response)
+    }
+  }
 
-      catch {
-        listener(response)
-      } as error {
-        # A listener that fails must not take the connection with it.
-      }
+  # Handing a response to the program's own listener, kept out of
+  # `_absorb` so that reading responses stays eligible for the JIT.
+  _notify(response) {
+    var listener = self._on_event
+
+    catch {
+      listener(response)
+    } as error {
+      # A listener that fails must not take the connection with it.
     }
   }
 

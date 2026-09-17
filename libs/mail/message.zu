@@ -1692,6 +1692,15 @@ def multipart(subtype: string, parts: list) {
   return Message().become_multipart(subtype, parts)
 }
 
+# The machine's own name, or the stand-in when it will not say.
+def _host_name() {
+  catch {
+    return os.hostname()
+  } as error {
+    return 'localhost'
+  }
+}
+
 /**
  * An identifier for a message, unique enough that no two ever collide.
  *
@@ -1700,16 +1709,7 @@ def multipart(subtype: string, parts: list) {
  * @returns string including the angle brackets a header needs.
  */
 def new_message_id(domain: ?string) {
-  var right = domain
-
-  if right == nil {
-    catch {
-      right = os.hostname()
-    } as error {
-      right = 'localhost'
-    }
-  }
-
+  var right = domain == nil ? _host_name() : domain
   var stamp = time().floor()
   var raw = crypto.random_bytes(10)
   var text = []
