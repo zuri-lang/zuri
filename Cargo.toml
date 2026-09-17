@@ -33,7 +33,10 @@ md-5 = "0.10"
 md4 = "0.10"
 md2 = "0.10"
 sha1 = "0.10"
-sha2 = "0.10"
+# "oid" carries the object identifiers the PKCS#1 v1.5 signature
+# scheme prefixes a digest with; without it rsa's pkcs1v15 keys cannot
+# be built over these hashes at all.
+sha2 = { version = "0.10", features = ["oid"] }
 sha3 = "0.10"
 ripemd = "0.1"
 blake2 = "0.10"
@@ -193,6 +196,12 @@ windows-sys = { version = "0.59", features = [
     # this crate is behind its own feature; without this one the whole
     # of Win32::Networking is compiled out.
     "Win32_Networking_WinSock",
+    # GetAdaptersAddresses, for the nameserver list behind net.resolver.
+    # Ndis comes with it rather than on its own merit: the adapter
+    # struct names IF_OPER_STATUS and a couple of other Ndis types in
+    # its own fields, so without it the struct does not exist.
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
 ] }
 
 

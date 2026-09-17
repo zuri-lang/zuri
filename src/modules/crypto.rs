@@ -668,41 +668,101 @@ fn rsa_hash_arg(ctx: &ZuriContext, idx: usize) -> Result<&'static str, String> {
   }
 }
 
+/// Which RSA signature scheme to use. PSS is the modern one and stays
+/// the default; PKCS#1 v1.5 is what the older standards specify, and a
+/// protocol that names it (DKIM among them) will not accept anything
+/// else.
+fn rsa_padding_arg(ctx: &ZuriContext, idx: usize) -> Result<&'static str, String> {
+  match ctx.args.get(idx) {
+    None => Ok("pss"),
+    Some(v) if v.is_nil() => Ok("pss"),
+    Some(v) if !v.is_string() => Err(format!(
+      "{}() expects argument {} to be a string, got {}",
+      ctx.name,
+      idx + 1,
+      v.type_name()
+    )),
+    Some(v) => match v.as_str() {
+      "pss" => Ok("pss"),
+      "pkcs1" => Ok("pkcs1"),
+      other => Err(format!(
+        "{}(): padding must be \"pss\" or \"pkcs1\", got \"{}\"",
+        ctx.name, other
+      )),
+    },
+  }
+}
+
 fn rsa_sign_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::RsaPrivateKey;
+  use rsa::pkcs1v15::SigningKey as Pkcs1SigningKey;
   use rsa::pkcs8::DecodePrivateKey;
   use rsa::pss::SigningKey;
 
-  enforce_arg_range!(ctx, 2, 3);
+  enforce_arg_range!(ctx, 2, 4);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
   let hash = rsa_hash_arg(ctx, 2)?;
+  let padding = rsa_padding_arg(ctx, 3)?;
 
   let priv_key = RsaPrivateKey::from_pkcs8_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid private key", e))?;
-  let sig = ctx.args[1].with_bytes(|message| match hash {
-    "sha384" => SigningKey::<Sha384>::new(priv_key).sign_with_rng(&mut OsRng, message),
-    "sha512" => SigningKey::<Sha512>::new(priv_key).sign_with_rng(&mut OsRng, message),
-    _ => SigningKey::<Sha256>::new(priv_key).sign_with_rng(&mut OsRng, message),
+  let sig = ctx.args[1].with_bytes(|message| match (padding, hash) {
+    ("pkcs1", "sha384") => Pkcs1SigningKey::<Sha384>::new(priv_key).sign(message).to_vec(),
+    ("pkcs1", "sha512") => Pkcs1SigningKey::<Sha512>::new(priv_key).sign(message).to_vec(),
+    ("pkcs1", _) => Pkcs1SigningKey::<Sha256>::new(priv_key).sign(message).to_vec(),
+    (_, "sha384") => SigningKey::<Sha384>::new(priv_key)
+      .sign_with_rng(&mut OsRng, message)
+      .to_vec(),
+    (_, "sha512") => SigningKey::<Sha512>::new(priv_key)
+      .sign_with_rng(&mut OsRng, message)
+      .to_vec(),
+    _ => SigningKey::<Sha256>::new(priv_key)
+      .sign_with_rng(&mut OsRng, message)
+      .to_vec(),
   });
-  Ok(ctx.heap().alloc_bytes(sig.to_vec()))
+  Ok(ctx.heap().alloc_bytes(sig))
 }
 
 fn rsa_verify_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   use rsa::RsaPublicKey;
+  use rsa::pkcs1v15::{Signature as Pkcs1Signature, VerifyingKey as Pkcs1VerifyingKey};
   use rsa::pkcs8::DecodePublicKey;
   use rsa::pss::{Signature as PssSignature, VerifyingKey};
 
-  enforce_arg_range!(ctx, 3, 4);
+  enforce_arg_range!(ctx, 3, 5);
   enforce_arg_type!(ctx, 0, ArgType::String);
   enforce_arg_type!(ctx, 1, ArgType::Bytes);
   enforce_arg_type!(ctx, 2, ArgType::Bytes);
   let hash = rsa_hash_arg(ctx, 3)?;
+  let padding = rsa_padding_arg(ctx, 4)?;
 
   let pub_key = RsaPublicKey::from_public_key_pem(ctx.args[0].as_str())
     .map_err(|e| crypto_err("invalid public key", e))?;
   let message = ctx.args[1].as_bytes();
   let sig_bytes = ctx.args[2].as_bytes();
+
+  if padding == "pkcs1" {
+    let ok = match Pkcs1Signature::try_from(sig_bytes.as_slice()) {
+      Ok(sig) => match hash {
+        "sha384" => {
+          RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha384>::new(pub_key), &message, &sig)
+            .is_ok()
+        },
+        "sha512" => {
+          RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha512>::new(pub_key), &message, &sig)
+            .is_ok()
+        },
+        _ => {
+          RsaVerifierTrait::verify(&Pkcs1VerifyingKey::<Sha256>::new(pub_key), &message, &sig)
+            .is_ok()
+        },
+      },
+      Err(_) => false,
+    };
+
+    return Ok(Value::bool(ok));
+  }
 
   let ok = match PssSignature::try_from(sig_bytes.as_slice()) {
     Ok(sig) => match hash {

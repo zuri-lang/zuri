@@ -1,0 +1,1033 @@
+/**
+ * @module encoding
+ *
+ * The encodings a message uses to get eight bit data through a seven
+ * bit pipe.
+ *
+ * Mail headers are ASCII and mail bodies were historically ASCII too,
+ * so everything else has to be spelled out in it. Bodies use base64 or
+ * quoted-printable; headers use the encoded words of RFC 2047 and, for
+ * parameters, the continuations of RFC 2231. This module implements
+ * all four in both directions, plus the character sets a message is
+ * likely to name.
+ *
+ * ```zuri
+ * import mail.encoding
+ *
+ * echo encoding.encode_word('Grüße', 'utf-8', 'Q')
+ * echo encoding.decode_words('=?utf-8?Q?Gr=C3=BC=C3=9Fe?=')
+ * ```
+ *
+ * ```console
+ * =?utf-8?Q?Gr=C3=BC=C3=9Fe?=
+ * Grüße
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+
+import .errors { MessageError }
+
+# The transfer encodings a part's Content-Transfer-Encoding may name.
+# The first three leave the data alone and only describe it.
+var TRANSFER_ENCODINGS = ['7bit', '8bit', 'binary', 'base64', 'quoted-printable']
+
+# The line length RFC 2045 sets for an encoded body, counting the soft
+# break that may end the line.
+var _BODY_LINE = 76
+
+# The length RFC 2047 sets for one encoded word, counting its own
+# markers.
+var _WORD_LINE = 75
+
+var _HEX = '0123456789ABCDEF'.to_bytes()
+
+# The characters a Q encoded word may carry as themselves. The
+# specification allows more in some positions and fewer in others, and
+# this is the set that is safe everywhere a word can appear.
+var _Q_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!*+-/'
+
+# Where windows-1252 differs from latin-1: the range latin-1 leaves as
+# control characters, which this maps to the punctuation and symbols
+# that live there instead.
+var _CP1252_HIGH = [
+  0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
+  0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
+  0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
+]
+
+# The eight places iso-8859-15 differs from iso-8859-1, by the byte
+# that differs and the character it means instead.
+var _LATIN9 = {
+  164: 0x20ac,
+  166: 0x0160,
+  168: 0x0161,
+  180: 0x017d,
+  184: 0x017e,
+  188: 0x0152,
+  189: 0x0153,
+  190: 0x0178,
+}
+
+def _raw_bytes(data) {
+  return is_bytes(data) ? data : data.to_bytes()
+}
+
+def _hex_value(value: number) {
+  if value >= 0x30 and value <= 0x39 {
+    return value - 0x30
+  }
+
+  if value >= 0x41 and value <= 0x46 {
+    return value - 0x37
+  }
+
+  if value >= 0x61 and value <= 0x66 {
+    return value - 0x57
+  }
+
+  return -1
+}
+
+def _is_space_byte(value: number) {
+  return value == 0x20 or value == 0x09
+}
+
+/**
+ * Whether every byte is plain ASCII, which decides whether a header or
+ * a body needs encoding at all.
+ *
+ * @param string|bytes data
+ * @returns bool
+ */
+def is_ascii(data) {
+  for value in _raw_bytes(data) {
+    if value > 0x7f {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * Encodes data as base64, wrapped into lines.
+ *
+ * @param string|bytes data
+ * @param ?number width: Characters per line, `76` by default. Pass `0`
+ *    for one unbroken line, which is what a header needs.
+ * @returns string
+ */
+def encode_base64(data, width: ?number) {
+  var text = base64.encode(_raw_bytes(data))
+  var wrap = width == nil ? _BODY_LINE : width
+
+  if wrap <= 0 or text.length() <= wrap {
+    return text
+  }
+
+  var lines = []
+  var at = 0
+
+  while at < text.length() {
+    var end = at + wrap
+
+    lines.append(text[at, end > text.length() ? text.length() : end])
+    at = end
+  }
+
+  return '\r\n'.join(lines)
+}
+
+/**
+ * Decodes base64, ignoring the line breaks and stray whitespace a
+ * message carries it with.
+ *
+ * @param string|bytes text
+ * @returns bytes
+ * @throws MessageError if what is left is not base64.
+ */
+def decode_base64(text) {
+  var clean = bytes(0)
+
+  for value in _raw_bytes(text) {
+    if value == 0x0d or value == 0x0a or _is_space_byte(value) {
+      continue
+    }
+
+    clean.append(value)
+  }
+
+  if clean.is_empty() {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(clean.to_string())
+  } as error {
+    raise MessageError('body is not valid base64: ${error.message}')
+  }
+}
+
+/**
+ * Encodes data as quoted-printable.
+ *
+ * Bytes that can stand for themselves do; the rest become `=XX`. Lines
+ * are kept within 76 characters with the soft breaks the encoding
+ * defines, and whitespace at the end of a line is encoded so that a
+ * transport which trims it cannot change what was sent.
+ *
+ * ```zuri
+ * import mail.encoding
+ *
+ * echo encoding.encode_quoted_printable('café = good')
+ * ```
+ *
+ * ```console
+ * caf=C3=A9 =3D good
+ * ```
+ *
+ * @param string|bytes data
+ * @returns string
+ */
+def encode_quoted_printable(data) {
+  var raw = _raw_bytes(data)
+  var out = bytes(0)
+  var column = 0
+  var index = 0
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x0d and index + 1 < raw.length() and raw[index + 1] == 0x0a {
+      _encode_trailing_space(out)
+
+      out.append(0x0d)
+      out.append(0x0a)
+
+      column = 0
+      index += 2
+      continue
+    }
+
+    # 0x3d is '=', which always has to be spelled out, and the rest of
+    # the printable range stands for itself.
+    var space = value == 0x09 or value == 0x20
+    var literal = space or (value >= 0x21 and value <= 0x7e and value != 0x3d)
+    var size = literal ? 1 : 3
+
+    # A space costs one character now but may cost three later, if the
+    # line turns out to end right after it. Leaving room for that here
+    # is what keeps the finished line inside the limit.
+    if column + (space ? 3 : size) > _BODY_LINE - 1 {
+      out.append(0x3d)
+      out.append(0x0d)
+      out.append(0x0a)
+
+      column = 0
+    }
+
+    if literal {
+      out.append(value)
+    } else {
+      out.append(0x3d)
+      out.append(_HEX[(value >> 4) & 0x0f])
+      out.append(_HEX[value & 0x0f])
+    }
+
+    column += size
+    index++
+  }
+
+  _encode_trailing_space(out)
+
+  return out.to_string()
+}
+
+# Whitespace at the end of a line does not survive every transport, so
+# the last byte before a break is spelled out when it is a space or a
+# tab.
+def _encode_trailing_space(out) {
+  if out.is_empty() {
+    return
+  }
+
+  var last = out[out.length() - 1]
+
+  if !_is_space_byte(last) {
+    return
+  }
+
+  out.pop()
+  out.append(0x3d)
+  out.append(_HEX[(last >> 4) & 0x0f])
+  out.append(_HEX[last & 0x0f])
+}
+
+/**
+ * Decodes quoted-printable.
+ *
+ * Tolerant of what real messages contain: a soft break with a bare
+ * newline rather than a carriage return and newline, and a lone `=`
+ * that is not followed by two hex digits, which is passed through
+ * rather than treated as a failure.
+ *
+ * @param string|bytes text
+ * @returns bytes
+ */
+def decode_quoted_printable(text) {
+  var raw = _raw_bytes(text)
+  var out = bytes(0)
+  var index = 0
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value != 0x3d {
+      out.append(value)
+      index++
+      continue
+    }
+
+    if index + 2 < raw.length() and raw[index + 1] == 0x0d and raw[index + 2] == 0x0a {
+      index += 3
+      continue
+    }
+
+    if index + 1 < raw.length() and raw[index + 1] == 0x0a {
+      index += 2
+      continue
+    }
+
+    if index + 2 < raw.length() {
+      var high = _hex_value(raw[index + 1])
+      var low = _hex_value(raw[index + 2])
+
+      if high >= 0 and low >= 0 {
+        out.append((high << 4) | low)
+        index += 3
+        continue
+      }
+    }
+
+    out.append(value)
+    index++
+  }
+
+  return out
+}
+
+/**
+ * Turns bytes into text, reading them as the character set names.
+ *
+ * The sets a message is likely to name are understood outright:
+ * UTF-8, US-ASCII, the ISO 8859 Latin sets 1 and 15, windows-1252,
+ * and UTF-16 in either byte order. A set this does not know is read as
+ * UTF-8, which leaves the ASCII in it intact rather than discarding
+ * the part that would have been readable.
+ *
+ * @param string|bytes raw
+ * @param ?string charset: `utf-8` when not given.
+ * @returns string
+ */
+def decode_text(raw, charset: ?string) {
+  var data = _raw_bytes(raw)
+  var name = charset == nil ? 'utf-8' : _canonical_charset(charset)
+
+  if name == 'utf-8' or name == 'us-ascii' {
+    return data.to_string()
+  }
+
+  if name == 'iso-8859-1' {
+    return _from_codepoints(data, nil)
+  }
+
+  if name == 'iso-8859-15' {
+    return _from_codepoints(data, _LATIN9)
+  }
+
+  if name == 'windows-1252' {
+    return _from_cp1252(data)
+  }
+
+  if name == 'utf-16' or name == 'utf-16le' or name == 'utf-16be' {
+    return _from_utf16(data, name)
+  }
+
+  return data.to_string()
+}
+
+# The many spellings one character set goes by, reduced to one.
+def _canonical_charset(charset: string) {
+  var name = charset.lower().trim()
+
+  # A charset in a parameter may carry a language tag after a star,
+  # which says nothing about how to decode the bytes.
+  var star = name.index_of('*')
+
+  if star > -1 {
+    name = name[0, star]
+  }
+
+  if name == 'utf8' or name == 'unicode-1-1-utf-8' {
+    return 'utf-8'
+  }
+
+  if name == 'ascii' or name == 'iso-ir-6' or name == 'ansi_x3.4-1968' {
+    return 'us-ascii'
+  }
+
+  if name == 'latin1' or name == 'latin-1' or name == 'iso8859-1'
+    or name == 'iso_8859-1' or name == 'l1' or name == 'cp819' {
+    return 'iso-8859-1'
+  }
+
+  if name == 'latin9' or name == 'iso8859-15' or name == 'iso_8859-15' {
+    return 'iso-8859-15'
+  }
+
+  if name == 'cp1252' or name == 'windows1252' or name == 'ansi' {
+    return 'windows-1252'
+  }
+
+  return name
+}
+
+# One byte per character, with an optional table of the places this set
+# differs from plain latin-1.
+def _from_codepoints(data, differences) {
+  var parts = []
+
+  for value in data {
+    if differences != nil and differences.contains('${value}') {
+      parts.append(differences['${value}'].chr())
+      continue
+    }
+
+    parts.append(value.chr())
+  }
+
+  return ''.join(parts)
+}
+
+def _from_cp1252(data) {
+  var parts = []
+
+  for value in data {
+    if value >= 0x80 and value <= 0x9f {
+      parts.append(_CP1252_HIGH[value - 0x80].chr())
+      continue
+    }
+
+    parts.append(value.chr())
+  }
+
+  return ''.join(parts)
+}
+
+# UTF-16, with the byte order taken from the mark when there is one and
+# from the name otherwise. A set named `utf-16` with no mark is
+# big-endian, which is what the specification says and not what every
+# sender does.
+def _from_utf16(data, name: string) {
+  var at = 0
+  var big = name != 'utf-16le'
+
+  if data.length() >= 2 {
+    if data[0] == 0xfe and data[1] == 0xff {
+      big = true
+      at = 2
+    } else if data[0] == 0xff and data[1] == 0xfe {
+      big = false
+      at = 2
+    }
+  }
+
+  var parts = []
+
+  while at + 1 < data.length() {
+    var unit = big ?
+      (data[at] << 8) | data[at + 1] :
+      (data[at + 1] << 8) | data[at]
+
+    at += 2
+
+    # A character outside the basic plane arrives as two units that
+    # have to be put back together.
+    if unit >= 0xd800 and unit <= 0xdbff and at + 1 < data.length() {
+      var low = big ?
+        (data[at] << 8) | data[at + 1] :
+        (data[at + 1] << 8) | data[at]
+
+      if low >= 0xdc00 and low <= 0xdfff {
+        at += 2
+        parts.append((0x10000 + ((unit - 0xd800) << 10) + (low - 0xdc00)).chr())
+        continue
+      }
+    }
+
+    parts.append(unit.chr())
+  }
+
+  return ''.join(parts)
+}
+
+/**
+ * Encodes text as one or more RFC 2047 encoded words, so that a header
+ * can carry characters a header is not allowed to contain.
+ *
+ * Text that is already ASCII is returned untouched, since a word that
+ * encodes nothing only makes the header harder to read.
+ *
+ * Long text becomes several words separated by a space, because one
+ * word may not exceed 75 characters. Words are split on character
+ * boundaries, never in the middle of one.
+ *
+ * @param string text
+ * @param ?string charset: `utf-8` when not given.
+ * @param ?string method: `B` or `Q`. Chosen by what the text looks
+ *    like when not given: `Q` when most of it is ASCII, `B` otherwise.
+ * @returns string
+ */
+def encode_word(text: string, charset: ?string, method: ?string) {
+  if is_ascii(text) and text.index_of('=?') < 0 {
+    return text
+  }
+
+  var set = charset == nil ? 'utf-8' : charset.lower()
+  var kind = method == nil ? _pick_method(text) : method.upper()
+
+  if kind != 'B' and kind != 'Q' {
+    raise MessageError('an encoded word is either B or Q, not ${method}')
+  }
+
+  var prefix = '=?${set}?${kind}?'
+  var budget = _WORD_LINE - prefix.length() - 2
+  var words = []
+  var current = ''
+
+  iter var index = 0; index < text.length(); index++ {
+    var candidate = current + text[index]
+
+    if _word_body(candidate, kind).length() > budget and current != '' {
+      words.append(prefix + _word_body(current, kind) + '?=')
+      current = text[index]
+      continue
+    }
+
+    current = candidate
+  }
+
+  if current != '' {
+    words.append(prefix + _word_body(current, kind) + '?=')
+  }
+
+  return ' '.join(words)
+}
+
+def _word_body(text: string, kind: string) {
+  if kind == 'B' {
+    return base64.encode(text.to_bytes())
+  }
+
+  var parts = []
+
+  for value in text.to_bytes() {
+    if value == 0x20 {
+      parts.append('_')
+      continue
+    }
+
+    if _Q_SAFE.index_of(value.chr()) > -1 {
+      parts.append(value.chr())
+      continue
+    }
+
+    parts.append('=' + _HEX[(value >> 4) & 0x0f].chr() + _HEX[value & 0x0f].chr())
+  }
+
+  return ''.join(parts)
+}
+
+# Q leaves ASCII readable and costs three characters for everything
+# else, so it wins when most of the text is ASCII and loses when little
+# of it is.
+def _pick_method(text: string) {
+  var raw = text.to_bytes()
+  var high = 0
+
+  for value in raw {
+    if value > 0x7f {
+      high++
+    }
+  }
+
+  return high * 5 > raw.length() ? 'B' : 'Q'
+}
+
+# One encoded word starting at `start`, or nil when there is not one
+# there. Everything between the markers is checked, because `=?` turns
+# up in ordinary text too and a header that merely looks encoded must
+# be left alone.
+def _scan_word(text: string, start: number) {
+  if !text[start, start + 2 > text.length() ? text.length() : start + 2].starts_with('=?') {
+    return nil
+  }
+
+  var first = text.index_of('?', start + 2)
+
+  if first < 0 {
+    return nil
+  }
+
+  var second = text.index_of('?', first + 1)
+
+  if second < 0 {
+    return nil
+  }
+
+  var close = text.index_of('?=', second + 1)
+
+  if close < 0 {
+    return nil
+  }
+
+  var charset = text[start + 2, first]
+  var kind = text[first + 1, second].upper()
+  var body = text[second + 1, close]
+
+  if charset == '' or charset.index_of(' ') > -1 {
+    return nil
+  }
+
+  if kind != 'B' and kind != 'Q' {
+    return nil
+  }
+
+  if body.index_of(' ') > -1 {
+    return nil
+  }
+
+  var decoded = nil
+
+  catch {
+    decoded = kind == 'B' ? decode_base64(body) : _q_decode(body)
+  } as error {
+    return nil
+  }
+
+  return { text: decode_text(decoded, charset), end: close + 2 }
+}
+
+# Q decoding differs from quoted-printable in one place: an underscore
+# stands for a space.
+def _q_decode(body: string) {
+  var swapped = bytes(0)
+
+  for value in body.to_bytes() {
+    swapped.append(value == 0x5f ? 0x20 : value)
+  }
+
+  return decode_quoted_printable(swapped)
+}
+
+/**
+ * Reads the encoded words out of a header value and puts back the text
+ * they stand for.
+ *
+ * Whitespace between two adjacent encoded words is dropped, which is
+ * what lets a long subject be split across several of them without a
+ * space appearing where none was written.
+ *
+ * Anything that is not a well-formed encoded word is left exactly as
+ * it is, including text that merely begins with `=?`.
+ *
+ * ```zuri
+ * import mail.encoding
+ *
+ * echo encoding.decode_words('=?utf-8?B?SGVsbG8=?= =?utf-8?B?IHdvcmxk?=')
+ * ```
+ *
+ * ```console
+ * Hello world
+ * ```
+ *
+ * @param string text
+ * @returns string
+ */
+def decode_words(text: string) {
+  if text.index_of('=?') < 0 {
+    return text
+  }
+
+  var parts = []
+  var gap = ''
+  var after_word = false
+  var index = 0
+
+  while index < text.length() {
+    var word = _scan_word(text, index)
+
+    if word != nil {
+      if !after_word and gap != '' {
+        parts.append(gap)
+      }
+
+      parts.append(word.text)
+
+      gap = ''
+      after_word = true
+      index = word.end
+      continue
+    }
+
+    var character = text[index]
+
+    if character == ' ' or character == '\t' or character == '\r' or character == '\n' {
+      gap += character
+      index++
+      continue
+    }
+
+    if gap != '' {
+      parts.append(gap)
+      gap = ''
+    }
+
+    parts.append(character)
+    after_word = false
+    index++
+  }
+
+  if gap != '' {
+    parts.append(gap)
+  }
+
+  return ''.join(parts)
+}
+
+# The characters RFC 2231 lets a parameter value carry unencoded.
+var _ATTRIBUTE_SAFE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+  + '0123456789!#$&+-.^_`|~'
+
+# How much of one continuation line the value gets, leaving room for
+# the parameter name and the markers around it.
+var _PARAMETER_CHUNK = 50
+
+/**
+ * Writes one parameter of a header, choosing the form its value needs.
+ *
+ * A short ASCII value is quoted and written as it is. A value with
+ * characters a header cannot carry is written in the extended form of
+ * RFC 2231, which names the character set. A long value is split
+ * across numbered continuations, because a parameter may not run past
+ * the end of a line.
+ *
+ * ```zuri
+ * import mail.encoding
+ *
+ * echo '; '.join(encoding.encode_parameter('filename', 'report.pdf'))
+ * echo '; '.join(encoding.encode_parameter('filename', 'résumé.pdf'))
+ * ```
+ *
+ * ```console
+ * filename="report.pdf"
+ * filename*=utf-8''r%C3%A9sum%C3%A9.pdf
+ * ```
+ *
+ * @param string name
+ * @param string value
+ * @returns list of string, each `key=value` ready to be joined with
+ *    `'; '`
+ */
+def encode_parameter(name: string, value: string) {
+  if is_ascii(value) and value.length() <= _PARAMETER_CHUNK * 2 {
+    return ['${name}="${_quote_parameter(value)}"']
+  }
+
+  var encoded = _percent_encode(value)
+
+  if encoded.length() <= _PARAMETER_CHUNK {
+    return ["${name}*=utf-8''${encoded}"]
+  }
+
+  var pieces = []
+  var at = 0
+
+  while at < encoded.length() {
+    var end = at + _PARAMETER_CHUNK
+
+    if end > encoded.length() {
+      end = encoded.length()
+    }
+
+    # A percent escape is three characters and splitting one in half
+    # loses the character it stands for.
+    while end > at and end < encoded.length() and _splits_escape(encoded, end) {
+      end--
+    }
+
+    pieces.append(encoded[at, end])
+    at = end
+  }
+
+  var written = []
+
+  iter var index = 0; index < pieces.length(); index++ {
+    var head = index == 0 ? "utf-8''" : ''
+
+    written.append('${name}*${index}*=${head}${pieces[index]}')
+  }
+
+  return written
+}
+
+def _splits_escape(text: string, at: number) {
+  return (at >= 1 and text[at - 1] == '%') or (at >= 2 and text[at - 2] == '%')
+}
+
+def _quote_parameter(value: string) {
+  return value.replace('/\\\\/', '\\\\\\\\').replace('/"/', '\\"')
+}
+
+def _percent_encode(value: string) {
+  var parts = []
+
+  for byte_value in value.to_bytes() {
+    if _ATTRIBUTE_SAFE.index_of(byte_value.chr()) > -1 {
+      parts.append(byte_value.chr())
+      continue
+    }
+
+    parts.append('%' + _HEX[(byte_value >> 4) & 0x0f].chr() + _HEX[byte_value & 0x0f].chr())
+  }
+
+  return ''.join(parts)
+}
+
+/**
+ * Puts the parameters of a header back together.
+ *
+ * Takes them as they were written, continuations and extended forms
+ * and all, and hands back one value per parameter with the pieces
+ * joined and the character set applied.
+ *
+ * @param dict raw: Parameters by the name they were written under,
+ *    including the `*0*` and `*` suffixes.
+ * @returns dict
+ */
+def decode_parameters(raw: dict) {
+  var pieces = {}
+  var plain = {}
+
+  for key in raw.keys() {
+    var name = key.lower()
+    var extended = name.ends_with('*')
+    var base = extended ? name[0, name.length() - 1] : name
+    var star = base.last_index_of('*')
+    var section = nil
+
+    if star > -1 and _is_digits(base[star + 1, base.length()]) {
+      section = base[star + 1, base.length()].to_number()
+      base = base[0, star]
+    }
+
+    if section == nil and !extended {
+      plain[base] = raw[key]
+      continue
+    }
+
+    if !pieces.contains(base) {
+      pieces[base] = []
+    }
+
+    pieces[base].append({
+      order: section == nil ? 0 : section,
+      extended,
+      value: raw[key],
+    })
+  }
+
+  var out = {}
+
+  for name in plain.keys() {
+    out[name] = plain[name]
+  }
+
+  for name in pieces.keys() {
+    out[name] = _join_parameter(pieces[name])
+  }
+
+  return out
+}
+
+def _is_digits(text: string) {
+  if text == '' {
+    return false
+  }
+
+  for value in text.to_bytes() {
+    if value < 0x30 or value > 0x39 {
+      return false
+    }
+  }
+
+  return true
+}
+
+# One parameter's pieces, in order, with the character set from the
+# first piece applied to the whole of it.
+def _join_parameter(pieces: list) {
+  pieces.sort(@(left, right) => left.order - right.order)
+
+  var charset = 'utf-8'
+  var out = bytes(0)
+  var first = true
+
+  for piece in pieces {
+    var text = piece.value
+
+    if piece.extended and first {
+      var quote = text.index_of("'")
+
+      if quote > -1 {
+        var second = text.index_of("'", quote + 1)
+
+        if second > -1 {
+          if quote > 0 {
+            charset = text[0, quote]
+          }
+
+          text = text[second + 1, text.length()]
+        }
+      }
+    }
+
+    out.extend(piece.extended ? _percent_decode(text) : text.to_bytes())
+    first = false
+  }
+
+  return decode_text(out, charset)
+}
+
+def _percent_decode(text: string) {
+  var raw = text.to_bytes()
+  var out = bytes(0)
+  var index = 0
+
+  while index < raw.length() {
+    if raw[index] == 0x25 and index + 2 < raw.length() {
+      var high = _hex_value(raw[index + 1])
+      var low = _hex_value(raw[index + 2])
+
+      if high >= 0 and low >= 0 {
+        out.append((high << 4) | low)
+        index += 3
+        continue
+      }
+    }
+
+    out.append(raw[index])
+    index++
+  }
+
+  return out
+}
+
+/**
+ * Encodes a part's body the way its `Content-Transfer-Encoding` says.
+ *
+ * `7bit`, `8bit` and `binary` describe the data rather than change it,
+ * so they hand it back as it is.
+ *
+ * @param string|bytes data
+ * @param string encoding
+ * @returns string
+ * @throws MessageError if `encoding` is not one this understands.
+ */
+def encode_body(data, encoding: string) {
+  var name = encoding.lower()
+
+  if name == 'base64' {
+    return encode_base64(data, _BODY_LINE)
+  }
+
+  if name == 'quoted-printable' {
+    return encode_quoted_printable(data)
+  }
+
+  if TRANSFER_ENCODINGS.contains(name) {
+    return is_bytes(data) ? data.to_string() : data
+  }
+
+  raise MessageError('unknown transfer encoding ${encoding}')
+}
+
+/**
+ * Decodes a part's body the way its `Content-Transfer-Encoding` says.
+ *
+ * An encoding this does not understand is treated as `8bit` and handed
+ * back untouched, because a part whose encoding cannot be read is
+ * still better delivered than discarded.
+ *
+ * @param string|bytes data
+ * @param ?string encoding: `7bit` when not given.
+ * @returns bytes
+ */
+def decode_body(data, encoding: ?string) {
+  var name = encoding == nil ? '7bit' : encoding.lower().trim()
+
+  if name == 'base64' {
+    return decode_base64(data)
+  }
+
+  if name == 'quoted-printable' {
+    return decode_quoted_printable(data)
+  }
+
+  return _raw_bytes(data)
+}
+
+/**
+ * Picks the transfer encoding a body should use.
+ *
+ * ASCII text that fits inside the line limit needs none. Text that is
+ * mostly ASCII is cheaper as quoted-printable, which leaves it
+ * readable; anything else is smaller as base64.
+ *
+ * @param string|bytes data
+ * @returns string one of `7bit`, `quoted-printable` or `base64`
+ */
+def guess_encoding(data) {
+  var raw = _raw_bytes(data)
+  var high = 0
+  var column = 0
+  var long_line = false
+
+  for value in raw {
+    if value > 0x7f or value == 0 {
+      high++
+    }
+
+    if value == 0x0a {
+      column = 0
+    } else {
+      column++
+
+      if column > 990 {
+        long_line = true
+      }
+    }
+  }
+
+  if high == 0 and !long_line {
+    return '7bit'
+  }
+
+  return high * 5 > raw.length() ? 'base64' : 'quoted-printable'
+}

@@ -1,0 +1,1343 @@
+/**
+ * @module server
+ *
+ * The receiving end of SMTP.
+ *
+ * `SmtpServer` accepts connections, runs the ESMTP conversation, and
+ * asks handlers of your own what to do at each stage: whether to take
+ * this sender, this recipient, this message. It knows the protocol;
+ * everything about policy is yours.
+ *
+ * ```zuri,ignore
+ * import mail.smtp { SmtpServer }
+ *
+ * var server = SmtpServer({ port: 2525, hostname: 'mail.example.com' })
+ *
+ * server.on_rcpt(@(session, recipient) {
+ *   if !recipient.domain.ends_with('example.com') {
+ *     return { code: 550, message: 'not a local address' }
+ *   }
+ * })
+ *
+ * server.on_data(@(session, raw) {
+ *   store.deliver(session.recipients, raw)
+ * })
+ *
+ * server.listen()
+ * ```
+ *
+ * A handler that returns nothing accepts. One that returns a code and
+ * a message refuses, with those. One that raises is a failure on the
+ * server's side, and the sender is told to try again later.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import crypto
+import hash
+import net
+import net.tls
+import os
+
+import ..address { Address }
+import ..errors { AuthenticationError, ConnectionClosed, ProtocolError }
+import ..message { Message }
+import ..sasl
+import ..stream { LineStream }
+
+# The mechanisms this server can run. `CRAM-MD5` is only offered when
+# the server is given a way to look a password up, since checking the
+# digest means working out the same one.
+var MECHANISMS = ['PLAIN', 'LOGIN', 'CRAM-MD5']
+
+# What a server takes by default: enough for a message with a few
+# photographs in it, and not enough to fill a disk by accident.
+var DEFAULT_MAX_SIZE = 35882577
+
+# Recipients one message may have before the server stops taking more.
+var DEFAULT_MAX_RECIPIENTS = 100
+
+# Bad commands in a row before the connection is dropped. A client that
+# cannot get anything right is not going to.
+var MAX_ERRORS = 10
+
+/**
+ * One connection, and everything known about it so far.
+ *
+ * Handlers are given this and may put their own values on it through
+ * `state`, which starts empty and lives as long as the connection.
+ *
+ * @printable
+ */
+class SmtpSession {
+
+  /**
+   * `sender` is the `Address` the transaction is from, `nil` before
+   * one has started, and an empty string for the null path a bounce
+   * comes from. `recipients` is the `Address` values accepted so far.
+   *
+   * @param string peer: The address the connection came from.
+   * @param bool secure: Whether it is encrypted.
+   */
+  @new(peer: string, secure: bool) {
+    self.peer = peer
+    self.secure = secure
+    self.greeted_as = nil
+    self.username = nil
+    self.authenticated = false
+    self.sender = nil
+    self.recipients = []
+    self.state = {}
+  }
+
+  /**
+   * Whether the client has authenticated.
+   *
+   * @returns bool
+   */
+  is_authenticated() {
+    return self.authenticated
+  }
+
+  /**
+   * Whether the connection is encrypted.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self.secure
+  }
+
+  # Everything a transaction holds, cleared by RSET and after each
+  # message, while everything the connection holds stays.
+  reset() {
+    self.sender = nil
+    self.recipients = []
+
+    return self
+  }
+
+  to_string() {
+    return '<SmtpSession ${self.peer}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# A handler's answer, normalised. Nothing, `true` or a positive code
+# means yes; anything else carries the refusal.
+def _verdict(result, accepted_code: number, accepted_text: string) {
+  if result == nil or result == true {
+    return { code: accepted_code, message: accepted_text, ok: true }
+  }
+
+  if result == false {
+    return { code: 550, message: 'rejected', ok: false }
+  }
+
+  if is_dict(result) {
+    var code = result.get('code', 550)
+
+    return {
+      code,
+      message: result.get('message', code < 400 ? 'ok' : 'rejected'),
+      enhanced: result.get('enhanced', nil),
+      ok: code < 400,
+    }
+  }
+
+  return { code: accepted_code, message: '${result}', ok: true }
+}
+
+/**
+ * A server that accepts mail.
+ *
+ * @printable
+ */
+class SmtpServer {
+
+  /**
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `host` | `127.0.0.1` | the address to bind |
+   * | `port` | `25` | the port to bind |
+   * | `hostname` | the machine's own | the name to greet clients with |
+   * | `max_size` | 35 MB | the largest message to take |
+   * | `max_recipients` | `100` | recipients one message may have |
+   * | `timeout` | `300000` | milliseconds a client may go quiet |
+   * | `require_tls` | `false` | refuse mail on an unencrypted connection |
+   * | `require_auth` | `false` | refuse mail from a client that has not authenticated |
+   * | `banner` | none | extra text on the greeting line |
+   *
+   * @param ?dict options
+   */
+  @new(options: ?dict) {
+    var given = options == nil ? {} : options
+
+    self.host = given.get('host', '127.0.0.1')
+    self.port = given.get('port', 25)
+    self.max_size = given.get('max_size', DEFAULT_MAX_SIZE)
+    self.max_recipients = given.get('max_recipients', DEFAULT_MAX_RECIPIENTS)
+    self.timeout = given.get('timeout', 300000)
+    self.require_tls = given.get('require_tls', false)
+    self.require_auth = given.get('require_auth', false)
+    self.banner = given.get('banner', nil)
+
+    self.hostname = given.get('hostname', nil)
+
+    if self.hostname == nil {
+      catch {
+        self.hostname = os.hostname()
+      } as error {
+        self.hostname = 'localhost'
+      }
+    }
+
+    self._listener = nil
+    self._tls = nil
+    self._running = false
+
+    self._on_connect = nil
+    self._on_mail = nil
+    self._on_rcpt = nil
+    self._on_data = nil
+    self._on_auth = nil
+    self._on_password = nil
+    self._on_close = nil
+    self._on_error = nil
+  }
+
+  /**
+   * Called when a connection opens, with the session. Refusing here
+   * closes the connection before the greeting.
+   *
+   * @param function(1) handler
+   * @returns SmtpServer itself.
+   */
+  on_connect(handler) {
+    self._on_connect = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session and the sender `Address` when a
+   * transaction starts.
+   *
+   * @param function(2) handler
+   * @returns SmtpServer itself.
+   */
+  on_mail(handler) {
+    self._on_mail = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session and each recipient `Address`. This is
+   * where a server decides whether it has anywhere to put the message.
+   *
+   * @param function(2) handler
+   * @returns SmtpServer itself.
+   */
+  on_rcpt(handler) {
+    self._on_rcpt = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session and the message, as bytes, once the whole
+   * of it has arrived. This is where a message is delivered.
+   *
+   * @param function(2) handler
+   * @returns SmtpServer itself.
+   */
+  on_data(handler) {
+    self._on_data = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session and `{ mechanism, username, password }`.
+   * Returning nothing accepts.
+   *
+   * Without this handler the server advertises no authentication at
+   * all, and a client that tries anyway is told so.
+   *
+   * @param function(2) handler
+   * @returns SmtpServer itself.
+   */
+  on_auth(handler) {
+    self._on_auth = handler
+
+    return self
+  }
+
+  /**
+   * Called with a username, and returns that account's password or
+   * `nil`.
+   *
+   * `CRAM-MD5` proves the password without sending it, which means the
+   * server has to work out the same digest and therefore has to know
+   * the password. A server that cannot supply one does not offer the
+   * mechanism.
+   *
+   * @param function(1) handler
+   * @returns SmtpServer itself.
+   */
+  on_password(handler) {
+    self._on_password = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session when a connection closes, however it
+   * closed.
+   *
+   * @param function(1) handler
+   * @returns SmtpServer itself.
+   */
+  on_close(handler) {
+    self._on_close = handler
+
+    return self
+  }
+
+  /**
+   * Called with the error and the session when something inside the
+   * server fails. Without it, failures are silent and the client is
+   * told to try again later.
+   *
+   * @param function(2) handler
+   * @returns SmtpServer itself.
+   */
+  on_error(handler) {
+    self._on_error = handler
+
+    return self
+  }
+
+  /**
+   * Gives the server a certificate, which is what lets it offer
+   * `STARTTLS`.
+   *
+   * @param string cert_chain: The certificate chain, PEM encoded.
+   * @param string private_key: The key, PEM encoded.
+   * @returns SmtpServer itself.
+   */
+  use_tls(cert_chain: string, private_key: string) {
+    var config = tls.TlsConfig()
+
+    config.set_cert_chain(cert_chain, private_key)
+
+    self._tls = config
+
+    return self
+  }
+
+  /**
+   * Gives the server a TLS configuration built elsewhere.
+   *
+   * @param TlsConfig config
+   * @returns SmtpServer itself.
+   */
+  set_tls_config(config) {
+    self._tls = config
+
+    return self
+  }
+
+  /**
+   * Whether the server can offer `STARTTLS`.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._tls != nil
+  }
+
+  /**
+   * Binds the listening socket without accepting anything yet, so that
+   * the address is known before the first connection.
+   *
+   * @returns SmtpServer itself.
+   */
+  bind() {
+    if self._listener != nil {
+      return self
+    }
+
+    self._listener = net.TcpStream()
+    self._listener.bind('${self.host}:${self.port}')
+
+    return self
+  }
+
+  /**
+   * The address the server is listening on, which is how a port of `0`
+   * is turned into the one the system chose.
+   *
+   * @returns SocketAddr
+   */
+  address() {
+    self.bind()
+
+    return self._listener.local_address()
+  }
+
+  /**
+   * Accepts one connection and serves it to the end.
+   *
+   * @returns SmtpServer itself.
+   */
+  accept() {
+    self.bind()
+
+    self.serve_connection(self._listener.accept())
+
+    return self
+  }
+
+  /**
+   * Accepts connections one after another until `close()`.
+   *
+   * One connection is served at a time. To serve several at once, run
+   * `serve()` instead, which puts a pool of isolates behind the same
+   * socket.
+   *
+   * @returns SmtpServer itself.
+   */
+  listen() {
+    self.bind()
+
+    self._running = true
+
+    while self._running {
+      var client = nil
+
+      catch {
+        client = self._listener.accept()
+      } as error {
+        if !self._running {
+          break
+        }
+
+        self._report(error, nil)
+        continue
+      }
+
+      self.serve_connection(client)
+    }
+
+    return self
+  }
+
+  /**
+   * Stops the accept loop and closes the listening socket.
+   *
+   * @returns SmtpServer itself.
+   */
+  close() {
+    self._running = false
+
+    if self._listener != nil {
+      self._listener.close()
+      self._listener = nil
+    }
+
+    return self
+  }
+
+  /**
+   * Whether the accept loop is running.
+   *
+   * @returns bool
+   */
+  is_listening() {
+    return self._running
+  }
+
+  # A handler held in a field has to be bound to a local before it can
+  # be called, or the call reads as a method on `self`.
+  _run(handler, session, argument, accepted_code: number, accepted_text: string) {
+    if handler == nil {
+      return { code: accepted_code, message: accepted_text, ok: true }
+    }
+
+    var callback = handler
+
+    catch {
+      return _verdict(callback(session, argument), accepted_code, accepted_text)
+    } as error {
+      self._report(error, session)
+
+      return {
+        code: 451,
+        message: 'the server could not handle that',
+        enhanced: '4.3.0',
+        ok: false,
+      }
+    }
+  }
+
+  _report(error, session) {
+    if self._on_error == nil {
+      return
+    }
+
+    var callback = self._on_error
+
+    catch {
+      callback(error, session)
+    } as failure {
+      # An error handler that fails has nowhere left to report to.
+    }
+  }
+
+  /**
+   * Serves one already-accepted connection to the end, then closes it.
+   *
+   * This is the whole conversation: the greeting, every command, and
+   * the close. Call it directly to put a server behind a socket
+   * something else accepted.
+   *
+   * @param TcpStream client
+   * @returns SmtpServer itself.
+   */
+  serve_connection(client) {
+    catch {
+      client.set_read_timeout(self.timeout)
+      client.set_write_timeout(self.timeout)
+    } as error {
+      # A socket that cannot take a timeout is still worth serving.
+    }
+
+    var peer = 'unknown'
+
+    catch {
+      peer = client.peer_address().to_string()
+    } as error {
+      # A peer that has already gone has no address to report.
+    }
+
+    var connection = LineStream(client, false)
+    var session = SmtpSession(peer, false)
+
+    catch {
+      self._converse(connection, session)
+    } as error {
+      if !instance_of(error, ConnectionClosed) {
+        self._report(error, session)
+      }
+    }
+
+    connection.close()
+
+    if self._on_close != nil {
+      var callback = self._on_close
+
+      catch {
+        callback(session)
+      } as error {
+        self._report(error, session)
+      }
+    }
+
+    return self
+  }
+
+  _converse(connection, session) {
+    var opening = self._run(self._on_connect, session, nil, 220, self._banner_text())
+
+    if !opening.ok {
+      _say(connection, opening)
+
+      return
+    }
+
+    _say(connection, { code: 220, message: self._banner_text() })
+
+    var errors = 0
+
+    while true {
+      var line = connection.read_line(512)
+      var space = line.index_of(' ')
+      var verb = (space > -1 ? line[0, space] : line).upper()
+      var rest = space > -1 ? line[space + 1, line.length()].trim() : ''
+
+      if verb == 'QUIT' {
+        _say(connection, { code: 221, message: '${self.hostname} closing connection' })
+
+        return
+      }
+
+      var handled = self._dispatch(connection, session, verb, rest, line)
+
+      if handled == 'close' {
+        return
+      }
+
+      if handled == 'error' {
+        errors++
+
+        if errors >= MAX_ERRORS {
+          _say(connection, { code: 421, message: 'too many errors' })
+
+          return
+        }
+
+        continue
+      }
+
+      errors = 0
+    }
+  }
+
+  _banner_text() {
+    var extra = self.banner == nil ? 'Zuri SMTP' : self.banner
+
+    return '${self.hostname} ESMTP ${extra}'
+  }
+
+  _dispatch(connection, session, verb: string, rest: string, line: string) {
+    if verb == 'EHLO' {
+      return self._do_ehlo(connection, session, rest)
+    }
+
+    if verb == 'HELO' {
+      if rest == '' {
+        _say(connection, { code: 501, message: 'HELO needs a name' })
+
+        return 'error'
+      }
+
+      session.greeted_as = rest
+      session.reset()
+
+      _say(connection, { code: 250, message: self.hostname })
+
+      return 'ok'
+    }
+
+    if verb == 'STARTTLS' {
+      return self._do_starttls(connection, session)
+    }
+
+    if verb == 'AUTH' {
+      return self._do_auth(connection, session, rest)
+    }
+
+    if verb == 'MAIL' {
+      return self._do_mail(connection, session, rest)
+    }
+
+    if verb == 'RCPT' {
+      return self._do_rcpt(connection, session, rest)
+    }
+
+    if verb == 'DATA' {
+      return self._do_data(connection, session)
+    }
+
+    if verb == 'BDAT' {
+      return self._do_bdat(connection, session, rest)
+    }
+
+    if verb == 'RSET' {
+      session.reset()
+
+      _say(connection, { code: 250, message: 'ok' })
+
+      return 'ok'
+    }
+
+    if verb == 'NOOP' {
+      _say(connection, { code: 250, message: 'ok' })
+
+      return 'ok'
+    }
+
+    if verb == 'VRFY' or verb == 'EXPN' {
+      _say(connection, {
+        code: 252,
+        message: 'cannot verify, but will try to deliver',
+        enhanced: '2.5.2',
+      })
+
+      return 'ok'
+    }
+
+    if verb == 'HELP' {
+      _say(connection, { code: 214, message: 'EHLO MAIL RCPT DATA RSET NOOP QUIT' })
+
+      return 'ok'
+    }
+
+    if verb == '' {
+      _say(connection, { code: 500, message: 'no command' })
+
+      return 'error'
+    }
+
+    _say(connection, { code: 500, message: '${verb} is not a command here', enhanced: '5.5.1' })
+
+    return 'error'
+  }
+
+  _do_ehlo(connection, session, rest: string) {
+    if rest == '' {
+      _say(connection, { code: 501, message: 'EHLO needs a name' })
+
+      return 'error'
+    }
+
+    session.greeted_as = rest
+    session.reset()
+
+    var lines = [self.hostname]
+
+    lines.append('SIZE ${self.max_size}')
+    lines.append('8BITMIME')
+    lines.append('PIPELINING')
+    lines.append('CHUNKING')
+    lines.append('ENHANCEDSTATUSCODES')
+    lines.append('SMTPUTF8')
+
+    if self._tls != nil and !session.secure {
+      lines.append('STARTTLS')
+    }
+
+    var mechanisms = self._offered_mechanisms(session)
+
+    if !mechanisms.is_empty() {
+      lines.append('AUTH ${' '.join(mechanisms)}')
+    }
+
+    lines.append('HELP')
+
+    _say_many(connection, 250, lines)
+
+    return 'ok'
+  }
+
+  # What the server will accept right now. Nothing that puts a password
+  # on the wire is offered until the wire is encrypted.
+  _offered_mechanisms(session) {
+    if self._on_auth == nil and self._on_password == nil {
+      return []
+    }
+
+    var offered = []
+
+    if self._on_auth != nil and session.secure {
+      offered.append('PLAIN')
+      offered.append('LOGIN')
+    }
+
+    if self._on_password != nil {
+      offered.append('CRAM-MD5')
+    }
+
+    return offered
+  }
+
+  _do_starttls(connection, session) {
+    if self._tls == nil {
+      _say(connection, { code: 454, message: 'TLS is not available here', enhanced: '4.7.0' })
+
+      return 'error'
+    }
+
+    if session.secure {
+      _say(connection, { code: 503, message: 'already using TLS', enhanced: '5.5.1' })
+
+      return 'error'
+    }
+
+    _say(connection, { code: 220, message: 'ready to start TLS' })
+
+    catch {
+      connection.upgrade(tls.TlsStream.accept(connection.transport(), self._tls), true)
+    } as error {
+      self._report(error, session)
+
+      return 'close'
+    }
+
+    # Everything said before the handshake is discarded, including who
+    # the client claimed to be, because none of it was protected.
+    session.secure = true
+    session.greeted_as = nil
+    session.authenticated = false
+    session.username = nil
+    session.reset()
+
+    return 'ok'
+  }
+
+  _do_auth(connection, session, rest: string) {
+    var offered = self._offered_mechanisms(session)
+
+    if offered.is_empty() {
+      _say(connection, {
+        code: 503,
+        message: session.secure ?
+          'authentication is not available here' :
+          'use STARTTLS before authenticating',
+        enhanced: '5.7.0',
+      })
+
+      return 'error'
+    }
+
+    if session.authenticated {
+      _say(connection, { code: 503, message: 'already authenticated', enhanced: '5.5.1' })
+
+      return 'error'
+    }
+
+    var space = rest.index_of(' ')
+    var name = (space > -1 ? rest[0, space] : rest).upper()
+    var initial = space > -1 ? rest[space + 1, rest.length()].trim() : nil
+
+    if !offered.contains(name) {
+      _say(connection, { code: 504, message: '${name} is not offered', enhanced: '5.5.4' })
+
+      return 'error'
+    }
+
+    var credentials = nil
+
+    catch {
+      credentials = name == 'CRAM-MD5' ?
+        self._run_cram(connection, session) :
+        self._run_password(connection, name, initial)
+    } as error {
+      if instance_of(error, ConnectionClosed) {
+        raise error
+      }
+
+      _say(connection, { code: 501, message: 'that is not a valid response', enhanced: '5.5.2' })
+
+      return 'error'
+    }
+
+    if credentials == nil {
+      _say(connection, { code: 501, message: 'authentication cancelled', enhanced: '5.7.8' })
+
+      return 'error'
+    }
+
+    # A challenge-response mechanism has already decided, since the
+    # server worked out the same digest itself.
+    if credentials.contains('verified') and !credentials.verified {
+      _say(connection, { code: 535, message: 'authentication failed', enhanced: '5.7.8' })
+
+      return 'error'
+    }
+
+    var verdict = self._run(self._on_auth, session, credentials, 235, 'authenticated')
+
+    if !verdict.ok {
+      _say(connection, {
+        code: verdict.code == 550 ? 535 : verdict.code,
+        message: verdict.message,
+        enhanced: verdict.get('enhanced', '5.7.8'),
+      })
+
+      return 'error'
+    }
+
+    session.authenticated = true
+    session.username = credentials.username
+
+    _say(connection, { code: 235, message: verdict.message, enhanced: '2.7.0' })
+
+    return 'ok'
+  }
+
+  # PLAIN carries everything at once; LOGIN asks for each half in turn.
+  _run_password(connection, name: string, initial) {
+    if name == 'PLAIN' {
+      var raw = initial == nil ? _ask(connection, '') : _decode(initial)
+
+      if raw == nil {
+        return nil
+      }
+
+      var parts = _split_zero(raw)
+
+      if parts.length() < 3 {
+        raise ProtocolError('a PLAIN response has three parts')
+      }
+
+      return { mechanism: name, username: parts[1], password: parts[2] }
+    }
+
+    var username = initial == nil ? _ask(connection, 'VXNlcm5hbWU6') : _decode(initial)
+
+    if username == nil {
+      return nil
+    }
+
+    var password = _ask(connection, 'UGFzc3dvcmQ6')
+
+    if password == nil {
+      return nil
+    }
+
+    return {
+      mechanism: name,
+      username: username.to_string(),
+      password: password.to_string(),
+    }
+  }
+
+  # CRAM-MD5 means working out the same digest the client did, which is
+  # why the server has to be able to look the password up.
+  _run_cram(connection, session) {
+    var challenge = '<${time().floor()}.${_token()}@${self.hostname}>'
+    var answer = _ask(connection, base64.encode(challenge.to_bytes()))
+
+    if answer == nil {
+      return nil
+    }
+
+    var text = answer.to_string().trim()
+    var space = text.last_index_of(' ')
+
+    if space < 1 {
+      raise ProtocolError('a CRAM-MD5 response is a name and a digest')
+    }
+
+    var username = text[0, space]
+    var digest = text[space + 1, text.length()].lower()
+    var lookup = self._on_password
+    var password = lookup(username)
+
+    if password == nil {
+      return { mechanism: 'CRAM-MD5', username, password: nil, verified: false }
+    }
+
+    var expected = hash.hmac_md5(password, challenge, false)
+
+    return {
+      mechanism: 'CRAM-MD5',
+      username,
+      password: digest == expected ? password : nil,
+      verified: digest == expected,
+    }
+  }
+
+  _do_mail(connection, session, rest: string) {
+    if session.greeted_as == nil {
+      _say(connection, { code: 503, message: 'greet first', enhanced: '5.5.1' })
+
+      return 'error'
+    }
+
+    if session.sender != nil {
+      _say(connection, { code: 503, message: 'a transaction is already open', enhanced: '5.5.1' })
+
+      return 'error'
+    }
+
+    if self.require_tls and !session.secure {
+      _say(connection, { code: 530, message: 'use STARTTLS first', enhanced: '5.7.0' })
+
+      return 'error'
+    }
+
+    if self.require_auth and !session.authenticated {
+      _say(connection, { code: 530, message: 'authenticate first', enhanced: '5.7.0' })
+
+      return 'error'
+    }
+
+    var upper = rest.upper()
+
+    if !upper.starts_with('FROM:') {
+      _say(connection, { code: 501, message: 'MAIL needs FROM:', enhanced: '5.5.2' })
+
+      return 'error'
+    }
+
+    var parsed = _read_path(rest[5, rest.length()])
+
+    if parsed == nil {
+      _say(connection, { code: 501, message: 'that is not an address', enhanced: '5.1.7' })
+
+      return 'error'
+    }
+
+    var declared = parsed.parameters.get('SIZE', nil)
+
+    if declared != nil and declared.to_number() > self.max_size {
+      _say(connection, {
+        code: 552,
+        message: 'the message is larger than ${self.max_size} bytes',
+        enhanced: '5.3.4',
+      })
+
+      return 'error'
+    }
+
+    # The null path is how a bounce says it must never be bounced in
+    # turn. Handlers see an empty string for it rather than an address.
+    var sender = parsed.empty ? '' : parsed.address
+    var verdict = self._run(self._on_mail, session, sender, 250, 'ok')
+
+    if !verdict.ok {
+      _say(connection, verdict)
+
+      return 'error'
+    }
+
+    session.sender = sender
+    session.recipients = []
+
+    _say(connection, { code: 250, message: verdict.message, enhanced: '2.1.0' })
+
+    return 'ok'
+  }
+
+  _do_rcpt(connection, session, rest: string) {
+    if session.sender == nil {
+      _say(connection, { code: 503, message: 'name a sender first', enhanced: '5.5.1' })
+
+      return 'error'
+    }
+
+    if session.recipients.length() >= self.max_recipients {
+      _say(connection, {
+        code: 452,
+        message: 'too many recipients for one message',
+        enhanced: '4.5.3',
+      })
+
+      return 'error'
+    }
+
+    if !rest.upper().starts_with('TO:') {
+      _say(connection, { code: 501, message: 'RCPT needs TO:', enhanced: '5.5.2' })
+
+      return 'error'
+    }
+
+    var parsed = _read_path(rest[3, rest.length()])
+
+    if parsed == nil or parsed.address == nil {
+      _say(connection, { code: 501, message: 'that is not an address', enhanced: '5.1.3' })
+
+      return 'error'
+    }
+
+    var verdict = self._run(self._on_rcpt, session, parsed.address, 250, 'ok')
+
+    if !verdict.ok {
+      _say(connection, verdict)
+
+      return 'error'
+    }
+
+    session.recipients.append(parsed.address)
+
+    _say(connection, { code: 250, message: verdict.message, enhanced: '2.1.5' })
+
+    return 'ok'
+  }
+
+  _do_data(connection, session) {
+    if session.sender == nil or session.recipients.is_empty() {
+      _say(connection, {
+        code: 503,
+        message: 'name a sender and a recipient first',
+        enhanced: '5.5.1',
+      })
+
+      return 'error'
+    }
+
+    _say(connection, { code: 354, message: 'go ahead, end with a dot on a line of its own' })
+
+    var body = bytes(0)
+    var too_big = false
+
+    while true {
+      var line = connection.read_line(MAX_DATA_LINE)
+
+      if line == '.' {
+        break
+      }
+
+      # A line that begins with a dot had one added by the sender, to
+      # keep it from looking like the end of the message.
+      var text = line.starts_with('.') ? line[1, line.length()] : line
+
+      if body.length() + text.length() + 2 > self.max_size {
+        too_big = true
+        continue
+      }
+
+      body.extend(text.to_bytes())
+      body.extend('\r\n'.to_bytes())
+    }
+
+    if too_big {
+      session.reset()
+
+      _say(connection, {
+        code: 552,
+        message: 'the message is larger than ${self.max_size} bytes',
+        enhanced: '5.3.4',
+      })
+
+      return 'error'
+    }
+
+    return self._deliver(connection, session, body)
+  }
+
+  _do_bdat(connection, session, rest: string) {
+    if session.sender == nil or session.recipients.is_empty() {
+      _say(connection, {
+        code: 503,
+        message: 'name a sender and a recipient first',
+        enhanced: '5.5.1',
+      })
+
+      return 'error'
+    }
+
+    var space = rest.index_of(' ')
+    var count = (space > -1 ? rest[0, space] : rest).trim()
+    var last = space > -1 and rest[space + 1, rest.length()].trim().upper() == 'LAST'
+
+    if !_is_digits(count) or count == '' {
+      _say(connection, { code: 501, message: 'BDAT needs a byte count', enhanced: '5.5.2' })
+
+      return 'error'
+    }
+
+    var size = count.to_number()
+
+    if !session.state.contains('chunks') {
+      session.state.chunks = bytes(0)
+    }
+
+    var chunk = connection.read_bytes(size)
+
+    if session.state.chunks.length() + size <= self.max_size {
+      session.state.chunks.extend(chunk)
+    } else {
+      session.state.oversize = true
+    }
+
+    if !last {
+      _say(connection, { code: 250, message: '${size} bytes received' })
+
+      return 'ok'
+    }
+
+    var body = session.state.chunks
+    var oversize = session.state.get('oversize', false)
+
+    session.state.remove('chunks')
+    session.state.remove('oversize')
+
+    if oversize {
+      session.reset()
+
+      _say(connection, {
+        code: 552,
+        message: 'the message is larger than ${self.max_size} bytes',
+        enhanced: '5.3.4',
+      })
+
+      return 'error'
+    }
+
+    return self._deliver(connection, session, body)
+  }
+
+  _deliver(connection, session, body) {
+    var verdict = self._run(self._on_data, session, body, 250, 'message accepted')
+
+    session.reset()
+
+    if !verdict.ok {
+      _say(connection, verdict)
+
+      return 'error'
+    }
+
+    _say(connection, { code: 250, message: verdict.message, enhanced: '2.0.0' })
+
+    return 'ok'
+  }
+
+  to_string() {
+    return '<SmtpServer ${self.hostname} on ${self.host}:${self.port}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# A data line may run to a thousand characters, and a sender that goes
+# past that is sending something this will not reassemble correctly
+# anyway.
+var MAX_DATA_LINE = 4096
+
+# Writes one reply, with its enhanced status code when it has one.
+def _say(connection, reply: dict) {
+  var code = reply.code
+  var enhanced = reply.get('enhanced', nil)
+  var text = reply.get('message', '')
+
+  connection.write_line('${code} ${enhanced == nil ? '' : enhanced + ' '}${text}')
+  connection.flush()
+}
+
+# Writes a reply that runs to several lines, which is what EHLO is.
+def _say_many(connection, code: number, lines: list) {
+  iter var index = 0; index < lines.length(); index++ {
+    var separator = index == lines.length() - 1 ? ' ' : '-'
+
+    connection.write_line('${code}${separator}${lines[index]}')
+  }
+
+  connection.flush()
+}
+
+# Sends a challenge and reads the answer. A lone star is the client
+# giving up, which is a refusal rather than a failure.
+def _ask(connection, challenge: string) {
+  connection.write_line('334 ${challenge}')
+  connection.flush()
+
+  var line = connection.read_line(4096).trim()
+
+  if line == '*' {
+    return nil
+  }
+
+  return _decode(line)
+}
+
+def _decode(text: string) {
+  if text == '' {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(text)
+  } as error {
+    raise ProtocolError('that is not base64')
+  }
+}
+
+def _split_zero(raw) {
+  var parts = []
+  var current = bytes(0)
+
+  for value in raw {
+    if value == 0 {
+      parts.append(current.to_string())
+      current = bytes(0)
+      continue
+    }
+
+    current.append(value)
+  }
+
+  parts.append(current.to_string())
+
+  return parts
+}
+
+def _token() {
+  var raw = crypto.random_bytes(8)
+  var text = []
+
+  for value in raw {
+    text.append('0123456789abcdef'[(value >> 4) & 0x0f])
+    text.append('0123456789abcdef'[value & 0x0f])
+  }
+
+  return ''.join(text)
+}
+
+def _is_digits(text: string) {
+  if text == '' {
+    return false
+  }
+
+  for value in text.to_bytes() {
+    if value < 0x30 or value > 0x39 {
+      return false
+    }
+  }
+
+  return true
+}
+
+# Reads the `<address> KEY=VALUE ...` a MAIL or RCPT command carries.
+# The empty path `<>` is the null sender, and comes back as an address
+# with nothing in it.
+def _read_path(rest: string) {
+  var text = rest.trim()
+  var open = text.index_of('<')
+
+  if open != 0 {
+    return nil
+  }
+
+  var close = text.index_of('>')
+
+  if close < 0 {
+    return nil
+  }
+
+  var inside = text[1, close]
+  var parameters = {}
+
+  for piece in text[close + 1, text.length()].trim().split(' ') {
+    var trimmed = piece.trim()
+
+    if trimmed == '' {
+      continue
+    }
+
+    var equals = trimmed.index_of('=')
+
+    if equals > -1 {
+      parameters[trimmed[0, equals].upper()] = trimmed[equals + 1, trimmed.length()]
+    } else {
+      parameters[trimmed.upper()] = true
+    }
+  }
+
+  if inside == '' {
+    return { address: nil, empty: true, parameters }
+  }
+
+  var address = nil
+
+  catch {
+    address = Address(inside, nil)
+  } as error {
+    return nil
+  }
+
+  return { address, empty: false, parameters }
+}

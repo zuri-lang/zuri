@@ -476,15 +476,15 @@ raises('format() rejects non-string', @() { ref.format(42) })
 # ===========================================================================
 section('13. format(): composite directives (c, r)')
 
+# Both composites are written out in full. The reference time is in the
+# afternoon on purpose: a composite that reaches for the 12 hour clock
+# reads 01:43 here and is only wrong for half of every day, which a
+# check on the year alone would never see.
 var iso_str = ref.format('c')
-check('c contains year',    iso_str.contains('2021'), true)
-check('c contains T',       iso_str.contains('T'),    true)
-check('c contains month',   iso_str.contains('05'),   true)
+check('c is the whole ISO 8601 date', iso_str, '2021-05-11T13:43:11+00:00')
 
 var rfc_str = ref.format('r')
-check('r contains year',    rfc_str.contains('2021'), true)
-check('r contains short day', rfc_str.contains('Tue') or rfc_str.contains('Mon') or
-      rfc_str.contains('Wed'), true)   # lenient: just check a weekday abbr appears
+check('r is the whole RFC 2822 date', rfc_str, 'Tue, 11 May 2021 13:43:11 +0000')
 
 
 # ===========================================================================
@@ -544,10 +544,8 @@ check('unix_time() and to_time() differ by less than a day', diff < 86400, true)
 # ===========================================================================
 section('16. http()')
 
-var http_str = ref.format('D, d M Y h:i:s') + ' GMT'
-check('http() format matches manual', ref.http(), http_str)
+check('http() is the whole HTTP date', ref.http(), 'Tue, 11 May 2021 13:43:11 GMT')
 check('http() ends with GMT', ref.http().ends_with('GMT'), true)
-check('http() contains year', ref.http().contains('2021'), true)
 
 
 # ===========================================================================

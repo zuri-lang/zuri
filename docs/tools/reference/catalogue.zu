@@ -85,6 +85,11 @@ var GROUPS = [
     blurb: 'One contract every relational database answers, and the adapters that answer it.',
     modules: ['sql'],
   },
+  {
+    title: 'Mail',
+    blurb: 'Messages, the three protocols that move them, and the servers at the far end.',
+    modules: ['mail'],
+  },
 ]
 
 /**

@@ -70,13 +70,19 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `test` | suites, matchers, test doubles, snapshots and reports | [20](ch20-00-testing.md) |
+| `test` | suites, matchers, test doubles, snapshots and reports | [20](ch21-00-testing.md) |
 
 ## Databases
 
 | Module | What it is for | Book |
 | --- | --- | --- |
 | `sql` | one contract for every relational database, with SQLite, PostgreSQL and MySQL adapters | [17](ch17-00-sql.md) |
+
+## Mail
+
+| Module | What it is for | Book |
+| --- | --- | --- |
+| `mail` | messages, SMTP, IMAP and POP3, both server ends, and DKIM | [18](ch18-00-mail.md) |
 
 ## The Network
 
@@ -95,7 +101,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `zuri` | lexing, parsing, compiling and runtime reflection | [18](ch18-00-metaprogramming.md) |
+| `zuri` | lexing, parsing, compiling and runtime reflection | [18](ch19-00-metaprogramming.md) |
 | `math` | the mathematical constants | [4](ch04-02-numbers.md) |
 
 ## Packages and Their Submodules
@@ -272,6 +278,26 @@ One module per element width, each exporting a single class.
 | `sql.sqlite` | the SQLite adapter, and its blobs, backups and hooks |
 | `sql.postgres` | the PostgreSQL adapter, and LISTEN/NOTIFY |
 | `sql.mysql` | the MySQL and MariaDB adapter |
+
+### `mail`
+
+| Submodule | What it is for |
+| --- | --- |
+| `mail.errors` | every error the mail stack raises, under one root |
+| `mail.address` | reading and writing the addresses in a header |
+| `mail.headers` | the header block, in order and without regard to case |
+| `mail.encoding` | the encodings a header and a body use |
+| `mail.content` | `Content-Type` and `Content-Disposition` |
+| `mail.message` | a message, its MIME tree, and building one |
+| `mail.dkim` | signing a message and checking a signature |
+| `mail.sasl` | the authentication mechanisms all three protocols share |
+| `mail.stream` | a line-oriented connection, and negotiating TLS over one |
+| `mail.smtp` | the sending and receiving ends of SMTP |
+| `mail.imap` | the client and server ends of IMAP, and where mail is kept |
+| `mail.imap.parser` | the IMAP grammar |
+| `mail.imap.store` | `MailStore`, `MaildirStore` and `MemoryStore` |
+| `mail.pop3` | the client end of POP3 |
+| `mail.pool` | running a mail server on more than one connection at once |
 
 ### `test`
 

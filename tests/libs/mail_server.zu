@@ -1,0 +1,551 @@
+/**
+ * test_mail_server.zu
+ *
+ * The three protocols over real sockets: the SMTP client against the
+ * SMTP server, the IMAP client against the IMAP server over both
+ * stores, the POP3 client against a server written out by hand, and
+ * the worker pool behind two of them at once.
+ *
+ * Every server runs in a spawned isolate (see `mail_server_app.zu`) so
+ * that both ends live in one test process, the same way
+ * `tests/libs/http_server.zu` does it.
+ */
+
+import mail
+import mail.imap { ImapClient }
+import mail.pool
+import mail.pop3 { Pop3Client }
+import mail.smtp { SmtpClient }
+
+import isolate
+import net.tls
+import os
+
+import .mail_server_app
+
+isolate.configure(12)
+
+var _passed = 0
+var _failed = 0
+
+def check(label, got, expected) {
+  if got == expected {
+    _passed++
+
+    return
+  }
+
+  _failed++
+
+  echo '  [FAIL] ${label}'
+  echo '         got      ${got}'
+  echo '         expected ${expected}'
+}
+
+def ok(label, condition) {
+  check(label, condition, true)
+}
+
+def raises(body) {
+  catch {
+    body()
+
+    return false
+  } as error
+  return true
+}
+
+def section(title) {
+  echo ''
+  echo '== ${title} =='
+}
+
+# The same certificate the http suite uses: issued for localhost by a
+# root that is trusted only by pointing a client at it.
+var ca_cert = '-----BEGIN CERTIFICATE-----
+MIIBnDCCAUOgAwIBAgIUeWaA1kIpfHmP8pCrmYnl7E501IUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAcMRowGAYDVQQDDBFadXJpIFRlc3QgUm9vdCBDQTBZMBMG
+ByqGSM49AgEGCCqGSM49AwEHA0IABFAaDC18AhIebjzRZpFvvbvzcuboDHU5lMqS
+ikGzkBAJSpBvmNiilC6S87CtECJcSyUH99BGoXW1V7ZKPyY8fJijYzBhMB0GA1Ud
+DgQWBBQ3dj3HS36c++2sfxUEXvzdETg99zAfBgNVHSMEGDAWgBQ3dj3HS36c++2s
+fxUEXvzdETg99zAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAKBggq
+hkjOPQQDAgNHADBEAiB9+2A7FyeRsuGsGYMK8doy3Il6VM9aaoeg44Z+VhpdogIg
+O/OaIrLQfEgEqK/tBQDGYtaFpM2SiUwNlGYCpDYL2OM=
+-----END CERTIFICATE-----
+'
+
+var server_cert = '-----BEGIN CERTIFICATE-----
+MIIBxjCCAWugAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQktM0xvAHGLQrfkjDG9GgqlkQ7Jp/M3J5nouQxtkO2DRbN
+8wTgShvkOwPLtTn4QsZzNvNcfYd5yVw3QEbWUygko4GSMIGPMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBoGA1UdEQQT
+MBGCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUYWdSTBIeJ8/+kYIfmzI1jQtz
+t3owHwYDVR0jBBgwFoAUN3Y9x0t+nPvtrH8VBF783RE4PfcwCgYIKoZIzj0EAwID
+SQAwRgIhAKyTEhmIrP+F4HYULeh1NlzYB+Fn8xgSY3OHQEemXM0eAiEA+zIv/TKY
+ygqPPVtOmV8uMme4Jp3vxdZJhkGY4OPTTUQ=
+-----END CERTIFICATE-----
+'
+
+var server_key = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIKCvr/d71GiDa9QHie6zXXMk+h/PJ6j2mc2dr31IL/xIoAoGCCqGSM49
+AwEHoUQDQgAEJLTNMbwBxi0K35IwxvRoKpZEOyafzNyeZ6LkMbZDtg0WzfME4Eob
+5DsDy7U5+ELGczbzXH2HeclcN0BG1lMoJA==
+-----END EC PRIVATE KEY-----
+'
+
+def trusting_config() {
+  var config = tls.TlsConfig()
+
+  config.add_ca_pem(ca_cert)
+
+  return config
+}
+
+
+section('smtp')
+
+var smtp_channel = isolate.channel(1)
+var smtp_task = isolate.spawn(mail_server_app.smtp_server, smtp_channel, 3)
+var smtp_address = smtp_channel.recv()
+
+var sender = SmtpClient.connect('smtp://${smtp_address}', { tls: 'disable' })
+
+check('greeting accepted', sender.greeting().code, 220)
+ok('the server named itself', sender.greeting().text.contains('test.example.com'))
+ok('size advertised', sender.supports('SIZE'))
+ok('pipelining advertised', sender.supports('PIPELINING'))
+ok('eight bit advertised', sender.supports('8BITMIME'))
+check('size read back', sender.max_size(), 4096)
+ok('not encrypted', !sender.is_secure())
+
+var note = mail.message()
+  .set_from('Ann <ann@example.com>')
+  .add_to(['bob@example.com', 'carol@example.com'])
+  .set_subject('Grüße from the suite')
+  .set_text('A line.\r\n.A dotted line.\r\nAnd an end.')
+
+check('accepted', sender.send(note, nil).code, 250)
+check('noop', sender.noop().code, 250)
+check('reset', sender.rset().code, 250)
+
+ok('a refused recipient raises', raises(@() {
+  sender.send(mail.message()
+    .set_from('ann@example.com')
+    .add_to('nobody@elsewhere.org')
+    .set_text('x'), nil)
+}))
+
+catch {
+  sender.send(mail.message()
+    .set_from('ann@example.com')
+    .add_to('nobody@elsewhere.org')
+    .set_text('x'), nil)
+} as refusal {
+  check('with the code the handler gave', refusal.code, 550)
+  check('and its enhanced code', refusal.enhanced, '5.1.1')
+  ok('as a permanent failure', instance_of(refusal, mail.SmtpPermanentError))
+}
+
+ok('a refused sender raises', raises(@() {
+  sender.send(mail.message()
+    .set_from('spam@blocked.example.net')
+    .add_to('bob@example.com')
+    .set_text('x'), nil)
+}))
+
+var big = ''
+
+iter var i = 0; i < 300; i++ {
+  big += 'this line is here to make the message too large for the server. '
+}
+
+ok('a message past the limit is refused before it is sent', raises(@() {
+  sender.send(mail.message()
+    .set_from('ann@example.com')
+    .add_to('bob@example.com')
+    .set_text(big), nil)
+}))
+
+sender.quit()
+
+var chunked = SmtpClient.connect('smtp://${smtp_address}', { tls: 'disable' })
+
+ok('chunking advertised', chunked.supports('CHUNKING'))
+
+chunked.mail_from('ann@example.com', nil)
+chunked.rcpt_to('bob@example.com', nil)
+
+check('sent in chunks', chunked.bdat(
+  'From: ann@example.com\r\nSubject: In chunks\r\n\r\nchunked body\r\n', true
+).code, 250)
+
+chunked.quit()
+
+var bouncer = SmtpClient.connect('smtp://${smtp_address}', { tls: 'disable' })
+
+check('the null sender is accepted', bouncer.mail_from('', nil).code, 250)
+bouncer.rcpt_to('bob@example.com', nil)
+check('and can deliver', bouncer.data(
+  'From: postmaster@example.com\r\nSubject: Bounce\r\n\r\nundeliverable\r\n'
+).code, 250)
+bouncer.quit()
+
+var seen = smtp_channel.recv()
+
+smtp_task.join(10000)
+
+check('three messages arrived', seen.length(), 3)
+check('sender recorded', seen[0].sender, 'ann@example.com')
+check('both recipients recorded', seen[0].recipients, ['bob@example.com', 'carol@example.com'])
+check('subject decoded', seen[0].subject, 'Grüße from the suite')
+check('a dotted line survived', seen[0].body, 'A line.\r\n.A dotted line.\r\nAnd an end.\r\n')
+check('the chunked message arrived', seen[1].subject, 'In chunks')
+check('the null sender came through empty', seen[2].sender, '')
+
+
+section('smtp over tls')
+
+var tls_channel = isolate.channel(1)
+var tls_task = isolate.spawn(mail_server_app.smtp_tls_server, tls_channel, server_cert, server_key)
+var tls_address = tls_channel.recv()
+var tls_port = tls_address.split(':')[1]
+
+var secure = SmtpClient.connect('smtp://localhost:${tls_port}', {
+  username: 'ann',
+  password: 'secret',
+  tls_config: trusting_config(),
+  mechanisms: ['PLAIN'],
+})
+
+ok('starttls negotiated', secure.is_secure())
+ok('authenticated', secure.is_authenticated())
+check('and can send', secure.send(mail.message()
+  .set_from('ann@example.com')
+  .add_to('bob@example.com')
+  .set_subject('Secure')
+  .set_text('body'), nil).code, 250)
+
+secure.quit()
+
+var challenged = SmtpClient.connect('smtp://localhost:${tls_port}', {
+  username: 'ann',
+  password: 'secret',
+  tls_config: trusting_config(),
+  mechanisms: ['CRAM-MD5'],
+})
+
+ok('cram-md5 authenticated', challenged.is_authenticated())
+challenged.send(mail.message()
+  .set_from('ann@example.com')
+  .add_to('bob@example.com')
+  .set_subject('Challenged')
+  .set_text('body'), nil)
+challenged.quit()
+
+var tls_seen = tls_channel.recv()
+
+tls_task.join(10000)
+
+check('both arrived', tls_seen.length(), 2)
+check('the server knew who sent it', tls_seen[0].user, 'ann')
+ok('and that it was encrypted', tls_seen[0].secure)
+
+
+section('imap')
+
+var imap_channel = isolate.channel(1)
+var imap_task = isolate.spawn(mail_server_app.imap_server, imap_channel)
+var imap_address = imap_channel.recv()
+
+var inbox = ImapClient.connect('imap://${imap_address}', {
+  username: 'ann', password: 'secret', tls: 'disable',
+})
+
+check('authenticated', inbox.state, 'authenticated')
+ok('the base capability is there', inbox.supports('IMAP4REV1'))
+ok('move offered', inbox.supports('MOVE'))
+ok('idle offered', inbox.supports('IDLE'))
+
+check('mailboxes listed', inbox.list('', '*').map(@(m) => m.name).sort(),
+  ['Archive', 'INBOX'])
+check('one level only', inbox.list('', '%').map(@(m) => m.name).sort(),
+  ['Archive', 'INBOX'])
+check('a pattern narrows it', inbox.list('', 'Arch*').map(@(m) => m.name), ['Archive'])
+
+var box = inbox.select('INBOX')
+
+check('two messages', box.exists, 2)
+ok('uid validity given', box.uidvalidity != nil)
+ok('uid next given', box.uidnext != nil)
+ok('writable', !box.read_only)
+ok('flags advertised', box.permanent_flags.contains('\\Seen'))
+
+check('everything found', inbox.search('ALL', false), [1, 2])
+check('nothing read yet', inbox.search('UNSEEN', false), [1, 2])
+check('found by subject', inbox.search('SUBJECT quarterly', false), [2])
+check('found by sender', inbox.search('FROM reports', false), [2])
+check('found by body', inbox.search('BODY first', false), [1])
+check('found by size', inbox.search('SMALLER 20', false), [])
+
+var infos = inbox.fetch('1:2', 'ENVELOPE FLAGS UID RFC822.SIZE INTERNALDATE', false)
+
+check('two fetched', infos.length(), 2)
+check('first subject', infos[0].envelope.subject, 'Hello there')
+check('second subject', infos[1].envelope.subject, 'Quarterly report')
+check('sender parsed', infos[0].envelope.from[0].address, 'ann@example.com')
+check('recipient parsed', infos[0].envelope.to[0].address, 'bob@example.com')
+ok('size reported', infos[0].size > 0)
+ok('internal date read', infos[0].internal_date != nil)
+ok('uid reported', infos[0].uid != nil)
+
+var structured = inbox.fetch(2, 'BODYSTRUCTURE', false)[0]
+
+check('structure is a multipart', structured.structure.mime_type(), 'multipart/mixed')
+check('with two parts inside', structured.structure.parts.length(), 2)
+check('the first being text', structured.structure.parts[0].mime_type(), 'text/plain')
+
+var headers_only = inbox.fetch_headers(1, false)[0]
+
+ok('headers came back', headers_only.parts.get('HEADER', nil) != nil)
+ok('and hold the subject',
+  headers_only.parts.HEADER.to_string().contains('Hello there'))
+
+var whole = inbox.fetch_message(1, false, false)
+
+check('subject on the fetched message', whole.subject(), 'Hello there')
+ok('body on it too', whole.text().contains('the first message'))
+check('peeking left it unread', inbox.search('SEEN', false), [])
+
+inbox.fetch_message(1, false, true)
+
+check('asking to mark it read did', inbox.search('SEEN', false), [1])
+
+var one_part = inbox.fetch(2, 'BODY.PEEK[2]', false)[0]
+
+ok('a numbered part came back', one_part.parts.get('2', nil) != nil)
+ok('and holds the attachment', one_part.parts['2'].to_string().contains('YXR0YWNoZWQ')
+  or one_part.parts['2'].to_string().contains('attached bytes'))
+
+inbox.add_flags(2, ['\\Flagged'], false)
+check('flagged', inbox.search('FLAGGED', false), [2])
+inbox.remove_flags(2, ['\\Flagged'], false)
+check('unflagged', inbox.search('FLAGGED', false), [])
+
+var uids = inbox.search('ALL', true)
+
+check('two uids', uids.length(), 2)
+check('a uid fetch reports the uid', inbox.fetch(uids[1], 'FLAGS', true)[0].uid, uids[1])
+check('a uid search finds by uid', inbox.search('UID ${uids[0]}', true), [uids[0]])
+
+inbox.copy(1, 'Archive', false)
+check('copied', inbox.status('Archive', ['MESSAGES']).MESSAGES, 1)
+
+inbox.append('Archive', mail.message()
+  .set_from('c@example.com')
+  .add_to('ann@example.com')
+  .set_subject('Appended')
+  .set_text('body'), ['\\Seen'], nil)
+check('appended', inbox.status('Archive', ['MESSAGES']).MESSAGES, 2)
+
+var with_literal = mail.message()
+  .set_from('c@example.com')
+  .add_to('ann@example.com')
+  .set_subject('Grüße, appended')
+  .set_text('a body with a line break\r\nin it')
+
+inbox.append('Archive', with_literal, nil, nil)
+check('a message with a literal appended', inbox.status('Archive', ['MESSAGES']).MESSAGES, 3)
+
+inbox.move(2, 'Archive', false)
+check('moved out', inbox.select('INBOX').exists, 1)
+check('and in', inbox.status('Archive', ['MESSAGES']).MESSAGES, 4)
+
+inbox.select('INBOX')
+inbox.mark_deleted(1, false)
+check('expunged', inbox.expunge(), [1])
+check('emptied', inbox.select('INBOX').exists, 0)
+
+inbox.create('Later')
+check('created', inbox.list('', '*').map(@(m) => m.name).sort(),
+  ['Archive', 'INBOX', 'Later'])
+inbox.rename('Later', 'Soon')
+check('renamed', inbox.list('', '*').map(@(m) => m.name).sort(),
+  ['Archive', 'INBOX', 'Soon'])
+inbox.delete('Soon')
+check('deleted', inbox.list('', '*').map(@(m) => m.name).sort(), ['Archive', 'INBOX'])
+
+var status = inbox.status('Archive', nil)
+
+ok('status reports messages', status.contains('MESSAGES'))
+ok('status reports uidnext', status.contains('UIDNEXT'))
+ok('status reports unseen', status.contains('UNSEEN'))
+
+inbox.select('Archive')
+check('examine opens read-only', inbox.examine('Archive').read_only, true)
+inbox.unselect()
+check('unselected', inbox.state, 'authenticated')
+
+ok('fetching with no mailbox open raises', raises(@() {
+  inbox.fetch(1, 'FLAGS', false)
+}))
+ok('a missing mailbox raises', raises(@() {
+  inbox.select('NoSuchBox')
+}))
+
+inbox.logout()
+check('logged out', inbox.state, 'logged-out')
+
+imap_task.join(10000)
+
+
+section('imap over tls')
+
+var imap_tls_channel = isolate.channel(1)
+var imap_tls_task = isolate.spawn(
+  mail_server_app.imap_tls_server, imap_tls_channel, server_cert, server_key
+)
+var imap_tls_address = imap_tls_channel.recv()
+var imap_tls_port = imap_tls_address.split(':')[1]
+
+var secure_inbox = ImapClient.connect('imap://localhost:${imap_tls_port}', {
+  username: 'ann',
+  password: 'secret',
+  tls_config: trusting_config(),
+})
+
+ok('starttls negotiated', secure_inbox.is_secure())
+check('authenticated over it', secure_inbox.state, 'authenticated')
+check('and can select', secure_inbox.select('INBOX').exists, 0)
+secure_inbox.logout()
+
+var challenged_inbox = ImapClient.connect('imap://localhost:${imap_tls_port}', {
+  username: 'ann',
+  password: 'secret',
+  tls_config: trusting_config(),
+  mechanisms: ['CRAM-MD5'],
+})
+
+check('cram-md5 authenticated', challenged_inbox.state, 'authenticated')
+challenged_inbox.logout()
+
+imap_tls_task.join(10000)
+
+
+section('imap over a maildir')
+
+var maildir_root = os.create_temp_dir('zuri-mail-test')
+var maildir_channel = isolate.channel(1)
+var maildir_task = isolate.spawn(
+  mail_server_app.maildir_server, maildir_channel, maildir_root
+)
+var maildir_address = maildir_channel.recv()
+
+var on_disk = ImapClient.connect('imap://${maildir_address}', {
+  username: 'ann', password: 'secret', tls: 'disable',
+})
+
+check('the delivered message is there', on_disk.select('INBOX').exists, 1)
+check('and reads back', on_disk.fetch_message(1, false, false).subject(), 'On disk')
+
+on_disk.append('INBOX', mail.message()
+  .set_from('x@example.com')
+  .add_to('ann@example.com')
+  .set_subject('Added')
+  .set_text('body'), nil, nil)
+
+check('appending lands on disk', on_disk.select('INBOX').exists, 2)
+
+on_disk.add_flags(1, ['\\Seen'], false)
+check('flags stick', on_disk.search('SEEN', false), [1])
+
+on_disk.logout()
+maildir_task.join(10000)
+
+var current = os.join_paths(maildir_root, 'ann', 'cur')
+var files = os.read_dir(current).filter(@(name) => name != '.' and name != '..')
+
+check('two files on disk', files.length(), 2)
+ok('one of them records the seen flag', files.some(@(name) => name.contains(':2,')
+  and name.ends_with('S')))
+ok('a delivery directory exists', os.dir_exists(os.join_paths(maildir_root, 'ann', 'new')))
+
+
+section('pop3')
+
+var pop_channel = isolate.channel(1)
+var pop_task = isolate.spawn(mail_server_app.pop3_server, pop_channel)
+var pop_address = pop_channel.recv()
+
+var mailbox = Pop3Client.connect('pop3://${pop_address}', {
+  username: 'ann', password: 'secret', tls: 'disable',
+})
+
+ok('authenticated', mailbox.authenticated)
+ok('capabilities read', mailbox.supports('UIDL'))
+
+var counts = mailbox.stat()
+
+check('two waiting', counts.count, 2)
+ok('with a size', counts.size > 0)
+
+var listing = mailbox.list()
+
+check('two listed', listing.length(), 2)
+check('numbered from one', listing[0].number, 1)
+ok('sized', listing[0].size > 0)
+check('and identified', listing[0].uid, 'uid-0001')
+
+check('first subject', mailbox.retrieve(1).subject(), 'First')
+check('first body', mailbox.retrieve(1).text(), 'the first body\r\n')
+check('a dotted line survives', mailbox.retrieve(2).text(),
+  '.a dotted line\r\nand more\r\n')
+ok('headers alone come back', mailbox.top(1, 0).subject() == 'First')
+ok('raw bytes come back', mailbox.retrieve_raw(1).to_string().contains('Subject: First'))
+
+mailbox.delete(1)
+check('one left', mailbox.stat().count, 1)
+mailbox.reset()
+check('unmarked', mailbox.stat().count, 2)
+mailbox.delete(2)
+mailbox.noop()
+mailbox.quit()
+
+check('the server saw the removal', pop_channel.recv(), [2])
+pop_task.join(10000)
+
+
+section('the worker pool')
+
+var cluster = pool.start(mail_server_app.build_pooled_imap, { workers: 2 })
+var pool_address = cluster.address().to_string()
+
+# The clients run in isolates of their own, because accepting and
+# connecting both block and something has to do each.
+var first = isolate.spawn(mail_server_app.pool_client, pool_address)
+var second = isolate.spawn(mail_server_app.pool_client, pool_address)
+
+cluster.accept_one()
+cluster.accept_one()
+
+var first_saw = first.join(15000)
+var second_saw = second.join(15000)
+
+check('the first worker answered', first_saw.messages, 1)
+check('the second did too', second_saw.messages, 1)
+check('both hold the same message', first_saw.subject, 'Pooled')
+check('as does the other', second_saw.subject, 'Pooled')
+
+cluster.close(5000)
+
+echo ''
+
+if _failed > 0 {
+  echo '${_failed} of ${_passed + _failed} checks failed'
+
+  os.exit(1)
+}
+
+echo 'all ${_passed} checks passed'

@@ -1,0 +1,22 @@
+/**
+ * @module pop3
+ *
+ * POP3: the client end of collecting mail.
+ *
+ * ```zuri,ignore
+ * import mail.pop3 { Pop3Client }
+ *
+ * var mailbox = Pop3Client.connect('pop3s://mail.example.com', {
+ *   username: 'ann',
+ *   password: secret,
+ * })
+ *
+ * echo mailbox.stat().count
+ *
+ * mailbox.quit()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.client { * }

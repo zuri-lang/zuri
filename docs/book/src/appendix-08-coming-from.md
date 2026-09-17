@@ -23,7 +23,7 @@ This is that list.
 | string ordering with `<` | `<` is numbers only. Use `compare()`, which returns `-1`, `0` or `1`. |
 | `x in collection` | No membership operator. Use `contains()`. |
 | `?.` and `??` | Neither exists. `or` covers the common case, with the truthiness caveat above. |
-| an `eval()` | There is none, deliberately. See [Metaprogramming](ch18-00-metaprogramming.md). |
+| an `eval()` | There is none, deliberately. See [Metaprogramming](ch19-00-metaprogramming.md). |
 
 ## From Python
 

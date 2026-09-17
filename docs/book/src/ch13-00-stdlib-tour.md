@@ -456,13 +456,13 @@ captured 12 characters
 
 Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
 for when the body might raise and you want its output anyway. This is
-what lets [Chapter 20](ch20-00-testing.md) assert on what a function
+what lets [Chapter 21](ch21-00-testing.md) assert on what a function
 prints, and keep a passing test's output out of the report.
 
 ### `test`
 
 Suites, matchers, mocks, snapshots and reports. Covered in
-[Chapter 20](ch20-00-testing.md).
+[Chapter 21](ch21-00-testing.md).
 
 ```zuri,ignore
 import test { * }
@@ -540,7 +540,7 @@ Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
 reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
 fully in [Chapter 15](ch15-00-http.md), and used throughout
-[Chapter 22](ch22-00-task-board.md).
+[Chapter 23](ch23-00-task-board.md).
 
 ## Databases
 
@@ -565,6 +565,33 @@ for post in db.query('select * from posts where id = ?', [id]) {
 ```
 
 Covered in [Chapter 17](ch17-00-sql.md).
+
+## Mail
+
+### `mail`
+
+Messages and the three protocols that move them, written in Zuri from
+the socket up. `mail.message()` builds a message out of text, HTML and
+files and works out the MIME tree from what went in; `mail.parse()`
+reads one back. `mail.smtp` sends, `mail.imap` reads mail where it is
+kept, and `mail.pop3` takes it away. Both server ends are here too: an
+SMTP server that decides what to accept through handlers of your own,
+and an IMAP server that answers out of a mail store, of which one keeps
+mail on disk in Maildir format and one keeps it in the process.
+`mail.dkim` signs outgoing mail and checks incoming mail.
+
+```zuri,ignore
+import mail
+
+mail.send('smtp://mail.example.com', mail.message({
+  from: 'reports@example.com',
+  to: 'ann@example.com',
+  subject: 'Quarterly report',
+  text: 'The numbers are in.',
+}), { username: 'reports', password: secret })
+```
+
+Covered in [Chapter 18](ch18-00-mail.md).
 
 ## Compression
 
@@ -623,7 +650,7 @@ true
 list
 ```
 
-[Chapter 18](ch18-00-metaprogramming.md) is the full treatment.
+[Chapter 19](ch19-00-metaprogramming.md) is the full treatment.
 
 ### `math`
 

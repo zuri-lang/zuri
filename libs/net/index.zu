@@ -14,6 +14,7 @@
  * - `net.tls` wraps a `TcpStream` in Transport Layer Security.
  * - `net.dtls` provides Datagram Transport Layer Security over UDP.
  * - `net.poll` waits on many sockets at once.
+ * - `net.resolver` asks the domain name system questions of its own.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -26,3 +27,4 @@ import @.addr { * }
 import @.poll { * }
 import @.tls
 import @.dtls
+import @.resolver

@@ -1,0 +1,830 @@
+/**
+ * @module sasl
+ *
+ * The authentication mechanisms all three mail protocols share.
+ *
+ * SMTP, IMAP and POP3 each have their own way of starting an
+ * authentication exchange and their own way of carrying the bytes, but
+ * what travels inside is the same in all three. This module holds the
+ * mechanisms themselves, so none of the protocols has to.
+ *
+ * ```zuri
+ * import mail.sasl
+ *
+ * var mechanism = sasl.of('PLAIN', { username: 'ann', password: 'secret' })
+ *
+ * echo mechanism.name()
+ * echo mechanism.start().to_string().replace('/\0/', '|')
+ * ```
+ *
+ * ```console
+ * PLAIN
+ * |ann|secret
+ * ```
+ *
+ * ### What is here
+ *
+ * | mechanism | what it sends |
+ * | - | - |
+ * | `PLAIN` | the password, so it needs TLS under it |
+ * | `LOGIN` | the same, one prompt at a time, for servers that only do this |
+ * | `CRAM-MD5` | a keyed digest of the server's challenge |
+ * | `SCRAM-SHA-1`, `SCRAM-SHA-256` | a proof the server checks without the password, and one back |
+ * | `XOAUTH2`, `OAUTHBEARER` | a bearer token, which is what the large providers want |
+ * | `EXTERNAL` | nothing: the client certificate already said who this is |
+ * | `ANONYMOUS` | nothing, on purpose |
+ *
+ * The clients pick the strongest mechanism both ends offer, in the
+ * order `PREFERENCE` gives.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import crypto
+import hash
+
+import .errors { AuthenticationError }
+
+/**
+ * The mechanisms this implements, strongest first, which is the order
+ * a client picks from what a server offers.
+ *
+ * `SCRAM` proves the password without sending it and proves the server
+ * knew it too. `CRAM-MD5` proves it without sending it but proves
+ * nothing about the server, and its digest is old. The rest send
+ * something worth protecting, which is why every client here refuses
+ * to use them without TLS.
+ *
+ * @type list
+ */
+var PREFERENCE = [
+  'SCRAM-SHA-256',
+  'SCRAM-SHA-1',
+  'CRAM-MD5',
+  'XOAUTH2',
+  'OAUTHBEARER',
+  'PLAIN',
+  'LOGIN',
+  'EXTERNAL',
+  'ANONYMOUS',
+]
+
+/**
+ * The mechanisms that put the password itself on the wire, and so must
+ * never be used without TLS.
+ *
+ * @type list
+ */
+var NEEDS_TLS = ['PLAIN', 'LOGIN', 'XOAUTH2', 'OAUTHBEARER']
+
+# The characters RFC 4013 maps to a space, and the ones it deletes.
+# Both lists are the ones that matter to a password typed by a person.
+var _TO_SPACE = [
+  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
+  0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x200b, 0x202f, 0x205f,
+  0x3000,
+]
+
+var _DELETED = [
+  0x00ad, 0x034f, 0x1806, 0x180b, 0x180c, 0x180d, 0x200c, 0x200d,
+  0x2060, 0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06,
+  0xfe07, 0xfe08, 0xfe09, 0xfe0a, 0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e,
+  0xfe0f, 0xfeff,
+]
+
+/**
+ * Prepares a username or password the way RFC 4013 says to, so that
+ * two spellings of the same characters authenticate the same.
+ *
+ * The space mappings, the deletions and the prohibited characters are
+ * all applied. Unicode normalisation is not, so text that needs it
+ * must arrive already normalised; for anything typed on a keyboard in
+ * any Latin script this makes no difference at all.
+ *
+ * @param string text
+ * @returns string
+ * @throws AuthenticationError if the text holds a character that may
+ *    not appear in a credential.
+ */
+def prepare(text: string) {
+  var out = []
+
+  iter var index = 0; index < text.length(); index++ {
+    var character = text[index]
+    var code = character.ord()
+
+    if _DELETED.contains(code) {
+      continue
+    }
+
+    if _TO_SPACE.contains(code) {
+      out.append(' ')
+      continue
+    }
+
+    # Control characters, the surrogate range, the private use areas
+    # and the non-characters have no business in a credential, and a
+    # server that saw them would not agree with us about what they are.
+    if code < 0x20 or code == 0x7f
+      or (code >= 0x80 and code <= 0x9f)
+      or (code >= 0xd800 and code <= 0xdfff)
+      or (code >= 0xe000 and code <= 0xf8ff)
+      or (code >= 0xfdd0 and code <= 0xfdef)
+      or (code & 0xfffe) == 0xfffe {
+      raise AuthenticationError('a credential cannot contain this character')
+    }
+
+    out.append(character)
+  }
+
+  return ''.join(out)
+}
+
+def _raw(data) {
+  return is_bytes(data) ? data : '${data}'.to_bytes()
+}
+
+def _nonce(size: number) {
+  var raw = crypto.random_bytes(size)
+  var text = []
+
+  # The alphabet is the printable range a SCRAM nonce may use, which
+  # excludes the comma the protocol separates fields with.
+  var alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+  for value in raw {
+    text.append(alphabet[value % alphabet.length()])
+  }
+
+  return ''.join(text)
+}
+
+def _xor(left, right) {
+  var out = bytes(0)
+
+  iter var index = 0; index < left.length(); index++ {
+    out.append(left[index] ^ right[index])
+  }
+
+  return out
+}
+
+/**
+ * What every mechanism looks like from the outside.
+ *
+ * A client calls `start()` once, sends whatever comes back if anything
+ * does, and then calls `step()` with each challenge the server sends
+ * until `is_done()`.
+ *
+ * @printable
+ */
+class Mechanism {
+
+  /**
+   * The name to offer the server.
+   *
+   * @returns string
+   */
+  name() {
+    raise AuthenticationError('a mechanism must say what it is called')
+  }
+
+  /**
+   * The response to send before the server has said anything, or `nil`
+   * for a mechanism that waits to be asked.
+   *
+   * @returns bytes|nil
+   */
+  start() {
+    return nil
+  }
+
+  /**
+   * The response to one challenge.
+   *
+   * @param bytes challenge: The server's challenge, already decoded.
+   * @returns bytes|nil
+   */
+  step(challenge) {
+    return nil
+  }
+
+  /**
+   * Whether the exchange is over as far as this mechanism is
+   * concerned. A server may still have the last word.
+   *
+   * @returns bool
+   */
+  is_done() {
+    return true
+  }
+
+  to_string() {
+    return '<Mechanism ${self.name()}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * `PLAIN`: the username and the password, separated by zero bytes.
+ *
+ * Everything worth having is on the wire, so this belongs under TLS
+ * and nowhere else.
+ *
+ * @printable
+ */
+class Plain < Mechanism {
+
+  /**
+   * @param string username
+   * @param string password
+   * @param ?string authorize_as: The account to act as, when it is not
+   *    the one being authenticated.
+   */
+  @new(username: string, password: string, authorize_as: ?string) {
+    self.username = prepare(username)
+    self.password = prepare(password)
+    self.authorize_as = authorize_as == nil ? '' : prepare(authorize_as)
+  }
+
+  name() {
+    return 'PLAIN'
+  }
+
+  start() {
+    var out = bytes(0)
+
+    out.extend(self.authorize_as.to_bytes())
+    out.append(0)
+    out.extend(self.username.to_bytes())
+    out.append(0)
+    out.extend(self.password.to_bytes())
+
+    return out
+  }
+}
+
+/**
+ * `LOGIN`: the username and the password again, one prompt at a time.
+ *
+ * Never standardised and entirely superseded by `PLAIN`, but some
+ * servers offer nothing else.
+ *
+ * @printable
+ */
+class Login < Mechanism {
+
+  /**
+   * @param string username
+   * @param string password
+   */
+  @new(username: string, password: string) {
+    self.username = prepare(username)
+    self.password = prepare(password)
+
+    self._sent = 0
+  }
+
+  name() {
+    return 'LOGIN'
+  }
+
+  step(challenge) {
+    self._sent++
+
+    # The prompts are meant to be "Username:" and "Password:", but
+    # servers word them differently and some send nothing at all, so
+    # the order is what this counts on.
+    if self._sent == 1 {
+      return self.username.to_bytes()
+    }
+
+    return self.password.to_bytes()
+  }
+
+  is_done() {
+    return self._sent >= 2
+  }
+}
+
+/**
+ * `CRAM-MD5`: a keyed digest of the server's challenge, so the
+ * password never travels.
+ *
+ * The digest is old and the exchange proves nothing about the server,
+ * so prefer SCRAM where there is a choice.
+ *
+ * @printable
+ */
+class CramMd5 < Mechanism {
+
+  /**
+   * @param string username
+   * @param string password
+   */
+  @new(username: string, password: string) {
+    self.username = prepare(username)
+    self.password = prepare(password)
+
+    self._done = false
+  }
+
+  name() {
+    return 'CRAM-MD5'
+  }
+
+  step(challenge) {
+    self._done = true
+
+    return response(self.username, self.password, challenge).to_bytes()
+  }
+
+  is_done() {
+    return self._done
+  }
+}
+
+/**
+ * The answer to a `CRAM-MD5` challenge.
+ *
+ * Used by the mechanism, and by a server checking one, which has to
+ * work out the same answer to compare against.
+ *
+ * @param string username
+ * @param string password
+ * @param string|bytes challenge
+ * @returns string
+ */
+def response(username: string, password: string, challenge) {
+  return '${username} ${hash.hmac_md5(password, _raw(challenge), false)}'
+}
+
+/**
+ * `XOAUTH2`: a bearer token rather than a password, which is what
+ * Google and Microsoft accept.
+ *
+ * @printable
+ */
+class XOAuth2 < Mechanism {
+
+  /**
+   * @param string username: The account the token is for.
+   * @param string token: The access token, without the `Bearer` word.
+   */
+  @new(username: string, token: string) {
+    self.username = username
+    self.token = token
+  }
+
+  name() {
+    return 'XOAUTH2'
+  }
+
+  start() {
+    var out = bytes(0)
+
+    out.extend('user=${self.username}'.to_bytes())
+    out.append(0x01)
+    out.extend('auth=Bearer ${self.token}'.to_bytes())
+    out.append(0x01)
+    out.append(0x01)
+
+    return out
+  }
+
+  step(challenge) {
+    # A challenge here is the server explaining why it refused. The
+    # exchange has to be closed off with an empty response before it
+    # will say so in a reply code.
+    return bytes(0)
+  }
+}
+
+/**
+ * `OAUTHBEARER`: the standardised form of the same idea, from RFC
+ * 7628.
+ *
+ * @printable
+ */
+class OAuthBearer < Mechanism {
+
+  /**
+   * @param string username
+   * @param string token
+   * @param ?string host: The server being reached, which the token may
+   *    be bound to.
+   * @param ?number port
+   */
+  @new(username: string, token: string, host: ?string, port: ?number) {
+    self.username = username
+    self.token = token
+    self.host = host
+    self.port = port
+  }
+
+  name() {
+    return 'OAUTHBEARER'
+  }
+
+  start() {
+    var parts = ['n,a=${self.username},']
+    var out = bytes(0)
+
+    out.extend(parts[0].to_bytes())
+    out.append(0x01)
+
+    if self.host != nil {
+      out.extend('host=${self.host}'.to_bytes())
+      out.append(0x01)
+    }
+
+    if self.port != nil {
+      out.extend('port=${self.port}'.to_bytes())
+      out.append(0x01)
+    }
+
+    out.extend('auth=Bearer ${self.token}'.to_bytes())
+    out.append(0x01)
+    out.append(0x01)
+
+    return out
+  }
+
+  step(challenge) {
+    return bytes(0)
+  }
+}
+
+/**
+ * `EXTERNAL`: the connection already established who this is, usually
+ * with a client certificate.
+ *
+ * @printable
+ */
+class External < Mechanism {
+
+  /**
+   * @param ?string authorize_as: The account to act as. Empty means
+   *    whichever one the certificate names.
+   */
+  @new(authorize_as: ?string) {
+    self.authorize_as = authorize_as == nil ? '' : authorize_as
+  }
+
+  name() {
+    return 'EXTERNAL'
+  }
+
+  start() {
+    return self.authorize_as.to_bytes()
+  }
+}
+
+/**
+ * `ANONYMOUS`: no identity at all, with an optional note saying who is
+ * knocking.
+ *
+ * @printable
+ */
+class Anonymous < Mechanism {
+
+  /**
+   * @param ?string trace: An address or a token, for the server's log.
+   */
+  @new(trace: ?string) {
+    self.trace = trace == nil ? '' : trace
+  }
+
+  name() {
+    return 'ANONYMOUS'
+  }
+
+  start() {
+    return self.trace.to_bytes()
+  }
+}
+
+# The two digests SCRAM is defined over here, with the length of each
+# and the functions that go with it.
+var _SCRAM_DIGESTS = {
+  'sha1': { size: 20, name: 'SCRAM-SHA-1' },
+  'sha256': { size: 32, name: 'SCRAM-SHA-256' },
+}
+
+def _scram_hash(digest: string, data) {
+  return digest == 'sha1' ? hash.sha1(data, true) : hash.sha256(data, true)
+}
+
+def _scram_hmac(digest: string, key, data) {
+  return digest == 'sha1' ?
+    hash.hmac(hash.sha1, key, data, true) :
+    hash.hmac(hash.sha256, key, data, true)
+}
+
+# A comma or an equals sign inside a username would be read as
+# structure, so each is spelled out.
+def _escape_name(name: string) {
+  return name.replace('/=/', '=3D').replace('/,/', '=2C')
+}
+
+# The `name=value` fields of one SCRAM message.
+def _scram_fields(text: string) {
+  var fields = {}
+
+  for piece in text.split(',') {
+    if piece.length() < 2 or piece[1] != '=' {
+      continue
+    }
+
+    fields[piece[0]] = piece[2, piece.length()]
+  }
+
+  return fields
+}
+
+/**
+ * `SCRAM-SHA-1` and `SCRAM-SHA-256`: the password is never sent, the
+ * server never has to store it, and the server proves it knew it too.
+ *
+ * This is the mechanism to use wherever a server offers it. Channel
+ * binding, the `-PLUS` form, is not offered: it needs a value out of
+ * the TLS session that nothing here exposes.
+ *
+ * @printable
+ */
+class Scram < Mechanism {
+
+  /**
+   * @param string username
+   * @param string password
+   * @param ?string digest: `sha256` when not given, or `sha1`.
+   * @param ?string authorize_as
+   * @param ?string nonce: The client nonce. A fresh random one is
+   *    generated when not given, which is what every real exchange
+   *    wants; passing one is for reproducing a known exchange.
+   * @throws AuthenticationError if `digest` is neither.
+   */
+  @new(username: string, password: string, digest: ?string, authorize_as: ?string,
+    nonce: ?string) {
+    self.digest = digest == nil ? 'sha256' : digest.lower()
+
+    if !_SCRAM_DIGESTS.contains(self.digest) {
+      raise AuthenticationError('SCRAM is defined here over sha1 and sha256')
+    }
+
+    self.username = prepare(username)
+    self.password = prepare(password)
+    self.authorize_as = authorize_as == nil ? '' : prepare(authorize_as)
+
+    self._nonce = nonce == nil ? _nonce(24) : nonce
+    self._stage = 0
+    self._first = nil
+    self._server_signature = nil
+  }
+
+  name() {
+    return _SCRAM_DIGESTS[self.digest].name
+  }
+
+  # The header that says what channel binding this client wants, which
+  # is none, and which account it is acting as.
+  _gs2() {
+    return self.authorize_as == '' ?
+      'n,,' :
+      'n,a=${_escape_name(self.authorize_as)},'
+  }
+
+  start() {
+    self._first = 'n=${_escape_name(self.username)},r=${self._nonce}'
+    self._stage = 1
+
+    return (self._gs2() + self._first).to_bytes()
+  }
+
+  step(challenge) {
+    if self._stage == 1 {
+      return self._answer(challenge.to_string())
+    }
+
+    return self._finish(challenge.to_string())
+  }
+
+  _answer(text: string) {
+    var fields = _scram_fields(text)
+
+    if fields.contains('e') {
+      raise AuthenticationError('the server refused: ${fields.e}')
+    }
+
+    if !fields.contains('r') or !fields.contains('s') or !fields.contains('i') {
+      raise AuthenticationError('the server first message is incomplete')
+    }
+
+    # The server extends the nonce this client sent. One that does not
+    # is either broken or not the server that was asked.
+    if !fields.r.starts_with(self._nonce) {
+      raise AuthenticationError('the server did not echo the nonce')
+    }
+
+    var iterations = fields.i.to_number()
+
+    if iterations < 1 {
+      raise AuthenticationError('the server asked for ${fields.i} iterations')
+    }
+
+    var salt = base64.decode(fields.s)
+    var size = _SCRAM_DIGESTS[self.digest].size
+    var salted = hash.pbkdf2(self.digest, self.password, salt, iterations, size, true)
+    var client_key = _scram_hmac(self.digest, salted, 'Client Key')
+    var stored_key = _scram_hash(self.digest, client_key)
+    var without_proof = 'c=${base64.encode(self._gs2().to_bytes())},r=${fields.r}'
+    var message = '${self._first},${text},${without_proof}'
+    var signature = _scram_hmac(self.digest, stored_key, message)
+    var server_key = _scram_hmac(self.digest, salted, 'Server Key')
+
+    self._server_signature = base64.encode(_scram_hmac(self.digest, server_key, message))
+    self._stage = 2
+
+    return '${without_proof},p=${base64.encode(_xor(client_key, signature))}'.to_bytes()
+  }
+
+  _finish(text: string) {
+    var fields = _scram_fields(text)
+
+    self._stage = 3
+
+    if fields.contains('e') {
+      raise AuthenticationError('the server refused: ${fields.e}')
+    }
+
+    # The last thing the server says is a proof that it knew the
+    # password too. Without it, a server that simply says yes to
+    # everything would pass.
+    if fields.get('v', nil) != self._server_signature {
+      raise AuthenticationError('the server did not prove it knew the password')
+    }
+
+    return bytes(0)
+  }
+
+  is_done() {
+    return self._stage >= 3
+  }
+}
+
+/**
+ * Builds a mechanism by name.
+ *
+ * | credential | used by |
+ * | - | - |
+ * | `username`, `password` | `PLAIN`, `LOGIN`, `CRAM-MD5`, `SCRAM-*` |
+ * | `username`, `token` | `XOAUTH2`, `OAUTHBEARER` |
+ * | `authorize_as` | `PLAIN`, `EXTERNAL`, `SCRAM-*` |
+ * | `host`, `port` | `OAUTHBEARER` |
+ * | `trace` | `ANONYMOUS` |
+ *
+ * @param string name: One of `PREFERENCE`.
+ * @param dict credentials
+ * @returns Mechanism
+ * @throws AuthenticationError if the name is not one of them, or a
+ *    credential it needs is missing.
+ */
+def of(name: string, credentials: dict) {
+  var wanted = name.upper()
+  var username = credentials.get('username', nil)
+  var password = credentials.get('password', nil)
+  var token = credentials.get('token', nil)
+
+  if wanted == 'ANONYMOUS' {
+    return Anonymous(credentials.get('trace', nil))
+  }
+
+  if wanted == 'EXTERNAL' {
+    return External(credentials.get('authorize_as', nil))
+  }
+
+  if wanted == 'XOAUTH2' or wanted == 'OAUTHBEARER' {
+    if username == nil or token == nil {
+      raise AuthenticationError('${wanted} needs a username and a token')
+    }
+
+    if wanted == 'XOAUTH2' {
+      return XOAuth2(username, token)
+    }
+
+    return OAuthBearer(
+      username,
+      token,
+      credentials.get('host', nil),
+      credentials.get('port', nil)
+    )
+  }
+
+  if username == nil or password == nil {
+    raise AuthenticationError('${wanted} needs a username and a password')
+  }
+
+  if wanted == 'PLAIN' {
+    return Plain(username, password, credentials.get('authorize_as', nil))
+  }
+
+  if wanted == 'LOGIN' {
+    return Login(username, password)
+  }
+
+  if wanted == 'CRAM-MD5' {
+    return CramMd5(username, password)
+  }
+
+  if wanted == 'SCRAM-SHA-1' or wanted == 'SCRAM-SHA-256' {
+    return Scram(
+      username,
+      password,
+      wanted == 'SCRAM-SHA-1' ? 'sha1' : 'sha256',
+      credentials.get('authorize_as', nil),
+      credentials.get('nonce', nil)
+    )
+  }
+
+  raise AuthenticationError('unknown mechanism ${name}')
+}
+
+/**
+ * Picks the mechanism to use.
+ *
+ * Takes what the server offers and what the caller can supply, and
+ * returns the strongest name both sides have, or `nil` when there is
+ * none.
+ *
+ * Mechanisms that put the password on the wire are left out entirely
+ * when the connection is not encrypted, which is why a client that
+ * refuses to authenticate in the clear does not have to check for it
+ * separately.
+ *
+ * ```zuri
+ * import mail.sasl
+ *
+ * echo sasl.choose(['PLAIN', 'LOGIN', 'CRAM-MD5'], { password: 'x' }, false)
+ * echo sasl.choose(['PLAIN', 'LOGIN'], { password: 'x' }, true)
+ * echo sasl.choose(['PLAIN', 'LOGIN'], { password: 'x' }, false)
+ * ```
+ *
+ * ```console
+ * CRAM-MD5
+ * PLAIN
+ * nil
+ * ```
+ *
+ * @param list offered: The names the server advertised.
+ * @param dict credentials: What the caller has to offer.
+ * @param bool secure: Whether the connection is encrypted.
+ * @param ?list allowed: Restricts the choice to these names.
+ * @returns string|nil
+ */
+def choose(offered: list, credentials: dict, secure: bool, allowed: ?list) {
+  var available = offered.map(@(name) => name.upper())
+  var has_password = credentials.get('password', nil) != nil
+  var has_token = credentials.get('token', nil) != nil
+
+  for name in PREFERENCE {
+    if !available.contains(name) {
+      continue
+    }
+
+    if allowed != nil and !allowed.map(@(item) => item.upper()).contains(name) {
+      continue
+    }
+
+    if !secure and NEEDS_TLS.contains(name) {
+      continue
+    }
+
+    if name == 'XOAUTH2' or name == 'OAUTHBEARER' {
+      if has_token {
+        return name
+      }
+
+      continue
+    }
+
+    if name == 'EXTERNAL' or name == 'ANONYMOUS' {
+      if credentials.get('allow_${name.lower()}', false) {
+        return name
+      }
+
+      continue
+    }
+
+    if has_password {
+      return name
+    }
+  }
+
+  return nil
+}

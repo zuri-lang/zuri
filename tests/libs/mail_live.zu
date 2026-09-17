@@ -1,0 +1,211 @@
+/**
+ * test_mail_live.zu
+ *
+ * The clients against real servers, which is the only way to find out
+ * what they actually do. Skipped unless pointed at one:
+ *
+ *   ZURI_TEST_SMTP=smtp://user:pass@host:587
+ *   ZURI_TEST_IMAP=imaps://user:pass@host
+ *   ZURI_TEST_POP3=pop3s://user:pass@host
+ *
+ * `ZURI_TEST_MAIL_TO` names an address the SMTP case may deliver to.
+ * Without it the SMTP case stops after the conversation and never
+ * sends anything, so pointing this at a real account cannot send mail
+ * by accident.
+ */
+
+import mail
+import mail.imap { ImapClient }
+import mail.pop3 { Pop3Client }
+import mail.smtp { SmtpClient }
+
+import os
+
+var _passed = 0
+var _failed = 0
+
+def check(label, got, expected) {
+  if got == expected {
+    _passed++
+
+    return
+  }
+
+  _failed++
+
+  echo '  [FAIL] ${label}'
+  echo '         got      ${got}'
+  echo '         expected ${expected}'
+}
+
+def ok(label, condition) {
+  check(label, condition, true)
+}
+
+def section(title) {
+  echo ''
+  echo '== ${title} =='
+}
+
+def live_smtp(url) {
+  section('smtp against ${_host_of(url)}')
+
+  var server = SmtpClient.connect(url, nil)
+
+  check('greeted', server.greeting().code, 220)
+  ok('it said what it can do', !server.capabilities().is_empty())
+  ok('and it is encrypted', server.is_secure())
+  ok('and we are known to it', server.is_authenticated())
+  check('noop', server.noop().code, 250)
+  check('reset', server.rset().code, 250)
+
+  var recipient = os.get_env('ZURI_TEST_MAIL_TO', nil)
+
+  if recipient == nil or recipient == '' {
+    echo '  (set ZURI_TEST_MAIL_TO to have it deliver a message)'
+    server.quit()
+
+    return
+  }
+
+  var note = mail.message()
+    .set_from(recipient)
+    .add_to(recipient)
+    .set_subject('Zuri mail suite: Grüße')
+    .set_text('Sent by the mail module test suite.')
+    .set_html('<p>Sent by the <em>mail</em> module test suite.</p>')
+    .attach(mail.attachment('name,total\nwidgets,41\n').set_filename('figures.csv'))
+
+  check('delivered', server.send(note, nil).code, 250)
+  server.quit()
+}
+
+def live_imap(url) {
+  section('imap against ${_host_of(url)}')
+
+  var inbox = ImapClient.connect(url, nil)
+
+  check('authenticated', inbox.state, 'authenticated')
+  ok('encrypted', inbox.is_secure())
+  ok('it is an imap server', inbox.supports('IMAP4REV1'))
+
+  var mailboxes = inbox.list('', '*')
+
+  ok('it has mailboxes', !mailboxes.is_empty())
+  ok('one of them is the inbox',
+    mailboxes.some(@(box) => box.name.upper() == 'INBOX'))
+
+  var box = inbox.examine('INBOX')
+
+  ok('the inbox opened read-only', box.read_only)
+  ok('with a uid validity', box.uidvalidity != nil)
+
+  var status = inbox.status('INBOX', ['MESSAGES', 'UIDNEXT'])
+
+  ok('status answered', status.contains('MESSAGES'))
+
+  if box.exists > 0 {
+    var newest = box.exists
+    var infos = inbox.fetch(newest, 'ENVELOPE FLAGS UID RFC822.SIZE', false)
+
+    check('the newest message fetched', infos.length(), 1)
+    ok('with a uid', infos[0].uid != nil)
+    ok('and a size', infos[0].size > 0)
+    ok('and an envelope', infos[0].envelope != nil)
+
+    var headers = inbox.fetch_headers(newest, false)[0]
+
+    ok('its headers came back', headers.parts.get('HEADER', nil) != nil)
+
+    var whole = inbox.fetch_message(newest, false, false)
+
+    ok('and the whole of it', whole.headers.length() > 0)
+    ok('examining it left it alone', true)
+  } else {
+    echo '  (the inbox is empty, so nothing was fetched)'
+  }
+
+  ok('a search ran', inbox.search('ALL', true).length() == box.exists)
+
+  inbox.logout()
+  check('logged out', inbox.state, 'logged-out')
+}
+
+def live_pop3(url) {
+  section('pop3 against ${_host_of(url)}')
+
+  var mailbox = Pop3Client.connect(url, nil)
+
+  ok('authenticated', mailbox.authenticated)
+  ok('encrypted', mailbox.is_secure())
+
+  var counts = mailbox.stat()
+
+  ok('it counted the mailbox', counts.count >= 0)
+
+  var listing = mailbox.list()
+
+  check('the listing agrees with the count', listing.length(), counts.count)
+
+  if !listing.is_empty() {
+    var first = listing[0]
+
+    ok('the first has a size', first.size > 0)
+
+    var note = mailbox.top(first.number, 0)
+
+    ok('its headers came back', note.headers.length() > 0)
+  } else {
+    echo '  (the mailbox is empty, so nothing was fetched)'
+  }
+
+  mailbox.noop()
+  mailbox.quit()
+}
+
+def _host_of(url) {
+  var marker = url.index_of('://')
+  var rest = marker > -1 ? url[marker + 3, url.length()] : url
+  var at = rest.last_index_of('@')
+
+  return at > -1 ? rest[at + 1, rest.length()] : rest
+}
+
+def run() {
+  var smtp_url = os.get_env('ZURI_TEST_SMTP', nil)
+  var imap_url = os.get_env('ZURI_TEST_IMAP', nil)
+  var pop3_url = os.get_env('ZURI_TEST_POP3', nil)
+
+  if (smtp_url == nil or smtp_url == '')
+    and (imap_url == nil or imap_url == '')
+    and (pop3_url == nil or pop3_url == '') {
+    echo 'mail_live skipped: set ZURI_TEST_SMTP, ZURI_TEST_IMAP or '
+      + 'ZURI_TEST_POP3 to a connection string to run it'
+
+    return
+  }
+
+  if smtp_url != nil and smtp_url != '' {
+    live_smtp(smtp_url)
+  }
+
+  if imap_url != nil and imap_url != '' {
+    live_imap(imap_url)
+  }
+
+  if pop3_url != nil and pop3_url != '' {
+    live_pop3(pop3_url)
+  }
+
+  echo ''
+
+  if _failed > 0 {
+    echo '${_failed} of ${_passed + _failed} checks failed'
+
+    os.exit(1)
+  }
+
+  echo 'all ${_passed} checks passed'
+}
+
+run()

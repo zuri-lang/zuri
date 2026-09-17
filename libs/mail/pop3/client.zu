@@ -1,0 +1,713 @@
+/**
+ * @module client
+ *
+ * POP3: collecting mail and taking it away.
+ *
+ * Where IMAP leaves mail on the server and lets a client work with it
+ * in place, POP3 hands it over and, usually, forgets it. That makes it
+ * the wrong protocol for reading mail on more than one device and the
+ * right one for a program whose job is to drain a mailbox.
+ *
+ * ```zuri,ignore
+ * import mail.pop3 { Pop3Client }
+ *
+ * var mailbox = Pop3Client.connect('pop3s://mail.example.com', {
+ *   username: 'ann',
+ *   password: secret,
+ * })
+ *
+ * for entry in mailbox.list() {
+ *   var note = mailbox.retrieve(entry.number)
+ *
+ *   archive(note)
+ *   mailbox.delete(entry.number)
+ * }
+ *
+ * mailbox.quit()
+ * ```
+ *
+ * Nothing is actually removed until `quit()`: `delete()` only marks,
+ * and `reset()` undoes every mark. A connection that drops without
+ * `quit()` leaves the mailbox as it was, which is the protocol
+ * protecting against a client that fails halfway.
+ *
+ * There is no POP3 server here. A POP3 server is an IMAP server with
+ * almost everything taken away, and `mail.imap` is the one to run.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import hash
+import net.tls
+
+import ..errors { AuthenticationError, Pop3Error, ProtocolError, StateError }
+import ..message { Message }
+import ..sasl
+import ..stream { TLS_MODES }
+import ..stream
+
+# 995 is POP3 wrapped in TLS from the first byte; 110 is the plain port
+# where TLS is negotiated with `STLS` instead.
+var POP3_SCHEMES = {
+  pop3s: { port: 995, tls: true },
+  pop3: { port: 110, tls: false },
+  pops: { port: 995, tls: true },
+  pop: { port: 110, tls: false },
+}
+
+/**
+ * One message in the mailbox, as `list()` reports it.
+ *
+ * @printable
+ */
+class Entry {
+
+  /**
+   * @param number number: Its position, which holds for this session
+   *    only.
+   * @param number size: How many bytes it is.
+   * @param ?string uid: The identifier that outlives the session, when
+   *    the server offers one.
+   */
+  @new(number: number, size: number, uid: ?string) {
+    self.number = number
+    self.size = size
+    self.uid = uid
+  }
+
+  to_string() {
+    return '<Entry ${self.number}, ${self.size} bytes>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A connection to a server that hands mail over.
+ *
+ * @printable
+ */
+class Pop3Client {
+
+  /**
+   * Builds a client around a connection that is already open.
+   *
+   * @param LineStream connection
+   * @param ?dict options: As `connect()`.
+   */
+  @new(connection, options: ?dict) {
+    var given = options == nil ? {} : options
+
+    self._stream = connection
+    self._options = given
+    self._host = given.get('host', 'localhost')
+
+    self.greeting = nil
+    self.capabilities = []
+    self.authenticated = false
+
+    self._timestamp = nil
+  }
+
+  /**
+   * Opens a connection and authenticates.
+   *
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `username`, `password` | none | authenticate when both are given |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `tls_config` | a default one | the trust settings for TLS |
+   * | `mechanisms` | all of them | restricts which are acceptable |
+   * | `timeout` | `60000` | milliseconds to wait on the socket |
+   *
+   * @param string url: `pop3s://host`, `pop3://host`, or a bare host.
+   * @param ?dict options
+   * @returns Pop3Client
+   * @throws Pop3Error if the server refuses.
+   * @throws AuthenticationError if it refuses the credentials.
+   */
+  static connect(url: string, options: ?dict) {
+    var given = options == nil ? {} : options
+    var where = stream.endpoint(url, POP3_SCHEMES)
+    var settings = {}
+
+    for key in given.keys() {
+      settings[key] = given[key]
+    }
+
+    settings.host = where.host
+
+    if !settings.contains('username') and where.username != nil {
+      settings.username = where.username
+    }
+
+    if !settings.contains('password') and where.password != nil {
+      settings.password = where.password
+    }
+
+    var connection = stream.connect(where.host, where.port, {
+      timeout: given.get('timeout', 60000),
+      tls: where.tls,
+      tls_config: given.get('tls_config', nil),
+      server_name: given.get('server_name', where.host),
+    })
+
+    var client = Pop3Client(connection, settings)
+
+    client.begin()
+
+    return client
+  }
+
+  /**
+   * Reads the greeting, negotiates TLS and authenticates.
+   *
+   * @returns Pop3Client itself.
+   */
+  begin() {
+    self.greeting = self._read_status('the greeting')
+    self._timestamp = _apop_timestamp(self.greeting)
+
+    self.refresh_capabilities()
+
+    var mode = self._options.get('tls', 'require')
+
+    if !TLS_MODES.contains(mode) {
+      raise ProtocolError('tls must be one of ${', '.join(TLS_MODES)}')
+    }
+
+    if !self._stream.is_secure() and mode != 'disable' {
+      if self.supports('STLS') {
+        self.start_tls()
+      } else if mode == 'require' {
+        raise ProtocolError('${self._host} does not offer STLS')
+      }
+    }
+
+    if self._options.get('username', nil) != nil
+      or self._options.get('token', nil) != nil {
+      self.login()
+    }
+
+    return self
+  }
+
+  /**
+   * Whether the server offers a capability.
+   *
+   * @param string name
+   * @returns bool
+   */
+  supports(name: string) {
+    return self.capabilities.contains(name.upper())
+  }
+
+  /**
+   * Whether the connection is encrypted.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._stream.is_secure()
+  }
+
+  /**
+   * Asks the server what it can do.
+   *
+   * A server old enough not to know `CAPA` reports nothing, which is
+   * not an error: it simply predates the command.
+   *
+   * @returns list of string
+   */
+  refresh_capabilities() {
+    self.capabilities = []
+
+    catch {
+      self._send('CAPA')
+      self._read_status('CAPA')
+
+      for line in self._read_multiline() {
+        var trimmed = line.trim()
+
+        if trimmed != '' {
+          self.capabilities.append(trimmed.upper())
+        }
+      }
+    } as error {
+      # A server without CAPA tells us so by refusing it.
+    }
+
+    return self.capabilities
+  }
+
+  /**
+   * Negotiates TLS over a connection that started in the clear.
+   *
+   * @returns Pop3Client itself.
+   * @throws Pop3Error if the server refuses.
+   */
+  start_tls() {
+    if self._stream.is_secure() {
+      return self
+    }
+
+    self._send('STLS')
+    self._read_status('STLS')
+
+    stream.start_tls(
+      self._stream,
+      self._options.get('server_name', self._host),
+      self._options.get('tls_config', nil)
+    )
+
+    self.refresh_capabilities()
+
+    return self
+  }
+
+  /**
+   * Authenticates, choosing the strongest mechanism both ends know.
+   *
+   * `APOP` is preferred over sending the password where the server's
+   * greeting offered it, and `USER`/`PASS` is the last resort and only
+   * over TLS.
+   *
+   * @param ?string mechanism: Forces one rather than choosing.
+   * @returns Pop3Client itself.
+   * @throws AuthenticationError if the credentials are refused or
+   *    nothing usable is on offer.
+   */
+  login(mechanism: ?string) {
+    var username = self._options.get('username', nil)
+    var password = self._options.get('password', nil)
+    var offered = self._sasl_mechanisms()
+    var chosen = mechanism
+
+    if chosen == nil {
+      chosen = sasl.choose(
+        offered,
+        self._options,
+        self._stream.is_secure(),
+        self._options.get('mechanisms', nil)
+      )
+    }
+
+    if chosen != nil {
+      return self.authenticate(sasl.of(chosen, self._options))
+    }
+
+    if username == nil or password == nil {
+      raise AuthenticationError('no credentials to log in with')
+    }
+
+    # APOP proves the password against the server's own greeting rather
+    # than sending it, which is the one thing plain POP3 got right.
+    if self._timestamp != nil {
+      return self._apop(username, password)
+    }
+
+    if !self._stream.is_secure() {
+      raise AuthenticationError(
+        'sending a password here would send it in the clear; '
+        + 'the server offers ${offered.is_empty() ? 'nothing else' : ', '.join(offered)}'
+      )
+    }
+
+    self._send('USER ${username}')
+    self._read_status('USER')
+    self._send('PASS ${password}')
+
+    catch {
+      self._read_status('PASS')
+    } as error {
+      raise AuthenticationError('${self._host} refused the credentials: ${error.message}')
+    }
+
+    self.authenticated = true
+
+    return self
+  }
+
+  _apop(username: string, password: string) {
+    var digest = hash.md5(self._timestamp + password, false)
+
+    self._send('APOP ${username} ${digest}')
+
+    catch {
+      self._read_status('APOP')
+    } as error {
+      raise AuthenticationError('${self._host} refused the credentials: ${error.message}')
+    }
+
+    self.authenticated = true
+
+    return self
+  }
+
+  /**
+   * Runs one authentication exchange with a mechanism already built.
+   *
+   * @param Mechanism mechanism
+   * @returns Pop3Client itself.
+   * @throws AuthenticationError if the server refuses.
+   */
+  authenticate(mechanism) {
+    var initial = mechanism.start()
+
+    self._send(initial == nil ?
+      'AUTH ${mechanism.name()}' :
+      'AUTH ${mechanism.name()} ${_encode(initial)}')
+
+    while true {
+      var line = self._stream.read_line(nil)
+
+      if line.starts_with('+OK') {
+        self.authenticated = true
+
+        return self
+      }
+
+      if line.starts_with('-ERR') {
+        raise AuthenticationError(
+          '${self._host} refused the credentials: ${_reason(line)}'
+        )
+      }
+
+      if !line.starts_with('+') {
+        raise ProtocolError('the server sent something unexpected: ${line}')
+      }
+
+      var challenge = line.length() > 2 ? line[2, line.length()] : ''
+      var answer = nil
+
+      catch {
+        answer = mechanism.step(_decode(challenge))
+      } as error {
+        self._send('*')
+
+        raise error
+      }
+
+      self._send(answer == nil ? '' : _encode(answer))
+    }
+  }
+
+  _sasl_mechanisms() {
+    for line in self.capabilities {
+      if line == 'SASL' or line.starts_with('SASL ') {
+        var found = []
+
+        for name in line.split(' ') {
+          var trimmed = name.trim().upper()
+
+          if trimmed != '' and trimmed != 'SASL' {
+            found.append(trimmed)
+          }
+        }
+
+        return found
+      }
+    }
+
+    return []
+  }
+
+  /**
+   * How many messages are waiting and how large they are together.
+   *
+   * @returns dict of `count` and `size`.
+   */
+  stat() {
+    self._send('STAT')
+
+    var line = self._read_status('STAT')
+    var parts = line.split(' ')
+
+    return {
+      count: parts.length() > 0 ? parts[0].to_number() : 0,
+      size: parts.length() > 1 ? parts[1].to_number() : 0,
+    }
+  }
+
+  /**
+   * Every message waiting, with its size and, where the server offers
+   * one, its lasting identifier.
+   *
+   * The number is only good for this session: deleting a message
+   * renumbers the rest on the next connection. The identifier is what
+   * a program that runs twice should remember.
+   *
+   * @returns list of `Entry`
+   */
+  list() {
+    self._send('LIST')
+    self._read_status('LIST')
+
+    var found = []
+
+    for line in self._read_multiline() {
+      var parts = line.trim().split(' ')
+
+      if parts.length() < 2 {
+        continue
+      }
+
+      found.append(Entry(parts[0].to_number(), parts[1].to_number(), nil))
+    }
+
+    var identifiers = self.uidl()
+
+    for entry in found {
+      entry.uid = identifiers.get('${entry.number}', nil)
+    }
+
+    return found
+  }
+
+  /**
+   * The lasting identifier of every message, by its number in this
+   * session.
+   *
+   * @returns dict, empty when the server does not offer `UIDL`.
+   */
+  uidl() {
+    var found = {}
+
+    catch {
+      self._send('UIDL')
+      self._read_status('UIDL')
+
+      for line in self._read_multiline() {
+        var parts = line.trim().split(' ')
+
+        if parts.length() >= 2 {
+          found[parts[0]] = parts[1]
+        }
+      }
+    } as error {
+      # A server without UIDL simply has no identifiers to give.
+    }
+
+    return found
+  }
+
+  /**
+   * Fetches one message whole.
+   *
+   * @param number number
+   * @returns Message
+   * @throws Pop3Error if there is no such message.
+   */
+  retrieve(number: number) {
+    self._send('RETR ${number}')
+    self._read_status('RETR ${number}')
+
+    return Message(nil, self._read_body())
+  }
+
+  /**
+   * Fetches one message as it arrived, without parsing it.
+   *
+   * @param number number
+   * @returns bytes
+   * @throws Pop3Error if there is no such message.
+   */
+  retrieve_raw(number: number) {
+    self._send('RETR ${number}')
+    self._read_status('RETR ${number}')
+
+    return self._read_body()
+  }
+
+  /**
+   * Fetches a message's headers and the first few lines of its body,
+   * which is enough to decide whether to fetch the rest.
+   *
+   * @param number number
+   * @param ?number lines: Body lines to include. None when not given.
+   * @returns Message
+   * @throws Pop3Error if the server does not offer `TOP`.
+   */
+  top(number: number, lines: ?number) {
+    self._send('TOP ${number} ${lines == nil ? 0 : lines}')
+    self._read_status('TOP ${number}')
+
+    return Message(nil, self._read_body())
+  }
+
+  /**
+   * Marks a message for removal. Nothing goes until `quit()`.
+   *
+   * @param number number
+   * @returns Pop3Client itself.
+   * @throws Pop3Error if there is no such message.
+   */
+  delete(number: number) {
+    self._send('DELE ${number}')
+    self._read_status('DELE ${number}')
+
+    return self
+  }
+
+  /**
+   * Unmarks everything marked for removal in this session.
+   *
+   * @returns Pop3Client itself.
+   */
+  reset() {
+    self._send('RSET')
+    self._read_status('RSET')
+
+    return self
+  }
+
+  /**
+   * Asks the server for nothing, which keeps the connection alive.
+   *
+   * @returns Pop3Client itself.
+   */
+  noop() {
+    self._send('NOOP')
+    self._read_status('NOOP')
+
+    return self
+  }
+
+  /**
+   * Says goodbye, which is when the server actually removes whatever
+   * was marked, and closes the connection.
+   *
+   * @returns Pop3Client itself.
+   */
+  quit() {
+    catch {
+      self._send('QUIT')
+      self._read_status('QUIT')
+    } as error {
+      # A server that closes on QUIT rather than answering it has
+      # still done what QUIT asked.
+    }
+
+    self._stream.close()
+
+    return self
+  }
+
+  /**
+   * Closes the connection without saying goodbye, which leaves the
+   * mailbox exactly as it was.
+   *
+   * @returns Pop3Client itself.
+   */
+  close() {
+    self._stream.close()
+
+    return self
+  }
+
+  _send(line: string) {
+    self._stream.write_line(line)
+    self._stream.flush()
+  }
+
+  # Reads one status line, and hands back whatever followed the `+OK`.
+  _read_status(doing: string) {
+    var line = self._stream.read_line(nil)
+
+    if line.starts_with('+OK') {
+      return line.length() > 4 ? line[4, line.length()].trim() : ''
+    }
+
+    if line.starts_with('-ERR') {
+      raise Pop3Error('${doing} was refused: ${_reason(line)}')
+    }
+
+    raise ProtocolError('the server sent something that is not a reply: ${line}')
+  }
+
+  # Reads until the line that is a single dot, which is how every
+  # multi-line response ends.
+  _read_multiline() {
+    var lines = []
+
+    while true {
+      var line = self._stream.read_line(nil)
+
+      if line == '.' {
+        return lines
+      }
+
+      lines.append(line.starts_with('.') ? line[1, line.length()] : line)
+    }
+  }
+
+  # The same, kept as bytes, because a message body is not text.
+  _read_body() {
+    var out = bytes(0)
+
+    while true {
+      var line = self._stream.read_line(nil)
+
+      if line == '.' {
+        return out
+      }
+
+      out.extend((line.starts_with('.') ? line[1, line.length()] : line).to_bytes())
+      out.extend('\r\n'.to_bytes())
+    }
+  }
+
+  to_string() {
+    return '<Pop3Client ${self._host}${self._stream.is_secure() ? ' secure' : ''}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The `<...>` a server puts in its greeting when it will accept APOP.
+def _apop_timestamp(greeting: string) {
+  var open = greeting.index_of('<')
+
+  if open < 0 {
+    return nil
+  }
+
+  var close = greeting.index_of('>', open)
+
+  if close < 0 {
+    return nil
+  }
+
+  return greeting[open, close + 1]
+}
+
+def _reason(line: string) {
+  var text = line.length() > 5 ? line[5, line.length()].trim() : ''
+
+  return text == '' ? 'no reason given' : text
+}
+
+def _encode(raw) {
+  return base64.encode(is_bytes(raw) ? raw : '${raw}'.to_bytes())
+}
+
+def _decode(text: string) {
+  var value = text.trim()
+
+  if value == '' {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(value)
+  } as error {
+    return value.to_bytes()
+  }
+}

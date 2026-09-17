@@ -1,0 +1,424 @@
+/**
+ * @module content
+ *
+ * The two headers that say what a part holds and what to do with it.
+ *
+ * `Content-Type` names the media type and carries the parameters that
+ * go with it: the character set of text, the boundary of a multipart,
+ * the name of a file. `Content-Disposition` says whether the part is
+ * meant to be shown where it sits or offered as an attachment, and
+ * carries the filename to offer it under.
+ *
+ * ```zuri
+ * import mail.content { ContentType }
+ *
+ * var type = ContentType.parse('text/plain; charset="utf-8"; format=flowed')
+ *
+ * echo type.mime_type()
+ * echo type.charset()
+ * echo type.get('format')
+ * ```
+ *
+ * ```console
+ * text/plain
+ * utf-8
+ * flowed
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import .encoding
+
+# What a part is when it does not say. RFC 2045 is explicit that this
+# is the default, and a message that leaves the header out is not
+# malformed.
+var DEFAULT_TYPE = 'text/plain'
+var DEFAULT_CHARSET = 'us-ascii'
+
+# Reads `; name=value` pairs off the end of a header, keeping the names
+# exactly as written so the continuations of RFC 2231 can be put back
+# together afterwards.
+def _read_parameters(text: string, from: number) {
+  var raw = {}
+  var index = from
+
+  while index < text.length() {
+    index = _skip_to_parameter(text, index)
+
+    if index >= text.length() {
+      break
+    }
+
+    var start = index
+
+    while index < text.length() and text[index] != '=' and text[index] != ';' {
+      index++
+    }
+
+    var name = text[start, index].trim()
+
+    if index >= text.length() or text[index] == ';' {
+      if name != '' {
+        raw[name] = ''
+      }
+
+      continue
+    }
+
+    index++
+
+    var value = nil
+
+    if index < text.length() and text[index] == '"' {
+      var quoted = _read_quoted(text, index)
+
+      value = quoted.text
+      index = quoted.end
+    } else {
+      var begin = index
+
+      while index < text.length() and text[index] != ';' {
+        index++
+      }
+
+      value = text[begin, index].trim()
+    }
+
+    if name != '' {
+      raw[name] = value
+    }
+  }
+
+  return raw
+}
+
+# Steps over the separator and any whitespace or comment in front of
+# the next parameter's name.
+def _skip_to_parameter(text: string, from: number) {
+  var index = from
+
+  while index < text.length() {
+    var character = text[index]
+
+    if character == ';' or character == ' ' or character == '\t'
+      or character == '\r' or character == '\n' {
+      index++
+      continue
+    }
+
+    if character == '(' {
+      index = _skip_comment(text, index)
+      continue
+    }
+
+    break
+  }
+
+  return index
+}
+
+def _skip_comment(text: string, from: number) {
+  var depth = 0
+  var index = from
+
+  while index < text.length() {
+    var character = text[index]
+
+    if character == '\\' {
+      index += 2
+      continue
+    }
+
+    if character == '(' {
+      depth++
+      index++
+      continue
+    }
+
+    if character == ')' {
+      depth--
+      index++
+
+      if depth == 0 {
+        return index
+      }
+
+      continue
+    }
+
+    index++
+  }
+
+  return index
+}
+
+def _read_quoted(text: string, from: number) {
+  var out = []
+  var index = from + 1
+
+  while index < text.length() {
+    var character = text[index]
+
+    if character == '\\' and index + 1 < text.length() {
+      out.append(text[index + 1])
+      index += 2
+      continue
+    }
+
+    if character == '"' {
+      return { text: ''.join(out), end: index + 1 }
+    }
+
+    out.append(character)
+    index++
+  }
+
+  return { text: ''.join(out), end: index }
+}
+
+# Where the media type ends and its parameters begin, ignoring a
+# semicolon that is inside a quoted string.
+def _head_end(text: string) {
+  var quoted = false
+
+  iter var index = 0; index < text.length(); index++ {
+    var character = text[index]
+
+    if character == '"' {
+      quoted = !quoted
+      continue
+    }
+
+    if character == ';' and !quoted {
+      return index
+    }
+  }
+
+  return text.length()
+}
+
+/**
+ * A media type and the parameters that came with it.
+ *
+ * @printable
+ */
+class ContentType {
+
+  /**
+   * @param string type: The type, such as `text`.
+   * @param string subtype: The subtype, such as `plain`.
+   * @param ?dict parameters: The parameters, already decoded.
+   */
+  @new(type: string, subtype: string, parameters: ?dict) {
+    self.type = type.lower()
+    self.subtype = subtype.lower()
+    self.parameters = parameters == nil ? {} : parameters
+  }
+
+  /**
+   * Reads a `Content-Type` header.
+   *
+   * A header that is missing or empty gives `text/plain`, which is
+   * what a part with no type is defined to be.
+   *
+   * @param ?string text
+   * @returns ContentType
+   */
+  static parse(text: ?string) {
+    if text == nil or text.trim() == '' {
+      return ContentType('text', 'plain', {})
+    }
+
+    var end = _head_end(text)
+    var head = text[0, end].trim()
+    var slash = head.index_of('/')
+    var type = slash > -1 ? head[0, slash] : head
+    var subtype = slash > -1 ? head[slash + 1, head.length()] : ''
+
+    if type == '' {
+      type = 'text'
+      subtype = 'plain'
+    }
+
+    return ContentType(
+      type,
+      subtype == '' ? 'plain' : subtype,
+      encoding.decode_parameters(_read_parameters(text, end))
+    )
+  }
+
+  /**
+   * The type and subtype together, as `text/plain`.
+   *
+   * @returns string
+   */
+  mime_type() {
+    return '${self.type}/${self.subtype}'
+  }
+
+  /**
+   * One parameter's value.
+   *
+   * @param string name: Matched without regard to case.
+   * @param ?any fallback: Returned when the parameter is absent.
+   * @returns any
+   */
+  get(name: string, fallback) {
+    return self.parameters.get(name.lower(), fallback)
+  }
+
+  /**
+   * The character set of a text part.
+   *
+   * @returns string `us-ascii` when the header does not say, which is
+   *    the defined default.
+   */
+  charset() {
+    return self.get('charset', DEFAULT_CHARSET)
+  }
+
+  /**
+   * The boundary that separates the parts of a multipart, or `nil`
+   * when this is not one.
+   *
+   * @returns string|nil
+   */
+  boundary() {
+    return self.get('boundary', nil)
+  }
+
+  /**
+   * The filename this part suggests, taken from the `name` parameter.
+   *
+   * `Content-Disposition` is the header that is supposed to carry it,
+   * and `Message.filename()` looks there first.
+   *
+   * @returns string|nil
+   */
+  name() {
+    return self.get('name', nil)
+  }
+
+  /**
+   * Whether this part contains other parts.
+   *
+   * @returns bool
+   */
+  is_multipart() {
+    return self.type == 'multipart'
+  }
+
+  /**
+   * Whether this part is text, and so has a character set worth
+   * applying.
+   *
+   * @returns bool
+   */
+  is_text() {
+    return self.type == 'text'
+  }
+
+  /**
+   * The header value, with every parameter written in the form it
+   * needs.
+   *
+   * @returns string
+   */
+  to_string() {
+    var parts = [self.mime_type()]
+
+    for name in self.parameters.keys() {
+      parts.extend(encoding.encode_parameter(name, '${self.parameters[name]}'))
+    }
+
+    return '; '.join(parts)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What a part is for: shown where it sits, or offered as a file.
+ *
+ * @printable
+ */
+class ContentDisposition {
+
+  /**
+   * @param string kind: `inline` or `attachment`.
+   * @param ?dict parameters
+   */
+  @new(kind: string, parameters: ?dict) {
+    self.kind = kind.lower()
+    self.parameters = parameters == nil ? {} : parameters
+  }
+
+  /**
+   * Reads a `Content-Disposition` header.
+   *
+   * @param ?string text
+   * @returns ContentDisposition
+   */
+  static parse(text: ?string) {
+    if text == nil or text.trim() == '' {
+      return ContentDisposition('inline', {})
+    }
+
+    var end = _head_end(text)
+    var kind = text[0, end].trim()
+
+    return ContentDisposition(
+      kind == '' ? 'inline' : kind,
+      encoding.decode_parameters(_read_parameters(text, end))
+    )
+  }
+
+  /**
+   * One parameter's value.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns any
+   */
+  get(name: string, fallback) {
+    return self.parameters.get(name.lower(), fallback)
+  }
+
+  /**
+   * The filename the part should be saved under, or `nil`.
+   *
+   * @returns string|nil
+   */
+  filename() {
+    return self.get('filename', nil)
+  }
+
+  /**
+   * Whether the part is meant to be offered as a file rather than
+   * shown in place.
+   *
+   * @returns bool
+   */
+  is_attachment() {
+    return self.kind == 'attachment'
+  }
+
+  to_string() {
+    var parts = [self.kind]
+
+    for name in self.parameters.keys() {
+      parts.extend(encoding.encode_parameter(name, '${self.parameters[name]}'))
+    }
+
+    return '; '.join(parts)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

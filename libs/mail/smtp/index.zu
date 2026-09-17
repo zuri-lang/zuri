@@ -1,0 +1,27 @@
+/**
+ * @module smtp
+ *
+ * SMTP: the protocol that moves mail from where it was written to
+ * where it is kept.
+ *
+ * Both ends are here. `SmtpClient` hands messages to a server;
+ * `SmtpServer` is the server, and decides what to accept through
+ * handlers of your own.
+ *
+ * ```zuri,ignore
+ * import mail.smtp { SmtpClient }
+ *
+ * var server = SmtpClient.connect('smtp://mail.example.com', {
+ *   username: 'reports',
+ *   password: secret,
+ * })
+ *
+ * server.send(note, nil)
+ * server.quit()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.client { * }
+import @.server { * }

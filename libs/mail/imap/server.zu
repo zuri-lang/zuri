@@ -1,0 +1,2105 @@
+/**
+ * @module server
+ *
+ * The serving end of IMAP.
+ *
+ * `ImapServer` accepts connections, runs the session state machine,
+ * and answers every command out of a `MailStore`. What mail there is
+ * and where it lives is the store's business; this knows only the
+ * protocol.
+ *
+ * ```zuri,ignore
+ * import mail.imap { ImapServer, MaildirStore }
+ *
+ * var store = MaildirStore('/var/mail')
+ *
+ * store.add_account('ann', secret)
+ *
+ * ImapServer({ port: 143 }, store).listen()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import crypto
+import date
+import hash
+import net
+import net.tls
+import os
+
+import ..errors { ConnectionClosed, MailboxError, ProtocolError }
+import ..message { Message }
+import ..stream { LineStream }
+
+import .parser { Literal, tokenize, quote }
+import .store { MailStore }
+
+# What the server says it can do. Everything listed is implemented
+# here; nothing is advertised that is not.
+var BASE_CAPABILITIES = ['IMAP4rev1', 'UNSELECT', 'MOVE', 'IDLE', 'LITERAL+', 'SASL-IR', 'ID']
+
+# The flags a client may set on a message here.
+var ALLOWED_FLAGS = ['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft']
+
+var DEFAULT_TIMEOUT = 1800000
+
+/**
+ * One connection, and what it has got as far as doing.
+ *
+ * @printable
+ */
+class ImapSession {
+
+  /**
+   * @param string peer
+   * @param bool secure
+   */
+  @new(peer: string, secure: bool) {
+    self.peer = peer
+    self.secure = secure
+    self.state = 'not-authenticated'
+    self.username = nil
+    self.mailbox = nil
+    self.read_only = false
+    self.snapshot = []
+    self.state_data = {}
+  }
+
+  /**
+   * Whether a mailbox is open.
+   *
+   * @returns bool
+   */
+  is_selected() {
+    return self.state == 'selected'
+  }
+
+  to_string() {
+    return '<ImapSession ${self.peer} ${self.state}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Reads commands off a connection, and grants permission for a literal
+# before reading one, which a client that is waiting needs.
+class _CommandSource {
+
+  @new(connection) {
+    self._connection = connection
+  }
+
+  read_line(limit) {
+    return self._connection.read_line(limit)
+  }
+
+  read_bytes(count: number) {
+    return self._connection.read_bytes(count)
+  }
+
+  announce_literal() {
+    self._connection.write_line('+ send it')
+    self._connection.flush()
+  }
+}
+
+/**
+ * A server that serves mail.
+ *
+ * @printable
+ */
+class ImapServer {
+
+  /**
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `host` | `127.0.0.1` | the address to bind |
+   * | `port` | `143` | the port to bind |
+   * | `greeting` | `Zuri IMAP ready` | what to say on connecting |
+   * | `timeout` | `1800000` | milliseconds a client may go quiet |
+   * | `require_tls` | `false` | refuse to authenticate without TLS |
+   *
+   * @param ?dict options
+   * @param MailStore store: Where the mail is.
+   */
+  @new(options: ?dict, store) {
+    var given = options == nil ? {} : options
+
+    self.host = given.get('host', '127.0.0.1')
+    self.port = given.get('port', 143)
+    self.greeting = given.get('greeting', 'Zuri IMAP ready')
+    self.timeout = given.get('timeout', DEFAULT_TIMEOUT)
+    self.require_tls = given.get('require_tls', false)
+    self.store = store
+
+    self._listener = nil
+    self._tls = nil
+    self._running = false
+    self._on_error = nil
+    self._on_connect = nil
+    self._on_close = nil
+  }
+
+  /**
+   * Called with the session when a connection opens.
+   *
+   * @param function(1) handler
+   * @returns ImapServer itself.
+   */
+  on_connect(handler) {
+    self._on_connect = handler
+
+    return self
+  }
+
+  /**
+   * Called with the session when a connection closes.
+   *
+   * @param function(1) handler
+   * @returns ImapServer itself.
+   */
+  on_close(handler) {
+    self._on_close = handler
+
+    return self
+  }
+
+  /**
+   * Called with the error and the session when something inside the
+   * server fails.
+   *
+   * @param function(2) handler
+   * @returns ImapServer itself.
+   */
+  on_error(handler) {
+    self._on_error = handler
+
+    return self
+  }
+
+  /**
+   * Gives the server a certificate, which is what lets it offer
+   * `STARTTLS`.
+   *
+   * @param string cert_chain
+   * @param string private_key
+   * @returns ImapServer itself.
+   */
+  use_tls(cert_chain: string, private_key: string) {
+    var config = tls.TlsConfig()
+
+    config.set_cert_chain(cert_chain, private_key)
+
+    self._tls = config
+
+    return self
+  }
+
+  /**
+   * Gives the server a TLS configuration built elsewhere.
+   *
+   * @param TlsConfig config
+   * @returns ImapServer itself.
+   */
+  set_tls_config(config) {
+    self._tls = config
+
+    return self
+  }
+
+  /**
+   * Binds the listening socket without accepting anything yet.
+   *
+   * @returns ImapServer itself.
+   */
+  bind() {
+    if self._listener != nil {
+      return self
+    }
+
+    self._listener = net.TcpStream()
+    self._listener.bind('${self.host}:${self.port}')
+
+    return self
+  }
+
+  /**
+   * The address the server is listening on.
+   *
+   * @returns SocketAddr
+   */
+  address() {
+    self.bind()
+
+    return self._listener.local_address()
+  }
+
+  /**
+   * Accepts one connection and serves it to the end.
+   *
+   * @returns ImapServer itself.
+   */
+  accept() {
+    self.bind()
+    self.serve_connection(self._listener.accept())
+
+    return self
+  }
+
+  /**
+   * Accepts connections one after another until `close()`.
+   *
+   * One at a time: an IMAP connection is long-lived, so a server
+   * expecting more than one client at once wants a worker per
+   * connection.
+   *
+   * @returns ImapServer itself.
+   */
+  listen() {
+    self.bind()
+
+    self._running = true
+
+    while self._running {
+      var client = nil
+
+      catch {
+        client = self._listener.accept()
+      } as error {
+        if !self._running {
+          break
+        }
+
+        self._report(error, nil)
+        continue
+      }
+
+      self.serve_connection(client)
+    }
+
+    return self
+  }
+
+  /**
+   * Stops the accept loop and closes the listening socket.
+   *
+   * @returns ImapServer itself.
+   */
+  close() {
+    self._running = false
+
+    if self._listener != nil {
+      self._listener.close()
+      self._listener = nil
+    }
+
+    return self
+  }
+
+  /**
+   * Whether the accept loop is running.
+   *
+   * @returns bool
+   */
+  is_listening() {
+    return self._running
+  }
+
+  _report(error, session) {
+    if self._on_error == nil {
+      return
+    }
+
+    var callback = self._on_error
+
+    catch {
+      callback(error, session)
+    } as failure {
+      # An error handler that fails has nowhere left to report to.
+    }
+  }
+
+  /**
+   * Serves one already-accepted connection to the end.
+   *
+   * @param TcpStream client
+   * @returns ImapServer itself.
+   */
+  serve_connection(client) {
+    catch {
+      client.set_read_timeout(self.timeout)
+      client.set_write_timeout(self.timeout)
+    } as error {
+      # A socket that cannot take a timeout is still worth serving.
+    }
+
+    var peer = 'unknown'
+
+    catch {
+      peer = client.peer_address().to_string()
+    } as error {
+      # A peer that has already gone has no address to report.
+    }
+
+    var connection = LineStream(client, false)
+    var session = ImapSession(peer, false)
+
+    if self._on_connect != nil {
+      var callback = self._on_connect
+
+      catch {
+        callback(session)
+      } as error {
+        self._report(error, session)
+      }
+    }
+
+    catch {
+      self._converse(connection, session)
+    } as error {
+      if !instance_of(error, ConnectionClosed) {
+        self._report(error, session)
+      }
+    }
+
+    connection.close()
+
+    if self._on_close != nil {
+      var callback = self._on_close
+
+      catch {
+        callback(session)
+      } as error {
+        self._report(error, session)
+      }
+    }
+
+    return self
+  }
+
+  _capabilities(session) {
+    var found = []
+
+    for name in BASE_CAPABILITIES {
+      found.append(name)
+    }
+
+    if self._tls != nil and !session.secure {
+      found.append('STARTTLS')
+    }
+
+    if session.state == 'not-authenticated' {
+      if session.secure or !self.require_tls {
+        found.append('AUTH=PLAIN')
+
+        if self.store.has_passwords() {
+          found.append('AUTH=CRAM-MD5')
+        }
+      } else {
+        found.append('LOGINDISABLED')
+      }
+    }
+
+    return found
+  }
+
+  _converse(connection, session) {
+    var hello = ' '.join(self._capabilities(session))
+
+    connection.write_line('* OK [CAPABILITY ${hello}] ${self.greeting}')
+    connection.flush()
+
+    var source = _CommandSource(connection)
+
+    while true {
+      var line = connection.read_line(nil)
+      var space = line.index_of(' ')
+
+      if space < 1 {
+        connection.write_line('* BAD a command needs a tag and a name')
+        connection.flush()
+        continue
+      }
+
+      var tag = line[0, space]
+      var rest = line[space + 1, line.length()]
+      var name_end = rest.index_of(' ')
+      var name = (name_end > -1 ? rest[0, name_end] : rest).upper()
+      var tail = name_end > -1 ? rest[name_end + 1, rest.length()] : ''
+      var arguments = []
+
+      catch {
+        arguments = tail == '' ? [] : tokenize(tail, source)
+      } as error {
+        if instance_of(error, ConnectionClosed) {
+          raise error
+        }
+
+        _reply(connection, tag, 'BAD', nil, error.message)
+        continue
+      }
+
+      if name == 'LOGOUT' {
+        connection.write_line('* BYE closing connection')
+        _reply(connection, tag, 'OK', nil, 'LOGOUT completed')
+
+        return
+      }
+
+      var outcome = self._dispatch(connection, session, tag, name, arguments, source)
+
+      if outcome == 'close' {
+        return
+      }
+    }
+  }
+
+  _dispatch(connection, session, tag: string, name: string, arguments: list, source) {
+    catch {
+      return self._run(connection, session, tag, name, arguments, source)
+    } as error {
+      if instance_of(error, ConnectionClosed) {
+        raise error
+      }
+
+      if instance_of(error, MailboxError) {
+        _reply(connection, tag, 'NO', nil, error.message)
+
+        return 'ok'
+      }
+
+      self._report(error, session)
+      _reply(connection, tag, 'NO', nil, 'the server could not do that')
+
+      return 'ok'
+    }
+  }
+
+  _run(connection, session, tag: string, name: string, arguments: list, source) {
+    if name == 'CAPABILITY' {
+      connection.write_line('* CAPABILITY ${' '.join(self._capabilities(session))}')
+      _reply(connection, tag, 'OK', nil, 'CAPABILITY completed')
+
+      return 'ok'
+    }
+
+    if name == 'NOOP' {
+      self._announce(connection, session)
+      _reply(connection, tag, 'OK', nil, 'NOOP completed')
+
+      return 'ok'
+    }
+
+    if name == 'ID' {
+      connection.write_line('* ID ("name" "Zuri")')
+      _reply(connection, tag, 'OK', nil, 'ID completed')
+
+      return 'ok'
+    }
+
+    if name == 'STARTTLS' {
+      return self._do_starttls(connection, session, tag)
+    }
+
+    if name == 'LOGIN' {
+      return self._do_login(connection, session, tag, arguments)
+    }
+
+    if name == 'AUTHENTICATE' {
+      return self._do_authenticate(connection, session, tag, arguments)
+    }
+
+    if session.state == 'not-authenticated' {
+      _reply(connection, tag, 'NO', nil, 'log in first')
+
+      return 'ok'
+    }
+
+    if name == 'SELECT' or name == 'EXAMINE' {
+      return self._do_select(connection, session, tag, name, arguments)
+    }
+
+    if name == 'CREATE' {
+      self.store.create(session.username, _text(arguments, 0))
+      _reply(connection, tag, 'OK', nil, 'CREATE completed')
+
+      return 'ok'
+    }
+
+    if name == 'DELETE' {
+      self.store.remove(session.username, _text(arguments, 0))
+      _reply(connection, tag, 'OK', nil, 'DELETE completed')
+
+      return 'ok'
+    }
+
+    if name == 'RENAME' {
+      self.store.rename(session.username, _text(arguments, 0), _text(arguments, 1))
+      _reply(connection, tag, 'OK', nil, 'RENAME completed')
+
+      return 'ok'
+    }
+
+    if name == 'SUBSCRIBE' or name == 'UNSUBSCRIBE' {
+      # Every mailbox here is one this account can see, so there is
+      # nothing separate to subscribe to.
+      if !self.store.exists(session.username, _text(arguments, 0)) {
+        _reply(connection, tag, 'NO', nil, 'no such mailbox')
+
+        return 'ok'
+      }
+
+      _reply(connection, tag, 'OK', nil, '${name} completed')
+
+      return 'ok'
+    }
+
+    if name == 'LIST' or name == 'LSUB' {
+      return self._do_list(connection, session, tag, name, arguments)
+    }
+
+    if name == 'STATUS' {
+      return self._do_status(connection, session, tag, arguments)
+    }
+
+    if name == 'APPEND' {
+      return self._do_append(connection, session, tag, arguments)
+    }
+
+    if name == 'CHECK' {
+      _reply(connection, tag, 'OK', nil, 'CHECK completed')
+
+      return 'ok'
+    }
+
+    if name == 'CLOSE' {
+      return self._do_close(connection, session, tag, true)
+    }
+
+    if name == 'UNSELECT' {
+      return self._do_close(connection, session, tag, false)
+    }
+
+    if name == 'IDLE' {
+      return self._do_idle(connection, session, tag)
+    }
+
+    if session.state != 'selected' {
+      _reply(connection, tag, 'NO', nil, 'select a mailbox first')
+
+      return 'ok'
+    }
+
+    if name == 'EXPUNGE' {
+      return self._do_expunge(connection, session, tag)
+    }
+
+    if name == 'SEARCH' {
+      return self._do_search(connection, session, tag, arguments, false)
+    }
+
+    if name == 'FETCH' {
+      return self._do_fetch(connection, session, tag, arguments, false)
+    }
+
+    if name == 'STORE' {
+      return self._do_store(connection, session, tag, arguments, false)
+    }
+
+    if name == 'COPY' {
+      return self._do_copy(connection, session, tag, arguments, false, false)
+    }
+
+    if name == 'MOVE' {
+      return self._do_copy(connection, session, tag, arguments, false, true)
+    }
+
+    if name == 'UID' {
+      return self._do_uid(connection, session, tag, arguments)
+    }
+
+    _reply(connection, tag, 'BAD', nil, '${name} is not a command here')
+
+    return 'ok'
+  }
+
+  _do_uid(connection, session, tag: string, arguments: list) {
+    if arguments.is_empty() {
+      _reply(connection, tag, 'BAD', nil, 'UID needs a command')
+
+      return 'ok'
+    }
+
+    var name = '${arguments[0]}'.upper()
+    var rest = arguments[1, arguments.length()]
+
+    if name == 'FETCH' {
+      return self._do_fetch(connection, session, tag, rest, true)
+    }
+
+    if name == 'STORE' {
+      return self._do_store(connection, session, tag, rest, true)
+    }
+
+    if name == 'SEARCH' {
+      return self._do_search(connection, session, tag, rest, true)
+    }
+
+    if name == 'COPY' {
+      return self._do_copy(connection, session, tag, rest, true, false)
+    }
+
+    if name == 'MOVE' {
+      return self._do_copy(connection, session, tag, rest, true, true)
+    }
+
+    if name == 'EXPUNGE' {
+      return self._do_expunge(connection, session, tag)
+    }
+
+    _reply(connection, tag, 'BAD', nil, 'UID ${name} is not a command here')
+
+    return 'ok'
+  }
+
+  _do_starttls(connection, session, tag: string) {
+    if self._tls == nil {
+      _reply(connection, tag, 'NO', nil, 'TLS is not available here')
+
+      return 'ok'
+    }
+
+    if session.secure {
+      _reply(connection, tag, 'BAD', nil, 'already using TLS')
+
+      return 'ok'
+    }
+
+    _reply(connection, tag, 'OK', nil, 'begin TLS')
+
+    catch {
+      connection.upgrade(tls.TlsStream.accept(connection.transport(), self._tls), true)
+    } as error {
+      self._report(error, session)
+
+      return 'close'
+    }
+
+    session.secure = true
+
+    return 'ok'
+  }
+
+  _do_login(connection, session, tag: string, arguments: list) {
+    if self.require_tls and !session.secure {
+      _reply(connection, tag, 'NO', 'PRIVACYREQUIRED', 'use STARTTLS first')
+
+      return 'ok'
+    }
+
+    if arguments.length() < 2 {
+      _reply(connection, tag, 'BAD', nil, 'LOGIN needs a name and a password')
+
+      return 'ok'
+    }
+
+    var username = _text(arguments, 0)
+    var password = _text(arguments, 1)
+
+    if !self.store.authenticate(username, password) {
+      _reply(connection, tag, 'NO', 'AUTHENTICATIONFAILED', 'those are not the credentials')
+
+      return 'ok'
+    }
+
+    session.username = username
+    session.state = 'authenticated'
+
+    _reply(
+      connection,
+      tag,
+      'OK',
+      'CAPABILITY ${' '.join(self._capabilities(session))}',
+      'LOGIN completed'
+    )
+
+    return 'ok'
+  }
+
+  _do_authenticate(connection, session, tag: string, arguments: list) {
+    if arguments.is_empty() {
+      _reply(connection, tag, 'BAD', nil, 'AUTHENTICATE needs a mechanism')
+
+      return 'ok'
+    }
+
+    var mechanism = '${arguments[0]}'.upper()
+    var initial = arguments.length() > 1 ? '${arguments[1]}' : nil
+
+    if self.require_tls and !session.secure and mechanism != 'CRAM-MD5' {
+      _reply(connection, tag, 'NO', 'PRIVACYREQUIRED', 'use STARTTLS first')
+
+      return 'ok'
+    }
+
+    var credentials = nil
+
+    catch {
+      credentials = mechanism == 'CRAM-MD5' ?
+        self._cram(connection) :
+        self._plain(connection, mechanism, initial)
+    } as error {
+      if instance_of(error, ConnectionClosed) {
+        raise error
+      }
+
+      _reply(connection, tag, 'BAD', nil, error.message)
+
+      return 'ok'
+    }
+
+    if credentials == nil {
+      _reply(connection, tag, 'BAD', nil, 'authentication cancelled')
+
+      return 'ok'
+    }
+
+    if !credentials.ok {
+      _reply(connection, tag, 'NO', 'AUTHENTICATIONFAILED', 'those are not the credentials')
+
+      return 'ok'
+    }
+
+    session.username = credentials.username
+    session.state = 'authenticated'
+
+    _reply(
+      connection,
+      tag,
+      'OK',
+      'CAPABILITY ${' '.join(self._capabilities(session))}',
+      'AUTHENTICATE completed'
+    )
+
+    return 'ok'
+  }
+
+  _plain(connection, mechanism: string, initial) {
+    if mechanism != 'PLAIN' {
+      raise ProtocolError('${mechanism} is not offered here')
+    }
+
+    var raw = initial == nil ? _ask(connection, '') : _decode(initial)
+
+    if raw == nil {
+      return nil
+    }
+
+    var parts = _split_zero(raw)
+
+    if parts.length() < 3 {
+      raise ProtocolError('a PLAIN response has three parts')
+    }
+
+    return {
+      username: parts[1],
+      ok: self.store.authenticate(parts[1], parts[2]),
+    }
+  }
+
+  _cram(connection) {
+    var challenge = '<${time().floor()}.${_token()}@zuri>'
+    var answer = _ask(connection, base64.encode(challenge.to_bytes()))
+
+    if answer == nil {
+      return nil
+    }
+
+    var text = answer.to_string().trim()
+    var space = text.last_index_of(' ')
+
+    if space < 1 {
+      raise ProtocolError('a CRAM-MD5 response is a name and a digest')
+    }
+
+    var username = text[0, space]
+    var digest = text[space + 1, text.length()].lower()
+    var password = self.store.password_of(username)
+
+    if password == nil {
+      return { username, ok: false }
+    }
+
+    return {
+      username,
+      ok: digest == hash.hmac_md5(password, challenge, false),
+    }
+  }
+
+  _do_select(connection, session, tag: string, name: string, arguments: list) {
+    var mailbox = _text(arguments, 0)
+
+    if !self.store.exists(session.username, mailbox) {
+      session.state = 'authenticated'
+      session.mailbox = nil
+
+      _reply(connection, tag, 'NO', nil, 'no such mailbox')
+
+      return 'ok'
+    }
+
+    var messages = self.store.messages(session.username, mailbox)
+    var counters = self.store.counters(session.username, mailbox)
+
+    session.mailbox = mailbox
+    session.snapshot = messages
+    session.read_only = name == 'EXAMINE'
+    session.state = 'selected'
+
+    var unseen = 0
+
+    iter var index = 0; index < messages.length(); index++ {
+      if !messages[index].has_flag('\\Seen') {
+        unseen = index + 1
+        break
+      }
+    }
+
+    connection.write_line('* ${messages.length()} EXISTS')
+    connection.write_line('* 0 RECENT')
+    connection.write_line('* FLAGS (${' '.join(ALLOWED_FLAGS)})')
+    connection.write_line('* OK [PERMANENTFLAGS (${' '.join(ALLOWED_FLAGS)} \\*)] limited')
+    connection.write_line('* OK [UIDVALIDITY ${counters.uidvalidity}] UIDs valid')
+    connection.write_line('* OK [UIDNEXT ${counters.uidnext}] next UID')
+
+    if unseen > 0 {
+      connection.write_line('* OK [UNSEEN ${unseen}] first unseen')
+    }
+
+    _reply(
+      connection,
+      tag,
+      'OK',
+      session.read_only ? 'READ-ONLY' : 'READ-WRITE',
+      '${name} completed'
+    )
+
+    return 'ok'
+  }
+
+  _do_close(connection, session, tag: string, expunging: bool) {
+    if session.state == 'selected' and expunging and !session.read_only {
+      self.store.expunge(session.username, session.mailbox)
+    }
+
+    session.state = 'authenticated'
+    session.mailbox = nil
+    session.snapshot = []
+
+    _reply(connection, tag, 'OK', nil, '${expunging ? 'CLOSE' : 'UNSELECT'} completed')
+
+    return 'ok'
+  }
+
+  _do_list(connection, session, tag: string, name: string, arguments: list) {
+    var reference = _text(arguments, 0)
+    var pattern = _text(arguments, 1)
+
+    if pattern == '' {
+      # An empty pattern is a client asking what the separator is.
+      connection.write_line('* ${name} (\\Noselect) "." ""')
+      _reply(connection, tag, 'OK', nil, '${name} completed')
+
+      return 'ok'
+    }
+
+    var wanted = '${reference == nil ? '' : reference}${pattern}'
+
+    for mailbox in self.store.mailboxes(session.username) {
+      if !_matches(mailbox, wanted) {
+        continue
+      }
+
+      connection.write_line('* ${name} (\\HasNoChildren) "." ${quote(mailbox)}')
+    }
+
+    _reply(connection, tag, 'OK', nil, '${name} completed')
+
+    return 'ok'
+  }
+
+  _do_status(connection, session, tag: string, arguments: list) {
+    var mailbox = _text(arguments, 0)
+
+    if !self.store.exists(session.username, mailbox) {
+      _reply(connection, tag, 'NO', nil, 'no such mailbox')
+
+      return 'ok'
+    }
+
+    var messages = self.store.messages(session.username, mailbox)
+    var counters = self.store.counters(session.username, mailbox)
+    var wanted = arguments.length() > 1 and is_list(arguments[1]) ? arguments[1] : []
+    var pairs = []
+
+    for item in wanted {
+      var key = '${item}'.upper()
+
+      if key == 'MESSAGES' {
+        pairs.append('MESSAGES ${messages.length()}')
+      } else if key == 'RECENT' {
+        pairs.append('RECENT 0')
+      } else if key == 'UIDNEXT' {
+        pairs.append('UIDNEXT ${counters.uidnext}')
+      } else if key == 'UIDVALIDITY' {
+        pairs.append('UIDVALIDITY ${counters.uidvalidity}')
+      } else if key == 'UNSEEN' {
+        pairs.append('UNSEEN ${_unseen_count(messages)}')
+      }
+    }
+
+    connection.write_line('* STATUS ${quote(mailbox)} (${' '.join(pairs)})')
+    _reply(connection, tag, 'OK', nil, 'STATUS completed')
+
+    return 'ok'
+  }
+
+  _do_append(connection, session, tag: string, arguments: list) {
+    var mailbox = _text(arguments, 0)
+
+    if !self.store.exists(session.username, mailbox) {
+      _reply(connection, tag, 'NO', 'TRYCREATE', 'no such mailbox')
+
+      return 'ok'
+    }
+
+    var flags = []
+    var stamp = nil
+    var raw = nil
+
+    for value in arguments[1, arguments.length()] {
+      if is_list(value) {
+        flags = value.map(@(one) => '${one}')
+        continue
+      }
+
+      if instance_of(value, Literal) {
+        raw = value.data
+        continue
+      }
+
+      var text = '${value}'
+
+      if stamp == nil and text.index_of(':') > -1 {
+        catch {
+          stamp = date.parse(text)
+        } as error {
+          # A date this cannot read is not worth refusing a message
+          # over; the time of arrival will do.
+        }
+      }
+    }
+
+    if raw == nil {
+      _reply(connection, tag, 'BAD', nil, 'APPEND needs a message')
+
+      return 'ok'
+    }
+
+    var stored = self.store.append(session.username, mailbox, raw, flags, stamp)
+    var counters = self.store.counters(session.username, mailbox)
+
+    if session.state == 'selected' and session.mailbox == mailbox {
+      self._announce(connection, session)
+    }
+
+    _reply(
+      connection,
+      tag,
+      'OK',
+      'APPENDUID ${counters.uidvalidity} ${stored.uid}',
+      'APPEND completed'
+    )
+
+    return 'ok'
+  }
+
+  # Tells the client what the mailbox holds now, when it has changed
+  # since the last time it was told.
+  _announce(connection, session) {
+    if session.state != 'selected' {
+      return
+    }
+
+    var messages = self.store.messages(session.username, session.mailbox)
+
+    if messages.length() != session.snapshot.length() {
+      connection.write_line('* ${messages.length()} EXISTS')
+    }
+
+    session.snapshot = messages
+  }
+
+  _do_expunge(connection, session, tag: string) {
+    if session.read_only {
+      _reply(connection, tag, 'NO', nil, 'the mailbox is open read-only')
+
+      return 'ok'
+    }
+
+    var before = self.store.messages(session.username, session.mailbox)
+    var gone = self.store.expunge(session.username, session.mailbox)
+    var positions = []
+
+    iter var index = 0; index < before.length(); index++ {
+      if gone.contains(before[index].uid) {
+        positions.append(index + 1)
+      }
+    }
+
+    # Each removal renumbers everything after it, so they are reported
+    # from the back and the client applies them in that order.
+    var at = positions.length() - 1
+
+    while at >= 0 {
+      connection.write_line('* ${positions[at]} EXPUNGE')
+      at--
+    }
+
+    session.snapshot = self.store.messages(session.username, session.mailbox)
+
+    _reply(connection, tag, 'OK', nil, 'EXPUNGE completed')
+
+    return 'ok'
+  }
+
+  _do_idle(connection, session, tag: string) {
+    connection.write_line('+ idling')
+    connection.flush()
+
+    while true {
+      var line = connection.read_line(nil)
+
+      if line.trim().upper() == 'DONE' {
+        break
+      }
+    }
+
+    self._announce(connection, session)
+    _reply(connection, tag, 'OK', nil, 'IDLE completed')
+
+    return 'ok'
+  }
+
+  _do_search(connection, session, tag: string, arguments: list, by_uid: bool) {
+    var messages = self.store.messages(session.username, session.mailbox)
+
+    session.snapshot = messages
+
+    var terms = arguments.map(@(one) => '${one}')
+    var found = []
+
+    iter var index = 0; index < messages.length(); index++ {
+      if _matches_search(messages[index], index + 1, terms) {
+        found.append(by_uid ? messages[index].uid : index + 1)
+      }
+    }
+
+    connection.write_line('* SEARCH${found.is_empty() ? '' : ' ' + ' '.join(found)}')
+    _reply(connection, tag, 'OK', nil, 'SEARCH completed')
+
+    return 'ok'
+  }
+
+  _do_fetch(connection, session, tag: string, arguments: list, by_uid: bool) {
+    if arguments.length() < 2 {
+      _reply(connection, tag, 'BAD', nil, 'FETCH needs a set and some items')
+
+      return 'ok'
+    }
+
+    var messages = self.store.messages(session.username, session.mailbox)
+
+    session.snapshot = messages
+
+    var chosen = _select_ids('${arguments[0]}', messages, by_uid)
+    var items = _fetch_items(arguments[1])
+
+    for entry in chosen {
+      var pairs = self._fetch_one(session, entry.message, items, by_uid)
+
+      connection.write_line('* ${entry.position} FETCH (${' '.join(pairs)})')
+    }
+
+    _reply(connection, tag, 'OK', nil, '${by_uid ? 'UID ' : ''}FETCH completed')
+
+    return 'ok'
+  }
+
+  _fetch_one(session, stored, items: list, by_uid: bool) {
+    var pairs = []
+    var mark_seen = false
+
+    # A UID fetch always reports the UID, whether or not it was asked
+    # for, because the client is working in those numbers.
+    if by_uid and !items.contains('UID') {
+      pairs.append('UID ${stored.uid}')
+    }
+
+    for item in items {
+      if item == 'UID' {
+        pairs.append('UID ${stored.uid}')
+        continue
+      }
+
+      if item == 'FLAGS' {
+        pairs.append('FLAGS (${' '.join(stored.flags)})')
+        continue
+      }
+
+      if item == 'RFC822.SIZE' {
+        pairs.append('RFC822.SIZE ${stored.size()}')
+        continue
+      }
+
+      if item == 'INTERNALDATE' {
+        pairs.append('INTERNALDATE "${stored.received.format('d-M-Y H:i:s O')}"')
+        continue
+      }
+
+      if item == 'ENVELOPE' {
+        pairs.append('ENVELOPE ${_envelope_of(stored)}')
+        continue
+      }
+
+      if item == 'BODYSTRUCTURE' or item == 'BODY' {
+        pairs.append('${item} ${_structure_of(stored)}')
+        continue
+      }
+
+      var section = _section_of(item)
+
+      if section == nil {
+        continue
+      }
+
+      var piece = _extract(stored, section.name)
+
+      if !section.peek and !session.read_only and !stored.has_flag('\\Seen') {
+        mark_seen = true
+      }
+
+      pairs.append('BODY[${section.name}] {${piece.length()}}\r\n${piece.to_string()}')
+    }
+
+    if mark_seen {
+      var flags = stored.flags + ['\\Seen']
+
+      self.store.set_flags(session.username, session.mailbox, stored.uid, flags)
+      stored.flags = flags
+
+      pairs.append('FLAGS (${' '.join(flags)})')
+    }
+
+    return pairs
+  }
+
+  _do_store(connection, session, tag: string, arguments: list, by_uid: bool) {
+    if session.read_only {
+      _reply(connection, tag, 'NO', nil, 'the mailbox is open read-only')
+
+      return 'ok'
+    }
+
+    if arguments.length() < 3 {
+      _reply(connection, tag, 'BAD', nil, 'STORE needs a set, an action and some flags')
+
+      return 'ok'
+    }
+
+    var messages = self.store.messages(session.username, session.mailbox)
+    var chosen = _select_ids('${arguments[0]}', messages, by_uid)
+    var action = '${arguments[1]}'.upper()
+    var silent = action.ends_with('.SILENT')
+    var wanted = is_list(arguments[2]) ?
+      arguments[2].map(@(one) => '${one}') :
+      ['${arguments[2]}']
+
+    if silent {
+      action = action[0, action.length() - 7]
+    }
+
+    for entry in chosen {
+      var flags = _apply_flags(entry.message.flags, action, wanted)
+
+      self.store.set_flags(session.username, session.mailbox, entry.message.uid, flags)
+      entry.message.flags = flags
+
+      if silent {
+        continue
+      }
+
+      var pairs = ['FLAGS (${' '.join(flags)})']
+
+      if by_uid {
+        pairs.append('UID ${entry.message.uid}')
+      }
+
+      connection.write_line('* ${entry.position} FETCH (${' '.join(pairs)})')
+    }
+
+    session.snapshot = self.store.messages(session.username, session.mailbox)
+
+    _reply(connection, tag, 'OK', nil, '${by_uid ? 'UID ' : ''}STORE completed')
+
+    return 'ok'
+  }
+
+  _do_copy(connection, session, tag: string, arguments: list, by_uid: bool, moving: bool) {
+    if arguments.length() < 2 {
+      _reply(connection, tag, 'BAD', nil, 'this needs a set and a mailbox')
+
+      return 'ok'
+    }
+
+    var target = _text(arguments, 1)
+
+    if !self.store.exists(session.username, target) {
+      _reply(connection, tag, 'NO', 'TRYCREATE', 'no such mailbox')
+
+      return 'ok'
+    }
+
+    var messages = self.store.messages(session.username, session.mailbox)
+    var chosen = _select_ids('${arguments[0]}', messages, by_uid)
+
+    for entry in chosen {
+      self.store.append(
+        session.username,
+        target,
+        entry.message.raw,
+        entry.message.flags,
+        entry.message.received
+      )
+    }
+
+    if !moving {
+      _reply(connection, tag, 'OK', nil, '${by_uid ? 'UID ' : ''}COPY completed')
+
+      return 'ok'
+    }
+
+    for entry in chosen {
+      self.store.set_flags(
+        session.username,
+        session.mailbox,
+        entry.message.uid,
+        entry.message.flags.contains('\\Deleted') ?
+          entry.message.flags :
+          entry.message.flags + ['\\Deleted']
+      )
+    }
+
+    self._do_expunge_quietly(connection, session, messages)
+
+    _reply(connection, tag, 'OK', nil, '${by_uid ? 'UID ' : ''}MOVE completed')
+
+    return 'ok'
+  }
+
+  _do_expunge_quietly(connection, session, before: list) {
+    var gone = self.store.expunge(session.username, session.mailbox)
+    var positions = []
+
+    iter var index = 0; index < before.length(); index++ {
+      if gone.contains(before[index].uid) {
+        positions.append(index + 1)
+      }
+    }
+
+    var at = positions.length() - 1
+
+    while at >= 0 {
+      connection.write_line('* ${positions[at]} EXPUNGE')
+      at--
+    }
+
+    session.snapshot = self.store.messages(session.username, session.mailbox)
+  }
+
+  to_string() {
+    return '<ImapServer on ${self.host}:${self.port}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _reply(connection, tag: string, status: string, code: ?string, text: string) {
+  var bracket = code == nil ? '' : '[${code}] '
+
+  connection.write_line('${tag} ${status} ${bracket}${text}')
+  connection.flush()
+}
+
+def _ask(connection, challenge: string) {
+  connection.write_line('+ ${challenge}')
+  connection.flush()
+
+  var line = connection.read_line(nil).trim()
+
+  if line == '*' {
+    return nil
+  }
+
+  return _decode(line)
+}
+
+def _decode(text) {
+  var value = text == nil ? '' : '${text}'.trim()
+
+  if value == '' {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(value)
+  } as error {
+    raise ProtocolError('that is not base64')
+  }
+}
+
+def _split_zero(raw) {
+  var parts = []
+  var current = bytes(0)
+
+  for value in raw {
+    if value == 0 {
+      parts.append(current.to_string())
+      current = bytes(0)
+      continue
+    }
+
+    current.append(value)
+  }
+
+  parts.append(current.to_string())
+
+  return parts
+}
+
+def _token() {
+  var raw = crypto.random_bytes(8)
+  var text = []
+
+  for value in raw {
+    text.append('0123456789abcdef'[(value >> 4) & 0x0f])
+    text.append('0123456789abcdef'[value & 0x0f])
+  }
+
+  return ''.join(text)
+}
+
+def _text(arguments: list, index: number) {
+  if index >= arguments.length() {
+    return ''
+  }
+
+  var value = arguments[index]
+
+  if value == nil {
+    return ''
+  }
+
+  return instance_of(value, Literal) ? value.to_text() : '${value}'
+}
+
+def _unseen_count(messages: list) {
+  var count = 0
+
+  for stored in messages {
+    if !stored.has_flag('\\Seen') {
+      count++
+    }
+  }
+
+  return count
+}
+
+# The `*` and `%` of a LIST pattern. `%` stops at the separator and `*`
+# does not, which is the whole difference between listing one level and
+# listing everything.
+def _matches(name: string, pattern: string) {
+  return _match_from(name, 0, pattern, 0)
+}
+
+def _match_from(name: string, at: number, pattern: string, from: number) {
+  var index = from
+  var position = at
+
+  while index < pattern.length() {
+    var character = pattern[index]
+
+    if character == '*' or character == '%' {
+      if index + 1 == pattern.length() {
+        if character == '*' {
+          return true
+        }
+
+        return name.index_of('.', position) < 0
+      }
+
+      var scan = position
+
+      while scan <= name.length() {
+        if _match_from(name, scan, pattern, index + 1) {
+          return true
+        }
+
+        if scan < name.length() and character == '%' and name[scan] == '.' {
+          return false
+        }
+
+        scan++
+      }
+
+      return false
+    }
+
+    if position >= name.length() or name[position] != character {
+      return false
+    }
+
+    position++
+    index++
+  }
+
+  return position == name.length()
+}
+
+# The messages a set names, with the position each sits at, since a
+# response reports positions whatever the request used.
+def _select_ids(set_text: string, messages: list, by_uid: bool) {
+  var chosen = []
+
+  iter var index = 0; index < messages.length(); index++ {
+    var number = by_uid ? messages[index].uid : index + 1
+
+    if _in_set(set_text, number, by_uid ? _highest_uid(messages) : messages.length()) {
+      chosen.append({ position: index + 1, message: messages[index] })
+    }
+  }
+
+  return chosen
+}
+
+def _highest_uid(messages: list) {
+  var highest = 0
+
+  for stored in messages {
+    if stored.uid > highest {
+      highest = stored.uid
+    }
+  }
+
+  return highest
+}
+
+# A set is a comma-separated list of numbers and ranges, in which `*`
+# stands for the largest there is.
+def _in_set(set_text: string, number: number, largest: number) {
+  for piece in set_text.split(',') {
+    var part = piece.trim()
+
+    if part == '' {
+      continue
+    }
+
+    var colon = part.index_of(':')
+
+    if colon < 0 {
+      if _bound(part, largest) == number {
+        return true
+      }
+
+      continue
+    }
+
+    var low = _bound(part[0, colon], largest)
+    var high = _bound(part[colon + 1, part.length()], largest)
+
+    if low > high {
+      var swap = low
+
+      low = high
+      high = swap
+    }
+
+    if number >= low and number <= high {
+      return true
+    }
+  }
+
+  return false
+}
+
+def _bound(text: string, largest: number) {
+  var trimmed = text.trim()
+
+  return trimmed == '*' ? largest : trimmed.to_number()
+}
+
+# The items a FETCH asked for, flattened into a list of names.
+def _fetch_items(value) {
+  var items = []
+
+  if is_list(value) {
+    for item in value {
+      items.append('${item}'.upper())
+    }
+
+    return _expand_macros(items)
+  }
+
+  return _expand_macros(['${value}'.upper()])
+}
+
+# The three shorthands IMAP defines for the sets of items everyone
+# asks for together.
+def _expand_macros(items: list) {
+  var found = []
+
+  for item in items {
+    if item == 'ALL' {
+      found.extend(['FLAGS', 'INTERNALDATE', 'RFC822.SIZE', 'ENVELOPE'])
+      continue
+    }
+
+    if item == 'FAST' {
+      found.extend(['FLAGS', 'INTERNALDATE', 'RFC822.SIZE'])
+      continue
+    }
+
+    if item == 'FULL' {
+      found.extend(['FLAGS', 'INTERNALDATE', 'RFC822.SIZE', 'ENVELOPE', 'BODY'])
+      continue
+    }
+
+    found.append(item)
+  }
+
+  return found
+}
+
+# A body item and whether asking for it marks the message read. `PEEK`
+# is how a client says it is only looking.
+def _section_of(item: string) {
+  var open = item.index_of('[')
+
+  if open < 0 {
+    if item == 'RFC822' {
+      return { name: '', peek: false }
+    }
+
+    if item == 'RFC822.HEADER' {
+      return { name: 'HEADER', peek: true }
+    }
+
+    if item == 'RFC822.TEXT' {
+      return { name: 'TEXT', peek: false }
+    }
+
+    return nil
+  }
+
+  var close = item.last_index_of(']')
+  var head = item[0, open].upper()
+
+  return {
+    name: close > open ? item[open + 1, close] : '',
+    peek: head == 'BODY.PEEK',
+  }
+}
+
+# The piece of a message a section names.
+def _extract(stored, section: string) {
+  if section == '' {
+    return stored.raw
+  }
+
+  var name = section.upper()
+  var split = _split_message(stored.raw)
+
+  if name == 'HEADER' {
+    return split.headers
+  }
+
+  if name == 'TEXT' {
+    return split.body
+  }
+
+  if name.starts_with('HEADER.FIELDS') {
+    return _pick_headers(split.headers, section, !name.starts_with('HEADER.FIELDS.NOT'))
+  }
+
+  # A numbered section names a part of a multipart message, which means
+  # walking the message to find it.
+  var note = Message(nil, stored.raw)
+  var part = _walk_to(note, name)
+
+  if part == nil {
+    return bytes(0)
+  }
+
+  if name.ends_with('.MIME') {
+    return part.headers.to_string().to_bytes()
+  }
+
+  return part.raw_body()
+}
+
+def _split_message(raw) {
+  var index = 0
+
+  while index < raw.length() {
+    if raw[index] == 0x0a {
+      var next = index + 1
+      var stop = index > 0 and raw[index - 1] == 0x0d ? index - 1 : index
+
+      if next < raw.length() and raw[next] == 0x0a {
+        return { headers: raw[0, next + 1], body: raw[next + 1, raw.length()] }
+      }
+
+      if next + 1 < raw.length() and raw[next] == 0x0d and raw[next + 1] == 0x0a {
+        return { headers: raw[0, next + 2], body: raw[next + 2, raw.length()] }
+      }
+    }
+
+    index++
+  }
+
+  return { headers: raw, body: bytes(0) }
+}
+
+# The named headers out of a block, or everything except them.
+def _pick_headers(headers, section: string, keeping: bool) {
+  var open = section.index_of('(')
+  var close = section.last_index_of(')')
+
+  if open < 0 or close < open {
+    return headers
+  }
+
+  var wanted = []
+
+  for name in section[open + 1, close].split(' ') {
+    var trimmed = name.trim().trim('"')
+
+    if trimmed != '' {
+      wanted.append(trimmed.lower())
+    }
+  }
+
+  var out = bytes(0)
+  var keep = false
+
+  for line in headers.to_string().replace('/\r\n/', '\n').split('\n') {
+    if line == '' {
+      continue
+    }
+
+    if !line.starts_with(' ') and !line.starts_with('\t') {
+      var colon = line.index_of(':')
+      var name = colon < 1 ? '' : line[0, colon].lower()
+
+      keep = wanted.contains(name) == keeping
+    }
+
+    if keep {
+      out.extend(line.to_bytes())
+      out.extend('\r\n'.to_bytes())
+    }
+  }
+
+  out.extend('\r\n'.to_bytes())
+
+  return out
+}
+
+# Walks a message down a dotted part number, as `2.1` for the first
+# part of the second part.
+def _walk_to(note, section: string) {
+  var path = section.replace('/\\.MIME$/', '')
+  var current = note
+
+  for step in path.split('.') {
+    if step == '' {
+      continue
+    }
+
+    var index = step.to_number()
+    var parts = current.parts()
+
+    if parts.is_empty() {
+      # A message that is not a multipart has one part, which is
+      # itself, and `1` names it.
+      if index == 1 {
+        continue
+      }
+
+      return nil
+    }
+
+    if index < 1 or index > parts.length() {
+      return nil
+    }
+
+    current = parts[index - 1]
+  }
+
+  return current
+}
+
+def _apply_flags(current: list, action: string, wanted: list) {
+  if action == 'FLAGS' {
+    return _only_allowed(wanted)
+  }
+
+  var found = []
+
+  for flag in current {
+    found.append(flag)
+  }
+
+  if action == '+FLAGS' {
+    for flag in _only_allowed(wanted) {
+      if !found.contains(flag) {
+        found.append(flag)
+      }
+    }
+
+    return found
+  }
+
+  var kept = []
+
+  for flag in found {
+    if !wanted.contains(flag) {
+      kept.append(flag)
+    }
+  }
+
+  return kept
+}
+
+def _only_allowed(flags: list) {
+  var kept = []
+
+  for flag in flags {
+    if ALLOWED_FLAGS.contains(flag) {
+      kept.append(flag)
+    }
+  }
+
+  return kept
+}
+
+# The envelope a client can show a message list from without fetching
+# any of the messages.
+def _envelope_of(stored) {
+  var note = Message(nil, stored.raw)
+  var headers = note.headers
+
+  return '(' + ' '.join([
+    _quoted(headers.get('Date', nil)),
+    _quoted(headers.get('Subject', nil)),
+    _address_list(headers, 'From'),
+    _address_list(headers, 'Sender', 'From'),
+    _address_list(headers, 'Reply-To', 'From'),
+    _address_list(headers, 'To'),
+    _address_list(headers, 'Cc'),
+    _address_list(headers, 'Bcc'),
+    _quoted(headers.get('In-Reply-To', nil)),
+    _quoted(headers.get('Message-ID', nil)),
+  ]) + ')'
+}
+
+def _address_list(headers, name: string, fallback) {
+  var found = headers.addresses(name)
+
+  if found.is_empty() and fallback != nil {
+    found = headers.addresses(fallback)
+  }
+
+  if found.is_empty() {
+    return 'NIL'
+  }
+
+  var written = []
+
+  for person in found {
+    written.append('(' + ' '.join([
+      _quoted(person.name == '' ? nil : person.name),
+      'NIL',
+      _quoted(person.local),
+      _quoted(person.domain == '' ? nil : person.domain),
+    ]) + ')')
+  }
+
+  return '(${' '.join(written)})'
+}
+
+def _quoted(value) {
+  if value == nil {
+    return 'NIL'
+  }
+
+  return '"' + '${value}'.replace('/\\\\/', '\\\\\\\\').replace('/"/', '\\"') + '"'
+}
+
+# The shape of a message, so a client can decide what to fetch without
+# fetching the whole of it.
+def _structure_of(stored) {
+  return _structure_part(Message(nil, stored.raw))
+}
+
+def _structure_part(part) {
+  var type = part.content_type()
+
+  if !part.parts().is_empty() {
+    var children = []
+
+    for child in part.parts() {
+      children.append(_structure_part(child))
+    }
+
+    return '(${''.join(children)} "${type.subtype.upper()}")'
+  }
+
+  var raw = part.raw_body()
+  var lines = _count_lines(raw)
+  var encoding = part.headers.get('Content-Transfer-Encoding', '7BIT')
+  var pieces = [
+    '"${type.type.upper()}"',
+    '"${type.subtype.upper()}"',
+    _parameters_of(type),
+    _quoted(part.headers.get('Content-ID', nil)),
+    _quoted(part.headers.get('Content-Description', nil)),
+    '"${encoding.upper()}"',
+    '${raw.length()}',
+  ]
+
+  if type.type == 'text' {
+    pieces.append('${lines}')
+  }
+
+  return '(${' '.join(pieces)})'
+}
+
+def _parameters_of(type) {
+  var pairs = []
+
+  for name in type.parameters.keys() {
+    pairs.append('${_quoted(name)} ${_quoted(type.parameters[name])}')
+  }
+
+  return pairs.is_empty() ? 'NIL' : '(${' '.join(pairs)})'
+}
+
+def _count_lines(raw) {
+  var count = 0
+
+  for value in raw {
+    if value == 0x0a {
+      count++
+    }
+  }
+
+  return count
+}
+
+# Whether one message matches a search. The keys implemented are the
+# ones a client actually sends; anything else does not narrow the
+# result rather than failing the command.
+def _matches_search(stored, position: number, terms: list) {
+  var index = 0
+  var note = nil
+
+  while index < terms.length() {
+    var key = terms[index].upper()
+
+    index++
+
+    if key == 'ALL' {
+      continue
+    }
+
+    if key == 'SEEN' or key == 'UNSEEN' or key == 'ANSWERED' or key == 'UNANSWERED'
+      or key == 'FLAGGED' or key == 'UNFLAGGED' or key == 'DELETED'
+      or key == 'UNDELETED' or key == 'DRAFT' or key == 'UNDRAFT'
+      or key == 'NEW' or key == 'OLD' or key == 'RECENT' {
+      if !_flag_matches(stored, key) {
+        return false
+      }
+
+      continue
+    }
+
+    if key == 'UID' or key == 'LARGER' or key == 'SMALLER' {
+      if index >= terms.length() {
+        return false
+      }
+
+      var value = terms[index]
+
+      index++
+
+      if key == 'LARGER' and stored.size() <= value.to_number() {
+        return false
+      }
+
+      if key == 'SMALLER' and stored.size() >= value.to_number() {
+        return false
+      }
+
+      if key == 'UID' and !_in_set(value, stored.uid, stored.uid) {
+        return false
+      }
+
+      continue
+    }
+
+    if key == 'HEADER' {
+      if index + 1 >= terms.length() {
+        return false
+      }
+
+      var name = terms[index]
+      var wanted = terms[index + 1]
+
+      index += 2
+
+      if note == nil {
+        note = Message(nil, stored.raw)
+      }
+
+      var value = note.headers.get(name, nil)
+
+      if value == nil or value.lower().index_of(wanted.lower()) < 0 {
+        return false
+      }
+
+      continue
+    }
+
+    if key == 'FROM' or key == 'TO' or key == 'CC' or key == 'BCC'
+      or key == 'SUBJECT' or key == 'BODY' or key == 'TEXT' {
+      if index >= terms.length() {
+        return false
+      }
+
+      var wanted = terms[index].lower()
+
+      index++
+
+      if note == nil {
+        note = Message(nil, stored.raw)
+      }
+
+      if !_contains_text(note, stored, key, wanted) {
+        return false
+      }
+
+      continue
+    }
+
+    # An unknown key takes its argument with it where it plainly has
+    # one, so the rest of the search is still read correctly.
+    if index < terms.length() and !_is_key(terms[index]) {
+      index++
+    }
+  }
+
+  return true
+}
+
+def _is_key(term: string) {
+  var upper = term.upper()
+
+  return upper == 'ALL' or upper == 'SEEN' or upper == 'UNSEEN' or upper == 'NOT'
+    or upper == 'OR' or upper == 'DELETED' or upper == 'UNDELETED'
+}
+
+def _flag_matches(stored, key: string) {
+  if key == 'SEEN' {
+    return stored.has_flag('\\Seen')
+  }
+
+  if key == 'UNSEEN' or key == 'NEW' {
+    return !stored.has_flag('\\Seen')
+  }
+
+  if key == 'ANSWERED' {
+    return stored.has_flag('\\Answered')
+  }
+
+  if key == 'UNANSWERED' {
+    return !stored.has_flag('\\Answered')
+  }
+
+  if key == 'FLAGGED' {
+    return stored.has_flag('\\Flagged')
+  }
+
+  if key == 'UNFLAGGED' {
+    return !stored.has_flag('\\Flagged')
+  }
+
+  if key == 'DELETED' {
+    return stored.has_flag('\\Deleted')
+  }
+
+  if key == 'UNDELETED' {
+    return !stored.has_flag('\\Deleted')
+  }
+
+  if key == 'DRAFT' {
+    return stored.has_flag('\\Draft')
+  }
+
+  if key == 'UNDRAFT' {
+    return !stored.has_flag('\\Draft')
+  }
+
+  # Nothing here is recent: the flag means "arrived since the last
+  # session looked", and this server does not keep that.
+  return key == 'OLD'
+}
+
+def _contains_text(note, stored, key: string, wanted: string) {
+  if key == 'SUBJECT' {
+    return note.subject().lower().index_of(wanted) > -1
+  }
+
+  if key == 'TEXT' {
+    return stored.raw.to_string().lower().index_of(wanted) > -1
+  }
+
+  if key == 'BODY' {
+    var body = note.text_body()
+
+    return body != nil and body.lower().index_of(wanted) > -1
+  }
+
+  var header = key == 'FROM' ? 'From' : (key == 'TO' ? 'To' : (key == 'CC' ? 'Cc' : 'Bcc'))
+  var value = note.headers.get(header, nil)
+
+  return value != nil and value.lower().index_of(wanted) > -1
+}

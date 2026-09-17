@@ -1,0 +1,1059 @@
+/**
+ * @module client
+ *
+ * The sending end of SMTP.
+ *
+ * `SmtpClient` opens a connection, negotiates what the server can do,
+ * authenticates, and hands messages over. Most programs want
+ * `mail.send()`, which does all of that for one message and closes the
+ * connection again; the client itself is for sending many, or for
+ * needing the steps apart.
+ *
+ * ```zuri,ignore
+ * import mail.smtp { SmtpClient }
+ *
+ * var server = SmtpClient.connect('smtp://mail.example.com', {
+ *   username: 'reports',
+ *   password: secret,
+ * })
+ *
+ * for note in queue {
+ *   server.send(note, nil)
+ * }
+ *
+ * server.quit()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import net.tls
+import os
+
+import ..errors {
+  AuthenticationError, ConnectionClosed, ProtocolError, StateError,
+  SmtpError, SmtpPermanentError, SmtpTransientError,
+}
+import ..message { Message }
+import ..sasl
+import ..stream { TLS_MODES }
+import ..stream
+
+# The schemes a connection string may use, and what each means.
+# Submission on 587 is the default because that is where mail from a
+# program is meant to go; 465 is the same thing wrapped in TLS from the
+# first byte, and 25 is for a server relaying to another server.
+var SMTP_SCHEMES = {
+  smtp: { port: 587, tls: false },
+  smtps: { port: 465, tls: true },
+}
+
+# How TLS is treated on a connection that did not start encrypted.
+# The line SMTP allows, which is shorter than most protocols.
+var MAX_REPLY_LINE = 1002
+
+/**
+ * One reply from the server: its code, and whatever it said with it.
+ *
+ * @printable
+ */
+class Reply {
+
+  /**
+   * @param number code: The three digit reply code.
+   * @param list lines: Each line of the reply, without its code.
+   */
+  @new(code: number, lines: list) {
+    self.code = code
+    self.lines = lines
+    self.text = '\n'.join(lines)
+    self.enhanced = _enhanced_code(lines.is_empty() ? '' : lines[0])
+  }
+
+  /**
+   * Whether the server accepted: a code in the 200s or 300s.
+   *
+   * @returns bool
+   */
+  is_positive() {
+    return self.code < 400
+  }
+
+  /**
+   * Whether the server wants more from the client before it will say,
+   * which is the 300s.
+   *
+   * @returns bool
+   */
+  is_intermediate() {
+    return self.code >= 300 and self.code < 400
+  }
+
+  /**
+   * Whether this is a refusal that may not be one tomorrow.
+   *
+   * @returns bool
+   */
+  is_transient() {
+    return self.code >= 400 and self.code < 500
+  }
+
+  /**
+   * Whether this is a refusal that trying again will not change.
+   *
+   * @returns bool
+   */
+  is_permanent() {
+    return self.code >= 500
+  }
+
+  /**
+   * Raises the error this reply stands for, or returns it when the
+   * server accepted.
+   *
+   * @param ?string doing: What was being attempted, for the message.
+   * @returns Reply itself.
+   * @throws SmtpTransientError|SmtpPermanentError
+   */
+  ok(doing: ?string) {
+    if self.is_positive() {
+      return self
+    }
+
+    var what = doing == nil ? 'the command' : doing
+    var message = '${what} was refused: ${self.code} ${self.text}'
+
+    if self.is_transient() {
+      raise SmtpTransientError(message, self.code, self.enhanced, self.lines)
+    }
+
+    raise SmtpPermanentError(message, self.code, self.enhanced, self.lines)
+  }
+
+  to_string() {
+    return '<Reply ${self.code} ${self.lines.is_empty() ? '' : self.lines[0]}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The enhanced status code RFC 3463 puts at the front of the text,
+# when the server sends one.
+def _enhanced_code(text: string) {
+  var space = text.index_of(' ')
+  var candidate = space > -1 ? text[0, space] : text
+  var parts = candidate.split('.')
+
+  if parts.length() != 3 {
+    return nil
+  }
+
+  if parts[0] != '2' and parts[0] != '4' and parts[0] != '5' {
+    return nil
+  }
+
+  for part in parts {
+    if part == '' or !_is_digits(part) {
+      return nil
+    }
+  }
+
+  return candidate
+}
+
+def _is_digits(text: string) {
+  for value in text.to_bytes() {
+    if value < 0x30 or value > 0x39 {
+      return false
+    }
+  }
+
+  return true
+}
+
+# Doubles a leading dot, so that a body line of a single dot cannot end
+# the message early.
+def _dot_stuff(raw) {
+  var out = bytes(0)
+  var at_line_start = true
+
+  for value in raw {
+    if at_line_start and value == 0x2e {
+      out.append(0x2e)
+    }
+
+    out.append(value)
+    at_line_start = value == 0x0a
+  }
+
+  return out
+}
+
+# A body has to arrive with the line endings the protocol uses, whatever
+# it had when it was built or read from a file.
+def _normalise_breaks(raw) {
+  var out = bytes(0)
+  var index = 0
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x0d and index + 1 < raw.length() and raw[index + 1] == 0x0a {
+      out.append(0x0d)
+      out.append(0x0a)
+      index += 2
+      continue
+    }
+
+    if value == 0x0a or value == 0x0d {
+      out.append(0x0d)
+      out.append(0x0a)
+      index++
+      continue
+    }
+
+    out.append(value)
+    index++
+  }
+
+  return out
+}
+
+/**
+ * A connection to a server that sends mail.
+ *
+ * @printable
+ */
+class SmtpClient {
+
+  /**
+   * Builds a client around a connection that is already open.
+   *
+   * `connect()` is what opens one; this is for a connection made some
+   * other way, and for tests that hand it a transcript instead of a
+   * socket.
+   *
+   * @param LineStream connection
+   * @param ?dict options: As `connect()`.
+   */
+  @new(connection, options: ?dict) {
+    var given = options == nil ? {} : options
+
+    self._stream = connection
+    self._options = given
+    self._host = given.get('host', 'localhost')
+    self._name = given.get('client_name', nil)
+    self._capabilities = {}
+    self._greeting = nil
+    self._authenticated = false
+    self._extended = false
+  }
+
+  /**
+   * Opens a connection and gets as far as being ready to send.
+   *
+   * The greeting is read, capabilities are asked for, TLS is
+   * negotiated if the connection did not start with it, and the client
+   * authenticates when given something to authenticate with.
+   *
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `username`, `password` | none | authenticate when both are given |
+   * | `token` | none | authenticate with a bearer token instead |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `tls_config` | a default one | the trust settings for TLS |
+   * | `mechanisms` | all of them | restricts which are acceptable |
+   * | `client_name` | the local hostname | the name to greet the server with |
+   * | `timeout` | `30000` | milliseconds to wait on the socket |
+   *
+   * @param string url: `smtp://host`, `smtps://host`, or a bare host.
+   *    A username and password in the string are used when the options
+   *    do not carry them.
+   * @param ?dict options
+   * @returns SmtpClient
+   * @throws SmtpError if the server refuses the greeting.
+   * @throws AuthenticationError if it refuses the credentials.
+   * @throws ProtocolError if TLS is required and not offered.
+   */
+  static connect(url: string, options: ?dict) {
+    var given = options == nil ? {} : options
+    var where = stream.endpoint(url, SMTP_SCHEMES)
+    var settings = {}
+
+    for key in given.keys() {
+      settings[key] = given[key]
+    }
+
+    settings.host = where.host
+
+    if !settings.contains('username') and where.username != nil {
+      settings.username = where.username
+    }
+
+    if !settings.contains('password') and where.password != nil {
+      settings.password = where.password
+    }
+
+    var connection = stream.connect(where.host, where.port, {
+      timeout: given.get('timeout', 30000),
+      tls: where.tls,
+      tls_config: given.get('tls_config', nil),
+      server_name: given.get('server_name', where.host),
+    })
+
+    var client = SmtpClient(connection, settings)
+
+    client.begin()
+
+    return client
+  }
+
+  /**
+   * Reads the greeting, introduces the client, negotiates TLS and
+   * authenticates. `connect()` calls this; a client built around an
+   * existing connection has to.
+   *
+   * @returns SmtpClient itself.
+   */
+  begin() {
+    self._greeting = self.read_reply().ok('the greeting')
+    self.ehlo(nil)
+
+    var mode = self._options.get('tls', 'require')
+
+    if !TLS_MODES.contains(mode) {
+      raise ProtocolError('tls must be one of ${', '.join(TLS_MODES)}')
+    }
+
+    if !self._stream.is_secure() and mode != 'disable' {
+      if self.supports('STARTTLS') {
+        self.start_tls()
+      } else if mode == 'require' {
+        raise ProtocolError('${self._host} does not offer STARTTLS')
+      }
+    }
+
+    if self._options.get('username', nil) != nil
+      or self._options.get('token', nil) != nil {
+      self.login()
+    }
+
+    return self
+  }
+
+  /**
+   * What the server said when the connection opened.
+   *
+   * @returns Reply|nil
+   */
+  greeting() {
+    return self._greeting
+  }
+
+  /**
+   * What the server said it can do, by name. A capability with no
+   * value of its own maps to `true`.
+   *
+   * @returns dict
+   */
+  capabilities() {
+    return self._capabilities
+  }
+
+  /**
+   * Whether the server offers a capability.
+   *
+   * @param string name: Matched without regard to case.
+   * @returns bool
+   */
+  supports(name: string) {
+    return self._capabilities.contains(name.upper())
+  }
+
+  /**
+   * Whether the connection is encrypted.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._stream.is_secure()
+  }
+
+  /**
+   * Whether the client has authenticated.
+   *
+   * @returns bool
+   */
+  is_authenticated() {
+    return self._authenticated
+  }
+
+  /**
+   * The largest message the server said it will take, or `nil` when it
+   * did not say.
+   *
+   * @returns number|nil
+   */
+  max_size() {
+    var value = self._capabilities.get('SIZE', nil)
+
+    if value == nil or value == true or value == '' {
+      return nil
+    }
+
+    return value.to_number()
+  }
+
+  /**
+   * Reads one reply, however many lines it runs to.
+   *
+   * @returns Reply
+   * @throws ProtocolError if what arrives is not a reply.
+   */
+  read_reply() {
+    var lines = []
+    var code = nil
+
+    while true {
+      var line = self._stream.read_line(MAX_REPLY_LINE)
+
+      if line.length() < 3 or !_is_digits(line[0, 3]) {
+        raise ProtocolError('the server sent something that is not a reply: ${line}')
+      }
+
+      var value = line[0, 3].to_number()
+
+      if code != nil and value != code {
+        raise ProtocolError('the reply changed code partway through')
+      }
+
+      code = value
+      lines.append(line.length() > 4 ? line[4, line.length()] : '')
+
+      # A hyphen after the code means another line follows; a space
+      # means that was the last of them.
+      if line.length() < 4 or line[3] != '-' {
+        break
+      }
+    }
+
+    return Reply(code, lines)
+  }
+
+  /**
+   * Sends a command and reads the reply it draws.
+   *
+   * @param string line
+   * @returns Reply
+   */
+  command(line: string) {
+    self._stream.write_line(line)
+    self._stream.flush()
+
+    return self.read_reply()
+  }
+
+  /**
+   * Introduces the client and reads back what the server can do.
+   *
+   * Falls back to the older `HELO` when the server does not understand
+   * `EHLO`, in which case there are no capabilities to read.
+   *
+   * @param ?string name: The name to give. The one from the options,
+   *    or the local hostname, when not given.
+   * @returns Reply
+   * @throws SmtpError if the server refuses both greetings.
+   */
+  ehlo(name: ?string) {
+    var who = name == nil ? self._client_name() : name
+    var reply = self.command('EHLO ${who}')
+
+    if reply.is_positive() {
+      self._extended = true
+      self._capabilities = _read_capabilities(reply.lines)
+
+      return reply
+    }
+
+    self._extended = false
+    self._capabilities = {}
+
+    return self.command('HELO ${who}').ok('the greeting')
+  }
+
+  _client_name() {
+    if self._name != nil {
+      return self._name
+    }
+
+    catch {
+      return os.hostname()
+    } as error {
+      return 'localhost'
+    }
+  }
+
+  /**
+   * Negotiates TLS over a connection that started in the clear, and
+   * introduces the client again, because everything the server said
+   * before the handshake has to be thrown away.
+   *
+   * @returns SmtpClient itself.
+   * @throws SmtpError if the server refuses.
+   */
+  start_tls() {
+    if self._stream.is_secure() {
+      return self
+    }
+
+    self.command('STARTTLS').ok('STARTTLS')
+
+    stream.start_tls(
+      self._stream,
+      self._options.get('server_name', self._host),
+      self._options.get('tls_config', nil)
+    )
+
+    # Everything the server advertised in the clear is worth nothing
+    # now: an attacker could have written it. The capabilities that
+    # count are the ones it repeats inside the tunnel.
+    self.ehlo(nil)
+
+    return self
+  }
+
+  /**
+   * Authenticates, choosing the strongest mechanism both ends know.
+   *
+   * @param ?string mechanism: Forces one rather than choosing.
+   * @returns SmtpClient itself.
+   * @throws AuthenticationError if there is no mechanism in common, if
+   *    the credentials are refused, or if the only ones on offer would
+   *    put the password on an unencrypted connection.
+   */
+  login(mechanism: ?string) {
+    var offered = self._auth_mechanisms()
+    var chosen = mechanism
+
+    if chosen == nil {
+      chosen = sasl.choose(
+        offered,
+        self._options,
+        self._stream.is_secure(),
+        self._options.get('mechanisms', nil)
+      )
+    }
+
+    if chosen == nil {
+      if !self._stream.is_secure() {
+        raise AuthenticationError(
+          'no mechanism this connection can use without TLS; '
+          + 'the server offers ${', '.join(offered)}'
+        )
+      }
+
+      raise AuthenticationError('no mechanism in common; the server offers ${', '.join(offered)}')
+    }
+
+    return self.authenticate(sasl.of(chosen, self._options))
+  }
+
+  /**
+   * Runs one authentication exchange with a mechanism already built.
+   *
+   * @param Mechanism mechanism
+   * @returns SmtpClient itself.
+   * @throws AuthenticationError if the server refuses.
+   */
+  authenticate(mechanism) {
+    var initial = mechanism.start()
+    var reply = initial == nil ?
+      self.command('AUTH ${mechanism.name()}') :
+      self.command('AUTH ${mechanism.name()} ${_encode(initial)}')
+
+    while reply.is_intermediate() {
+      var challenge = _decode(reply.lines.is_empty() ? '' : reply.lines[0])
+      var answer = nil
+
+      catch {
+        answer = mechanism.step(challenge)
+      } as error {
+        # Leaving an exchange half-finished confuses the server, so it
+        # is closed off before the failure is reported.
+        self.command('*')
+
+        raise error
+      }
+
+      reply = self.command(answer == nil ? '' : _encode(answer))
+    }
+
+    if !reply.is_positive() {
+      raise AuthenticationError(
+        '${self._host} refused the credentials: ${reply.code} ${reply.text}'
+      )
+    }
+
+    self._authenticated = true
+
+    # A server may hand back a different set of capabilities once it
+    # knows who is asking.
+    if self._extended {
+      self.ehlo(nil)
+    }
+
+    return self
+  }
+
+  _auth_mechanisms() {
+    var value = self._capabilities.get('AUTH', nil)
+
+    if value == nil or value == true {
+      return []
+    }
+
+    var found = []
+
+    for name in value.replace('/=/', ' ').split(' ') {
+      var trimmed = name.trim()
+
+      if trimmed != '' {
+        found.append(trimmed.upper())
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * Starts a transaction by naming the sender.
+   *
+   * @param string|Address sender: The return path. An empty string is
+   *    the null sender a bounce is sent from.
+   * @param ?dict options: `size` to declare the message's size, and
+   *    `body` for `8BITMIME` or `BINARYMIME`.
+   * @returns Reply
+   * @throws SmtpError if the server refuses the sender.
+   */
+  mail_from(sender, options: ?dict) {
+    var given = options == nil ? {} : options
+    var path = _path_of(sender)
+    var extras = []
+
+    if given.contains('size') and self.supports('SIZE') {
+      extras.append('SIZE=${given.size}')
+    }
+
+    if given.contains('body') and self.supports('8BITMIME') {
+      extras.append('BODY=${given.body}')
+    }
+
+    if given.contains('envelope_id') and self.supports('DSN') {
+      extras.append('ENVID=${given.envelope_id}')
+    }
+
+    if given.contains('ret') and self.supports('DSN') {
+      extras.append('RET=${given.ret}')
+    }
+
+    var tail = extras.is_empty() ? '' : ' ' + ' '.join(extras)
+
+    return self.command('MAIL FROM:${path}${tail}').ok('the sender ${path}')
+  }
+
+  /**
+   * Adds one recipient to the transaction.
+   *
+   * @param string|Address recipient
+   * @param ?dict options: `notify` and `original` for DSN.
+   * @returns Reply
+   * @throws SmtpError if the server refuses the recipient.
+   */
+  rcpt_to(recipient, options: ?dict) {
+    var given = options == nil ? {} : options
+    var path = _path_of(recipient)
+    var extras = []
+
+    if given.contains('notify') and self.supports('DSN') {
+      extras.append('NOTIFY=${given.notify}')
+    }
+
+    if given.contains('original') and self.supports('DSN') {
+      extras.append('ORCPT=${given.original}')
+    }
+
+    var tail = extras.is_empty() ? '' : ' ' + ' '.join(extras)
+
+    return self.command('RCPT TO:${path}${tail}').ok('the recipient ${path}')
+  }
+
+  /**
+   * Hands over the message itself and ends the transaction.
+   *
+   * Line endings are normalised and a leading dot on any line is
+   * doubled, so a body containing a line with one dot on it cannot end
+   * the message early.
+   *
+   * @param string|bytes body
+   * @returns Reply the server's verdict on the whole message.
+   * @throws SmtpError if the server refuses either the command or the
+   *    message.
+   */
+  data(body) {
+    self.command('DATA').ok('DATA')
+
+    var raw = _normalise_breaks(is_bytes(body) ? body : '${body}'.to_bytes())
+    var out = _dot_stuff(raw)
+
+    if out.length() < 2 or out[out.length() - 1] != 0x0a {
+      out.extend('\r\n'.to_bytes())
+    }
+
+    out.extend('.\r\n'.to_bytes())
+
+    self._stream.write(out)
+    self._stream.flush()
+
+    return self.read_reply().ok('the message')
+  }
+
+  /**
+   * Hands the message over in chunks, which is what `CHUNKING` is for.
+   *
+   * Nothing is escaped, because a chunk carries its own length and has
+   * no terminator to collide with. Only works where the server offers
+   * `CHUNKING`.
+   *
+   * @param string|bytes chunk
+   * @param bool last: Whether this is the final chunk.
+   * @returns Reply
+   * @throws StateError if the server does not offer `CHUNKING`.
+   * @throws SmtpError if the server refuses.
+   */
+  bdat(chunk, last: bool) {
+    if !self.supports('CHUNKING') {
+      raise StateError('${self._host} does not offer CHUNKING')
+    }
+
+    var raw = is_bytes(chunk) ? chunk : '${chunk}'.to_bytes()
+
+    self._stream.write_line('BDAT ${raw.length()}${last ? ' LAST' : ''}')
+    self._stream.write(raw)
+    self._stream.flush()
+
+    return self.read_reply().ok('the message')
+  }
+
+  /**
+   * Sends one message: the sender, the recipients, and the message
+   * itself, in one transaction.
+   *
+   * The sender comes from the message's `From` and the recipients from
+   * its `To`, `Cc` and `Bcc` unless the options say otherwise. `Bcc` is
+   * removed before the message goes, which is the whole point of it.
+   *
+   * ```zuri,ignore
+   * server.send(note, nil)
+   * server.send(note, { from: 'bounces@example.com' })
+   * ```
+   *
+   * @param Message message
+   * @param ?dict options: `from` and `to` to override the envelope,
+   *    and anything `mail_from()` and `rcpt_to()` accept.
+   * @returns Reply the server's verdict.
+   * @throws StateError if there is no sender or no recipient.
+   * @throws SmtpError if the server refuses any part of it.
+   */
+  send(message, options: ?dict) {
+    var given = options == nil ? {} : options
+    var envelope = _envelope(message, given)
+    var outgoing = message
+
+    # A message is identified and dated by whoever submits it, which is
+    # here. Both are left alone when they are already set.
+    if !message.headers.contains('Date') {
+      message.set_date(nil)
+    }
+
+    if !message.headers.contains('Message-ID') {
+      message.set_message_id(nil)
+    }
+
+    if message.headers.contains('Bcc') {
+      # The copy keeps the caller's message intact, since a program
+      # that sends the same message twice should not find it changed.
+      outgoing = Message(nil, message.to_bytes())
+      outgoing.headers.remove('Bcc')
+    }
+
+    var raw = _normalise_breaks(outgoing.to_bytes())
+    var limit = self.max_size()
+
+    if limit != nil and raw.length() > limit {
+      raise SmtpPermanentError(
+        'the message is ${raw.length()} bytes and ${self._host} takes ${limit}',
+        552,
+        '5.3.4',
+        []
+      )
+    }
+
+    var from_options = {}
+
+    for key in given.keys() {
+      from_options[key] = given[key]
+    }
+
+    if self.supports('SIZE') and !from_options.contains('size') {
+      from_options.size = raw.length()
+    }
+
+    if !from_options.contains('body') and self.supports('8BITMIME') {
+      from_options.body = '8BITMIME'
+    }
+
+    catch {
+      self.mail_from(envelope.from, from_options)
+
+      for recipient in envelope.to {
+        self.rcpt_to(recipient, given)
+      }
+
+      if self.supports('CHUNKING') and given.get('chunking', false) {
+        return self.bdat(raw, true)
+      }
+
+      return self.data(raw)
+    } as error {
+      # A transaction the server refused partway through is still open
+      # as far as it is concerned, and the next `MAIL` on this
+      # connection would be refused for that alone. Abandoning it here
+      # is what leaves the connection usable.
+      catch {
+        self.rset()
+      } as failure {
+        # A connection too broken to reset is too broken to reuse, and
+        # the error worth reporting is the first one.
+      }
+
+      raise error
+    }
+  }
+
+  /**
+   * Sends a message that is already bytes, to recipients given here.
+   *
+   * @param string|Address sender
+   * @param list recipients
+   * @param string|bytes body
+   * @param ?dict options
+   * @returns Reply
+   * @throws StateError if there are no recipients.
+   */
+  send_raw(sender, recipients: list, body, options: ?dict) {
+    if recipients.is_empty() {
+      raise StateError('a message needs at least one recipient')
+    }
+
+    var given = options == nil ? {} : options
+    var raw = _normalise_breaks(is_bytes(body) ? body : '${body}'.to_bytes())
+    var from_options = {}
+
+    for key in given.keys() {
+      from_options[key] = given[key]
+    }
+
+    if self.supports('SIZE') and !from_options.contains('size') {
+      from_options.size = raw.length()
+    }
+
+    catch {
+      self.mail_from(sender, from_options)
+
+      for recipient in recipients {
+        self.rcpt_to(recipient, given)
+      }
+
+      return self.data(raw)
+    } as error {
+      catch {
+        self.rset()
+      } as failure {
+        # As `send()`: a connection that cannot be reset cannot be
+        # reused either.
+      }
+
+      raise error
+    }
+  }
+
+  /**
+   * Abandons whatever transaction is in progress.
+   *
+   * @returns Reply
+   */
+  rset() {
+    return self.command('RSET').ok('RSET')
+  }
+
+  /**
+   * Asks the server for nothing, which is how a connection is kept
+   * from going idle.
+   *
+   * @returns Reply
+   */
+  noop() {
+    return self.command('NOOP').ok('NOOP')
+  }
+
+  /**
+   * Asks whether the server knows an address.
+   *
+   * Most servers on the public internet refuse to answer this, because
+   * answering it hands an address list to whoever asks. A refusal is
+   * returned rather than raised, since it is an answer of a kind.
+   *
+   * @param string address
+   * @returns Reply
+   */
+  verify(address: string) {
+    return self.command('VRFY ${address}')
+  }
+
+  /**
+   * Says goodbye and closes the connection.
+   *
+   * @returns Reply|nil the server's farewell, or `nil` when it had
+   *    already gone.
+   */
+  quit() {
+    var reply = nil
+
+    catch {
+      reply = self.command('QUIT')
+    } as error {
+      # A server that closes the connection on QUIT rather than
+      # answering it is rude, not broken.
+    }
+
+    self._stream.close()
+
+    return reply
+  }
+
+  /**
+   * Closes the connection without saying goodbye.
+   *
+   * @returns SmtpClient itself.
+   */
+  close() {
+    self._stream.close()
+
+    return self
+  }
+
+  to_string() {
+    return '<SmtpClient ${self._host}${self._stream.is_secure() ? ' secure' : ''}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The capability lines of an EHLO reply. The first line is the server
+# greeting itself, not a capability.
+def _read_capabilities(lines: list) {
+  var found = {}
+
+  iter var index = 1; index < lines.length(); index++ {
+    var line = lines[index].trim()
+
+    if line == '' {
+      continue
+    }
+
+    var space = line.index_of(' ')
+    var name = space > -1 ? line[0, space] : line
+
+    found[name.upper()] = space > -1 ? line[space + 1, line.length()] : true
+  }
+
+  return found
+}
+
+# An address in the angle brackets a command path needs. An empty
+# sender is the null path, which is what a bounce comes from.
+def _path_of(address) {
+  var text = is_string(address) ? address : address.address
+
+  if text == '' {
+    return '<>'
+  }
+
+  if text.starts_with('<') {
+    return text
+  }
+
+  return '<${text}>'
+}
+
+# Who the message is from and who it is going to, from the options
+# first and from the message itself otherwise.
+def _envelope(message, options: dict) {
+  var sender = options.get('from', nil)
+
+  if sender == nil {
+    var author = message.sender()
+
+    if author == nil {
+      raise StateError('the message has no From, and no sender was given')
+    }
+
+    sender = author.address
+  } else if !is_string(sender) {
+    sender = sender.address
+  }
+
+  var recipients = options.get('to', nil)
+  var addresses = []
+
+  if recipients == nil {
+    for person in message.recipients() {
+      addresses.append(person.address)
+    }
+  } else if is_string(recipients) {
+    addresses.append(recipients)
+  } else {
+    for person in recipients {
+      addresses.append(is_string(person) ? person : person.address)
+    }
+  }
+
+  if addresses.is_empty() {
+    raise StateError('the message has no recipients, and none were given')
+  }
+
+  return { from: sender, to: addresses }
+}
+
+def _encode(raw) {
+  return base64.encode(is_bytes(raw) ? raw : '${raw}'.to_bytes())
+}
+
+def _decode(text: string) {
+  if text.trim() == '' {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(text.trim())
+  } as error {
+    return text.to_bytes()
+  }
+}

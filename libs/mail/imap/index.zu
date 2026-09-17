@@ -1,0 +1,30 @@
+/**
+ * @module imap
+ *
+ * IMAP: reading mail where it is kept, rather than taking it away.
+ *
+ * Both ends are here. `ImapClient` talks to a server; `ImapServer` is
+ * one, answering out of a `MailStore` of which two ship.
+ *
+ * ```zuri,ignore
+ * import mail.imap { ImapClient }
+ *
+ * var inbox = ImapClient.connect('imaps://mail.example.com', {
+ *   username: 'ann',
+ *   password: secret,
+ * })
+ *
+ * inbox.select('INBOX')
+ *
+ * echo inbox.search('UNSEEN', true).length()
+ *
+ * inbox.logout()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .parser
+import @.store { * }
+import @.client { * }
+import @.server { * }

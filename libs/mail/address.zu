@@ -1,0 +1,666 @@
+/**
+ * @module address
+ *
+ * Reading and writing the addresses in a mail header.
+ *
+ * An address in a header is rarely just an address. It can carry a
+ * display name, the name can be quoted or encoded, either can have
+ * comments buried in it, and a header can list several of them or
+ * gather them into a named group. This module turns all of that into
+ * `Address` objects, and turns them back into a header a server will
+ * accept.
+ *
+ * ```zuri
+ * import mail.address
+ *
+ * var who = address.parse('"Ore, Richard" <richard@example.com> (author)')
+ *
+ * echo who.name
+ * echo who.address
+ * echo who.domain
+ * ```
+ *
+ * ```console
+ * Ore, Richard
+ * richard@example.com
+ * example.com
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import .encoding
+import .errors { MessageError }
+
+# The characters RFC 5322 gives a meaning of their own. Everything else
+# that is printable can be part of an atom.
+var _SPECIALS = '()<>[]:;@\\,."'
+
+# The characters an atom may contain, which is what decides whether a
+# local part or a display name can be written without quotes.
+var _ATEXT = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+  + "0123456789!#$%&'*+-/=?^_`{|}~"
+
+/**
+ * One address, with the display name that was written alongside it.
+ *
+ * `name` is the display name, already decoded from whatever encoding
+ * the header carried it in, and is an empty string when there was
+ * none. `address` is the address itself, `local` the part before the
+ * `@` and `domain` the part after it.
+ *
+ * @printable
+ */
+class Address {
+
+  /**
+   * Builds an address.
+   *
+   * ```zuri
+   * import mail.address { Address }
+   *
+   * echo Address('richard@example.com', 'Richard Ore').to_string()
+   * ```
+   *
+   * ```console
+   * Richard Ore <richard@example.com>
+   * ```
+   *
+   * @param string spec: The address, as `local@domain`.
+   * @param ?string name: The display name. Empty when not given.
+   * @throws MessageError if `spec` has no local part.
+   */
+  @new(spec: string, name: ?string) {
+    var at = spec.last_index_of('@')
+
+    self.local = at > -1 ? spec[0, at] : spec
+    self.domain = at > -1 ? spec[at + 1, spec.length()] : ''
+    self.name = name == nil ? '' : name
+
+    if self.local == '' {
+      raise MessageError('an address needs a local part: ${spec}')
+    }
+
+    self.address = self.domain == '' ?
+      _write_local(self.local) :
+      '${_write_local(self.local)}@${self.domain}'
+  }
+
+  /**
+   * Whether this address has a domain. An address without one is legal
+   * in a header but cannot be delivered to over the network.
+   *
+   * @returns bool
+   */
+  is_routable() {
+    return self.domain != ''
+  }
+
+  /**
+   * The address as a header would carry it, with the display name
+   * quoted or encoded as it needs to be.
+   *
+   * @returns string
+   */
+  to_string() {
+    if self.name == '' {
+      return self.address
+    }
+
+    return '${_write_phrase(self.name)} <${self.address}>'
+  }
+
+  /**
+   * Whether two addresses are the same one.
+   *
+   * The domain is compared without regard to case, since domains are
+   * case-insensitive. The local part is compared exactly, since it is
+   * the receiving server's to interpret and some of them do
+   * distinguish case.
+   *
+   * @param Address other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, Address) {
+      return false
+    }
+
+    return self.local == other.local and self.domain.lower() == other.domain.lower()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A named group of addresses, as `Managers: ann@example.com,
+ * bob@example.com;` writes one.
+ *
+ * Groups are rare, and a program that does not care about them can use
+ * `parse_list()`, which hands back the members and forgets the name.
+ *
+ * @printable
+ */
+class Group {
+
+  /**
+   * @param string name: The group's name.
+   * @param list members: The `Address` values in it, possibly empty.
+   */
+  @new(name: string, members: list) {
+    self.name = name
+    self.members = members
+  }
+
+  to_string() {
+    var inside = ', '.join(self.members.map(@(member) => member.to_string()))
+
+    return '${_write_phrase(self.name)}:${inside == '' ? '' : ' ' + inside};'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _is_atext(character: string) {
+  return _ATEXT.index_of(character) > -1
+}
+
+def _is_space_byte(value: number) {
+  return value == 0x20 or value == 0x09 or value == 0x0d or value == 0x0a
+}
+
+def _is_delimiter(value: number) {
+  return _is_space_byte(value) or _SPECIALS.index_of(value.chr()) > -1
+}
+
+# Comments nest, and a backslash inside one escapes whatever follows,
+# including a bracket that would otherwise close it.
+def _skip_comment(raw, start: number) {
+  var depth = 0
+  var index = start
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x5c {
+      index += 2
+      continue
+    }
+
+    if value == 0x28 {
+      depth++
+      index++
+      continue
+    }
+
+    if value == 0x29 {
+      depth--
+      index++
+
+      if depth == 0 {
+        return index
+      }
+
+      continue
+    }
+
+    index++
+  }
+
+  return index
+}
+
+def _read_quoted(raw, start: number) {
+  var out = bytes(0)
+  var index = start + 1
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x5c and index + 1 < raw.length() {
+      out.append(raw[index + 1])
+      index += 2
+      continue
+    }
+
+    if value == 0x22 {
+      return { text: out.to_string(), end: index + 1 }
+    }
+
+    out.append(value)
+    index++
+  }
+
+  return { text: out.to_string(), end: index }
+}
+
+def _read_literal(raw, start: number) {
+  var out = bytes(0)
+
+  out.append(0x5b)
+
+  var index = start + 1
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x5c and index + 1 < raw.length() {
+      out.append(raw[index + 1])
+      index += 2
+      continue
+    }
+
+    out.append(value)
+    index++
+
+    if value == 0x5d {
+      return { text: out.to_string(), end: index }
+    }
+  }
+
+  return { text: out.to_string(), end: index }
+}
+
+# Splits a header value into the pieces a parser can reason about:
+# atoms, quoted strings, domain literals, the specials that structure a
+# list, and a marker wherever whitespace separated two of them.
+def _tokenize(text: string) {
+  var raw = text.to_bytes()
+  var tokens = []
+  var index = 0
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x28 {
+      index = _skip_comment(raw, index)
+
+      if !tokens.is_empty() and tokens[tokens.length() - 1].kind != 'space' {
+        tokens.append({ kind: 'space', value: ' ' })
+      }
+
+      continue
+    }
+
+    if _is_space_byte(value) {
+      if !tokens.is_empty() and tokens[tokens.length() - 1].kind != 'space' {
+        tokens.append({ kind: 'space', value: ' ' })
+      }
+
+      index++
+      continue
+    }
+
+    if value == 0x22 {
+      var quoted = _read_quoted(raw, index)
+
+      tokens.append({ kind: 'quoted', value: quoted.text })
+      index = quoted.end
+      continue
+    }
+
+    if value == 0x5b {
+      var literal = _read_literal(raw, index)
+
+      tokens.append({ kind: 'literal', value: literal.text })
+      index = literal.end
+      continue
+    }
+
+    if _SPECIALS.index_of(value.chr()) > -1 {
+      tokens.append({ kind: 'special', value: value.chr() })
+      index++
+      continue
+    }
+
+    var start = index
+
+    while index < raw.length() and !_is_delimiter(raw[index]) {
+      index++
+    }
+
+    tokens.append({ kind: 'atom', value: raw[start, index].to_string() })
+  }
+
+  return tokens
+}
+
+# The text of a display name, with the whitespace between its pieces
+# preserved and any encoded words in it decoded.
+def _phrase_of(tokens: list) {
+  var parts = []
+
+  for token in tokens {
+    parts.append(token.value)
+  }
+
+  return encoding.decode_words(''.join(parts).trim())
+}
+
+# The local and domain halves of an address, taking the first `@` as
+# the one that separates them. A quoted local part has already been
+# unquoted by the tokenizer, so an `@` inside one is not a special
+# here and cannot be mistaken for the separator.
+def _addr_spec_of(tokens: list) {
+  var local = []
+  var domain = []
+  var split = false
+
+  for token in tokens {
+    if token.kind == 'space' {
+      continue
+    }
+
+    if token.kind == 'special' and token.value == '@' and !split {
+      split = true
+      continue
+    }
+
+    if split {
+      domain.append(token.value)
+    } else {
+      local.append(token.value)
+    }
+  }
+
+  return { local: ''.join(local), domain: ''.join(domain) }
+}
+
+# `Address` splits at the last `@`, which is the right one: a local
+# part that contains one was quoted in the header and comes back here
+# already unquoted, so re-joining the two halves and splitting again
+# gives back what was parsed.
+def _build(spec: dict, name: string) {
+  if spec.local == '' {
+    return nil
+  }
+
+  if spec.domain == '' {
+    return spec.local.index_of('@') > -1 ? nil : Address(spec.local, name)
+  }
+
+  return Address('${spec.local}@${spec.domain}', name)
+}
+
+# One mailbox or one group, starting at `at`. Returns nil for a run of
+# tokens that is not either, so a malformed entry in a list costs only
+# itself.
+def _parse_item(tokens: list, at: number) {
+  var prefix = []
+  var index = at
+
+  while index < tokens.length() {
+    var token = tokens[index]
+
+    if token.kind == 'special' and (token.value == '<' or token.value == ':'
+      or token.value == ',' or token.value == ';') {
+      break
+    }
+
+    prefix.append(token)
+    index++
+  }
+
+  if index >= tokens.length() or tokens[index].value == ',' or tokens[index].value == ';' {
+    return { item: _build(_addr_spec_of(prefix), ''), end: index }
+  }
+
+  if tokens[index].value == '<' {
+    var inside = []
+
+    index++
+
+    while index < tokens.length() and tokens[index].value != '>' {
+      inside.append(tokens[index])
+      index++
+    }
+
+    if index < tokens.length() {
+      index++
+    }
+
+    return { item: _build(_addr_spec_of(inside), _phrase_of(prefix)), end: index }
+  }
+
+  # A colon after a phrase opens a group, which runs to the semicolon.
+  var members = []
+
+  index++
+
+  while index < tokens.length() and tokens[index].value != ';' {
+    if tokens[index].kind == 'space'
+      or (tokens[index].kind == 'special' and tokens[index].value == ',') {
+      index++
+      continue
+    }
+
+    var member = _parse_item(tokens, index)
+
+    if member == nil or member.end <= index {
+      index++
+      continue
+    }
+
+    if member.item != nil {
+      members.append(member.item)
+    }
+
+    index = member.end
+  }
+
+  if index < tokens.length() {
+    index++
+  }
+
+  return { item: Group(_phrase_of(prefix), members), end: index }
+}
+
+/**
+ * Reads every address in a header value, keeping the groups.
+ *
+ * Entries that are not addresses at all are left out rather than
+ * raising, because one unusable entry in a `To` header is no reason to
+ * refuse the whole message.
+ *
+ * @param string text
+ * @returns list of `Address` and `Group`
+ */
+def parse_groups(text: string) {
+  var tokens = _tokenize(text)
+  var items = []
+  var at = 0
+
+  while at < tokens.length() {
+    var token = tokens[at]
+
+    if token.kind == 'space' or (token.kind == 'special' and token.value == ',') {
+      at++
+      continue
+    }
+
+    var parsed = _parse_item(tokens, at)
+
+    if parsed == nil or parsed.end <= at {
+      at++
+      continue
+    }
+
+    if parsed.item != nil {
+      items.append(parsed.item)
+    }
+
+    at = parsed.end
+  }
+
+  return items
+}
+
+/**
+ * Reads every address in a header value.
+ *
+ * A group's members come back alongside the rest, since a program
+ * sending mail cares who the recipients are and not how they were
+ * gathered.
+ *
+ * ```zuri
+ * import mail.address
+ *
+ * var people = address.parse_list('Ann <ann@example.com>, bob@example.com')
+ *
+ * echo people.map(@(person) => person.address)
+ * ```
+ *
+ * ```console
+ * [ann@example.com, bob@example.com]
+ * ```
+ *
+ * @param string text
+ * @returns list of `Address`
+ */
+def parse_list(text: string) {
+  var found = []
+
+  for item in parse_groups(text) {
+    if instance_of(item, Group) {
+      found.extend(item.members)
+      continue
+    }
+
+    found.append(item)
+  }
+
+  return found
+}
+
+/**
+ * Reads exactly one address.
+ *
+ * @param string text
+ * @returns Address
+ * @throws MessageError if `text` holds no address, or more than one.
+ */
+def parse(text: string) {
+  var found = parse_list(text)
+
+  if found.is_empty() {
+    raise MessageError('no address in ${text}')
+  }
+
+  if found.length() > 1 {
+    raise MessageError('more than one address in ${text}')
+  }
+
+  return found[0]
+}
+
+/**
+ * Builds an address without parsing anything.
+ *
+ * @param string spec: The address, as `local@domain`.
+ * @param ?string name: The display name.
+ * @returns Address
+ */
+def address(spec: string, name: ?string) {
+  return Address(spec, name)
+}
+
+/**
+ * Writes a list of addresses as a header value.
+ *
+ * @param list items: `Address` or `Group` values, or plain strings,
+ *    which are parsed first.
+ * @returns string
+ */
+def format_list(items: list) {
+  var written = []
+
+  for item in items {
+    if is_string(item) {
+      written.append(parse(item).to_string())
+      continue
+    }
+
+    written.append(item.to_string())
+  }
+
+  return ', '.join(written)
+}
+
+# A local part may be written bare when every character in it is one an
+# atom may hold and the dots in it separate rather than lead, trail or
+# double up. Anything else has to be quoted.
+def _write_local(local: string) {
+  if local == '' {
+    return '""'
+  }
+
+  if _is_dot_atom(local) {
+    return local
+  }
+
+  return '"' + _escape_quoted(local) + '"'
+}
+
+def _is_dot_atom(text: string) {
+  if text.starts_with('.') or text.ends_with('.') or text.index_of('..') > -1 {
+    return false
+  }
+
+  iter var index = 0; index < text.length(); index++ {
+    var character = text[index]
+
+    if character != '.' and !_is_atext(character) {
+      return false
+    }
+  }
+
+  return true
+}
+
+def _escape_quoted(text: string) {
+  var out = []
+
+  iter var index = 0; index < text.length(); index++ {
+    var character = text[index]
+
+    if character == '"' or character == '\\' {
+      out.append('\\')
+    }
+
+    out.append(character)
+  }
+
+  return ''.join(out)
+}
+
+# A display name goes into a header as it is when it is a plain run of
+# atoms, as an encoded word when it holds characters a header cannot
+# carry, and quoted otherwise.
+def _write_phrase(name: string) {
+  if !encoding.is_ascii(name) {
+    return encoding.encode_word(name, 'utf-8', nil)
+  }
+
+  var plain = true
+
+  iter var index = 0; index < name.length(); index++ {
+    var character = name[index]
+
+    if character != ' ' and !_is_atext(character) {
+      plain = false
+      break
+    }
+  }
+
+  if plain and name.trim() == name and name != '' {
+    return name
+  }
+
+  return '"' + _escape_quoted(name) + '"'
+}

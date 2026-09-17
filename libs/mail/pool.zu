@@ -1,0 +1,220 @@
+/**
+ * @module pool
+ *
+ * Running a mail server on more than one connection at a time.
+ *
+ * Both servers here serve one connection to the end before taking the
+ * next, which is the right shape for the protocols and the wrong shape
+ * for more than one client. `serve()` puts a pool of isolates behind
+ * one listening socket: the main isolate accepts, and each worker
+ * takes a connection and sees it through.
+ *
+ * ```zuri,ignore
+ * import mail.pool
+ * import .my_server
+ *
+ * pool.serve(my_server.build, { host: '0.0.0.0', port: 143, workers: 8 })
+ * ```
+ *
+ * `build` is a function in a module of its own, not a closure, because
+ * an isolate resolves a module's function by name on its own side and
+ * cannot be handed one that closes over anything here.
+ *
+ * ```zuri,ignore
+ * # my_server.zu
+ * import mail.imap { ImapServer, MaildirStore }
+ *
+ * def build() {
+ *   var store = MaildirStore('/var/mail')
+ *
+ *   store.add_account('ann', 'secret')
+ *
+ *   return ImapServer({}, store)
+ * }
+ * ```
+ *
+ * An IMAP connection can be open for hours, so the pool is a ceiling
+ * on how many clients can be served at once, not on how fast they are
+ * served. Size it accordingly.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import isolate
+import net
+
+# Connections waiting for a worker. A short queue is deliberate: a
+# connection sitting in it is one nothing is reading, and a client
+# would rather be refused than ignored.
+var _BACKLOG = 16
+
+/**
+ * What one worker isolate runs: build a server of its own, then serve
+ * whatever connections the acceptor hands it.
+ *
+ * Called by `serve()`. It is public because an isolate has to be able
+ * to find it by name.
+ *
+ * @param Channel connections: Accepted sockets arrive here.
+ * @param function(0) build: Returns this worker's server.
+ */
+def worker_main(connections, build) {
+  var maker = build
+  var server = maker()
+
+  while true {
+    var client = connections.recv()
+
+    if client == nil {
+      break
+    }
+
+    catch {
+      server.serve_connection(client)
+    } as error {
+      # A connection that fails takes itself down and nothing else.
+      # The server's own `on_error` has already seen it.
+    }
+  }
+}
+
+/**
+ * A running pool: the socket, the workers, and the loop feeding them.
+ *
+ * @printable
+ */
+class Cluster {
+
+  /**
+   * @param TcpStream listener
+   * @param Channel connections
+   * @param list workers: The isolates serving them.
+   */
+  @new(listener, connections, workers: list) {
+    self._listener = listener
+    self._connections = connections
+    self._workers = workers
+    self._running = false
+  }
+
+  /**
+   * The address the pool is listening on.
+   *
+   * @returns SocketAddr
+   */
+  address() {
+    return self._listener.local_address()
+  }
+
+  /**
+   * Accepts connections and hands them out until `close()`.
+   *
+   * @returns Cluster itself.
+   */
+  run() {
+    self._running = true
+
+    while self._running {
+      var client = nil
+
+      catch {
+        client = self._listener.accept()
+      } as error {
+        if !self._running {
+          break
+        }
+
+        continue
+      }
+
+      self._connections.send(client)
+    }
+
+    return self
+  }
+
+  /**
+   * Accepts exactly one connection and hands it to a worker, for a
+   * program that wants to drive the loop itself.
+   *
+   * @returns Cluster itself.
+   */
+  accept_one() {
+    self._connections.send(self._listener.accept())
+
+    return self
+  }
+
+  /**
+   * Stops accepting, tells the workers there is nothing more coming,
+   * and waits for them to finish what they hold.
+   *
+   * @param ?number timeout: Milliseconds to wait for each worker.
+   * @returns Cluster itself.
+   */
+  close(timeout: ?number) {
+    self._running = false
+
+    self._listener.close()
+    self._connections.close()
+
+    for worker in self._workers {
+      catch {
+        worker.join(timeout == nil ? 30000 : timeout)
+      } as error {
+        # A worker still holding a connection when the wait runs out
+        # goes down with the process.
+      }
+    }
+
+    return self
+  }
+
+  to_string() {
+    return '<Cluster ${self._workers.length()} workers>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Starts a pool without running the accept loop, so the address is
+ * known before the first connection.
+ *
+ * @param function(0) build: A module's function returning a server.
+ * @param ?dict options: `host`, `port` and `workers`.
+ * @returns Cluster
+ */
+def start(build, options: ?dict) {
+  var given = options == nil ? {} : options
+  var host = given.get('host', '127.0.0.1')
+  var port = given.get('port', 0)
+  var count = given.get('workers', 4)
+  var listener = net.TcpStream()
+
+  listener.bind('${host}:${port}')
+
+  var connections = isolate.channel(_BACKLOG)
+  var workers = []
+
+  iter var index = 0; index < count; index++ {
+    workers.append(isolate.spawn(worker_main, connections, build))
+  }
+
+  return Cluster(listener, connections, workers)
+}
+
+/**
+ * Starts a pool and runs it until something closes it.
+ *
+ * @param function(0) build
+ * @param ?dict options: As `start()`.
+ * @returns Cluster
+ */
+def serve(build, options: ?dict) {
+  return start(build, options).run()
+}

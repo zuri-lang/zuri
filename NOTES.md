@@ -14,7 +14,8 @@
 - The `ast` and the `reflect` module has been collapsed into a single module called `zuri`.
 - `template` module has been renamed and moved to `wire` module.
 - The `socket` module and `ssl` module has been dropped in favor of the `net` module.
-- The `postgres` and `sqlite` module have been replaced with the respective submodules of the new `sql` module. The `sql`
+- The `postgres` and `sqlite` module have been replaced with the respective submodules of the new `sql` module. The `sql`.
+- The `curl` module has been removed from Zuri.
 
 
 # CHANGELOGS

@@ -1,0 +1,435 @@
+/**
+ * @module stream
+ *
+ * A line-oriented connection, which is what all three mail protocols
+ * are underneath.
+ *
+ * SMTP, IMAP and POP3 all speak in lines ending with a carriage return
+ * and a newline, mixed with runs of raw bytes whose length something
+ * else announced. `LineStream` puts that over any of the transports
+ * `net` provides, and lets one be swapped for another mid-conversation,
+ * which is what `STARTTLS` is.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import net
+import net.tls
+
+import .errors { ConnectionClosed, ProtocolError }
+
+/**
+ * How TLS is treated on a connection that did not start encrypted:
+ * `require` refuses to go on without it, `prefer` takes it when the
+ * server offers it, and `disable` does not ask.
+ *
+ * @type list
+ */
+var TLS_MODES = ['require', 'prefer', 'disable']
+
+# The longest line any of the three protocols allows, with room to
+# spare. A peer that sends more than this is not going to stop, so the
+# connection is failed rather than grown without limit.
+var MAX_LINE = 65536
+
+# How much to ask the transport for at a time.
+var _CHUNK = 16384
+
+/**
+ * A connection that reads and writes lines.
+ *
+ * @printable
+ */
+class LineStream {
+
+  /**
+   * @param any transport: Anything with `read()`, `write_all()`,
+   *    `flush()` and `close()`. Every socket in `net` qualifies.
+   * @param ?bool secure: Whether the transport is already encrypted.
+   *    Worked out from the transport when not given.
+   */
+  @new(transport, secure: ?bool) {
+    self._transport = transport
+    self._secure = secure == nil ? instance_of(transport, tls.TlsStream) : secure
+    self._buffer = bytes(0)
+    self._at = 0
+    self._closed = false
+  }
+
+  /**
+   * The transport underneath, for the calls this does not wrap.
+   *
+   * @returns any
+   */
+  transport() {
+    return self._transport
+  }
+
+  /**
+   * Whether what goes over this connection is encrypted.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._secure
+  }
+
+  /**
+   * Replaces the transport with another, which is what a protocol does
+   * once it has negotiated TLS over a connection that started in the
+   * clear.
+   *
+   * @param any transport
+   * @param ?bool secure
+   * @returns LineStream itself.
+   * @throws ProtocolError if anything is still buffered, since bytes
+   *    read before the handshake cannot belong after it.
+   */
+  upgrade(transport, secure: ?bool) {
+    if self._at < self._buffer.length() {
+      raise ProtocolError('the peer sent data before the handshake finished')
+    }
+
+    self._transport = transport
+    self._secure = secure == nil ? true : secure
+    self._buffer = bytes(0)
+    self._at = 0
+
+    return self
+  }
+
+  # Pulls the next chunk out of the transport. Returns false at the end
+  # of the connection.
+  _fill() {
+    if self._closed {
+      return false
+    }
+
+    var chunk = self._transport.read(_CHUNK)
+
+    if chunk == nil or chunk.is_empty() {
+      return false
+    }
+
+    if self._at > 0 {
+      # Everything already handed out is dead weight, and dropping it
+      # here is what keeps the buffer from growing across a long
+      # session.
+      self._buffer = self._buffer[self._at, self._buffer.length()]
+      self._at = 0
+    }
+
+    self._buffer.extend(chunk)
+
+    return true
+  }
+
+  /**
+   * Reads one line.
+   *
+   * The line break comes off, and a lone newline is accepted in place
+   * of the pair, because servers send one often enough that refusing
+   * would be refusing real mail.
+   *
+   * @param ?number limit: The longest line to accept. `MAX_LINE` when
+   *    not given.
+   * @returns string
+   * @throws ConnectionClosed if the connection ends mid-line.
+   * @throws ProtocolError if the line runs past the limit.
+   */
+  read_line(limit: ?number) {
+    var cap = limit == nil ? MAX_LINE : limit
+
+    while true {
+      var index = self._buffer.index_of(0x0a, self._at)
+
+      if index > -1 {
+        var stop = index
+
+        if stop > self._at and self._buffer[stop - 1] == 0x0d {
+          stop--
+        }
+
+        var line = stop == self._at ? '' : self._buffer[self._at, stop].to_string()
+
+        self._at = index + 1
+
+        return line
+      }
+
+      if self._buffer.length() - self._at > cap {
+        raise ProtocolError('the peer sent a line longer than ${cap} bytes')
+      }
+
+      if !self._fill() {
+        raise ConnectionClosed('the connection ended in the middle of a line')
+      }
+    }
+  }
+
+  /**
+   * Reads exactly `count` bytes, whatever they contain.
+   *
+   * @param number count
+   * @returns bytes
+   * @throws ConnectionClosed if the connection ends first.
+   */
+  read_bytes(count: number) {
+    if count <= 0 {
+      return bytes(0)
+    }
+
+    while self._buffer.length() - self._at < count {
+      if !self._fill() {
+        var got = self._buffer.length() - self._at
+
+        raise ConnectionClosed('the connection ended after ${got} of ${count} bytes')
+      }
+    }
+
+    var out = self._buffer[self._at, self._at + count]
+
+    self._at += count
+
+    return out
+  }
+
+  /**
+   * Whether anything is waiting in the buffer, without touching the
+   * transport.
+   *
+   * @returns bool
+   */
+  has_buffered() {
+    return self._at < self._buffer.length()
+  }
+
+  /**
+   * Writes bytes as they are.
+   *
+   * @param string|bytes data
+   * @returns LineStream itself.
+   */
+  write(data) {
+    self._transport.write_all(data)
+
+    return self
+  }
+
+  /**
+   * Writes one line and the break that ends it.
+   *
+   * @param string text
+   * @returns LineStream itself.
+   */
+  write_line(text: string) {
+    return self.write('${text}\r\n')
+  }
+
+  /**
+   * Pushes anything buffered by the transport out to the peer.
+   *
+   * @returns LineStream itself.
+   */
+  flush() {
+    self._transport.flush()
+
+    return self
+  }
+
+  /**
+   * Closes the connection. Closing one that is already closed does
+   * nothing.
+   *
+   * @returns LineStream itself.
+   */
+  close() {
+    if self._closed {
+      return self
+    }
+
+    self._closed = true
+
+    catch {
+      self._transport.close()
+    } as error {
+      # A peer that has already gone makes closing fail, and there is
+      # nothing left to do about it here.
+    }
+
+    return self
+  }
+
+  /**
+   * Whether `close()` has been called.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return self._closed
+  }
+
+  to_string() {
+    return '<LineStream ${self._secure ? 'secure' : 'plain'}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Opens a connection to a host, in TLS or in the clear.
+ *
+ * @param string host
+ * @param number port
+ * @param dict options: `timeout` in milliseconds, `tls` to handshake
+ *    immediately, `tls_config` and `server_name`.
+ * @returns LineStream
+ * @throws Error if the connection or the handshake fails.
+ */
+def connect(host: string, port: number, options: dict) {
+  var socket = net.TcpStream()
+  var timeout = options.get('timeout', 30000)
+
+  socket.connect('${host}:${port}')
+  socket.set_read_timeout(timeout)
+  socket.set_write_timeout(timeout)
+
+  if !options.get('tls', false) {
+    return LineStream(socket, false)
+  }
+
+  var config = options.get('tls_config', nil)
+
+  return LineStream(
+    tls.TlsStream.connect(socket, config == nil ? tls.TlsConfig() : config,
+      options.get('server_name', host)),
+    true
+  )
+}
+
+/**
+ * Wraps a connection that started in the clear in TLS, which is what
+ * every `STARTTLS` comes down to.
+ *
+ * @param LineStream stream
+ * @param string server_name: The name to check the certificate against.
+ * @param ?TlsConfig config
+ * @returns LineStream the same one, now encrypted.
+ * @throws Error if the handshake fails.
+ */
+def start_tls(stream, server_name: string, config) {
+  return stream.upgrade(
+    tls.TlsStream.connect(
+      stream.transport(),
+      config == nil ? tls.TlsConfig() : config,
+      server_name
+    ),
+    true
+  )
+}
+
+/**
+ * Reads a connection string into the pieces needed to open it.
+ *
+ * Accepts `scheme://[user[:password]@]host[:port]`, and a bare
+ * `host[:port]` for which the first scheme in `schemes` is assumed.
+ *
+ * ```zuri
+ * import mail.stream
+ *
+ * var where = stream.endpoint('smtps://ann:secret@mail.example.com', {
+ *   smtp: { port: 587, tls: false },
+ *   smtps: { port: 465, tls: true },
+ * })
+ *
+ * echo '${where.host} ${where.port} ${where.tls} ${where.username}'
+ * ```
+ *
+ * ```console
+ * mail.example.com 465 true ann
+ * ```
+ *
+ * @param string url
+ * @param dict schemes: Each scheme's default port and whether it means
+ *    TLS from the first byte.
+ * @returns dict of `scheme`, `host`, `port`, `tls`, `username` and
+ *    `password`, the last two `nil` when the string carries none.
+ * @throws ProtocolError if the scheme is not one of those given, or
+ *    there is no host.
+ */
+def endpoint(url: string, schemes: dict) {
+  var rest = url
+  var scheme = schemes.keys()[0]
+  var marker = url.index_of('://')
+
+  if marker > -1 {
+    scheme = url[0, marker].lower()
+    rest = url[marker + 3, url.length()]
+  }
+
+  if !schemes.contains(scheme) {
+    raise ProtocolError('${scheme} is not one of ${', '.join(schemes.keys())}')
+  }
+
+  var slash = rest.index_of('/')
+
+  if slash > -1 {
+    rest = rest[0, slash]
+  }
+
+  var username = nil
+  var password = nil
+  var at = rest.last_index_of('@')
+
+  if at > -1 {
+    var credentials = rest[0, at]
+    var colon = credentials.index_of(':')
+
+    username = colon > -1 ? credentials[0, colon] : credentials
+    password = colon > -1 ? credentials[colon + 1, credentials.length()] : nil
+    rest = rest[at + 1, rest.length()]
+  }
+
+  var host = rest
+  var port = schemes[scheme].port
+
+  if rest.starts_with('[') {
+    var close = rest.index_of(']')
+
+    if close < 0 {
+      raise ProtocolError('the address is missing its closing bracket: ${url}')
+    }
+
+    host = rest[1, close]
+
+    var tail = rest[close + 1, rest.length()]
+
+    if tail.starts_with(':') {
+      port = tail[1, tail.length()].to_number()
+    }
+  } else {
+    var colon = rest.index_of(':')
+
+    if colon > -1 and rest.last_index_of(':') == colon {
+      host = rest[0, colon]
+      port = rest[colon + 1, rest.length()].to_number()
+    }
+  }
+
+  if host == '' {
+    raise ProtocolError('no host in ${url}')
+  }
+
+  return {
+    scheme,
+    host,
+    port,
+    tls: schemes[scheme].tls,
+    username,
+    password,
+  }
+}

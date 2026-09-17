@@ -1,0 +1,1887 @@
+/**
+ * @module client
+ *
+ * The reading end of IMAP.
+ *
+ * `ImapClient` connects to a server, opens a mailbox, and reads what
+ * is in it. Unlike POP3, nothing is downloaded that was not asked
+ * for: a message's headers, one part of it, or the whole of it, as
+ * needed.
+ *
+ * ```zuri,ignore
+ * import mail.imap { ImapClient }
+ *
+ * var inbox = ImapClient.connect('imaps://mail.example.com', {
+ *   username: 'ann',
+ *   password: secret,
+ * })
+ *
+ * inbox.select('INBOX')
+ *
+ * for id in inbox.search('UNSEEN') {
+ *   echo inbox.fetch_message(id).subject()
+ * }
+ *
+ * inbox.logout()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import date
+import net.tls
+
+import ..address
+import ..encoding
+import ..errors { AuthenticationError, ImapError, ProtocolError, StateError }
+import ..message { Message }
+import ..sasl
+import ..stream { TLS_MODES }
+import ..stream
+
+import .parser { Literal, Reader, quote }
+
+# 993 is IMAP wrapped in TLS from the first byte; 143 is the plain port
+# where TLS is negotiated with `STARTTLS` instead.
+var IMAP_SCHEMES = {
+  imaps: { port: 993, tls: true },
+  imap: { port: 143, tls: false },
+}
+
+# What a connection can be doing, which decides what commands it will
+# accept.
+var STATES = ['not-authenticated', 'authenticated', 'selected', 'logged-out']
+
+/**
+ * An open mailbox, and what the server said about it when it opened.
+ *
+ * @printable
+ */
+class Mailbox {
+
+  /**
+   * @param string name
+   */
+  @new(name: string) {
+    self.name = name
+    self.flags = []
+    self.permanent_flags = []
+    self.exists = 0
+    self.recent = 0
+    self.unseen = nil
+    self.uidvalidity = nil
+    self.uidnext = nil
+    self.read_only = false
+  }
+
+  to_string() {
+    return '<Mailbox ${self.name}, ${self.exists} messages>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * One mailbox as `list()` reports it: its name, the character that
+ * separates the levels of it, and what the server says about it.
+ *
+ * @printable
+ */
+class MailboxInfo {
+
+  /**
+   * @param string name
+   * @param list flags: The attributes, such as `\HasChildren`.
+   * @param ?string delimiter: The hierarchy separator, or `nil` for a
+   *    server with no hierarchy at all.
+   */
+  @new(name: string, flags: list, delimiter: ?string) {
+    self.name = name
+    self.flags = flags
+    self.delimiter = delimiter
+  }
+
+  /**
+   * Whether the server says this name cannot be selected, which is
+   * what a folder that only holds other folders looks like.
+   *
+   * @returns bool
+   */
+  is_selectable() {
+    return !self.flags.contains('\\Noselect') and !self.flags.contains('\\NonExistent')
+  }
+
+  to_string() {
+    return '<MailboxInfo ${self.name}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The addresses and dates out of a message's headers, as the server
+ * parsed them, so a list of messages can be shown without fetching
+ * any of them.
+ *
+ * @printable
+ */
+class Envelope {
+
+  @new(values: list) {
+    self.date = _text_of(values, 0)
+    self.subject = _decoded_of(values, 1)
+    self.from = _addresses_of(values, 2)
+    self.sender = _addresses_of(values, 3)
+    self.reply_to = _addresses_of(values, 4)
+    self.to = _addresses_of(values, 5)
+    self.cc = _addresses_of(values, 6)
+    self.bcc = _addresses_of(values, 7)
+    self.in_reply_to = _text_of(values, 8)
+    self.message_id = _text_of(values, 9)
+  }
+
+  /**
+   * The date as a `Date`, or `nil` when the server sent none or it
+   * cannot be read.
+   *
+   * @returns Date|nil
+   */
+  sent_at() {
+    if self.date == nil {
+      return nil
+    }
+
+    catch {
+      return date.parse(self.date)
+    } as error {
+      return nil
+    }
+  }
+
+  to_string() {
+    return '<Envelope ${self.subject == nil ? '(no subject)' : self.subject}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What one message is made of, without fetching it: the type of each
+ * part, its size, and where in the message it sits.
+ *
+ * `section` is the number a `BODY[...]` fetch uses to ask for that
+ * part on its own.
+ *
+ * @printable
+ */
+class BodyPart {
+
+  /**
+   * @param string type
+   * @param string subtype
+   * @param dict parameters
+   * @param ?number size
+   * @param string section
+   */
+  @new(type: string, subtype: string, parameters: dict, size: ?number, section: string) {
+    self.type = type
+    self.subtype = subtype
+    self.parameters = parameters
+    self.size = size
+    self.section = section
+    self.parts = []
+    self.encoding = nil
+    self.id = nil
+    self.description = nil
+    self.disposition = nil
+    self.filename = nil
+  }
+
+  /**
+   * The media type, as `text/plain`.
+   *
+   * @returns string
+   */
+  mime_type() {
+    return '${self.type}/${self.subtype}'
+  }
+
+  /**
+   * Every part inside this one and itself, outermost first.
+   *
+   * @returns list of `BodyPart`
+   */
+  walk() {
+    var found = [self]
+
+    for part in self.parts {
+      found.extend(part.walk())
+    }
+
+    return found
+  }
+
+  to_string() {
+    return '<BodyPart ${self.mime_type()} ${self.section}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What a `FETCH` returned about one message.
+ *
+ * Which fields are filled in depends on what was asked for. `parts`
+ * holds each `BODY[...]` section that came back, keyed by the section
+ * that was requested.
+ *
+ * @printable
+ */
+class MessageInfo {
+
+  /**
+   * @param number sequence: The message's position in the mailbox.
+   */
+  @new(sequence: number) {
+    self.sequence = sequence
+    self.uid = nil
+    self.flags = []
+    self.size = nil
+    self.internal_date = nil
+    self.envelope = nil
+    self.structure = nil
+    self.parts = {}
+  }
+
+  /**
+   * The whole message, when the fetch asked for it.
+   *
+   * @returns Message|nil
+   */
+  message() {
+    var raw = self.parts.get('', nil)
+
+    if raw == nil {
+      raw = self.parts.get('RFC822', nil)
+    }
+
+    return raw == nil ? nil : Message(nil, raw)
+  }
+
+  /**
+   * Whether the message has been read.
+   *
+   * @returns bool
+   */
+  is_seen() {
+    return self.flags.contains('\\Seen')
+  }
+
+  to_string() {
+    return '<MessageInfo ${self.uid == nil ? self.sequence : self.uid}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _text_of(values: list, index: number) {
+  if index >= values.length() {
+    return nil
+  }
+
+  var value = values[index]
+
+  if value == nil {
+    return nil
+  }
+
+  return instance_of(value, Literal) ? value.to_text() : '${value}'
+}
+
+# A subject arrives as the header carried it, encoded words and all.
+def _decoded_of(values: list, index: number) {
+  var raw = _text_of(values, index)
+
+  return raw == nil ? nil : encoding.decode_words(raw)
+}
+
+# An address in an envelope arrives as four pieces: the display name,
+# the source route nothing uses any more, and the two halves of the
+# address itself.
+def _addresses_of(values: list, index: number) {
+  if index >= values.length() {
+    return []
+  }
+
+  var group = values[index]
+
+  if group == nil or !is_list(group) {
+    return []
+  }
+
+  var found = []
+
+  for entry in group {
+    if !is_list(entry) or entry.length() < 4 {
+      continue
+    }
+
+    var name = _text_of(entry, 0)
+    var local = _text_of(entry, 2)
+    var domain = _text_of(entry, 3)
+
+    if local == nil {
+      continue
+    }
+
+    catch {
+      found.append(address.Address(
+        domain == nil ? local : '${local}@${domain}',
+        name
+      ))
+    } as error {
+      # An envelope entry that will not make an address is skipped
+      # rather than failing the whole fetch.
+    }
+  }
+
+  return found
+}
+
+/**
+ * A connection to a server that stores mail.
+ *
+ * @printable
+ */
+class ImapClient {
+
+  /**
+   * Builds a client around a connection that is already open.
+   *
+   * @param LineStream connection
+   * @param ?dict options: As `connect()`.
+   */
+  @new(connection, options: ?dict) {
+    var given = options == nil ? {} : options
+
+    self._stream = connection
+    self._reader = Reader(connection)
+    self._options = given
+    self._host = given.get('host', 'localhost')
+
+    self.capabilities = []
+    self.state = 'not-authenticated'
+    self.mailbox = nil
+    self.greeting = nil
+
+    self._counter = 0
+    self._pending = []
+    self._on_event = nil
+  }
+
+  /**
+   * Opens a connection and gets as far as being able to select a
+   * mailbox.
+   *
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `username`, `password` | none | authenticate when both are given |
+   * | `token` | none | authenticate with a bearer token instead |
+   * | `tls` | `require` | `require`, `prefer` or `disable`, when not already encrypted |
+   * | `tls_config` | a default one | the trust settings for TLS |
+   * | `mechanisms` | all of them | restricts which are acceptable |
+   * | `timeout` | `60000` | milliseconds to wait on the socket |
+   *
+   * @param string url: `imaps://host`, `imap://host`, or a bare host.
+   * @param ?dict options
+   * @returns ImapClient
+   * @throws ImapError if the server refuses.
+   * @throws AuthenticationError if it refuses the credentials.
+   */
+  static connect(url: string, options: ?dict) {
+    var given = options == nil ? {} : options
+    var where = stream.endpoint(url, IMAP_SCHEMES)
+    var settings = {}
+
+    for key in given.keys() {
+      settings[key] = given[key]
+    }
+
+    settings.host = where.host
+
+    if !settings.contains('username') and where.username != nil {
+      settings.username = where.username
+    }
+
+    if !settings.contains('password') and where.password != nil {
+      settings.password = where.password
+    }
+
+    var connection = stream.connect(where.host, where.port, {
+      timeout: given.get('timeout', 60000),
+      tls: where.tls,
+      tls_config: given.get('tls_config', nil),
+      server_name: given.get('server_name', where.host),
+    })
+
+    var client = ImapClient(connection, settings)
+
+    client.begin()
+
+    return client
+  }
+
+  /**
+   * Reads the greeting, negotiates TLS and authenticates.
+   *
+   * @returns ImapClient itself.
+   * @throws ImapError if the greeting says the server is not
+   *    available.
+   */
+  begin() {
+    var hello = self._reader.next()
+
+    self.greeting = hello
+
+    if hello.status == 'BYE' {
+      raise ImapError('${self._host} will not talk: ${hello.text}', 'BYE', hello.code_name)
+    }
+
+    if hello.status == 'PREAUTH' {
+      self.state = 'authenticated'
+    }
+
+    self._read_capability_code(hello)
+
+    if self.capabilities.is_empty() {
+      self.refresh_capabilities()
+    }
+
+    var mode = self._options.get('tls', 'require')
+
+    if !TLS_MODES.contains(mode) {
+      raise ProtocolError('tls must be one of ${', '.join(TLS_MODES)}')
+    }
+
+    if !self._stream.is_secure() and mode != 'disable' {
+      if self.supports('STARTTLS') {
+        self.start_tls()
+      } else if mode == 'require' {
+        raise ProtocolError('${self._host} does not offer STARTTLS')
+      }
+    }
+
+    if self.state == 'not-authenticated' {
+      if self._options.get('username', nil) != nil
+        or self._options.get('token', nil) != nil {
+        self.login()
+      }
+    }
+
+    return self
+  }
+
+  /**
+   * Whether the server offers a capability.
+   *
+   * @param string name: Matched without regard to case.
+   * @returns bool
+   */
+  supports(name: string) {
+    return self.capabilities.contains(name.upper())
+  }
+
+  /**
+   * Whether the connection is encrypted.
+   *
+   * @returns bool
+   */
+  is_secure() {
+    return self._stream.is_secure()
+  }
+
+  /**
+   * Asks the server what it can do, replacing what is known.
+   *
+   * @returns list of string
+   */
+  refresh_capabilities() {
+    self.run('CAPABILITY', [])
+
+    return self.capabilities
+  }
+
+  # A CAPABILITY list turns up in three places: its own response, the
+  # greeting's code, and the code on a successful login.
+  _read_capability_code(response) {
+    if response.code == nil or response.code.is_empty() {
+      return
+    }
+
+    if '${response.code[0]}'.upper() != 'CAPABILITY' {
+      return
+    }
+
+    self.capabilities = []
+
+    for value in response.code[1, response.code.length()] {
+      self.capabilities.append('${value}'.upper())
+    }
+  }
+
+  /**
+   * Negotiates TLS over a connection that started in the clear, and
+   * asks what the server can do again, because nothing it said before
+   * the handshake was protected.
+   *
+   * @returns ImapClient itself.
+   * @throws ImapError if the server refuses.
+   */
+  start_tls() {
+    if self._stream.is_secure() {
+      return self
+    }
+
+    self.run('STARTTLS', [])
+
+    stream.start_tls(
+      self._stream,
+      self._options.get('server_name', self._host),
+      self._options.get('tls_config', nil)
+    )
+
+    self.refresh_capabilities()
+
+    return self
+  }
+
+  /**
+   * Authenticates, choosing the strongest mechanism both ends know.
+   *
+   * A server may forbid a mechanism outright by advertising
+   * `LOGINDISABLED`, which is how it says the connection is not
+   * private enough; this refuses to try in that case rather than
+   * sending the password anyway.
+   *
+   * @param ?string mechanism: Forces one rather than choosing.
+   * @returns ImapClient itself.
+   * @throws AuthenticationError if there is no mechanism in common or
+   *    the credentials are refused.
+   */
+  login(mechanism: ?string) {
+    var offered = self._auth_mechanisms()
+    var chosen = mechanism
+
+    if chosen == nil {
+      chosen = sasl.choose(
+        offered,
+        self._options,
+        self._stream.is_secure(),
+        self._options.get('mechanisms', nil)
+      )
+    }
+
+    if chosen != nil {
+      return self.authenticate(sasl.of(chosen, self._options))
+    }
+
+    # LOGIN is the command every server has had since the beginning,
+    # and it is the fallback when SASL offers nothing usable.
+    if self.supports('LOGINDISABLED') or !self._stream.is_secure() {
+      raise AuthenticationError(
+        'no mechanism this connection can use without TLS; '
+        + 'the server offers ${', '.join(offered)}'
+      )
+    }
+
+    var username = self._options.get('username', nil)
+    var password = self._options.get('password', nil)
+
+    if username == nil or password == nil {
+      raise AuthenticationError('no credentials to log in with')
+    }
+
+    self.run('LOGIN', [quote(username), quote(password)])
+
+    self.state = 'authenticated'
+
+    return self
+  }
+
+  /**
+   * Runs one authentication exchange with a mechanism already built.
+   *
+   * @param Mechanism mechanism
+   * @returns ImapClient itself.
+   * @throws AuthenticationError if the server refuses.
+   */
+  authenticate(mechanism) {
+    var initial = mechanism.start()
+    var tag = self._next_tag()
+    var line = '${tag} AUTHENTICATE ${mechanism.name()}'
+
+    # SASL-IR lets the first response ride along with the command
+    # rather than waiting to be asked for it.
+    if initial != nil and self.supports('SASL-IR') {
+      line += ' ${_encode(initial)}'
+      initial = nil
+    }
+
+    self._stream.write_line(line)
+    self._stream.flush()
+
+    var sent_initial = initial == nil
+
+    while true {
+      var response = self._reader.next()
+
+      if response.kind == 'continuation' {
+        var answer = nil
+
+        catch {
+          answer = sent_initial ?
+            mechanism.step(_decode(response.tokens[0])) :
+            initial
+        } as error {
+          self._stream.write_line('*')
+          self._stream.flush()
+          self._reader.next()
+
+          raise error
+        }
+
+        sent_initial = true
+
+        self._stream.write_line(answer == nil ? '' : _encode(answer))
+        self._stream.flush()
+        continue
+      }
+
+      if response.kind == 'untagged' {
+        self._absorb(response)
+        continue
+      }
+
+      if response.tag != tag {
+        continue
+      }
+
+      if !response.is_ok() {
+        raise AuthenticationError(
+          '${self._host} refused the credentials: ${response.text}'
+        )
+      }
+
+      self._read_capability_code(response)
+
+      if self.capabilities.is_empty() {
+        self.refresh_capabilities()
+      }
+
+      self.state = 'authenticated'
+
+      return self
+    }
+  }
+
+  _auth_mechanisms() {
+    var found = []
+
+    for name in self.capabilities {
+      if name.starts_with('AUTH=') {
+        found.append(name[5, name.length()])
+      }
+    }
+
+    return found
+  }
+
+  _next_tag() {
+    self._counter++
+
+    return 'Z${self._counter}'
+  }
+
+  /**
+   * Sends a command and reads everything it draws, up to and including
+   * the tagged answer.
+   *
+   * Arguments are written as they are: a plain string goes unquoted,
+   * so quote anything that needs it with `parser.quote()` first. A
+   * `Literal` is sent as a literal, waiting for the server's
+   * permission unless it said permission is not needed.
+   *
+   * @param string name
+   * @param list arguments
+   * @returns list of the untagged responses the command produced.
+   * @throws ImapError if the server answers `NO` or `BAD`.
+   */
+  run(name: string, arguments: list) {
+    var tag = self._next_tag()
+
+    self._send(tag, name, arguments)
+
+    var collected = []
+
+    while true {
+      var response = self._reader.next()
+
+      if response.kind == 'continuation' {
+        raise ProtocolError('the server asked for more than ${name} had to give')
+      }
+
+      if response.kind == 'untagged' {
+        self._absorb(response)
+        collected.append(response)
+        continue
+      }
+
+      if response.tag != tag {
+        continue
+      }
+
+      if response.status == 'OK' {
+        self._read_capability_code(response)
+
+        return collected
+      }
+
+      raise ImapError(
+        '${name} was refused: ${response.text}',
+        response.status == nil ? 'NO' : response.status,
+        response.code_name
+      )
+    }
+  }
+
+  _send(tag: string, name: string, arguments: list) {
+    var line = '${tag} ${name}'
+
+    iter var index = 0; index < arguments.length(); index++ {
+      var argument = arguments[index]
+
+      if !instance_of(argument, Literal) {
+        line += ' ${argument}'
+        continue
+      }
+
+      var ahead = self.supports('LITERAL+') or self.supports('LITERAL-')
+
+      line += ' {${argument.length()}${ahead ? '+' : ''}}'
+
+      self._stream.write_line(line)
+      self._stream.flush()
+
+      if !ahead {
+        var go = self._reader.next()
+
+        if go.kind != 'continuation' {
+          raise ProtocolError('the server would not take a literal for ${name}')
+        }
+      }
+
+      self._stream.write(argument.data)
+
+      line = ''
+    }
+
+    self._stream.write_line(line)
+    self._stream.flush()
+  }
+
+  # Keeps the connection's own idea of the mailbox up to date from
+  # whatever the server volunteers, and hands anything a caller is
+  # listening for to the listener.
+  _absorb(response) {
+    var name = response.name()
+
+    if name == 'CAPABILITY' {
+      self.capabilities = []
+
+      for value in response.arguments() {
+        self.capabilities.append('${value}'.upper())
+      }
+    }
+
+    if self.mailbox != nil {
+      if name == 'EXISTS' {
+        self.mailbox.exists = response.number()
+      } else if name == 'RECENT' {
+        self.mailbox.recent = response.number()
+      } else if name == 'EXPUNGE' {
+        self.mailbox.exists = self.mailbox.exists - 1
+      } else if name == 'FLAGS' {
+        var arguments = response.arguments()
+
+        self.mailbox.flags = arguments.is_empty() ? [] : _strings(arguments[0])
+      }
+    }
+
+    if response.status != nil and response.code != nil {
+      self._read_status_code(response)
+    }
+
+    if self._on_event != nil {
+      var listener = self._on_event
+
+      catch {
+        listener(response)
+      } as error {
+        # A listener that fails must not take the connection with it.
+      }
+    }
+  }
+
+  _read_status_code(response) {
+    var code = response.code
+
+    if code.is_empty() or self.mailbox == nil {
+      return
+    }
+
+    var key = '${code[0]}'.upper()
+    var rest = code[1, code.length()]
+
+    if key == 'UIDVALIDITY' and !rest.is_empty() {
+      self.mailbox.uidvalidity = rest[0]
+    } else if key == 'UIDNEXT' and !rest.is_empty() {
+      self.mailbox.uidnext = rest[0]
+    } else if key == 'UNSEEN' and !rest.is_empty() {
+      self.mailbox.unseen = rest[0]
+    } else if key == 'PERMANENTFLAGS' and !rest.is_empty() {
+      self.mailbox.permanent_flags = _strings(rest[0])
+    } else if key == 'READ-ONLY' {
+      self.mailbox.read_only = true
+    } else if key == 'READ-WRITE' {
+      self.mailbox.read_only = false
+    }
+  }
+
+  /**
+   * Calls a function with every untagged response the server sends.
+   *
+   * This is how a program watches a mailbox: the server announces new
+   * mail and changed flags whenever it likes, and `idle()` exists so
+   * there is something to announce them during.
+   *
+   * @param ?function(1) listener: `nil` stops listening.
+   * @returns ImapClient itself.
+   */
+  on_event(listener) {
+    self._on_event = listener
+
+    return self
+  }
+
+  /**
+   * Opens a mailbox for reading and writing.
+   *
+   * @param string name
+   * @returns Mailbox
+   * @throws ImapError if there is no such mailbox.
+   */
+  select(name: string) {
+    return self._open('SELECT', name)
+  }
+
+  /**
+   * Opens a mailbox without being able to change anything in it, which
+   * also means reading a message does not mark it read.
+   *
+   * @param string name
+   * @returns Mailbox
+   * @throws ImapError if there is no such mailbox.
+   */
+  examine(name: string) {
+    return self._open('EXAMINE', name)
+  }
+
+  _open(command: string, name: string) {
+    var opened = Mailbox(name)
+
+    self.mailbox = opened
+    self.state = 'authenticated'
+
+    catch {
+      self.run(command, [quote(name)])
+    } as error {
+      self.mailbox = nil
+
+      raise error
+    }
+
+    self.state = 'selected'
+
+    if command == 'EXAMINE' {
+      opened.read_only = true
+    }
+
+    return opened
+  }
+
+  /**
+   * Closes the open mailbox, removing the messages marked deleted on
+   * the way out.
+   *
+   * @returns ImapClient itself.
+   */
+  close_mailbox() {
+    if self.state != 'selected' {
+      return self
+    }
+
+    self.run('CLOSE', [])
+
+    self.mailbox = nil
+    self.state = 'authenticated'
+
+    return self
+  }
+
+  /**
+   * Closes the open mailbox without removing anything, which is what
+   * `CLOSE` cannot do.
+   *
+   * @returns ImapClient itself.
+   * @throws StateError if the server does not offer `UNSELECT`.
+   */
+  unselect() {
+    if self.state != 'selected' {
+      return self
+    }
+
+    if !self.supports('UNSELECT') {
+      raise StateError('${self._host} does not offer UNSELECT')
+    }
+
+    self.run('UNSELECT', [])
+
+    self.mailbox = nil
+    self.state = 'authenticated'
+
+    return self
+  }
+
+  /**
+   * The mailboxes matching a pattern.
+   *
+   * `*` matches anything including the hierarchy separator, and `%`
+   * matches anything except it, which is what lists one level.
+   *
+   * ```zuri,ignore
+   * for box in inbox.list('', '*') {
+   *   echo box.name
+   * }
+   * ```
+   *
+   * @param ?string reference: The prefix to search under. Empty when
+   *    not given.
+   * @param ?string pattern: `*` when not given.
+   * @returns list of `MailboxInfo`
+   */
+  list(reference: ?string, pattern: ?string) {
+    return self._listing('LIST', reference, pattern)
+  }
+
+  /**
+   * The mailboxes matching a pattern that this account is subscribed
+   * to.
+   *
+   * @param ?string reference
+   * @param ?string pattern
+   * @returns list of `MailboxInfo`
+   */
+  lsub(reference: ?string, pattern: ?string) {
+    return self._listing('LSUB', reference, pattern)
+  }
+
+  _listing(command: string, reference: ?string, pattern: ?string) {
+    var responses = self.run(command, [
+      quote(reference == nil ? '' : reference),
+      quote(pattern == nil ? '*' : pattern),
+    ])
+
+    var found = []
+
+    for response in responses {
+      if response.name() != command {
+        continue
+      }
+
+      var arguments = response.arguments()
+
+      if arguments.length() < 3 {
+        continue
+      }
+
+      found.append(MailboxInfo(
+        _as_text(arguments[2]),
+        _strings(arguments[0]),
+        arguments[1] == nil ? nil : _as_text(arguments[1])
+      ))
+    }
+
+    return found
+  }
+
+  /**
+   * What is in a mailbox without opening it.
+   *
+   * ```zuri,ignore
+   * echo inbox.status('INBOX', ['MESSAGES', 'UNSEEN'])
+   * ```
+   *
+   * @param string name
+   * @param ?list items: `MESSAGES`, `RECENT`, `UIDNEXT`, `UIDVALIDITY`
+   *    and `UNSEEN`. All five when not given.
+   * @returns dict of the items asked for, by name.
+   */
+  status(name: string, items: ?list) {
+    var wanted = items == nil ?
+      ['MESSAGES', 'RECENT', 'UIDNEXT', 'UIDVALIDITY', 'UNSEEN'] :
+      items
+
+    var responses = self.run('STATUS', [quote(name), '(${' '.join(wanted)})'])
+    var found = {}
+
+    for response in responses {
+      if response.name() != 'STATUS' {
+        continue
+      }
+
+      var arguments = response.arguments()
+
+      if arguments.length() < 2 or !is_list(arguments[1]) {
+        continue
+      }
+
+      var pairs = arguments[1]
+
+      iter var index = 0; index + 1 < pairs.length(); index += 2 {
+        found['${pairs[index]}'.upper()] = pairs[index + 1]
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * Creates a mailbox.
+   *
+   * @param string name
+   * @returns ImapClient itself.
+   * @throws ImapError if it exists already or the name is not allowed.
+   */
+  create(name: string) {
+    self.run('CREATE', [quote(name)])
+
+    return self
+  }
+
+  /**
+   * Deletes a mailbox and everything in it.
+   *
+   * @param string name
+   * @returns ImapClient itself.
+   * @throws ImapError if there is no such mailbox.
+   */
+  delete(name: string) {
+    self.run('DELETE', [quote(name)])
+
+    return self
+  }
+
+  /**
+   * Renames a mailbox.
+   *
+   * @param string from
+   * @param string to
+   * @returns ImapClient itself.
+   */
+  rename(from: string, to: string) {
+    self.run('RENAME', [quote(from), quote(to)])
+
+    return self
+  }
+
+  /**
+   * Marks a mailbox as one this account wants to see.
+   *
+   * @param string name
+   * @returns ImapClient itself.
+   */
+  subscribe(name: string) {
+    self.run('SUBSCRIBE', [quote(name)])
+
+    return self
+  }
+
+  /**
+   * Undoes `subscribe()`.
+   *
+   * @param string name
+   * @returns ImapClient itself.
+   */
+  unsubscribe(name: string) {
+    self.run('UNSUBSCRIBE', [quote(name)])
+
+    return self
+  }
+
+  /**
+   * The messages in the open mailbox matching a search.
+   *
+   * The criteria are IMAP's own, which read close to English:
+   * `'UNSEEN'`, `'FROM ann@example.com'`, `'SINCE 1-Jan-2026 SMALLER
+   * 10000'`.
+   *
+   * ```zuri,ignore
+   * for uid in inbox.search('UNSEEN SINCE 1-Jan-2026', true) {
+   *   echo uid
+   * }
+   * ```
+   *
+   * @param string criteria
+   * @param ?bool by_uid: Return unique identifiers rather than
+   *    positions, which is what anything that outlives the connection
+   *    wants.
+   * @returns list of number
+   * @throws StateError if no mailbox is open.
+   */
+  search(criteria: string, by_uid: ?bool) {
+    self._need_mailbox('search')
+
+    var responses = self._maybe_uid('SEARCH', by_uid, [criteria])
+    var found = []
+
+    for response in responses {
+      if response.name() != 'SEARCH' {
+        continue
+      }
+
+      for value in response.arguments() {
+        if is_number(value) {
+          found.append(value)
+        }
+      }
+    }
+
+    return found
+  }
+
+  _maybe_uid(command: string, by_uid: ?bool, arguments: list) {
+    if by_uid == true {
+      return self.run('UID ${command}', arguments)
+    }
+
+    return self.run(command, arguments)
+  }
+
+  _need_mailbox(doing: string) {
+    if self.state != 'selected' {
+      raise StateError('select a mailbox before trying to ${doing}')
+    }
+  }
+
+  /**
+   * Fetches what the server knows about some messages.
+   *
+   * ```zuri,ignore
+   * for info in inbox.fetch('1:10', 'ENVELOPE FLAGS', false) {
+   *   echo '${info.sequence} ${info.envelope.subject}'
+   * }
+   * ```
+   *
+   * @param string|list|number ids: A set, as `'1:10'` or `'1,3,5'`, or
+   *    a list of numbers, or one number.
+   * @param ?string items: What to fetch, in IMAP's own words.
+   *    `ENVELOPE FLAGS INTERNALDATE RFC822.SIZE` when not given.
+   * @param ?bool by_uid: Whether `ids` are unique identifiers.
+   * @returns list of `MessageInfo`
+   * @throws StateError if no mailbox is open.
+   */
+  fetch(ids, items: ?string, by_uid: ?bool) {
+    self._need_mailbox('fetch')
+
+    var wanted = items == nil ?
+      'ENVELOPE FLAGS INTERNALDATE RFC822.SIZE' :
+      items
+
+    var responses = self._maybe_uid(
+      'FETCH',
+      by_uid,
+      [_id_set(ids), wanted.starts_with('(') ? wanted : '(${wanted})']
+    )
+
+    var found = []
+
+    for response in responses {
+      if response.name() != 'FETCH' {
+        continue
+      }
+
+      var arguments = response.arguments()
+
+      if arguments.is_empty() or !is_list(arguments[0]) {
+        continue
+      }
+
+      found.append(_read_fetch(response.number(), arguments[0]))
+    }
+
+    return found
+  }
+
+  /**
+   * Fetches one message whole.
+   *
+   * Reading a message this way does not mark it read, because a
+   * program that goes through a mailbox should not change what a
+   * person sees when they next open it. Pass `mark_seen` to say
+   * otherwise, which is what a mail client showing a message wants.
+   *
+   * ```zuri,ignore
+   * echo inbox.fetch_message(uid, true, false).subject()
+   * ```
+   *
+   * @param number id
+   * @param ?bool by_uid
+   * @param ?bool mark_seen: Whether to set `\Seen` on the way.
+   * @returns Message
+   * @throws ImapError if there is no such message.
+   */
+  fetch_message(id: number, by_uid: ?bool, mark_seen: ?bool) {
+    var found = self.fetch(id, mark_seen == true ? 'BODY[]' : 'BODY.PEEK[]', by_uid)
+
+    if found.is_empty() {
+      raise ImapError('no message ${id} in ${self.mailbox.name}', 'NO', nil)
+    }
+
+    var note = found[0].message()
+
+    if note == nil {
+      raise ProtocolError('the server sent no body for message ${id}')
+    }
+
+    return note
+  }
+
+  /**
+   * Fetches only the headers of some messages, which is enough to show
+   * a list without pulling the bodies across.
+   *
+   * @param string|list|number ids
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo`, each with `parts` holding the
+   *    header block.
+   */
+  fetch_headers(ids, by_uid: ?bool) {
+    return self.fetch(ids, 'BODY.PEEK[HEADER] FLAGS UID RFC822.SIZE', by_uid)
+  }
+
+  /**
+   * Changes the flags on some messages.
+   *
+   * @param string|list|number ids
+   * @param string action: `FLAGS` to replace, `+FLAGS` to add,
+   *    `-FLAGS` to remove. Add `.SILENT` to any of them to stop the
+   *    server reporting the result back.
+   * @param list flags: The flags, as `['\\Seen']`.
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo` describing what changed.
+   */
+  store(ids, action: string, flags: list, by_uid: ?bool) {
+    self._need_mailbox('change flags')
+
+    var responses = self._maybe_uid(
+      'STORE',
+      by_uid,
+      [_id_set(ids), action, '(${' '.join(flags)})']
+    )
+
+    var found = []
+
+    for response in responses {
+      if response.name() != 'FETCH' {
+        continue
+      }
+
+      var arguments = response.arguments()
+
+      if !arguments.is_empty() and is_list(arguments[0]) {
+        found.append(_read_fetch(response.number(), arguments[0]))
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * Adds flags to some messages, leaving the rest alone.
+   *
+   * @param string|list|number ids
+   * @param list flags
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo`
+   */
+  add_flags(ids, flags: list, by_uid: ?bool) {
+    return self.store(ids, '+FLAGS', flags, by_uid)
+  }
+
+  /**
+   * Removes flags from some messages.
+   *
+   * @param string|list|number ids
+   * @param list flags
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo`
+   */
+  remove_flags(ids, flags: list, by_uid: ?bool) {
+    return self.store(ids, '-FLAGS', flags, by_uid)
+  }
+
+  /**
+   * Marks messages read.
+   *
+   * @param string|list|number ids
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo`
+   */
+  mark_seen(ids, by_uid: ?bool) {
+    return self.add_flags(ids, ['\\Seen'], by_uid)
+  }
+
+  /**
+   * Marks messages for removal. Nothing goes until `expunge()`.
+   *
+   * @param string|list|number ids
+   * @param ?bool by_uid
+   * @returns list of `MessageInfo`
+   */
+  mark_deleted(ids, by_uid: ?bool) {
+    return self.add_flags(ids, ['\\Deleted'], by_uid)
+  }
+
+  /**
+   * Copies messages into another mailbox.
+   *
+   * @param string|list|number ids
+   * @param string target
+   * @param ?bool by_uid
+   * @returns ImapClient itself.
+   */
+  copy(ids, target: string, by_uid: ?bool) {
+    self._need_mailbox('copy')
+    self._maybe_uid('COPY', by_uid, [_id_set(ids), quote(target)])
+
+    return self
+  }
+
+  /**
+   * Moves messages into another mailbox.
+   *
+   * Uses the server's own `MOVE` where there is one, and otherwise
+   * does what `MOVE` was invented to replace: copy, mark deleted,
+   * expunge.
+   *
+   * @param string|list|number ids
+   * @param string target
+   * @param ?bool by_uid
+   * @returns ImapClient itself.
+   */
+  move(ids, target: string, by_uid: ?bool) {
+    self._need_mailbox('move')
+
+    if self.supports('MOVE') {
+      self._maybe_uid('MOVE', by_uid, [_id_set(ids), quote(target)])
+
+      return self
+    }
+
+    self.copy(ids, target, by_uid)
+    self.mark_deleted(ids, by_uid)
+
+    return self.expunge()
+  }
+
+  /**
+   * Removes every message marked deleted in the open mailbox.
+   *
+   * @returns list of number: the positions that went, highest first,
+   *    which is the order they have to be applied in.
+   */
+  expunge() {
+    self._need_mailbox('expunge')
+
+    var responses = self.run('EXPUNGE', [])
+    var gone = []
+
+    for response in responses {
+      if response.name() == 'EXPUNGE' {
+        gone.append(response.number())
+      }
+    }
+
+    return gone
+  }
+
+  /**
+   * Adds a message to a mailbox without sending it anywhere, which is
+   * how a sent message gets into the Sent folder.
+   *
+   * @param string mailbox
+   * @param Message|string|bytes note
+   * @param ?list flags: `['\\Seen']` is the usual one for a sent
+   *    message.
+   * @param ?Date received: The internal date to file it under. The
+   *    time of arrival when not given.
+   * @returns ImapClient itself.
+   */
+  append(mailbox: string, note, flags: ?list, received) {
+    var raw = instance_of(note, Message) ? note.to_bytes() : note
+    var arguments = [quote(mailbox)]
+
+    if flags != nil and !flags.is_empty() {
+      arguments.append('(${' '.join(flags)})')
+    }
+
+    if received != nil {
+      arguments.append('"${received.format('d-M-Y H:i:s O')}"')
+    }
+
+    arguments.append(Literal(is_bytes(raw) ? raw : '${raw}'.to_bytes()))
+
+    self.run('APPEND', arguments)
+
+    return self
+  }
+
+  /**
+   * Waits for the server to say something, which is how a program
+   * learns about new mail without asking over and over.
+   *
+   * Returns when the server reports anything, or when the wait runs
+   * out. A server may drop a connection that idles for too long, so
+   * even a program with nothing else to do should come back around
+   * every twenty minutes or so; RFC 2177 says as much.
+   *
+   * ```zuri,ignore
+   * inbox.on_event(@(response) {
+   *   echo 'server said ${response.name()}'
+   * })
+   *
+   * while true {
+   *   inbox.idle(1500000)
+   * }
+   * ```
+   *
+   * @param ?number timeout: Milliseconds to wait. `1500000`, which is
+   *    twenty-five minutes, when not given.
+   * @returns list of the untagged responses that arrived.
+   * @throws StateError if the server does not offer `IDLE`.
+   */
+  idle(timeout: ?number) {
+    self._need_mailbox('idle')
+
+    if !self.supports('IDLE') {
+      raise StateError('${self._host} does not offer IDLE')
+    }
+
+    var tag = self._next_tag()
+
+    self._stream.write_line('${tag} IDLE')
+    self._stream.flush()
+
+    var go = self._reader.next()
+
+    if go.kind != 'continuation' {
+      raise ProtocolError('the server would not start idling')
+    }
+
+    var collected = []
+
+    catch {
+      self._stream.transport().set_read_timeout(timeout == nil ? 1500000 : timeout)
+    } as error {
+      # A transport with no timeout of its own simply waits.
+    }
+
+    catch {
+      collected.append(self._reader.next())
+    } as error {
+      # Running out of time is the ordinary way this ends.
+    }
+
+    self._stream.write_line('DONE')
+    self._stream.flush()
+
+    while true {
+      var response = self._reader.next()
+
+      if response.kind == 'untagged' {
+        self._absorb(response)
+        collected.append(response)
+        continue
+      }
+
+      if response.tag == tag {
+        break
+      }
+    }
+
+    for response in collected {
+      if response.kind == 'untagged' {
+        self._absorb(response)
+      }
+    }
+
+    return collected
+  }
+
+  /**
+   * Asks the server for nothing, which both keeps the connection alive
+   * and gives it a chance to report anything that has changed.
+   *
+   * @returns list of the untagged responses that came with it.
+   */
+  noop() {
+    return self.run('NOOP', [])
+  }
+
+  /**
+   * The namespaces this account has: its own, other people's, and the
+   * shared ones.
+   *
+   * @returns list, as the server sent it.
+   * @throws StateError if the server does not offer `NAMESPACE`.
+   */
+  namespace() {
+    if !self.supports('NAMESPACE') {
+      raise StateError('${self._host} does not offer NAMESPACE')
+    }
+
+    for response in self.run('NAMESPACE', []) {
+      if response.name() == 'NAMESPACE' {
+        return response.arguments()
+      }
+    }
+
+    return []
+  }
+
+  /**
+   * Turns on an extension the server offers but does not use until
+   * asked, such as `UTF8=ACCEPT`.
+   *
+   * @param list names
+   * @returns ImapClient itself.
+   * @throws StateError if the server does not offer `ENABLE`.
+   */
+  enable(names: list) {
+    if !self.supports('ENABLE') {
+      raise StateError('${self._host} does not offer ENABLE')
+    }
+
+    self.run('ENABLE', [' '.join(names)])
+
+    return self
+  }
+
+  /**
+   * Tells the server what this client is, and reads back what the
+   * server is. Both sides may say nothing at all.
+   *
+   * @param ?dict fields: `name`, `version` and whatever else is worth
+   *    saying. A name of `Zuri` when not given.
+   * @returns dict of what the server said about itself.
+   */
+  id(fields: ?dict) {
+    if !self.supports('ID') {
+      return {}
+    }
+
+    var given = fields == nil ? { name: 'Zuri' } : fields
+    var pairs = []
+
+    for key in given.keys() {
+      pairs.append('${quote(key)} ${quote('${given[key]}')}')
+    }
+
+    var found = {}
+
+    for response in self.run('ID', ['(${' '.join(pairs)})']) {
+      if response.name() != 'ID' {
+        continue
+      }
+
+      var arguments = response.arguments()
+
+      if arguments.is_empty() or !is_list(arguments[0]) {
+        continue
+      }
+
+      var values = arguments[0]
+
+      iter var index = 0; index + 1 < values.length(); index += 2 {
+        found['${values[index]}'] = values[index + 1] == nil ?
+          nil :
+          _as_text(values[index + 1])
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * Says goodbye and closes the connection.
+   *
+   * @returns ImapClient itself.
+   */
+  logout() {
+    catch {
+      self.run('LOGOUT', [])
+    } as error {
+      # A server that closes on LOGOUT rather than answering it is
+      # doing the same thing by other means.
+    }
+
+    self.state = 'logged-out'
+    self.mailbox = nil
+
+    self._stream.close()
+
+    return self
+  }
+
+  /**
+   * Closes the connection without saying goodbye.
+   *
+   * @returns ImapClient itself.
+   */
+  close() {
+    self.state = 'logged-out'
+
+    self._stream.close()
+
+    return self
+  }
+
+  to_string() {
+    var where = self.mailbox == nil ? self.state : self.mailbox.name
+
+    return '<ImapClient ${self._host} ${where}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# A set of message numbers as IMAP writes one.
+def _id_set(ids) {
+  if is_string(ids) {
+    return ids
+  }
+
+  if is_number(ids) {
+    return '${ids}'
+  }
+
+  return ','.join(ids.map(@(one) => '${one}'))
+}
+
+def _as_text(value) {
+  if value == nil {
+    return nil
+  }
+
+  return instance_of(value, Literal) ? value.to_text() : '${value}'
+}
+
+def _strings(value) {
+  if value == nil or !is_list(value) {
+    return []
+  }
+
+  return value.map(@(item) => '${item}')
+}
+
+# The `name value name value` pairs a FETCH response carries.
+def _read_fetch(sequence: number, values: list) {
+  var info = MessageInfo(sequence)
+  var index = 0
+
+  while index < values.length() {
+    var key = '${values[index]}'.upper()
+    var value = index + 1 < values.length() ? values[index + 1] : nil
+
+    index += 2
+
+    if key == 'UID' {
+      info.uid = value
+      continue
+    }
+
+    if key == 'FLAGS' {
+      info.flags = _strings(value)
+      continue
+    }
+
+    if key == 'RFC822.SIZE' {
+      info.size = value
+      continue
+    }
+
+    if key == 'INTERNALDATE' {
+      info.internal_date = _read_internal_date(_as_text(value))
+      continue
+    }
+
+    if key == 'ENVELOPE' {
+      info.envelope = is_list(value) ? Envelope(value) : nil
+      continue
+    }
+
+    # `BODY (...)` is the structure of the message; `BODY[...]` is a
+    # piece of the message itself. The brackets are what tell them
+    # apart, and the tokenizer keeps them on the name.
+    if key == 'BODYSTRUCTURE' or (key == 'BODY' and is_list(value)) {
+      info.structure = is_list(value) ? _read_structure(value, '1') : nil
+      continue
+    }
+
+    var open = key.index_of('[')
+
+    if open > -1 or key == 'RFC822' or key == 'RFC822.HEADER'
+      or key == 'RFC822.TEXT' {
+      var section = key
+
+      if open > -1 {
+        var close = key.last_index_of(']')
+
+        section = close > open ? key[open + 1, close] : ''
+      }
+
+      info.parts[section] = instance_of(value, Literal) ?
+        value.data :
+        (value == nil ? bytes(0) : '${value}'.to_bytes())
+    }
+  }
+
+  return info
+}
+
+# IMAP writes its own date, `17-Sep-2026 02:52:33 +0100`, which is not
+# one of the spellings the general parser recognises.
+def _read_internal_date(text: ?string) {
+  if text == nil {
+    return nil
+  }
+
+  catch {
+    return date.parse_format(text.trim(), 'd-M-Y H:i:s O')
+  } as error {
+    catch {
+      return date.parse(text)
+    } as failure {
+      return nil
+    }
+  }
+}
+
+# A body structure is a list whose first value is either a string, in
+# which case this is one part, or a list, in which case it is a
+# multipart and the lists are its children.
+def _read_structure(values: list, section: string) {
+  if values.is_empty() {
+    return nil
+  }
+
+  if is_list(values[0]) {
+    var children = []
+    var subtype = 'mixed'
+    var index = 0
+
+    while index < values.length() and is_list(values[index]) {
+      var child = _read_structure(values[index], '${section}.${index + 1}')
+
+      if child != nil {
+        children.append(child)
+      }
+
+      index++
+    }
+
+    if index < values.length() {
+      subtype = '${values[index]}'.lower()
+    }
+
+    var part = BodyPart('multipart', subtype, {}, nil, section)
+
+    part.parts = children
+
+    return part
+  }
+
+  var type = '${values[0]}'.lower()
+  var subtype = values.length() > 1 ? '${values[1]}'.lower() : ''
+  var part = BodyPart(
+    type,
+    subtype,
+    _read_pairs(values.length() > 2 ? values[2] : nil),
+    values.length() > 6 ? values[6] : nil,
+    section
+  )
+
+  part.id = values.length() > 3 ? _as_text(values[3]) : nil
+  part.description = values.length() > 4 ? _as_text(values[4]) : nil
+  part.encoding = values.length() > 5 ? _as_text(values[5]) : nil
+  part.filename = part.parameters.get('name', nil)
+
+  return part
+}
+
+def _read_pairs(value) {
+  var found = {}
+
+  if value == nil or !is_list(value) {
+    return found
+  }
+
+  iter var index = 0; index + 1 < value.length(); index += 2 {
+    found['${value[index]}'.lower()] = _as_text(value[index + 1])
+  }
+
+  return found
+}
+
+def _encode(raw) {
+  return base64.encode(is_bytes(raw) ? raw : '${raw}'.to_bytes())
+}
+
+def _decode(text) {
+  var value = text == nil ? '' : '${text}'.trim()
+
+  if value == '' {
+    return bytes(0)
+  }
+
+  catch {
+    return base64.decode(value)
+  } as error {
+    return value.to_bytes()
+  }
+}

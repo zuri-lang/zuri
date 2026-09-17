@@ -1,0 +1,2224 @@
+/**
+ * @module resolver
+ *
+ * A DNS resolver, written in Zuri from the wire format up.
+ *
+ * `net.resolve()` answers the one question the operating system will
+ * answer for you: what addresses does this name have. Everything else
+ * a name can carry, from the mail servers of a domain to the text
+ * record a service asks you to publish, needs a resolver that speaks
+ * DNS itself. This is that resolver.
+ *
+ * ```zuri,ignore
+ * import net.resolver
+ *
+ * for record in resolver.mx('example.com') {
+ *   echo '${record.preference} ${record.exchange}'
+ * }
+ * ```
+ *
+ * The module-level functions go through one shared `Resolver` built
+ * from this machine's own configuration, which is what most programs
+ * want. Build your own when you need to ask a particular server, or
+ * ask it over TLS:
+ *
+ * ```zuri,ignore
+ * import net.resolver { Resolver }
+ *
+ * var dns = Resolver({
+ *   servers: ['1.1.1.1'],
+ *   tls: true,
+ *   server_name: 'cloudflare-dns.com',
+ * })
+ *
+ * echo dns.txt('example.com')
+ * ```
+ *
+ * ### What it does
+ *
+ * Queries go out over UDP and fall back to TCP when the answer does
+ * not fit, which is the behaviour every resolver is required to have
+ * and the reason a large TXT or DNSKEY record arrives intact. EDNS(0)
+ * is advertised so that fallback is rare. Each query carries a random
+ * identifier from a fresh ephemeral port, answers that do not match
+ * the question asked are discarded, and a server that does not answer
+ * in time gives way to the next one.
+ *
+ * Answers are cached for as long as their own time-to-live says, and
+ * a name that does not exist is cached too, for as long as the zone's
+ * own authority record allows. Caching is per resolver and can be
+ * turned off.
+ *
+ * ### What it does not do
+ *
+ * It does not validate DNSSEC. Signatures are carried through when a
+ * server sends them, and the `dnssec` option asks for them, but nothing
+ * here checks one. A program that needs a validated answer wants a
+ * validating server and a trusted path to it, which is what `tls`
+ * gives.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _net_resolver
+
+import .tcp { TcpStream }
+import .udp { UdpSocket }
+import .ip { Ip, Ipv6 }
+import .tls
+
+import crypto
+
+/**
+ * The record types this module knows how to read, by name. A type it
+ * has no name for is still parsed, reported by its number, and its
+ * data handed over as raw bytes.
+ *
+ * @type dict
+ */
+var TYPES = {
+  A: 1,
+  NS: 2,
+  CNAME: 5,
+  SOA: 6,
+  PTR: 12,
+  HINFO: 13,
+  MX: 15,
+  TXT: 16,
+  RP: 17,
+  AFSDB: 18,
+  SIG: 24,
+  KEY: 25,
+  AAAA: 28,
+  LOC: 29,
+  SRV: 33,
+  NAPTR: 35,
+  KX: 36,
+  CERT: 37,
+  DNAME: 39,
+  OPT: 41,
+  DS: 43,
+  SSHFP: 44,
+  IPSECKEY: 45,
+  RRSIG: 46,
+  NSEC: 47,
+  DNSKEY: 48,
+  DHCID: 49,
+  NSEC3: 50,
+  NSEC3PARAM: 51,
+  TLSA: 52,
+  SMIMEA: 53,
+  HIP: 55,
+  CDS: 59,
+  CDNSKEY: 60,
+  OPENPGPKEY: 61,
+  CSYNC: 62,
+  ZONEMD: 63,
+  SVCB: 64,
+  HTTPS: 65,
+  EUI48: 108,
+  EUI64: 109,
+  URI: 256,
+  CAA: 257,
+  ANY: 255,
+}
+
+/**
+ * The classes a question can be asked in. `IN`, the internet class, is
+ * the only one in general use and is the default everywhere here.
+ *
+ * @type dict
+ */
+var CLASSES = {
+  IN: 1,
+  CH: 3,
+  HS: 4,
+  NONE: 254,
+  ANY: 255,
+}
+
+/**
+ * What a server said about the question, by name. `NOERROR` means the
+ * query succeeded, which is not the same as it having found anything.
+ *
+ * @type dict
+ */
+var RCODES = {
+  NOERROR: 0,
+  FORMERR: 1,
+  SERVFAIL: 2,
+  NXDOMAIN: 3,
+  NOTIMP: 4,
+  REFUSED: 5,
+  YXDOMAIN: 6,
+  YXRRSET: 7,
+  NXRRSET: 8,
+  NOTAUTH: 9,
+  NOTZONE: 10,
+  BADVERS: 16,
+}
+
+# The largest response this resolver is willing to be sent over UDP.
+# 1232 is the payload that still fits a 1280 byte IPv6 path without
+# fragmenting, and a fragmented DNS response is one that arrives
+# unreliably or not at all.
+var _EDNS_UDP_SIZE = 1232
+
+# A response bigger than the advertised size cannot arrive over UDP,
+# so the receive buffer only has to cover the largest legal datagram.
+var _UDP_BUFFER = 4096
+
+# A message carried over TCP is preceded by its length in two bytes,
+# which caps it at 65535.
+var _MAX_TCP_MESSAGE = 65535
+
+# Chasing a chain of aliases has to stop somewhere. A chain longer than
+# this in one answer is a loop or a server being deliberately unhelpful.
+var _MAX_ALIAS_HOPS = 16
+
+# Compression pointers can point at other compression pointers. This
+# bounds the walk so a message pointing at itself fails rather than
+# hangs.
+var _MAX_NAME_HOPS = 64
+
+/**
+ * The root of every error this module raises.
+ */
+class ResolverError < Error {}
+
+/**
+ * The name does not exist. This is the `NXDOMAIN` answer, and it is an
+ * answer rather than a failure: an authoritative server has said that
+ * nothing is published under this name at all.
+ */
+class NameError < ResolverError {}
+
+/**
+ * The server answered, and the answer was a refusal or a failure of
+ * its own. `rcode` carries the code it sent and `rcode_name` the name
+ * of that code.
+ */
+class ServerError < ResolverError {
+
+  /**
+   * @param string message
+   * @param number rcode: The code the server replied with.
+   */
+  @new(message: string, rcode: number) {
+    parent(message)
+
+    self.rcode = rcode
+    self.rcode_name = _rcode_name(rcode)
+  }
+}
+
+/**
+ * No server answered in time. Every configured server was asked, as
+ * many times as `attempts` allows, and none of them replied.
+ */
+class ResolverTimeout < ResolverError {}
+
+/**
+ * Something came back that is not a DNS message, or is one that
+ * contradicts itself. A truncated answer, a compression pointer that
+ * loops, a record whose length runs past the end of the message.
+ */
+class MalformedResponse < ResolverError {}
+
+/**
+ * The resolver has nowhere to send a query: no servers were given and
+ * the system has none configured.
+ */
+class NoServersError < ResolverError {}
+
+# The name of a type number, or the number itself in the form a zone
+# file would write it for a type that has no name.
+def _type_name(value: number) {
+  for name, number in TYPES {
+    if number == value {
+      return name
+    }
+  }
+
+  return 'TYPE${value}'
+}
+
+def _class_name(value: number) {
+  for name, number in CLASSES {
+    if number == value {
+      return name
+    }
+  }
+
+  return 'CLASS${value}'
+}
+
+def _rcode_name(value: number) {
+  for name, number in RCODES {
+    if number == value {
+      return name
+    }
+  }
+
+  return 'RCODE${value}'
+}
+
+# Accepts a type as either its name or its number, so every call site
+# can take whichever the caller finds clearer.
+def _type_number(type) {
+  if is_number(type) {
+    return type
+  }
+
+  var name = type.upper()
+
+  if TYPES.contains(name) {
+    return TYPES[name]
+  }
+
+  if name.starts_with('TYPE') {
+    var number = name[4, name.length()].to_number()
+
+    if number > 0 or name == 'TYPE0' {
+      return number
+    }
+  }
+
+  raise ResolverError('unknown record type ${type}')
+}
+
+def _class_number(klass) {
+  if klass == nil {
+    return CLASSES.IN
+  }
+
+  if is_number(klass) {
+    return klass
+  }
+
+  var name = klass.upper()
+
+  if CLASSES.contains(name) {
+    return CLASSES[name]
+  }
+
+  raise ResolverError('unknown record class ${klass}')
+}
+
+# Two and four byte big-endian integers, which is the only integer
+# width DNS uses. Every value in a message is unsigned.
+def _put_int2(out, value: number) {
+  out.append((value >> 8) & 0xff)
+  out.append(value & 0xff)
+}
+
+def _put_int4(out, value: number) {
+  _put_int2(out, (value / 65536).floor() & 0xffff)
+  _put_int2(out, value & 0xffff)
+}
+
+# Three decimal digits, which is the form an escaped byte takes in a
+# name.
+def _pad3(value: number) {
+  var text = '${value}'
+
+  while text.length() < 3 {
+    text = '0' + text
+  }
+
+  return text
+}
+
+/**
+ * Splits a name into its labels, reading the escapes a name in
+ * presentation form may carry: `\.` for a dot inside a label, `\\` for
+ * a backslash, and `\255` for any byte by its decimal value.
+ *
+ * Works on bytes rather than characters so a name that is already
+ * UTF-8 survives, which matters for the internationalised names a
+ * server may hand back without converting them.
+ */
+def _split_labels(name: string) {
+  var raw = name.to_bytes()
+  var labels = []
+  var current = bytes(0)
+  var index = 0
+
+  while index < raw.length() {
+    var value = raw[index]
+
+    if value == 0x5c {
+      index++
+
+      if index >= raw.length() {
+        raise ResolverError('name ends with a dangling escape: ${name}')
+      }
+
+      var next = raw[index]
+
+      if next >= 0x30 and next <= 0x39 {
+        if index + 2 >= raw.length() {
+          raise ResolverError('escape needs three digits in name: ${name}')
+        }
+
+        var digits = raw[index, index + 3].to_string()
+        var number = digits.to_number()
+
+        if number > 255 {
+          raise ResolverError('escape ${digits} is not a byte in name: ${name}')
+        }
+
+        current.append(number)
+        index += 3
+        continue
+      }
+
+      current.append(next)
+      index++
+      continue
+    }
+
+    if value == 0x2e {
+      labels.append(current)
+      current = bytes(0)
+      index++
+      continue
+    }
+
+    current.append(value)
+    index++
+  }
+
+  labels.append(current)
+
+  return labels
+}
+
+# The presentation form of one label: the bytes a name can hold are not
+# the bytes a name can be written with.
+def _escape_label(raw) {
+  var out = ''
+
+  for value in raw {
+    if value == 0x2e or value == 0x5c {
+      out += '\\' + value.chr()
+    } else if value < 0x21 or value > 0x7e {
+      out += '\\' + _pad3(value)
+    } else {
+      out += value.chr()
+    }
+  }
+
+  return out
+}
+
+/**
+ * Encodes a name into the label sequence a message carries.
+ *
+ * A trailing dot is optional and means the same thing either way; the
+ * name is always sent fully qualified, because a message has no notion
+ * of a relative one.
+ *
+ * @param string name
+ * @returns bytes
+ * @throws ResolverError if a label is longer than 63 bytes or the
+ *    whole name longer than 255.
+ */
+def _encode_name(name: string) {
+  var out = bytes(0)
+
+  if name == '' or name == '.' {
+    out.append(0)
+
+    return out
+  }
+
+  var trimmed = name.ends_with('.') ? name[0, name.length() - 1] : name
+
+  for label in _split_labels(trimmed) {
+    if label.is_empty() {
+      raise ResolverError('name has an empty label: ${name}')
+    }
+
+    if label.length() > 63 {
+      raise ResolverError('label longer than 63 bytes in name: ${name}')
+    }
+
+    out.append(label.length())
+    out.extend(label)
+  }
+
+  out.append(0)
+
+  if out.length() > 255 {
+    raise ResolverError('name longer than 255 bytes: ${name}')
+  }
+
+  return out
+}
+
+/**
+ * Reads a message from the front, one field at a time.
+ *
+ * Every read is bounds checked, because a message that says it holds
+ * more than it does is exactly what a hostile answer looks like.
+ */
+class _Reader {
+
+  /**
+   * @param bytes data: The whole message, since a name may point back
+   *    into any part of it.
+   */
+  @new(data) {
+    self._data = data
+    self._at = 0
+  }
+
+  position() {
+    return self._at
+  }
+
+  seek(position: number) {
+    self._at = position
+  }
+
+  remaining() {
+    return self._data.length() - self._at
+  }
+
+  byte() {
+    if self.remaining() < 1 {
+      raise MalformedResponse('message ended in the middle of a field')
+    }
+
+    var value = self._data[self._at]
+    self._at++
+
+    return value
+  }
+
+  int2() {
+    var high = self.byte()
+    var low = self.byte()
+
+    return (high << 8) | low
+  }
+
+  int4() {
+    var high = self.int2()
+    var low = self.int2()
+
+    return (high * 65536) + low
+  }
+
+  take(count: number) {
+    if count < 0 or self.remaining() < count {
+      raise MalformedResponse('message ended in the middle of a field')
+    }
+
+    var slice = count == 0 ? bytes(0) : self._data[self._at, self._at + count]
+    self._at += count
+
+    return slice
+  }
+
+  /**
+   * Reads a name, following the compression pointers that let a
+   * message mention the same suffix once.
+   *
+   * @returns string the name with no trailing dot, or `.` for the root
+   */
+  name() {
+    var labels = []
+    var at = self._at
+    var jumped = false
+    var hops = 0
+
+    while true {
+      if at >= self._data.length() {
+        raise MalformedResponse('name runs past the end of the message')
+      }
+
+      var length = self._data[at]
+
+      if length == 0 {
+        at++
+        break
+      }
+
+      if (length & 0xc0) == 0xc0 {
+        if at + 1 >= self._data.length() {
+          raise MalformedResponse('compression pointer runs past the end')
+        }
+
+        var target = ((length & 0x3f) << 8) | self._data[at + 1]
+
+        if !jumped {
+          self._at = at + 2
+          jumped = true
+        }
+
+        hops++
+
+        if hops > _MAX_NAME_HOPS {
+          raise MalformedResponse('compression pointers loop')
+        }
+
+        if target >= self._data.length() {
+          raise MalformedResponse('compression pointer runs past the end')
+        }
+
+        at = target
+        continue
+      }
+
+      if (length & 0xc0) != 0 {
+        raise MalformedResponse('reserved label type in a name')
+      }
+
+      at++
+
+      if at + length > self._data.length() {
+        raise MalformedResponse('label runs past the end of the message')
+      }
+
+      labels.append(_escape_label(self._data[at, at + length]))
+      at += length
+    }
+
+    if !jumped {
+      self._at = at
+    }
+
+    if labels.is_empty() {
+      return '.'
+    }
+
+    return '.'.join(labels)
+  }
+}
+
+/**
+ * One mail server for a domain, as an `MX` record names it.
+ *
+ * Mail is delivered to the exchange with the lowest preference that
+ * answers, so `Resolver.mx()` hands them back in that order.
+ *
+ * @printable
+ */
+class MailExchange {
+
+  /**
+   * @param number preference: Lower is tried first.
+   * @param string exchange: The name of the mail server.
+   */
+  @new(preference: number, exchange: string) {
+    self.preference = preference
+    self.exchange = exchange
+  }
+
+  to_string() {
+    return '${self.preference} ${self.exchange}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Where a service lives, as an `SRV` record names it: the host and
+ * port, with the priority and weight that decide which of several to
+ * use.
+ *
+ * Clients try the lowest priority first, and choose among equal
+ * priorities in proportion to their weight.
+ *
+ * @printable
+ */
+class Service {
+
+  /**
+   * @param number priority: Lower is tried first.
+   * @param number weight: The share of traffic among equal priorities.
+   * @param number port: The port the service listens on.
+   * @param string target: The name of the host running it.
+   */
+  @new(priority: number, weight: number, port: number, target: string) {
+    self.priority = priority
+    self.weight = weight
+    self.port = port
+    self.target = target
+  }
+
+  /**
+   * The `host:port` this record points at, ready to hand to
+   * `TcpStream.connect()`.
+   *
+   * @returns string
+   */
+  address() {
+    return '${self.target}:${self.port}'
+  }
+
+  to_string() {
+    return '${self.priority} ${self.weight} ${self.port} ${self.target}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The authority record at the top of a zone, which says who publishes
+ * it and how long the rest of the world may hold on to what it says.
+ *
+ * @printable
+ */
+class StartOfAuthority {
+
+  /**
+   * @param string primary: The name of the primary nameserver.
+   * @param string mailbox: The address of whoever is responsible, with
+   *    the first dot standing in for the `@`.
+   * @param number serial: The version of the zone.
+   * @param number refresh: Seconds a secondary waits between checks.
+   * @param number retry: Seconds a secondary waits after a failed one.
+   * @param number expire: Seconds a secondary may serve the zone
+   *    without reaching the primary.
+   * @param number minimum: Seconds a negative answer may be cached.
+   */
+  @new(primary, mailbox, serial, refresh, retry, expire, minimum) {
+    self.primary = primary
+    self.mailbox = mailbox
+    self.serial = serial
+    self.refresh = refresh
+    self.retry = retry
+    self.expire = expire
+    self.minimum = minimum
+  }
+
+  to_string() {
+    return '${self.primary} ${self.mailbox} ${self.serial} ${self.refresh} '
+      + '${self.retry} ${self.expire} ${self.minimum}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A `CAA` record: which certificate authorities a domain allows to
+ * issue for it.
+ *
+ * @printable
+ */
+class Certification {
+
+  /**
+   * @param number flags: Bit 7 set means a client must understand the
+   *    tag or refuse to issue.
+   * @param string tag: `issue`, `issuewild` or `iodef` in practice.
+   * @param string value: What the tag names, usually an authority's
+   *    domain.
+   */
+  @new(flags: number, tag: string, value: string) {
+    self.flags = flags
+    self.tag = tag
+    self.value = value
+  }
+
+  to_string() {
+    return '${self.flags} ${self.tag} "${self.value}"'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * One resource record: a name, what kind of thing it holds, how long
+ * it may be cached, and the thing itself.
+ *
+ * What `data` holds depends on the type:
+ *
+ * | type | `data` |
+ * | - | - |
+ * | `A`, `AAAA` | the address, as a string |
+ * | `NS`, `CNAME`, `PTR`, `DNAME` | the name, as a string |
+ * | `MX` | a `MailExchange` |
+ * | `SRV` | a `Service` |
+ * | `SOA` | a `StartOfAuthority` |
+ * | `CAA` | a `Certification` |
+ * | `TXT` | a list of strings, one per character-string |
+ * | anything else | the record's data, as bytes |
+ *
+ * @printable
+ */
+class Record {
+
+  /**
+   * @param string name: The name this record is published under.
+   * @param number type: The record type, as a number.
+   * @param number klass: The record class, as a number.
+   * @param number ttl: Seconds this record may be cached for.
+   * @param any data: The record's contents, per the table above.
+   */
+  @new(name, type, klass, ttl, data) {
+    self.name = name
+    self.type = type
+    self.type_name = _type_name(type)
+    self.klass = klass
+    self.class_name = _class_name(klass)
+    self.ttl = ttl
+    self.data = data
+  }
+
+  /**
+   * A `TXT` record's strings joined into one, which is how a record
+   * split across several character-strings is meant to be read. Any
+   * other type raises.
+   *
+   * @returns string
+   * @throws ResolverError if this is not a `TXT` record.
+   */
+  text() {
+    if self.type != TYPES.TXT {
+      raise ResolverError('${self.type_name} records have no text')
+    }
+
+    return ''.join(self.data)
+  }
+
+  /**
+   * The record as a zone file would write it.
+   *
+   * @returns string
+   */
+  to_string() {
+    var value = self.data
+
+    if self.type == TYPES.TXT {
+      value = ' '.join(self.data.map(@(part) => '"${part}"'))
+    } else if is_bytes(value) {
+      value = '\\# ${value.length()}'
+    }
+
+    return '${self.name} ${self.ttl} ${self.class_name} ${self.type_name} ${value}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The question a message asks, echoed back in the answer so a reply
+ * can be matched to what it replies to.
+ *
+ * @printable
+ */
+class Question {
+
+  /**
+   * @param string name
+   * @param number type
+   * @param number klass
+   */
+  @new(name: string, type: number, klass: number) {
+    self.name = name
+    self.type = type
+    self.type_name = _type_name(type)
+    self.klass = klass
+    self.class_name = _class_name(klass)
+  }
+
+  to_string() {
+    return '${self.name} ${self.class_name} ${self.type_name}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A whole answer: what was asked, what came back, and what the server
+ * said about it.
+ *
+ * @printable
+ */
+class Response {
+
+  @new(id, flags, question, answers, authorities, additionals, extended) {
+    self.id = id
+    self.flags = flags
+    self.question = question
+    self.answers = answers
+    self.authorities = authorities
+    self.additionals = additionals
+
+    # The four bit code in the header only reaches 15. EDNS widens it
+    # by eight more bits carried in the OPT record, which is where a
+    # code like BADVERS lives.
+    self.rcode = ((extended == nil ? 0 : extended) << 4) | (flags & 0x000f)
+    self.rcode_name = _rcode_name(self.rcode)
+
+    self.authoritative = (flags & 0x0400) != 0
+    self.truncated = (flags & 0x0200) != 0
+    self.recursion_desired = (flags & 0x0100) != 0
+    self.recursion_available = (flags & 0x0080) != 0
+    self.authentic = (flags & 0x0020) != 0
+  }
+
+  /**
+   * The answers of one type, leaving out the aliases and anything else
+   * the server sent along.
+   *
+   * @param string|number type
+   * @returns list of `Record`
+   */
+  records_of(type) {
+    var wanted = _type_number(type)
+
+    return self.answers.filter(@(record) => record.type == wanted)
+  }
+
+  /**
+   * Raises when the server reported anything other than success. A
+   * name that does not exist raises `NameError`; everything else
+   * raises `ServerError`.
+   *
+   * @returns Response itself, so this can be chained.
+   * @throws NameError|ServerError
+   */
+  ok() {
+    if self.rcode == RCODES.NOERROR {
+      return self
+    }
+
+    var asked = self.question == nil ? 'the query' : self.question.name
+
+    if self.rcode == RCODES.NXDOMAIN {
+      raise NameError('no such name: ${asked}')
+    }
+
+    raise ServerError(
+      '${self.rcode_name} answering ${asked}',
+      self.rcode
+    )
+  }
+
+  to_string() {
+    return '<Response ${self.rcode_name}, ${self.answers.length()} answers>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Reads the contents of one record. `length` is what the record said
+# about itself, and the reader is left at the end of it whatever
+# happens, so one record this module cannot make sense of does not
+# derail the ones after it.
+def _read_rdata(reader, type: number, length: number) {
+  var end = reader.position() + length
+
+  if length > reader.remaining() {
+    raise MalformedResponse('record data runs past the end of the message')
+  }
+
+  var data = nil
+
+  if type == TYPES.A and length == 4 {
+    var raw = reader.take(4)
+    data = '${raw[0]}.${raw[1]}.${raw[2]}.${raw[3]}'
+  } else if type == TYPES.AAAA and length == 16 {
+    var raw = reader.take(16)
+    var groups = []
+
+    iter var index = 0; index < 16; index += 2 {
+      groups.append((raw[index] << 8) | raw[index + 1])
+    }
+
+    data = _ipv6_text(groups)
+  } else if type == TYPES.NS or type == TYPES.CNAME or type == TYPES.PTR
+    or type == TYPES.DNAME {
+    data = reader.name()
+  } else if type == TYPES.MX {
+    var preference = reader.int2()
+    data = MailExchange(preference, reader.name())
+  } else if type == TYPES.SOA {
+    var primary = reader.name()
+    var mailbox = reader.name()
+    var serial = reader.int4()
+    var refresh = reader.int4()
+    var retry = reader.int4()
+    var expire = reader.int4()
+    data = StartOfAuthority(primary, mailbox, serial, refresh, retry, expire, reader.int4())
+  } else if type == TYPES.SRV {
+    var priority = reader.int2()
+    var weight = reader.int2()
+    var port = reader.int2()
+    data = Service(priority, weight, port, reader.name())
+  } else if type == TYPES.TXT {
+    var parts = []
+
+    while reader.position() < end {
+      parts.append(reader.take(reader.byte()).to_string())
+    }
+
+    data = parts
+  } else if type == TYPES.CAA and length >= 2 {
+    var flags = reader.byte()
+    var tag = reader.take(reader.byte()).to_string()
+    data = Certification(flags, tag, reader.take(end - reader.position()).to_string())
+  } else {
+    data = reader.take(length)
+  }
+
+  reader.seek(end)
+
+  return data
+}
+
+# Zuri has no way to spread a list into an argument list, so the eight
+# segments of an IPv6 address are handed over one at a time.
+def _ipv6_text(groups: list) {
+  return Ipv6(
+    groups[0], groups[1], groups[2], groups[3],
+    groups[4], groups[5], groups[6], groups[7]
+  ).to_string()
+}
+
+def _read_records(reader, count: number) {
+  var records = []
+
+  iter var index = 0; index < count; index++ {
+    var name = reader.name()
+    var type = reader.int2()
+    var klass = reader.int2()
+    var ttl = reader.int4()
+    var length = reader.int2()
+
+    records.append(Record(name, type, klass, ttl, _read_rdata(reader, type, length)))
+  }
+
+  return records
+}
+
+/**
+ * Turns the bytes of a message into a `Response`.
+ *
+ * @param bytes data
+ * @returns Response
+ * @throws MalformedResponse if the bytes are not a well-formed message
+ */
+def parse_message(data) {
+  if data.length() < 12 {
+    raise MalformedResponse('message is too short to hold a header')
+  }
+
+  var reader = _Reader(data)
+  var id = reader.int2()
+  var flags = reader.int2()
+  var question_count = reader.int2()
+  var answer_count = reader.int2()
+  var authority_count = reader.int2()
+  var additional_count = reader.int2()
+  var question = nil
+
+  iter var index = 0; index < question_count; index++ {
+    var name = reader.name()
+    var type = reader.int2()
+    var klass = reader.int2()
+
+    if question == nil {
+      question = Question(name, type, klass)
+    }
+  }
+
+  var answers = _read_records(reader, answer_count)
+  var authorities = _read_records(reader, authority_count)
+  var additionals = _read_records(reader, additional_count)
+  var extended = 0
+
+  for record in additionals {
+    if record.type == TYPES.OPT {
+      # OPT reuses the TTL field for three things at once, and the
+      # extended part of the response code is the first byte of it.
+      extended = (record.ttl / 16777216).floor() & 0xff
+    }
+  }
+
+  return Response(id, flags, question, answers, authorities, additionals, extended)
+}
+
+/**
+ * Builds the bytes of a query.
+ *
+ * @param number id: The identifier to match the answer against.
+ * @param string name: The name to ask about.
+ * @param number type
+ * @param number klass
+ * @param dict options: `recursion`, `edns`, `udp_size` and `dnssec`.
+ * @returns bytes
+ */
+def build_query(id: number, name: string, type: number, klass: number, options: dict) {
+  var out = bytes(0)
+  var flags = options.recursion ? 0x0100 : 0
+
+  _put_int2(out, id)
+  _put_int2(out, flags)
+  _put_int2(out, 1)
+  _put_int2(out, 0)
+  _put_int2(out, 0)
+  _put_int2(out, options.edns ? 1 : 0)
+
+  out.extend(_encode_name(name))
+  _put_int2(out, type)
+  _put_int2(out, klass)
+
+  if options.edns {
+    # An OPT record is a record in shape only: its name is always the
+    # root, its class carries the payload size the sender can accept,
+    # and its TTL carries flags.
+    out.append(0)
+    _put_int2(out, TYPES.OPT)
+    _put_int2(out, options.udp_size)
+    out.append(0)
+    out.append(0)
+    _put_int2(out, options.dnssec ? 0x8000 : 0)
+    _put_int2(out, 0)
+  }
+
+  return out
+}
+
+# An address and a port, written the way a socket expects to be handed
+# them. An IPv6 literal has to be bracketed or the colon before the
+# port is just another colon.
+def _endpoint(address: string, port: number) {
+  if address.index_of(':') > -1 {
+    return '[${address}]:${port}'
+  }
+
+  return '${address}:${port}'
+}
+
+# A configured server may name its own port. A bracketed address always
+# does it unambiguously; a bare one is only a host and port when there
+# is exactly one colon in it, since more than one makes it IPv6.
+def _server_endpoint(entry: string, default_port: number) {
+  if entry.starts_with('[') {
+    var close = entry.index_of(']')
+
+    if close < 0 {
+      raise ResolverError('server address is missing its closing bracket: ${entry}')
+    }
+
+    var host = entry[1, close]
+    var tail = entry[close + 1, entry.length()]
+
+    if tail.starts_with(':') {
+      return _endpoint(host, tail[1, tail.length()].to_number())
+    }
+
+    return _endpoint(host, default_port)
+  }
+
+  var first = entry.index_of(':')
+
+  if first > -1 and entry.last_index_of(':') == first {
+    return _endpoint(entry[0, first], entry[first + 1, entry.length()].to_number())
+  }
+
+  return _endpoint(entry, default_port)
+}
+
+# Frames a message for a stream. TCP carries a byte stream with no
+# boundaries of its own, so every message is preceded by its length.
+def _frame(query) {
+  if query.length() > _MAX_TCP_MESSAGE {
+    raise ResolverError('query is too large to send')
+  }
+
+  var framed = bytes(0)
+
+  _put_int2(framed, query.length())
+  framed.extend(query)
+
+  return framed
+}
+
+def _read_framed(stream) {
+  var header = stream.read_exact(2)
+
+  if header.length() < 2 {
+    raise MalformedResponse('connection closed before the answer arrived')
+  }
+
+  var length = (header[0] << 8) | header[1]
+  var body = length == 0 ? bytes(0) : stream.read_exact(length)
+
+  if body.length() < length {
+    raise MalformedResponse('connection closed in the middle of the answer')
+  }
+
+  return body
+}
+
+/**
+ * Asks one server one question and returns what it said.
+ *
+ * Used by `Resolver`, and on its own when you want to talk to a
+ * particular server without any of the retrying, caching or search
+ * list a resolver puts around it.
+ *
+ * @param string server: An address, optionally with a port.
+ * @param bytes query: The message to send.
+ * @param dict options: `timeout`, `port`, `tcp`, `tls`, `tls_config`
+ *    and `server_name`.
+ * @returns bytes the answer, unparsed
+ * @throws Error on a network failure or a timeout
+ */
+def exchange(server: string, query, options: dict) {
+  if options.tls {
+    return _exchange_tls(server, query, options)
+  }
+
+  if options.tcp {
+    return _exchange_tcp(server, query, options)
+  }
+
+  return _exchange_udp(server, query, options)
+}
+
+# The local address to send from, matched to the family of the server
+# being asked. Port zero asks the operating system for an unused one,
+# and an unpredictable source port is part of what makes an answer hard
+# to forge.
+def _local_for(endpoint: string) {
+  return endpoint.starts_with('[') ? '[::]:0' : '0.0.0.0:0'
+}
+
+def _exchange_udp(server: string, query, options: dict) {
+  var socket = UdpSocket()
+  var deadline = time() + (options.timeout / 1000)
+  var endpoint = _server_endpoint(server, options.port)
+
+  catch {
+    socket.bind(_local_for(endpoint))
+    socket.set_write_timeout(options.timeout)
+    socket.connect(endpoint)
+    socket.send(query)
+
+    # A datagram from the right address is not necessarily an answer to
+    # the question just asked: it could be a late reply to an earlier
+    # one, or something aimed at this port on purpose. Keep reading
+    # until one identifies itself correctly or the time runs out.
+    while true {
+      var left = ((deadline - time()) * 1000).floor()
+
+      if left <= 0 {
+        raise ResolverTimeout('${server} did not answer in time')
+      }
+
+      socket.set_read_timeout(left)
+
+      var answer = socket.receive(_UDP_BUFFER)
+
+      if options.expect_id == nil or answer.length() < 2 {
+        socket.close()
+
+        return answer
+      }
+
+      if ((answer[0] << 8) | answer[1]) == options.expect_id {
+        socket.close()
+
+        return answer
+      }
+    }
+  } as error {
+    socket.close()
+
+    raise error
+  }
+}
+
+def _exchange_tcp(server: string, query, options: dict) {
+  var stream = TcpStream()
+
+  catch {
+    stream.connect(_server_endpoint(server, options.port), options.timeout)
+    stream.set_read_timeout(options.timeout)
+    stream.set_write_timeout(options.timeout)
+    stream.write_all(_frame(query))
+
+    var answer = _read_framed(stream)
+    stream.close()
+
+    return answer
+  } as error {
+    stream.close()
+
+    raise error
+  }
+}
+
+def _exchange_tls(server: string, query, options: dict) {
+  if options.server_name == nil {
+    raise ResolverError('a resolver using TLS needs the server_name to verify against')
+  }
+
+  var stream = TcpStream()
+  var secure = nil
+
+  catch {
+    stream.connect(_server_endpoint(server, options.port), options.timeout)
+    stream.set_read_timeout(options.timeout)
+    stream.set_write_timeout(options.timeout)
+
+    var config = options.tls_config == nil ? tls.TlsConfig() : options.tls_config
+    secure = tls.TlsStream.connect(stream, config, options.server_name)
+
+    secure.write_all(_frame(query))
+
+    var answer = _read_framed(secure)
+    secure.close()
+
+    return answer
+  } as error {
+    if secure != nil {
+      secure.close()
+    } else {
+      stream.close()
+    }
+
+    raise error
+  }
+}
+
+def _count_dots(name: string) {
+  var count = 0
+
+  for value in name.to_bytes() {
+    if value == 0x2e {
+      count++
+    }
+  }
+
+  return count
+}
+
+/**
+ * The nameservers this machine is configured to use, in the order the
+ * system lists them.
+ *
+ * Read from `/etc/resolv.conf` on unix and from the network stack on
+ * Windows. An address that is only meaningful together with an
+ * interface, which is how a link-local IPv6 server is configured, is
+ * left out, because nothing here can carry the interface along with
+ * it.
+ *
+ * ```zuri,ignore
+ * import net.resolver
+ *
+ * echo resolver.system_servers()
+ * # [127.0.0.53]
+ * ```
+ *
+ * @returns list of string, possibly empty
+ */
+def system_servers() {
+  return _net_resolver.resolver_system_servers()
+}
+
+/**
+ * The domain suffixes to try against a name that has no dots in it.
+ *
+ * Usually empty away from a managed network. `Resolver` uses this as
+ * the default for its `search` option.
+ *
+ * @returns list of string, possibly empty
+ */
+def system_search() {
+  var found = []
+
+  for suffix in _net_resolver.resolver_system_search() {
+    # A lone dot is how a system says "search the root", which is the
+    # same as not searching at all.
+    var trimmed = suffix.ends_with('.') ? suffix[0, suffix.length() - 1] : suffix
+
+    if trimmed != '' {
+      found.append(trimmed)
+    }
+  }
+
+  return found
+}
+
+/**
+ * Asks questions of the domain name system and reads the answers.
+ *
+ * One resolver holds its own configuration and its own cache, so a
+ * program can keep several: one for the machine's own servers, one for
+ * a particular provider over TLS, one with caching off for a test.
+ *
+ * ```zuri,ignore
+ * import net.resolver { Resolver }
+ *
+ * var dns = Resolver()
+ *
+ * echo dns.addresses('example.com')
+ * echo dns.mx('example.com')
+ * ```
+ *
+ * @printable
+ */
+class Resolver {
+
+  /**
+   * Builds a resolver.
+   *
+   * Every option has a default, and the defaults describe this
+   * machine, so `Resolver()` behaves the way the rest of the system
+   * does.
+   *
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `servers` | the system's own | the addresses to ask, in order |
+   * | `port` | `53`, or `853` with `tls` | the port to ask them on |
+   * | `timeout` | `5000` | milliseconds one server gets to answer |
+   * | `attempts` | `2` | times to go round the whole list |
+   * | `tcp` | `false` | send over TCP rather than UDP |
+   * | `tls` | `false` | send over TLS, which implies TCP |
+   * | `server_name` | none | the name to verify the TLS certificate against |
+   * | `tls_config` | a default `TlsConfig` | the trust settings for TLS |
+   * | `search` | the system's own | suffixes to try against a short name |
+   * | `ndots` | `1` | dots a name needs before it is tried unsuffixed first |
+   * | `recursion` | `true` | ask the server to do the work |
+   * | `edns` | `true` | advertise a larger UDP payload |
+   * | `udp_size` | `1232` | how much larger |
+   * | `dnssec` | `false` | ask for signature records, without validating them |
+   * | `cache` | `true` | remember answers for as long as they say |
+   * | `cache_size` | `512` | entries to keep before evicting |
+   *
+   * @param ?dict options
+   * @throws ResolverError if an option is not one of the above.
+   */
+  @new(options: ?dict) {
+    var given = options == nil ? {} : options
+
+    for key in given.keys() {
+      if !_OPTIONS.contains(key) {
+        raise ResolverError('unknown resolver option ${key}')
+      }
+    }
+
+    self._tls = given.get('tls', false)
+    self._tcp = given.get('tcp', false) or self._tls
+    self._servers = given.get('servers', nil)
+    self._port = given.get('port', self._tls ? 853 : 53)
+    self._timeout = given.get('timeout', 5000)
+    self._attempts = given.get('attempts', 2)
+    self._server_name = given.get('server_name', nil)
+    self._tls_config = given.get('tls_config', nil)
+    self._search = given.get('search', nil)
+    self._ndots = given.get('ndots', 1)
+    self._recursion = given.get('recursion', true)
+    self._edns = given.get('edns', true)
+    self._udp_size = given.get('udp_size', _EDNS_UDP_SIZE)
+    self._dnssec = given.get('dnssec', false)
+    self._caching = given.get('cache', true)
+    self._cache_size = given.get('cache_size', 512)
+
+    self._cache = {}
+    self._order = []
+  }
+
+  /**
+   * The servers this resolver asks, in the order it asks them.
+   *
+   * @returns list of string
+   * @throws NoServersError if none were given and the system has none.
+   */
+  servers() {
+    if self._servers == nil {
+      self._servers = system_servers()
+    }
+
+    if self._servers.is_empty() {
+      raise NoServersError(
+        'no nameservers configured; pass servers to Resolver() to name them'
+      )
+    }
+
+    return self._servers
+  }
+
+  /**
+   * The suffixes this resolver tries against a name too short to be
+   * meant on its own.
+   *
+   * @returns list of string, possibly empty
+   */
+  search() {
+    if self._search == nil {
+      self._search = system_search()
+    }
+
+    return self._search
+  }
+
+  # Identifiers are random rather than sequential: an answer is only
+  # accepted if it carries the identifier of the question, so a
+  # guessable one is a way in.
+  _next_id() {
+    var raw = crypto.random_bytes(2)
+
+    return (raw[0] << 8) | raw[1]
+  }
+
+  _transport(over_tcp: bool, expect_id) {
+    return {
+      timeout: self._timeout,
+      port: self._port,
+      tcp: over_tcp,
+      tls: self._tls,
+      tls_config: self._tls_config,
+      server_name: self._server_name,
+      expect_id,
+    }
+  }
+
+  _shape() {
+    return {
+      recursion: self._recursion,
+      edns: self._edns,
+      udp_size: self._udp_size,
+      dnssec: self._dnssec,
+    }
+  }
+
+  _cache_key(name: string, type: number, klass: number) {
+    return '${name.lower()}|${type}|${klass}'
+  }
+
+  _cached(key: string) {
+    if !self._caching or !self._cache.contains(key) {
+      return nil
+    }
+
+    var entry = self._cache[key]
+
+    if entry.expires <= time() {
+      self._forget(key)
+
+      return nil
+    }
+
+    return entry.response
+  }
+
+  _remember(key: string, response) {
+    if !self._caching {
+      return
+    }
+
+    var ttl = _cacheable_ttl(response)
+
+    if ttl <= 0 {
+      return
+    }
+
+    if self._cache.contains(key) {
+      self._forget(key)
+    }
+
+    self._cache[key] = { expires: time() + ttl, response }
+    self._order.append(key)
+
+    while self._order.length() > self._cache_size {
+      self._forget(self._order[0])
+    }
+  }
+
+  _forget(key: string) {
+    self._cache.remove(key)
+    self._order.remove(key)
+  }
+
+  /**
+   * Empties this resolver's cache.
+   *
+   * @returns Resolver itself.
+   */
+  flush() {
+    self._cache = {}
+    self._order = []
+
+    return self
+  }
+
+  # Sends one question to every server in turn, as many rounds as
+  # `attempts` allows, and returns the first answer that is an answer
+  # to it. A server that fails or falls silent gives way to the next.
+  _ask(name: string, type: number, klass: number) {
+    var failure = nil
+
+    iter var attempt = 0; attempt < self._attempts; attempt++ {
+      for server in self.servers() {
+        catch {
+          return self._ask_one(server, name, type, klass)
+        } as error {
+          failure = error
+        }
+      }
+    }
+
+    if failure == nil {
+      raise ResolverTimeout('no server answered for ${name}')
+    }
+
+    raise failure
+  }
+
+  _ask_one(server: string, name: string, type: number, klass: number) {
+    var id = self._next_id()
+    var query = build_query(id, name, type, klass, self._shape())
+    var raw = exchange(server, query, self._transport(self._tcp, id))
+    var response = parse_message(raw)
+
+    # A truncated answer is the server saying the real one did not fit.
+    # Asking again over a stream is the only way to see the rest of it.
+    if response.truncated and !self._tcp {
+      raw = exchange(server, query, self._transport(true, id))
+      response = parse_message(raw)
+    }
+
+    if response.id != id {
+      raise MalformedResponse('${server} answered a question that was not asked')
+    }
+
+    if !_answers_question(response, name, type, klass) {
+      raise MalformedResponse('${server} answered with a different question')
+    }
+
+    return response
+  }
+
+  # The names to try, in order. A name that already ends in a dot is
+  # meant exactly as written. A short one gets the search list, and
+  # `ndots` decides whether it is tried on its own before or after.
+  _candidates(name: string) {
+    if name.ends_with('.') or self.search().is_empty() {
+      return [name]
+    }
+
+    var suffixed = self.search().map(@(suffix) => '${name}.${suffix}')
+
+    if _count_dots(name) >= self._ndots {
+      return [name] + suffixed
+    }
+
+    return suffixed + [name]
+  }
+
+  /**
+   * Asks about one name and hands back the whole answer, including the
+   * records the server sent along with it.
+   *
+   * The search list is applied, so a short name is tried with each
+   * configured suffix. The answer is not checked: a name that does not
+   * exist comes back as a `Response` whose `rcode` says so, which is
+   * what `ok()` is for.
+   *
+   * ```zuri,ignore
+   * import net.resolver { Resolver }
+   *
+   * var response = Resolver().query('example.com', 'MX').ok()
+   *
+   * echo response.answers
+   * ```
+   *
+   * @param string name
+   * @param string|number type: A name from `TYPES` or a number.
+   * @param ?string|number klass: `IN` unless told otherwise.
+   * @returns Response
+   * @throws NoServersError if there is nowhere to send the query.
+   * @throws ResolverTimeout if no server answered.
+   * @throws MalformedResponse if what came back is not a valid answer.
+   */
+  query(name: string, type, klass) {
+    var wanted = _type_number(type)
+    var in_class = _class_number(klass)
+    var last = nil
+
+    for candidate in self._candidates(name) {
+      var key = self._cache_key(candidate, wanted, in_class)
+      var hit = self._cached(key)
+
+      if hit != nil {
+        if hit.rcode == RCODES.NOERROR {
+          return hit
+        }
+
+        last = hit
+        continue
+      }
+
+      var response = self._ask(candidate, wanted, in_class)
+      self._remember(key, response)
+
+      if response.rcode == RCODES.NOERROR {
+        return response
+      }
+
+      last = response
+    }
+
+    return last
+  }
+
+  /**
+   * The records of one type published for a name.
+   *
+   * Aliases are followed: asking for the `A` records of a name that is
+   * a `CNAME` gives the addresses at the end of the chain. A name that
+   * exists but publishes nothing of this type gives an empty list,
+   * which is a different thing from the name not existing.
+   *
+   * @param string name
+   * @param string|number type
+   * @param ?string|number klass
+   * @returns list of `Record`
+   * @throws NameError if the name does not exist.
+   * @throws ServerError if the server reported a failure.
+   */
+  resolve(name: string, type, klass) {
+    var wanted = _type_number(type)
+    var in_class = _class_number(klass)
+    var response = self.query(name, wanted, in_class).ok()
+    var target = response.question == nil ? name : response.question.name
+    var hops = 0
+
+    while true {
+      var direct = _records_named(response.answers, target, wanted)
+
+      if !direct.is_empty() {
+        return direct
+      }
+
+      if wanted == TYPES.CNAME {
+        return []
+      }
+
+      var alias = _records_named(response.answers, target, TYPES.CNAME)
+
+      if alias.is_empty() {
+        return []
+      }
+
+      hops++
+
+      if hops > _MAX_ALIAS_HOPS {
+        raise ResolverError('alias chain for ${name} does not end')
+      }
+
+      target = alias[0].data
+
+      # The server usually resolves the whole chain for us and sends
+      # every step of it. When it stops short, the rest has to be asked
+      # for separately.
+      if _records_named(response.answers, target, wanted).is_empty()
+        and _records_named(response.answers, target, TYPES.CNAME).is_empty() {
+        response = self.query(target, wanted, in_class).ok()
+      }
+    }
+  }
+
+  /**
+   * Every address a name has, IPv4 first and then IPv6.
+   *
+   * @param string name
+   * @returns list of string
+   * @throws NameError if the name does not exist.
+   */
+  addresses(name: string) {
+    return self.a(name) + self.aaaa(name)
+  }
+
+  /**
+   * The IPv4 addresses of a name.
+   *
+   * @param string name
+   * @returns list of string
+   * @throws NameError if the name does not exist.
+   */
+  a(name: string) {
+    return self.resolve(name, TYPES.A).map(@(record) => record.data)
+  }
+
+  /**
+   * The IPv6 addresses of a name.
+   *
+   * @param string name
+   * @returns list of string
+   * @throws NameError if the name does not exist.
+   */
+  aaaa(name: string) {
+    return self.resolve(name, TYPES.AAAA).map(@(record) => record.data)
+  }
+
+  /**
+   * The name this one is an alias for, or `nil` when it is not one.
+   *
+   * @param string name
+   * @returns string|nil
+   * @throws NameError if the name does not exist.
+   */
+  cname(name: string) {
+    var found = self.resolve(name, TYPES.CNAME)
+
+    return found.is_empty() ? nil : found[0].data
+  }
+
+  /**
+   * The mail servers for a domain, lowest preference first, which is
+   * the order they should be tried in.
+   *
+   * ```zuri,ignore
+   * import net.resolver { Resolver }
+   *
+   * for server in Resolver().mx('example.com') {
+   *   echo '${server.preference} ${server.exchange}'
+   * }
+   * ```
+   *
+   * @param string name
+   * @returns list of `MailExchange`
+   * @throws NameError if the name does not exist.
+   */
+  mx(name: string) {
+    var found = self.resolve(name, TYPES.MX).map(@(record) => record.data)
+
+    return found.sort(@(left, right) => left.preference - right.preference)
+  }
+
+  /**
+   * The nameservers a domain is delegated to.
+   *
+   * @param string name
+   * @returns list of string
+   * @throws NameError if the name does not exist.
+   */
+  ns(name: string) {
+    return self.resolve(name, TYPES.NS).map(@(record) => record.data)
+  }
+
+  /**
+   * The text records of a name, one string per record.
+   *
+   * A record split across several character-strings, which is how
+   * anything longer than 255 bytes is published, is joined back
+   * together, because the split is a limit of the wire format and not
+   * part of what was published.
+   *
+   * @param string name
+   * @returns list of string
+   * @throws NameError if the name does not exist.
+   */
+  txt(name: string) {
+    return self.resolve(name, TYPES.TXT).map(@(record) => record.text())
+  }
+
+  /**
+   * The authority record at the top of the zone a name belongs to, or
+   * `nil` when the name is not the top of one.
+   *
+   * @param string name
+   * @returns StartOfAuthority|nil
+   * @throws NameError if the name does not exist.
+   */
+  soa(name: string) {
+    var found = self.resolve(name, TYPES.SOA)
+
+    return found.is_empty() ? nil : found[0].data
+  }
+
+  /**
+   * The hosts running a service, by priority and then by weight.
+   *
+   * Among equal priorities the record with the larger weight should
+   * take proportionally more traffic; this returns them heaviest
+   * first, and choosing between them is the caller's to make.
+   *
+   * @param string name: The full service name, such as
+   *    `_imap._tcp.example.com`.
+   * @returns list of `Service`
+   * @throws NameError if the name does not exist.
+   */
+  srv(name: string) {
+    var found = self.resolve(name, TYPES.SRV).map(@(record) => record.data)
+
+    return found.sort(@(left, right) {
+      if left.priority != right.priority {
+        return left.priority - right.priority
+      }
+
+      return right.weight - left.weight
+    })
+  }
+
+  /**
+   * The names an address points back at.
+   *
+   * Takes the address itself rather than a reversed name, so there is
+   * no need to build `4.3.2.1.in-addr.arpa` by hand.
+   *
+   * ```zuri,ignore
+   * import net.resolver { Resolver }
+   *
+   * echo Resolver().ptr('8.8.8.8')
+   * # [dns.google]
+   * ```
+   *
+   * @param string address: An IPv4 or IPv6 address.
+   * @returns list of string
+   * @throws NameError if nothing is published for the address.
+   */
+  ptr(address: string) {
+    return self.resolve(reverse_name(address), TYPES.PTR).map(@(record) => record.data)
+  }
+
+  /**
+   * Which certificate authorities a domain allows to issue for it.
+   *
+   * @param string name
+   * @returns list of `Certification`
+   * @throws NameError if the name does not exist.
+   */
+  caa(name: string) {
+    return self.resolve(name, TYPES.CAA).map(@(record) => record.data)
+  }
+
+  to_string() {
+    var where = self._servers == nil ? 'the system servers' : ', '.join(self._servers)
+
+    return '<Resolver ${where}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Every option `Resolver()` accepts. Anything else is a typo, and a
+# typo that is silently ignored is a resolver that quietly does the
+# wrong thing for the rest of the program's life.
+var _OPTIONS = [
+  'servers', 'port', 'timeout', 'attempts', 'tcp', 'tls', 'server_name',
+  'tls_config', 'search', 'ndots', 'recursion', 'edns', 'udp_size',
+  'dnssec', 'cache', 'cache_size',
+]
+
+# Whether an answer is an answer to the question that was asked. A
+# server echoes the question back, and a reply whose question is not
+# the one sent is not a reply to it.
+def _answers_question(response, name: string, type: number, klass: number) {
+  if response.question == nil {
+    return false
+  }
+
+  var asked = name.ends_with('.') ? name[0, name.length() - 1] : name
+
+  return response.question.name.lower() == asked.lower()
+    and response.question.type == type
+    and response.question.klass == klass
+}
+
+def _records_named(records: list, name: string, type: number) {
+  var wanted = name.lower()
+
+  return records.filter(@(record) {
+    return record.type == type and record.name.lower() == wanted
+  })
+}
+
+# How long an answer may be kept. A positive answer lives as long as
+# its shortest record says; a negative one lives as long as the zone's
+# authority record allows, which is what negative caching means.
+def _cacheable_ttl(response) {
+  var ttl = nil
+
+  if !response.answers.is_empty() {
+    for record in response.answers {
+      if ttl == nil or record.ttl < ttl {
+        ttl = record.ttl
+      }
+    }
+  } else {
+    for record in response.authorities {
+      if record.type != TYPES.SOA {
+        continue
+      }
+
+      var limit = record.data.minimum < record.ttl ? record.data.minimum : record.ttl
+
+      if ttl == nil or limit < ttl {
+        ttl = limit
+      }
+    }
+  }
+
+  if ttl == nil or ttl <= 0 {
+    return 0
+  }
+
+  # A record is free to claim a century. Nothing here is a long-lived
+  # cache, and holding an answer for longer than a day only means
+  # noticing a change a day late.
+  return ttl > 86400 ? 86400 : ttl
+}
+
+/**
+ * The name an address's records are published under.
+ *
+ * IPv4 addresses live under `in-addr.arpa` with their octets
+ * reversed, and IPv6 addresses under `ip6.arpa` with one label per
+ * nibble.
+ *
+ * ```zuri
+ * import net.resolver
+ *
+ * echo resolver.reverse_name('192.0.2.7')
+ * echo resolver.reverse_name('2001:db8::1')
+ * ```
+ *
+ * ```console
+ * 7.2.0.192.in-addr.arpa
+ * 1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa
+ * ```
+ *
+ * @param string address: An IPv4 or IPv6 address.
+ * @returns string
+ * @throws Error if `address` is not an address.
+ */
+def reverse_name(address: string) {
+  var parsed = Ip.parse(address)
+
+  if parsed.is_ipv4() {
+    var labels = parsed.as_ipv4().octets().map(@(octet) => '${octet}')
+
+    return '.'.join(labels.reverse()) + '.in-addr.arpa'
+  }
+
+  var nibbles = []
+
+  for group in parsed.as_ipv6().segments() {
+    var text = group.hex()
+
+    while text.length() < 4 {
+      text = '0' + text
+    }
+
+    for value in text.to_bytes() {
+      nibbles.append(value.chr())
+    }
+  }
+
+  return '.'.join(nibbles.reverse()) + '.ip6.arpa'
+}
+
+# The resolver the module-level functions go through. Built on first
+# use so that importing this module does not read a config file a
+# program may never need.
+var _shared = nil
+
+/**
+ * The resolver the module-level functions use: one shared `Resolver`
+ * built from this machine's own configuration.
+ *
+ * Reach for it when you want the shared cache but need a method the
+ * module does not re-export.
+ *
+ * @returns Resolver
+ */
+def shared() {
+  if _shared == nil {
+    _shared = Resolver()
+  }
+
+  return _shared
+}
+
+/**
+ * Replaces the shared resolver, so that every module-level function
+ * goes through the one given instead.
+ *
+ * ```zuri,ignore
+ * import net.resolver { Resolver }
+ * import net.resolver
+ *
+ * resolver.use(Resolver({ servers: ['9.9.9.9'] }))
+ * ```
+ *
+ * @param Resolver instance
+ * @returns Resolver the one now in use.
+ */
+def use(instance: Resolver) {
+  _shared = instance
+
+  return _shared
+}
+
+/**
+ * Asks the shared resolver about one name and hands back the whole
+ * answer.
+ *
+ * @param string name
+ * @param string|number type
+ * @param ?string|number klass
+ * @returns Response
+ */
+def query(name: string, type, klass) {
+  return shared().query(name, type, klass)
+}
+
+/**
+ * The records of one type published for a name, through the shared
+ * resolver.
+ *
+ * @param string name
+ * @param string|number type
+ * @param ?string|number klass
+ * @returns list of `Record`
+ */
+def resolve(name: string, type, klass) {
+  return shared().resolve(name, type, klass)
+}
+
+/**
+ * Every address a name has, IPv4 first.
+ *
+ * @param string name
+ * @returns list of string
+ */
+def addresses(name: string) {
+  return shared().addresses(name)
+}
+
+/**
+ * The IPv4 addresses of a name.
+ *
+ * @param string name
+ * @returns list of string
+ */
+def a(name: string) {
+  return shared().a(name)
+}
+
+/**
+ * The IPv6 addresses of a name.
+ *
+ * @param string name
+ * @returns list of string
+ */
+def aaaa(name: string) {
+  return shared().aaaa(name)
+}
+
+/**
+ * The name this one is an alias for, or `nil`.
+ *
+ * @param string name
+ * @returns string|nil
+ */
+def cname(name: string) {
+  return shared().cname(name)
+}
+
+/**
+ * The mail servers for a domain, lowest preference first.
+ *
+ * @param string name
+ * @returns list of `MailExchange`
+ */
+def mx(name: string) {
+  return shared().mx(name)
+}
+
+/**
+ * The nameservers a domain is delegated to.
+ *
+ * @param string name
+ * @returns list of string
+ */
+def ns(name: string) {
+  return shared().ns(name)
+}
+
+/**
+ * The text records of a name.
+ *
+ * @param string name
+ * @returns list of string
+ */
+def txt(name: string) {
+  return shared().txt(name)
+}
+
+/**
+ * The authority record at the top of a name's zone, or `nil`.
+ *
+ * @param string name
+ * @returns StartOfAuthority|nil
+ */
+def soa(name: string) {
+  return shared().soa(name)
+}
+
+/**
+ * The hosts running a service, by priority and then by weight.
+ *
+ * @param string name
+ * @returns list of `Service`
+ */
+def srv(name: string) {
+  return shared().srv(name)
+}
+
+/**
+ * The names an address points back at.
+ *
+ * @param string address
+ * @returns list of string
+ */
+def ptr(address: string) {
+  return shared().ptr(address)
+}
+
+/**
+ * Which certificate authorities a domain allows to issue for it.
+ *
+ * @param string name
+ * @returns list of `Certification`
+ */
+def caa(name: string) {
+  return shared().caa(name)
+}
+
+/**
+ * Empties the shared resolver's cache.
+ *
+ * @returns Resolver the shared resolver.
+ */
+def flush() {
+  return shared().flush()
+}

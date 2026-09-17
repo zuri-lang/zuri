@@ -1,0 +1,225 @@
+/**
+ * @module mail
+ *
+ * Mail, from the message to the socket.
+ *
+ * `mail` builds and reads messages, and speaks the three protocols
+ * that move them: SMTP to send, IMAP and POP3 to read. It also runs
+ * the other end, with an SMTP server that accepts mail and an IMAP
+ * server that serves it. All of it is written in Zuri.
+ *
+ * ```zuri,ignore
+ * import mail
+ *
+ * var note = mail.message()
+ *   .set_from('reports@example.com')
+ *   .add_to('ann@example.com')
+ *   .set_subject('Quarterly report')
+ *   .set_text('The numbers are in.')
+ *
+ * mail.send('smtp://mail.example.com', note, {
+ *   username: 'reports',
+ *   password: secret,
+ * })
+ * ```
+ *
+ * ### What is here
+ *
+ * | | |
+ * | - | - |
+ * | `message()` | starts a message, built up one call at a time |
+ * | `parse()` | reads one back |
+ * | `send()` | sends one, opening and closing the connection |
+ * | `Message` | a message, or one part of one |
+ * | `Address` | one address and the name written with it |
+ * | `Headers` | the header block, in order and case-insensitive |
+ * | `SmtpClient` | a connection to a server that sends mail |
+ * | `ImapClient` | a connection to a server that stores it |
+ * | `Pop3Client` | the older way of collecting it |
+ * | `SmtpServer` | the receiving end of SMTP |
+ * | `ImapServer` | the serving end of IMAP |
+ * | `MailStore` | where an `ImapServer` keeps mail |
+ * | `MailError` | the root of every error raised here |
+ *
+ * ### Reading mail
+ *
+ * ```zuri,ignore
+ * import mail
+ *
+ * var inbox = mail.imap('imaps://mail.example.com', {
+ *   username: 'ann',
+ *   password: secret,
+ * })
+ *
+ * inbox.select('INBOX')
+ *
+ * for id in inbox.search('UNSEEN') {
+ *   echo inbox.fetch_message(id).subject()
+ * }
+ *
+ * inbox.logout()
+ * ```
+ *
+ * ### Running a server
+ *
+ * The servers are the same shape as `http.HttpServer`: bind, listen,
+ * and hand each connection to a worker. An `SmtpServer` decides what
+ * to accept through handlers, and an `ImapServer` answers from a
+ * `MailStore`, of which two ship: one on disk in Maildir format and
+ * one in memory.
+ *
+ * ### Security
+ *
+ * Every client can start in TLS or negotiate it with `STARTTLS`, and
+ * refuses to send credentials over a connection that is neither.
+ * `mail.dkim` signs outgoing mail and verifies incoming mail.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.errors { * }
+import @.encoding
+import @.content { * }
+import @.message { * }
+import @.dkim
+import @.sasl
+import @.stream
+import @.smtp { * }
+import @.imap { * }
+import @.pop3 { * }
+import @.pool
+
+# `Address` and `Headers` are named here; the rest of what those two
+# modules hold stays behind `mail.address` and `mail.headers`, where a
+# name like `parse` or `fold` means something without a prefix.
+import @.address { Address, Group }
+import @.address
+import @.headers { Headers }
+import @.headers
+
+/**
+ * Reads one address out of text.
+ *
+ * ```zuri
+ * import mail
+ *
+ * echo mail.parse_address('Ann <ann@example.com>').address
+ * ```
+ *
+ * ```console
+ * ann@example.com
+ * ```
+ *
+ * @param string text
+ * @returns Address
+ * @throws MessageError if the text holds no address, or several.
+ */
+def parse_address(text: string) {
+  return address.parse(text)
+}
+
+/**
+ * Reads every address out of text, with any groups flattened into
+ * their members.
+ *
+ * @param string text
+ * @returns list of `Address`
+ */
+def parse_address_list(text: string) {
+  return address.parse_list(text)
+}
+
+/**
+ * Reads every address out of text, keeping the groups as groups.
+ *
+ * @param string text
+ * @returns list of `Address` and `Group`
+ */
+def parse_address_groups(text: string) {
+  return address.parse_groups(text)
+}
+
+/**
+ * Writes a list of addresses as a header value.
+ *
+ * @param list people: `Address` values, `Group` values, or text to be
+ *    parsed first.
+ * @returns string
+ */
+def format_addresses(people: list) {
+  return address.format_list(people)
+}
+
+/**
+ * Sends one message, opening the connection and closing it again.
+ *
+ * This is the whole of sending mail for a program that sends one at a
+ * time. A program sending many wants an `SmtpClient` of its own, kept
+ * open across all of them.
+ *
+ * ```zuri,ignore
+ * import mail
+ *
+ * mail.send('smtp://mail.example.com', mail.message()
+ *   .set_from('reports@example.com')
+ *   .add_to('ann@example.com')
+ *   .set_subject('Quarterly report')
+ *   .set_text('The numbers are in.'),
+ *   { username: 'reports', password: secret })
+ * ```
+ *
+ * @param string url: `smtp://host` or `smtps://host`.
+ * @param Message note
+ * @param ?dict options: Everything `SmtpClient.connect()` takes, and
+ *    `from` and `to` to override the envelope.
+ * @returns Reply the server's verdict on the message.
+ * @throws SmtpError if the server refuses any part of it.
+ */
+def send(url: string, note, options: ?dict) {
+  var client = SmtpClient.connect(url, options)
+
+  catch {
+    var reply = client.send(note, options)
+
+    client.quit()
+
+    return reply
+  } as error {
+    client.close()
+
+    raise error
+  }
+}
+
+/**
+ * Opens a connection to a server that sends mail.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns SmtpClient
+ */
+def smtp(url: string, options: ?dict) {
+  return SmtpClient.connect(url, options)
+}
+
+/**
+ * Opens a connection to a server that stores mail.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns ImapClient
+ */
+def imap(url: string, options: ?dict) {
+  return ImapClient.connect(url, options)
+}
+
+/**
+ * Opens a connection to a server that hands mail over.
+ *
+ * @param string url
+ * @param ?dict options
+ * @returns Pop3Client
+ */
+def pop3(url: string, options: ?dict) {
+  return Pop3Client.connect(url, options)
+}

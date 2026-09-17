@@ -492,17 +492,23 @@ class _Rsa {
   }
 
   /**
-   * Signs message with RSA-PSS.
+   * Signs message with RSA.
+   *
+   * PSS is the scheme unless `padding` says otherwise, and is the one
+   * to choose for anything new. PKCS#1 v1.5 is there for the older
+   * standards that name it and accept nothing else, DKIM's
+   * `rsa-sha256` among them.
    *
    * @param string private_pem PEM-encoded private key.
    * @param bytes message The raw bytes to sign.
-   * @param ?string hash The digest to use under PSS/MGF1: one of
-   *    `"sha256"`, `"sha384"`, `"sha512"`. Default: `"sha256"`.
+   * @param ?string hash The digest to use: one of `"sha256"`,
+   *    `"sha384"`, `"sha512"`. Default: `"sha256"`.
+   * @param ?string padding `"pss"` or `"pkcs1"`. Default: `"pss"`.
    * @return bytes DER-encoded signature.
    * @throws CryptoError
    */
-  sign(private_pem, message, hash) {
-    return _crypto.rsa_sign(private_pem, message, hash)
+  sign(private_pem, message, hash, padding) {
+    return _crypto.rsa_sign(private_pem, message, hash, padding)
   }
 
   /**
@@ -520,11 +526,13 @@ class _Rsa {
    *    `"sha256"`, `"sha384"`, `"sha512"`. Default: `"sha256"`.
    *    Must match whatever `sign()` was actually called with, or
    *    verification will fail.
+   * @param ?string padding The scheme `sign()` used: `"pss"` or
+   *    `"pkcs1"`. Default: `"pss"`. Must match too.
    * @return bool
    * @throws CryptoError
    */
-  verify(public_pem, message, signature, hash) {
-    return _crypto.rsa_verify(public_pem, message, signature, hash)
+  verify(public_pem, message, signature, hash, padding) {
+    return _crypto.rsa_verify(public_pem, message, signature, hash, padding)
   }
 }
 

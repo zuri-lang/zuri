@@ -1,0 +1,530 @@
+/**
+ * @module headers
+ *
+ * The header block of a message: what is in it, in what order, and how
+ * it is written back out.
+ *
+ * Mail headers are not a dictionary. The same name can appear more
+ * than once and the order matters, which is why `Received` traces a
+ * route and why a signature covers the headers it covers. `Headers`
+ * keeps them as they were, matches names without regard to case, and
+ * hands back one value or all of them as the caller asks.
+ *
+ * ```zuri
+ * import mail.headers { Headers }
+ *
+ * var headers = Headers()
+ *
+ * headers.set('Subject', 'Quarterly report')
+ * headers.add('Received', 'from a.example.com')
+ * headers.add('Received', 'from b.example.com')
+ *
+ * echo headers.get('subject', nil)
+ * echo headers.get_all('Received').length()
+ * ```
+ *
+ * ```console
+ * Quarterly report
+ * 2
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import date
+
+import .address
+import .content { ContentType, ContentDisposition }
+import .encoding
+import .errors { MessageError }
+
+# What RFC 5322 recommends a line stay within, not counting the pair of
+# characters that ends it. The hard limit is 998; this is the one that
+# keeps a message readable in a terminal.
+var LINE_WIDTH = 78
+
+# The headers whose values are addresses, so that `Message` knows which
+# ones to hand to the address parser without being told.
+var ADDRESS_HEADERS = [
+  'from', 'sender', 'reply-to', 'to', 'cc', 'bcc',
+  'resent-from', 'resent-sender', 'resent-to', 'resent-cc', 'resent-bcc',
+  'return-path', 'disposition-notification-to',
+]
+
+/**
+ * Puts a folded header value back together.
+ *
+ * A header may be split across lines by starting the next one with
+ * whitespace. Unfolding removes the line break and leaves the
+ * whitespace, which is what it stood for.
+ *
+ * @param string text
+ * @returns string
+ */
+# Strips the whitespace either side of a header value. `trim()` takes
+# one character at a time, and a value that has been through a parser
+# can have a carriage return or a tab on the end of it as easily as a
+# space.
+def _tidy(value: string) {
+  var raw = value.to_bytes()
+  var start = 0
+  var stop = raw.length()
+
+  while start < stop and _is_blank(raw[start]) {
+    start++
+  }
+
+  while stop > start and _is_blank(raw[stop - 1]) {
+    stop--
+  }
+
+  return start == stop ? '' : raw[start, stop].to_string()
+}
+
+def _is_blank(value: number) {
+  return value == 0x20 or value == 0x09 or value == 0x0d or value == 0x0a
+}
+
+def unfold(text: string) {
+  return text.replace('/\r?\n(?=[ \t])/', '')
+}
+
+/**
+ * Writes one header, folded so that no line runs past the width.
+ *
+ * Folding happens at whitespace, which is the only place it is allowed
+ * to. A single run of characters with no whitespace in it cannot be
+ * folded and is left to overrun, because breaking it would change what
+ * it says.
+ *
+ * ```zuri
+ * import mail.headers
+ *
+ * var folded = headers.fold('Subject', ('word ' * 20).trim(), 40)
+ *
+ * echo folded.lines().length()
+ * ```
+ *
+ * ```console
+ * 3
+ * ```
+ *
+ * @param string name
+ * @param string value
+ * @param ?number width: `78` when not given.
+ * @returns string with `\r\n` between the lines it produced
+ */
+def fold(name: string, value: string, width: ?number) {
+  var limit = width == nil ? LINE_WIDTH : width
+  var flat = unfold(value).replace('/\r?\n/', ' ')
+  var lines = []
+  var current = '${name}:'
+  var started = false
+
+  for word in flat.split(' ') {
+    if word == '' {
+      continue
+    }
+
+    var candidate = '${current} ${word}'
+
+    if started and candidate.length() > limit {
+      lines.append(current)
+      current = ' ${word}'
+      continue
+    }
+
+    current = candidate
+    started = true
+  }
+
+  lines.append(current)
+
+  return '\r\n'.join(lines)
+}
+
+/**
+ * The headers of a message or of one of its parts.
+ *
+ * @printable
+ */
+class Headers {
+
+  /**
+   * @param ?list entries: Pairs of `[name, value]` to start with.
+   */
+  @new(entries: ?list) {
+    self._entries = []
+
+    if entries != nil {
+      for entry in entries {
+        self.add(entry[0], entry[1])
+      }
+    }
+  }
+
+  /**
+   * Reads a header block.
+   *
+   * Lines that continue the one before them are joined back together.
+   * A line that is not a header and does not continue one is skipped,
+   * which is what lets a message with an mbox separator in front of it
+   * still be read.
+   *
+   * @param string|bytes text: The block, without the blank line that
+   *    ends it.
+   * @returns Headers
+   */
+  static parse(text) {
+    var source = is_bytes(text) ? text.to_string() : text
+    var headers = Headers()
+    var name = nil
+    var value = []
+
+    for line in source.replace('/\r\n/', '\n').split('\n') {
+      if line == '' {
+        continue
+      }
+
+      if line.starts_with(' ') or line.starts_with('\t') {
+        if name != nil {
+          value.append(line)
+        }
+
+        continue
+      }
+
+      if name != nil {
+        headers.add(name, ''.join(value))
+        name = nil
+        value = []
+      }
+
+      var colon = line.index_of(':')
+
+      if colon < 1 {
+        continue
+      }
+
+      name = line[0, colon]
+      value = [line[colon + 1, line.length()]]
+    }
+
+    if name != nil {
+      headers.add(name, ''.join(value))
+    }
+
+    return headers
+  }
+
+  /**
+   * Adds a header, leaving any already there alone.
+   *
+   * @param string name
+   * @param string value
+   * @returns Headers itself.
+   */
+  add(name: string, value) {
+    self._entries.append({
+      name: _tidy(name),
+      value: _tidy('${value}'),
+    })
+
+    return self
+  }
+
+  /**
+   * Adds a header in front of every other one.
+   *
+   * A header that records what happened to a message on its way goes
+   * at the top, so that reading down the block reads backwards through
+   * the message's history. `Received` and `DKIM-Signature` are both
+   * added this way.
+   *
+   * @param string name
+   * @param string value
+   * @returns Headers itself.
+   */
+  prepend(name: string, value) {
+    self._entries.insert({
+      name: _tidy(name),
+      value: _tidy('${value}'),
+    }, 0)
+
+    return self
+  }
+
+  /**
+   * Sets a header, removing any already there.
+   *
+   * @param string name
+   * @param string value
+   * @returns Headers itself.
+   */
+  set(name: string, value) {
+    self.remove(name)
+
+    return self.add(name, value)
+  }
+
+  /**
+   * The first value of a header, or `fallback` when it is not there.
+   *
+   * The value comes back as it was written. Use `decoded()` when it
+   * may carry encoded words.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns string|any
+   */
+  get(name: string, fallback) {
+    var wanted = name.lower()
+
+    for entry in self._entries {
+      if entry.name.lower() == wanted {
+        return entry.value
+      }
+    }
+
+    return fallback
+  }
+
+  /**
+   * Every value of a header, in the order they appear.
+   *
+   * @param string name
+   * @returns list of string
+   */
+  get_all(name: string) {
+    var wanted = name.lower()
+    var found = []
+
+    for entry in self._entries {
+      if entry.name.lower() == wanted {
+        found.append(entry.value)
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * The first value of a header with its encoded words decoded.
+   *
+   * @param string name
+   * @param ?any fallback
+   * @returns string|any
+   */
+  decoded(name: string, fallback) {
+    var raw = self.get(name, nil)
+
+    return raw == nil ? fallback : encoding.decode_words(raw)
+  }
+
+  /**
+   * Removes every instance of a header.
+   *
+   * @param string name
+   * @returns number how many were removed.
+   */
+  remove(name: string) {
+    var wanted = name.lower()
+    var kept = []
+    var dropped = 0
+
+    for entry in self._entries {
+      if entry.name.lower() == wanted {
+        dropped++
+        continue
+      }
+
+      kept.append(entry)
+    }
+
+    self._entries = kept
+
+    return dropped
+  }
+
+  /**
+   * Whether a header is present.
+   *
+   * @param string name
+   * @returns bool
+   */
+  contains(name: string) {
+    return self.get(name, nil) != nil
+  }
+
+  /**
+   * The names of every header, in order and as they were written.
+   * A name that appears more than once appears here more than once.
+   *
+   * @returns list of string
+   */
+  names() {
+    return self._entries.map(@(entry) => entry.name)
+  }
+
+  /**
+   * Every header as a `{ name, value }` dictionary, in order.
+   *
+   * @returns list of dict
+   */
+  entries() {
+    return self._entries.map(@(entry) => { name: entry.name, value: entry.value })
+  }
+
+  /**
+   * How many headers there are, counting repeats separately.
+   *
+   * @returns number
+   */
+  length() {
+    return self._entries.length()
+  }
+
+  /**
+   * @returns bool
+   */
+  is_empty() {
+    return self._entries.is_empty()
+  }
+
+  /**
+   * A copy that can be changed without changing this one.
+   *
+   * @returns Headers
+   */
+  clone() {
+    var copy = Headers()
+
+    for entry in self._entries {
+      copy.add(entry.name, entry.value)
+    }
+
+    return copy
+  }
+
+  /**
+   * The addresses in a header, across every instance of it.
+   *
+   * ```zuri
+   * import mail.headers { Headers }
+   *
+   * var headers = Headers([['To', 'Ann <ann@example.com>, bob@example.com']])
+   *
+   * echo headers.addresses('to').map(@(person) => person.address)
+   * ```
+   *
+   * ```console
+   * [ann@example.com, bob@example.com]
+   * ```
+   *
+   * @param string name
+   * @returns list of `Address`
+   */
+  addresses(name: string) {
+    var found = []
+
+    for value in self.get_all(name) {
+      found.extend(address.parse_list(value))
+    }
+
+    return found
+  }
+
+  /**
+   * Sets a header to a list of addresses.
+   *
+   * @param string name
+   * @param list|string|Address people: One address or several, as
+   *    `Address` values or as text to be parsed.
+   * @returns Headers itself.
+   */
+  set_addresses(name: string, people) {
+    if is_string(people) {
+      return self.set(name, address.format_list(address.parse_list(people)))
+    }
+
+    if !is_list(people) {
+      return self.set(name, people.to_string())
+    }
+
+    return self.set(name, address.format_list(people))
+  }
+
+  /**
+   * A header read as a date, or `nil` when it is absent or unreadable.
+   *
+   * @param ?string name: `Date` when not given.
+   * @returns Date|nil
+   */
+  date(name: ?string) {
+    var raw = self.get(name == nil ? 'Date' : name, nil)
+
+    if raw == nil {
+      return nil
+    }
+
+    catch {
+      return date.parse(raw)
+    } as error {
+      return nil
+    }
+  }
+
+  /**
+   * Sets a header to a date, written the way RFC 5322 wants one.
+   *
+   * @param string name
+   * @param ?Date moment: The current time when not given.
+   * @returns Headers itself.
+   */
+  set_date(name: string, moment) {
+    var stamp = moment == nil ? date.date() : moment
+
+    return self.set(name, stamp.format('r'))
+  }
+
+  /**
+   * The `Content-Type` of this part.
+   *
+   * @returns ContentType
+   */
+  content_type() {
+    return ContentType.parse(self.get('Content-Type', nil))
+  }
+
+  /**
+   * The `Content-Disposition` of this part.
+   *
+   * @returns ContentDisposition
+   */
+  content_disposition() {
+    return ContentDisposition.parse(self.get('Content-Disposition', nil))
+  }
+
+  /**
+   * The whole block, folded, with every line ended by a carriage
+   * return and newline. The blank line that separates the headers from
+   * the body is not included.
+   *
+   * @returns string
+   */
+  to_string() {
+    var lines = []
+
+    for entry in self._entries {
+      lines.append(fold(entry.name, entry.value, LINE_WIDTH))
+    }
+
+    return '\r\n'.join(lines)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

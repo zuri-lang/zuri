@@ -1,0 +1,1074 @@
+/**
+ * @module store
+ *
+ * Where an `ImapServer` keeps mail.
+ *
+ * `MailStore` is the contract: what a store has to be able to do for
+ * the server to answer with it. Two are provided. `MaildirStore` keeps
+ * mail on disk in the Maildir layout, which every other mail tool can
+ * read, so a mailbox written here is not trapped here. `MemoryStore`
+ * keeps it in the process and forgets it on exit, which is what a test
+ * and an embedded server want.
+ *
+ * ```zuri,ignore
+ * import mail.imap { ImapServer, MaildirStore }
+ *
+ * var store = MaildirStore('/var/mail/ann')
+ *
+ * store.add_account('ann', 'secret')
+ *
+ * ImapServer({ port: 143 }, store).listen()
+ * ```
+ *
+ * A store of your own only has to answer the same calls. Nothing here
+ * is required to come from a file.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import crypto
+import date
+import hash
+import os
+
+import ..errors { MailboxError }
+
+# The three directories a Maildir is made of. `tmp` is where a message
+# is written, `new` is where it is moved once written whole, and `cur`
+# is where it lives once a reader has seen it.
+var MAILDIR_PARTS = ['tmp', 'new', 'cur']
+
+# How a Maildir records a flag, as the letter that goes in a message's
+# filename after `:2,`.
+var MAILDIR_FLAGS = {
+  '\\Draft': 'D',
+  '\\Flagged': 'F',
+  '\\Answered': 'R',
+  '\\Seen': 'S',
+  '\\Deleted': 'T',
+}
+
+# The separator between the levels of a mailbox name. Maildir++ uses a
+# dot and so does this, so `Archive.2026` is a folder inside `Archive`.
+var DELIMITER = '.'
+
+/**
+ * One message in a store.
+ *
+ * @printable
+ */
+class StoredMessage {
+
+  /**
+   * @param number uid: Unique within its mailbox, and never reused.
+   * @param bytes raw: The message exactly as it arrived.
+   * @param list flags
+   * @param Date received: When the store took it.
+   */
+  @new(uid: number, raw, flags: list, received) {
+    self.uid = uid
+    self.raw = raw
+    self.flags = flags
+    self.received = received
+  }
+
+  /**
+   * How large the message is.
+   *
+   * @returns number
+   */
+  size() {
+    return self.raw.length()
+  }
+
+  /**
+   * Whether a flag is set.
+   *
+   * @param string flag
+   * @returns bool
+   */
+  has_flag(flag: string) {
+    return self.flags.contains(flag)
+  }
+
+  to_string() {
+    return '<StoredMessage ${self.uid}, ${self.size()} bytes>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What a store has to be able to do.
+ *
+ * Every method raises here; a store is something that answers them.
+ * Both of the ones that ship do, and so can one of your own.
+ *
+ * @printable
+ */
+class MailStore {
+
+  /**
+   * Whether these credentials name an account.
+   *
+   * @param string username
+   * @param string password
+   * @returns bool
+   */
+  authenticate(username: string, password: string) {
+    raise MailboxError('this store cannot check credentials')
+  }
+
+  /**
+   * The password of an account, for the mechanisms that prove it
+   * without sending it, or `nil` when there is no such account or the
+   * store cannot produce one.
+   *
+   * A store that keeps only hashed passwords returns `nil`, and the
+   * server then does not offer those mechanisms.
+   *
+   * @param string username
+   * @returns string|nil
+   */
+  password_of(username: string) {
+    return nil
+  }
+
+  /**
+   * Whether this store can produce a password rather than only check
+   * one.
+   *
+   * A server offers the mechanisms that prove a password without
+   * sending it only when it can work out the same proof, which means
+   * knowing the password. A store that keeps only hashes, or that
+   * checks credentials somewhere else entirely, says no here and the
+   * server stops offering them.
+   *
+   * @returns bool
+   */
+  has_passwords() {
+    return false
+  }
+
+  /**
+   * The mailboxes an account has.
+   *
+   * @param string username
+   * @returns list of string
+   */
+  mailboxes(username: string) {
+    raise MailboxError('this store cannot list mailboxes')
+  }
+
+  /**
+   * Whether a mailbox exists.
+   *
+   * @param string username
+   * @param string mailbox
+   * @returns bool
+   */
+  exists(username: string, mailbox: string) {
+    return self.mailboxes(username).contains(mailbox)
+  }
+
+  /**
+   * Creates a mailbox.
+   *
+   * @param string username
+   * @param string mailbox
+   * @throws MailboxError if it exists already.
+   */
+  create(username: string, mailbox: string) {
+    raise MailboxError('this store cannot create mailboxes')
+  }
+
+  /**
+   * Removes a mailbox and everything in it.
+   *
+   * @param string username
+   * @param string mailbox
+   * @throws MailboxError if there is no such mailbox.
+   */
+  remove(username: string, mailbox: string) {
+    raise MailboxError('this store cannot remove mailboxes')
+  }
+
+  /**
+   * Renames a mailbox.
+   *
+   * @param string username
+   * @param string from
+   * @param string to
+   * @throws MailboxError if there is no such mailbox, or the new name
+   *    is taken.
+   */
+  rename(username: string, from: string, to: string) {
+    raise MailboxError('this store cannot rename mailboxes')
+  }
+
+  /**
+   * Every message in a mailbox, oldest first.
+   *
+   * @param string username
+   * @param string mailbox
+   * @returns list of `StoredMessage`
+   * @throws MailboxError if there is no such mailbox.
+   */
+  messages(username: string, mailbox: string) {
+    raise MailboxError('this store cannot read mailboxes')
+  }
+
+  /**
+   * Adds a message to a mailbox.
+   *
+   * @param string username
+   * @param string mailbox
+   * @param bytes raw
+   * @param ?list flags
+   * @param ?Date received
+   * @returns StoredMessage
+   * @throws MailboxError if there is no such mailbox.
+   */
+  append(username: string, mailbox: string, raw, flags: ?list, received) {
+    raise MailboxError('this store cannot take messages')
+  }
+
+  /**
+   * Replaces the flags on one message.
+   *
+   * @param string username
+   * @param string mailbox
+   * @param number uid
+   * @param list flags
+   * @throws MailboxError if there is no such message.
+   */
+  set_flags(username: string, mailbox: string, uid: number, flags: list) {
+    raise MailboxError('this store cannot change flags')
+  }
+
+  /**
+   * Removes every message in a mailbox marked `\Deleted`.
+   *
+   * @param string username
+   * @param string mailbox
+   * @returns list of number: the identifiers that went.
+   */
+  expunge(username: string, mailbox: string) {
+    raise MailboxError('this store cannot remove messages')
+  }
+
+  /**
+   * What the next message added to a mailbox will be numbered, and how
+   * to tell that the numbering has been reset.
+   *
+   * @param string username
+   * @param string mailbox
+   * @returns dict of `uidnext` and `uidvalidity`.
+   */
+  counters(username: string, mailbox: string) {
+    raise MailboxError('this store cannot report its counters')
+  }
+
+  to_string() {
+    return '<MailStore>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# A unique enough name for one message file, built the way Maildir
+# says: the time it arrived, something no other process would produce,
+# and the machine's name.
+def _unique_name() {
+  var raw = crypto.random_bytes(8)
+  var text = []
+
+  for value in raw {
+    text.append('0123456789abcdef'[(value >> 4) & 0x0f])
+    text.append('0123456789abcdef'[value & 0x0f])
+  }
+
+  var host = 'localhost'
+
+  catch {
+    host = os.hostname().replace('/[\/:]/', '-')
+  } as error {
+    # A machine that will not say its name gets the stand-in.
+  }
+
+  return '${time().floor()}.M${os.pid()}Q${''.join(text)}.${host}'
+}
+
+# The letters that record a message's flags, in the order Maildir wants
+# them, which is alphabetical.
+def _flag_letters(flags: list) {
+  var letters = []
+
+  for flag in flags {
+    if MAILDIR_FLAGS.contains(flag) {
+      letters.append(MAILDIR_FLAGS[flag])
+    }
+  }
+
+  return ''.join(letters.sort())
+}
+
+def _flags_from_letters(letters: string) {
+  var flags = []
+
+  for flag in MAILDIR_FLAGS.keys() {
+    if letters.index_of(MAILDIR_FLAGS[flag]) > -1 {
+      flags.append(flag)
+    }
+  }
+
+  return flags
+}
+
+/**
+ * A store that keeps everything in the process and nothing on disk.
+ *
+ * Fast, and gone when the program is. This is what a test wants, and
+ * what a server embedded in something else wants when the mail it
+ * holds is not the point.
+ *
+ * ```zuri
+ * import mail.imap { MemoryStore }
+ *
+ * var store = MemoryStore()
+ *
+ * store.add_account('ann', 'secret')
+ * store.append('ann', 'INBOX', 'From: a@b.com\r\n\r\nhello', nil, nil)
+ *
+ * echo store.mailboxes('ann')
+ * echo store.messages('ann', 'INBOX').length()
+ * ```
+ *
+ * ```console
+ * [INBOX]
+ * 1
+ * ```
+ *
+ * @printable
+ */
+class MemoryStore < MailStore {
+
+  /**
+   * @param ?list mailboxes: The mailboxes every new account starts
+   *    with. `['INBOX']` when not given.
+   */
+  @new(mailboxes: ?list) {
+    self._accounts = {}
+    self._initial = mailboxes == nil ? ['INBOX'] : mailboxes
+  }
+
+  /**
+   * Adds an account, with the mailboxes a new account starts with.
+   *
+   * @param string username
+   * @param string password
+   * @returns MemoryStore itself.
+   */
+  add_account(username: string, password: string) {
+    var boxes = {}
+
+    for name in self._initial {
+      boxes[name] = _new_box()
+    }
+
+    self._accounts[username] = { password, boxes }
+
+    return self
+  }
+
+  authenticate(username: string, password: string) {
+    if !self._accounts.contains(username) {
+      return false
+    }
+
+    return self._accounts[username].password == password
+  }
+
+  password_of(username: string) {
+    if !self._accounts.contains(username) {
+      return nil
+    }
+
+    return self._accounts[username].password
+  }
+
+  has_passwords() {
+    return true
+  }
+
+  _boxes(username: string) {
+    if !self._accounts.contains(username) {
+      raise MailboxError('no account named ${username}')
+    }
+
+    return self._accounts[username].boxes
+  }
+
+  _box(username: string, mailbox: string) {
+    var boxes = self._boxes(username)
+
+    if !boxes.contains(mailbox) {
+      raise MailboxError('no mailbox named ${mailbox}')
+    }
+
+    return boxes[mailbox]
+  }
+
+  mailboxes(username: string) {
+    return self._boxes(username).keys().sort()
+  }
+
+  exists(username: string, mailbox: string) {
+    return self._boxes(username).contains(mailbox)
+  }
+
+  create(username: string, mailbox: string) {
+    var boxes = self._boxes(username)
+
+    if boxes.contains(mailbox) {
+      raise MailboxError('${mailbox} exists already')
+    }
+
+    boxes[mailbox] = _new_box()
+  }
+
+  remove(username: string, mailbox: string) {
+    var boxes = self._boxes(username)
+
+    if !boxes.contains(mailbox) {
+      raise MailboxError('no mailbox named ${mailbox}')
+    }
+
+    boxes.remove(mailbox)
+  }
+
+  rename(username: string, from: string, to: string) {
+    var boxes = self._boxes(username)
+
+    if !boxes.contains(from) {
+      raise MailboxError('no mailbox named ${from}')
+    }
+
+    if boxes.contains(to) {
+      raise MailboxError('${to} exists already')
+    }
+
+    boxes[to] = boxes[from]
+    boxes.remove(from)
+  }
+
+  messages(username: string, mailbox: string) {
+    return self._box(username, mailbox).messages
+  }
+
+  append(username: string, mailbox: string, raw, flags: ?list, received) {
+    var box = self._box(username, mailbox)
+    var stored = StoredMessage(
+      box.uidnext,
+      is_bytes(raw) ? raw : '${raw}'.to_bytes(),
+      flags == nil ? [] : flags,
+      received == nil ? date.date() : received
+    )
+
+    box.uidnext = box.uidnext + 1
+    box.messages.append(stored)
+
+    return stored
+  }
+
+  set_flags(username: string, mailbox: string, uid: number, flags: list) {
+    for stored in self._box(username, mailbox).messages {
+      if stored.uid == uid {
+        stored.flags = flags
+
+        return
+      }
+    }
+
+    raise MailboxError('no message ${uid} in ${mailbox}')
+  }
+
+  expunge(username: string, mailbox: string) {
+    var box = self._box(username, mailbox)
+    var kept = []
+    var gone = []
+
+    for stored in box.messages {
+      if stored.has_flag('\\Deleted') {
+        gone.append(stored.uid)
+        continue
+      }
+
+      kept.append(stored)
+    }
+
+    box.messages = kept
+
+    return gone
+  }
+
+  counters(username: string, mailbox: string) {
+    var box = self._box(username, mailbox)
+
+    return { uidnext: box.uidnext, uidvalidity: box.uidvalidity }
+  }
+
+  to_string() {
+    return '<MemoryStore ${self._accounts.length()} accounts>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# A mailbox starts numbering at one, and its validity is the moment it
+# was made, which is what tells a client the numbering has been reset.
+def _new_box() {
+  return { messages: [], uidnext: 1, uidvalidity: time().floor() }
+}
+
+# The file each mailbox keeps its numbering in. Maildir itself has no
+# notion of a message number that survives a rename, and IMAP cannot
+# work without one, so this is where the two are reconciled.
+var INDEX_FILE = 'zuri-uidlist'
+
+/**
+ * A store that keeps mail on disk in the Maildir layout.
+ *
+ * Each account is a directory under `root`, holding its INBOX
+ * directly and every other mailbox as `.Name` beside it, which is the
+ * Maildir++ arrangement every other mail tool understands. A mailbox
+ * written here can be read by anything else, and mail delivered by
+ * anything else turns up here.
+ *
+ * Mail is on disk; accounts are not. The store asks the program who
+ * its users are, either as a password given to `add_account()` or
+ * through `set_authenticator()`, because where an application keeps
+ * its passwords is the application's business and not a mail
+ * library's.
+ *
+ * ```zuri,ignore
+ * import mail.imap { MaildirStore }
+ *
+ * var store = MaildirStore('/var/mail')
+ *
+ * store.add_account('ann', secret)
+ * store.append('ann', 'INBOX', raw, nil, nil)
+ * ```
+ *
+ * @printable
+ */
+class MaildirStore < MailStore {
+
+  /**
+   * @param string root: The directory the accounts live under. It is
+   *    created if it is not there.
+   */
+  @new(root: string) {
+    self.root = root
+    self._accounts = {}
+    self._authenticator = nil
+
+    if !os.dir_exists(root) {
+      os.create_dir(root, nil, true)
+    }
+  }
+
+  /**
+   * Adds an account with a password this store will check itself, and
+   * makes its mail directory if it is not there.
+   *
+   * @param string username
+   * @param string password
+   * @returns MaildirStore itself.
+   */
+  add_account(username: string, password: string) {
+    self._accounts[username] = password
+
+    var home = self._home(username)
+
+    if !os.dir_exists(home) {
+      os.create_dir(home, nil, true)
+    }
+
+    self._ensure_maildir(home)
+
+    return self
+  }
+
+  /**
+   * Hands credential checking to a function of your own, which is what
+   * a program with its own user table wants.
+   *
+   * A store with an authenticator can no longer produce a password, so
+   * the server stops offering the mechanisms that need one.
+   *
+   * @param function(2) checker: Given a username and a password,
+   *    returns whether they are right.
+   * @returns MaildirStore itself.
+   */
+  set_authenticator(checker) {
+    self._authenticator = checker
+
+    return self
+  }
+
+  authenticate(username: string, password: string) {
+    if self._authenticator != nil {
+      var checker = self._authenticator
+
+      return checker(username, password) == true
+    }
+
+    if !self._accounts.contains(username) {
+      return false
+    }
+
+    return self._accounts[username] == password
+  }
+
+  password_of(username: string) {
+    if self._authenticator != nil {
+      return nil
+    }
+
+    return self._accounts.get(username, nil)
+  }
+
+  has_passwords() {
+    return self._authenticator == nil
+  }
+
+  _home(username: string) {
+    if username.index_of('/') > -1 or username.index_of('\\') > -1
+      or username == '.' or username == '..' {
+      raise MailboxError('${username} is not a usable account name')
+    }
+
+    return os.join_paths(self.root, username)
+  }
+
+  # INBOX is the account's own directory; every other mailbox is a
+  # dotted directory beside it, which is what Maildir++ specifies.
+  _box_path(username: string, mailbox: string) {
+    var home = self._home(username)
+
+    if mailbox.upper() == 'INBOX' {
+      return home
+    }
+
+    if mailbox == '' or mailbox.starts_with('.') or mailbox.index_of('/') > -1 {
+      raise MailboxError('${mailbox} is not a usable mailbox name')
+    }
+
+    return os.join_paths(home, '.${mailbox}')
+  }
+
+  _ensure_maildir(path: string) {
+    for part in MAILDIR_PARTS {
+      var inside = os.join_paths(path, part)
+
+      if !os.dir_exists(inside) {
+        os.create_dir(inside, nil, true)
+      }
+    }
+  }
+
+  mailboxes(username: string) {
+    var home = self._home(username)
+
+    if !os.dir_exists(home) {
+      raise MailboxError('no account named ${username}')
+    }
+
+    var found = ['INBOX']
+
+    for name in os.read_dir(home) {
+      if !name.starts_with('.') or name == '.' or name == '..' {
+        continue
+      }
+
+      if !os.dir_exists(os.join_paths(home, name)) {
+        continue
+      }
+
+      found.append(name[1, name.length()])
+    }
+
+    return found.sort()
+  }
+
+  exists(username: string, mailbox: string) {
+    catch {
+      return os.dir_exists(self._box_path(username, mailbox))
+    } as error {
+      return false
+    }
+  }
+
+  create(username: string, mailbox: string) {
+    var path = self._box_path(username, mailbox)
+
+    if os.dir_exists(path) {
+      raise MailboxError('${mailbox} exists already')
+    }
+
+    os.create_dir(path, nil, true)
+    self._ensure_maildir(path)
+    self._write_index(path, { uidvalidity: time().floor(), uidnext: 1, entries: {} })
+  }
+
+  remove(username: string, mailbox: string) {
+    if mailbox.upper() == 'INBOX' {
+      raise MailboxError('INBOX cannot be removed')
+    }
+
+    var path = self._box_path(username, mailbox)
+
+    if !os.dir_exists(path) {
+      raise MailboxError('no mailbox named ${mailbox}')
+    }
+
+    for part in MAILDIR_PARTS {
+      var inside = os.join_paths(path, part)
+
+      if !os.dir_exists(inside) {
+        continue
+      }
+
+      for name in os.read_dir(inside) {
+        if name == '.' or name == '..' {
+          continue
+        }
+
+        file(os.join_paths(inside, name)).delete()
+      }
+
+      os.remove_dir(inside)
+    }
+
+    var index = os.join_paths(path, INDEX_FILE)
+
+    if file(index).exists() {
+      file(index).delete()
+    }
+
+    os.remove_dir(path)
+  }
+
+  rename(username: string, from: string, to: string) {
+    if from.upper() == 'INBOX' {
+      raise MailboxError('INBOX cannot be renamed')
+    }
+
+    var source = self._box_path(username, from)
+    var target = self._box_path(username, to)
+
+    if !os.dir_exists(source) {
+      raise MailboxError('no mailbox named ${from}')
+    }
+
+    if os.dir_exists(target) {
+      raise MailboxError('${to} exists already')
+    }
+
+    os.rename(source, target)
+  }
+
+  # Reads the numbering, taking in anything that has been delivered
+  # since the last look. A message a delivery agent dropped in has no
+  # number yet, and gets the next one.
+  _load(username: string, mailbox: string) {
+    var path = self._box_path(username, mailbox)
+
+    if !os.dir_exists(path) {
+      raise MailboxError('no mailbox named ${mailbox}')
+    }
+
+    self._ensure_maildir(path)
+
+    var index = self._read_index(path)
+
+    # Anything still in the delivery directory is moved across first,
+    # which is what marks it as seen by a reader rather than by the
+    # delivery agent.
+    var staging = os.join_paths(path, 'new')
+    var current = os.join_paths(path, 'cur')
+
+    for name in os.read_dir(staging) {
+      if name == '.' or name == '..' {
+        continue
+      }
+
+      var moved = name.index_of(':') > -1 ? name : '${name}:2,'
+
+      os.rename(os.join_paths(staging, name), os.join_paths(current, moved))
+    }
+
+    var present = []
+    var changed = false
+
+    for name in os.read_dir(current) {
+      if name == '.' or name == '..' {
+        continue
+      }
+
+      present.append(name)
+
+      var key = _base_name(name)
+
+      if !index.entries.contains(key) {
+        index.entries[key] = index.uidnext
+        index.uidnext = index.uidnext + 1
+        changed = true
+      }
+    }
+
+    # A number belonging to a file that has gone is not reused, so a
+    # client that remembers it is told the message is missing rather
+    # than handed a different one.
+    for key in index.entries.keys() {
+      var still_here = false
+
+      for name in present {
+        if _base_name(name) == key {
+          still_here = true
+          break
+        }
+      }
+
+      if !still_here {
+        index.entries.remove(key)
+        changed = true
+      }
+    }
+
+    if changed {
+      self._write_index(path, index)
+    }
+
+    return { path, current, index, present }
+  }
+
+  messages(username: string, mailbox: string) {
+    var state = self._load(username, mailbox)
+    var found = []
+
+    for name in state.present {
+      var key = _base_name(name)
+      var full = os.join_paths(state.current, name)
+      var handle = file(full, 'rb')
+      var raw = handle.read()
+
+      handle.close()
+
+      found.append(StoredMessage(
+        state.index.entries[key],
+        raw,
+        _flags_from_letters(_flag_part(name)),
+        _received_of(key)
+      ))
+    }
+
+    return found.sort(@(left, right) => left.uid - right.uid)
+  }
+
+  append(username: string, mailbox: string, raw, flags: ?list, received) {
+    var state = self._load(username, mailbox)
+    var data = is_bytes(raw) ? raw : '${raw}'.to_bytes()
+    var name = '${_unique_name()},S=${data.length()}'
+    var letters = _flag_letters(flags == nil ? [] : flags)
+    var staged = os.join_paths(state.path, 'tmp', name)
+    var handle = file(staged, 'wb')
+
+    handle.write(data)
+    handle.close()
+
+    # The message is written somewhere nothing reads from and only then
+    # moved into place, so a reader never sees half a message.
+    var final_name = '${name}:2,${letters}'
+
+    os.rename(staged, os.join_paths(state.current, final_name))
+
+    var uid = state.index.uidnext
+
+    state.index.entries[_base_name(final_name)] = uid
+    state.index.uidnext = uid + 1
+
+    self._write_index(state.path, state.index)
+
+    return StoredMessage(
+      uid,
+      data,
+      flags == nil ? [] : flags,
+      received == nil ? date.date() : received
+    )
+  }
+
+  set_flags(username: string, mailbox: string, uid: number, flags: list) {
+    var state = self._load(username, mailbox)
+
+    for name in state.present {
+      var key = _base_name(name)
+
+      if state.index.entries.get(key, nil) != uid {
+        continue
+      }
+
+      var renamed = '${key}:2,${_flag_letters(flags)}'
+
+      if renamed == name {
+        return
+      }
+
+      os.rename(
+        os.join_paths(state.current, name),
+        os.join_paths(state.current, renamed)
+      )
+
+      return
+    }
+
+    raise MailboxError('no message ${uid} in ${mailbox}')
+  }
+
+  expunge(username: string, mailbox: string) {
+    var state = self._load(username, mailbox)
+    var gone = []
+
+    for name in state.present {
+      if _flag_part(name).index_of('T') < 0 {
+        continue
+      }
+
+      var key = _base_name(name)
+
+      gone.append(state.index.entries.get(key, 0))
+
+      file(os.join_paths(state.current, name)).delete()
+      state.index.entries.remove(key)
+    }
+
+    if !gone.is_empty() {
+      self._write_index(state.path, state.index)
+    }
+
+    return gone
+  }
+
+  counters(username: string, mailbox: string) {
+    var state = self._load(username, mailbox)
+
+    return {
+      uidnext: state.index.uidnext,
+      uidvalidity: state.index.uidvalidity,
+    }
+  }
+
+  _read_index(path: string) {
+    var full = os.join_paths(path, INDEX_FILE)
+    var index = { uidvalidity: time().floor(), uidnext: 1, entries: {} }
+
+    if !file(full).exists() {
+      return index
+    }
+
+    var handle = file(full, 'r')
+    var text = handle.read()
+
+    handle.close()
+
+    for line in text.split('\n') {
+      var trimmed = line.trim().trim('\r')
+
+      if trimmed == '' {
+        continue
+      }
+
+      var space = trimmed.index_of(' ')
+
+      if space < 1 {
+        continue
+      }
+
+      var key = trimmed[0, space]
+      var value = trimmed[space + 1, trimmed.length()]
+
+      if key == 'uidvalidity' {
+        index.uidvalidity = value.to_number()
+        continue
+      }
+
+      if key == 'uidnext' {
+        index.uidnext = value.to_number()
+        continue
+      }
+
+      index.entries[value] = key.to_number()
+    }
+
+    return index
+  }
+
+  _write_index(path: string, index: dict) {
+    var lines = [
+      'uidvalidity ${index.uidvalidity}',
+      'uidnext ${index.uidnext}',
+    ]
+
+    for key in index.entries.keys() {
+      lines.append('${index.entries[key]} ${key}')
+    }
+
+    var handle = file(os.join_paths(path, INDEX_FILE), 'w')
+
+    handle.write('\n'.join(lines) + '\n')
+    handle.close()
+  }
+
+  to_string() {
+    return '<MaildirStore ${self.root}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The part of a message's filename that identifies it, without the
+# flags a rename keeps changing.
+def _base_name(name: string) {
+  var marker = name.index_of(':')
+
+  return marker < 0 ? name : name[0, marker]
+}
+
+def _flag_part(name: string) {
+  var marker = name.index_of(':2,')
+
+  return marker < 0 ? '' : name[marker + 3, name.length()]
+}
+
+# A Maildir filename starts with the time the message arrived.
+def _received_of(key: string) {
+  var dot = key.index_of('.')
+  var seconds = dot < 0 ? key : key[0, dot]
+
+  catch {
+    return date.from_time(seconds.to_number())
+  } as error {
+    return date.date()
+  }
+}

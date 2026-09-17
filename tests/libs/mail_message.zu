@@ -1,0 +1,559 @@
+/**
+ * test_mail_message.zu
+ *
+ * The part of `mail` that needs no socket: addresses, headers, the
+ * encodings a header and a body use, the MIME tree a message turns
+ * into, DKIM, and the SASL mechanisms all three protocols share.
+ *
+ * The SASL and DKIM cases are checked against the worked examples in
+ * the specifications themselves, so a change that still round-trips
+ * with itself but no longer matches anyone else is caught here.
+ */
+
+import mail
+import mail.content { ContentType, ContentDisposition }
+import mail.dkim { Signer }
+import mail.encoding as enc
+import mail.headers { Headers, fold, unfold }
+import mail.sasl
+import mail.stream as ms
+
+import base64
+import crypto
+import os
+
+var _passed = 0
+var _failed = 0
+
+def check(label, got, expected) {
+  if got == expected {
+    _passed++
+
+    return
+  }
+
+  _failed++
+
+  echo '  [FAIL] ${label}'
+  echo '         got      ${got}'
+  echo '         expected ${expected}'
+}
+
+def ok(label, condition) {
+  check(label, condition, true)
+}
+
+def raises(body) {
+  catch {
+    body()
+
+    return false
+  } as error
+  return true
+}
+
+def section(title) {
+  echo ''
+  echo '== ${title} =='
+}
+
+section('addresses')
+
+var one = mail.parse_address('"Ore, Richard" <richard@example.com> (author)')
+
+check('display name unquoted', one.name, 'Ore, Richard')
+check('address', one.address, 'richard@example.com')
+check('local part', one.local, 'richard')
+check('domain', one.domain, 'example.com')
+check('written back with quotes', one.to_string(), '"Ore, Richard" <richard@example.com>')
+
+var several = mail.parse_address_list(
+  'Ann <ann@example.com>, bob@example.com, "C D" <cd@example.org>'
+)
+
+check('three read', several.length(), 3)
+check('names kept', several.map(@(p) => p.name), ['Ann', '', 'C D'])
+check('addresses kept', several.map(@(p) => p.address), [
+  'ann@example.com',
+  'bob@example.com',
+  'cd@example.org',
+])
+
+var grouped = mail.parse_address_list(
+  'Managers: ann@example.com, bob@example.com;, carol@example.net'
+)
+
+check('group members flattened', grouped.length(), 3)
+check('group last member', grouped[2].address, 'carol@example.net')
+
+var kept = mail.parse_address_groups('Managers: ann@example.com;')
+
+check('group kept when asked', kept.length(), 1)
+check('group name', kept[0].name, 'Managers')
+check('group written back', kept[0].to_string(), 'Managers: ann@example.com;')
+
+check('quoted local part', mail.parse_address('"john doe"@example.com').local, 'john doe')
+check('quoted local rewritten', mail.parse_address('"john doe"@example.com').address,
+  '"john doe"@example.com')
+check('domain literal', mail.parse_address('user@[192.0.2.1]').domain, '[192.0.2.1]')
+
+var encoded = mail.parse_address('=?utf-8?Q?Gr=C3=BC=C3=9Fe?= <gruss@example.com>')
+
+check('encoded display name decoded', encoded.name, 'Grüße')
+
+check('domains compare without case',
+  mail.Address('a@b.com', nil).equals(mail.Address('a@B.COM', nil)), true)
+check('local parts compare with case',
+  mail.Address('A@b.com', nil).equals(mail.Address('a@b.com', nil)), false)
+ok('no address raises', raises(@() { mail.parse_address('   ') }))
+ok('two addresses raise', raises(@() { mail.parse_address('a@b.com, c@d.com') }))
+
+check('non-ascii name encoded on the way out',
+  mail.Address('a@b.com', 'Grüße').to_string().starts_with('=?utf-8?'), true)
+check('and decodes back',
+  mail.parse_address(mail.Address('a@b.com', 'Grüße').to_string()).name, 'Grüße')
+
+section('encodings')
+
+check('ascii needs no encoded word', enc.encode_word('plain', nil, nil), 'plain')
+check('Q encoding', enc.encode_word('Grüße', 'utf-8', 'Q'), '=?utf-8?Q?Gr=C3=BC=C3=9Fe?=')
+check('Q decoding', enc.decode_words('=?utf-8?Q?Gr=C3=BC=C3=9Fe?='), 'Grüße')
+check('B decoding', enc.decode_words('=?utf-8?B?R3LDvMOfZQ==?='), 'Grüße')
+check('space between words dropped',
+  enc.decode_words('=?utf-8?B?SGVsbG8=?= =?utf-8?B?IHdvcmxk?='), 'Hello world')
+check('space outside words kept',
+  enc.decode_words('plain =?utf-8?Q?caf=C3=A9?= text'), 'plain café text')
+check('malformed word left alone',
+  enc.decode_words('not =?an encoded? word'), 'not =?an encoded? word')
+
+var long_subject = 'Grüße aus München und noch viele weitere Zeichen für einen sehr langen Betreff'
+
+ok('a long subject becomes several words',
+  enc.encode_word(long_subject, 'utf-8', 'Q').split(' ').length() > 1)
+check('and still decodes whole',
+  enc.decode_words(enc.encode_word(long_subject, 'utf-8', 'Q')), long_subject)
+check('either method round-trips',
+  enc.decode_words(enc.encode_word(long_subject, 'utf-8', 'B')), long_subject)
+
+check('quoted-printable', enc.encode_quoted_printable('café = good'), 'caf=C3=A9 =3D good')
+check('and back', enc.decode_quoted_printable('caf=C3=A9 =3D good').to_string(), 'café = good')
+
+var trailing = 'a line with a trailing space \r\nand another\r\n'
+
+check('trailing space is spelled out',
+  enc.encode_quoted_printable(trailing).contains('space=20'), true)
+check('trailing space survives',
+  enc.decode_quoted_printable(enc.encode_quoted_printable(trailing)).to_string(), trailing)
+
+var wide = ''
+
+iter var i = 0; i < 200; i++ {
+  wide += 'x'
+}
+
+for line in enc.encode_quoted_printable(wide).split('\r\n') {
+  ok('no encoded line runs past 76', line.length() <= 76)
+}
+
+check('base64 unwrapped', enc.encode_base64('hello world', 0), 'aGVsbG8gd29ybGQ=')
+check('base64 back', enc.decode_base64('aGVsbG8gd29ybGQ=').to_string(), 'hello world')
+check('whitespace in base64 ignored',
+  enc.decode_base64('aGVsbG8g\r\nd29ybGQ=').to_string(), 'hello world')
+
+check('latin-1 decoded', enc.decode_text(bytes([0xe9, 0x74, 0xe9]), 'iso-8859-1'), 'été')
+check('windows-1252 decoded', enc.decode_text(bytes([0x93, 0x41, 0x94]), 'windows-1252'), '“A”')
+check('unknown charset read as utf-8',
+  enc.decode_text('plain'.to_bytes(), 'x-made-up'), 'plain')
+
+check('short ascii parameter quoted',
+  ' ; '.join(enc.encode_parameter('filename', 'report.pdf')), 'filename="report.pdf"')
+check('non-ascii parameter extended',
+  ' ; '.join(enc.encode_parameter('filename', 'résumé.pdf')),
+  "filename*=utf-8''r%C3%A9sum%C3%A9.pdf")
+check('extended parameter read back',
+  enc.decode_parameters({ "filename*": "utf-8''r%C3%A9sum%C3%A9.pdf" }).filename, 'résumé.pdf')
+check('continuations put back together', enc.decode_parameters({
+  'filename*0*': "utf-8''r%C3%A9",
+  'filename*1*': 'sum%C3%A9.pdf',
+}).filename, 'résumé.pdf')
+
+check('ascii needs no transfer encoding', enc.guess_encoding('plain ascii'), '7bit')
+check('binary goes base64',
+  enc.guess_encoding(bytes([0, 1, 2, 0xff, 0xfe, 0xfd])), 'base64')
+
+section('content headers')
+
+var type = ContentType.parse('text/plain; charset="utf-8"; format=flowed')
+
+check('media type', type.mime_type(), 'text/plain')
+check('charset', type.charset(), 'utf-8')
+check('other parameter', type.get('format', nil), 'flowed')
+check('missing header is text/plain', ContentType.parse(nil).mime_type(), 'text/plain')
+check('default charset', ContentType.parse(nil).charset(), 'us-ascii')
+check('boundary', ContentType.parse('multipart/mixed; boundary="=_ab"').boundary(), '=_ab')
+ok('multipart recognised', ContentType.parse('multipart/mixed; boundary=x').is_multipart())
+check('case folded', ContentType.parse('Text/HTML').mime_type(), 'text/html')
+check('semicolon inside quotes kept',
+  ContentType.parse('application/octet-stream; name="a;b.bin"').get('name', nil), 'a;b.bin')
+check('comment skipped',
+  ContentType.parse('text/plain (just text); charset=utf-8').charset(), 'utf-8')
+
+var disposition = ContentDisposition.parse("attachment; filename*=utf-8''r%C3%A9sum%C3%A9.pdf")
+
+check('disposition kind', disposition.kind, 'attachment')
+check('disposition filename', disposition.filename(), 'résumé.pdf')
+ok('disposition is an attachment', disposition.is_attachment())
+
+section('headers')
+
+var headers = Headers()
+
+headers.set('Subject', 'Quarterly report')
+headers.add('Received', 'from a.example.com')
+headers.add('Received', 'from b.example.com')
+
+check('read without case', headers.get('subject', nil), 'Quarterly report')
+check('repeats kept', headers.get_all('Received').length(), 2)
+check('order kept', headers.names(), ['Subject', 'Received', 'Received'])
+check('set replaces', headers.set('Received', 'only one').get_all('Received').length(), 1)
+check('prepend goes first', headers.prepend('X-First', 'yes').names()[0], 'X-First')
+check('remove reports how many', headers.remove('Received'), 1)
+ok('gone', !headers.contains('Received'))
+
+var block = 'From: a@b.com\r\nSubject: hello\r\n there\r\nTo: c@d.com\r\n'
+var parsed = Headers.parse(block)
+
+check('folded value joined', parsed.get('subject', nil), 'hello there')
+check('three headers', parsed.length(), 3)
+check('mbox separator skipped', Headers.parse('From ann Mon\r\nTo: a@b.com').length(), 1)
+
+check('unfolding keeps the whitespace', unfold('a\r\n  b'), 'a  b')
+check('folding breaks at spaces', fold('Subject', ('word ' * 20).trim(), 40).lines().length(), 3)
+
+for line in fold('Subject', ('word ' * 30).trim(), 40).split('\r\n') {
+  ok('no folded line runs past the width', line.length() <= 40)
+}
+
+check('one long word is left alone', fold('X', ('a' * 200), 40).lines().length(), 1)
+
+var addressed = Headers([['To', 'Ann <ann@example.com>, bob@example.com']])
+
+check('addresses parsed from a header',
+  addressed.addresses('to').map(@(p) => p.address), ['ann@example.com', 'bob@example.com'])
+
+var dated = Headers([['Date', 'Tue, 11 May 2021 13:43:11 +0000']])
+
+check('date read', dated.date(nil).format('r'), 'Tue, 11 May 2021 13:43:11 +0000')
+check('unreadable date is nil', Headers([['Date', 'whenever']]).date(nil), nil)
+check('encoded subject decoded',
+  Headers([['Subject', '=?utf-8?Q?caf=C3=A9?=']]).decoded('subject', nil), 'café')
+
+section('connection strings')
+
+var where = ms.endpoint('smtps://ann:secret@mail.example.com', {
+  smtp: { port: 587, tls: false },
+  smtps: { port: 465, tls: true },
+})
+
+check('scheme port', where.port, 465)
+check('scheme tls', where.tls, true)
+check('host', where.host, 'mail.example.com')
+check('username', where.username, 'ann')
+check('password', where.password, 'secret')
+
+var plain = ms.endpoint('mail.example.com:2525', {
+  smtp: { port: 587, tls: false },
+  smtps: { port: 465, tls: true },
+})
+
+check('bare host takes the first scheme', plain.scheme, 'smtp')
+check('explicit port wins', plain.port, 2525)
+check('ipv6 bracketed', ms.endpoint('smtp://[::1]:25', {
+  smtp: { port: 587, tls: false },
+}).host, '::1')
+ok('unknown scheme raises', raises(@() {
+  ms.endpoint('gopher://x', { smtp: { port: 25, tls: false } })
+}))
+
+section('building messages')
+
+var simple = mail.message()
+  .set_from('Richard Ore <richard@example.com>')
+  .add_to(['ann@example.com', 'bob@example.com'])
+  .set_subject('Quarterly report')
+  .set_text('The numbers are in.')
+
+check('subject read back', simple.subject(), 'Quarterly report')
+check('one part', simple.content_type().mime_type(), 'text/plain')
+check('sender', simple.sender().address, 'richard@example.com')
+check('recipients', simple.recipients().map(@(p) => p.address),
+  ['ann@example.com', 'bob@example.com'])
+ok('dated', simple.headers.contains('Date'))
+ok('not identified until it is sent', simple.message_id() == nil)
+ok('mime version set', simple.headers.get('MIME-Version', nil) == '1.0')
+check('body', simple.text(), 'The numbers are in.')
+
+var both = mail.message()
+  .set_from('a@example.com')
+  .add_to('b@example.com')
+  .set_subject('Both')
+  .set_text('plain version')
+  .set_html('<p>html version</p>')
+
+check('two renderings become an alternative', both.content_type().mime_type(),
+  'multipart/alternative')
+check('plain comes first', both.parts().map(@(p) => p.content_type().mime_type()),
+  ['text/plain', 'text/html'])
+check('plain readable', both.text_body(), 'plain version')
+check('html readable', both.html_body(), '<p>html version</p>')
+
+var carried = mail.message()
+  .set_from('a@example.com')
+  .add_to('b@example.com')
+  .set_subject('With a file')
+  .set_text('see attached')
+  .attach(mail.attachment('file contents here').set_filename('notes.txt'))
+
+check('a file makes it mixed', carried.content_type().mime_type(), 'multipart/mixed')
+check('body still readable', carried.text_body(), 'see attached')
+check('one attachment', carried.attachments().length(), 1)
+check('named', carried.attachments()[0].filename(), 'notes.txt')
+check('contents intact', carried.attachments()[0].body_bytes().to_string(), 'file contents here')
+check('type guessed from the name',
+  carried.attachments()[0].content_type().mime_type(), 'text/plain')
+
+var everything = mail.message()
+  .set_from('a@example.com')
+  .add_to('b@example.com')
+  .set_subject('All of it')
+  .set_text('plain')
+  .set_html('<p>html</p>')
+  .attach(mail.attachment(bytes([1, 2, 3, 255])).set_filename('blob.bin'))
+
+check('alternative inside mixed',
+  everything.walk().map(@(p) => p.content_type().mime_type()),
+  ['multipart/mixed', 'multipart/alternative', 'text/plain', 'text/html',
+    'application/octet-stream'])
+check('binary attachment survives',
+  everything.attachments()[0].body_bytes().to_list(), [1, 2, 3, 255])
+
+var embedded = mail.message()
+  .set_from('a@e.com')
+  .add_to('b@e.com')
+  .set_subject('Logo')
+var source = embedded.embed(
+  mail.attachment(bytes([137, 80, 78, 71])).set_filename('logo.png')
+)
+
+embedded.set_html('<img src="${source}">')
+
+check('embedding makes it related', embedded.content_type().mime_type(), 'multipart/related')
+check('html is the root part',
+  embedded.parts().map(@(p) => p.content_type().mime_type()), ['text/html', 'image/png'])
+ok('reference is a cid', source.starts_with('cid:'))
+
+
+section('reading messages')
+
+var back = mail.parse(carried.to_bytes())
+
+check('subject survives', back.subject(), 'With a file')
+check('structure survives', back.content_type().mime_type(), 'multipart/mixed')
+check('body survives', back.text_body(), 'see attached')
+check('attachment survives', back.attachments()[0].filename(), 'notes.txt')
+check('round trip is exact', back.to_bytes().to_string(), carried.to_bytes().to_string())
+
+var unicode = mail.message()
+  .set_from('a@e.com')
+  .add_to('b@e.com')
+  .set_subject('Grüße')
+  .set_text('héllo wörld')
+var unicode_back = mail.parse(unicode.to_bytes())
+
+check('non-ascii subject survives', unicode_back.subject(), 'Grüße')
+check('non-ascii body survives', unicode_back.text(), 'héllo wörld')
+
+var hand_written = 'From: a@example.com\r\n'
+  + 'To: b@example.com\r\n'
+  + 'Subject: Hi\r\n'
+  + 'References: <one@example.com> <two@example.com>\r\n'
+  + '\r\n'
+  + 'Hello there.\r\n'
+
+var read = mail.parse(hand_written)
+
+check('headers read', read.subject(), 'Hi')
+check('body read', read.text(), 'Hello there.\r\n')
+check('references read', read.references(), ['<one@example.com>', '<two@example.com>'])
+check('reply-to falls back to from', read.reply_to()[0].address, 'a@example.com')
+check('source kept for signing', read.source_headers() != nil, true)
+
+check('a message with no body at all parses',
+  mail.parse('Subject: bare\r\n').subject(), 'bare')
+
+
+section('dkim')
+
+var pair = crypto.rsa.generate(2048)
+var published = pair.public_pem
+  .replace('/-----BEGIN PUBLIC KEY-----/', '')
+  .replace('/-----END PUBLIC KEY-----/', '')
+  .replace('/\n/', '')
+var record = ['v=DKIM1; k=rsa; p=${published}']
+
+def lookup(name) {
+  return record
+}
+
+def signed_note(canonicalisation) {
+  var note = mail.message()
+    .set_from('Richard Ore <richard@example.com>')
+    .add_to('ann@example.com')
+    .set_subject('Signed with ${canonicalisation}')
+    .set_text('The body.\r\nWith  odd   spacing.  \r\n\r\n\r\n')
+
+  Signer('example.com', 'default', pair.private_pem, {
+    canonicalisation,
+  }).sign(note)
+
+  return note
+}
+
+for canonicalisation in ['relaxed/relaxed', 'simple/simple', 'relaxed/simple', 'simple/relaxed'] {
+  var results = mail.dkim.verify(mail.parse(signed_note(canonicalisation).to_bytes()), lookup)
+
+  check('${canonicalisation} verifies', results.length() == 1 and results[0].valid, true)
+}
+
+var note = signed_note('relaxed/relaxed')
+
+ok('the header is added at the top', note.headers.names()[0] == 'DKIM-Signature')
+
+var signature = mail.dkim.Signature.parse(note.headers.get('DKIM-Signature', nil))
+
+check('algorithm recorded', signature.algorithm, 'rsa-sha256')
+check('domain recorded', signature.domain, 'example.com')
+check('selector recorded', signature.selector, 'default')
+check('key is looked up under the selector', signature.record_name(),
+  'default._domainkey.example.com')
+ok('the from header is covered', signature.headers.map(@(h) => h.lower()).contains('from'))
+
+var tampered_body = note.to_bytes().to_string().replace('/The body\./', 'Another body.')
+
+check('a changed body fails',
+  mail.dkim.verify(mail.parse(tampered_body), lookup)[0].valid, false)
+
+var tampered_header = note.to_bytes().to_string()
+  .replace('/Subject: Signed with relaxed\/relaxed/', 'Subject: Something else')
+
+check('a changed signed header fails',
+  mail.dkim.verify(mail.parse(tampered_header), lookup)[0].valid, false)
+
+var with_trace = 'Received: from relay.example.net\r\n' + note.to_bytes().to_string()
+
+check('an added unsigned header does not',
+  mail.dkim.verify(mail.parse(with_trace), lookup)[0].valid, true)
+
+var refolded = note.to_bytes().to_string()
+  .replace('/Subject: Signed with/', 'Subject:\r\n Signed    with')
+
+check('relaxed survives refolding',
+  mail.dkim.verify(mail.parse(refolded), lookup)[0].valid, true)
+
+check('an unsigned message reports nothing',
+  mail.dkim.verify(mail.parse('Subject: bare\r\n\r\nbody\r\n'), lookup).length(), 0)
+
+check('a body canonicalises under relaxed',
+  mail.dkim.canonicalise_body('a \r\nb\r\n\r\n\r\n', 'relaxed').to_string(), 'a\r\nb\r\n')
+check('simple keeps the whitespace',
+  mail.dkim.canonicalise_body('a \r\nb\r\n\r\n\r\n', 'simple').to_string(), 'a \r\nb\r\n')
+check('an empty body under simple is one break',
+  mail.dkim.canonicalise_body('', 'simple').to_string(), '\r\n')
+check('and under relaxed is nothing',
+  mail.dkim.canonicalise_body('', 'relaxed').to_string(), '')
+check('a header collapses under relaxed',
+  mail.dkim.canonicalise_header('Subject', '  a   b  ', 'relaxed'), 'subject:a b')
+check('and does not under simple',
+  mail.dkim.canonicalise_header('Subject', '  a   b  ', 'simple'), 'Subject:  a   b  ')
+
+
+section('sasl')
+
+var plain = sasl.of('PLAIN', { username: 'ann', password: 'secret' })
+
+check('plain name', plain.name(), 'PLAIN')
+check('plain response', plain.start().to_list(),
+  [0, 97, 110, 110, 0, 115, 101, 99, 114, 101, 116])
+
+var login = sasl.of('LOGIN', { username: 'ann', password: 'secret' })
+
+check('login username', login.step('Username:'.to_bytes()).to_string(), 'ann')
+check('login password', login.step('Password:'.to_bytes()).to_string(), 'secret')
+ok('login finishes', login.is_done())
+
+check('cram-md5 matches RFC 2195',
+  sasl.response('tim', 'tanstaaftanstaaf', '<1896.697170952@postoffice.reston.mci.net>'),
+  'tim b913a602c7eda7a495b4e6e7334d3890')
+
+var scram = sasl.Scram('user', 'pencil', 'sha256', nil, 'rOprNGfwEbeRWgbNEkqO')
+var server_first = 'r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,'
+  + 's=W22ZaJ0SNY7soEsUEjb6gQ==,i=4096'
+
+check('scram-sha-256 first message matches RFC 7677',
+  scram.start().to_string(), 'n,,n=user,r=rOprNGfwEbeRWgbNEkqO')
+check('scram-sha-256 proof matches RFC 7677',
+  scram.step(server_first.to_bytes()).to_string(),
+  'c=biws,r=rOprNGfwEbeRWgbNEkqO%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0,'
+    + 'p=dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=')
+
+scram.step('v=6rriTRBi23WpRR/wtup+mMhUZUn/dB5nLTJRsjl95G4='.to_bytes())
+ok('scram finishes', scram.is_done())
+
+var impostor = sasl.Scram('user', 'pencil', 'sha256', nil, 'rOprNGfwEbeRWgbNEkqO')
+
+impostor.start()
+impostor.step(server_first.to_bytes())
+
+ok('a server that cannot prove itself is refused', raises(@() {
+  impostor.step('v=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='.to_bytes())
+}))
+
+var scram1 = sasl.Scram('user', 'pencil', 'sha1', nil, 'fyko+d2lbbFgONRv9qkxdawL')
+
+scram1.start()
+
+check('scram-sha-1 proof matches RFC 5802',
+  scram1.step(
+    'r=fyko+d2lbbFgONRv9qkxdawL3rfcNHYJY1ZVvWVs7j,s=QSXCR+Q6sek8bf92,i=4096'.to_bytes()
+  ).to_string(),
+  'c=biws,r=fyko+d2lbbFgONRv9qkxdawL3rfcNHYJY1ZVvWVs7j,'
+    + 'p=v0X8v3Bz2T0CJGbJQyF0X+HI4Ts=')
+
+check('the strongest on offer wins',
+  sasl.choose(['PLAIN', 'LOGIN', 'CRAM-MD5'], { password: 'x' }, false, nil), 'CRAM-MD5')
+check('plain is allowed under tls',
+  sasl.choose(['PLAIN', 'LOGIN'], { password: 'x' }, true, nil), 'PLAIN')
+check('and refused without it',
+  sasl.choose(['PLAIN', 'LOGIN'], { password: 'x' }, false, nil), nil)
+check('scram beats everything',
+  sasl.choose(['SCRAM-SHA-256', 'CRAM-MD5', 'PLAIN'], { password: 'x' }, true, nil),
+  'SCRAM-SHA-256')
+check('a token picks a token mechanism',
+  sasl.choose(['PLAIN', 'XOAUTH2'], { username: 'a', token: 't' }, true, nil), 'XOAUTH2')
+check('an allowed list narrows it',
+  sasl.choose(['SCRAM-SHA-256', 'PLAIN'], { password: 'x' }, true, ['PLAIN']), 'PLAIN')
+
+check('a credential is prepared', sasl.prepare('pass word'), 'pass word')
+ok('a control character in a credential raises', raises(@() {
+  sasl.prepare('bad' + bytes([1]).to_string() + 'name')
+}))
+
+echo ''
+
+if _failed > 0 {
+  echo '${_failed} of ${_passed + _failed} checks failed'
+
+  os.exit(1)
+}
+
+echo 'all ${_passed} checks passed'

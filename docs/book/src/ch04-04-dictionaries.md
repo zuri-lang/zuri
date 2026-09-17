@@ -495,7 +495,7 @@ The important property is that **only the handlers in the table can ever
 run**. A user typing anything at all selects one of four functions you
 wrote, or the fallback. That is the difference between a program that
 handles input and one that executes it, and it is why Zuri has no
-`eval()`. [Chapter 18](ch18-00-metaprogramming.md) covers the reasoning.
+`eval()`. [Chapter 19](ch19-00-metaprogramming.md) covers the reasoning.
 
 ### Storing Methods
 

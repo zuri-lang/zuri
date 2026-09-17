@@ -23,6 +23,7 @@ mod json;
 mod math;
 mod net_dtls;
 mod net_poll;
+mod net_resolver;
 pub(crate) mod net_tcp;
 pub(crate) mod net_unix;
 pub(crate) mod net_tls;
@@ -63,6 +64,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   isolate::MODULE,
   net_dtls::MODULE,
   net_poll::MODULE,
+  net_resolver::MODULE,
   net_tcp::MODULE,
   net_unix::MODULE,
   net_tls::MODULE,

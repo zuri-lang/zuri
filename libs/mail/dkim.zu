@@ -1,0 +1,993 @@
+/**
+ * @module dkim
+ *
+ * DomainKeys Identified Mail: signing outgoing messages so a receiver
+ * can tell they came from the domain they claim to, and checking the
+ * signatures on incoming ones.
+ *
+ * A signature covers the body and a chosen set of headers. The public
+ * key lives in the domain's own DNS, under the selector the signature
+ * names, which is what ties the message to the domain.
+ *
+ * ```zuri,ignore
+ * import mail
+ * import mail.dkim { Signer }
+ *
+ * var signer = Signer('example.com', 'default', private_key)
+ *
+ * signer.sign(note)
+ *
+ * mail.send('smtp://mail.example.com', note)
+ * ```
+ *
+ * Verification looks the key up through `net.resolver` unless handed
+ * something else to look it up with:
+ *
+ * ```zuri,ignore
+ * import mail.dkim
+ *
+ * for result in dkim.verify(incoming) {
+ *   echo '${result.domain}: ${result.valid ? 'ok' : result.reason}'
+ * }
+ * ```
+ *
+ * ### What is covered
+ *
+ * Both canonicalisations, `simple` and `relaxed`, on headers and on
+ * bodies, and both signing algorithms in use: `rsa-sha256` and the
+ * `ed25519-sha256` of RFC 8463.
+ *
+ * A signature says nothing about who wrote the message, only that the
+ * domain that signed it takes responsibility for it. Deciding what a
+ * valid signature from a given domain is worth is a policy question,
+ * and the answer is usually DMARC.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import base64
+import crypto
+import hash
+import net.resolver
+
+import .encoding
+import .errors { MailError }
+import .headers { Headers, fold }
+
+/**
+ * Raised when a signature cannot be built: an algorithm this does not
+ * implement, a key that will not parse, a canonicalisation that is not
+ * one of the two.
+ *
+ * @printable
+ */
+class DkimError < MailError {
+  to_string() {
+    return '<DkimError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The signing algorithms this implements.
+ *
+ * @type list
+ */
+var ALGORITHMS = ['rsa-sha256', 'ed25519-sha256']
+
+/**
+ * The canonicalisations this implements, on either headers or body.
+ *
+ * `simple` covers the bytes as they are, which means any change at all
+ * on the way breaks the signature. `relaxed` forgives the whitespace
+ * and folding changes a mail server may make in passing, and is what
+ * almost everything uses.
+ *
+ * @type list
+ */
+var CANONICALISATIONS = ['simple', 'relaxed']
+
+/**
+ * The headers signed when the signer is not told which to sign.
+ *
+ * A header that is not in the message is skipped rather than signed as
+ * empty, and one that is listed twice is signed twice, which is how a
+ * signature says "there was exactly one of these".
+ *
+ * @type list
+ */
+var DEFAULT_HEADERS = [
+  'From', 'Sender', 'Reply-To', 'Subject', 'Date', 'To', 'Cc',
+  'Message-ID', 'MIME-Version', 'Content-Type',
+  'Content-Transfer-Encoding', 'Content-ID', 'Content-Description',
+  'In-Reply-To', 'References',
+]
+
+# The twelve bytes that turn a bare Ed25519 public key into the
+# SubjectPublicKeyInfo structure a PEM file holds. RFC 8463 publishes
+# the key itself, and nothing else takes it in that form.
+var _ED25519_SPKI = [
+  0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+]
+
+def _is_wsp(value: number) {
+  return value == 0x20 or value == 0x09
+}
+
+def _raw_bytes(data) {
+  return is_bytes(data) ? data : '${data}'.to_bytes()
+}
+
+/**
+ * Canonicalises a body.
+ *
+ * @param string|bytes raw
+ * @param string method: `simple` or `relaxed`.
+ * @returns bytes
+ * @throws DkimError if `method` is neither.
+ */
+def canonicalise_body(raw, method: string) {
+  if !CANONICALISATIONS.contains(method) {
+    raise DkimError('unknown body canonicalisation ${method}')
+  }
+
+  var data = _raw_bytes(raw)
+  var out = bytes(0)
+  var index = 0
+  var relaxed = method == 'relaxed'
+  var pending_space = false
+
+  while index < data.length() {
+    var value = data[index]
+
+    if value == 0x0a or (value == 0x0d and index + 1 < data.length()
+      and data[index + 1] == 0x0a) {
+      # Only `relaxed` drops the whitespace at the end of a line.
+      # `simple` covers the bytes as they are, which is the whole
+      # difference between the two.
+      if relaxed {
+        _drop_trailing_wsp(out)
+      }
+
+      out.append(0x0d)
+      out.append(0x0a)
+
+      pending_space = false
+      index += value == 0x0a ? 1 : 2
+      continue
+    }
+
+    if relaxed and _is_wsp(value) {
+      pending_space = true
+      index++
+      continue
+    }
+
+    if pending_space {
+      out.append(0x20)
+      pending_space = false
+    }
+
+    if !relaxed and _is_wsp(value) {
+      out.append(value)
+      index++
+      continue
+    }
+
+    out.append(value)
+    index++
+  }
+
+  if relaxed {
+    _drop_trailing_wsp(out)
+  }
+
+  _drop_trailing_breaks(out)
+
+  if out.is_empty() {
+    # An empty body is a single line break under `simple` and nothing
+    # at all under `relaxed`.
+    if relaxed {
+      return out
+    }
+
+    out.append(0x0d)
+    out.append(0x0a)
+
+    return out
+  }
+
+  out.append(0x0d)
+  out.append(0x0a)
+
+  return out
+}
+
+def _drop_trailing_wsp(out) {
+  while !out.is_empty() and _is_wsp(out[out.length() - 1]) {
+    out.pop()
+  }
+}
+
+def _drop_trailing_breaks(out) {
+  while out.length() >= 2
+    and out[out.length() - 1] == 0x0a
+    and out[out.length() - 2] == 0x0d {
+    out.pop()
+    out.pop()
+  }
+}
+
+/**
+ * Canonicalises one header.
+ *
+ * @param string name
+ * @param string value: The value as it was written, folding and all.
+ * @param string method: `simple` or `relaxed`.
+ * @returns string, without the line break that ends it.
+ * @throws DkimError if `method` is neither.
+ */
+def canonicalise_header(name: string, value: string, method: string) {
+  if !CANONICALISATIONS.contains(method) {
+    raise DkimError('unknown header canonicalisation ${method}')
+  }
+
+  if method == 'simple' {
+    return '${name}:${value}'
+  }
+
+  var flat = value.replace('/\r?\n/', '')
+  var out = bytes(0)
+  var pending = false
+
+  for byte_value in flat.to_bytes() {
+    if _is_wsp(byte_value) {
+      pending = true
+      continue
+    }
+
+    if pending and !out.is_empty() {
+      out.append(0x20)
+    }
+
+    pending = false
+
+    out.append(byte_value)
+  }
+
+  return '${name.lower()}:${out.to_string()}'
+}
+
+# The tags of a DKIM-Signature value, by name. Whitespace inside a tag
+# is folding rather than content, and comes out here.
+def _read_tags(value: string) {
+  var tags = {}
+
+  for piece in value.split(';') {
+    var equals = piece.index_of('=')
+
+    if equals < 0 {
+      continue
+    }
+
+    var name = piece[0, equals].trim().trim('\t').trim('\r').trim('\n').trim()
+    var raw = piece[equals + 1, piece.length()]
+
+    if name == '' {
+      continue
+    }
+
+    tags[name] = _squeeze(raw, name == 'b' or name == 'bh' or name == 'h' or name == 'z')
+  }
+
+  return tags
+}
+
+# Folding whitespace is not part of a tag's value. For the tags that
+# carry base64 or a colon-separated list it goes entirely; for the rest
+# only the whitespace around the edges does.
+def _squeeze(raw: string, strip_all: bool) {
+  var out = bytes(0)
+
+  for value in raw.to_bytes() {
+    if _is_wsp(value) or value == 0x0d or value == 0x0a {
+      if strip_all {
+        continue
+      }
+
+      out.append(value)
+      continue
+    }
+
+    out.append(value)
+  }
+
+  var text = out.to_string()
+
+  return strip_all ? text : text.trim()
+}
+
+/**
+ * One `DKIM-Signature` header, read into its parts.
+ *
+ * @printable
+ */
+class Signature {
+
+  /**
+   * @param dict tags: The tags of the header, by name.
+   * @param ?string raw: The header value it was read from.
+   */
+  @new(tags: dict, raw: ?string) {
+    self.tags = tags
+    self.raw = raw
+
+    self.version = tags.get('v', '1')
+    self.algorithm = tags.get('a', 'rsa-sha256').lower()
+    self.domain = tags.get('d', '')
+    self.selector = tags.get('s', '')
+    self.body_hash = tags.get('bh', '')
+    self.signature = tags.get('b', '')
+    self.identity = tags.get('i', nil)
+    self.query = tags.get('q', 'dns/txt')
+    self.body_length = tags.contains('l') ? tags.l.to_number() : nil
+    self.signed_at = tags.contains('t') ? tags.t.to_number() : nil
+    self.expires_at = tags.contains('x') ? tags.x.to_number() : nil
+
+    var canon = tags.get('c', 'simple/simple').lower()
+    var slash = canon.index_of('/')
+
+    self.header_canonicalisation = slash > -1 ? canon[0, slash] : canon
+    self.body_canonicalisation = slash > -1 ? canon[slash + 1, canon.length()] : 'simple'
+
+    self.headers = []
+
+    for name in tags.get('h', '').split(':') {
+      var trimmed = name.trim()
+
+      if trimmed != '' {
+        self.headers.append(trimmed)
+      }
+    }
+  }
+
+  /**
+   * Reads a `DKIM-Signature` header value.
+   *
+   * @param string value
+   * @returns Signature
+   */
+  static parse(value: string) {
+    return Signature(_read_tags(value), value)
+  }
+
+  /**
+   * The name the public key is published under.
+   *
+   * @returns string
+   */
+  record_name() {
+    return '${self.selector}._domainkey.${self.domain}'
+  }
+
+  to_string() {
+    return '<Signature ${self.domain}/${self.selector} ${self.algorithm}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Empties the `b=` tag, leaving the rest of the header exactly as it
+# was. The signature covers the header it lives in, so the one thing it
+# cannot cover is itself.
+def _blank_signature(value: string) {
+  var at = _find_tag(value, 'b')
+
+  if at < 0 {
+    return value
+  }
+
+  var equals = value.index_of('=', at)
+
+  if equals < 0 {
+    return value
+  }
+
+  var end = value.index_of(';', equals)
+
+  if end < 0 {
+    end = value.length()
+  }
+
+  return value[0, equals + 1] + value[end, value.length()]
+}
+
+# Where a tag of this exact name starts, skipping the ones whose names
+# merely end with it.
+def _find_tag(value: string, wanted: string) {
+  var at = 0
+
+  while at < value.length() {
+    var equals = value.index_of('=', at)
+
+    if equals < 0 {
+      return -1
+    }
+
+    var start = equals
+
+    while start > 0 and value[start - 1] != ';' {
+      start--
+    }
+
+    if value[start, equals].trim() == wanted {
+      return start
+    }
+
+    var next = value.index_of(';', equals)
+
+    if next < 0 {
+      return -1
+    }
+
+    at = next + 1
+  }
+
+  return -1
+}
+
+/**
+ * Turns the `p=` value of a key record into a PEM the crypto module
+ * will accept.
+ *
+ * An RSA key is published as the whole SubjectPublicKeyInfo structure
+ * and only needs wrapping. An Ed25519 key is published as the 32 raw
+ * bytes, and has that structure put around it here.
+ *
+ * @param string encoded: The base64 from the record's `p=` tag.
+ * @param string algorithm: One of `ALGORITHMS`.
+ * @returns string
+ * @throws DkimError if the key will not decode.
+ */
+def public_key_pem(encoded: string, algorithm: string) {
+  var raw = nil
+
+  catch {
+    raw = base64.decode(encoded)
+  } as error {
+    raise DkimError('public key is not base64: ${error.message}')
+  }
+
+  if algorithm.starts_with('ed25519') {
+    if raw.length() != 32 {
+      raise DkimError('an ed25519 public key is 32 bytes, not ${raw.length()}')
+    }
+
+    var wrapped = bytes(_ED25519_SPKI)
+
+    wrapped.extend(raw)
+    raw = wrapped
+  }
+
+  var body = base64.encode(raw)
+  var lines = []
+  var at = 0
+
+  while at < body.length() {
+    var end = at + 64
+
+    lines.append(body[at, end > body.length() ? body.length() : end])
+    at = end
+  }
+
+  return '-----BEGIN PUBLIC KEY-----\n${'\n'.join(lines)}\n-----END PUBLIC KEY-----\n'
+}
+
+# The headers of a message with their folding intact, which is what
+# `simple` canonicalisation covers. A message that was parsed still has
+# the bytes it came from; one that was built is asked to write them.
+def _header_source(message) {
+  var source = message.source_headers()
+
+  if source == nil {
+    var written = []
+
+    for entry in message.headers.entries() {
+      written.append(fold(entry.name, entry.value, 78))
+    }
+
+    source = '\r\n'.join(written)
+  }
+
+  var found = []
+  var name = nil
+  var value = []
+
+  for line in source.replace('/\r\n/', '\n').split('\n') {
+    if line == '' {
+      continue
+    }
+
+    if line.starts_with(' ') or line.starts_with('\t') {
+      if name != nil {
+        value.append(line)
+      }
+
+      continue
+    }
+
+    if name != nil {
+      found.append({ name, value: '\r\n'.join(value) })
+    }
+
+    var colon = line.index_of(':')
+
+    if colon < 1 {
+      name = nil
+      value = []
+      continue
+    }
+
+    name = line[0, colon]
+    value = [line[colon + 1, line.length()]]
+  }
+
+  if name != nil {
+    found.append({ name, value: '\r\n'.join(value) })
+  }
+
+  return found
+}
+
+# The body of a message as it will be, or was, sent.
+def _body_source(message) {
+  var source = message.source_body()
+
+  if source != nil {
+    return source
+  }
+
+  var raw = message.to_bytes()
+  var index = 0
+
+  while index + 3 < raw.length() {
+    if raw[index] == 0x0d and raw[index + 1] == 0x0a
+      and raw[index + 2] == 0x0d and raw[index + 3] == 0x0a {
+      return raw[index + 4, raw.length()]
+    }
+
+    index++
+  }
+
+  return bytes(0)
+}
+
+# Gathers the instances of each name, so that a name listed more than
+# once in `h=` takes them from the bottom of the message up, which is
+# what the specification says and what stops a header being added
+# above a signed one without breaking it.
+def _instance_pool(entries: list) {
+  var pool = {}
+
+  for entry in entries {
+    var key = entry.name.lower()
+
+    if !pool.contains(key) {
+      pool[key] = []
+    }
+
+    pool[key].append(entry.value)
+  }
+
+  return pool
+}
+
+# The canonical header block a signature covers: the listed headers in
+# the order listed, then the signature's own header with its `b=`
+# emptied and no line break after it.
+def _signed_headers(pool: dict, names: list, signature_value: string, method: string) {
+  var parts = []
+
+  for name in names {
+    var key = name.lower()
+
+    if !pool.contains(key) or pool[key].is_empty() {
+      continue
+    }
+
+    parts.append(canonicalise_header(name, pool[key].pop(), method) + '\r\n')
+  }
+
+  parts.append(canonicalise_header(
+    'DKIM-Signature',
+    _blank_signature(signature_value),
+    method
+  ))
+
+  return ''.join(parts)
+}
+
+# Breaks a run of base64 so the header it goes into can fold. Neither
+# canonicalisation is affected: `relaxed` collapses the whitespace, and
+# `simple` never sees this tag's value because it is emptied first.
+def _breakable(text: string, width: number) {
+  var pieces = []
+  var at = 0
+
+  while at < text.length() {
+    var end = at + width
+
+    pieces.append(text[at, end > text.length() ? text.length() : end])
+    at = end
+  }
+
+  return ' '.join(pieces)
+}
+
+def _digest_of(algorithm: string) {
+  if algorithm.ends_with('sha256') {
+    return 'sha256'
+  }
+
+  raise DkimError('unknown signing algorithm ${algorithm}')
+}
+
+/**
+ * Signs outgoing messages for one domain with one key.
+ *
+ * Build one and keep it: a signer holds no connection and no state
+ * beyond its key, and signing is the only thing it does.
+ *
+ * @printable
+ */
+class Signer {
+
+  /**
+   * | option | default | what it does |
+   * | - | - | - |
+   * | `algorithm` | `rsa-sha256` | or `ed25519-sha256` |
+   * | `canonicalisation` | `relaxed/relaxed` | headers then body |
+   * | `headers` | `DEFAULT_HEADERS` | which headers to cover |
+   * | `identity` | none | the `i=` tag, an address within the domain |
+   * | `expires_in` | none | seconds until the signature stops counting |
+   * | `timestamp` | `true` | whether to record when it was signed |
+   *
+   * @param string domain: The domain taking responsibility.
+   * @param string selector: Which of the domain's keys this is.
+   * @param string private_key: The key, PEM encoded.
+   * @param ?dict options
+   * @throws DkimError if an option names something not implemented.
+   */
+  @new(domain: string, selector: string, private_key: string, options: ?dict) {
+    var given = options == nil ? {} : options
+
+    self.domain = domain
+    self.selector = selector
+    self.algorithm = given.get('algorithm', 'rsa-sha256').lower()
+
+    if !ALGORITHMS.contains(self.algorithm) {
+      raise DkimError('unknown signing algorithm ${self.algorithm}')
+    }
+
+    var canon = given.get('canonicalisation', 'relaxed/relaxed').lower()
+    var slash = canon.index_of('/')
+
+    self.header_canonicalisation = slash > -1 ? canon[0, slash] : canon
+    self.body_canonicalisation = slash > -1 ? canon[slash + 1, canon.length()] : 'simple'
+
+    if !CANONICALISATIONS.contains(self.header_canonicalisation)
+      or !CANONICALISATIONS.contains(self.body_canonicalisation) {
+      raise DkimError('unknown canonicalisation ${canon}')
+    }
+
+    self.headers = given.get('headers', DEFAULT_HEADERS)
+    self.identity = given.get('identity', nil)
+    self.expires_in = given.get('expires_in', nil)
+    self.timestamp = given.get('timestamp', true)
+
+    self._key = private_key
+  }
+
+  /**
+   * Signs a message, adding the `DKIM-Signature` header to the top of
+   * it.
+   *
+   * The message is signed as it stands, so everything else about it
+   * has to be settled first. Changing a signed header afterwards
+   * breaks the signature.
+   *
+   * @param Message message
+   * @returns string the header value that was added.
+   * @throws DkimError if the key will not sign.
+   */
+  sign(message) {
+    var digest = _digest_of(self.algorithm)
+    var body = canonicalise_body(_body_source(message), self.body_canonicalisation)
+    var body_hash = base64.encode(hash.sha256(body, true))
+    var pool = _instance_pool(_header_source(message))
+    var covered = []
+
+    # A header that is not there cannot be signed, and claiming it was
+    # would only make the signature fail at the far end.
+    for name in self.headers {
+      var key = name.lower()
+
+      if pool.contains(key) and !pool[key].is_empty() {
+        covered.append(name)
+      }
+    }
+
+    var tags = [
+      'v=1',
+      'a=${self.algorithm}',
+      'c=${self.header_canonicalisation}/${self.body_canonicalisation}',
+      'd=${self.domain}',
+      's=${self.selector}',
+    ]
+
+    if self.identity != nil {
+      tags.append('i=${self.identity}')
+    }
+
+    if self.timestamp or self.expires_in != nil {
+      var now = time().floor()
+
+      tags.append('t=${now}')
+
+      if self.expires_in != nil {
+        tags.append('x=${now + self.expires_in}')
+      }
+    }
+
+    tags.append('h=${':'.join(covered)}')
+    tags.append('bh=${_breakable(body_hash, 64)}')
+    tags.append('b=')
+
+    var unsigned = '; '.join(tags)
+    var block = _signed_headers(
+      _instance_pool(_header_source(message)),
+      covered,
+      unsigned,
+      self.header_canonicalisation
+    )
+
+    var raw = nil
+
+    catch {
+      raw = self.algorithm.starts_with('ed25519') ?
+        crypto.ed25519.sign(self._key, block.to_bytes()) :
+        crypto.rsa.sign(self._key, block.to_bytes(), digest, 'pkcs1')
+    } as error {
+      raise DkimError('could not sign: ${error.message}')
+    }
+
+    var value = unsigned + _breakable(base64.encode(raw), 64)
+
+    message.headers.prepend('DKIM-Signature', value)
+
+    return value
+  }
+
+  to_string() {
+    return '<Signer ${self.domain}/${self.selector}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * What checking one signature came to.
+ *
+ * @printable
+ */
+class Result {
+
+  /**
+   * @param Signature signature: The signature that was checked.
+   * @param bool valid
+   * @param ?string reason: Why not, when it is not valid.
+   */
+  @new(signature, valid: bool, reason: ?string) {
+    self.signature = signature
+    self.valid = valid
+    self.reason = reason
+
+    self.domain = signature == nil ? '' : signature.domain
+    self.selector = signature == nil ? '' : signature.selector
+  }
+
+  to_string() {
+    if self.valid {
+      return '<Result ${self.domain} pass>'
+    }
+
+    return '<Result ${self.domain} fail: ${self.reason}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The key record for a signature, as published in DNS.
+def _default_lookup(name: string) {
+  return resolver.txt(name)
+}
+
+# Reads a key record: semicolon separated tags, of which `p=` is the
+# key itself. An empty `p=` means the key has been revoked.
+def _read_key_record(records: list, algorithm: string) {
+  for text in records {
+    var tags = _read_tags(text)
+
+    if tags.contains('v') and tags.v.upper() != 'DKIM1' {
+      continue
+    }
+
+    if !tags.contains('p') {
+      continue
+    }
+
+    if tags.p == '' {
+      raise DkimError('the key for this selector has been revoked')
+    }
+
+    var kind = tags.get('k', 'rsa').lower()
+    var wanted = algorithm.starts_with('ed25519') ? 'ed25519' : 'rsa'
+
+    if kind != wanted {
+      continue
+    }
+
+    return public_key_pem(tags.p, algorithm)
+  }
+
+  raise DkimError('no usable key in the record')
+}
+
+def _check(message, value: string, lookup) {
+  var signature = Signature.parse(value)
+
+  if signature.version != '1' {
+    return Result(signature, false, 'unsupported version ${signature.version}')
+  }
+
+  if !ALGORITHMS.contains(signature.algorithm) {
+    return Result(signature, false, 'unsupported algorithm ${signature.algorithm}')
+  }
+
+  if !CANONICALISATIONS.contains(signature.header_canonicalisation)
+    or !CANONICALISATIONS.contains(signature.body_canonicalisation) {
+    return Result(signature, false, 'unsupported canonicalisation')
+  }
+
+  if signature.domain == '' or signature.selector == '' {
+    return Result(signature, false, 'the signature names no domain or selector')
+  }
+
+  if signature.expires_at != nil and time() > signature.expires_at {
+    return Result(signature, false, 'the signature has expired')
+  }
+
+  var body = _body_source(message)
+
+  # `l=` says only the first so many bytes were signed, which lets
+  # anything after them be added without breaking the signature. It is
+  # honoured because the specification says to, and reported because a
+  # reader should know how much of the body the result covers.
+  if signature.body_length != nil and signature.body_length < body.length() {
+    body = body[0, signature.body_length]
+  }
+
+  var computed = base64.encode(
+    hash.sha256(canonicalise_body(body, signature.body_canonicalisation), true)
+  )
+
+  if computed != signature.body_hash {
+    return Result(signature, false, 'the body does not match the signature')
+  }
+
+  var entries = _header_source(message).filter(@(entry) {
+    return entry.name.lower() != 'dkim-signature' or entry.value.trim() != value.trim()
+  })
+
+  var block = _signed_headers(
+    _instance_pool(entries),
+    signature.headers,
+    value,
+    signature.header_canonicalisation
+  )
+
+  var key = nil
+
+  catch {
+    key = _read_key_record(lookup(signature.record_name()), signature.algorithm)
+  } as error {
+    return Result(signature, false, 'no usable key: ${error.message}')
+  }
+
+  var raw = nil
+
+  catch {
+    raw = base64.decode(signature.signature)
+  } as error {
+    return Result(signature, false, 'the signature is not base64')
+  }
+
+  var ok = false
+
+  catch {
+    ok = signature.algorithm.starts_with('ed25519') ?
+      crypto.ed25519.verify(key, block.to_bytes(), raw) :
+      crypto.rsa.verify(key, block.to_bytes(), raw, _digest_of(signature.algorithm), 'pkcs1')
+  } as error {
+    return Result(signature, false, 'could not check the signature: ${error.message}')
+  }
+
+  return Result(signature, ok, ok ? nil : 'the headers do not match the signature')
+}
+
+/**
+ * Checks every signature on a message.
+ *
+ * One result comes back per `DKIM-Signature` header, in the order they
+ * appear, whether it passed or not. A message with no signatures gives
+ * an empty list, which is not a failure: it is a message nobody signed.
+ *
+ * ```zuri,ignore
+ * import mail.dkim
+ *
+ * for result in dkim.verify(incoming) {
+ *   echo '${result.domain}: ${result.valid ? 'pass' : result.reason}'
+ * }
+ * ```
+ *
+ * @note A message that was parsed is checked against the bytes it was
+ *    parsed from, which is the only thing a signature can be checked
+ *    against. Changing a parsed message and checking it again reports
+ *    on the message that arrived, not the one now in hand.
+ * @param Message message
+ * @param ?function lookup: Given a name, returns the text records
+ *    published under it. `net.resolver` is used when not given.
+ * @returns list of `Result`
+ */
+def verify(message, lookup) {
+  var resolve = lookup == nil ? _default_lookup : lookup
+  var results = []
+
+  for value in message.headers.get_all('DKIM-Signature') {
+    catch {
+      results.append(_check(message, value, resolve))
+    } as error {
+      results.append(Result(nil, false, error.message))
+    }
+  }
+
+  return results
+}
+
+/**
+ * Whether a message carries at least one signature that checks out.
+ *
+ * @param Message message
+ * @param ?function lookup
+ * @returns bool
+ */
+def is_signed(message, lookup) {
+  for result in verify(message, lookup) {
+    if result.valid {
+      return true
+    }
+  }
+
+  return false
+}

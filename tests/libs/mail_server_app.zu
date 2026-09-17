@@ -1,0 +1,357 @@
+/**
+ * The servers `mail_server.zu` runs, each in an isolate of its own.
+ *
+ * They live in a module because an isolate resolves a module's
+ * function by name on its own side; a closure defined in the test
+ * itself could not cross.
+ */
+
+import mail
+import mail.imap { ImapServer, MemoryStore, MaildirStore }
+import mail.smtp { SmtpServer }
+
+import net
+import os
+
+/**
+ * An SMTP server that reports what it was given back down the channel.
+ *
+ * Refuses anything not addressed inside example.com, so the test can
+ * see a rejection as well as an acceptance.
+ */
+def smtp_server(channel, rounds) {
+  var server = SmtpServer({ port: 0, hostname: 'test.example.com', max_size: 4096 })
+  var seen = []
+
+  server.on_rcpt(@(session, recipient) {
+    if !recipient.domain.ends_with('example.com') {
+      return { code: 550, message: 'not a local address', enhanced: '5.1.1' }
+    }
+  })
+
+  server.on_mail(@(session, sender) {
+    if sender != '' and sender.domain == 'blocked.example.net' {
+      return { code: 550, message: 'that sender is not welcome' }
+    }
+  })
+
+  server.on_data(@(session, raw) {
+    var note = mail.parse(raw)
+
+    seen.append({
+      sender: session.sender == '' ? '' : session.sender.address,
+      recipients: session.recipients.map(@(one) => one.address),
+      subject: note.subject(),
+      body: note.text_body(),
+      size: raw.length(),
+    })
+  })
+
+  channel.send(server.address().to_string())
+
+  iter var index = 0; index < rounds; index++ {
+    server.accept()
+  }
+
+  server.close()
+  channel.send(seen)
+}
+
+/**
+ * The same, with a certificate, so STARTTLS and the mechanisms that
+ * need it can be exercised.
+ */
+def smtp_tls_server(channel, certificate, key) {
+  var server = SmtpServer({ port: 0, hostname: 'localhost', require_auth: true })
+  var seen = []
+
+  server.use_tls(certificate, key)
+
+  server.on_password(@(username) {
+    return username == 'ann' ? 'secret' : nil
+  })
+
+  server.on_auth(@(session, credentials) {
+    if credentials.username != 'ann' {
+      return { code: 535, message: 'no such account' }
+    }
+
+    if credentials.contains('verified') {
+      return nil
+    }
+
+    if credentials.password != 'secret' {
+      return { code: 535, message: 'wrong password' }
+    }
+  })
+
+  server.on_data(@(session, raw) {
+    seen.append({ user: session.username, secure: session.secure, size: raw.length() })
+  })
+
+  channel.send(server.address().to_string())
+
+  server.accept()
+  server.accept()
+  server.close()
+  channel.send(seen)
+}
+
+/**
+ * An IMAP server over an in-memory store, holding two messages.
+ */
+def imap_server(channel) {
+  var store = MemoryStore(['INBOX', 'Archive'])
+
+  store.add_account('ann', 'secret')
+  store.append('ann', 'INBOX', mail.message()
+    .set_from('ann@example.com')
+    .add_to('bob@example.com')
+    .set_subject('Hello there')
+    .set_text('the first message').to_bytes(), nil, nil)
+  store.append('ann', 'INBOX', mail.message()
+    .set_from('reports@example.com')
+    .add_to('ann@example.com')
+    .set_subject('Quarterly report')
+    .set_text('the second message')
+    .attach(mail.attachment('attached bytes').set_filename('figures.txt')).to_bytes(), nil, nil)
+
+  var server = ImapServer({ port: 0 }, store)
+
+  channel.send(server.address().to_string())
+
+  server.accept()
+  server.close()
+}
+
+/**
+ * An IMAP server over a Maildir on disk, so the same client run can be
+ * checked against real files afterwards.
+ */
+def maildir_server(channel, root) {
+  var store = MaildirStore(root)
+
+  store.add_account('ann', 'secret')
+  store.append('ann', 'INBOX', mail.message()
+    .set_from('ann@example.com')
+    .add_to('bob@example.com')
+    .set_subject('On disk')
+    .set_text('kept in a file').to_bytes(), nil, nil)
+
+  var server = ImapServer({ port: 0 }, store)
+
+  channel.send(server.address().to_string())
+
+  server.accept()
+  server.close()
+}
+
+/**
+ * An IMAP server with a certificate, for STARTTLS and CRAM-MD5.
+ */
+def imap_tls_server(channel, certificate, key) {
+  var store = MemoryStore(nil)
+
+  store.add_account('ann', 'secret')
+
+  var server = ImapServer({ port: 0, require_tls: true }, store)
+
+  server.use_tls(certificate, key)
+
+  channel.send(server.address().to_string())
+
+  server.accept()
+  server.accept()
+  server.close()
+}
+
+# The POP3 conversation, written out by hand. There is no POP3 server
+# in the module and there is not meant to be; this exists so the
+# client has something correct to talk to.
+var _POP3_MESSAGES = [
+  'From: ann@example.com\r\nSubject: First\r\n\r\nthe first body\r\n',
+  'From: bob@example.com\r\nSubject: Second\r\n\r\n.a dotted line\r\nand more\r\n',
+]
+
+def pop3_server(channel) {
+  var listener = net.TcpStream()
+
+  listener.bind('127.0.0.1:0')
+
+  channel.send(listener.local_address().to_string())
+
+  var client = listener.accept()
+  var stream = mail.stream.LineStream(client, false)
+  var deleted = []
+
+  _say(stream, '+OK zuri pop3 ready <1896.697170952@test.example.com>')
+
+  while true {
+    var line = stream.read_line(nil)
+    var space = line.index_of(' ')
+    var verb = (space > -1 ? line[0, space] : line).upper()
+    var rest = space > -1 ? line[space + 1, line.length()].trim() : ''
+
+    if verb == 'CAPA' {
+      _say(stream, '+OK capabilities follow')
+      _say(stream, 'TOP')
+      _say(stream, 'UIDL')
+      _say(stream, 'USER')
+      _say(stream, 'SASL PLAIN')
+      _say(stream, '.')
+      continue
+    }
+
+    if verb == 'APOP' {
+      _say(stream, '+OK welcome')
+      continue
+    }
+
+    if verb == 'USER' or verb == 'PASS' {
+      _say(stream, '+OK')
+      continue
+    }
+
+    if verb == 'STAT' {
+      _say(stream, '+OK ${_live(deleted).length()} ${_total(deleted)}')
+      continue
+    }
+
+    if verb == 'LIST' {
+      _say(stream, '+OK scan listing follows')
+
+      for number in _live(deleted) {
+        _say(stream, '${number} ${_POP3_MESSAGES[number - 1].length()}')
+      }
+
+      _say(stream, '.')
+      continue
+    }
+
+    if verb == 'UIDL' {
+      _say(stream, '+OK unique ids follow')
+
+      for number in _live(deleted) {
+        _say(stream, '${number} uid-000${number}')
+      }
+
+      _say(stream, '.')
+      continue
+    }
+
+    if verb == 'RETR' or verb == 'TOP' {
+      var number = (verb == 'TOP' ? rest.split(' ')[0] : rest).to_number()
+
+      if number < 1 or number > _POP3_MESSAGES.length() or deleted.contains(number) {
+        _say(stream, '-ERR no such message')
+        continue
+      }
+
+      _say(stream, '+OK message follows')
+
+      # The message already ends with a break, so splitting on one
+      # leaves a last empty piece that is not a line of the message.
+      var body_lines = _POP3_MESSAGES[number - 1].split('\r\n')
+
+      iter var at = 0; at < body_lines.length() - 1; at++ {
+        var body_line = body_lines[at]
+
+        _say(stream, body_line.starts_with('.') ? '.' + body_line : body_line)
+      }
+
+      _say(stream, '.')
+      continue
+    }
+
+    if verb == 'DELE' {
+      deleted.append(rest.to_number())
+      _say(stream, '+OK marked')
+      continue
+    }
+
+    if verb == 'RSET' {
+      deleted = []
+      _say(stream, '+OK unmarked')
+      continue
+    }
+
+    if verb == 'NOOP' {
+      _say(stream, '+OK')
+      continue
+    }
+
+    if verb == 'QUIT' {
+      _say(stream, '+OK bye')
+      break
+    }
+
+    _say(stream, '-ERR unknown command')
+  }
+
+  stream.close()
+  listener.close()
+  channel.send(deleted)
+}
+
+def _say(stream, line) {
+  stream.write_line(line)
+  stream.flush()
+}
+
+def _live(deleted) {
+  var found = []
+
+  iter var number = 1; number <= _POP3_MESSAGES.length(); number++ {
+    if !deleted.contains(number) {
+      found.append(number)
+    }
+  }
+
+  return found
+}
+
+def _total(deleted) {
+  var size = 0
+
+  for number in _live(deleted) {
+    size += _POP3_MESSAGES[number - 1].length()
+  }
+
+  return size
+}
+
+/**
+ * Builds an IMAP server for the worker pool, which calls this once in
+ * each worker.
+ */
+def build_pooled_imap() {
+  var store = MemoryStore(nil)
+
+  store.add_account('ann', 'secret')
+  store.append('ann', 'INBOX', mail.message()
+    .set_from('a@example.com')
+    .add_to('ann@example.com')
+    .set_subject('Pooled')
+    .set_text('served by a worker').to_bytes(), nil, nil)
+
+  return ImapServer({}, store)
+}
+
+
+/**
+ * One client for the pool test, run in an isolate of its own so that
+ * the main one is free to accept.
+ */
+def pool_client(address) {
+  var inbox = mail.imap('imap://${address}', {
+    username: 'ann', password: 'secret', tls: 'disable',
+  })
+  var found = {
+    messages: inbox.select('INBOX').exists,
+    subject: inbox.fetch_message(1, false, false).subject(),
+  }
+
+  inbox.logout()
+
+  return found
+}

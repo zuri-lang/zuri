@@ -1,0 +1,249 @@
+/**
+ * @module errors
+ *
+ * Every error the mail stack raises, under one root.
+ *
+ * `MailError` is that root. The subclasses separate the cases worth
+ * handling differently: a message that will not parse, a server that
+ * refused, credentials that were not accepted, a connection that went
+ * away mid-conversation.
+ *
+ * The protocols each add one of their own, carrying the reply the
+ * server actually sent. SMTP splits its into two, because the
+ * difference between "not now" and "not ever" is the difference
+ * between queueing a message and bouncing it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+/**
+ * Base class for every error this module raises.
+ *
+ * @printable
+ */
+class MailError < Error {
+  to_string() {
+    return '<MailError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The bytes handed over are not a message, or are one that contradicts
+ * itself: a header with no colon in it, a multipart body whose
+ * boundary never appears, a transfer encoding that decodes to nothing.
+ *
+ * @printable
+ */
+class MessageError < MailError {
+  to_string() {
+    return '<MessageError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The server said something the protocol does not allow: a greeting
+ * that is not a greeting, a response with no tag, a line longer than
+ * the specification permits.
+ *
+ * @printable
+ */
+class ProtocolError < MailError {
+  to_string() {
+    return '<ProtocolError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The connection closed while a conversation was still going on, or
+ * a command was issued on one that had already closed.
+ *
+ * @printable
+ */
+class ConnectionClosed < MailError {
+  to_string() {
+    return '<ConnectionClosed: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The credentials were not accepted, or no mechanism both ends
+ * understand was on offer.
+ *
+ * @printable
+ */
+class AuthenticationError < MailError {
+  to_string() {
+    return '<AuthenticationError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A command was issued that makes no sense in the state the connection
+ * is in: a fetch before a mailbox has been selected, a recipient
+ * before a sender.
+ *
+ * @printable
+ */
+class StateError < MailError {
+  to_string() {
+    return '<StateError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The server rejected a command, and said so with a reply code.
+ *
+ * `code` is the three digit code, and `enhanced` the finer grained one
+ * from RFC 3463 when the server sends one, as `'5.7.1'`. Servers
+ * differ in how much detail they put in `text`, and none of it is
+ * meant to be matched on.
+ *
+ * @printable
+ */
+class SmtpError < MailError {
+
+  /**
+   * @param string message
+   * @param number code: The three digit reply code.
+   * @param ?string enhanced: The enhanced status code, when sent.
+   * @param ?list lines: Every line of the reply, without its code.
+   */
+  @new(message: string, code: number, enhanced: ?string, lines: ?list) {
+    parent(message)
+
+    self.code = code
+    self.enhanced = enhanced
+    self.lines = lines == nil ? [] : lines
+  }
+
+  to_string() {
+    return '<SmtpError ${self.code}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A 4xx reply: the server could not accept the message now, and the
+ * sender should try again later. A queue retries these.
+ *
+ * @printable
+ */
+class SmtpTransientError < SmtpError {
+  to_string() {
+    return '<SmtpTransientError ${self.code}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A 5xx reply: the server will not accept the message, and trying
+ * again changes nothing. A queue bounces these.
+ *
+ * @printable
+ */
+class SmtpPermanentError < SmtpError {
+  to_string() {
+    return '<SmtpPermanentError ${self.code}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The IMAP server answered a command with `NO` or `BAD`.
+ *
+ * `status` is which of the two it was. `NO` means the command was
+ * understood and refused; `BAD` means it was not understood, which
+ * points at the client rather than the request.
+ *
+ * @printable
+ */
+class ImapError < MailError {
+
+  /**
+   * @param string message
+   * @param string status: `NO` or `BAD`.
+   * @param ?string code: The bracketed response code, such as
+   *    `TRYCREATE`, when the server sent one.
+   */
+  @new(message: string, status: string, code: ?string) {
+    parent(message)
+
+    self.status = status
+    self.code = code
+  }
+
+  to_string() {
+    return '<ImapError ${self.status}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The POP3 server answered a command with `-ERR`.
+ *
+ * @printable
+ */
+class Pop3Error < MailError {
+  to_string() {
+    return '<Pop3Error: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Something went wrong in a mail store: a mailbox that does not exist,
+ * one that cannot be created, a message that has gone from under a
+ * session that was reading it.
+ *
+ * @printable
+ */
+class MailboxError < MailError {
+  to_string() {
+    return '<MailboxError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

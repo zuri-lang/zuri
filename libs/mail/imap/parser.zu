@@ -1,0 +1,606 @@
+/**
+ * @module parser
+ *
+ * The IMAP grammar: turning what a server says into something a
+ * program can read.
+ *
+ * IMAP does not speak in lines alone. A response may carry a literal,
+ * which is a byte count followed by exactly that many bytes of
+ * anything at all, including line breaks, so reading one response can
+ * mean reading several lines and a block of raw data. That is why this
+ * reads from the connection rather than from a string.
+ *
+ * ```zuri
+ * import mail.imap.parser
+ *
+ * var tokens = parser.tokenize('(\\Seen \\Answered) "/" "INBOX"')
+ *
+ * echo tokens[0]
+ * echo tokens[2]
+ * ```
+ *
+ * ```console
+ * [\Seen, \Answered]
+ * INBOX
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import ..errors { ProtocolError }
+
+# The words that make a response a statement about how a command went,
+# rather than data.
+var STATUSES = ['OK', 'NO', 'BAD', 'PREAUTH', 'BYE']
+
+# The flags with a defined meaning, as opposed to the keywords a server
+# or a client invents.
+var SYSTEM_FLAGS = ['\\Seen', '\\Answered', '\\Flagged', '\\Deleted', '\\Draft', '\\Recent']
+
+def _is_digit(value: number) {
+  return value >= 0x30 and value <= 0x39
+}
+
+# The characters that end an atom. Everything printable that is not one
+# of these can be part of one.
+def _ends_atom(value: number) {
+  return value == 0x20 or value == 0x28 or value == 0x29 or value == 0x7b
+    or value == 0x22 or value == 0x5b or value == 0x5d or value < 0x20
+    or value == 0x25 or value == 0x2a
+}
+
+/**
+ * A run of bytes a server sent as a literal.
+ *
+ * Kept apart from an ordinary string because a literal is where a
+ * message body arrives, and a body is bytes: decoding it as text would
+ * corrupt anything that is not text.
+ *
+ * @printable
+ */
+class Literal {
+
+  /**
+   * @param bytes data
+   */
+  @new(data) {
+    self.data = data
+  }
+
+  /**
+   * The literal read as UTF-8 text.
+   *
+   * @returns string
+   */
+  to_text() {
+    return self.data.to_string()
+  }
+
+  /**
+   * How many bytes it holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self.data.length()
+  }
+
+  to_string() {
+    return self.to_text()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Everything the tokenizer needs to know about where it is: the text of
+# the current line, how far into it, and where to get more from.
+def _cursor(text: string, source) {
+  return { text, at: 0, source }
+}
+
+def _peek(state) {
+  if state.at >= state.text.length() {
+    return ''
+  }
+
+  return state.text[state.at]
+}
+
+def _skip_spaces(state) {
+  while state.at < state.text.length() and state.text[state.at] == ' ' {
+    state.at++
+  }
+}
+
+# Reads a quoted string, in which a backslash escapes the character
+# after it and nothing else has a meaning.
+def _read_quoted(state) {
+  var out = []
+
+  state.at++
+
+  while state.at < state.text.length() {
+    var character = state.text[state.at]
+
+    if character == '\\' and state.at + 1 < state.text.length() {
+      out.append(state.text[state.at + 1])
+      state.at += 2
+      continue
+    }
+
+    if character == '"' {
+      state.at++
+
+      return ''.join(out)
+    }
+
+    out.append(character)
+    state.at++
+  }
+
+  raise ProtocolError('a quoted string was never closed')
+}
+
+# Reads a literal: the count in braces ends the line, the bytes follow
+# it, and whatever comes after them continues the response on the next
+# line.
+def _read_literal(state) {
+  var close = state.text.index_of('}', state.at)
+
+  if close < 0 {
+    raise ProtocolError('a literal count was never closed')
+  }
+
+  var inside = state.text[state.at + 1, close]
+  var synchronising = true
+
+  # A plus here is LITERAL+, which says the sender did not wait for
+  # permission before sending. A minus is LITERAL-, which says the same
+  # of a small one.
+  if inside.ends_with('+') or inside.ends_with('-') {
+    inside = inside[0, inside.length() - 1]
+    synchronising = false
+  }
+
+  var count = inside.to_number()
+
+  if state.source == nil {
+    raise ProtocolError('a literal cannot be read without the connection it came from')
+  }
+
+  # A sender that waited is waiting now. Only a reader that can grant
+  # permission has this, which is to say only a server.
+  if synchronising and hasprop(state.source, 'announce_literal') {
+    state.source.announce_literal()
+  }
+
+  var data = state.source.read_bytes(count)
+
+  state.text = state.source.read_line(nil)
+  state.at = 0
+
+  return Literal(data)
+}
+
+def _read_atom(state) {
+  var start = state.at
+
+  # `\*` is the one place a star is part of a name rather than a
+  # wildcard: it is what a PERMANENTFLAGS list says to mean that new
+  # keywords may be invented.
+  if state.text[start, start + 2 > state.text.length() ? state.text.length() : start + 2]
+    == '\\*' {
+    state.at += 2
+
+    return '\\*'
+  }
+
+  while state.at < state.text.length() and !_ends_atom(state.text[state.at].ord()) {
+    state.at++
+  }
+
+  if state.at == start {
+    raise ProtocolError('expected something at position ${start} of ${state.text}')
+  }
+
+  # A fetch item names its section in brackets right after the item
+  # itself, as `BODY[HEADER.FIELDS (FROM TO)]`, and the whole of that
+  # is one name rather than a name and a list.
+  if _peek(state) == '[' {
+    state.at = _skip_section(state)
+
+    if _peek(state) == '<' {
+      var close = state.text.index_of('>', state.at)
+
+      state.at = close < 0 ? state.text.length() : close + 1
+    }
+  }
+
+  var atom = state.text[start, state.at]
+
+  if atom.upper() == 'NIL' {
+    return nil
+  }
+
+  if _looks_numeric(atom) {
+    return atom.to_number()
+  }
+
+  return atom
+}
+
+# Steps over a bracketed section, minding the brackets and quotes
+# inside it.
+def _skip_section(state) {
+  var at = state.at
+  var depth = 0
+  var quoted = false
+
+  while at < state.text.length() {
+    var character = state.text[at]
+
+    if quoted {
+      if character == '\\' {
+        at += 2
+        continue
+      }
+
+      if character == '"' {
+        quoted = false
+      }
+
+      at++
+      continue
+    }
+
+    if character == '"' {
+      quoted = true
+    } else if character == '[' {
+      depth++
+    } else if character == ']' {
+      depth--
+
+      if depth == 0 {
+        return at + 1
+      }
+    }
+
+    at++
+  }
+
+  raise ProtocolError('a section was never closed')
+}
+
+def _looks_numeric(atom: string) {
+  if atom == '' {
+    return false
+  }
+
+  for value in atom.to_bytes() {
+    if !_is_digit(value) {
+      return false
+    }
+  }
+
+  return true
+}
+
+# One value, whatever shape it takes.
+def _read_value(state) {
+  var character = _peek(state)
+
+  if character == '(' {
+    return _read_list(state, ')')
+  }
+
+  if character == '[' {
+    return _read_list(state, ']')
+  }
+
+  if character == '"' {
+    return _read_quoted(state)
+  }
+
+  if character == '{' {
+    return _read_literal(state)
+  }
+
+  return _read_atom(state)
+}
+
+def _read_list(state, closer: string) {
+  var items = []
+
+  state.at++
+
+  while true {
+    _skip_spaces(state)
+
+    if state.at >= state.text.length() {
+      raise ProtocolError('a list was never closed')
+    }
+
+    if state.text[state.at] == closer {
+      state.at++
+
+      return items
+    }
+
+    items.append(_read_value(state))
+  }
+}
+
+/**
+ * Reads a run of IMAP values out of text.
+ *
+ * `source` is only needed when the text can contain a literal, which
+ * is to say whenever it came from a server rather than from a test.
+ *
+ * @param string text
+ * @param ?LineStream source: Where to read a literal's bytes from.
+ * @returns list
+ * @throws ProtocolError if the text is not well formed.
+ */
+def tokenize(text: string, source) {
+  var state = _cursor(text, source)
+  var values = []
+
+  while true {
+    _skip_spaces(state)
+
+    if state.at >= state.text.length() {
+      return values
+    }
+
+    values.append(_read_value(state))
+  }
+}
+
+/**
+ * One response from the server.
+ *
+ * `kind` is `tagged` for the answer to a command, `untagged` for
+ * everything a server says on its own, and `continuation` for the
+ * invitation to send the rest of a command.
+ *
+ * @printable
+ */
+class Response {
+
+  /**
+   * @param string kind
+   * @param ?string tag
+   * @param list tokens: The values in the response, in order.
+   * @param string line: The first line it was read from.
+   */
+  @new(kind: string, tag: ?string, tokens: list, line: string) {
+    self.kind = kind
+    self.tag = tag
+    self.tokens = tokens
+    self.line = line
+
+    self.status = nil
+    self.code = nil
+    self.code_name = nil
+    self.text = ''
+
+    self._read_status()
+  }
+
+  _read_status() {
+    if self.tokens.is_empty() {
+      return
+    }
+
+    var first = self.tokens[0]
+
+    if !is_string(first) or !STATUSES.contains(first.upper()) {
+      return
+    }
+
+    self.status = first.upper()
+
+    var rest = self.tokens[1, self.tokens.length()]
+
+    # A status may carry a machine-readable code in brackets before its
+    # human-readable text.
+    if !rest.is_empty() and is_list(rest[0]) {
+      self.code = rest[0]
+      self.code_name = rest[0].is_empty() ? nil : '${rest[0][0]}'.upper()
+      rest = rest[1, rest.length()]
+    }
+
+    self.text = _flatten(rest)
+  }
+
+  /**
+   * Whether this is a command's answer and the answer was yes.
+   *
+   * @returns bool
+   */
+  is_ok() {
+    return self.status == 'OK'
+  }
+
+  /**
+   * The name of an untagged data response, such as `EXISTS`, `FETCH`
+   * or `LIST`, or `nil` when it is not one.
+   *
+   * A numbered response puts the number first, so the name is the
+   * second value in those and the first in the rest.
+   *
+   * @returns string|nil
+   */
+  name() {
+    if self.kind != 'untagged' or self.tokens.is_empty() {
+      return nil
+    }
+
+    if is_number(self.tokens[0]) {
+      return self.tokens.length() > 1 and is_string(self.tokens[1]) ?
+        self.tokens[1].upper() :
+        nil
+    }
+
+    return is_string(self.tokens[0]) ? self.tokens[0].upper() : nil
+  }
+
+  /**
+   * The number a numbered response carries, such as the message number
+   * in `* 12 FETCH`, or `nil` when it carries none.
+   *
+   * @returns number|nil
+   */
+  number() {
+    if self.tokens.is_empty() or !is_number(self.tokens[0]) {
+      return nil
+    }
+
+    return self.tokens[0]
+  }
+
+  /**
+   * The values after the response's name.
+   *
+   * @returns list
+   */
+  arguments() {
+    if self.tokens.is_empty() {
+      return []
+    }
+
+    var from = is_number(self.tokens[0]) ? 2 : 1
+
+    return from >= self.tokens.length() ? [] : self.tokens[from, self.tokens.length()]
+  }
+
+  to_string() {
+    return '<Response ${self.kind} ${self.status == nil ? self.name() : self.status}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# The readable tail of a status response, put back together from the
+# values it was split into.
+def _flatten(values: list) {
+  var parts = []
+
+  for value in values {
+    if value == nil {
+      parts.append('NIL')
+      continue
+    }
+
+    if is_list(value) {
+      parts.append('(${_flatten(value)})')
+      continue
+    }
+
+    parts.append('${value}')
+  }
+
+  return ' '.join(parts)
+}
+
+/**
+ * Reads responses off a connection, one at a time.
+ *
+ * @printable
+ */
+class Reader {
+
+  /**
+   * @param LineStream source
+   */
+  @new(source) {
+    self._source = source
+  }
+
+  /**
+   * Reads the next response, however many lines and literals it takes.
+   *
+   * @returns Response
+   * @throws ProtocolError if what arrives is not a response.
+   * @throws ConnectionClosed if the connection ends first.
+   */
+  next() {
+    var line = self._source.read_line(nil)
+
+    if line == '' {
+      raise ProtocolError('the server sent an empty line')
+    }
+
+    if line.starts_with('+') {
+      var rest = line.length() > 2 ? line[2, line.length()] : ''
+
+      return Response('continuation', '+', [rest], line)
+    }
+
+    var space = line.index_of(' ')
+
+    if space < 0 {
+      raise ProtocolError('the server sent a response with no body: ${line}')
+    }
+
+    var tag = line[0, space]
+    var rest = line[space + 1, line.length()]
+    var tokens = tokenize(rest, self._source)
+
+    if tag == '*' {
+      return Response('untagged', '*', tokens, line)
+    }
+
+    return Response('tagged', tag, tokens, line)
+  }
+
+  to_string() {
+    return '<Reader>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Writes a value the way a command has to carry it.
+ *
+ * A name that is plain enough goes as it is, one that is not is
+ * quoted, and one that cannot be quoted at all, because it holds a
+ * line break or characters outside ASCII, is sent as a literal.
+ *
+ * @param string value
+ * @returns string|Literal
+ */
+def quote(value: string) {
+  var needs_literal = false
+  var needs_quotes = value == ''
+
+  for byte_value in value.to_bytes() {
+    if byte_value == 0x0d or byte_value == 0x0a or byte_value > 0x7f or byte_value == 0 {
+      needs_literal = true
+      break
+    }
+
+    if _ends_atom(byte_value) or byte_value == 0x5c or byte_value == 0x5d {
+      needs_quotes = true
+    }
+  }
+
+  if needs_literal {
+    return Literal(value.to_bytes())
+  }
+
+  if !needs_quotes {
+    return value
+  }
+
+  return '"' + value.replace('/\\\\/', '\\\\\\\\').replace('/"/', '\\"') + '"'
+}

@@ -800,10 +800,10 @@ class Date {
           result += self.gmt_offset
         }
         when 'c' {
-          result += self.format('Y-m-dTh:i:sP')
+          result += self.format('Y-m-dTH:i:sP')
         }
         when 'r' {
-          result += self.format('D, d M Y h:i:s O')
+          result += self.format('D, d M Y H:i:s O')
         }
         default {
           result += format[i]
@@ -827,7 +827,7 @@ class Date {
    * @returns string
    */
   http() {
-    return self.format('D, d M Y h:i:s') + ' GMT'
+    return self.format('D, d M Y H:i:s') + ' GMT'
   }
 
   /**

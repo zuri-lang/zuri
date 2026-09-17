@@ -1,0 +1,1777 @@
+/**
+ * @module message
+ *
+ * A mail message: its headers, its body, and the tree of parts a body
+ * turns into once there is more than one thing in it.
+ *
+ * `Message` is both what comes off the wire and what goes onto it.
+ * Parsing one gives the whole MIME tree with every part decoded on
+ * demand; building one from text, HTML and files gives back a message
+ * any mail server will accept.
+ *
+ * ```zuri
+ * import mail
+ *
+ * var note = mail.message()
+ *   .set_from('Richard Ore <richard@example.com>')
+ *   .add_to('ann@example.com')
+ *   .set_subject('Quarterly report')
+ *   .set_text('The numbers are attached.')
+ *
+ * echo note.subject()
+ * echo note.content_type().mime_type()
+ * ```
+ *
+ * ```console
+ * Quarterly report
+ * text/plain
+ * ```
+ *
+ * A message with both text and HTML in it becomes a
+ * `multipart/alternative`; add a file and the whole thing is wrapped
+ * in a `multipart/mixed`. None of that has to be spelled out: the
+ * shape follows from what was put in.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#! part of the mail module
+
+import crypto
+import date
+import mime
+import os
+
+import .address
+import .content { ContentType }
+import .encoding
+import .errors { MessageError }
+import .headers { Headers }
+
+# The headers that describe a part rather than the message around it.
+# Wrapping a message in a multipart moves these down into the child and
+# leaves everything else where it was.
+var _CONTENT_HEADERS = [
+  'content-type',
+  'content-transfer-encoding',
+  'content-disposition',
+  'content-id',
+  'content-description',
+  'content-location',
+  'content-md5',
+]
+
+def _raw_bytes(data) {
+  return is_bytes(data) ? data : '${data}'.to_bytes()
+}
+
+# The line boundaries of a block of bytes, handling both endings, since
+# a message that has been through a file or an editor may carry either.
+def _lines_of(raw) {
+  var found = []
+  var start = 0
+  var index = 0
+
+  while index < raw.length() {
+    if raw[index] == 0x0a {
+      var stop = index
+
+      if stop > start and raw[stop - 1] == 0x0d {
+        stop--
+      }
+
+      found.append({ start, stop, next: index + 1 })
+      start = index + 1
+    }
+
+    index++
+  }
+
+  if start < raw.length() {
+    found.append({ start, stop: raw.length(), next: raw.length() })
+  }
+
+  return found
+}
+
+# The line break in front of a boundary belongs to the boundary and
+# not to the part before it, so it comes off the end of that part.
+def _trim_eol(raw, from: number, at: number) {
+  if at > from and raw[at - 1] == 0x0a {
+    if at - 1 > from and raw[at - 2] == 0x0d {
+      return at - 2
+    }
+
+    return at - 1
+  }
+
+  return at
+}
+
+# Where the headers end and the body begins: the first line with
+# nothing on it.
+def _body_offset(raw) {
+  var index = 0
+
+  while index < raw.length() {
+    if raw[index] == 0x0a {
+      var next = index + 1
+      # The line break in front of the blank line ends the last header
+      # and is no part of it, carriage return included.
+      var stop = index > 0 and raw[index - 1] == 0x0d ? index - 1 : index
+
+      if next < raw.length() and raw[next] == 0x0a {
+        return { headers: stop, body: next + 1 }
+      }
+
+      if next + 1 < raw.length() and raw[next] == 0x0d and raw[next + 1] == 0x0a {
+        return { headers: stop, body: next + 2 }
+      }
+    }
+
+    index++
+  }
+
+  return { headers: raw.length(), body: raw.length() }
+}
+
+# A boundary that cannot appear in the content it separates. Sixteen
+# random bytes is more than enough for that, and the fixed prefix makes
+# it obvious in a raw message what the line is for.
+def _new_boundary() {
+  var raw = crypto.random_bytes(16)
+  var text = []
+
+  for value in raw {
+    text.append('0123456789abcdef'[(value >> 4) & 0x0f])
+    text.append('0123456789abcdef'[value & 0x0f])
+  }
+
+  return '=_zuri_' + ''.join(text)
+}
+
+/**
+ * One message, or one part of one.
+ *
+ * A part is a message too: it has headers and a body, and its body may
+ * be more parts. The same class covers both, so walking a message and
+ * reading a standalone one are the same code.
+ *
+ * @printable
+ */
+class Message {
+
+  /**
+   * Builds a message.
+   *
+   * Most callers want `mail.message()`, which fills one in, or
+   * `mail.parse()`, which reads one off the wire.
+   *
+   * @param ?Headers headers: The headers to start with.
+   * @param ?any source: Bytes or text to read the message from, in
+   *    which case `headers` is ignored.
+   */
+  @new(headers, source) {
+    self.headers = headers == nil ? Headers() : headers
+
+    self.preamble = nil
+    self.epilogue = nil
+
+    self._body = bytes(0)
+    self._parts = []
+    self._source_headers = nil
+    self._source_body = nil
+
+    if source != nil {
+      self._load(_raw_bytes(source))
+    }
+  }
+
+  _load(raw) {
+    var split = _body_offset(raw)
+    var header_text = split.headers == 0 ? '' : raw[0, split.headers].to_string()
+    var body = split.body >= raw.length() ? bytes(0) : raw[split.body, raw.length()]
+
+    self.headers = Headers.parse(header_text)
+    self._source_headers = header_text
+    self._source_body = body
+
+    var type = self.content_type()
+
+    if type.is_multipart() and type.boundary() != nil {
+      self._read_parts(body, type.boundary())
+    } else {
+      self._body = body
+    }
+  }
+
+  /**
+   * Reads a message.
+   *
+   * Nothing is decoded up front. The tree is built, and each part
+   * decodes its own body the first time something asks for it, so
+   * reading the subject of a message with a large attachment in it
+   * costs nothing more than reading the headers.
+   *
+   * ```zuri
+   * import mail
+   *
+   * var note = mail.parse(
+   *   'From: a@example.com\r\n'
+   *   + 'Subject: Hi\r\n'
+   *   + '\r\n'
+   *   + 'Hello there.\r\n'
+   * )
+   *
+   * echo note.subject()
+   * echo note.text()
+   * ```
+   *
+   * ```console
+   * Hi
+   * Hello there.
+   * ```
+   *
+   * @param string|bytes data
+   * @returns Message
+   * @throws MessageError if the headers cannot be read.
+   */
+  static parse(data) {
+    return Message(nil, data)
+  }
+
+  # Splits a multipart body on its boundary. Anything before the first
+  # boundary and after the closing one is kept, because a message that
+  # round-trips has to come back the same.
+  _read_parts(body, boundary: string) {
+    var opener = '--${boundary}'
+    var closer = '--${boundary}--'
+    var pieces = []
+    var content_start = nil
+    var preamble_end = nil
+    var closed_at = nil
+
+    for line in _lines_of(body) {
+      var text = body[line.start, line.stop].to_string().rtrim(' ').rtrim('\t')
+
+      if text != opener and text != closer {
+        continue
+      }
+
+      if content_start == nil {
+        preamble_end = line.start
+      } else {
+        pieces.append(body[content_start, _trim_eol(body, content_start, line.start)])
+      }
+
+      if text == closer {
+        closed_at = line.next
+        break
+      }
+
+      content_start = line.next
+    }
+
+    if content_start == nil {
+      # Nothing that looks like a boundary, so whatever the header
+      # says, this part has one body and not several.
+      self._body = body
+
+      return
+    }
+
+    if closed_at == nil {
+      pieces.append(body[content_start, body.length()])
+    }
+
+    if preamble_end != nil and preamble_end > 0 {
+      self.preamble = body[0, _trim_eol(body, 0, preamble_end)].to_string()
+    }
+
+    if closed_at != nil and closed_at < body.length() {
+      self.epilogue = body[closed_at, body.length()].to_string()
+    }
+
+    for piece in pieces {
+      self._parts.append(Message(nil, piece))
+    }
+  }
+
+  /**
+   * The `Content-Type` of this part.
+   *
+   * @returns ContentType
+   */
+  content_type() {
+    return self.headers.content_type()
+  }
+
+  /**
+   * Whether this part holds other parts.
+   *
+   * @returns bool
+   */
+  is_multipart() {
+    return !self._parts.is_empty()
+  }
+
+  /**
+   * The parts directly inside this one, which is empty for a part that
+   * holds content rather than other parts.
+   *
+   * @returns list of `Message`
+   */
+  parts() {
+    return self._parts
+  }
+
+  /**
+   * Every part of the message including this one, outermost first.
+   *
+   * ```zuri,ignore
+   * for part in note.walk() {
+   *   echo part.content_type().mime_type()
+   * }
+   * ```
+   *
+   * @returns list of `Message`
+   */
+  walk() {
+    var found = [self]
+
+    for part in self._parts {
+      found.extend(part.walk())
+    }
+
+    return found
+  }
+
+  /**
+   * This part's body, decoded from whatever transfer encoding it
+   * arrived in.
+   *
+   * A part that holds other parts has no body of its own and gives
+   * back nothing.
+   *
+   * @returns bytes
+   */
+  body_bytes() {
+    if self.is_multipart() {
+      return bytes(0)
+    }
+
+    return encoding.decode_body(
+      self._body,
+      self.headers.get('Content-Transfer-Encoding', '7bit')
+    )
+  }
+
+  /**
+   * This part's body as text, decoded from its transfer encoding and
+   * then from its character set.
+   *
+   * @returns string
+   */
+  text() {
+    return encoding.decode_text(self.body_bytes(), self.content_type().charset())
+  }
+
+  /**
+   * The body still encoded, exactly as it sits in the message.
+   *
+   * @returns bytes
+   */
+  raw_body() {
+    return self._body
+  }
+
+  /**
+   * Replaces the body with bytes that are already in the transfer
+   * encoding the headers name, and drops any parts this held.
+   *
+   * The encoding is not applied here and not checked. `set_text()` and
+   * `attach()` are the calls that do both.
+   *
+   * @param string|bytes data
+   * @returns Message itself.
+   */
+  set_raw_body(data) {
+    self._body = _raw_bytes(data)
+    self._parts = []
+
+    return self
+  }
+
+  /**
+   * Replaces the parts this one holds.
+   *
+   * @param list parts: `Message` values.
+   * @returns Message itself.
+   */
+  set_parts(parts: list) {
+    self._parts = parts
+    self._body = bytes(0)
+
+    return self
+  }
+
+  /**
+   * Whether this part holds nothing at all: no body and no parts.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self._parts.is_empty() and self._body.is_empty()
+  }
+
+  /**
+   * The bytes this part's headers were read from, or `nil` for a part
+   * that was built rather than parsed.
+   *
+   * A signature covers the message as it was written, not as it would
+   * be written again, which is what this is for.
+   *
+   * @returns string|nil
+   */
+  source_headers() {
+    return self._source_headers
+  }
+
+  /**
+   * The bytes this part's body was read from, or `nil` for a part that
+   * was built rather than parsed.
+   *
+   * @returns bytes|nil
+   */
+  source_body() {
+    return self._source_body
+  }
+
+  /**
+   * The subject, with any encoded words in it decoded.
+   *
+   * @returns string empty when the message has no subject.
+   */
+  subject() {
+    return self.headers.decoded('Subject', '')
+  }
+
+  /**
+   * Sets the subject, encoding it if it holds characters a header
+   * cannot carry.
+   *
+   * @param string text
+   * @returns Message itself.
+   */
+  set_subject(text: string) {
+    self.headers.set('Subject', encoding.encode_word(text, 'utf-8', nil))
+
+    return self
+  }
+
+  /**
+   * The sender, or `nil` when the message has no `From`.
+   *
+   * @returns Address|nil
+   */
+  sender() {
+    var found = self.headers.addresses('From')
+
+    return found.is_empty() ? nil : found[0]
+  }
+
+  /**
+   * The addresses in `To`.
+   *
+   * @returns list of `Address`
+   */
+  to() {
+    return self.headers.addresses('To')
+  }
+
+  /**
+   * The addresses in `Cc`.
+   *
+   * @returns list of `Address`
+   */
+  cc() {
+    return self.headers.addresses('Cc')
+  }
+
+  /**
+   * The addresses in `Bcc`.
+   *
+   * A message that has been sent should not have this header at all,
+   * since the whole point of a blind copy is that the other recipients
+   * cannot see it. `mail.send()` strips it before handing the message
+   * over, after taking the recipients from it.
+   *
+   * @returns list of `Address`
+   */
+  bcc() {
+    return self.headers.addresses('Bcc')
+  }
+
+  /**
+   * The addresses in `Reply-To`, falling back to the sender when there
+   * is no such header, which is what a mail client does.
+   *
+   * @returns list of `Address`
+   */
+  reply_to() {
+    var found = self.headers.addresses('Reply-To')
+
+    if !found.is_empty() {
+      return found
+    }
+
+    var author = self.sender()
+
+    return author == nil ? [] : [author]
+  }
+
+  /**
+   * Everyone the message is addressed to: `To`, `Cc` and `Bcc`
+   * together, with duplicates removed.
+   *
+   * @returns list of `Address`
+   */
+  recipients() {
+    var found = []
+    var seen = []
+
+    for person in self.to() + self.cc() + self.bcc() {
+      var key = '${person.local}@${person.domain.lower()}'
+
+      if seen.contains(key) {
+        continue
+      }
+
+      seen.append(key)
+      found.append(person)
+    }
+
+    return found
+  }
+
+  /**
+   * The `Date` header as a date, or `nil` when it is absent or
+   * unreadable.
+   *
+   * @returns Date|nil
+   */
+  sent_at() {
+    return self.headers.date(nil)
+  }
+
+  /**
+   * The `Message-ID`, with the angle brackets left on, or `nil`.
+   *
+   * @returns string|nil
+   */
+  message_id() {
+    return self.headers.get('Message-ID', nil)
+  }
+
+  /**
+   * The message identifiers in `References`, oldest first, which is
+   * the chain of replies this message belongs to.
+   *
+   * @returns list of string
+   */
+  references() {
+    var raw = self.headers.get('References', '')
+    var found = []
+    var at = 0
+
+    while at < raw.length() {
+      var open = raw.index_of('<', at)
+
+      if open < 0 {
+        break
+      }
+
+      var close = raw.index_of('>', open + 1)
+
+      if close < 0 {
+        break
+      }
+
+      found.append(raw[open, close + 1])
+      at = close + 1
+    }
+
+    return found
+  }
+
+  /**
+   * The name this part suggests being saved under, from its
+   * disposition or, failing that, its type. `nil` when it suggests
+   * none.
+   *
+   * @returns string|nil
+   */
+  filename() {
+    var named = self.headers.content_disposition().filename()
+
+    return named == nil ? self.content_type().name() : named
+  }
+
+  /**
+   * Whether this part is meant to be offered as a file rather than
+   * shown in place.
+   *
+   * A part is an attachment when it says so, and also when it says
+   * nothing but carries a filename, which is what older mailers do.
+   *
+   * @returns bool
+   */
+  is_attachment() {
+    if self.headers.content_disposition().is_attachment() {
+      return true
+    }
+
+    return !self.headers.contains('Content-Disposition') and self.filename() != nil
+  }
+
+  /**
+   * The first part of a given type anywhere in the message, or `nil`.
+   *
+   * @param string mime_type: As `text/html`.
+   * @returns Message|nil
+   */
+  find_part(mime_type: string) {
+    var wanted = mime_type.lower()
+
+    for part in self.walk() {
+      if part.content_type().mime_type() == wanted and !part.is_attachment() {
+        return part
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The plain text of the message, wherever in the tree it is, or
+   * `nil` when there is none.
+   *
+   * @returns string|nil
+   */
+  text_body() {
+    var part = self.find_part('text/plain')
+
+    return part == nil ? nil : part.text()
+  }
+
+  /**
+   * The HTML of the message, wherever in the tree it is, or `nil` when
+   * there is none.
+   *
+   * @returns string|nil
+   */
+  html_body() {
+    var part = self.find_part('text/html')
+
+    return part == nil ? nil : part.text()
+  }
+
+  /**
+   * Every part of the message that is an attachment.
+   *
+   * @returns list of `Message`
+   */
+  attachments() {
+    return self.walk().filter(@(part) => part.is_attachment())
+  }
+
+  /**
+   * Moves this part's content into a part of its own and hands it
+   * back, leaving this one holding the message-level headers and
+   * nothing else.
+   *
+   * This is what turns a message into the first child of the
+   * multipart that is about to replace it, which is why `attach()`
+   * can wrap a message without the caller rebuilding it.
+   *
+   * @returns Message
+   */
+  take_content() {
+    var child = Message()
+
+    for entry in self.headers.entries() {
+      if _CONTENT_HEADERS.contains(entry.name.lower()) {
+        child.headers.add(entry.name, entry.value)
+      }
+    }
+
+    # A part holds a body or it holds parts, never both, and each
+    # setter clears the other.
+    if self._parts.is_empty() {
+      child.set_raw_body(self._body)
+    } else {
+      child.set_parts(self._parts)
+    }
+
+    child.preamble = self.preamble
+    child.epilogue = self.epilogue
+
+    for name in _CONTENT_HEADERS {
+      self.headers.remove(name)
+    }
+
+    self._body = bytes(0)
+    self._parts = []
+    self.preamble = nil
+    self.epilogue = nil
+
+    return child
+  }
+
+  /**
+   * Turns this part into a multipart holding the given parts, under a
+   * boundary nothing inside it can contain.
+   *
+   * @param string subtype: `mixed`, `alternative`, `related` or
+   *    `digest`.
+   * @param list parts: The `Message` values to put in it.
+   * @returns Message itself.
+   */
+  become_multipart(subtype: string, parts: list) {
+    self.headers.set('Content-Type', 'multipart/${subtype}; boundary="${_new_boundary()}"')
+    self.headers.remove('Content-Transfer-Encoding')
+    self.headers.remove('Content-Disposition')
+
+    self._parts = parts
+    self._body = bytes(0)
+
+    return self
+  }
+
+  # Takes on another part's content headers and body, which is how a
+  # message with nothing in it becomes a message with one thing in it
+  # without growing a multipart it does not need.
+  _adopt(part) {
+    for name in _CONTENT_HEADERS {
+      self.headers.remove(name)
+    }
+
+    for entry in part.headers.entries() {
+      self.headers.add(entry.name, entry.value)
+    }
+
+    self._body = part.raw_body()
+    self._parts = part.parts()
+
+    return self
+  }
+
+  # Where a part of this type sits in the tree, as the list holding it
+  # and its position in that list, or nil when there is none.
+  _locate(mime_type: string) {
+    var wanted = mime_type.lower()
+    var pending = [self]
+
+    while !pending.is_empty() {
+      var node = pending.shift()
+      var children = node.parts()
+
+      iter var index = 0; index < children.length(); index++ {
+        var part = children[index]
+
+        if part.content_type().mime_type() == wanted and !part.is_attachment() {
+          return { owner: node, at: index }
+        }
+
+        pending.append(part)
+      }
+    }
+
+    return nil
+  }
+
+  _mime_version() {
+    if !self.headers.contains('MIME-Version') {
+      self.headers.set('MIME-Version', '1.0')
+    }
+  }
+
+  # Puts a text or HTML part where it belongs. The rules are the ones a
+  # reader expects to find: the two renderings of a body sit in an
+  # alternative, the root of a related is its first part, and the body
+  # of a mixed is its first part too.
+  _place_body(part) {
+    self._mime_version()
+
+    var mime_type = part.content_type().mime_type()
+
+    if !self.is_multipart() and self.content_type().mime_type() == mime_type {
+      return self._adopt(part)
+    }
+
+    var found = self._locate(mime_type)
+
+    if found != nil {
+      found.owner.parts()[found.at] = part
+
+      return self
+    }
+
+    if self.is_empty() {
+      return self._adopt(part)
+    }
+
+    var alternative = self._locate_multipart('alternative')
+
+    if alternative != nil {
+      # Plain text comes first, because a reader that understands both
+      # is meant to take the last one it can display.
+      if mime_type == 'text/plain' {
+        alternative.parts().insert(part, 0)
+      } else {
+        alternative.parts().append(part)
+      }
+
+      return self
+    }
+
+    var related = self._locate_multipart('related')
+
+    if related != nil {
+      return self._place_beside(related.parts(), part, mime_type)
+    }
+
+    if self.content_type().mime_type() == 'multipart/mixed' {
+      return self._place_beside(self.parts(), part, mime_type)
+    }
+
+    var current = self.take_content()
+
+    return self.become_multipart(
+      'alternative',
+      mime_type == 'text/plain' ? [part, current] : [current, part]
+    )
+  }
+
+  # Puts a body part at the front of a list whose first entry is the
+  # body, pairing it with whatever was there when that was a body too.
+  _place_beside(inside: list, part, mime_type: string) {
+    if inside.is_empty() {
+      inside.append(part)
+
+      return self
+    }
+
+    var root = inside[0]
+    var root_type = root.content_type().mime_type()
+
+    if root_type == 'text/plain' or root_type == 'text/html' {
+      inside[0] = Message().become_multipart(
+        'alternative',
+        mime_type == 'text/plain' ? [part, root] : [root, part]
+      )
+
+      return self
+    }
+
+    inside.insert(part, 0)
+
+    return self
+  }
+
+  _locate_multipart(subtype: string) {
+    var wanted = 'multipart/${subtype}'
+    var pending = [self]
+
+    while !pending.is_empty() {
+      var node = pending.shift()
+
+      if node.content_type().mime_type() == wanted {
+        return node
+      }
+
+      for part in node.parts() {
+        pending.append(part)
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * Sets who the message is from, replacing whoever was there.
+   *
+   * ```zuri,ignore
+   * note.set_from('Richard Ore <richard@example.com>')
+   * ```
+   *
+   * @param string|Address person
+   * @returns Message itself.
+   */
+  set_from(person) {
+    self.headers.set_addresses('From', person)
+
+    return self
+  }
+
+  /**
+   * Sets the `Sender` header, which says who actually put the message
+   * on the wire when that is not who it is from.
+   *
+   * @param string|Address person
+   * @returns Message itself.
+   */
+  set_sender(person) {
+    self.headers.set_addresses('Sender', person)
+
+    return self
+  }
+
+  /**
+   * Adds recipients, keeping any already there.
+   *
+   * ```zuri,ignore
+   * note.add_to('ann@example.com').add_to('bob@example.com')
+   * ```
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  add_to(people) {
+    return self._add_addresses('To', people)
+  }
+
+  /**
+   * Adds copied recipients, keeping any already there.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  add_cc(people) {
+    return self._add_addresses('Cc', people)
+  }
+
+  /**
+   * Adds blind copied recipients.
+   *
+   * The header is removed before the message is handed to a server,
+   * after the recipients have been taken from it, which is the whole
+   * point of a blind copy.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  add_bcc(people) {
+    return self._add_addresses('Bcc', people)
+  }
+
+  /**
+   * Sets the recipients, replacing any already there.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  set_to(people) {
+    self.headers.set_addresses('To', people)
+
+    return self
+  }
+
+  /**
+   * Sets the copied recipients, replacing any already there.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  set_cc(people) {
+    self.headers.set_addresses('Cc', people)
+
+    return self
+  }
+
+  /**
+   * Sets the blind copied recipients, replacing any already there.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  set_bcc(people) {
+    self.headers.set_addresses('Bcc', people)
+
+    return self
+  }
+
+  /**
+   * Sets where replies should go, when that is not the sender.
+   *
+   * @param string|Address|list people
+   * @returns Message itself.
+   */
+  set_reply_to(people) {
+    self.headers.set_addresses('Reply-To', people)
+
+    return self
+  }
+
+  _add_addresses(name: string, people) {
+    var existing = self.headers.addresses(name)
+    var added = is_list(people) ? people : [people]
+
+    for person in added {
+      if is_string(person) {
+        existing.extend(address.parse_list(person))
+        continue
+      }
+
+      existing.append(person)
+    }
+
+    self.headers.set_addresses(name, existing)
+
+    return self
+  }
+
+  /**
+   * Sets any header at all, replacing one already there.
+   *
+   * The value is written exactly as given, so a header that needs
+   * encoding needs it applied first. `set_subject()` and the address
+   * setters do that for the headers where it matters.
+   *
+   * @param string name
+   * @param any value
+   * @returns Message itself.
+   */
+  set_header(name: string, value) {
+    self.headers.set(name, value)
+
+    return self
+  }
+
+  /**
+   * Adds a header, keeping any already there. `Received` is the header
+   * this is for.
+   *
+   * @param string name
+   * @param any value
+   * @returns Message itself.
+   */
+  add_header(name: string, value) {
+    self.headers.add(name, value)
+
+    return self
+  }
+
+  /**
+   * Sets when the message was written.
+   *
+   * A message built by `mail.message()` is dated for you, so this is
+   * for saying otherwise.
+   *
+   * @param ?Date moment: The current time when not given.
+   * @returns Message itself.
+   */
+  set_date(moment) {
+    self.headers.set_date('Date', moment)
+
+    return self
+  }
+
+  /**
+   * Sets the message's own identifier.
+   *
+   * @param ?string id: A fresh one, built from the sender's domain,
+   *    when not given.
+   * @returns Message itself.
+   */
+  set_message_id(id: ?string) {
+    if id != nil {
+      self.headers.set('Message-ID', id)
+
+      return self
+    }
+
+    var author = self.sender()
+
+    self.headers.set('Message-ID', new_message_id(author == nil ? nil : author.domain))
+
+    return self
+  }
+
+  /**
+   * Marks the message as a reply to another, which is what puts the
+   * two in the same conversation in a mail client.
+   *
+   * ```zuri,ignore
+   * reply.set_in_reply_to(original.message_id())
+   *      .set_references(original.references() + [original.message_id()])
+   * ```
+   *
+   * @param string id: The identifier of the message being answered.
+   * @returns Message itself.
+   */
+  set_in_reply_to(id: string) {
+    self.headers.set('In-Reply-To', id)
+
+    return self
+  }
+
+  /**
+   * Sets the chain of identifiers this message belongs to, oldest
+   * first.
+   *
+   * @param list|string ids
+   * @returns Message itself.
+   */
+  set_references(ids) {
+    self.headers.set('References', is_list(ids) ? ' '.join(ids) : ids)
+
+    return self
+  }
+
+  /**
+   * Sets the plain text of the message.
+   *
+   * Replaces the text that is already there, wherever in the tree it
+   * is. A message that has HTML but no text becomes a
+   * `multipart/alternative` holding both.
+   *
+   * @param string text
+   * @param ?string charset: `utf-8` when not given.
+   * @returns Message itself.
+   */
+  set_text(text: string, charset: ?string) {
+    return self._place_body(text_part(text, charset, 'plain'))
+  }
+
+  /**
+   * Sets the HTML of the message.
+   *
+   * @param string html
+   * @param ?string charset: `utf-8` when not given.
+   * @returns Message itself.
+   */
+  set_html(html: string, charset: ?string) {
+    return self._place_body(text_part(html, charset, 'html'))
+  }
+
+  /**
+   * Adds an attachment to the message.
+   *
+   * The message becomes a `multipart/mixed` if it is not one already,
+   * with whatever it held before as the first part. That happens once,
+   * however many attachments are added.
+   *
+   * ```zuri,ignore
+   * note.attach(mail.attachment(figures).set_filename('figures.csv'))
+   * note.attach(mail.Attachment.from_file('reports/q3.pdf'))
+   * ```
+   *
+   * @param Attachment|Message part: An attachment, or a part that is
+   *    already built.
+   * @returns Message itself.
+   * @throws MessageError if handed anything else.
+   */
+  attach(part) {
+    var built = _as_part(part, 'attach')
+
+    self._mime_version()
+
+    if self.content_type().mime_type() == 'multipart/mixed' {
+      self._parts.append(built)
+
+      return self
+    }
+
+    if self.is_empty() {
+      return self.become_multipart('mixed', [built])
+    }
+
+    return self.become_multipart('mixed', [self.take_content(), built])
+  }
+
+  /**
+   * Adds something to be shown inside the HTML rather than offered
+   * separately, and returns the reference to point an `<img>` at.
+   *
+   * The message becomes a `multipart/related` around the content it
+   * already held, which is what tells a reader the two belong
+   * together.
+   *
+   * ```zuri,ignore
+   * var source = note.embed(mail.attachment(logo).set_filename('logo.png'))
+   *
+   * note.set_html('<img src="${source}">')
+   * ```
+   *
+   * @param Attachment|Message part
+   * @returns string the `cid:` URL that refers to it.
+   * @throws MessageError if handed anything else.
+   */
+  embed(part) {
+    var id = nil
+
+    if instance_of(part, Attachment) {
+      id = part.cid()
+
+      if id == nil {
+        id = '${_new_boundary()}@zuri'
+
+        part.set_cid(id)
+      }
+
+      part.set_disposition('inline')
+    }
+
+    var built = _as_part(part, 'embed')
+
+    if id == nil {
+      id = built.headers.get('Content-ID', nil)
+
+      if id == nil {
+        raise MessageError('a part to embed needs a Content-ID')
+      }
+
+      id = id.ltrim('<').rtrim('>')
+    }
+
+    self._mime_version()
+
+    var related = self._locate_multipart('related')
+
+    if related != nil {
+      related.parts().append(built)
+
+      return 'cid:${id}'
+    }
+
+    if self.is_empty() {
+      self.become_multipart('related', [built])
+
+      return 'cid:${id}'
+    }
+
+    self.become_multipart('related', [self.take_content(), built])
+
+    return 'cid:${id}'
+  }
+
+  /**
+   * The whole message, ready to be written to a socket or a file.
+   *
+   * Lines end with a carriage return and a newline, which is what the
+   * protocols require whatever the local convention is.
+   *
+   * @returns bytes
+   */
+  to_bytes() {
+    var out = bytes(0)
+
+    out.extend(self.headers.to_string().to_bytes())
+    out.extend('\r\n\r\n'.to_bytes())
+
+    if !self.is_multipart() {
+      out.extend(self._body)
+
+      return out
+    }
+
+    var boundary = self.content_type().boundary()
+
+    if boundary == nil {
+      raise MessageError('a multipart part has no boundary')
+    }
+
+    if self.preamble != nil {
+      out.extend(self.preamble.to_bytes())
+      out.extend('\r\n'.to_bytes())
+    }
+
+    for part in self._parts {
+      out.extend('--${boundary}\r\n'.to_bytes())
+      out.extend(part.to_bytes())
+      out.extend('\r\n'.to_bytes())
+    }
+
+    out.extend('--${boundary}--\r\n'.to_bytes())
+
+    if self.epilogue != nil {
+      out.extend(self.epilogue.to_bytes())
+    }
+
+    return out
+  }
+
+  /**
+   * The whole message as text.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.to_bytes().to_string()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# Outgoing text is written as UTF-8, or as US-ASCII when that is all it
+# needs. Naming any other set would be a promise this cannot keep,
+# since nothing here encodes into one.
+def _outgoing_charset(text: string, charset: ?string) {
+  if charset == nil {
+    return encoding.is_ascii(text) ? 'us-ascii' : 'utf-8'
+  }
+
+  var name = charset.lower()
+
+  if name == 'utf-8' or name == 'utf8' {
+    return 'utf-8'
+  }
+
+  if (name == 'us-ascii' or name == 'ascii') and encoding.is_ascii(text) {
+    return 'us-ascii'
+  }
+
+  raise MessageError('outgoing text is written as UTF-8, not ${charset}')
+}
+
+/**
+ * Builds one text part.
+ *
+ * @param string text
+ * @param ?string charset: `utf-8`, or `us-ascii` when the text needs
+ *    nothing more. No other set can be written.
+ * @param ?string subtype: `plain` when not given.
+ * @returns Message
+ * @throws MessageError if `charset` names a set this cannot write.
+ */
+def text_part(text: string, charset: ?string, subtype: ?string) {
+  var set = _outgoing_charset(text, charset)
+  var kind = subtype == nil ? 'plain' : subtype
+  var raw = text.to_bytes()
+  var transfer = encoding.guess_encoding(raw)
+  var part = Message()
+
+  part.headers.set('Content-Type', 'text/${kind}; charset=${set}')
+  part.headers.set('Content-Transfer-Encoding', transfer)
+
+  part.set_raw_body(encoding.encode_body(raw, transfer))
+
+  return part
+}
+
+/**
+ * Builds one file part.
+ *
+ * @param string|bytes data
+ * @param ?dict options: `filename`, `content_type`, `disposition`,
+ *    `cid` and `encoding`, as `Message.attach()` documents them.
+ * @returns Message
+ */
+/**
+ * Something a message carries alongside what it says: a file to offer,
+ * or an image the HTML shows.
+ *
+ * Built one call at a time, the way a message is, and handed to
+ * `Message.attach()` or `Message.embed()`.
+ *
+ * ```zuri
+ * import mail
+ *
+ * var figures = mail.attachment('name,total\nengines,41')
+ *   .set_filename('figures.csv')
+ *
+ * echo figures.filename()
+ * echo figures.content_type()
+ * echo figures.size()
+ * ```
+ *
+ * ```console
+ * figures.csv
+ * text/csv
+ * 24
+ * ```
+ *
+ * The media type follows from the filename unless it is set. The
+ * transfer encoding follows from the contents, and a file is always
+ * encoded rather than sent as it is, because bytes that happen to look
+ * like text are still bytes.
+ *
+ * @printable
+ */
+class Attachment {
+
+  /**
+   * @param string|bytes data: The contents.
+   */
+  @new(data) {
+    self._data = _raw_bytes(data)
+    self._filename = nil
+    self._content_type = nil
+    self._disposition = 'attachment'
+    self._cid = nil
+    self._encoding = nil
+    self._description = nil
+  }
+
+  /**
+   * Reads the contents from a file on disk, taking the name from the
+   * path.
+   *
+   * ```zuri,ignore
+   * note.attach(Attachment.from_file('reports/q3.pdf'))
+   * ```
+   *
+   * @param string path
+   * @returns Attachment
+   * @throws Error if the file cannot be read.
+   */
+  static from_file(path: string) {
+    var handle = file(path, 'rb')
+    var raw = handle.read()
+
+    handle.close()
+
+    return Attachment(raw).set_filename(os.base_name(path))
+  }
+
+  /**
+   * Sets the name to offer the file under.
+   *
+   * A name with characters a header cannot carry is encoded, and a
+   * long one is split across continuations, on the way out.
+   *
+   * @param string name
+   * @returns Attachment itself.
+   */
+  set_filename(name: string) {
+    self._filename = name
+
+    return self
+  }
+
+  /**
+   * Sets the media type, for when the filename does not settle it.
+   *
+   * @param string type: As `application/pdf`.
+   * @returns Attachment itself.
+   */
+  set_content_type(type: string) {
+    self._content_type = type
+
+    return self
+  }
+
+  /**
+   * Sets whether the part is offered as a file or shown where it sits.
+   *
+   * `embed()` sets this to `inline` itself, so it is only worth
+   * setting for a part that is neither quite.
+   *
+   * @param string kind: `attachment` or `inline`.
+   * @returns Attachment itself.
+   */
+  set_disposition(kind: string) {
+    self._disposition = kind
+
+    return self
+  }
+
+  /**
+   * Sets the identifier HTML refers to this part by.
+   *
+   * `embed()` invents one when there is none, so this is for a
+   * reference that has to be predictable.
+   *
+   * @param string id: With or without the angle brackets.
+   * @returns Attachment itself.
+   */
+  set_cid(id: string) {
+    self._cid = id
+
+    return self
+  }
+
+  /**
+   * Sets the transfer encoding, overriding the one the contents would
+   * have chosen.
+   *
+   * @param string name: One of `mail.encoding.TRANSFER_ENCODINGS`.
+   * @returns Attachment itself.
+   */
+  set_encoding(name: string) {
+    self._encoding = name
+
+    return self
+  }
+
+  /**
+   * Sets a human-readable description, which some mail clients show
+   * beside the file.
+   *
+   * @param string text
+   * @returns Attachment itself.
+   */
+  set_description(text: string) {
+    self._description = text
+
+    return self
+  }
+
+  /**
+   * The name this will be offered under, or `nil`.
+   *
+   * @returns string|nil
+   */
+  filename() {
+    return self._filename
+  }
+
+  /**
+   * The media type this will be sent as, worked out from the filename
+   * when it was not set.
+   *
+   * @returns string
+   */
+  content_type() {
+    if self._content_type != nil {
+      return self._content_type
+    }
+
+    if self._filename == nil {
+      return 'application/octet-stream'
+    }
+
+    return mime.detect_from_name(self._filename)
+  }
+
+  /**
+   * Whether the part is offered as a file or shown where it sits.
+   *
+   * @returns string
+   */
+  disposition() {
+    return self._disposition
+  }
+
+  /**
+   * The identifier HTML refers to this part by, or `nil`.
+   *
+   * @returns string|nil
+   */
+  cid() {
+    return self._cid
+  }
+
+  /**
+   * How many bytes the contents are.
+   *
+   * @returns number
+   */
+  size() {
+    return self._data.length()
+  }
+
+  /**
+   * The contents.
+   *
+   * @returns bytes
+   */
+  data() {
+    return self._data
+  }
+
+  /**
+   * Turns this into the message part that goes on the wire.
+   *
+   * `attach()` and `embed()` call it. It is here for a program
+   * building a tree by hand.
+   *
+   * @returns Message
+   */
+  to_part() {
+    var transfer = self._encoding
+
+    if transfer == nil {
+      transfer = encoding.guess_encoding(self._data)
+
+      # A file is worth sending intact even when the bytes in it happen
+      # to look like text, so it is never left unencoded.
+      if transfer == '7bit' {
+        transfer = 'base64'
+      }
+    }
+
+    var part = Message()
+    var type_parts = [self.content_type()]
+
+    if self._filename != nil {
+      type_parts.extend(encoding.encode_parameter('name', self._filename))
+    }
+
+    part.headers.set('Content-Type', '; '.join(type_parts))
+    part.headers.set('Content-Transfer-Encoding', transfer)
+
+    var disposition = [self._disposition]
+
+    if self._filename != nil {
+      disposition.extend(encoding.encode_parameter('filename', self._filename))
+    }
+
+    part.headers.set('Content-Disposition', '; '.join(disposition))
+
+    if self._cid != nil {
+      part.headers.set(
+        'Content-ID',
+        self._cid.starts_with('<') ? self._cid : '<${self._cid}>'
+      )
+    }
+
+    if self._description != nil {
+      part.headers.set('Content-Description', encoding.encode_word(
+        self._description, 'utf-8', nil
+      ))
+    }
+
+    part.set_raw_body(encoding.encode_body(self._data, transfer))
+
+    return part
+  }
+
+  to_string() {
+    var name = self._filename == nil ? self.content_type() : self._filename
+
+    return '<Attachment ${name}, ${self.size()} bytes>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Starts an attachment from what is in it.
+ *
+ * ```zuri
+ * import mail
+ *
+ * echo mail.attachment('some bytes').set_filename('notes.txt').to_string()
+ * ```
+ *
+ * ```console
+ * <Attachment notes.txt, 10 bytes>
+ * ```
+ *
+ * @param string|bytes data
+ * @returns Attachment
+ */
+def attachment(data) {
+  return Attachment(data)
+}
+
+# Both `attach()` and `embed()` take either an attachment or a part
+# that is already built, and refuse anything else by name rather than
+# failing later with something obscure.
+def _as_part(part, doing: string) {
+  if instance_of(part, Attachment) {
+    return part.to_part()
+  }
+
+  if instance_of(part, Message) {
+    return part
+  }
+
+  raise MessageError(
+    '${doing}() takes an Attachment; build one with mail.attachment()'
+  )
+}
+
+def multipart(subtype: string, parts: list) {
+  return Message().become_multipart(subtype, parts)
+}
+
+/**
+ * An identifier for a message, unique enough that no two ever collide.
+ *
+ * @param ?string domain: The right hand side. The machine's own name
+ *    when not given.
+ * @returns string including the angle brackets a header needs.
+ */
+def new_message_id(domain: ?string) {
+  var right = domain
+
+  if right == nil {
+    catch {
+      right = os.hostname()
+    } as error {
+      right = 'localhost'
+    }
+  }
+
+  var stamp = time().floor()
+  var raw = crypto.random_bytes(10)
+  var text = []
+
+  for value in raw {
+    text.append('0123456789abcdef'[(value >> 4) & 0x0f])
+    text.append('0123456789abcdef'[value & 0x0f])
+  }
+
+  return '<${stamp}.${''.join(text)}@${right}>'
+}
+
+/**
+ * Reads a message.
+ *
+ * @param string|bytes data
+ * @returns Message
+ */
+def parse(data) {
+  return Message.parse(data)
+}
+
+/**
+ * Starts a message.
+ *
+ * What goes in it is said one call at a time, and every call hands the
+ * message back so they read as one:
+ *
+ * ```zuri
+ * import mail
+ *
+ * var note = mail.message()
+ *   .set_from('Richard Ore <richard@example.com>')
+ *   .add_to('ann@example.com')
+ *   .set_subject('Quarterly report')
+ *   .set_text('The numbers are in.')
+ *
+ * echo note.subject()
+ * echo note.content_type().mime_type()
+ * ```
+ *
+ * ```console
+ * Quarterly report
+ * text/plain
+ * ```
+ *
+ * The shape follows from what is said. Text alone is a `text/plain`
+ * message; adding HTML makes it a `multipart/alternative`; attaching a
+ * file wraps the whole thing in a `multipart/mixed`. None of that has
+ * to be arranged by hand.
+ *
+ * A message starts dated, since the time it was written is the time it
+ * was written. It gets its identifier when it is sent, because that is
+ * when the domain it belongs to is settled.
+ *
+ * @returns Message
+ */
+def message() {
+  var note = Message()
+
+  note.headers.set('MIME-Version', '1.0')
+  note.headers.set_date('Date', nil)
+
+  return note
+}
