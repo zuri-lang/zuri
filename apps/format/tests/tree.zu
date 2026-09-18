@@ -8,11 +8,9 @@ import ..tree { parse }
 
 # The groups in a parsed sequence, each as its kind.
 def group_kinds(source) {
-  return parse(stream(source)).filter(@(n) {
-    return n.node == 'group'
-  }).map(@(n) {
-    return n.kind
-  })
+  return parse(stream(source))
+    .filter(@(n) => n.node == 'group')
+    .map(@(n) => n.kind)
 }
 
 # The first group found anywhere in `nodes`, depth first, or nil.
@@ -28,11 +26,7 @@ def first_group(nodes) {
 
 # The bare token texts of a group's items, ignoring nested groups.
 def token_texts(group) {
-  return group.items.filter(@(n) {
-    return n.node == 'tok'
-  }).map(@(n) {
-    return n.atom.text
-  })
+  return group.items.filter(@(n) => n.node == 'tok').map(@(n) => n.atom.text)
 }
 
 describe('parse', @{

@@ -22,9 +22,11 @@ var _VALUE = [
 ]
 
 # What a `(` sticks to with no space, making it a call rather than a
-# grouping.
+# grouping. `Def` belongs here for the anonymous `def(x)`, where the
+# keyword sits straight against the parameters; a named `def foo(x)` has
+# its name in between, so the keyword still gets its space.
 var _CALLABLE = [
-  'Identifier', 'Rparen', 'Rbracket', 'Self_', 'Parent', 'Decorator',
+  'Identifier', 'Rparen', 'Rbracket', 'Self_', 'Parent', 'Decorator', 'Def',
 ]
 
 # What a `[` sticks to with no space, making it an index rather than a
@@ -190,7 +192,13 @@ def _space(prev, cur, state) {
     return ''
   }
 
-  if pk == 'Lparen' or pk == 'Lbracket' or pk == 'At' or pk == 'TriDot' {
+  # The `@` closure shorthand attaches to its parameter list or block,
+  # `@(x)` and `@{ ... }`, but stands off from an arrow: `@ => 5`.
+  if pk == 'At' {
+    return ck == 'Lparen' or ck == 'Lbrace' ? '' : ' '
+  }
+
+  if pk == 'Lparen' or pk == 'Lbracket' or pk == 'TriDot' {
     return ''
   }
 

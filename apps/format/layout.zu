@@ -426,6 +426,137 @@ def _splittable(items: list, kind: string) {
   return false
 }
 
+# The assignment operators a statement may open with, which a chain on the
+# right-hand side reads through.
+var _ASSIGN = [
+  'Equal', 'PlusEq', 'MinusEq', 'MultiplyEq', 'DivideEq', 'PowEq', 'FloorEq',
+  'PercentEq', 'LshiftEq', 'RshiftEq', 'UrshiftEq', 'AmpEq', 'BarEq', 'XorEq',
+  'TildeEq',
+]
+
+# Top-level tokens that mean the line is not a single chain but an
+# expression built from one: a comparison, arithmetic, a ternary, a
+# lambda arrow, a comma. Any of these and the dots belong to different
+# operands, so breaking at them would be wrong.
+var _CHAIN_STOP = [
+  'Question', 'Colon', 'And', 'Or', 'EqualEq', 'BangEq', 'Less', 'LessEq',
+  'Greater', 'GreaterEq', 'Plus', 'Minus', 'Multiply', 'Divide', 'Pow', 'Floor',
+  'Percent', 'Amp', 'Bar', 'Xor', 'Lshift', 'Rshift', 'Urshift', 'Comma', 'In',
+  'As', 'Arrow', 'Range',
+]
+
+# Whether `items` is a single fluent chain, once a leading assignment is
+# allowed for, rather than a larger expression that merely contains one. A
+# ternary with a `.length()` in each branch is not a chain, and must not
+# be broken as if it were.
+def _is_chain(items: list) {
+  var assigned = false
+
+  for node in items {
+    if node.node != 'tok' {
+      continue
+    }
+
+    var kind = node.atom.kind
+
+    if !assigned and _ASSIGN.contains(kind) {
+      assigned = true
+
+      continue
+    }
+
+    if _CHAIN_STOP.contains(kind) or _ASSIGN.contains(kind) {
+      return false
+    }
+  }
+
+  return true
+}
+
+# How many method-call links a fluent chain has at the top level: a `.`
+# followed by a name and its call parentheses, as in `.filter(x)`. Two or
+# more is what makes a chain worth breaking one call to a line rather than
+# leaving it to run past the width.
+def _method_links(items: list) {
+  var reals = items.filter(@(n) => n.node == 'tok' or n.node == 'group')
+  var count = 0
+  var index = 0
+
+  while index + 2 < reals.length() {
+    var dot = reals[index]
+    var name = reals[index + 1]
+    var call = reals[index + 2]
+
+    if dot.node == 'tok'
+      and dot.atom.kind == 'Dot'
+      and name.node == 'tok'
+      and name.atom.kind == 'Identifier'
+      and call.node == 'group'
+      and call.kind == 'paren' {
+      count += 1
+    }
+
+    index += 1
+  }
+
+  return count
+}
+
+# The first real node at or after `from`, and its index, as a pair
+# `{ node, at }`, or `{ node: nil, at: -1 }` when there is none.
+def _next_node(items: list, from: number) {
+  var index = from
+
+  while index < items.length() {
+    var node = items[index]
+
+    if node.node != 'newline' and node.node != 'blank' {
+      return { node, at: index }
+    }
+
+    index += 1
+  }
+
+  return { node: nil, at: -1 }
+}
+
+# Whether the `.` at `index` begins a call link, `.name(...)`, rather than
+# a plain property access. A call link is where a fluent chain breaks; a
+# property access stays with the call that follows it.
+def _is_call_link(items: list, index: number) {
+  var name = _next_node(items, index + 1)
+
+  if name.node == nil
+    or name.node.node != 'tok'
+    or name.node.atom.kind != 'Identifier' {
+    return false
+  }
+
+  var call = _next_node(items, name.at + 1)
+
+  return call.node != nil
+    and call.node.node == 'group'
+    and call.node.kind == 'paren'
+}
+
+# Lays out a list of segments: the first at `depth`, the rest indented one
+# level under it, the closing `suffix` on the last. Each segment is
+# emitted through {_emit_line}, so one still too long breaks again.
+def _emit_segments(
+  segments: list, depth: number, suffix: string, lines: list, ctx: dict,
+) {
+  var index = 0
+
+  for segment in segments {
+    var last = index == segments.length() - 1
+    var deeper = index == 0 ? depth : depth + 1
+
+    _emit_line(segment, deeper, last ? suffix : '', lines, ctx)
+
+    index += 1
+  }
+}
+
 # Breaks a long line at its `and`/`or`, each operand on its own line with
 # the operator leading it, the way a multi-line condition reads.
 def _emit_operator_break(
@@ -452,16 +583,46 @@ def _emit_operator_break(
     segments.append(current)
   }
 
+  _emit_segments(segments, depth, suffix, lines, ctx)
+}
+
+# Breaks a long fluent chain at each call link, `.name(...)`, one call to a
+# line. A property access leading a link, as in `group.items.filter(...)`,
+# stays on the head line with what it reads from.
+def _emit_chain_break(
+  items: list, depth: number, suffix: string, lines: list, ctx: dict,
+) {
+  var segments = []
+  var current = []
   var index = 0
 
-  for segment in segments {
-    var last = index == segments.length() - 1
-    var deeper = index == 0 ? depth : depth + 1
+  while index < items.length() {
+    var node = items[index]
 
-    _emit_line(segment, deeper, last ? suffix : '', lines, ctx)
+    if node.node == 'newline' or node.node == 'blank' {
+      index += 1
+
+      continue
+    }
+
+    if node.node == 'tok'
+      and node.atom.kind == 'Dot'
+      and !current.is_empty()
+      and _is_call_link(items, index) {
+      segments.append(current)
+      current = [node]
+    } else {
+      current.append(node)
+    }
 
     index += 1
   }
+
+  if !current.is_empty() {
+    segments.append(current)
+  }
+
+  _emit_segments(segments, depth, suffix, lines, ctx)
 }
 
 # A long line, broken at its lowest-precedence operator if it has one, or
@@ -478,6 +639,15 @@ def _wrap(items: list, depth: number, suffix: string, lines: list, ctx: dict) {
 
   if _splittable(items, 'And') {
     _emit_operator_break(items, depth, suffix, lines, ctx, 'And')
+
+    return
+  }
+
+  # A fluent chain of two or more calls breaks a call to a line, each `.`
+  # leading its own, rather than filling the last call's arguments and
+  # leaving the head still too long.
+  if _is_chain(items) and _method_links(items) >= 2 {
+    _emit_chain_break(items, depth, suffix, lines, ctx)
 
     return
   }
