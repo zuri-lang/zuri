@@ -1,0 +1,55 @@
+# Tests for one-line rendering: the spacing rules that decide where a
+# space goes between two tokens and where none does.
+
+import test { * }
+
+import ..atoms { stream }
+import ..tree { parse }
+import ..render { flat }
+
+# The one-line rendering of a snippet.
+def line(source) {
+  return flat(parse(stream(source)), false)
+}
+
+describe('flat', @{
+  it('spaces binary operators and follows commas', @{
+    expect(line('var x=f(a,b)+1')).to_be('var x = f(a, b) + 1')
+  })
+
+  it('keeps a call tight against its name', @{
+    expect(line('f (a)')).to_be('f(a)')
+  })
+
+  it('keeps no space around a dot', @{
+    expect(line('a . b . c')).to_be('a.b.c')
+  })
+
+  it('treats a leading `-` as unary', @{
+    expect(line('var x = -1')).to_be('var x = -1')
+  })
+
+  it('treats `-` between values as binary', @{
+    expect(line('var x = a - 1')).to_be('var x = a - 1')
+  })
+
+  it('joins a type union with no spaces around the bar', @{
+    expect(line('def f(x: ?list|dict) {\n}')).to_be('def f(x: ?list|dict) {}')
+  })
+
+  it('keeps the space in a relative import', @{
+    expect(line('import .sibling')).to_be('import .sibling')
+  })
+
+  it('keeps the space in a parent import', @{
+    expect(line('import ..sibling')).to_be('import ..sibling')
+  })
+
+  it('spaces a ternary across its `?` and `:`', @{
+    expect(line('var s = big ? one : two')).to_be('var s = big ? one : two')
+  })
+
+  it('applies the shorthand rewrite inside a dictionary', @{
+    expect(line('var d={name:name,age:42}')).to_be('var d = { name, age: 42 }')
+  })
+})

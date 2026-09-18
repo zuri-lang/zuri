@@ -1024,10 +1024,18 @@ impl<'a> Parser<'a> {
   fn conditional(&mut self) -> Expr {
     let mut expr = self.or();
 
+    // The `?` and the `:` may each begin a new line, the same way a
+    // binary operator can, so a ternary spread across several lines
+    // reads with the operators leading each branch. A leading `?` after
+    // an expression, or a leading `:` once a `?` has been seen, can only
+    // be a ternary, so skipping the newline before them is unambiguous.
+    self.skip_newline_before(|k| matches!(k, TokenKind::Question));
+
     if match_tok!(self, TokenKind::Question) {
       self.ignore_newlines();
       let truth = self.conditional();
 
+      self.skip_newline_before(|k| matches!(k, TokenKind::Colon));
       consume_tok!(self, TokenKind::Colon, "Expected ':' in tenary operation.");
       self.ignore_newlines();
 

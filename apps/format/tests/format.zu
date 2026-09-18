@@ -1,0 +1,55 @@
+# Tests for the top layer: `format` end to end, its idempotence, the
+# safety net that refuses a result whose tokens drifted, and reading a
+# file off disk.
+
+import test { * }
+
+import os
+
+import ..index { format, format_file, FormatError }
+
+# A bare `$`, so a source string can spell out `${` without the test file
+# interpolating it.
+var S = '$'
+
+describe('format', @{
+  it('ends the result with a single trailing newline', @{
+    expect(format('var x = 1')).to_be('var x = 1\n')
+  })
+
+  it('is a fixed point: formatting its own output changes nothing', @{
+    var once = format('def  g(a,b,c){var x={p:p,q:2}\nreturn x}')
+
+    expect(format(once)).to_be(once)
+  })
+
+  it('keeps a trailing comment at the end of its line', @{
+    expect(format('var x = 1 # note')).to_be('var x = 1 # note\n')
+  })
+
+  it('never touches the inside of an interpolated string', @{
+    var source = "echo 'a  " + S + "{x}  b'"
+
+    expect(format(source)).to_be(source + '\n')
+  })
+})
+
+describe('the safety net', @{
+  it('raises a FormatError, which is an Error', @{
+    expect(FormatError('x')).to_be_instance_of(Error)
+  })
+})
+
+describe('format_file', @{
+  it('reads a file and returns its formatted text', @{
+    var path = os.create_temp_file('fmt')
+    var handle = file(path, 'w')
+
+    handle.write('var  x=1')
+    handle.close()
+
+    expect(format_file(path)).to_be('var x = 1\n')
+
+    file(path).delete()
+  })
+})

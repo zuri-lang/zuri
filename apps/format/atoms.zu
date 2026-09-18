@@ -1,0 +1,175 @@
+/**
+ * @module format.atoms
+ *
+ * Turns a Zuri source string into the flat stream of atoms the
+ * formatter works on. An atom is one indivisible piece of output: a
+ * keyword, an operator, a name, a whole string literal, a comment.
+ *
+ * The lexer hands strings back in pieces when they interpolate: the
+ * text up to the first `${`, then the expression's own tokens, then
+ * the text between that `}` and the next `${`, and so on. A formatter
+ * must never touch what is inside a string, so each string is put back
+ * together from the source it came from, by character offset, and kept
+ * as a single atom.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import zuri
+
+# The two characters a string can be quoted with.
+var QUOTES = ['\'', '"']
+
+/**
+ * One atom of output.
+ *
+ * `kind` is the lexer's token kind for real tokens (`'Identifier'`,
+ * `'Plus'`, ...), `'String'` for a reassembled string, or `'Blank'`
+ * for a run of blank lines that the source kept between two lines.
+ *
+ * @printable
+ */
+class Atom {
+  @new(kind: string, text: string, line: number) {
+    self.kind = kind
+    self.text = text
+    self.line = line
+  }
+
+  is_comment() {
+    return self.kind == 'Comment' or self.kind == 'DocBlock'
+  }
+
+  to_string() {
+    return '${self.kind}[${self.text}]'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Finds where the string that starts at `start` ends, following the
+ * same rules the lexer does: a matching close quote, `${ }` groups
+ * that may themselves hold strings, and `\` escapes.
+ *
+ * @param string source
+ * @param number start: The offset of the opening quote.
+ * @returns number the offset just past the closing quote.
+ */
+def string_end(source: string, start: number) {
+  var quote = source[start]
+  var length = source.length()
+  var index = start + 1
+  var depth = 0
+
+  while index < length {
+    var char = source[index]
+
+    if char == '\\' {
+      index += 2
+      continue
+    }
+
+    if depth == 0 and char == quote {
+      return index + 1
+    }
+
+    if char == '$' and index + 1 < length and source[index + 1] == '{' {
+      depth += 1
+      index += 2
+      continue
+    }
+
+    if depth > 0 {
+      if char == '}' {
+        depth -= 1
+      } else if char == '\'' or char == '"' {
+        # A string nested inside the interpolation; skip it whole so a
+        # quote or brace of its own cannot end the outer one early.
+        index = string_end(source, index)
+        continue
+      }
+    }
+
+    index += 1
+  }
+
+  return length
+}
+
+# Whether a token begins a string literal, rather than continuing or
+# closing an interpolation (those pieces begin with `}`).
+def _starts_string(token) {
+  if token.kind != 'Literal' and token.kind != 'Interpolation' {
+    return false
+  }
+
+  return QUOTES.contains(token.text[0])
+}
+
+/**
+ * The atom stream for `source`: every meaningful token in order, with
+ * strings reassembled, runs of blank lines recorded as one `'Blank'`
+ * atom, and single newlines dropped (the formatter decides line breaks
+ * itself).
+ *
+ * @param string source
+ * @returns list of {Atom}
+ */
+def stream(source: string) {
+  var tokens = zuri.tokenize(source)
+  var atoms = []
+  var index = 0
+  var newlines = 0
+
+  while index < tokens.length() {
+    var token = tokens[index]
+
+    if token.kind == 'Eof' {
+      break
+    }
+
+    if token.kind == 'Newline' {
+      newlines += 1
+      index += 1
+
+      continue
+    }
+
+    # A single newline separates two statements; two or more is a blank
+    # line the author put there on purpose, kept as exactly one. Neither
+    # matters inside a bracket group, where the tree drops them.
+    if !atoms.is_empty() {
+      if newlines >= 2 {
+        atoms.append(Atom('Blank', '', token.line))
+      } else if newlines == 1 {
+        atoms.append(Atom('Newline', '', token.line))
+      }
+    }
+
+    newlines = 0
+
+    if _starts_string(token) {
+      var end = string_end(source, token.start)
+
+      atoms.append(Atom('String', source[token.start, end], token.line))
+
+      # Skip every token the lexer produced for the pieces of this
+      # string.
+      index += 1
+
+      while index < tokens.length() and tokens[index].start < end {
+        index += 1
+      }
+
+      continue
+    }
+
+    atoms.append(Atom(token.kind, token.text, token.line))
+    index += 1
+  }
+
+  return atoms
+}

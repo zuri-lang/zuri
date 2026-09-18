@@ -3,3 +3,23 @@ var test2 = 'string'.index_of('tr') ? 'Test passed' : 'Test failed'
 
 echo test1
 echo test2
+
+# A conditional broken across lines, with the operators leading each
+# branch rather than trailing the one before.
+var leading = 5 > 11
+  ? 'Test failed'
+  : 'Test passed'
+
+# The same choice chained, mixing a trailing `?` with leading `:`.
+var chained = 2 == 1 ? 'one'
+  : 2 == 2 ? 'two'
+  : 'many'
+
+# The older shape, operators ending each line, still reads the same.
+var trailing = 5 > 11 ?
+  'Test failed' :
+  'Test passed'
+
+echo leading
+echo chained
+echo trailing

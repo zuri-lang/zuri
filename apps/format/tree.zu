@@ -1,0 +1,237 @@
+/**
+ * @module format.tree
+ *
+ * Groups the flat atom stream into a tree the renderer can lay out:
+ * every `(`, `[` and `{` becomes one node holding what is inside it,
+ * so the renderer can ask "does this whole group fit on the line?"
+ * without rescanning for the matching bracket.
+ *
+ * A `{` is either a block (statements) or a dictionary (`key: value`
+ * pairs). Which one is decided by what comes right before it, the same
+ * way a reader tells them apart: a brace in the middle of an
+ * expression, right after `=`, `(`, `,`, `return`, `:` or an operator,
+ * is a dictionary; anywhere else it opens a block.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+# The atoms that put a following `{` in expression position, where it
+# is a dictionary rather than a block.
+var _DICT_BEFORE = [
+  'Equal', 'PlusEq', 'MinusEq', 'MultiplyEq', 'DivideEq', 'PowEq', 'FloorEq',
+  'PercentEq', 'LshiftEq', 'RshiftEq', 'UrshiftEq', 'AmpEq', 'BarEq', 'XorEq',
+  'TildeEq', 'Lparen', 'Lbracket', 'Comma', 'Colon', 'Return', 'Arrow', 'Echo',
+  'Raise', 'In', 'Question', 'Plus', 'Minus', 'Multiply', 'Divide', 'Pow',
+  'Floor', 'Percent', 'EqualEq', 'BangEq', 'Less', 'LessEq', 'Greater',
+  'GreaterEq', 'And', 'Or', 'Amp', 'Bar', 'Xor', 'Lshift', 'Rshift', 'Urshift',
+]
+
+# The matching closer for each opener.
+var _CLOSER = { 'Lparen': 'Rparen', 'Lbracket': 'Rbracket', 'Lbrace': 'Rbrace' }
+
+def _tok(atom) {
+  return { node: 'tok', atom }
+}
+
+def _skip_trivia(items, from) {
+  var index = from
+
+  while index < items.length()
+    and (items[index].node == 'newline' or items[index].node == 'blank') {
+    index += 1
+  }
+
+  return index
+}
+
+def _is_tok(node, kind) {
+  return node.node == 'tok' and node.atom.kind == kind
+}
+
+# Whether the item at `index` begins a dictionary entry: the first real
+# item, or the one right after a comma.
+def _entry_start(items, index) {
+  var back = index - 1
+
+  while back >= 0
+    and (items[back].node == 'newline' or items[back].node == 'blank') {
+    back -= 1
+  }
+
+  return back < 0 or _is_tok(items[back], 'Comma')
+}
+
+# Collapses `name: name` to `name` inside a dictionary, the shorthand
+# Zuri prefers. Only a whole entry whose value is the same identifier as
+# its key is touched; `x: x + 1` or `x: other.x` is left alone.
+def _shorthand(items) {
+  var out = []
+  var index = 0
+
+  while index < items.length() {
+    var node = items[index]
+
+    if _is_tok(node, 'Identifier') and _entry_start(items, index) {
+      var colon = _skip_trivia(items, index + 1)
+      var value = colon < items.length() ? _skip_trivia(
+        items, colon + 1,
+      ): items.length()
+
+      if colon < items.length()
+        and _is_tok(items[colon], 'Colon')
+        and value < items.length()
+        and _is_tok(items[value], 'Identifier')
+        and items[value].atom.text == node.atom.text {
+        var after = _skip_trivia(items, value + 1)
+        var ends = after >= items.length() or _is_tok(items[after], 'Comma')
+
+        if ends {
+          out.append(node)
+          index = value + 1
+
+          continue
+        }
+      }
+    }
+
+    out.append(node)
+    index += 1
+  }
+
+  return out
+}
+
+# The last real token in `items`, skipping newlines and blanks, or nil.
+def _last_token(items) {
+  var index = items.length() - 1
+
+  while index >= 0 {
+    var item = items[index]
+
+    if item.node == 'tok' {
+      return item.atom
+    }
+
+    if item.node == 'group' {
+      return item.close
+    }
+
+    index -= 1
+  }
+
+  return nil
+}
+
+# Whether a `{` following `before` opens a dictionary.
+def _is_dict(before) {
+  if before == nil {
+    return false
+  }
+
+  return _DICT_BEFORE.contains(before.kind)
+}
+
+# Whether the statement being built so far is an `import`, whose `{ }`
+# names an inline list of members rather than a block.
+def _in_import(items) {
+  var index = items.length() - 1
+
+  while index >= 0 {
+    var item = items[index]
+
+    if item.node == 'newline' or item.node == 'blank' {
+      return false
+    }
+
+    if item.node == 'tok' and item.atom.kind == 'Import' {
+      return true
+    }
+
+    index -= 1
+  }
+
+  return false
+}
+
+/**
+ * Parses the atom stream into a list of nodes. Each node is one of:
+ *
+ * - `{ node: 'tok', atom }`
+ * - `{ node: 'group', kind, open, items, close }` where `kind` is
+ *   `'paren'`, `'bracket'`, `'dict'` or `'block'`
+ * - `{ node: 'newline' }` or `{ node: 'blank' }`
+ *
+ * @param list atoms
+ * @returns list of nodes
+ */
+def parse(atoms: list) {
+  var state = { at: 0 }
+
+  return _parse_seq(atoms, state, nil)
+}
+
+def _parse_seq(atoms: list, state: dict, closer) {
+  var items = []
+
+  while state.at < atoms.length() {
+    var atom = atoms[state.at]
+
+    if closer != nil and atom.kind == closer {
+      return items
+    }
+
+    if atom.kind == 'Newline' {
+      items.append({ node: 'newline' })
+      state.at += 1
+
+      continue
+    }
+
+    if atom.kind == 'Blank' {
+      items.append({ node: 'blank' })
+      state.at += 1
+
+      continue
+    }
+
+    if _CLOSER.contains(atom.kind) {
+      var kind = 'block'
+
+      var before = _last_token(items)
+
+      if atom.kind == 'Lparen' {
+        kind = 'paren'
+      } else if atom.kind == 'Lbracket' {
+        kind = 'bracket'
+      } else if _is_dict(before) or _in_import(items) {
+        kind = 'dict'
+      } else if before == nil and (closer == 'Rparen' or closer == 'Rbracket') {
+        # The first thing inside a `(` or `[` is an expression, so a `{`
+        # there opens a dictionary, as in `each({ ... })`.
+        kind = 'dict'
+      }
+
+      var open = atom
+
+      state.at += 1
+
+      var inner = _parse_seq(atoms, state, _CLOSER[open.kind])
+      var close = state.at < atoms.length() ? atoms[state.at] : nil
+
+      state.at += 1
+
+      if kind == 'dict' {
+        inner = _shorthand(inner)
+      }
+
+      items.append({ node: 'group', kind, open, items: inner, close })
+
+      continue
+    }
+
+    items.append(_tok(atom))
+    state.at += 1
+  }
+
+  return items
+}

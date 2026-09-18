@@ -104,17 +104,19 @@ echo status
 adult
 ```
 
-It nests, and it can span several lines. The rule when breaking it across
-lines is that `?` and `:` **end** a line rather than beginning one:
+It nests, and it can span several lines. When breaking one across lines,
+`?` and `:` may either end a line or begin the next, whichever reads
+better; leading each branch with its operator keeps the shape of the
+choice visible:
 
 ```zuri
 var n = 7
 
-var size = n > 100 ?
-  'large' :
-  n > 5 ?
-    'medium' :
-    'small'
+var size = n > 100
+  ? 'large'
+  : n > 5
+    ? 'medium'
+    : 'small'
 
 echo size
 ```
@@ -122,8 +124,6 @@ echo size
 ```console
 medium
 ```
-
-Starting a line with `?` or `:` does not parse.
 
 Use `? :` when you are producing a value and `if` when you are performing
 an action. A conditional expression whose branches are both side effects is

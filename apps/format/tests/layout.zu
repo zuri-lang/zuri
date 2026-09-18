@@ -1,0 +1,58 @@
+# Tests for the line-breaking layer: what stays on one line, what a block
+# does, and how a line too long for the width is broken.
+
+import test { * }
+
+import ..index { format }
+
+# The formatted source, split into its lines with the trailing blank
+# dropped, so a test can point at one line.
+def lines(source) {
+  return format(source).rtrim('\n').split('\n')
+}
+
+describe('blocks', @{
+  it('keeps a block open, one statement to a line', @{
+    expect(lines('def add(a,b){return a+b}')).to_equal([
+      'def add(a, b) {', '  return a + b', '}',
+    ])
+  })
+
+  it('indents two spaces for each level of nesting', @{
+    expect(lines('def f(){if x{return 1}}')).to_equal([
+      'def f() {', '  if x {', '    return 1', '  }', '}',
+    ])
+  })
+
+  it('keeps a no-argument closure tight as `@{`', @{
+    expect(lines('each(items, @{ work() })')).to_equal([
+      'each(items, @{', '  work()', '})',
+    ])
+  })
+})
+
+describe('breaking long lines', @{
+  var chain = 'var ok = alpha and beta and gamma and delta and epsilon and zeta and eta and theta'
+
+  it('leaves a line that fits on one line', @{
+    expect(lines('var x = a and b')).to_equal(['var x = a and b'])
+  })
+
+  it('breaks an and-chain with the operator leading each line', @{
+    var out = lines(chain)
+
+    expect(out.length()).to_be_greater_than(1)
+    expect(out[0]).to_be('var ok = alpha')
+    expect(out[1]).to_be('  and beta')
+  })
+
+  it('fills a call across lines and keeps a trailing comma', @{
+    var call = 'foo(alphaArgument, betaArgument, gammaArgument, deltaArgument, epsilonArgument, zeta)'
+
+    var out = lines(call)
+
+    expect(out[0]).to_be('foo(')
+    expect(out[out.length() - 1]).to_be(')')
+    expect(out[out.length() - 2].rtrim(',')).to_end_with('zeta')
+  })
+})

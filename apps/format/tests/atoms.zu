@@ -1,0 +1,79 @@
+# Tests for the atom stream: the layer that turns source into the tokens
+# the rest of the formatter works from, with strings kept whole and the
+# blank lines a reader put in preserved.
+
+import test { * }
+
+import ..atoms { stream, string_end }
+
+# A bare `$`, so a test can spell out `${` in a source string without the
+# test file itself interpolating it.
+var S = '$'
+
+# The kinds in an atom stream, in order, skipping the whitespace markers.
+def kinds(source) {
+  return stream(source).filter(@(a) {
+    return a.kind != 'Newline' and a.kind != 'Blank'
+  }).map(@(a) {
+    return a.kind
+  })
+}
+
+describe('stream', @{
+  it('carries the lexer kinds through in order', @{
+    expect(kinds('var x = f(a, b)')).to_equal([
+      'Var', 'Identifier', 'Equal', 'Identifier', 'Lparen', 'Identifier',
+      'Comma', 'Identifier', 'Rparen',
+    ])
+  })
+
+  it('keeps an interpolated string whole, in one atom', @{
+    var source = "echo 'a " + S + "{y + 1} b'"
+
+    var strings = stream(source).filter(@(a) {
+      return a.kind == 'String'
+    })
+
+    expect(strings.length()).to_be(1)
+    expect(strings[0].text).to_be("'a " + S + "{y + 1} b'")
+  })
+
+  it('records two or more blank lines as a single Blank', @{
+    var out = stream('a\n\n\nb').map(@(a) {
+      return a.kind
+    })
+
+    expect(out).to_equal(['Identifier', 'Blank', 'Identifier'])
+  })
+
+  it('marks a single line break as a Newline, not a Blank', @{
+    var out = stream('a\nb').map(@(a) {
+      return a.kind
+    })
+
+    expect(out).to_equal(['Identifier', 'Newline', 'Identifier'])
+  })
+
+  it('gives every atom the line it came from', @{
+    var ids = stream('a\nb').filter(@(a) {
+      return a.kind == 'Identifier'
+    })
+
+    expect(ids[0].line).to_be(1)
+    expect(ids[1].line).to_be(2)
+  })
+})
+
+describe('string_end', @{
+  it('returns the index just past a plain closing quote', @{
+    var source = "x = 'hello' + 1"
+
+    expect(string_end(source, 4)).to_be(11)
+  })
+
+  it('steps over a nested string inside an interpolation', @{
+    var source = "'a " + S + '{f("b")} c' + "'"
+
+    expect(string_end(source, 0)).to_be(source.length())
+  })
+})

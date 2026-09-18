@@ -135,6 +135,6 @@ third file cannot see it through you, add the `@`.
 **A same-directory import is `import .sibling`**, not the full path from
 the project root.
 
-**A conditional expression breaks after the operator, not before it.**
-`cond ?` and `a :` may each end a line; a line that *starts* with `?` or
-`:` does not parse.
+**A conditional expression breaks across lines either way.** `?` and `:`
+may each end a line or begin the next, so `cond ?` on one line and a
+line *starting* with `?` or `:` both parse.

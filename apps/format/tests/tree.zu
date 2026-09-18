@@ -1,0 +1,79 @@
+# Tests for the tree layer: grouping atoms by their brackets, telling a
+# block apart from a dictionary, and collapsing `name: name` shorthand.
+
+import test { * }
+
+import ..atoms { stream }
+import ..tree { parse }
+
+# The groups in a parsed sequence, each as its kind.
+def group_kinds(source) {
+  return parse(stream(source)).filter(@(n) {
+    return n.node == 'group'
+  }).map(@(n) {
+    return n.kind
+  })
+}
+
+# The first group found anywhere in `nodes`, depth first, or nil.
+def first_group(nodes) {
+  for node in nodes {
+    if node.node == 'group' {
+      return node
+    }
+  }
+
+  return nil
+}
+
+# The bare token texts of a group's items, ignoring nested groups.
+def token_texts(group) {
+  return group.items.filter(@(n) {
+    return n.node == 'tok'
+  }).map(@(n) {
+    return n.atom.text
+  })
+}
+
+describe('parse', @{
+  it('groups a call in parentheses', @{
+    expect(group_kinds('f(a, b)')).to_equal(['paren'])
+  })
+
+  it('groups a list in brackets', @{
+    expect(group_kinds('[1, 2, 3]')).to_equal(['bracket'])
+  })
+
+  it('reads a brace after `=` as a dictionary', @{
+    expect(group_kinds('var d = { a: 1 }')).to_equal(['dict'])
+  })
+
+  it('reads a brace opening a body as a block', @{
+    expect(group_kinds('def f() {\n  return 1\n}')).to_contain('block')
+  })
+
+  it('reads a leading brace inside a call as a dictionary', @{
+    var call = first_group(parse(stream('each({ a: 1 })')))
+
+    expect(call.kind).to_be('paren')
+    expect(first_group(call.items).kind).to_be('dict')
+  })
+
+  it('reads an import member list as a dictionary group', @{
+    expect(group_kinds('import test { describe, it }')).to_equal(['dict'])
+  })
+})
+
+describe('shorthand', @{
+  it('collapses `name: name` inside a dictionary', @{
+    var dict = first_group(parse(stream('var d = { name: name, age: 42 }')))
+
+    expect(token_texts(dict)).to_equal(['name', ',', 'age', ':', '42'])
+  })
+
+  it('leaves `x: x + 1` alone', @{
+    var dict = first_group(parse(stream('var d = { x: x + 1 }')))
+
+    expect(token_texts(dict)).to_equal(['x', ':', 'x', '+', '1'])
+  })
+})

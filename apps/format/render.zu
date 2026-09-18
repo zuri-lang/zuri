@@ -1,0 +1,250 @@
+/**
+ * @module format.render
+ *
+ * Lays the node tree out as text: two spaces per level of nesting, one
+ * space or none between each pair of tokens by the rules a Zuri reader
+ * expects, and one statement to a line. Long lines are broken across
+ * several, and short ones are kept whole.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+var LIMIT = 80
+
+var INDENT = '  '
+
+# Tokens that stand for a value, used to tell a binary `-`/`+` from a
+# unary one and a call/index bracket from a grouping/list one.
+var _VALUE = [
+  'Identifier', 'Integer', 'Double', 'BigNumber', 'BinNumber', 'OctNumber',
+  'HexNumber', 'String', 'Self_', 'Parent', 'True', 'False', 'Nil', 'Rparen',
+  'Rbracket', 'Rbrace',
+]
+
+# What a `(` sticks to with no space, making it a call rather than a
+# grouping.
+var _CALLABLE = [
+  'Identifier', 'Rparen', 'Rbracket', 'Self_', 'Parent', 'Decorator',
+]
+
+# What a `[` sticks to with no space, making it an index rather than a
+# list.
+var _INDEXABLE = [
+  'Identifier', 'Rparen', 'Rbracket', 'Self_', 'Parent', 'String', 'Rbrace',
+  'Decorator',
+]
+
+# Tokens after which a line break is a continuation, not the end of a
+# statement.
+var CONTINUES_AFTER = [
+  'Equal', 'PlusEq', 'MinusEq', 'MultiplyEq', 'DivideEq', 'PowEq', 'FloorEq',
+  'PercentEq', 'LshiftEq', 'RshiftEq', 'UrshiftEq', 'AmpEq', 'BarEq', 'XorEq',
+  'TildeEq', 'Plus', 'Minus', 'Multiply', 'Divide', 'Pow', 'Floor', 'Percent',
+  'EqualEq', 'BangEq', 'Less', 'LessEq', 'Greater', 'GreaterEq', 'And', 'Or',
+  'Amp', 'Bar', 'Xor', 'Lshift', 'Rshift', 'Urshift', 'Comma', 'Dot', 'Arrow',
+  'Colon', 'Question', 'In', 'As',
+]
+
+# Tokens which, at the start of a line, continue the line before them.
+var CONTINUES_BEFORE = [
+  'Dot', 'Plus', 'Minus', 'Multiply', 'Divide', 'Pow', 'Floor', 'Percent',
+  'EqualEq', 'BangEq', 'Less', 'LessEq', 'Greater', 'GreaterEq', 'And', 'Or',
+  'Amp', 'Bar', 'Xor', 'Arrow', 'Question', 'Colon', 'As', 'Else',
+]
+
+def _atom(kind: string, text: string) {
+  return { kind, text }
+}
+
+# The lead and trail tokens of a node, and its own one-line text.
+def _piece(node, breakable) {
+  if node.node == 'tok' {
+    return { lead: node.atom, trail: node.atom, text: node.atom.text }
+  }
+
+  if node.node == 'raw' {
+    var atom = _atom(node.kind, node.text)
+
+    return { lead: atom, trail: atom, text: node.text }
+  }
+
+  return { lead: node.open, trail: node.close, text: _group_text(node) }
+}
+
+# Drops a trailing comma and the newlines after it. A group kept on one
+# line loses the trailing comma a broken one would carry.
+def _without_trailing_comma(items) {
+  var last = items.length() - 1
+
+  while last >= 0
+    and (items[last].node == 'newline' or items[last].node == 'blank') {
+    last -= 1
+  }
+
+  if last >= 0
+    and items[last].node == 'tok'
+    and items[last].atom.kind == 'Comma' {
+    return items[0, last]
+  }
+
+  return items
+}
+
+# The one-line text of a bracket group.
+def _group_text(group) {
+  var inner = flat(_without_trailing_comma(group.items), group.kind == 'dict')
+
+  if group.kind == 'paren' {
+    return '(${inner})'
+  }
+
+  if group.kind == 'bracket' {
+    return '[${inner}]'
+  }
+
+  if inner == '' {
+    return '{}'
+  }
+
+  return '{ ${inner} }'
+}
+
+# The space, `' '` or `''`, that goes between `prev` and `cur`. `state`
+# carries what a single pair cannot decide on its own: an open ternary,
+# an optional-type marker, and whether the last `-`/`+` was unary.
+def _space(prev, cur, state) {
+  if prev == nil {
+    return ''
+  }
+
+  if state.optional {
+    state.optional = false
+
+    return ''
+  }
+
+  var pk = prev.kind
+  var ck = cur.kind
+
+  # A type annotation runs from a `:` (outside a dictionary) to the next
+  # `,`, `=`, `)`, `{` or `=>`. Inside it, `|` and `&` join types with no
+  # space (`list|dict`), unlike the bitwise operators they share a symbol
+  # with.
+  if ck == 'Comma'
+    or ck == 'Equal'
+    or ck == 'Arrow'
+    or ck == 'Lbrace'
+    or ck == 'Rparen' {
+    state.in_type = false
+  }
+
+  if state.in_type
+    and (ck == 'Bar' or ck == 'Amp' or pk == 'Bar' or pk == 'Amp') {
+    return ''
+  }
+
+  if ck == 'Question' {
+    if pk == 'Colon' {
+      state.optional = true
+
+      return ' '
+    }
+
+    state.ternary += 1
+
+    return ' '
+  }
+
+  if ck == 'Colon' and state.ternary > 0 {
+    state.ternary -= 1
+
+    return ' '
+  }
+
+  if ck == 'Colon' {
+    state.in_type = !state.in_dict
+
+    return ''
+  }
+
+  if ck == 'Minus' or ck == 'Plus' {
+    state.unary = prev == nil or !_VALUE.contains(pk)
+  }
+
+  if (pk == 'Minus' or pk == 'Plus') and state.unary {
+    return ''
+  }
+
+  if ck == 'Comma' or ck == 'Semicolon' or ck == 'Rparen' or ck == 'Rbracket' {
+    return ''
+  }
+
+  # A relative import keeps its space: `import .sibling` and
+  # `import ..sibling`, not `import.sibling`. A parent import spells its
+  # `..` as a range token, so both cases are covered here.
+  if pk == 'Import' and (ck == 'Dot' or ck == 'Range') {
+    return ' '
+  }
+
+  if ck == 'Dot' or pk == 'Dot' or ck == 'Range' or pk == 'Range' {
+    return ''
+  }
+
+  if pk == 'Lparen' or pk == 'Lbracket' or pk == 'At' or pk == 'TriDot' {
+    return ''
+  }
+
+  if pk == 'Bang' or pk == 'Tilde' {
+    return ''
+  }
+
+  if ck == 'Increment'
+    or ck == 'Decrement'
+    or pk == 'Increment'
+    or pk == 'Decrement' {
+    return ''
+  }
+
+  if ck == 'Lparen' and _CALLABLE.contains(pk) {
+    return ''
+  }
+
+  if ck == 'Lbracket' and _INDEXABLE.contains(pk) {
+    return ''
+  }
+
+  return ' '
+}
+
+# A fresh spacing state for one line or one group. `in_dict` says whether
+# a `:` here separates a key from a value rather than a name from a type.
+def _state(in_dict: bool) {
+  return { ternary: 0, optional: false, unary: false, in_dict, in_type: false }
+}
+
+/**
+ * The one-line rendering of a node sequence: every token spaced, every
+ * group inlined, newlines and blanks ignored. This is the shape a line
+ * takes when it fits; when it does not, {render} breaks it instead.
+ *
+ * @param list nodes
+ * @returns string
+ */
+def flat(nodes: list, in_dict: ?bool) {
+  var out = ''
+  var prev = nil
+  var state = _state(in_dict == true)
+
+  for node in nodes {
+    if node.node == 'newline' or node.node == 'blank' {
+      continue
+    }
+
+    var piece = _piece(node, false)
+
+    out += _space(prev, piece.lead, state) + piece.text
+    prev = piece.trail
+  }
+
+  return out
+}
