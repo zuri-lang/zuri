@@ -21,7 +21,7 @@ ff
 
 | Type | Methods | Page |
 | --- | --- | --- |
-| `string` | 40 | [String Methods](appendix-05-01-string.md) |
+| `string` | 41 | [String Methods](appendix-05-01-string.md) |
 | `number` | 43 | [Number Methods](appendix-05-02-number.md) |
 | `bigint` | 26 | [Bigint Methods](appendix-05-03-bigint.md) |
 | `bool` | 1 | [Boolean Methods](appendix-05-04-bool.md) |

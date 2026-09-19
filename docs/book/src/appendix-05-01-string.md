@@ -26,8 +26,8 @@ thing.
 | [`starts_with(str: string)`](#starts_with) | `boolean` | Returns `true` if the string begins with the string or character specified in _str_, otherwise it returns `false`. |
 | [`ends_with(str: string)`](#ends_with) | `boolean` | Returns `true` if the string ends with the string or character specified in _str_, otherwise it returns `false`. |
 | [`count(str: string)`](#count) | `number` | Returns the number of non-overlapping occurrences of the substring _str_ in the string. |
-| [`to_number(base: ?number)`](#to_number) | `number` | Returns the first numeric value contained in the string if any exists or `0` if the string contains no numeric value. |
-| [`to_bigint(base: ?number)`](#to_bigint) | `bigint` | Returns the integer value of the string as a `bigint`, or `0n` if the string does not spell one. |
+| [`to_number(base)`](#to_number) | `number` | Returns the first numeric value contained in the string if any exists or `0` if the string contains no numeric value. |
+| [`to_bigint(base)`](#to_bigint) | `bigint` | Returns the integer value of the string as a `bigint`, or `0n` if the string does not spell one. |
 | [`to_list()`](#to_list) | `list` | Returns a list whose elements consists of every character contained in the string in order of appearance. |
 | [`to_bytes()`](#to_bytes) | `bytes` | Returns the content of the string as a stream of `bytes`. |
 | [`lpad(width: number, fill: ?string)`](#lpad) | `string` | Returns the string left justified in a string of length _width_. |
@@ -592,7 +592,7 @@ For example:
 ## `to_number()`
 
 ```zuri,ignore
-to_number(base: ?number) -> number
+to_number(base) -> number
 ```
 
 Returns the first numeric value contained in the string if any exists or
@@ -615,16 +615,18 @@ For example:
 
 **Parameters**
 
-- `base` (`?number`) — The base the digits are in, from 2 to 36. Defaults
+- `base` (`number`) — The base the digits are in, from 2 to 36. Defaults
   to `10`. A fractional part is only read in base 10, since no other base
   spells one.
 
 **Returns** `number`
 
+**Raises** `RangeError` if `base` is outside 2 to 36.
+
 ## `to_bigint()`
 
 ```zuri,ignore
-to_bigint(base: ?number) -> bigint
+to_bigint(base) -> bigint
 ```
 
 Returns the integer value of the string as a `bigint`, or `0n` if the
@@ -634,8 +636,6 @@ This is `to_number()` for integers too large to be a number. A number is
 exact only up to 2^53; past that, digits are lost, and an id or a
 `BIGINT UNSIGNED` read from a database routinely runs past it. Every
 digit survives here however long the run.
-
-For example:
 
 ```zuri-repl
 %> '9007199254740993'.to_bigint()
@@ -659,10 +659,12 @@ part is read, since this produces an integer, so `'12.5'.to_bigint()` is
 
 **Parameters**
 
-- `base` (`?number`) — The base the digits are in, from 2 to 36. Defaults
+- `base` (`number`) — The base the digits are in, from 2 to 36. Defaults
   to `10`.
 
 **Returns** `bigint`
+
+**Raises** `RangeError` if `base` is outside 2 to 36.
 
 ## `to_list()`
 
@@ -679,7 +681,7 @@ For example:
 
 ```zuri-repl
 %> 'Zuri'.to_list()
-[B, l, a, d, e]
+[Z, u, r, i]
 %> 'Plantation'.to_list()
 [P, l, a, n, t, a, t, i, o, n]
 ```

@@ -44,9 +44,9 @@ negative and no trailing `n`. Pass `radix` to render in another base
 instead, using lowercase letters for digit values above nine.
 
 ```zuri-repl
-%> (255n).to_string()
+%> 255n.to_string()
 '255'
-%> (255n).to_string(16)
+%> 255n.to_string(16)
 'ff'
 %> (-255n).to_string(16)
 '-ff'
@@ -72,7 +72,7 @@ to_number() -> number
 Converts the bigint to a `number`.
 
 ```zuri-repl
-%> (6n).to_number()
+%> 6n.to_number()
 6
 ```
 
@@ -93,9 +93,9 @@ Converts the bigint to a boolean, following the same rule as
 `number.to_bool()`: zero and up are truthy, negatives are falsy.
 
 ```zuri-repl
-%> (5n).to_bool()
+%> 5n.to_bool()
 true
-%> (0n).to_bool()
+%> 0n.to_bool()
 true
 %> (-5n).to_bool()
 false
@@ -115,9 +115,9 @@ byte string that can hold it, and is never empty: zero is a single
 `0x00` byte.
 
 ```zuri-repl
-%> (258n).to_bytes()
+%> 258n.to_bytes()
 (01 02)
-%> (258n).to_bytes('little')
+%> 258n.to_bytes('little')
 (02 01)
 %> (-1n).to_bytes()
 (ff)
@@ -140,7 +140,7 @@ bin() -> string
 Returns the base-2 digits, equivalent to `to_string(2)`.
 
 ```zuri-repl
-%> (255n).bin()
+%> 255n.bin()
 '11111111'
 ```
 
@@ -159,7 +159,7 @@ hex() -> string
 Returns the base-16 digits in lowercase, equivalent to `to_string(16)`.
 
 ```zuri-repl
-%> (255n).hex()
+%> 255n.hex()
 'ff'
 ```
 
@@ -174,7 +174,7 @@ oct() -> string
 Returns the base-8 digits, equivalent to `to_string(8)`.
 
 ```zuri-repl
-%> (255n).oct()
+%> 255n.oct()
 '377'
 ```
 
@@ -207,7 +207,7 @@ negative and `0` for zero.
 ```zuri-repl
 %> (-9n).sign()
 -1
-%> (0n).sign()
+%> 0n.sign()
 0
 ```
 
@@ -222,7 +222,7 @@ max(other) -> bigint
 Returns the larger of the two bigints.
 
 ```zuri-repl
-%> (3n).max(7n)
+%> 3n.max(7n)
 7n
 ```
 
@@ -243,7 +243,7 @@ min(other) -> bigint
 Returns the smaller of the two bigints.
 
 ```zuri-repl
-%> (3n).min(7n)
+%> 3n.min(7n)
 3n
 ```
 
@@ -264,7 +264,7 @@ pow(exponent) -> bigint
 Raises the bigint to `exponent`, the method form of `**`.
 
 ```zuri-repl
-%> (2n).pow(100)
+%> 2n.pow(100)
 1267650600228229401496703205376n
 ```
 
@@ -289,9 +289,9 @@ Returns the integer square root, truncated towards zero, so
 `145n.sqrt()` is `12n` rather than `12.04...`.
 
 ```zuri-repl
-%> (144n).sqrt()
+%> 144n.sqrt()
 12n
-%> (145n).sqrt()
+%> 145n.sqrt()
 12n
 ```
 
@@ -324,7 +324,7 @@ nth_root(n) -> bigint
 Returns the integer `n`th root, truncated towards zero.
 
 ```zuri-repl
-%> (1000000n).nth_root(3)
+%> 1000000n.nth_root(3)
 100n
 ```
 
@@ -347,7 +347,7 @@ Returns the greatest common divisor of the two bigints. The result is
 always non-negative regardless of either sign, and `0n.gcd(0n)` is `0n`.
 
 ```zuri-repl
-%> (48n).gcd(18n)
+%> 48n.gcd(18n)
 6n
 ```
 
@@ -369,7 +369,7 @@ Returns the least common multiple of the two bigints. The result is
 always non-negative, and is `0n` when either side is zero.
 
 ```zuri-repl
-%> (48n).lcm(18n)
+%> 48n.lcm(18n)
 144n
 ```
 
@@ -392,7 +392,7 @@ power, which is what makes it usable for the huge exponents cryptography
 needs.
 
 ```zuri-repl
-%> (4n).modpow(13n, 497n)
+%> 4n.modpow(13n, 497n)
 445n
 ```
 
@@ -422,9 +422,9 @@ modinv(modulus) -> bigint|nil
 Returns the modular multiplicative inverse: the `x` solving `self * x == 1 (mod modulus)`.
 
 ```zuri-repl
-%> (3n).modinv(11n)
+%> 3n.modinv(11n)
 4n
-%> (4n).modinv(8n)
+%> 4n.modinv(8n)
 nil
 ```
 
@@ -452,9 +452,9 @@ Returns how many bits the magnitude occupies, ignoring the sign. Zero
 occupies none.
 
 ```zuri-repl
-%> (255n).bits()
+%> 255n.bits()
 8
-%> (0n).bits()
+%> 0n.bits()
 0
 ```
 
@@ -470,9 +470,9 @@ Returns whether the bit at `index` is set, counting from the least
 significant bit at index 0.
 
 ```zuri-repl
-%> (5n).bit(0)
+%> 5n.bit(0)
 true
-%> (5n).bit(1)
+%> 5n.bit(1)
 false
 ```
 
@@ -498,7 +498,7 @@ Returns a new bigint with the bit at `index` set or cleared. The
 receiver is left untouched.
 
 ```zuri-repl
-%> (5n).set_bit(1, true)
+%> 5n.set_bit(1, true)
 7n
 ```
 
@@ -521,9 +521,9 @@ Returns the count of least-significant zero bits, which is the largest
 power of two dividing the bigint.
 
 ```zuri-repl
-%> (40n).trailing_zeros()
+%> 40n.trailing_zeros()
 3
-%> (0n).trailing_zeros()
+%> 0n.trailing_zeros()
 nil
 ```
 
@@ -541,7 +541,7 @@ is_zero() -> boolean
 Returns whether the bigint is zero.
 
 ```zuri-repl
-%> (0n).is_zero()
+%> 0n.is_zero()
 true
 ```
 
@@ -556,7 +556,7 @@ is_even() -> boolean
 Returns whether the bigint is even. Zero is even.
 
 ```zuri-repl
-%> (4n).is_even()
+%> 4n.is_even()
 true
 ```
 
@@ -571,7 +571,7 @@ is_odd() -> boolean
 Returns whether the bigint is odd.
 
 ```zuri-repl
-%> (5n).is_odd()
+%> 5n.is_odd()
 true
 ```
 
