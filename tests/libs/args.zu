@@ -178,6 +178,25 @@ assert p_pos2.parse(['42', 'fast']).indexes == [42, 'fast'],
   'a positional must coerce to its declared type and validate against its choices'
 ok('positional argument type coercion and choices')
 
+var p_pos3 = args.Parser('pos3', false)
+p_pos3.add_index('path', 'Where to work')
+assert p_pos3.parse([]).indexes == [],
+  'a positional with no default and nothing supplied must be absent, not a nil placeholder'
+assert p_pos3.parse(['libs']).indexes == ['libs'],
+  'and must still collect the value when one is supplied'
+ok('an unsupplied positional with no default leaves indexes empty')
+
+# A default only reaches `indexes` through the positionals before it, so
+# nothing can land in an earlier positional's slot.
+var p_pos4 = args.Parser('pos4', false)
+p_pos4.add_index('src', 'Source')
+p_pos4.add_index('dest', 'Destination', {value: 'out.txt'})
+assert p_pos4.parse([]).indexes == [],
+  'a later default must not slide into an earlier positional\'s slot'
+assert p_pos4.parse(['in.txt']).indexes == ['in.txt', 'out.txt'],
+  'and must fill in once the positional before it has a value'
+ok('positional defaults never shift left')
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------

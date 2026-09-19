@@ -717,6 +717,9 @@ class Parser < _Optionable {
    * {bool}: error if argument is absent (default `false`) -
    * `metavar` {string}: display name in help
    *
+   * Without a `value`, a positional nobody supplied is simply missing
+   * from `parse()`'s `indexes` rather than sitting there as nil.
+   *
    * @param string name
    * @param ?string help
    * @param ?dict opts
@@ -755,6 +758,17 @@ class Parser < _Optionable {
    *   command: nil | {name, value}, # command name and value (if any)
    *   indexes: list                 # collected positional values
    * }
+   * ```
+   *
+   * `indexes` holds one entry per positional that has a value, in the
+   * order they were declared: what the user supplied, then the declared
+   * default of any that follow. A positional that was not supplied and
+   * has no default is absent rather than nil, so `indexes.is_empty()`
+   * and `indexes.length()` answer what they look like they answer, and
+   * a program that wants its own fallback can reach for it:
+   *
+   * ```zuri
+   * var path = parsed.indexes.is_empty() ? os.cwd() : parsed.indexes[0]
    * ```
    *
    * @param ?list custom_args
@@ -1051,13 +1065,20 @@ class Parser < _Optionable {
     }
 
     # Positional defaults
+    #
+    # A declared positional nobody supplied takes its default. One with
+    # no default ends the fill rather than leaving a nil behind: a
+    # positional can only be omitted from the right, so there is nothing
+    # after it worth filling, and a trailing nil would cost every caller
+    # the ability to ask whether an argument arrived at all.
     iter var j = parsed_args.indexes.length(); j < self.indexes.length(); j++ {
       var idx = self.indexes[j]
-      if idx.value != nil {
-        parsed_args.indexes.append(_get_real_value(idx, idx.value))
-      } else {
-        parsed_args.indexes.append(nil)
+
+      if idx.value == nil {
+        break
       }
+
+      parsed_args.indexes.append(_get_real_value(idx, idx.value))
     }
 
     # Required option check (top-level)
