@@ -28,7 +28,7 @@ var GROUPS = [
   {
     title: 'Data Formats',
     blurb: 'Reading and writing the formats other programs speak.',
-    modules: ['json', 'yaml', 'csv', 'base64', 'struct'],
+    modules: ['json', 'yaml', 'toml', 'csv', 'base64', 'struct'],
   },
   {
     title: 'Numbers and Collections',

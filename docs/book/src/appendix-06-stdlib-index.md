@@ -13,6 +13,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 | --- | --- | --- |
 | `json` | encode, decode, read and write JSON | [13](ch13-00-stdlib-tour.md) |
 | `yaml` | parse YAML, with anchors, tags and multi-document streams | [13](ch13-00-stdlib-tour.md) |
+| `toml` | parse and write TOML, and edit one without disturbing its layout | [13](ch13-00-stdlib-tour.md) |
 | `csv` | read and write CSV, with dialect detection | [13](ch13-00-stdlib-tour.md) |
 | `struct` | pack and unpack binary layouts | [10](ch10-00-binary-data.md) |
 | `base64` | Base64 encode and decode | [10](ch10-00-binary-data.md) |

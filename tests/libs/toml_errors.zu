@@ -1,0 +1,326 @@
+/**
+ * toml_errors.zu
+ *
+ * Test suite for everything the `toml` module refuses. The invalid
+ * corpus below is drawn from the cases TOML v1.0.0 calls out: the
+ * redefinition rules that decide whether a header may name a table,
+ * the number grammar, the string grammar, and the places an inline
+ * table is sealed. It also covers the errors an edit can raise, and
+ * checks that every one of them carries the position or path that says
+ * where to look.
+ */
+
+import toml
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Asserts every sample is rejected, and that the rejection is a
+# ParseError rather than something incidental.
+def all_rejected(group, samples) {
+  for sample in samples {
+    var error = nil
+
+    catch {
+      toml.parse(sample[1])
+    } as e {
+      error = e
+    }
+
+    assert error != nil, group + ': ' + sample[0] + ' was accepted'
+    assert instance_of(error, toml.TomlError),
+      group + ': ' + sample[0] + ' raised ' + typeof(error) + ', not a TomlError'
+  }
+
+  ok(group + ' (${samples.length()} cases)')
+}
+
+# Asserts every sample is accepted, which matters as much: a parser
+# that rejects too much is as wrong as one that rejects too little.
+def all_accepted(group, samples) {
+  for sample in samples {
+    catch {
+      toml.parse(sample[1])
+    } as e {
+      assert false, group + ': ' + sample[0] + ' was rejected with ' + e.message
+    }
+  }
+
+  ok(group + ' (${samples.length()} cases)')
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  toml module — invalid input test suite'
+echo '═══════════════════════════════════════════════════════'
+echo ''
+echo 'Redefinition'
+
+all_rejected('keys and tables defined twice', [
+  ['a duplicate key', 'a = 1\na = 2\n'],
+  ['a duplicate table', '[a]\n[a]\n'],
+  ['a duplicate key in a table', '[a]\nx = 1\nx = 2\n'],
+  ['a duplicate key in an inline table', 'a = { b = 1, b = 2 }\n'],
+  ['a duplicate key in an array element', '[[a]]\nx = 1\nx = 2\n'],
+  ['a duplicate dotted key', 'a.b = 1\na.b = 2\n'],
+])
+
+all_rejected('a header over something that is not an open table', [
+  ['a table created by a dotted key', 'a.b = 1\n[a]\n'],
+  ['a value', 'a = 1\n[a]\n'],
+  ['a value, reached through a header', '[a]\nb = 1\n[a.b]\n'],
+  ['an array of tables', '[[a]]\n[a]\n'],
+  ['a table, named as an array', '[a]\n[[a]]\n'],
+  ['a static array, named as an array of tables', 'a = [1, 2]\n[[a]]\n'],
+])
+
+all_rejected('an inline table is sealed once written', [
+  ['extended with a dotted key', 'a = { b = 1 }\na.c = 2\n'],
+  ['extended with a header', 'a = { b = 1 }\n[a.c]\n'],
+  ['reopened by name', 'a = { b = 1 }\n[a]\n'],
+])
+
+all_rejected('a dotted key over a table that is already open', [
+  ['a table defined by a header', '[a.b]\nx = 1\n[a]\nb.y = 2\n'],
+])
+
+echo ''
+echo 'What the rules still allow'
+
+all_accepted('the redefinitions TOML permits', [
+  ['a sub-table under a dotted table',
+    '[fruit]\napple.color = "red"\n[fruit.apple.texture]\nsmooth = true\n'],
+  ['a parent defined after its child', '[a.b]\nx = 1\n[a]\ny = 2\n'],
+  ['a header returning to an earlier tree', '[a]\n[b]\n[a.c]\n'],
+  ['a table under an array element', '[[a]]\n[a.b]\nx = 1\n'],
+  ['an array of tables nested in one', '[[a]]\n[[a.b]]\nx = 1\n[[a]]\n'],
+  ['a bare key that looks like a number', '1234 = 5\n'],
+  ['a key that looks like a date', '1979-05-27 = 5\n'],
+])
+
+echo ''
+echo 'Numbers'
+
+all_rejected('the integer grammar', [
+  ['a leading zero', 'a = 01\n'],
+  ['a leading zero after a sign', 'a = -01\n'],
+  ['a doubled underscore', 'a = 1__0\n'],
+  ['a trailing underscore', 'a = 10_\n'],
+  ['a leading underscore', 'a = _10\n'],
+  ['an underscore against the base prefix', 'a = 0x_1\n'],
+  ['a hexadecimal digit with no prefix', 'a = DEADBEEF\n'],
+  ['a signed hexadecimal', 'a = -0x1\n'],
+  ['a digit outside the base', 'a = 0b102\n'],
+  ['past the 64-bit range', 'a = 9223372036854775808\n'],
+  ['below the 64-bit range', 'a = -9223372036854775809\n'],
+])
+
+all_rejected('the float grammar', [
+  ['a point with no fraction', 'a = 1.\n'],
+  ['a point with no whole part', 'a = .5\n'],
+  ['an exponent with no digits', 'a = 1e\n'],
+  ['a doubled exponent', 'a = 1e2e3\n'],
+  ['a point inside an exponent', 'a = 1e2.3\n'],
+  ['a capitalised infinity', 'a = Inf\n'],
+  ['a capitalised nan', 'a = NaN\n'],
+])
+
+all_accepted('the numbers TOML does allow', [
+  ['a signed zero', 'a = -0\nb = +0\n'],
+  ['a zero float', 'a = 0.0\nb = -0.0\n'],
+  ['a signed infinity', 'a = +inf\nb = -inf\nc = inf\n'],
+  ['a signed nan', 'a = +nan\nb = -nan\nc = nan\n'],
+  ['every base', 'a = 0xff\nb = 0o17\nc = 0b11\n'],
+  ['underscores between digits', 'a = 1_000\nb = 0xd_e\n'],
+  ['an exponent without a point', 'a = 1e6\nb = 1E6\nc = 5e+22\n'],
+])
+
+echo ''
+echo 'Strings'
+
+all_rejected('the string grammar', [
+  ['an unknown escape', 'a = "\\q"\n'],
+  ['a lone backslash', 'a = "\\"\n'],
+  ['a short unicode escape', 'a = "\\u12"\n'],
+  ['a surrogate codepoint', 'a = "\\ud800"\n'],
+  ['a codepoint past the last plane', 'a = "\\U00110000"\n'],
+  ['a raw newline in a basic string', 'a = "one\ntwo"\n'],
+  ['a raw newline in a literal string', "a = 'one\ntwo'\n"],
+  ['an unterminated basic string', 'a = "open\n'],
+  ['an unterminated multi-line string', 'a = """open\n'],
+  ['a control character in a string', 'a = "bad' + (1).chr() + '"\n'],
+  ['a control character in a comment', '# bad' + (1).chr() + '\n'],
+])
+
+all_accepted('the strings TOML does allow', [
+  ['an escaped delimiter run', 'a = """he said \\""" loudly"""\n'],
+  ['a tab inside a basic string', 'a = "one\ttwo"\n'],
+  ['an empty string of every kind',
+    'a = ""\n' + "b = ''\n" + 'c = """"""\n' + "d = ''''''\n"],
+])
+
+echo ''
+echo 'Timestamps'
+
+all_rejected('the date and time grammar', [
+  ['a day that month does not have', 'a = 2026-02-30\n'],
+  ['a day no month has', 'a = 2026-01-32\n'],
+  ['the 29th of a common February', 'a = 2026-02-29\n'],
+  ['a month past twelve', 'a = 2026-13-01\n'],
+  ['an hour past 23', 'a = 25:00:00\n'],
+  ['a minute past 59', 'a = 12:60:00\n'],
+  ['a two-digit year', 'a = 79-05-27\n'],
+  ['a missing day', 'a = 1979-05\n'],
+  ['an offset with no colon', 'a = 1979-05-27T07:32:00+0700\n'],
+  ['an offset past 23 hours', 'a = 1979-05-27T07:32:00+24:00\n'],
+])
+
+all_accepted('the timestamps TOML does allow', [
+  ['a leap day', 'a = 2024-02-29\n'],
+  ['a leap second', 'a = 1987-07-05T17:45:60Z\n'],
+  ['a lower-case separator and zulu', 'a = 1979-05-27t07:32:00z\n'],
+  ['a space separator', 'a = 1979-05-27 07:32:00Z\n'],
+  ['a long fraction', 'a = 1979-05-27T07:32:00.123456789012Z\n'],
+])
+
+echo ''
+echo 'Structure'
+
+all_rejected('the document grammar', [
+  ['a key with no value', 'a = \n'],
+  ['a key with no equals', 'a\n'],
+  ['a value with no key', '= 1\n'],
+  ['text after a value', 'a = 1 b\n'],
+  ['two pairs on one line', 'a = 1 b = 2\n'],
+  ['an empty header', '[]\n'],
+  ['an unclosed header', '[a\n'],
+  ['a header with no closing pair', '[[a]\n'],
+  ['text after a header', '[a] b\n'],
+  ['an unterminated array', 'a = [1, 2\n'],
+  ['an array missing a comma', 'a = [1 2]\n'],
+  ['an unterminated inline table', 'a = { b = 1\n'],
+  ['an inline table across lines', 'a = { b = 1,\n  c = 2 }\n'],
+  ['an inline table with a trailing comma', 'a = { b = 1, }\n'],
+  ['a bare carriage return', 'a = 1\rb = 2\n'],
+])
+
+all_accepted('the layouts TOML does allow', [
+  ['an array across lines with a trailing comma', 'a = [\n  1,\n  2,\n]\n'],
+  ['comments inside an array', 'a = [ # one\n  1, # two\n]\n'],
+  ['an empty inline table', 'a = {}\n'],
+  ['a document of comments alone', '# just this\n'],
+  ['no final newline', 'a = 1'],
+])
+
+echo ''
+echo 'What an error carries'
+
+var where = nil
+
+catch {
+  toml.parse('a = 1\nb = 1\nc = @\n')
+} as e {
+  where = e
+}
+
+assert instance_of(where, toml.ParseError), 'a syntax fault is a ParseError'
+assert where.line == 3, 'the error knows its line'
+assert where.column > 0, 'the error knows its column'
+assert where.to_string().contains('3:'), 'and prints both'
+ok('a parse error carries its position')
+
+assert instance_of(toml.ParseError('x', 1, 1), toml.TomlError),
+  'ParseError hangs off TomlError'
+assert instance_of(toml.EncodeError('x'), toml.TomlError),
+  'EncodeError hangs off TomlError'
+assert instance_of(toml.EditError('x'), toml.TomlError),
+  'EditError hangs off TomlError'
+assert instance_of(toml.TomlError('x'), Error), 'TomlError is an Error'
+ok('every error hangs off TomlError')
+
+echo ''
+echo 'Edits that cannot be made'
+
+def edit_raises(build) {
+  var error = nil
+
+  catch {
+    build()
+  } as e {
+    error = e
+  }
+
+  return error
+}
+
+var through_value = edit_raises(@() {
+  var doc = toml.edit('a = 1\n')
+
+  doc.set('a.b', 2)
+})
+
+assert instance_of(through_value, toml.EditError),
+  'setting through a value is an EditError'
+ok('a path cannot run through a value')
+
+var over_table = edit_raises(@() {
+  var doc = toml.edit('[a]\nx = 1\n')
+
+  doc.set('a', 2)
+})
+
+assert instance_of(over_table, toml.EditError),
+  'replacing a table with a value is refused'
+ok('a table cannot be replaced by a value')
+
+var wrong_kind = edit_raises(@() {
+  var doc = toml.edit('[[a]]\nx = 1\n')
+
+  doc.array_of_tables('a').element(5)
+})
+
+assert instance_of(wrong_kind, toml.EditError),
+  'an element outside the array is refused'
+ok('an array of tables checks its bounds')
+
+var not_an_array = edit_raises(@() {
+  var doc = toml.edit('[a]\nx = 1\n')
+
+  doc.array_of_tables('a')
+})
+
+assert instance_of(not_an_array, toml.EditError),
+  'a table is not an array of tables'
+ok('a table cannot be reached as an array of tables')
+
+var through_aot = edit_raises(@() {
+  var doc = toml.edit('[[a]]\nx = 1\n')
+
+  doc.set('a.b', 2)
+})
+
+assert instance_of(through_aot, toml.EditError),
+  'a path through an array of tables needs an element'
+ok('a path cannot run through an array of tables')
+
+var no_key = edit_raises(@() {
+  var doc = toml.edit('[a]\nx = 1\n')
+
+  doc.table('a').set_comment('missing', 'note')
+})
+
+assert instance_of(no_key, toml.EditError),
+  'commenting a key that is not there is refused'
+ok('a comment needs a key to sit above')
+
+assert toml.edit('a = 1\n').remove('nope') == false,
+  'removing what is not there is not an error'
+ok('a removal that finds nothing is quiet')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

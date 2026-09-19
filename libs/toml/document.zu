@@ -1,0 +1,1808 @@
+/**
+ * @module document
+ *
+ * The document tree, which is the text.
+ *
+ * A TOML file read for its values can throw away everything that is
+ * not a value. A TOML file read so that it can be written back cannot
+ * throw away anything at all: the comment above a key, the blank line
+ * between two tables, the choice of `0x1F` over `31`, the single
+ * quotes around a Windows path. A program that rewrites a file it did
+ * not write has to leave all of it alone.
+ *
+ * So every node here holds two things: what it means, and the exact
+ * text it was. `Value` keeps the decoded value beside the source
+ * spelling that produced it. `Entry` keeps the whitespace on each side
+ * of its `=`. `Table` keeps the trivia before its header. Rendering is
+ * concatenation, and a document nobody edited comes back byte for
+ * byte.
+ *
+ * Nodes are built by `parser.zu` when reading and by `encoder.zu` when
+ * writing. Reach them through `Document`, which is what the module's
+ * public API hands out.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import date
+
+import .errors { EditError, EncodeError }
+import .values { DateTime, LocalDateTime, LocalDate, LocalTime, Float }
+
+
+# The bare keys TOML allows without quoting.
+var _BARE = {
+  'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
+  'G': true, 'H': true, 'I': true, 'J': true, 'K': true, 'L': true,
+  'M': true, 'N': true, 'O': true, 'P': true, 'Q': true, 'R': true,
+  'S': true, 'T': true, 'U': true, 'V': true, 'W': true, 'X': true,
+  'Y': true, 'Z': true,
+  'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true,
+  'g': true, 'h': true, 'i': true, 'j': true, 'k': true, 'l': true,
+  'm': true, 'n': true, 'o': true, 'p': true, 'q': true, 'r': true,
+  's': true, 't': true, 'u': true, 'v': true, 'w': true, 'x': true,
+  'y': true, 'z': true,
+  '0': true, '1': true, '2': true, '3': true, '4': true, '5': true,
+  '6': true, '7': true, '8': true, '9': true,
+  '_': true, '-': true,
+}
+
+# The single-character escapes TOML defines for a basic string.
+var _ESCAPES = {
+  '"':    '\\"',
+  '\\':   '\\\\',
+  '\b':   '\\b',
+  '\t':   '\\t',
+  '\n':   '\\n',
+  '\f':   '\\f',
+  '\r':   '\\r',
+}
+
+var _HEX = '0123456789abcdef'
+
+
+# Renders `code` as a four- or eight-digit TOML unicode escape.
+def _unicode_escape(code) {
+  var width = code > 65535 ? 8 : 4
+  var digits = ''
+  var value = code
+
+  iter var i = 0; i < width; i++ {
+    digits = _HEX[value % 16] + digits
+    value = (value / 16).floor()
+  }
+
+  return (width == 4 ? '\\u' : '\\U') + digits
+}
+
+
+/**
+ * Returns `name` as TOML would spell it as a key: bare when every
+ * character allows it, and quoted when not.
+ *
+ * An empty key is legal in TOML and must be written `""`.
+ *
+ * @param string name
+ * @returns string
+ */
+def spell_key(name: string) {
+  if name == '' {
+    return '""'
+  }
+
+  var bare = true
+
+  iter var i = 0; i < name.length(); i++ {
+    if !_BARE.contains(name[i]) {
+      bare = false
+      break
+    }
+  }
+
+  if bare {
+    return name
+  }
+
+  return spell_basic_string(name)
+}
+
+
+/**
+ * Returns `text` as a TOML basic string, quoted and escaped.
+ *
+ * Control characters that have no short escape are written as `\uXXXX`.
+ * Every other character is passed through as itself, so the result
+ * stays readable for anything that is not a control character.
+ *
+ * @param string text
+ * @returns string
+ */
+def spell_basic_string(text: string) {
+  var out = '"'
+
+  iter var i = 0; i < text.length(); i++ {
+    var ch = text[i]
+
+    if _ESCAPES.contains(ch) {
+      out += _ESCAPES[ch]
+      continue
+    }
+
+    var code = ch.ord()
+
+    # The control ranges TOML forbids unescaped inside a basic string.
+    if code < 32 or code == 127 {
+      out += _unicode_escape(code)
+      continue
+    }
+
+    out += ch
+  }
+
+  return out + '"'
+}
+
+
+/**
+ * Returns `text` as a TOML multi-line basic string.
+ *
+ * Newlines and single quotes pass through untouched; a run of three
+ * quotes and a trailing quote are escaped, since either would close
+ * the string early.
+ *
+ * @param string text
+ * @returns string
+ */
+def spell_multiline_string(text: string) {
+  var out = ''
+  var i = 0
+
+  while i < text.length() {
+    var ch = text[i]
+
+    # A run of three or more quotes has to be broken up, and escaping
+    # the first of each three is the least invasive way to do it.
+    if ch == '"' and i + 2 < text.length() and text[i + 1] == '"' and
+        text[i + 2] == '"' {
+      out += '\\"'
+      i++
+      continue
+    }
+
+    if ch == '\\' {
+      out += '\\\\'
+      i++
+      continue
+    }
+
+    if ch == '\n' or ch == '\t' {
+      out += ch
+      i++
+      continue
+    }
+
+    var code = ch.ord()
+
+    if code < 32 or code == 127 {
+      out += _unicode_escape(code)
+      i++
+      continue
+    }
+
+    out += ch
+    i++
+  }
+
+  # A closing quote immediately before the delimiter would make four in
+  # a row, so it needs escaping too.
+  if out.ends_with('"') {
+    out = out[0, out.length() - 1] + '\\"'
+  }
+
+  return '"""' + out + '"""'
+}
+
+
+/**
+ * Returns `value` as a TOML integer.
+ *
+ * @param number|bigint value
+ * @returns string
+ */
+def spell_integer(value) {
+  if is_bigint(value) {
+    return value.to_string()
+  }
+
+  var text = value.to_string()
+
+  # A double large enough to stringify in exponent form has already
+  # lost the digits an integer needs, and TOML has no exponent form for
+  # an integer, so the caller is told rather than handed a wrong number.
+  if text.contains('e') or text.contains('E') {
+    raise EncodeError(
+      'integer ${text} is too large to write exactly; use a bigint'
+    )
+  }
+
+  return text
+}
+
+
+/**
+ * Returns `value` as a TOML float, including the `inf` and `nan`
+ * spellings TOML defines.
+ *
+ * A whole number gains a `.0`, because a float that renders without
+ * one reads back as an integer.
+ *
+ * @param number value
+ * @returns string
+ */
+def spell_float(value) {
+  return Float(value).to_string()
+}
+
+
+/**
+ * One value in a document: a scalar, an array, or an inline table.
+ *
+ * `kind` names the TOML type. `value` is the decoded Zuri value for a
+ * scalar, or the `Array` or `InlineTable` node for a container. `raw`
+ * is the exact source text of a scalar, which is what makes `0x1F`
+ * survive a round trip as `0x1F` rather than as `31`.
+ *
+ * `prefix` and `suffix` hold the trivia on each side: whatever sat
+ * between the `=` and the value, and whatever followed it on the same
+ * line, a trailing comment included.
+ *
+ * @printable
+ */
+class Value {
+  var kind = 'string'
+  var value = nil
+  var raw = nil
+  var prefix = ''
+  var suffix = ''
+
+  /**
+   * @param string kind One of `string`, `integer`, `float`, `boolean`,
+   *    `datetime`, `local-datetime`, `local-date`, `local-time`,
+   *    `array` or `inline-table`.
+   * @param any value The decoded value, or the container node.
+   * @param ?string raw The exact source text, for a scalar.
+   */
+  @new(kind, value, raw) {
+    self.kind = kind
+    self.value = value
+
+    if raw != nil {
+      self.raw = raw
+    }
+  }
+
+  /**
+   * Returns the value's own text, without its surrounding trivia.
+   *
+   * @returns string
+   */
+  to_string() {
+    if self.kind == 'array' or self.kind == 'inline-table' {
+      return self.value.to_string()
+    }
+
+    return self.raw
+  }
+
+  /**
+   * Returns the value as a plain Zuri value, with every container
+   * below it converted too.
+   *
+   * @returns any
+   */
+  to_value() {
+    if self.kind == 'array' or self.kind == 'inline-table' {
+      return self.value.to_value()
+    }
+
+    return self.value
+  }
+}
+
+
+/**
+ * A TOML array, holding its items and the trivia between them.
+ *
+ * An array may run across lines and carry comments between its items,
+ * so each item keeps its own prefix and suffix and the array keeps
+ * whatever sits before the closing bracket.
+ *
+ * @printable
+ */
+class Array {
+  var items = []
+  var trailing_comma = false
+  var trailing = ''
+
+  @new() {
+    self.items = []
+  }
+
+  /**
+   * Returns the array as TOML text, brackets included.
+   *
+   * @returns string
+   */
+  to_string() {
+    var out = '['
+
+    iter var i = 0; i < self.items.length(); i++ {
+      if i > 0 {
+        out += ','
+      }
+
+      var item = self.items[i]
+      out += item.prefix + item.to_string() + item.suffix
+    }
+
+    if self.trailing_comma and self.items.length() > 0 {
+      out += ','
+    }
+
+    return out + self.trailing + ']'
+  }
+
+  /**
+   * Returns the array as a plain Zuri list.
+   *
+   * @returns list
+   */
+  to_value() {
+    var out = []
+
+    for item in self.items {
+      out.append(item.to_value())
+    }
+
+    return out
+  }
+}
+
+
+/**
+ * A TOML inline table, holding its entries and the trivia between
+ * them.
+ *
+ * An inline table is sealed once written: TOML forbids adding to one
+ * after the fact, and this module enforces that on edit as well as on
+ * parse.
+ *
+ * @printable
+ */
+class InlineTable {
+  var entries = []
+  var trailing = ''
+
+  @new() {
+    self.entries = []
+  }
+
+  /**
+   * Returns the inline table as TOML text, braces included.
+   *
+   * @returns string
+   */
+  to_string() {
+    var out = '{'
+
+    iter var i = 0; i < self.entries.length(); i++ {
+      if i > 0 {
+        out += ','
+      }
+
+      out += self.entries[i].to_string()
+    }
+
+    return out + self.trailing + '}'
+  }
+
+  /**
+   * Returns the inline table as a plain Zuri dictionary, with dotted
+   * keys expanded into nested dictionaries.
+   *
+   * @returns dict
+   */
+  to_value() {
+    var out = {}
+
+    for entry in self.entries {
+      _graft(out, entry.path, entry.value.to_value())
+    }
+
+    return out
+  }
+}
+
+
+/**
+ * One `key = value` pair.
+ *
+ * `path` is the decoded key, which has more than one element when the
+ * key was dotted. `key_raw` is the key exactly as written, dots,
+ * quotes and interior spaces included, so `a . b` stays `a . b`.
+ *
+ * `prefix` is everything from the end of the previous line to the
+ * first character of the key, which is where a comment above the key
+ * lives. `newline` is the line terminator, and is empty for an entry
+ * inside an inline table.
+ *
+ * @printable
+ */
+class Entry {
+  var path = []
+  var key_raw = ''
+  var prefix = ''
+  var pre_eq = ''
+  var value = nil
+  var newline = ''
+
+  /**
+   * @param list path The decoded key path.
+   * @param string key_raw The key exactly as written.
+   * @param Value value The value this key holds.
+   */
+  @new(path, key_raw, value) {
+    self.path = path
+    self.key_raw = key_raw
+    self.value = value
+  }
+
+  /**
+   * Returns the whole pair as TOML text, its own trivia included.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.prefix + self.key_raw + self.pre_eq + '=' +
+        self.value.prefix + self.value.to_string() + self.value.suffix +
+        self.newline
+  }
+
+  /**
+   * Returns the comment written above this key, without its `#`, the
+   * single space that usually follows it, or the indentation. Returns
+   * `nil` when there is no comment.
+   *
+   * @returns string|nil
+   */
+  comment() {
+    var found = nil
+
+    for line in self.prefix.split('\n') {
+      var text = _strip_spaces(line)
+
+      if text.starts_with('#') {
+        var body = text[1,]
+
+        # `set_comment()` writes `# text`, so the space it put there is
+        # punctuation rather than content and comes back off.
+        if body.starts_with(' ') {
+          body = body[1,]
+        }
+
+        found = found == nil ? body : found + '\n' + body
+      }
+    }
+
+    return found
+  }
+}
+
+
+/**
+ * A table: a `[header]` block, the root of a document, or a parent
+ * that only exists because something below it was written.
+ *
+ * `entries` holds the pairs written directly under this table's
+ * header, in document order. `children` maps a name to the `Table` or
+ * `ArrayOfTables` below it.
+ *
+ * A table is *explicit* when a header was written for it, and
+ * *implicit* when it exists only because a deeper table named it. A
+ * table brought into being by a dotted key is marked `dotted`: TOML
+ * allows sub-tables to be added under one, but forbids reopening it
+ * with a header of its own.
+ *
+ * @printable
+ */
+class Table {
+  var document = nil
+  var path = []
+  var header_raw = nil
+  var prefix = ''
+  var suffix = ''
+  var newline = ''
+  var entries = []
+  var children = {}
+  var explicit = false
+  var dotted = false
+  var is_aot_element = false
+
+  /**
+   * @param list path The full key path from the root.
+   */
+  @new(path) {
+    self.path = path
+    self.entries = []
+    self.children = {}
+  }
+
+  /**
+   * Returns this table's own text: its header when it has one, then
+   * every pair written under it.
+   *
+   * Child tables are not included. A document renders them in the
+   * order their headers appeared, which is not necessarily the order
+   * the tree nests them in.
+   *
+   * @returns string
+   */
+  to_string() {
+    var out = ''
+
+    if self.header_raw != nil {
+      var brackets = self.is_aot_element ? ['[[', ']]'] : ['[', ']']
+      out += self.prefix + brackets[0] + self.header_raw + brackets[1] +
+          self.suffix + self.newline
+    }
+
+    for entry in self.entries {
+      out += entry.to_string()
+    }
+
+    return out
+  }
+
+  /**
+   * Returns this table and everything under it as a plain Zuri
+   * dictionary.
+   *
+   * @returns dict
+   */
+  to_value() {
+    var out = {}
+
+    for entry in self.entries {
+      _graft(out, entry.path, entry.value.to_value())
+    }
+
+    for name, child in self.children {
+      out[name] = child.to_value()
+    }
+
+    return out
+  }
+
+  /**
+   * Returns the `Entry` whose key path is exactly `path`, or `nil`.
+   *
+   * @param list path
+   * @returns Entry|nil
+   */
+  entry_at(path: list) {
+    for entry in self.entries {
+      if _same_path(entry.path, path) {
+        return entry
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * Returns the names of everything this table holds, pairs first and
+   * then child tables, in the order they were written.
+   *
+   * A dotted key contributes only its first element, which is the name
+   * this table actually holds.
+   *
+   * @returns list
+   */
+  keys() {
+    var out = []
+
+    for entry in self.entries {
+      if !out.contains(entry.path[0]) {
+        out.append(entry.path[0])
+      }
+    }
+
+    for name in self.children.keys() {
+      if !out.contains(name) {
+        out.append(name)
+      }
+    }
+
+    return out
+  }
+
+  /**
+   * Returns how many names this table holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self.keys().length()
+  }
+
+  @key(previous) {
+    var names = self.keys()
+
+    if previous == nil {
+      return names.length() > 0 ? names[0] : nil
+    }
+
+    var at = names.index_of(previous)
+
+    if at < 0 or at + 1 >= names.length() {
+      return nil
+    }
+
+    return names[at + 1]
+  }
+
+  @value(key) {
+    return self.get(key)
+  }
+
+  /**
+   * Returns the value stored at `path`, as a plain Zuri value, or
+   * `nil` when nothing is there.
+   *
+   * `path` is a dotted string or a list of key names. A dotted string
+   * splits on `.`, so a key that contains a literal dot has to be
+   * passed as a list.
+   *
+   * @param string|list path
+   * @returns any
+   */
+  get(path) {
+    var parts = _as_path(path)
+
+    if parts.length() == 0 {
+      return self.to_value()
+    }
+
+    # A dotted entry can cover the whole path, or a prefix of it with
+    # the rest reaching into an inline table or an array.
+    for entry in self.entries {
+      if _is_prefix(entry.path, parts) {
+        return _descend(entry.value.to_value(),
+            parts[entry.path.length(),])
+      }
+    }
+
+    var child = self.children.get(parts[0], nil)
+
+    if child == nil {
+      return nil
+    }
+
+    if parts.length() == 1 {
+      return child.to_value()
+    }
+
+    if instance_of(child, Table) {
+      return child.get(parts[1,])
+    }
+
+    return _descend(child.to_value(), parts[1,])
+  }
+
+  /**
+   * Returns true when something is stored at `path`.
+   *
+   * @param string|list path
+   * @returns bool
+   */
+  has(path) {
+    return self.get(path) != nil
+  }
+
+  /**
+   * Writes `value` at `path`, relative to this table.
+   *
+   * A key that is already there keeps its line: only the value text
+   * changes, so the spacing around the `=` and a trailing comment both
+   * survive. A key that is not there is appended to this table,
+   * indented to match the pairs already in it.
+   *
+   * Parent tables along `path` are created as table blocks when they
+   * do not exist. A dictionary passed as `value` is written as an
+   * inline table; `Document.table()` is how a dictionary becomes a
+   * table block of its own instead.
+   *
+   * @param string|list path A dotted key path, or a list of names.
+   * @param any value
+   * @returns Entry The pair that was written.
+   * @throws EditError If `path` runs through something that is not a
+   *    table, or names a table that already exists.
+   * @throws EncodeError If `value` has no TOML spelling.
+   */
+  set(path, value) {
+    return _set(self.document, self, _as_path(path), value)
+  }
+
+  /**
+   * Removes whatever sits at `path`, relative to this table.
+   *
+   * A removed pair takes the comment written directly above it with
+   * it, because that comment described the pair. The blank lines
+   * around it are left alone.
+   *
+   * @param string|list path
+   * @returns bool True when something was there to remove.
+   */
+  remove(path) {
+    return _remove(self.document, self, _as_path(path))
+  }
+
+  /**
+   * Returns the comment written above `key`, without its `#`, the
+   * single space that usually follows it, or the indentation. Returns
+   * `nil` when there is no comment.
+   *
+   * @param string|list key
+   * @returns string|nil
+   */
+  comment(key) {
+    var entry = self.entry_at(_as_path(key))
+
+    return entry == nil ? nil : entry.comment()
+  }
+
+  /**
+   * Writes `text` as the comment above `key`, replacing any comment
+   * already there. Pass `nil` to remove it.
+   *
+   * A `text` containing newlines becomes one `#` line per line.
+   *
+   * @param string|list key
+   * @param string|nil text
+   * @throws EditError If `key` is not in this table.
+   */
+  set_comment(key, text) {
+    var entry = self.entry_at(_as_path(key))
+
+    if entry == nil {
+      raise EditError('no key to comment', _join_path(_as_path(key)))
+    }
+
+    entry.prefix = _rebuild_prefix(entry.prefix, text, self.document.newline)
+  }
+}
+
+
+/**
+ * A `[[header]]` array of tables.
+ *
+ * Each element is a `Table` of its own, carrying its own header text
+ * and its own trivia, because each was written separately.
+ *
+ * @printable
+ */
+class ArrayOfTables {
+  var document = nil
+  var path = []
+  var elements = []
+
+  /**
+   * @param list path The full key path from the root.
+   */
+  @new(path) {
+    self.path = path
+    self.elements = []
+  }
+
+  /**
+   * Returns every element as a plain Zuri list of dictionaries.
+   *
+   * @returns list
+   */
+  to_value() {
+    var out = []
+
+    for element in self.elements {
+      out.append(element.to_value())
+    }
+
+    return out
+  }
+
+  /**
+   * Returns how many elements the array holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self.elements.length()
+  }
+
+  to_string() {
+    var out = ''
+
+    for element in self.elements {
+      out += element.to_string()
+    }
+
+    return out
+  }
+
+  /**
+   * Adds a new `[[header]]` block to the end of the array and returns
+   * the `Table` it made, which is where that element's keys go.
+   *
+   * @returns Table
+   */
+  append() {
+    var element = Table(self.path)
+
+    element.document = self.document
+    element.explicit = true
+    element.is_aot_element = true
+    element.header_raw = _spell_path(self.path)
+    element.prefix = _block_prefix(self.document)
+    element.newline = self.document.newline
+
+    self.elements.append(element)
+    self.document.order.append(element)
+
+    return element
+  }
+
+  /**
+   * Returns the element at `index`, counting from zero.
+   *
+   * @param number index
+   * @returns Table
+   * @throws EditError If `index` is outside the array.
+   */
+  element(index: number) {
+    if index < 0 or index >= self.elements.length() {
+      raise EditError(
+        'element ${index} is outside an array of ${self.elements.length()}',
+        _join_path(self.path)
+      )
+    }
+
+    return self.elements[index]
+  }
+}
+
+
+# Writes `value` into `target` at `path`, creating the dictionaries the
+# path runs through. This is how a dotted key becomes nested.
+def _graft(target, path, value) {
+  var at = target
+
+  iter var i = 0; i < path.length() - 1; i++ {
+    var name = path[i]
+
+    if !at.contains(name) or !is_dict(at[name]) {
+      at[name] = {}
+    }
+
+    at = at[name]
+  }
+
+  at[path[path.length() - 1]] = value
+}
+
+
+# Follows `path` into an already-decoded plain value.
+def _descend(value, path) {
+  var at = value
+
+  for name in path {
+    if !is_dict(at) or !at.contains(name) {
+      return nil
+    }
+
+    at = at[name]
+  }
+
+  return at
+}
+
+
+# True when two key paths are the same.
+def _same_path(a, b) {
+  if a.length() != b.length() {
+    return false
+  }
+
+  iter var i = 0; i < a.length(); i++ {
+    if a[i] != b[i] {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+# True when `prefix` is `path` itself or leads into it.
+def _is_prefix(prefix, path) {
+  if prefix.length() > path.length() {
+    return false
+  }
+
+  iter var i = 0; i < prefix.length(); i++ {
+    if prefix[i] != path[i] {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+# Removes spaces and tabs from both ends. `trim()` takes one character
+# at a time, and trivia is padded with either.
+def _strip_spaces(text) {
+  var start = 0
+  var end = text.length()
+
+  while start < end and (text[start] == ' ' or text[start] == '\t') {
+    start++
+  }
+
+  while end > start and (text[end - 1] == ' ' or text[end - 1] == '\t') {
+    end--
+  }
+
+  return text[start, end]
+}
+
+
+/**
+ * Turns a dotted string or a list into a key path.
+ *
+ * @param string|list path
+ * @returns list
+ */
+def _as_path(path) {
+  if is_list(path) {
+    return path
+  }
+
+  if !is_string(path) {
+    raise EditError('key path must be a string or a list, got ${typeof(path)}')
+  }
+
+  if path == '' {
+    return []
+  }
+
+  return path.split('.')
+}
+
+
+/**
+ * Builds the `Value` node for a plain Zuri value, choosing the TOML
+ * spelling as it goes.
+ *
+ * A string with a newline in it becomes a multi-line basic string; a
+ * whole number becomes an integer; a `Float` becomes a float whatever
+ * its value. A list becomes a single-line array and a dictionary
+ * becomes an inline table, because this is the spelling a value takes
+ * when it is written in place. `Document.table()` is how a value
+ * becomes a table block instead.
+ *
+ * @param any value
+ * @param ?string path Dotted path used in an error message.
+ * @returns Value
+ * @throws EncodeError If the value has no TOML spelling, or if a list
+ *    or dictionary contains itself.
+ */
+def spell_value(value, path) {
+  return _spell(value, path == nil ? '' : path, {})
+}
+
+
+def _spell(value, path, seen) {
+  if value == nil {
+    raise EncodeError('TOML has no null; remove the key instead', path)
+  }
+
+  if is_string(value) {
+    if value.contains('\n') {
+      return Value('string', value, spell_multiline_string(value))
+    }
+
+    return Value('string', value, spell_basic_string(value))
+  }
+
+  if is_bool(value) {
+    return Value('boolean', value, value ? 'true' : 'false')
+  }
+
+  if is_bigint(value) {
+    return Value('integer', value, value.to_string())
+  }
+
+  if instance_of(value, Float) {
+    return Value('float', value.value, value.to_string())
+  }
+
+  if is_number(value) {
+    # NaN and the infinities have no integer spelling, and neither has
+    # a fractional number, so everything else is a float.
+    if value == value and value != (1 / 0) and value != (-1 / 0) and
+        value == value.floor() {
+      return Value('integer', value, spell_integer(value))
+    }
+
+    return Value('float', value, spell_float(value))
+  }
+
+  if instance_of(value, DateTime) {
+    return Value('datetime', value, value.to_string())
+  }
+
+  if instance_of(value, LocalDateTime) {
+    return Value('local-datetime', value, value.to_string())
+  }
+
+  if instance_of(value, LocalDate) {
+    return Value('local-date', value, value.to_string())
+  }
+
+  if instance_of(value, LocalTime) {
+    return Value('local-time', value, value.to_string())
+  }
+
+  if instance_of(value, date.Date) {
+    return Value('datetime', value, _spell_date(value))
+  }
+
+  if is_list(value) {
+    return _spell_array(value, path, seen)
+  }
+
+  if is_dict(value) {
+    return _spell_inline(value, path, seen)
+  }
+
+  raise EncodeError('${typeof(value)} has no TOML spelling', path)
+}
+
+
+# A `date.Date` always knows an offset, so it writes as TOML's one
+# temporal type that carries one.
+def _spell_date(value) {
+  var minutes = (value.gmt_offset / 60).floor()
+
+  return DateTime(value.year, value.month, value.day, value.hour,
+      value.minute, value.seconds, value.microseconds * 1000,
+      minutes).to_string()
+}
+
+
+def _spell_array(items, path, seen) {
+  var key = id(items).to_string()
+
+  if seen.contains(key) {
+    raise EncodeError('a list cannot contain itself', path)
+  }
+
+  seen[key] = true
+
+  var node = Array()
+
+  iter var i = 0; i < items.length(); i++ {
+    var item = _spell(items[i], '${path}[${i}]', seen)
+
+    if i > 0 {
+      item.prefix = ' '
+    }
+
+    node.items.append(item)
+  }
+
+  seen.remove(key)
+
+  return Value('array', node, nil)
+}
+
+
+def _spell_inline(source, path, seen) {
+  var key = id(source).to_string()
+
+  if seen.contains(key) {
+    raise EncodeError('a dictionary cannot contain itself', path)
+  }
+
+  seen[key] = true
+
+  var node = InlineTable()
+  var first = true
+
+  for name, item in source {
+    if !is_string(name) {
+      raise EncodeError(
+        'a TOML key must be a string, got ${typeof(name)}', path
+      )
+    }
+
+    var below = path == '' ? name : '${path}.${name}'
+    var entry = Entry([name], spell_key(name), _spell(item, below, seen))
+
+    entry.prefix = ' '
+    entry.pre_eq = ' '
+    entry.value.prefix = ' '
+
+    node.entries.append(entry)
+    first = false
+  }
+
+  if !first {
+    node.trailing = ' '
+  }
+
+  seen.remove(key)
+
+  return Value('inline-table', node, nil)
+}
+
+
+/**
+ * A whole TOML document: every table in it, and every byte between
+ * them.
+ *
+ * A document that nobody has edited renders back exactly as it was
+ * read, byte for byte. An edited one keeps everything the edit did not
+ * touch, so a rewritten configuration file still reads as the file
+ * somebody wrote.
+ *
+ * `order` is the sequence the table headers appeared in, which is not
+ * the order the tree nests them in: a document may open `[a]`, then
+ * `[b]`, then `[a.c]`, and all three keep their places.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var doc = toml.edit('# the package\n[package]\nname = "app"\n')
+ * doc.set('package.version', '1.0.0')
+ *
+ * echo doc.to_string()
+ * ```
+ *
+ * ```console
+ * # the package
+ * [package]
+ * name = "app"
+ * version = "1.0.0"
+ *
+ * ```
+ *
+ * @printable
+ */
+class Document {
+  var root = nil
+  var order = []
+  var trailing = ''
+  var bom = ''
+  var newline = '\n'
+
+  @new() {
+    self.root = Table([])
+    self.root.document = self
+    self.order = []
+  }
+
+  /**
+   * Returns the whole document as TOML text.
+   *
+   * @returns string
+   */
+  to_string() {
+    var out = self.bom + self.root.to_string()
+
+    for node in self.order {
+      out += node.to_string()
+    }
+
+    return out + self.trailing
+  }
+
+  /**
+   * Returns the document as a plain Zuri dictionary, with every table,
+   * array and scalar below it converted too.
+   *
+   * @returns dict
+   */
+  to_value() {
+    return self.root.to_value()
+  }
+
+  /**
+   * Returns the value at `path`, or `nil` when nothing is there.
+   *
+   * @param string|list path A dotted key path, or a list of key names
+   *    for keys that contain a literal dot.
+   * @returns any
+   */
+  get(path) {
+    return self.root.get(path)
+  }
+
+  /**
+   * Returns true when something is stored at `path`.
+   *
+   * @param string|list path
+   * @returns bool
+   */
+  has(path) {
+    return self.root.has(path)
+  }
+
+  /**
+   * Returns the top-level names the document holds, in the order they
+   * were written.
+   *
+   * @returns list
+   */
+  keys() {
+    var names = self.root.keys()
+
+    for node in self.order {
+      if node.path.length() > 0 and !names.contains(node.path[0]) {
+        names.append(node.path[0])
+      }
+    }
+
+    return names
+  }
+
+  /**
+   * Returns how many top-level names the document holds.
+   *
+   * @returns number
+   */
+  length() {
+    return self.keys().length()
+  }
+
+
+  /**
+   * Writes `value` at `path`.
+   *
+   * A key that is already there keeps its line, its spacing and its
+   * trailing comment; only the value text changes. A key that is not
+   * there is appended to the table that should hold it, and the table
+   * blocks along `path` are created when they do not exist.
+   *
+   * ```zuri
+   * import toml
+   *
+   * var doc = toml.edit('[server]\nhost = "localhost"  # bind address\n')
+   * doc.set('server.host', '0.0.0.0')
+   * doc.set('server.port', 8080)
+   *
+   * echo doc.to_string()
+   * ```
+   *
+   * ```console
+   * [server]
+   * host = "0.0.0.0"  # bind address
+   * port = 8080
+   *
+   * ```
+   *
+   * @param string|list path A dotted key path, or a list of names for
+   *    keys that contain a literal dot.
+   * @param any value
+   * @returns Entry The pair that was written.
+   * @throws EditError If `path` runs through something that is not a
+   *    table, or names a table that already exists.
+   * @throws EncodeError If `value` has no TOML spelling.
+   */
+  set(path, value) {
+    return _set(self, self.root, _as_path(path), value)
+  }
+
+  /**
+   * Removes whatever sits at `path`, a pair or a whole table.
+   *
+   * A removed pair takes the comment written directly above it with
+   * it. Removing a table removes everything under it.
+   *
+   * @param string|list path
+   * @returns bool True when something was there to remove.
+   */
+  remove(path) {
+    return _remove(self, self.root, _as_path(path))
+  }
+
+  /**
+   * Returns the table at `path`, creating it as a table block when it
+   * is not there.
+   *
+   * This is how a dictionary becomes a `[header]` block rather than
+   * the inline table `set()` would write.
+   *
+   * ```zuri
+   * import toml
+   *
+   * var doc = toml.edit('name = "app"\n')
+   * doc.table('dependencies').set('http', '^2.0')
+   *
+   * echo doc.to_string()
+   * ```
+   *
+   * ```console
+   * name = "app"
+   *
+   * [dependencies]
+   * http = "^2.0"
+   *
+   * ```
+   *
+   * @param string|list path
+   * @returns Table
+   * @throws EditError If `path` runs through something that is not a
+   *    table.
+   */
+  table(path) {
+    var parts = _as_path(path)
+
+    if parts.length() == 0 {
+      return self.root
+    }
+
+    return _new_table(self, parts)
+  }
+
+  /**
+   * Returns the array of tables at `path`, creating an empty one when
+   * it is not there.
+   *
+   * `append()` on the result adds a `[[header]]` block and returns the
+   * `Table` it made, which is where the new element's keys go.
+   *
+   * ```zuri
+   * import toml
+   *
+   * var doc = toml.edit('')
+   * doc.array_of_tables('bin').append().set('name', 'serve')
+   *
+   * echo doc.to_string()
+   * ```
+   *
+   * ```console
+   * [[bin]]
+   * name = "serve"
+   *
+   * ```
+   *
+   * @param string|list path
+   * @returns ArrayOfTables
+   * @throws EditError If `path` names something that is not an array
+   *    of tables.
+   */
+  array_of_tables(path) {
+    var parts = _as_path(path)
+
+    if parts.length() == 0 {
+      raise EditError('an array of tables needs a name')
+    }
+
+    return _ensure_aot(self, parts)
+  }
+
+  /**
+   * Writes the document to `path`, creating or overwriting the file.
+   *
+   * @param string path Filesystem path to write to.
+   * @throws Error On any file error.
+   */
+  save(path: string) {
+    var handle = file(path, 'w')
+
+    handle.write(self.to_string())
+    handle.close()
+  }
+
+  @key(previous) {
+    var names = self.keys()
+
+    if previous == nil {
+      return names.length() > 0 ? names[0] : nil
+    }
+
+    var at = names.index_of(previous)
+
+    if at < 0 or at + 1 >= names.length() {
+      return nil
+    }
+
+    return names[at + 1]
+  }
+
+  @value(key) {
+    return self.get(key)
+  }
+}
+
+
+# ---------------------------------------------------------------------------
+# Editing
+# ---------------------------------------------------------------------------
+
+# The pair in `table` that already owns `name`, whether it holds it
+# directly or as the head of a dotted key.
+def _entry_owning(table, name) {
+  for entry in table.entries {
+    if entry.path[0] == name {
+      return entry
+    }
+  }
+
+  return nil
+}
+
+
+# The indentation new pairs in this table should carry, taken from the
+# pairs already there so a nested style is not broken by an edit.
+def _indent_of(table) {
+  if table.entries.length() == 0 {
+    return ''
+  }
+
+  var prefix = table.entries[table.entries.length() - 1].prefix
+  var at = prefix.last_index_of('\n')
+  var tail = at < 0 ? prefix : prefix[at + 1,]
+
+  # Only take it when the line really is nothing but indentation; a
+  # comment sitting above the last pair is not a style to copy.
+  iter var i = 0; i < tail.length(); i++ {
+    if tail[i] != ' ' and tail[i] != '\t' {
+      return ''
+    }
+  }
+
+  return tail
+}
+
+
+# Makes sure the table's last pair ends in a line break, so whatever is
+# appended next starts on a line of its own. A file that ended without
+# a trailing newline gets one here.
+def _close_last_line(document, table) {
+  if table.entries.length() == 0 {
+    if table.header_raw != nil and table.newline == '' {
+      table.newline = document.newline
+    }
+
+    return
+  }
+
+  var last = table.entries[table.entries.length() - 1]
+
+  if last.newline == '' {
+    last.newline = document.newline
+  }
+}
+
+
+# Creates the table block for `path`, reusing whatever part of the
+# chain already exists and leaving the tables it had to invent on the
+# way implicit, exactly as a bare `[a.b.c]` header does.
+def _new_table(document, path) {
+  var at = document.root
+
+  iter var i = 0; i < path.length(); i++ {
+    var name = path[i]
+    var child = at.children.get(name, nil)
+
+    if child == nil {
+      child = Table(path[0, i + 1])
+      child.document = document
+      at.children[name] = child
+    }
+
+    if instance_of(child, ArrayOfTables) {
+      child = child.elements[child.elements.length() - 1]
+    }
+
+    at = child
+  }
+
+  if !at.explicit {
+    at.explicit = true
+    at.header_raw = _spell_path(path)
+    at.newline = document.newline
+    at.prefix = _block_prefix(document)
+    document.order.append(at)
+  }
+
+  return at
+}
+
+
+# A new table block is separated from whatever precedes it by one blank
+# line, unless the document is still empty.
+def _block_prefix(document) {
+  if document.root.entries.length() == 0 and document.order.length() == 0 {
+    return ''
+  }
+
+  var previous = document.order.length() > 0
+      ? document.order[document.order.length() - 1]
+      : document.root
+
+  _close_last_line(document, previous)
+
+  return document.newline
+}
+
+
+# A dotted path as a header spells it, quoting the parts that need it.
+def _spell_path(path) {
+  var parts = []
+
+  for name in path {
+    parts.append(spell_key(name))
+  }
+
+  return '.'.join(parts)
+}
+
+
+# Finds the table that should hold the last element of `parts`, and the
+# key path it should hold it under. The path comes back longer than one
+# element when the owner already holds that name through a dotted key,
+# because TOML then requires the new pair to be dotted as well.
+def _locate(document, parts, create) {
+  return _locate_in(document, document.root, parts, create)
+}
+
+
+def _locate_in(document, start, parts, create) {
+  var at = start
+  var i = 0
+
+  while i < parts.length() - 1 {
+    var name = parts[i]
+
+    if _entry_owning(at, name) != nil {
+      return { table: at, path: parts[i,] }
+    }
+
+    var child = at.children.get(name, nil)
+
+    if child == nil {
+      break
+    }
+
+    if instance_of(child, ArrayOfTables) {
+      raise EditError(
+        "'${'.'.join(parts[0, i + 1])}' is an array of tables; reach an " +
+        'element through array_of_tables()',
+        '.'.join(parts)
+      )
+    }
+
+    at = child
+    i++
+  }
+
+  if i < parts.length() - 1 {
+    if !create {
+      return nil
+    }
+
+    at = _new_table(document, start.path + parts[0, parts.length() - 1])
+  }
+
+  return { table: at, path: parts[parts.length() - 1,] }
+}
+
+
+# Writes `value` at `path`, keeping the layout of a pair that is
+# already there and giving a new one the style of its neighbours.
+def _set(document, start, parts, value) {
+  if parts.length() == 0 {
+    raise EditError('cannot set the document itself; name a key')
+  }
+
+  var found = _locate_in(document, start, parts, true)
+  var table = found.table
+  var path = found.path
+  var existing = table.entry_at(path)
+  var node = spell_value(value, '.'.join(parts))
+
+  if existing != nil {
+    # The pair keeps its own line: only the value text changes, so the
+    # spacing around the `=` and any trailing comment survive.
+    node.prefix = existing.value.prefix
+    node.suffix = existing.value.suffix
+    existing.value = node
+
+    return existing
+  }
+
+  if table.children.contains(path[0]) {
+    raise EditError(
+      "'${'.'.join(parts)}' is a table; a table cannot be replaced by a value",
+      '.'.join(parts)
+    )
+  }
+
+  # A dotted key may sit beside another, but not underneath one and not
+  # over one. Either way the file would end up saying the same name is
+  # two different things.
+  for entry in table.entries {
+    if _is_prefix(entry.path, path) {
+      raise EditError(
+        entry.value.kind == 'inline-table'
+          ? "'${_join_path(entry.path)}' is an inline table, which TOML " +
+            'seals once written; replace the whole value instead'
+          : "'${_join_path(entry.path)}' is a value and cannot hold a key",
+        '.'.join(parts)
+      )
+    }
+
+    if _is_prefix(path, entry.path) {
+      raise EditError(
+        "'${_join_path(path)}' already holds keys and cannot become a value",
+        '.'.join(parts)
+      )
+    }
+  }
+
+  _close_last_line(document, table)
+
+  var entry = Entry(path, _spell_path(path), node)
+
+  entry.prefix = _indent_of(table)
+  entry.pre_eq = ' '
+  entry.value.prefix = ' '
+  entry.newline = document.newline
+
+  table.entries.append(entry)
+
+  return entry
+}
+
+
+# Drops whatever sits at `path`, and says whether anything did.
+def _remove(document, start, parts) {
+  if parts.length() == 0 {
+    return false
+  }
+
+  var found = _locate_in(document, start, parts, false)
+
+  if found != nil {
+    var table = found.table
+    var entry = table.entry_at(found.path)
+
+    if entry != nil {
+      table.entries.remove(entry)
+
+      return true
+    }
+
+    var child = table.children.get(found.path[0], nil)
+
+    if child != nil and found.path.length() == 1 {
+      table.children.remove(found.path[0])
+      _forget(document, child)
+
+      return true
+    }
+  }
+
+  return false
+}
+
+
+# Takes a table and everything under it out of the render order, so a
+# removed block stops being written.
+def _forget(document, node) {
+  if instance_of(node, ArrayOfTables) {
+    for element in node.elements {
+      _forget(document, element)
+    }
+
+    return
+  }
+
+  if document.order.contains(node) {
+    document.order.remove(node)
+  }
+
+  for name, child in node.children {
+    _forget(document, child)
+  }
+}
+
+
+# A key path as a message should show it.
+def _join_path(parts) {
+  return '.'.join(parts)
+}
+
+
+# Replaces the comment block sitting in `prefix` with `text`, keeping
+# the blank lines that separated the pair from whatever came before and
+# the indentation that follows.
+def _rebuild_prefix(prefix, text, newline) {
+  var lines = prefix.split('\n')
+  var indent = lines[lines.length() - 1]
+  var kept = []
+
+  iter var i = 0; i < lines.length() - 1; i++ {
+    if !_strip_spaces(lines[i]).starts_with('#') {
+      kept.append(lines[i])
+    }
+  }
+
+  if text != nil {
+    for line in text.split('\n') {
+      kept.append(indent + '# ' + line)
+    }
+  }
+
+  kept.append(indent)
+
+  return newline == '\r\n'
+      ? '\r\n'.join(kept)
+      : '\n'.join(kept)
+}
+
+
+# Finds or creates the array of tables at `parts`.
+def _ensure_aot(document, parts) {
+  var owner = document.root
+
+  iter var i = 0; i < parts.length() - 1; i++ {
+    var name = parts[i]
+    var child = owner.children.get(name, nil)
+
+    if child == nil {
+      child = Table(parts[0, i + 1])
+      child.document = document
+      owner.children[name] = child
+    }
+
+    if instance_of(child, ArrayOfTables) {
+      child = child.elements[child.elements.length() - 1]
+    }
+
+    owner = child
+  }
+
+  var name = parts[parts.length() - 1]
+  var found = owner.children.get(name, nil)
+
+  if found != nil {
+    if !instance_of(found, ArrayOfTables) {
+      raise EditError(
+        "'${_join_path(parts)}' is a table, not an array of tables",
+        _join_path(parts)
+      )
+    }
+
+    return found
+  }
+
+  var node = ArrayOfTables(parts)
+
+  node.document = document
+  owner.children[name] = node
+
+  return node
+}

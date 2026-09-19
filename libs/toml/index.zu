@@ -1,0 +1,330 @@
+/**
+ * @module toml
+ *
+ * TOML, read for its values or edited in place without disturbing the
+ * file around them.
+ *
+ * TOML is the format configuration files settle on when they have to
+ * be edited by people and by programs both. This module answers both
+ * halves. `parse()` and `dump()` treat a document as data, the way
+ * `json` and `yaml` do. `edit()` treats it as a file somebody wrote,
+ * and keeps every comment, blank line and quoting choice through a
+ * change.
+ *
+ * The implementation follows TOML v1.0.0 in full.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var config = toml.parse('[server]\nhost = "localhost"\nport = 8080\n')
+ *
+ * echo config['server']['port']
+ * ```
+ *
+ * ```console
+ * 8080
+ * ```
+ *
+ * ### What a value decodes to
+ *
+ * | TOML | Zuri |
+ * | --- | --- |
+ * | string | `string` |
+ * | integer | `number`, or `bigint` past 2^53 |
+ * | float | `number` |
+ * | boolean | `bool` |
+ * | offset date-time | `DateTime` |
+ * | local date-time | `LocalDateTime` |
+ * | local date | `LocalDate` |
+ * | local time | `LocalTime` |
+ * | array | `list` |
+ * | table | `dict` |
+ *
+ * Zuri's `number` is an IEEE-754 double, exact only to 2^53. TOML
+ * requires the full signed 64-bit range, so an integer past what a
+ * double can carry decodes to a `bigint` instead of rounding
+ * silently. An integer outside the 64-bit range is a parse error,
+ * which is what TOML asks for.
+ *
+ * ### Integers, floats, and the one thing that does not round-trip
+ *
+ * The same double is behind `1` and `1.0`, and nothing afterwards
+ * tells them apart. Encoding has to guess, and it guesses integer
+ * whenever a number has no fractional part. Wrap a number in `Float`
+ * to settle it:
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.dump({ a: 1.0, b: toml.Float(1.0) })
+ * ```
+ *
+ * ```console
+ * a = 1
+ * b = 1.0
+ *
+ * ```
+ *
+ * This is the only place a value changes type across a `parse()` and
+ * `dump()` pair. `edit()` is not affected: it never re-spells a value
+ * it was not asked to change.
+ *
+ * ### Editing a file in place
+ *
+ * `edit()` returns a `Document`, which knows the text it came from.
+ * Rendering one nobody touched reproduces the input byte for byte, and
+ * an edit disturbs only the line it lands on:
+ *
+ * ```zuri
+ * import toml
+ *
+ * var doc = toml.edit('# what we ship\n[package]\nname = "app"\nversion = "0.9.0"  # bump me\n')
+ *
+ * doc.set('package.version', '1.0.0')
+ * doc.table('dependencies').set('http', '^2.0')
+ *
+ * echo doc.to_string()
+ * ```
+ *
+ * ```console
+ * # what we ship
+ * [package]
+ * name = "app"
+ * version = "1.0.0"  # bump me
+ *
+ * [dependencies]
+ * http = "^2.0"
+ *
+ * ```
+ *
+ * The comment stayed, the header stayed, and the trailing comment on
+ * the line that changed stayed with it.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import @.errors { TomlError, ParseError, EncodeError, EditError }
+import @.values { DateTime, LocalDateTime, LocalDate, LocalTime, Float }
+import @.document {
+  Document, Table, ArrayOfTables, Entry, Value, Array, InlineTable
+}
+
+import .parser
+import .encoder
+
+
+/**
+ * Parses TOML text and returns it as a plain Zuri dictionary.
+ *
+ * A TOML document is always a table, so the result is always a
+ * dictionary, empty when the text held nothing but comments.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var config = toml.parse('title = "example"\n[owner]\nname = "Ada"\n')
+ *
+ * echo config['title']
+ * echo config['owner']['name']
+ * ```
+ *
+ * ```console
+ * example
+ * Ada
+ * ```
+ *
+ * @param string text The TOML text.
+ * @returns dict
+ * @throws ParseError On any syntax or structural error, carrying the
+ *    line and column it stopped at.
+ */
+def parse(text: string) {
+  return parser.parse(text).to_value()
+}
+
+
+/**
+ * Reads the TOML file at `path` and returns it as a plain Zuri
+ * dictionary.
+ *
+ * ```zuri,ignore
+ * import toml
+ *
+ * var config = toml.load_file('zuri.toml')
+ *
+ * echo config['package']['name']
+ * ```
+ *
+ * @param string path Filesystem path to the TOML file.
+ * @returns dict
+ * @throws ParseError On any syntax or structural error.
+ * @throws Error On any file error.
+ */
+def load_file(path: string) {
+  return parse(file(path).read())
+}
+
+
+/**
+ * Returns `value` as TOML text.
+ *
+ * The result always ends in a line break. Keys keep the order the
+ * dictionary holds them in unless `sort_keys` says otherwise.
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.dump({
+ *   title: 'example',
+ *   owner: { name: 'Ada', active: true },
+ *   ports: [8000, 8001],
+ * })
+ * ```
+ *
+ * ```console
+ * title = "example"
+ * ports = [8000, 8001]
+ *
+ * [owner]
+ * name = "Ada"
+ * active = true
+ *
+ * ```
+ *
+ * @param dict value The value to write. A TOML document is a table,
+ *    so this has to be a dictionary.
+ * @param ?dict options `sort_keys` (default `false`) writes keys in
+ *    sorted order instead of insertion order. `inline_threshold`
+ *    (default `0`, off) writes a flat table inline when its inline
+ *    form is no longer than this many characters.
+ *    `multiline_strings` (default `true`) writes a string holding a
+ *    newline in triple quotes rather than escaping it. `array_width`
+ *    (default `80`) is the length past which an array breaks onto one
+ *    line per item.
+ * @returns string
+ * @throws EncodeError If `value` is not a dictionary, holds a `nil` or
+ *    a value with no TOML spelling, has a non-string key, or contains
+ *    itself.
+ */
+def dump(value, options: ?dict) {
+  return encoder.encode(value, options).to_string()
+}
+
+
+/**
+ * Writes `value` to the file at `path` as TOML, creating or
+ * overwriting it.
+ *
+ * ```zuri,ignore
+ * import toml
+ *
+ * toml.dump_file('config.toml', {
+ *   server: { host: '0.0.0.0', port: 8080 },
+ * })
+ * ```
+ *
+ * @param string path Filesystem path to write to.
+ * @param dict value The value to write.
+ * @param ?dict options The same options `dump()` takes.
+ * @throws EncodeError If the value cannot be written.
+ * @throws Error On any file error.
+ */
+def dump_file(path: string, value, options: ?dict) {
+  var handle = file(path, 'w')
+
+  handle.write(dump(value, options))
+  handle.close()
+}
+
+
+/**
+ * Parses TOML text into a `Document`, which remembers how it was
+ * written.
+ *
+ * This is the one to reach for when the file already exists and
+ * belongs to somebody. A `Document` renders back byte for byte until
+ * it is changed, and a change touches only what it names.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var doc = toml.edit('[a]\nx = 1   # keep me\ny = 2\n')
+ *
+ * doc.set('a.x', 99)
+ * doc.remove('a.y')
+ *
+ * echo doc.to_string()
+ * ```
+ *
+ * ```console
+ * [a]
+ * x = 99   # keep me
+ *
+ * ```
+ *
+ * @param string text The TOML text.
+ * @returns Document
+ * @throws ParseError On any syntax or structural error.
+ */
+def edit(text: string) {
+  return parser.parse(text)
+}
+
+
+/**
+ * Reads the TOML file at `path` into a `Document`.
+ *
+ * `Document.save()` writes it back.
+ *
+ * ```zuri,ignore
+ * import toml
+ *
+ * var doc = toml.edit_file('zuri.toml')
+ *
+ * doc.set('package.version', '2.0.0')
+ * doc.save('zuri.toml')
+ * ```
+ *
+ * @param string path Filesystem path to the TOML file.
+ * @returns Document
+ * @throws ParseError On any syntax or structural error.
+ * @throws Error On any file error.
+ */
+def edit_file(path: string) {
+  return edit(file(path).read())
+}
+
+
+/**
+ * Builds a `Document` from a plain Zuri value.
+ *
+ * `dump()` is this followed by `to_string()`. Reach for this one when
+ * the document is going to be edited before it is written, or when a
+ * generated file should be handed to the same code that handles a
+ * parsed one.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var doc = toml.document({ package: { name: 'app' } })
+ *
+ * doc.set('package.version', '0.1.0')
+ *
+ * echo doc.to_string()
+ * ```
+ *
+ * ```console
+ * [package]
+ * name = "app"
+ * version = "0.1.0"
+ *
+ * ```
+ *
+ * @param dict value The value to write.
+ * @param ?dict options The same options `dump()` takes.
+ * @returns Document
+ * @throws EncodeError If the value cannot be written.
+ */
+def document(value, options: ?dict) {
+  return encoder.encode(value, options)
+}

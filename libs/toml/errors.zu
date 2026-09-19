@@ -1,0 +1,176 @@
+/**
+ * @module errors
+ *
+ * Every error the `toml` module raises, under one root.
+ *
+ * `TomlError` is that root. The three subclasses separate the cases a
+ * caller handles differently: text that is not TOML, a Zuri value that
+ * has no TOML spelling, and an edit that contradicts the document it
+ * was applied to.
+ *
+ * Each one carries the detail a message alone cannot. `ParseError`
+ * knows the line and column it stopped at, `EncodeError` knows the
+ * type it could not write, and `EditError` knows the key path it
+ * could not follow.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+
+/**
+ * Base class for every error this module raises.
+ *
+ * Catch this to catch anything `toml` can do.
+ *
+ * @printable
+ */
+class TomlError < Error {
+
+  /**
+   * @param string message Human-readable description of the fault.
+   */
+  @new(message) {
+    parent(message)
+    self.type = 'TomlError'
+  }
+
+  to_string() {
+    return '<${self.type}: ${self.message}>'
+  }
+}
+
+
+/**
+ * Text that is not valid TOML.
+ *
+ * `line` and `column` are both 1-based and point at the character the
+ * parser gave up on, which is where the fix goes. Both are `-1` when
+ * the fault belongs to the document as a whole rather than to one
+ * position in it.
+ *
+ * ```zuri
+ * import toml
+ *
+ * catch {
+ *   toml.parse('key = ')
+ * } as error {
+ *   echo '${error.line}:${error.column} ${error.message}'
+ * }
+ * ```
+ *
+ * ```console
+ * 1:7 expected a value after '='
+ * ```
+ *
+ * @printable
+ */
+class ParseError < TomlError {
+  var line   = -1
+  var column = -1
+
+  /**
+   * @param string message Human-readable description of the fault.
+   * @param ?number line 1-based line, or `-1` when not applicable.
+   * @param ?number column 1-based column, or `-1` when not applicable.
+   */
+  @new(message, line, column) {
+    parent(message)
+
+    self.type = 'ParseError'
+
+    if line != nil {
+      self.line = line
+    }
+
+    if column != nil {
+      self.column = column
+    }
+  }
+
+  to_string() {
+    if self.line < 0 {
+      return '<ParseError: ${self.message}>'
+    }
+
+    return '<ParseError: ${self.message} at ${self.line}:${self.column}>'
+  }
+}
+
+
+/**
+ * A Zuri value that cannot be written as TOML.
+ *
+ * TOML has no null, so a `nil` anywhere in a value raises this rather
+ * than being written as something that reads back differently. The
+ * same goes for a function, a class, a cyclic structure, and a
+ * dictionary key that is not a string.
+ *
+ * `path` is the dotted key path the offending value sat at, so a
+ * rejected leaf in a deep structure can be found without a search.
+ *
+ * @printable
+ */
+class EncodeError < TomlError {
+  var path = ''
+
+  /**
+   * @param string message Human-readable description of the fault.
+   * @param ?string path Dotted key path to the offending value.
+   */
+  @new(message, path) {
+    parent(message)
+
+    self.type = 'EncodeError'
+
+    if path != nil {
+      self.path = path
+    }
+  }
+
+  to_string() {
+    if self.path == '' {
+      return '<EncodeError: ${self.message}>'
+    }
+
+    return "<EncodeError: ${self.message} at '${self.path}'>"
+  }
+}
+
+
+/**
+ * An edit that the document cannot accept.
+ *
+ * Raised when a key path runs through something that is not a table,
+ * such as `set('a.b', 1)` on a document where `a` is already a string,
+ * and when a path is malformed or empty.
+ *
+ * `path` is the full dotted path as it was given, so the message names
+ * what the caller asked for rather than the fragment that failed.
+ *
+ * @printable
+ */
+class EditError < TomlError {
+  var path = ''
+
+  /**
+   * @param string message Human-readable description of the fault.
+   * @param ?string path The dotted key path the edit was applied to.
+   */
+  @new(message, path) {
+    parent(message)
+
+    self.type = 'EditError'
+
+    if path != nil {
+      self.path = path
+    }
+  }
+
+  to_string() {
+    if self.path == '' {
+      return '<EditError: ${self.message}>'
+    }
+
+    return "<EditError: ${self.message} at '${self.path}'>"
+  }
+}

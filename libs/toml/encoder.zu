@@ -1,0 +1,434 @@
+/**
+ * @module encoder
+ *
+ * Turning a plain Zuri value into a document.
+ *
+ * The parser's job is to lose nothing. This one's is the opposite:
+ * there is no original text to preserve, so every choice has to be
+ * made from scratch. Which dictionaries become `[table]` blocks and
+ * which become inline tables, which lists become `[[array of table]]`
+ * blocks, where a long array breaks across lines, whether a string
+ * with a newline in it is escaped or written out in triple quotes.
+ *
+ * Every one of those is an option with a stated default, and the
+ * result is a `Document` like any other, so a freshly encoded value
+ * and a parsed file are the same kind of thing afterwards.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .errors { EncodeError }
+import .document {
+  Document, Table, ArrayOfTables, Entry, Value, Array, InlineTable,
+  spell_key, spell_basic_string, spell_multiline_string, spell_integer,
+  spell_float, spell_value
+}
+
+
+# What an unconfigured encoder does.
+var _DEFAULTS = {
+  sort_keys: false,
+  inline_threshold: 0,
+  multiline_strings: true,
+  array_width: 80,
+}
+
+
+# Fills in whatever the caller left out, and refuses a name that is not
+# an option so a typo is loud rather than silently ignored.
+def _settings(options) {
+  var out = {}
+
+  for name, value in _DEFAULTS {
+    out[name] = value
+  }
+
+  if options == nil {
+    return out
+  }
+
+  if !is_dict(options) {
+    raise EncodeError('options must be a dictionary, got ${typeof(options)}')
+  }
+
+  for name, value in options {
+    if !_DEFAULTS.contains(name) {
+      raise EncodeError("'${name}' is not an encoder option")
+    }
+
+    out[name] = value
+  }
+
+  return out
+}
+
+
+# True when this value belongs on a `key = value` line rather than in a
+# block of its own.
+def _is_leaf(value, opts) {
+  if is_dict(value) {
+    return _fits_inline(value, opts)
+  }
+
+  if is_list(value) {
+    return !_is_table_array(value)
+  }
+
+  return true
+}
+
+
+# An array of tables needs every element to be a table, and needs at
+# least one: an empty list is an empty array, which is a different
+# thing and spells differently.
+def _is_table_array(items) {
+  if !is_list(items) or items.length() == 0 {
+    return false
+  }
+
+  for item in items {
+    if !is_dict(item) {
+      return false
+    }
+  }
+
+  return true
+}
+
+
+# A dictionary may be written inline when the caller asked for short
+# tables to stay inline, it holds nothing that would itself be a block,
+# and the whole thing fits in the budget.
+def _fits_inline(source, opts) {
+  if opts.inline_threshold <= 0 {
+    return false
+  }
+
+  for name, value in source {
+    if is_dict(value) or _is_table_array(value) {
+      return false
+    }
+  }
+
+  return _spell(source, opts, '', {}).to_string().length() <=
+      opts.inline_threshold
+}
+
+
+# The names of a dictionary, in the order they will be written.
+def _names(source, opts) {
+  var names = source.keys()
+
+  if opts.sort_keys {
+    names.sort()
+  }
+
+  return names
+}
+
+
+# Builds the value node for anything that sits on a `key = value` line.
+def _spell(value, opts, path, seen) {
+  if is_string(value) and value.contains('\n') and !opts.multiline_strings {
+    return Value('string', value, spell_basic_string(value))
+  }
+
+  if is_list(value) {
+    return _spell_array(value, opts, path, seen)
+  }
+
+  if is_dict(value) {
+    return _spell_inline(value, opts, path, seen)
+  }
+
+  return spell_value(value, path)
+}
+
+
+# Refuses a container that is already being written. A structure that
+# holds itself has no finite TOML, and without this the walk below
+# would never end.
+def _enter(value, path, seen) {
+  var key = id(value).to_string()
+
+  if seen.contains(key) {
+    raise EncodeError(
+      is_list(value)
+        ? 'a list cannot contain itself'
+        : 'a dictionary cannot contain itself',
+      path
+    )
+  }
+
+  seen[key] = true
+
+  return key
+}
+
+
+def _spell_array(items, opts, path, seen) {
+  var key = _enter(items, path, seen)
+  var node = Array()
+
+  iter var i = 0; i < items.length(); i++ {
+    var item = _spell(items[i], opts, '${path}[${i}]', seen)
+
+    if i > 0 {
+      item.prefix = ' '
+    }
+
+    node.items.append(item)
+  }
+
+  seen.remove(key)
+
+  var flat = Value('array', node, nil)
+
+  if flat.to_string().length() <= opts.array_width {
+    return flat
+  }
+
+  # Too long for one line, so every item gets its own, with the
+  # trailing comma that makes adding another a one-line diff.
+  iter var i = 0; i < node.items.length(); i++ {
+    node.items[i].prefix = '\n  '
+  }
+
+  node.trailing_comma = node.items.length() > 0
+  node.trailing = '\n'
+
+  return flat
+}
+
+
+def _spell_inline(source, opts, path, seen) {
+  var key = _enter(source, path, seen)
+  var node = InlineTable()
+  var empty = true
+
+  for name in _names(source, opts) {
+    if !is_string(name) {
+      raise EncodeError(
+        'a TOML key must be a string, got ${typeof(name)}', path
+      )
+    }
+
+    var below = path == '' ? name : '${path}.${name}'
+    var entry = Entry([name], spell_key(name),
+        _spell(source[name], opts, below, seen))
+
+    entry.prefix = ' '
+    entry.pre_eq = ' '
+    entry.value.prefix = ' '
+
+    node.entries.append(entry)
+    empty = false
+  }
+
+  if !empty {
+    node.trailing = ' '
+  }
+
+  seen.remove(key)
+
+  return Value('inline-table', node, nil)
+}
+
+
+# Writes one table: its own pairs first, because TOML reads every pair
+# after a header as belonging to it, and only then the blocks below it.
+def _write(doc, table, source, path, opts, seen) {
+  var key = _enter(source, _join(path), seen)
+  var names = _names(source, opts)
+
+  for name in names {
+    if !is_string(name) {
+      raise EncodeError('a TOML key must be a string, got ${typeof(name)}',
+          _join(path))
+    }
+  }
+
+  for name in names {
+    var value = source[name]
+
+    if !_is_leaf(value, opts) {
+      continue
+    }
+
+    var entry = Entry([name], spell_key(name),
+        _spell(value, opts, _join(path + [name]), seen))
+
+    entry.pre_eq = ' '
+    entry.value.prefix = ' '
+    entry.newline = doc.newline
+
+    table.entries.append(entry)
+  }
+
+  for name in names {
+    var value = source[name]
+
+    if _is_leaf(value, opts) {
+      continue
+    }
+
+    if is_dict(value) {
+      var below = path + [name]
+
+      # A table holding nothing but other tables is left implicit: its
+      # header would carry no pairs, and `[a.b.c]` already says that
+      # `a` and `a.b` exist.
+      var node = _needs_header(value, opts)
+          ? _block(doc, table, below)
+          : _implicit(doc, table, below)
+
+      _write(doc, node, value, below, opts, seen)
+      continue
+    }
+
+    var array = _array_block(doc, table, path + [name])
+    var holder = _enter(value, _join(path + [name]), seen)
+
+    for item in value {
+      var element = _element(doc, array)
+
+      _write(doc, element, item, path + [name], opts, seen)
+    }
+
+    seen.remove(holder)
+  }
+
+  seen.remove(key)
+}
+
+
+# True when this table has to be written out: it holds pairs of its
+# own, or it holds nothing at all and would otherwise vanish.
+def _needs_header(source, opts) {
+  if source.length() == 0 {
+    return true
+  }
+
+  for name, value in source {
+    if _is_leaf(value, opts) {
+      return true
+    }
+  }
+
+  return false
+}
+
+
+# A table that exists in the tree but is never written, the way a bare
+# `[a.b]` header brings `a` into being without a header of its own.
+def _implicit(doc, owner, path) {
+  var node = Table(path)
+
+  node.document = doc
+  owner.children[path[path.length() - 1]] = node
+
+  return node
+}
+
+
+# Creates the `[header]` block for a path and hangs it off its parent.
+def _block(doc, owner, path) {
+  var node = Table(path)
+
+  node.document = doc
+  node.explicit = true
+  node.header_raw = _header(path)
+  node.prefix = doc.order.length() > 0 or doc.root.entries.length() > 0
+      ? doc.newline
+      : ''
+  node.newline = doc.newline
+
+  owner.children[path[path.length() - 1]] = node
+  doc.order.append(node)
+
+  return node
+}
+
+
+def _array_block(doc, owner, path) {
+  var node = ArrayOfTables(path)
+
+  node.document = doc
+  owner.children[path[path.length() - 1]] = node
+
+  return node
+}
+
+
+def _element(doc, array) {
+  var node = Table(array.path)
+
+  node.document = doc
+  node.explicit = true
+  node.is_aot_element = true
+  node.header_raw = _header(array.path)
+  node.prefix = doc.order.length() > 0 or doc.root.entries.length() > 0
+      ? doc.newline
+      : ''
+  node.newline = doc.newline
+
+  array.elements.append(node)
+  doc.order.append(node)
+
+  return node
+}
+
+
+def _header(path) {
+  var parts = []
+
+  for name in path {
+    parts.append(spell_key(name))
+  }
+
+  return '.'.join(parts)
+}
+
+
+def _join(path) {
+  return '.'.join(path)
+}
+
+
+/**
+ * Builds the document for a Zuri dictionary.
+ *
+ * A TOML file is a table, so the value has to be a dictionary.
+ * Everything under it is placed by what it is: a dictionary becomes a
+ * `[table]` block, a non-empty list of dictionaries becomes a
+ * `[[array of tables]]`, and everything else becomes a pair on a line.
+ *
+ * @param dict value The value to write.
+ * @param ?dict options `sort_keys` (default `false`) writes keys in
+ *    sorted order instead of insertion order. `inline_threshold`
+ *    (default `0`, off) writes a flat table inline when its inline
+ *    form is no longer than this many characters.
+ *    `multiline_strings` (default `true`) writes a string holding a
+ *    newline in triple quotes rather than escaping it. `array_width`
+ *    (default `80`) is the length past which an array breaks onto one
+ *    line per item.
+ * @returns Document
+ * @throws EncodeError If the value is not a dictionary, holds a `nil`
+ *    or a value with no TOML spelling, has a non-string key, or
+ *    contains itself.
+ */
+def encode(value, options) {
+  if !is_dict(value) {
+    raise EncodeError(
+      'a TOML document is a table, so the value must be a dictionary, ' +
+      'got ${typeof(value)}'
+    )
+  }
+
+  var opts = _settings(options)
+  var doc = Document()
+
+  _write(doc, doc.root, value, [], opts, {})
+
+  return doc
+}

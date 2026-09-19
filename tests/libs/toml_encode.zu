@@ -1,0 +1,211 @@
+/**
+ * toml_encode.zu
+ *
+ * Test suite for the `toml` module's encoder: how a plain Zuri value
+ * is shaped into TOML, what each option changes, and which values have
+ * no TOML spelling at all. Everything written here is parsed back and
+ * compared, so the encoder is checked against the parser rather than
+ * against a transcript alone.
+ */
+
+import toml
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+
+  return true
+}
+
+# Dumps a value, asserts the text is what was expected, and asserts it
+# parses back to the value it came from.
+def emits(value, expected, options) {
+  var text = toml.dump(value, options)
+
+  assert text == expected,
+    'expected ' + expected.replace('/\n/', '\\n') +
+    ' but got ' + text.replace('/\n/', '\\n')
+
+  return toml.parse(text)
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  toml module — encoder test suite'
+echo '═══════════════════════════════════════════════════════'
+echo ''
+echo 'Scalars'
+
+emits({ s: 'hello', b: true, i: 42, f: 3.5 },
+  's = "hello"\nb = true\ni = 42\nf = 3.5\n', nil)
+ok('strings, booleans, integers and floats')
+
+emits({ a: 1.0 }, 'a = 1\n', nil)
+emits({ a: toml.Float(1.0) }, 'a = 1.0\n', nil)
+emits({ a: toml.Float(2.5) }, 'a = 2.5\n', nil)
+ok('a whole number writes as an integer unless Float says otherwise')
+
+emits({ a: 1 / 0, b: -1 / 0 }, 'a = inf\nb = -inf\n', nil)
+
+var nans = toml.parse(toml.dump({ a: 0 / 0 }))
+
+assert nans['a'] != nans['a'], 'nan survives as nan'
+ok('inf and nan')
+
+emits({ a: '9223372036854775807'.to_bigint() },
+  'a = 9223372036854775807\n', nil)
+ok('a bigint writes every digit')
+
+var escaped = emits({ a: 'quote" back\\ tab\t' },
+  'a = "quote\\" back\\\\ tab\\t"\n', nil)
+
+assert escaped['a'] == 'quote" back\\ tab\t', 'escapes round-trip'
+
+var control = toml.dump({ a: (1).chr() })
+
+assert control == 'a = "\\u0001"\n', 'a control character becomes a short escape'
+assert toml.parse(control)['a'] == (1).chr(), 'and reads back as itself'
+ok('escaping, including control characters')
+
+echo ''
+echo 'Keys'
+
+emits({ 'bare_key-1': 1 }, 'bare_key-1 = 1\n', nil)
+emits({ 'needs quoting': 1 }, '"needs quoting" = 1\n', nil)
+emits({ '': 1 }, '"" = 1\n', nil)
+emits({ 'a.b': 1 }, '"a.b" = 1\n', nil)
+ok('keys are quoted only when they have to be')
+
+echo ''
+echo 'Structure'
+
+emits({ title: 't', owner: { name: 'Ada' } },
+  'title = "t"\n\n[owner]\nname = "Ada"\n', nil)
+ok('a dictionary becomes a table block, after the pairs beside it')
+
+emits({ a: { b: { c: { d: 1 } } } }, '[a.b.c]\nd = 1\n', nil)
+ok('a table holding only tables is left implicit')
+
+emits({ a: {} }, '[a]\n', nil)
+ok('an empty table still gets a header')
+
+emits({ bin: [{ name: 'a' }, { name: 'b' }] },
+  '[[bin]]\nname = "a"\n\n[[bin]]\nname = "b"\n', nil)
+ok('a list of dictionaries becomes an array of tables')
+
+emits({ xs: [] }, 'xs = []\n', nil)
+emits({ xs: [1, 'a', true] }, 'xs = [1, "a", true]\n', nil)
+emits({ xs: [{ a: 1 }, 2] }, 'xs = [{ a = 1 }, 2]\n', nil)
+ok('an empty or mixed list stays an array, not an array of tables')
+
+emits({ xs: [[1, 2], [3]] }, 'xs = [[1, 2], [3]]\n', nil)
+ok('arrays nest')
+
+echo ''
+echo 'Options'
+
+emits({ z: 1, a: 2, m: 3 }, 'z = 1\na = 2\nm = 3\n', nil)
+emits({ z: 1, a: 2, m: 3 }, 'a = 2\nm = 3\nz = 1\n', { sort_keys: true })
+ok('sort_keys chooses between insertion and sorted order')
+
+emits({ s: 'one\ntwo' }, 's = """one\ntwo"""\n', nil)
+emits({ s: 'one\ntwo' }, 's = "one\\ntwo"\n', { multiline_strings: false })
+ok('multiline_strings chooses between triple quotes and an escape')
+
+emits({ pt: { x: 1, y: 2 } }, 'pt = { x = 1, y = 2 }\n', { inline_threshold: 40 })
+emits({ pt: { x: 1, y: 2 } }, '[pt]\nx = 1\ny = 2\n', nil)
+emits({ pt: { x: 1, nested: { deep: 1 } } },
+  '[pt]\nx = 1\nnested = { deep = 1 }\n', { inline_threshold: 200 })
+emits({ pt: { x: 'a value long enough to blow the budget wide open' } },
+  '[pt]\nx = "a value long enough to blow the budget wide open"\n',
+  { inline_threshold: 20 })
+ok('inline_threshold inlines a flat table that fits, and only that')
+
+var wide = toml.dump({ xs: [1, 2, 3] }, { array_width: 5 })
+
+assert wide == 'xs = [\n  1,\n  2,\n  3,\n]\n',
+  'a long array breaks one item per line'
+assert toml.parse(wide)['xs'] == [1, 2, 3], 'and parses back the same'
+ok('array_width breaks a long array across lines')
+
+assert raises(@() => toml.dump({ a: 1 }, { nope: true })),
+  'an unknown option is refused'
+ok('an unknown option is an error rather than a silent no-op')
+
+echo ''
+echo 'Timestamps'
+
+emits({ a: toml.LocalDate(2026, 9, 19) }, 'a = 2026-09-19\n', nil)
+emits({ a: toml.LocalTime(7, 32, 0) }, 'a = 07:32:00\n', nil)
+emits({ a: toml.LocalDateTime(1979, 5, 27, 7, 32, 0) },
+  'a = 1979-05-27T07:32:00\n', nil)
+emits({ a: toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 0) },
+  'a = 1979-05-27T07:32:00Z\n', nil)
+emits({ a: toml.DateTime(1979, 5, 27, 0, 32, 0, 0, -420) },
+  'a = 1979-05-27T00:32:00-07:00\n', nil)
+ok('all four temporal types write as TOML spells them')
+
+var round = toml.parse(toml.dump({ a: toml.DateTime(2026, 9, 19, 13, 4, 5, 500000000, 60) }))
+
+assert round['a'].equals(toml.DateTime(2026, 9, 19, 13, 4, 5, 500000000, 60)),
+  'a timestamp with a fraction and an offset round-trips'
+ok('a timestamp round-trips through dump and parse')
+
+echo ''
+echo 'What cannot be written'
+
+assert raises(@() => toml.dump({ a: nil })), 'TOML has no null'
+assert raises(@() => toml.dump([1, 2])), 'a document has to be a table'
+assert raises(@() => toml.dump('text')), 'a scalar is not a document'
+assert raises(@() => toml.dump({ a: @() => 1 })), 'a function has no spelling'
+assert raises(@() => toml.dump({ 1: 'a' })), 'a key has to be a string'
+ok('nil, a non-table document, a function and a non-string key')
+
+var cycle = { a: 1 }
+
+cycle['self'] = cycle
+
+assert raises(@() => toml.dump(cycle)), 'a dictionary holding itself is refused'
+
+var loop = [1]
+
+loop.append(loop)
+
+assert raises(@() => toml.dump({ xs: loop })), 'a list holding itself is refused'
+ok('a structure that contains itself is refused rather than recursed')
+
+var err = nil
+
+catch {
+  toml.dump({ outer: { inner: nil } })
+} as e {
+  err = e
+}
+
+assert instance_of(err, toml.EncodeError), 'the failure is an EncodeError'
+assert err.path == 'outer.inner', 'and names the path it gave up at'
+ok('an encode error names where it happened')
+
+echo ''
+echo 'Documents built from values'
+
+var doc = toml.document({ package: { name: 'app' } })
+
+doc.set('package.version', '1.0.0')
+
+assert doc.to_string() == '[package]\nname = "app"\nversion = "1.0.0"\n',
+  'a built document can be edited like a parsed one'
+ok('document() builds an editable document')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

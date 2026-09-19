@@ -1,0 +1,642 @@
+/**
+ * @module values
+ *
+ * The TOML types that Zuri has no built-in equal for.
+ *
+ * TOML carries four temporal types and draws a line between an
+ * integer and a float. Zuri has one `number`, which is an IEEE-754
+ * double, and a `date.Date` that always knows an offset. Neither gap
+ * can be closed by picking a near-enough built-in: a local date that
+ * decoded as a `Date` would grow a UTC offset it never had, and a
+ * float that decoded as a `number` would be written back out as an
+ * integer.
+ *
+ * So the four temporal types are their own classes here, and `Float`
+ * marks a number that must stay a float. Each temporal class validates
+ * on construction, renders itself in the exact form TOML specifies,
+ * and answers `equals()` rather than `==`, which compares instances by
+ * identity.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var released = toml.LocalDate(2026, 9, 19)
+ * echo released.to_string()
+ *
+ * var stamp = toml.DateTime(2026, 9, 19, 13, 4, 5, 0, -300)
+ * echo stamp.to_string()
+ * ```
+ *
+ * ```console
+ * 2026-09-19
+ * 2026-09-19T13:04:05-05:00
+ * ```
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import date
+
+import .errors { TomlError }
+
+
+# Days in each month outside a leap year, indexed from 1 so the month
+# number can be used directly.
+var _DAYS_IN_MONTH = [-1, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+
+# The proleptic Gregorian leap rule, which is the one RFC 3339 uses.
+def _is_leap(year) {
+  if year % 4 != 0 {
+    return false
+  }
+
+  if year % 100 != 0 {
+    return true
+  }
+
+  return year % 400 == 0
+}
+
+
+# How many days `month` has in `year`.
+def _days_in(year, month) {
+  if month == 2 and _is_leap(year) {
+    return 29
+  }
+
+  return _DAYS_IN_MONTH[month]
+}
+
+
+# Left-pads a non-negative integer with zeros to `width` digits.
+def _pad(value, width) {
+  var text = value.to_string()
+
+  while text.length() < width {
+    text = '0' + text
+  }
+
+  return text
+}
+
+
+# Every field a TOML date or time carries has to be a whole number, and
+# a fractional one would render as digits that are not there.
+def _whole(value, name) {
+  if !is_number(value) or value != value.floor() {
+    raise TomlError('${name} must be a whole number, got ${value}')
+  }
+}
+
+
+# Checks a year/month/day triple against the calendar.
+def _check_date(year, month, day) {
+  _whole(year, 'year')
+  _whole(month, 'month')
+  _whole(day, 'day')
+
+  if year < 0 or year > 9999 {
+    raise TomlError('year must be from 0 to 9999, got ${year}')
+  }
+
+  if month < 1 or month > 12 {
+    raise TomlError('month must be from 1 to 12, got ${month}')
+  }
+
+  var limit = _days_in(year, month)
+
+  if day < 1 or day > limit {
+    raise TomlError('day must be from 1 to ${limit} for month ${month}, got ${day}')
+  }
+}
+
+
+# Checks an hour/minute/second/nanosecond quadruple against the clock.
+def _check_time(hour, minute, second, nanosecond) {
+  _whole(hour, 'hour')
+  _whole(minute, 'minute')
+  _whole(second, 'second')
+  _whole(nanosecond, 'nanosecond')
+
+  if hour < 0 or hour > 23 {
+    raise TomlError('hour must be from 0 to 23, got ${hour}')
+  }
+
+  if minute < 0 or minute > 59 {
+    raise TomlError('minute must be from 0 to 59, got ${minute}')
+  }
+
+  # 60 is allowed: RFC 3339 admits a positive leap second, and a
+  # timestamp recorded during one is still a real timestamp.
+  if second < 0 or second > 60 {
+    raise TomlError('second must be from 0 to 60, got ${second}')
+  }
+
+  if nanosecond < 0 or nanosecond > 999999999 {
+    raise TomlError('nanosecond must be from 0 to 999999999, got ${nanosecond}')
+  }
+}
+
+
+# Renders the fractional part of a second, or '' when there is none.
+# Trailing zeros are dropped, so 500000000ns is '.5' rather than
+# '.500000000'.
+def _fraction(nanosecond) {
+  if nanosecond == 0 {
+    return ''
+  }
+
+  var digits = _pad(nanosecond, 9)
+
+  while digits.length() > 1 and digits.ends_with('0') {
+    digits = digits[0, digits.length() - 1]
+  }
+
+  return '.' + digits
+}
+
+
+# Renders a UTC offset in minutes as TOML spells it.
+def _offset_text(minutes) {
+  if minutes == 0 {
+    return 'Z'
+  }
+
+  var sign = minutes < 0 ? '-' : '+'
+  var total = minutes.abs()
+
+  return sign + _pad((total / 60).floor(), 2) + ':' + _pad(total % 60, 2)
+}
+
+
+/**
+ * A calendar date with no time and no offset, TOML's `local-date`.
+ *
+ * Spelled `1979-05-27`. This is a date on the wall calendar: a
+ * birthday, a release day, a contract term. It names no instant, so
+ * two `LocalDate`s from different timezones are comparable directly.
+ *
+ * ```zuri
+ * import toml
+ *
+ * var released = toml.LocalDate(2026, 9, 19)
+ *
+ * echo released.to_string()
+ * echo released.year
+ * echo released.equals(toml.LocalDate(2026, 9, 19))
+ * ```
+ *
+ * ```console
+ * 2026-09-19
+ * 2026
+ * true
+ * ```
+ *
+ * @printable
+ */
+class LocalDate {
+
+  /**
+   * @param number year From 0 to 9999.
+   * @param number month From 1 to 12.
+   * @param number day From 1 to the length of that month, leap years
+   *    included.
+   * @throws TomlError If any field is fractional or out of range, or
+   *    if the day does not exist in that month.
+   */
+  @new(year, month, day) {
+    _check_date(year, month, day)
+
+    self.year = year
+    self.month = month
+    self.day = day
+  }
+
+  /**
+   * Returns the date as TOML spells it, `YYYY-MM-DD`.
+   *
+   * @returns string
+   */
+  to_string() {
+    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' + _pad(self.day, 2)
+  }
+
+  /**
+   * Returns true when `other` is a `LocalDate` naming the same day.
+   *
+   * `==` compares instances by identity, so two separately built
+   * dates for the same day are never `==`. This is the comparison to
+   * use.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, LocalDate) {
+      return false
+    }
+
+    return self.year == other.year and self.month == other.month and
+        self.day == other.day
+  }
+
+  /**
+   * Returns this date as a `date.Date` at midnight UTC.
+   *
+   * The offset is an artefact of the conversion: a `date.Date` always
+   * has one and a `LocalDate` never did. Use it for calendar
+   * arithmetic, not to claim an instant the TOML file did not state.
+   *
+   * @returns Date
+   */
+  to_date() {
+    return date.Date(self.year, self.month, self.day, 0, 0, 0, 0, 0)
+  }
+}
+
+
+/**
+ * A wall-clock time with no date and no offset, TOML's `local-time`.
+ *
+ * Spelled `07:32:00` or `07:32:00.999999`. This is a time of day that
+ * recurs: an opening hour, a cron-like schedule, a curfew.
+ *
+ * Fractional seconds are kept to nanosecond precision and render with
+ * trailing zeros removed, so half a second is `.5` rather than
+ * `.500000000`.
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.LocalTime(7, 32, 0).to_string()
+ * echo toml.LocalTime(7, 32, 0, 500000000).to_string()
+ * ```
+ *
+ * ```console
+ * 07:32:00
+ * 07:32:00.5
+ * ```
+ *
+ * @printable
+ */
+class LocalTime {
+
+  /**
+   * @param number hour From 0 to 23.
+   * @param number minute From 0 to 59.
+   * @param number second From 0 to 60, the 60 admitting a leap second.
+   * @param ?number nanosecond From 0 to 999999999. Defaults to `0`.
+   * @throws TomlError If any field is fractional or out of range.
+   */
+  @new(hour, minute, second, nanosecond) {
+    if nanosecond == nil {
+      nanosecond = 0
+    }
+
+    _check_time(hour, minute, second, nanosecond)
+
+    self.hour = hour
+    self.minute = minute
+    self.second = second
+    self.nanosecond = nanosecond
+  }
+
+  /**
+   * Returns the time as TOML spells it, `HH:MM:SS` with a fractional
+   * part only when there is one.
+   *
+   * @returns string
+   */
+  to_string() {
+    return _pad(self.hour, 2) + ':' + _pad(self.minute, 2) + ':' +
+        _pad(self.second, 2) + _fraction(self.nanosecond)
+  }
+
+  /**
+   * Returns true when `other` is a `LocalTime` naming the same
+   * instant of the clock, fractional seconds included.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, LocalTime) {
+      return false
+    }
+
+    return self.hour == other.hour and self.minute == other.minute and
+        self.second == other.second and self.nanosecond == other.nanosecond
+  }
+}
+
+
+/**
+ * A date and a wall-clock time with no offset, TOML's
+ * `local-date-time`.
+ *
+ * Spelled `1979-05-27T07:32:00`. It names a moment on somebody's
+ * calendar and clock without saying whose, which is what a log format
+ * or a schedule written for one site means by a timestamp.
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.LocalDateTime(1979, 5, 27, 7, 32, 0).to_string()
+ * ```
+ *
+ * ```console
+ * 1979-05-27T07:32:00
+ * ```
+ *
+ * @printable
+ */
+class LocalDateTime {
+
+  /**
+   * @param number year From 0 to 9999.
+   * @param number month From 1 to 12.
+   * @param number day From 1 to the length of that month.
+   * @param number hour From 0 to 23.
+   * @param number minute From 0 to 59.
+   * @param number second From 0 to 60.
+   * @param ?number nanosecond From 0 to 999999999. Defaults to `0`.
+   * @throws TomlError If any field is fractional or out of range.
+   */
+  @new(year, month, day, hour, minute, second, nanosecond) {
+    if nanosecond == nil {
+      nanosecond = 0
+    }
+
+    _check_date(year, month, day)
+    _check_time(hour, minute, second, nanosecond)
+
+    self.year = year
+    self.month = month
+    self.day = day
+    self.hour = hour
+    self.minute = minute
+    self.second = second
+    self.nanosecond = nanosecond
+  }
+
+  /**
+   * Returns the timestamp as TOML spells it, the date and the time
+   * joined by `T`.
+   *
+   * @returns string
+   */
+  to_string() {
+    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
+        _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
+        _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
+        _fraction(self.nanosecond)
+  }
+
+  /**
+   * Returns true when `other` is a `LocalDateTime` naming the same
+   * date and time.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, LocalDateTime) {
+      return false
+    }
+
+    return self.year == other.year and self.month == other.month and
+        self.day == other.day and self.hour == other.hour and
+        self.minute == other.minute and self.second == other.second and
+        self.nanosecond == other.nanosecond
+  }
+
+  /**
+   * Returns this timestamp as a `date.Date` read as UTC.
+   *
+   * The offset is an artefact of the conversion. A `LocalDateTime`
+   * deliberately does not know one, so reading the result as an
+   * instant asserts something the TOML file did not.
+   *
+   * @returns Date
+   */
+  to_date() {
+    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
+        self.second, (self.nanosecond / 1000).floor(), 0)
+  }
+}
+
+
+/**
+ * A date and time with a UTC offset, TOML's `offset-date-time`.
+ *
+ * Spelled `1979-05-27T07:32:00Z` or `1979-05-27T00:32:00-07:00`. This
+ * is the only one of the four that names an unambiguous instant, and
+ * the only one that can be compared across sites.
+ *
+ * The offset is held in minutes, signed, so `-300` is `-05:00`. A zero
+ * offset renders as `Z`; a document that spelled it `+00:00` keeps
+ * that spelling through an edit, because the raw text is preserved
+ * alongside the value.
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.DateTime(1979, 5, 27, 7, 32, 0, 0, 0).to_string()
+ * echo toml.DateTime(1979, 5, 27, 0, 32, 0, 0, -420).to_string()
+ * ```
+ *
+ * ```console
+ * 1979-05-27T07:32:00Z
+ * 1979-05-27T00:32:00-07:00
+ * ```
+ *
+ * @printable
+ */
+class DateTime {
+
+  /**
+   * @param number year From 0 to 9999.
+   * @param number month From 1 to 12.
+   * @param number day From 1 to the length of that month.
+   * @param number hour From 0 to 23.
+   * @param number minute From 0 to 59.
+   * @param number second From 0 to 60.
+   * @param ?number nanosecond From 0 to 999999999. Defaults to `0`.
+   * @param ?number offset_minutes Minutes east of UTC, from `-1439` to
+   *    `1439`. Defaults to `0`, which renders as `Z`.
+   * @throws TomlError If any field is fractional or out of range.
+   */
+  @new(year, month, day, hour, minute, second, nanosecond, offset_minutes) {
+    if nanosecond == nil {
+      nanosecond = 0
+    }
+
+    if offset_minutes == nil {
+      offset_minutes = 0
+    }
+
+    _check_date(year, month, day)
+    _check_time(hour, minute, second, nanosecond)
+    _whole(offset_minutes, 'offset_minutes')
+
+    if offset_minutes < -1439 or offset_minutes > 1439 {
+      raise TomlError(
+        'offset_minutes must be from -1439 to 1439, got ${offset_minutes}'
+      )
+    }
+
+    self.year = year
+    self.month = month
+    self.day = day
+    self.hour = hour
+    self.minute = minute
+    self.second = second
+    self.nanosecond = nanosecond
+    self.offset_minutes = offset_minutes
+  }
+
+  /**
+   * Returns the timestamp as TOML spells it, with `Z` for a zero
+   * offset and `+HH:MM` or `-HH:MM` otherwise.
+   *
+   * @returns string
+   */
+  to_string() {
+    return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' +
+        _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
+        _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
+        _fraction(self.nanosecond) + _offset_text(self.offset_minutes)
+  }
+
+  /**
+   * Returns true when `other` is a `DateTime` with the same fields
+   * and the same offset.
+   *
+   * Two timestamps naming the same instant through different offsets
+   * are not equal here. Compare `to_date().to_time()` for that.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, DateTime) {
+      return false
+    }
+
+    return self.year == other.year and self.month == other.month and
+        self.day == other.day and self.hour == other.hour and
+        self.minute == other.minute and self.second == other.second and
+        self.nanosecond == other.nanosecond and
+        self.offset_minutes == other.offset_minutes
+  }
+
+  /**
+   * Returns this timestamp as a `date.Date` carrying the same offset.
+   *
+   * This is the one temporal type that converts without inventing
+   * anything: both sides name the same instant.
+   *
+   * @returns Date
+   */
+  to_date() {
+    return date.Date(self.year, self.month, self.day, self.hour, self.minute,
+        self.second, (self.nanosecond / 1000).floor(), self.offset_minutes * 60)
+  }
+}
+
+
+/**
+ * A number that must be written as a TOML float.
+ *
+ * Zuri's `number` is an IEEE-754 double, so `1.0` and `1` are one
+ * value and nothing distinguishes them afterwards. TOML does
+ * distinguish them, and an encoder with only the value to go on has to
+ * guess: it writes an integer whenever the number has no fractional
+ * part, which turns a `1.0` into a `1`.
+ *
+ * Wrap the number to settle it. `Float` means float, whatever the
+ * value happens to be:
+ *
+ * ```zuri
+ * import toml
+ *
+ * echo toml.dump({ ratio: 1.0 })
+ * echo toml.dump({ ratio: toml.Float(1.0) })
+ * ```
+ *
+ * ```console
+ * ratio = 1
+ *
+ * ratio = 1.0
+ *
+ * ```
+ *
+ * Decoding never produces one: a TOML float decodes to a plain
+ * `number`, because a wrapper on every float would make every read
+ * pay for a distinction most programs do not use.
+ *
+ * @printable
+ */
+class Float {
+
+  /**
+   * @param number value The number to write as a float. `inf`, `-inf`
+   *    and `nan` are all accepted; TOML spells them `inf`, `-inf` and
+   *    `nan`.
+   * @throws TomlError If `value` is not a number.
+   */
+  @new(value) {
+    if !is_number(value) {
+      raise TomlError('Float expects a number, got ${typeof(value)}')
+    }
+
+    self.value = value
+  }
+
+  /**
+   * Returns the wrapped number as TOML spells it.
+   *
+   * @returns string
+   */
+  to_string() {
+    if self.value != self.value {
+      return 'nan'
+    }
+
+    if self.value == (1 / 0) {
+      return 'inf'
+    }
+
+    if self.value == (-1 / 0) {
+      return '-inf'
+    }
+
+    var text = self.value.to_string()
+
+    # A whole number stringifies without a point, and the point is the
+    # entire reason this wrapper exists.
+    if !text.contains('.') and !text.contains('e') and !text.contains('E') {
+      text += '.0'
+    }
+
+    return text
+  }
+
+  /**
+   * Returns true when `other` is a `Float` wrapping the same number.
+   *
+   * `nan` never equals anything, this included, which matches what the
+   * bare comparison does.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    if !instance_of(other, Float) {
+      return false
+    }
+
+    return self.value == other.value
+  }
+}

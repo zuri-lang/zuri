@@ -1,0 +1,1475 @@
+/**
+ * @module parser
+ *
+ * Reading TOML text into the document tree, losing nothing.
+ *
+ * The parser is a single pass over the characters. It builds the
+ * nodes in `document.zu`, and every byte it consumes ends up in one of
+ * them: a value's text in its `raw`, the spaces around an `=` in the
+ * pair that holds it, a comment in the prefix of whatever it sits
+ * above. Nothing is normalised on the way in, so nothing has to be
+ * reconstructed on the way out.
+ *
+ * Alongside the tree it keeps a second, smaller structure recording
+ * what has been *declared*. TOML's rules about redefinition are not
+ * about text at all: a table may be created implicitly by a header
+ * below it, created by a dotted key, or written out in full, and which
+ * of those happened decides whether the next header naming it is legal.
+ * Keeping that separate from the format tree is what keeps both
+ * readable.
+ *
+ * @copyright 2026, Richard Ore and The Zuri Contributors
+ */
+
+import .errors { ParseError }
+import .document { Document, Table, ArrayOfTables, Entry, Value, Array, InlineTable }
+import .values { DateTime, LocalDateTime, LocalDate, LocalTime }
+
+
+# The largest and smallest integers TOML requires an implementation to
+# carry, which is the signed 64-bit range.
+var _INT_MAX = '9223372036854775807'.to_bigint()
+var _INT_MIN = '-9223372036854775808'.to_bigint()
+
+# Past this, a double can no longer hold consecutive integers, so an
+# integer larger than it decodes as a bigint instead of silently
+# rounding.
+var _SAFE = '9007199254740991'.to_bigint()
+var _SAFE_LOW = '-9007199254740991'.to_bigint()
+
+var _BARE_KEY = {
+  'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
+  'G': true, 'H': true, 'I': true, 'J': true, 'K': true, 'L': true,
+  'M': true, 'N': true, 'O': true, 'P': true, 'Q': true, 'R': true,
+  'S': true, 'T': true, 'U': true, 'V': true, 'W': true, 'X': true,
+  'Y': true, 'Z': true,
+  'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true,
+  'g': true, 'h': true, 'i': true, 'j': true, 'k': true, 'l': true,
+  'm': true, 'n': true, 'o': true, 'p': true, 'q': true, 'r': true,
+  's': true, 't': true, 'u': true, 'v': true, 'w': true, 'x': true,
+  'y': true, 'z': true,
+  '0': true, '1': true, '2': true, '3': true, '4': true, '5': true,
+  '6': true, '7': true, '8': true, '9': true,
+  '_': true, '-': true,
+}
+
+var _DIGITS = {
+  '0': 0, '1': 1, '2': 2, '3': 3, '4': 4,
+  '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+}
+
+var _HEX_DIGITS = {
+  '0': true, '1': true, '2': true, '3': true, '4': true, '5': true,
+  '6': true, '7': true, '8': true, '9': true,
+  'a': true, 'b': true, 'c': true, 'd': true, 'e': true, 'f': true,
+  'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
+}
+
+var _ESCAPE_CHARS = {
+  'b': '\b', 't': '\t', 'n': '\n', 'f': '\f', 'r': '\r',
+  '"': '"', '\\': '\\',
+}
+
+
+# What a name has been declared as, and what may still be done to it.
+# This mirrors the document tree only as far as TOML's redefinition
+# rules need, which is why it is not the document tree.
+class _Slot {
+  var kind = 'table'
+  var children = {}
+  var elements = []
+  var explicit = false
+  var dotted = false
+  var inline = false
+
+  @new(kind) {
+    self.kind = kind
+    self.children = {}
+    self.elements = []
+  }
+}
+
+
+class _Parser {
+  var src = ''
+  var pos = 0
+  var len = 0
+  var line = 1
+  var col = 1
+  var doc = nil
+  var root_slot = nil
+  var table = nil
+  var slot = nil
+
+  @new(source) {
+    self.src = source
+    self.len = source.length()
+    self.doc = Document()
+    self.root_slot = _Slot('table')
+    self.root_slot.explicit = true
+    self.table = self.doc.root
+    self.slot = self.root_slot
+  }
+
+  # -------------------------------------------------------------------
+  # Characters
+  # -------------------------------------------------------------------
+
+  _peek(offset) {
+    var at = self.pos + (offset == nil ? 0 : offset)
+
+    return at >= self.len ? '' : self.src[at]
+  }
+
+  _at_end() {
+    return self.pos >= self.len
+  }
+
+  _advance() {
+    if self.pos >= self.len {
+      return ''
+    }
+
+    var ch = self.src[self.pos]
+
+    self.pos++
+
+    if ch == '\n' {
+      self.line++
+      self.col = 1
+    } else {
+      self.col++
+    }
+
+    return ch
+  }
+
+  _skip(count) {
+    iter var i = 0; i < count; i++ {
+      self._advance()
+    }
+  }
+
+  _fail(message) {
+    raise ParseError(message, self.line, self.col)
+  }
+
+  _expect(ch, what) {
+    if self._peek() != ch {
+      self._fail('expected ${what}')
+    }
+
+    self._advance()
+  }
+
+  # Spaces and tabs, which is all TOML counts as horizontal whitespace.
+  _spaces() {
+    var start = self.pos
+
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if ch != ' ' and ch != '\t' {
+        break
+      }
+
+      self._advance()
+    }
+
+    return self.src[start, self.pos]
+  }
+
+  # A comment runs to the end of its line and may hold anything but a
+  # control character.
+  _comment() {
+    var start = self.pos
+
+    self._advance()
+
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if ch == '\n' {
+        break
+      }
+
+      if ch == '\r' and self._peek(1) == '\n' {
+        break
+      }
+
+      var code = ch.ord()
+
+      if (code < 32 and code != 9) or code == 127 {
+        self._fail('a comment cannot hold a control character')
+      }
+
+      self._advance()
+    }
+
+    return self.src[start, self.pos]
+  }
+
+  _newline() {
+    if self._peek() == '\r' and self._peek(1) == '\n' {
+      self._skip(2)
+
+      return '\r\n'
+    }
+
+    if self._peek() == '\n' {
+      self._advance()
+
+      return '\n'
+    }
+
+    return ''
+  }
+
+  # Everything between two significant things: indentation, blank
+  # lines, and whole comment lines.
+  _trivia() {
+    var start = self.pos
+
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if ch == ' ' or ch == '\t' {
+        self._advance()
+        continue
+      }
+
+      if ch == '\r' or ch == '\n' {
+        if self._newline() == '' {
+          self._fail('a bare carriage return is not a line break')
+        }
+
+        continue
+      }
+
+      if ch == '#' {
+        self._comment()
+        continue
+      }
+
+      break
+    }
+
+    return self.src[start, self.pos]
+  }
+
+  # Whatever follows a value on its own line: spacing, then maybe a
+  # comment. The line break itself is returned separately, because it
+  # belongs to the pair rather than to the value.
+  _line_tail() {
+    var start = self.pos
+
+    self._spaces()
+
+    if self._peek() == '#' {
+      self._comment()
+    }
+
+    return self.src[start, self.pos]
+  }
+
+  _end_of_line(what) {
+    if self._at_end() {
+      return ''
+    }
+
+    var eol = self._newline()
+
+    if eol == '' {
+      self._fail('unexpected text after ${what}')
+    }
+
+    return eol
+  }
+
+  # -------------------------------------------------------------------
+  # Keys
+  # -------------------------------------------------------------------
+
+  # A key, which may be dotted. The decoded parts come back alongside
+  # the exact text they were written as, spaces around the dots
+  # included, so `a . b` survives as `a . b`.
+  _key() {
+    var start = self.pos
+    var path = [self._key_part()]
+
+    while true {
+      var ahead = 0
+
+      while self.pos + ahead < self.len {
+        var ch = self.src[self.pos + ahead]
+
+        if ch != ' ' and ch != '\t' {
+          break
+        }
+
+        ahead++
+      }
+
+      if self.pos + ahead >= self.len or self.src[self.pos + ahead] != '.' {
+        break
+      }
+
+      self._skip(ahead + 1)
+      self._spaces()
+      path.append(self._key_part())
+    }
+
+    return { path, raw: self.src[start, self.pos] }
+  }
+
+  _key_part() {
+    var ch = self._peek()
+
+    if ch == '"' {
+      return self._basic_string()
+    }
+
+    if ch == "'" {
+      return self._literal_string()
+    }
+
+    if !_BARE_KEY.contains(ch) {
+      self._fail('expected a key')
+    }
+
+    var start = self.pos
+
+    while !self._at_end() and _BARE_KEY.contains(self._peek()) {
+      self._advance()
+    }
+
+    return self.src[start, self.pos]
+  }
+
+  # -------------------------------------------------------------------
+  # Strings
+  # -------------------------------------------------------------------
+
+  _basic_string() {
+    self._advance()
+
+    var out = ''
+
+    while true {
+      if self._at_end() {
+        self._fail('unterminated string')
+      }
+
+      var ch = self._peek()
+
+      if ch == '"' {
+        self._advance()
+        break
+      }
+
+      if ch == '\n' or ch == '\r' {
+        self._fail('a single-quoted line cannot hold a line break')
+      }
+
+      if ch == '\\' {
+        out += self._escape()
+        continue
+      }
+
+      var code = ch.ord()
+
+      if (code < 32 and code != 9) or code == 127 {
+        self._fail('a string cannot hold a raw control character')
+      }
+
+      out += ch
+      self._advance()
+    }
+
+    return out
+  }
+
+  # One backslash escape, already positioned on the backslash.
+  _escape() {
+    self._advance()
+
+    var ch = self._peek()
+
+    if _ESCAPE_CHARS.contains(ch) {
+      self._advance()
+
+      return _ESCAPE_CHARS[ch]
+    }
+
+    if ch == 'u' or ch == 'U' {
+      var width = ch == 'u' ? 4 : 8
+
+      self._advance()
+
+      var code = 0
+
+      iter var i = 0; i < width; i++ {
+        var digit = self._peek()
+
+        if !_HEX_DIGITS.contains(digit) {
+          self._fail('\\' + ch + ' needs ${width} hexadecimal digits')
+        }
+
+        code = code * 16 + _hex_value(digit)
+        self._advance()
+      }
+
+      # The surrogate range has no character in it, and a codepoint
+      # past the last plane has none either.
+      if (code >= 55296 and code <= 57343) or code > 1114111 {
+        self._fail('${code} is not a unicode scalar value')
+      }
+
+      return code.chr()
+    }
+
+    self._fail("'\\" + ch + "' is not an escape TOML defines")
+  }
+
+  _multiline_basic() {
+    self._skip(3)
+
+    # A line break straight after the opening delimiter is not content.
+    self._newline()
+
+    var out = ''
+
+    while true {
+      if self._at_end() {
+        self._fail('unterminated multi-line string')
+      }
+
+      if self._peek() == '"' and self._peek(1) == '"' and self._peek(2) == '"' {
+        self._skip(3)
+
+        # Up to two more quotes belong to the content: `""""` is a
+        # quote followed by the delimiter.
+        var extra = 0
+
+        while extra < 2 and self._peek() == '"' {
+          out += '"'
+          self._advance()
+          extra++
+        }
+
+        break
+      }
+
+      var ch = self._peek()
+
+      if ch == '\\' {
+        var next = self._peek(1)
+
+        # A backslash at the end of a line swallows the break and every
+        # space that follows it, which is how a long string is folded
+        # across lines without gaining whitespace.
+        if next == '\n' or next == '\r' or
+            ((next == ' ' or next == '\t') and self._only_spaces_to_eol(1)) {
+          self._advance()
+          self._spaces()
+
+          if self._newline() == '' {
+            self._fail('a trailing backslash must end its line')
+          }
+
+          self._trivia()
+          continue
+        }
+
+        out += self._escape()
+        continue
+      }
+
+      if ch == '\r' and self._peek(1) != '\n' {
+        self._fail('a bare carriage return is not a line break')
+      }
+
+      var code = ch.ord()
+
+      if (code < 32 and code != 9 and code != 10 and code != 13) or code == 127 {
+        self._fail('a string cannot hold a raw control character')
+      }
+
+      out += ch
+      self._advance()
+    }
+
+    return out
+  }
+
+  # True when nothing but spaces and tabs sits between `offset` and the
+  # end of the line.
+  _only_spaces_to_eol(offset) {
+    var at = self.pos + offset
+
+    while at < self.len {
+      var ch = self.src[at]
+
+      if ch == '\n' {
+        return true
+      }
+
+      if ch == '\r' and at + 1 < self.len and self.src[at + 1] == '\n' {
+        return true
+      }
+
+      if ch != ' ' and ch != '\t' {
+        return false
+      }
+
+      at++
+    }
+
+    return false
+  }
+
+  _literal_string() {
+    self._advance()
+
+    var start = self.pos
+
+    while true {
+      if self._at_end() {
+        self._fail('unterminated string')
+      }
+
+      var ch = self._peek()
+
+      if ch == "'" {
+        break
+      }
+
+      if ch == '\n' or ch == '\r' {
+        self._fail('a single-quoted line cannot hold a line break')
+      }
+
+      var code = ch.ord()
+
+      if (code < 32 and code != 9) or code == 127 {
+        self._fail('a string cannot hold a raw control character')
+      }
+
+      self._advance()
+    }
+
+    var text = self.src[start, self.pos]
+
+    self._advance()
+
+    return text
+  }
+
+  _multiline_literal() {
+    self._skip(3)
+    self._newline()
+
+    var start = self.pos
+    var out = ''
+
+    while true {
+      if self._at_end() {
+        self._fail('unterminated multi-line string')
+      }
+
+      if self._peek() == "'" and self._peek(1) == "'" and self._peek(2) == "'" {
+        out = self.src[start, self.pos]
+        self._skip(3)
+
+        var extra = 0
+
+        while extra < 2 and self._peek() == "'" {
+          out += "'"
+          self._advance()
+          extra++
+        }
+
+        break
+      }
+
+      var ch = self._peek()
+
+      if ch == '\r' and self._peek(1) != '\n' {
+        self._fail('a bare carriage return is not a line break')
+      }
+
+      var code = ch.ord()
+
+      if (code < 32 and code != 9 and code != 10 and code != 13) or code == 127 {
+        self._fail('a string cannot hold a raw control character')
+      }
+
+      self._advance()
+    }
+
+    return out
+  }
+
+  # -------------------------------------------------------------------
+  # Numbers and timestamps
+  # -------------------------------------------------------------------
+
+  # A run of digits in the given alphabet, with TOML's rule that an
+  # underscore has to sit between two of them.
+  _digit_run(alphabet) {
+    if !alphabet.contains(self._peek()) {
+      self._fail('expected a digit')
+    }
+
+    var out = ''
+
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if alphabet.contains(ch) {
+        out += ch
+        self._advance()
+        continue
+      }
+
+      if ch != '_' {
+        break
+      }
+
+      self._advance()
+
+      if !alphabet.contains(self._peek()) {
+        self._fail("an underscore has to sit between two digits")
+      }
+    }
+
+    return out
+  }
+
+  _fixed_digits(count, what) {
+    var out = ''
+
+    iter var i = 0; i < count; i++ {
+      var ch = self._peek()
+
+      if !_DIGITS.contains(ch) {
+        self._fail('expected ${count} digits for ${what}')
+      }
+
+      out += ch
+      self._advance()
+    }
+
+    return out.to_number()
+  }
+
+  # True when a date is what starts here: four digits and a dash.
+  _starts_date() {
+    iter var i = 0; i < 4; i++ {
+      if !_DIGITS.contains(self._peek(i)) {
+        return false
+      }
+    }
+
+    return self._peek(4) == '-'
+  }
+
+  # True when a time is what starts here: two digits and a colon.
+  _starts_time() {
+    return _DIGITS.contains(self._peek()) and _DIGITS.contains(self._peek(1)) and
+        self._peek(2) == ':'
+  }
+
+  _timestamp() {
+    var start = self.pos
+
+    if self._starts_time() {
+      var clock = self._clock()
+
+      return Value('local-time',
+          LocalTime(clock.hour, clock.minute, clock.second, clock.nanosecond),
+          self.src[start, self.pos])
+    }
+
+    var year = self._fixed_digits(4, 'a year')
+
+    self._expect('-', "'-' after the year")
+
+    var month = self._fixed_digits(2, 'a month')
+
+    self._expect('-', "'-' after the month")
+
+    var day = self._fixed_digits(2, 'a day')
+    var joined = false
+
+    if self._peek() == 'T' or self._peek() == 't' {
+      self._advance()
+      joined = true
+    } else {
+      # A space may stand in for the `T`, but only when a clock really
+      # follows it; otherwise the space ends the value.
+      if self._peek() == ' ' and _DIGITS.contains(self._peek(1)) and
+          _DIGITS.contains(self._peek(2)) and self._peek(3) == ':' {
+        self._advance()
+        joined = true
+      }
+    }
+
+    if !joined {
+      return Value('local-date', LocalDate(year, month, day),
+          self.src[start, self.pos])
+    }
+
+    var clock = self._clock()
+    var offset = self._offset()
+
+    if offset == nil {
+      return Value('local-datetime',
+          LocalDateTime(year, month, day, clock.hour, clock.minute,
+              clock.second, clock.nanosecond),
+          self.src[start, self.pos])
+    }
+
+    return Value('datetime',
+        DateTime(year, month, day, clock.hour, clock.minute, clock.second,
+            clock.nanosecond, offset),
+        self.src[start, self.pos])
+  }
+
+  _clock() {
+    var hour = self._fixed_digits(2, 'an hour')
+
+    self._expect(':', "':' after the hour")
+
+    var minute = self._fixed_digits(2, 'a minute')
+
+    self._expect(':', "':' after the minute")
+
+    var second = self._fixed_digits(2, 'a second')
+    var nanosecond = 0
+
+    if self._peek() == '.' {
+      self._advance()
+
+      var digits = ''
+
+      if !_DIGITS.contains(self._peek()) {
+        self._fail('expected digits after the decimal point')
+      }
+
+      while _DIGITS.contains(self._peek()) {
+        digits += self._peek()
+        self._advance()
+      }
+
+      # Anything finer than a nanosecond is dropped from the value. The
+      # written form is kept whole, so a round trip still reproduces it.
+      while digits.length() < 9 {
+        digits += '0'
+      }
+
+      nanosecond = digits[0, 9].to_number()
+    }
+
+    return { hour, minute, second, nanosecond }
+  }
+
+  # The trailing offset of a timestamp, or nil when it has none.
+  _offset() {
+    var ch = self._peek()
+
+    if ch == 'Z' or ch == 'z' {
+      self._advance()
+
+      return 0
+    }
+
+    if ch != '+' and ch != '-' {
+      return nil
+    }
+
+    var sign = ch == '-' ? -1 : 1
+
+    self._advance()
+
+    var hours = self._fixed_digits(2, 'the offset hours')
+
+    self._expect(':', "':' in the offset")
+
+    var minutes = self._fixed_digits(2, 'the offset minutes')
+
+    if hours > 23 {
+      self._fail('an offset cannot be more than 23 hours')
+    }
+
+    if minutes > 59 {
+      self._fail('an offset cannot be more than 59 minutes')
+    }
+
+    return sign * (hours * 60 + minutes)
+  }
+
+  _number() {
+    var start = self.pos
+    var sign = ''
+
+    if self._peek() == '+' or self._peek() == '-' {
+      sign = self._peek()
+      self._advance()
+    }
+
+    if self._peek() == 'i' {
+      self._word('inf')
+
+      return Value('float', sign == '-' ? -1 / 0 : 1 / 0,
+          self.src[start, self.pos])
+    }
+
+    if self._peek() == 'n' {
+      self._word('nan')
+
+      return Value('float', 0 / 0, self.src[start, self.pos])
+    }
+
+    # A base prefix takes no sign and no fractional part.
+    if self._peek() == '0' and sign == '' {
+      var marker = self._peek(1)
+
+      if marker == 'x' or marker == 'o' or marker == 'b' {
+        self._skip(2)
+
+        var alphabet = marker == 'x' ? _HEX_DIGITS
+            : (marker == 'o' ? _OCTAL_DIGITS : _BINARY_DIGITS)
+        var radix = marker == 'x' ? 16 : (marker == 'o' ? 8 : 2)
+        var digits = self._digit_run(alphabet)
+
+        return self._integer(digits.to_bigint(radix), self.src[start, self.pos])
+      }
+    }
+
+    var whole = self._digit_run(_DIGITS)
+
+    if whole.length() > 1 and whole[0] == '0' {
+      self._fail('a number cannot have a leading zero')
+    }
+
+    var fraction = ''
+    var exponent = ''
+
+    if self._peek() == '.' {
+      self._advance()
+      fraction = self._digit_run(_DIGITS)
+    }
+
+    if self._peek() == 'e' or self._peek() == 'E' {
+      self._advance()
+
+      var exponent_sign = ''
+
+      if self._peek() == '+' or self._peek() == '-' {
+        exponent_sign = self._peek()
+        self._advance()
+      }
+
+      exponent = exponent_sign + self._digit_run(_DIGITS)
+    }
+
+    var raw = self.src[start, self.pos]
+
+    if fraction == '' and exponent == '' {
+      return self._integer((sign + whole).to_bigint(), raw)
+    }
+
+    var text = sign + whole
+
+    if fraction != '' {
+      text += '.' + fraction
+    }
+
+    if exponent != '' {
+      text += 'e' + exponent
+    }
+
+    return Value('float', text.to_number(), raw)
+  }
+
+  # Turns an exactly-parsed integer into the narrowest Zuri type that
+  # still holds it: a number while a double can carry every digit, and
+  # a bigint past that.
+  _integer(value, raw) {
+    if value > _INT_MAX or value < _INT_MIN {
+      self._fail('${raw} is outside the range TOML gives an integer')
+    }
+
+    if value > _SAFE or value < _SAFE_LOW {
+      return Value('integer', value, raw)
+    }
+
+    return Value('integer', value.to_number(), raw)
+  }
+
+  _word(text) {
+    iter var i = 0; i < text.length(); i++ {
+      if self._peek(i) != text[i] {
+        self._fail("expected '${text}'")
+      }
+    }
+
+    self._skip(text.length())
+  }
+
+  # -------------------------------------------------------------------
+  # Values
+  # -------------------------------------------------------------------
+
+  _value() {
+    var start = self.pos
+    var ch = self._peek()
+
+    if ch == '' or ch == '\n' or ch == '\r' or ch == '#' {
+      self._fail("expected a value after '='")
+    }
+
+    if ch == '"' {
+      if self._peek(1) == '"' and self._peek(2) == '"' {
+        var text = self._multiline_basic()
+
+        return Value('string', text, self.src[start, self.pos])
+      }
+
+      return Value('string', self._basic_string(), self.src[start, self.pos])
+    }
+
+    if ch == "'" {
+      if self._peek(1) == "'" and self._peek(2) == "'" {
+        var text = self._multiline_literal()
+
+        return Value('string', text, self.src[start, self.pos])
+      }
+
+      return Value('string', self._literal_string(), self.src[start, self.pos])
+    }
+
+    if ch == '[' {
+      return self._array()
+    }
+
+    if ch == '{' {
+      return self._inline_table()
+    }
+
+    if ch == 't' {
+      self._word('true')
+
+      return Value('boolean', true, 'true')
+    }
+
+    if ch == 'f' {
+      self._word('false')
+
+      return Value('boolean', false, 'false')
+    }
+
+    if self._starts_date() or self._starts_time() {
+      return self._timestamp()
+    }
+
+    if _DIGITS.contains(ch) or ch == '+' or ch == '-' or ch == 'i' or ch == 'n' {
+      return self._number()
+    }
+
+    self._fail("'${ch}' does not start a value")
+  }
+
+  _array() {
+    self._advance()
+
+    var node = Array()
+    var expecting = true
+
+    while true {
+      var prefix = self._trivia()
+
+      if self._at_end() {
+        self._fail('unterminated array')
+      }
+
+      if self._peek() == ']' {
+        node.trailing = prefix
+        self._advance()
+        break
+      }
+
+      if !expecting {
+        self._fail("expected ',' between array values")
+      }
+
+      var item = self._value()
+
+      item.prefix = prefix
+      item.suffix = self._trivia()
+
+      node.items.append(item)
+      node.trailing_comma = false
+
+      if self._peek() == ',' {
+        self._advance()
+        node.trailing_comma = true
+        expecting = true
+      } else {
+        expecting = false
+      }
+    }
+
+    return Value('array', node, nil)
+  }
+
+  _inline_table() {
+    self._advance()
+
+    var node = InlineTable()
+    var scope = _Slot('table')
+    var expecting = true
+    var after_comma = false
+
+    while true {
+      var prefix = self._spaces()
+
+      if self._at_end() {
+        self._fail('unterminated inline table')
+      }
+
+      if self._peek() == '\n' or self._peek() == '\r' {
+        self._fail('an inline table has to stay on one line')
+      }
+
+      if self._peek() == '}' {
+        if after_comma {
+          self._fail('an inline table cannot end with a comma')
+        }
+
+        node.trailing = prefix
+        self._advance()
+        break
+      }
+
+      if !expecting {
+        self._fail("expected ',' between inline table values")
+      }
+
+      var key = self._key()
+      var pre_eq = self._spaces()
+
+      self._expect('=', "'=' after a key")
+
+      var value_prefix = self._spaces()
+      var value = self._value()
+
+      value.prefix = value_prefix
+      value.suffix = self._spaces()
+
+      var entry = Entry(key.path, key.raw, value)
+
+      entry.prefix = prefix
+      entry.pre_eq = pre_eq
+
+      self._claim(scope, key.path, value)
+      node.entries.append(entry)
+
+      if self._peek() == ',' {
+        self._advance()
+        expecting = true
+        after_comma = true
+      } else {
+        expecting = false
+        after_comma = false
+      }
+    }
+
+    return Value('inline-table', node, nil)
+  }
+
+  # -------------------------------------------------------------------
+  # Declarations
+  # -------------------------------------------------------------------
+
+  # Walks the parents of a dotted key, creating the tables it brings
+  # into being, and hands back the one that should hold the last part.
+  _key_scope(start, path) {
+    var at = start
+
+    iter var i = 0; i < path.length() - 1; i++ {
+      var name = path[i]
+      var child = at.children.get(name, nil)
+
+      if child == nil {
+        child = _Slot('table')
+        child.dotted = true
+        at.children[name] = child
+      } else {
+        if child.inline {
+          self._fail("'${name}' is an inline table and cannot be added to")
+        }
+
+        if child.kind != 'table' {
+          self._fail("'${name}' is not a table")
+        }
+
+        if child.explicit {
+          self._fail("'${name}' is already a table; it cannot be extended " +
+              'with a dotted key')
+        }
+      }
+
+      at = child
+    }
+
+    return at
+  }
+
+  # Records a key and whatever it holds, refusing a name that is taken.
+  _claim(scope, path, value) {
+    var owner = self._key_scope(scope, path)
+    var name = path[path.length() - 1]
+
+    if owner.children.contains(name) {
+      self._fail("'${name}' is defined twice")
+    }
+
+    if value.kind == 'inline-table' {
+      var slot = _Slot('table')
+
+      slot.inline = true
+      slot.explicit = true
+      owner.children[name] = slot
+
+      return
+    }
+
+    owner.children[name] = _Slot('value')
+  }
+
+  # Walks the parents of a table header, creating the tables it implies.
+  _header_scope(path) {
+    var at = self.root_slot
+
+    iter var i = 0; i < path.length() - 1; i++ {
+      var name = path[i]
+      var child = at.children.get(name, nil)
+
+      if child == nil {
+        child = _Slot('table')
+        at.children[name] = child
+      }
+
+      if child.inline {
+        self._fail("'${name}' is an inline table and cannot be added to")
+      }
+
+      if child.kind == 'aot' {
+        if child.elements.length() == 0 {
+          self._fail("'${name}' has no element to add to")
+        }
+
+        child = child.elements[child.elements.length() - 1]
+      } else {
+        if child.kind != 'table' {
+          self._fail("'${name}' is not a table")
+        }
+      }
+
+      at = child
+    }
+
+    return at
+  }
+
+  # -------------------------------------------------------------------
+  # Statements
+  # -------------------------------------------------------------------
+
+  _pair(prefix) {
+    var key = self._key()
+    var pre_eq = self._spaces()
+
+    self._expect('=', "'=' after a key")
+
+    var value_prefix = self._spaces()
+    var value = self._value()
+
+    value.prefix = value_prefix
+    value.suffix = self._line_tail()
+
+    var entry = Entry(key.path, key.raw, value)
+
+    entry.prefix = prefix
+    entry.pre_eq = pre_eq
+    entry.newline = self._end_of_line('a value')
+
+    self._claim(self.slot, key.path, value)
+
+    # A dotted key reaches through tables that are not written out, so
+    # the document tree has to gain them too.
+    self.table.entries.append(entry)
+  }
+
+  _header(prefix) {
+    self._advance()
+
+    var is_array = false
+
+    if self._peek() == '[' {
+      self._advance()
+      is_array = true
+    }
+
+    var inner = self.pos
+
+    self._spaces()
+
+    var key = self._key()
+
+    self._spaces()
+
+    var header_raw = self.src[inner, self.pos]
+
+    self._expect(']', is_array ? "']]' to close the header" : "']' to close the header")
+
+    if is_array {
+      self._expect(']', "']]' to close the header")
+    }
+
+    var suffix = self._line_tail()
+    var newline = self._end_of_line('a table header')
+
+    if is_array {
+      self._open_array_element(key.path, header_raw, prefix, suffix, newline)
+      return
+    }
+
+    self._open_table(key.path, header_raw, prefix, suffix, newline)
+  }
+
+  _open_table(path, header_raw, prefix, suffix, newline) {
+    var scope = self._header_scope(path)
+    var name = path[path.length() - 1]
+    var child = scope.children.get(name, nil)
+
+    if child == nil {
+      child = _Slot('table')
+      scope.children[name] = child
+    } else {
+      if child.inline {
+        self._fail("'${name}' is an inline table and cannot be reopened")
+      }
+
+      if child.kind != 'table' {
+        self._fail("'${name}' is not a table")
+      }
+
+      if child.explicit {
+        self._fail("table '${_dotted(path)}' is defined twice")
+      }
+
+      if child.dotted {
+        self._fail("table '${_dotted(path)}' was created by a dotted key " +
+            'and cannot be reopened')
+      }
+    }
+
+    child.explicit = true
+
+    var node = self._doc_table(path)
+
+    node.explicit = true
+    node.header_raw = header_raw
+    node.prefix = prefix
+    node.suffix = suffix
+    node.newline = newline
+
+    self.doc.order.append(node)
+    self.table = node
+    self.slot = child
+  }
+
+  _open_array_element(path, header_raw, prefix, suffix, newline) {
+    var scope = self._header_scope(path)
+    var name = path[path.length() - 1]
+    var child = scope.children.get(name, nil)
+
+    if child == nil {
+      child = _Slot('aot')
+      scope.children[name] = child
+    } else {
+      if child.kind != 'aot' {
+        self._fail("'${name}' is not an array of tables")
+      }
+    }
+
+    var element_slot = _Slot('table')
+
+    element_slot.explicit = true
+    child.elements.append(element_slot)
+
+    var array = self._doc_array(path)
+    var node = Table(path)
+
+    node.document = self.doc
+    node.explicit = true
+    node.is_aot_element = true
+    node.header_raw = header_raw
+    node.prefix = prefix
+    node.suffix = suffix
+    node.newline = newline
+
+    array.elements.append(node)
+    self.doc.order.append(node)
+    self.table = node
+    self.slot = element_slot
+  }
+
+  # The document-tree table for a header path, creating the parents the
+  # header implies but never wrote.
+  _doc_table(path) {
+    var at = self.doc.root
+
+    iter var i = 0; i < path.length(); i++ {
+      var name = path[i]
+      var child = at.children.get(name, nil)
+
+      if child == nil {
+        child = Table(path[0, i + 1])
+        child.document = self.doc
+        at.children[name] = child
+      }
+
+      if instance_of(child, ArrayOfTables) {
+        child = child.elements[child.elements.length() - 1]
+      }
+
+      at = child
+    }
+
+    return at
+  }
+
+  # The document-tree array of tables for a `[[header]]` path.
+  _doc_array(path) {
+    var at = self.doc.root
+
+    iter var i = 0; i < path.length() - 1; i++ {
+      var name = path[i]
+      var child = at.children.get(name, nil)
+
+      if child == nil {
+        child = Table(path[0, i + 1])
+        child.document = self.doc
+        at.children[name] = child
+      }
+
+      if instance_of(child, ArrayOfTables) {
+        child = child.elements[child.elements.length() - 1]
+      }
+
+      at = child
+    }
+
+    var name = path[path.length() - 1]
+    var found = at.children.get(name, nil)
+
+    if found == nil {
+      found = ArrayOfTables(path)
+      found.document = self.doc
+      at.children[name] = found
+    }
+
+    return found
+  }
+
+  # -------------------------------------------------------------------
+  # Entry point
+  # -------------------------------------------------------------------
+
+  parse() {
+    # A byte order mark is allowed at the very start and is not content.
+    if self._peek() == _BOM {
+      self.doc.bom = _BOM
+      self._advance()
+    }
+
+    self.doc.newline = _detect_newline(self.src)
+
+    while true {
+      var trivia = self._trivia()
+
+      if self._at_end() {
+        self.doc.trailing = trivia
+        break
+      }
+
+      if self._peek() == '[' {
+        self._header(trivia)
+        continue
+      }
+
+      self._pair(trivia)
+    }
+
+    return self.doc
+  }
+}
+
+
+var _BOM = (65279).chr()
+
+var _OCTAL_DIGITS = {
+  '0': true, '1': true, '2': true, '3': true,
+  '4': true, '5': true, '6': true, '7': true,
+}
+
+var _BINARY_DIGITS = { '0': true, '1': true }
+
+var _HEX_VALUES = {
+  '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7,
+  '8': 8, '9': 9,
+  'a': 10, 'b': 11, 'c': 12, 'd': 13, 'e': 14, 'f': 15,
+  'A': 10, 'B': 11, 'C': 12, 'D': 13, 'E': 14, 'F': 15,
+}
+
+
+def _hex_value(digit) {
+  return _HEX_VALUES[digit]
+}
+
+
+def _dotted(path) {
+  return '.'.join(path)
+}
+
+
+# Which line break the document is written with, taken from the first
+# one in it so that anything added later matches.
+def _detect_newline(source) {
+  var at = source.index_of('\n')
+
+  if at < 0 {
+    return '\n'
+  }
+
+  return at > 0 and source[at - 1] == '\r' ? '\r\n' : '\n'
+}
+
+
+/**
+ * Reads TOML text and returns the document tree it describes.
+ *
+ * Every byte of the input ends up somewhere in the tree, so rendering
+ * the result without editing it reproduces the input exactly.
+ *
+ * @param string text
+ * @returns Document
+ * @throws ParseError On any syntax or structural error, with the line
+ *    and column it stopped at.
+ */
+def parse(text: string) {
+  return _Parser(text).parse()
+}

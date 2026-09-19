@@ -56,6 +56,41 @@ echo yaml.parse('name: zuri\ntags:\n  - fast\n  - small')
 Anchors, aliases, tags, multi-document streams and block scalars are all
 supported.
 
+### `toml`
+
+```zuri
+import toml
+
+echo toml.parse('[package]\nname = "zuri"\nversion = "1.0"\n')
+```
+
+```console
+{package: {name: zuri, version: 1.0}}
+```
+
+`parse()` and `dump()` treat a document as data. `edit()` treats it as a
+file somebody wrote: the `Document` it returns renders back byte for byte
+until it is changed, and a change disturbs only the line it lands on.
+
+```zuri
+import toml
+
+var doc = toml.edit('# what we ship\n[package]\nversion = "0.9.0"  # bump me\n')
+doc.set('package.version', '1.0.0')
+
+echo doc.to_string()
+```
+
+```console
+# what we ship
+[package]
+version = "1.0.0"  # bump me
+
+```
+
+That is what a program editing somebody else's configuration file needs:
+the comment stayed, and so did the spacing on the line that changed.
+
 ### `csv`
 
 ```zuri
