@@ -245,7 +245,7 @@ def write_fixture(path, body) {
   )
   handle.close()
 
-  return os.exec(os.args[0], path)
+  return os.exec(os.args[0], 'run', path)
 }
 
 var declined = write_fixture('tmp/os_signal_decline_fixture.zu', '')

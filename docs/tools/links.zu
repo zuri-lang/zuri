@@ -9,8 +9,8 @@
  * Run it from the repository root:
  *
  * ```
- * zuri docs/tools/links.zu              # both books
- * zuri docs/tools/links.zu reference    # just one
+ * zuri run docs/tools/links.zu              # both books
+ * zuri run docs/tools/links.zu reference    # just one
  * ```
  *
  * Exits non-zero when anything does not resolve.

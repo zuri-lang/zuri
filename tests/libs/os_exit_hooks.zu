@@ -28,7 +28,7 @@ def run_script(source) {
   var path = os.join_paths(TMP, 'case.zu')
   file(path, 'w').write(source)
 
-  var child = os.spawn(os.exe_path, [path], { stdin: 'null' })
+  var child = os.spawn(os.exe_path, ['run', path], { stdin: 'null' })
   var code = child.wait()
 
   return {

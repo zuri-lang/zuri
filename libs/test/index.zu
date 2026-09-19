@@ -23,7 +23,7 @@
  * Run it like any other script:
  *
  * ```console
- * $ zuri tests/calculator.zu
+ * $ zuri run tests/calculator.zu
  *
  * Calculator
  *   ✓ adds
@@ -240,7 +240,7 @@
  * that hangs or crashes takes nothing else down with it. See
  * {test.conduct}.
  *
- * Give the directory an `index.zu` and the whole suite is `zuri tests`:
+ * Give the directory an `index.zu` and the whole suite is `zuri run tests`:
  *
  * ```zuri,ignore
  * # tests/index.zu

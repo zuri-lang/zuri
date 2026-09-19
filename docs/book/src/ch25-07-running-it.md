@@ -1,7 +1,7 @@
 # Running It for Real
 
 ```console
-$ zuri taskboard
+$ zuri run taskboard
 2026-09-11T02:29:55+01:00 INFO [taskboard]: task board on http://127.0.0.1:8000
 ```
 
@@ -47,7 +47,7 @@ exists.
 Every setting comes from the environment with a default:
 
 ```console
-$ PORT=9000 HOST=0.0.0.0 DATA_DIR=/var/lib/taskboard zuri taskboard
+$ PORT=9000 HOST=0.0.0.0 DATA_DIR=/var/lib/taskboard zuri run taskboard
 ```
 
 Running it with no environment at all works too, which is what makes the

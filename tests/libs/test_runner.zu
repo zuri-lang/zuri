@@ -632,7 +632,7 @@ def auto_run(source) {
   var path = os.join_paths(AUTO, 'case.zu')
   file(path, 'w').write(source)
 
-  var child = os.spawn(os.exe_path, [path], { stdin: 'null' })
+  var child = os.spawn(os.exe_path, ['run', path], { stdin: 'null' })
   var code = child.wait()
 
   return { code, out: child.read_stdout().to_string() }

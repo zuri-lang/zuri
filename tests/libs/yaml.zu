@@ -14,7 +14,7 @@
  *   - Edge cases (empty input, BOM, comments, blank lines, Unicode)
  *
  * Run with:
- *   zuri test_yaml.zu
+ *   zuri run test_yaml.zu
  */
 
 import math

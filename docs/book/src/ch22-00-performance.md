@@ -22,11 +22,11 @@ echo 'took ${((time() - start) * 1000).round()}ms'
 ```
 
 ```console
-$ zuri fib.zu
+$ zuri run fib.zu
 196418
 took 14ms
 
-$ ZURI_JIT=0 zuri fib.zu
+$ ZURI_JIT=0 zuri run fib.zu
 196418
 took 47ms
 ```
@@ -62,7 +62,7 @@ script fast.
 You can watch it happen:
 
 ```console
-$ ZURI_JIT_LOG=1 zuri fib.zu
+$ ZURI_JIT_LOG=1 zuri run fib.zu
 [jit] compiled 'fib' (11 bytecode ops, 0 osr point(s), speculative_params=0x1, speculative_regs=0x0)
 196418
 ```
@@ -70,7 +70,7 @@ $ ZURI_JIT_LOG=1 zuri fib.zu
 And you can see what did and did not make it:
 
 ```console
-$ ZURI_JIT_COVERAGE=1 zuri fib.zu
+$ ZURI_JIT_COVERAGE=1 zuri run fib.zu
 === jit coverage ===
 status	calls	threshold	ops	osr	name
 compiled	62009	169	11	0	fib

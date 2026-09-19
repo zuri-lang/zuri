@@ -10,7 +10,7 @@
  * Run it from the repository root:
  *
  * ```
- * zuri docs/tools/book/generate.zu
+ * zuri run docs/tools/book/generate.zu
  * ```
  */
 

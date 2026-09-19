@@ -37,8 +37,23 @@ var vm_version = _os.vm_version
 var platform = _os.platform
 
 /**
- * A list containing the command line arguments passed to the
- * startup script.
+ * The command line, as the running script sees it.
+ *
+ * The first entry is the path to the Zuri executable and the second is
+ * the script being run. Everything after those two was meant for the
+ * script itself, so a program reads its own arguments from `args[2,]`
+ * and gets the same list whether it was launched with `zuri run` or as
+ * a command.
+ *
+ * ```zuri-repl
+ * %> import os
+ * %> os.args
+ * ['/usr/local/bin/zuri', '/home/ada/greet.zu', '--name', 'Ada']
+ * ```
+ *
+ * The `args` module reads this for you, and reading it directly is
+ * only worth it for the simplest of programs.
+ *
  * @type list
  */
 var args = _os.args

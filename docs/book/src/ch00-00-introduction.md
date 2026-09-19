@@ -132,7 +132,7 @@ Commands you type in a shell appear with a `$` prompt, and the output
 follows underneath:
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 Hello, world!
 ```
 

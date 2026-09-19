@@ -10,7 +10,7 @@
  * this, and the pictures follow. Run it from the repository root:
  *
  * ```
- * zuri docs/book/src/imagine/figures.zu
+ * zuri run docs/book/src/imagine/figures.zu
  * ```
  *
  * A system font is needed for the figures with text in them. Nothing

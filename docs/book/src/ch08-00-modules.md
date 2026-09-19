@@ -165,7 +165,7 @@ import .pkg.util       # runs pkg/util.zu
 import .pkg.sub.deep   # runs pkg/sub/deep.zu
 ```
 
-The same rule applies to `zuri pkg` on the command line, which is what
+The same rule applies to `zuri run pkg` on the command line, which is what
 makes a package runnable as well as importable.
 
 ## How a Bare Name Is Resolved
@@ -190,7 +190,7 @@ $ cat uses.zu
 import mylib
 echo mylib.hi()
 
-$ zuri uses.zu
+$ zuri run uses.zu
 from user libs
 ```
 
@@ -309,7 +309,7 @@ if __root__ == __file__ {
 ```
 
 ```console
-$ zuri tool.zu
+$ zuri run tool.zu
 running as a program: 5
 ```
 
@@ -367,7 +367,7 @@ myapp/
     _json_store.zu  # private: the leading underscore says so
 ```
 
-Run it with `zuri myapp`. The capstone in [Chapter 25](ch25-00-task-board.md)
+Run it with `zuri run myapp`. The capstone in [Chapter 25](ch25-00-task-board.md)
 is laid out exactly this way.
 
 ### A Package, End to End
@@ -417,7 +417,7 @@ echo greet.english.hello('Grace')
 ```
 
 ```console
-$ zuri .
+$ zuri run .
 Hello, Ada
 Bonjour, Ada
 Hello, Grace

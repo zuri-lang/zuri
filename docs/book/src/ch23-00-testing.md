@@ -41,7 +41,7 @@ describe('subtotal', @{
 Run it the way you run anything else:
 
 ```console
-$ zuri cart.zu
+$ zuri run cart.zu
 
   subtotal
     ✓ is zero for an empty cart
@@ -298,7 +298,7 @@ describe('Session', @{
 ```
 
 ```console
-$ zuri session.zu
+$ zuri run session.zu
 connecting
   Session
     ✓ starts empty
@@ -381,7 +381,7 @@ it_each([
 ```
 
 ```console
-$ zuri slug.zu
+$ zuri run slug.zu
   ✓ turns 'Hello World' into 'hello-world'
   ✓ turns '  Spaced  Out  ' into 'spaced-out'
   ✓ turns 'Zuri 1.0!' into 'zuri-1-0'
@@ -521,7 +521,7 @@ it('builds the document', @{
 The first run writes the file and passes:
 
 ```console
-$ zuri invoice.zu
+$ zuri run invoice.zu
 
   invoice
     ✓ builds the document
@@ -581,7 +581,7 @@ When the value changes, you get the diff:
 If the new value is right, rewrite the snapshots:
 
 ```console
-$ ZURI_UPDATE_SNAPSHOTS=1 zuri invoice.zu
+$ ZURI_UPDATE_SNAPSHOTS=1 zuri run invoice.zu
 ```
 
 That also deletes entries nothing asks for any more. And on CI, where
@@ -631,10 +631,10 @@ test.conduct(os.dir_name(__file__))
 ```
 
 A directory handed to `zuri` runs its `index.zu`, so that one file makes
-the whole suite `zuri tests`:
+the whole suite `zuri run tests`:
 
 ```console
-$ zuri tests
+$ zuri run tests
 
   zuri test  2 files in tests
 

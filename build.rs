@@ -63,6 +63,16 @@ fn main() {
   copy_to_output("libs", &profile).expect("Could not copy libs");
   println!("cargo:rerun-if-changed={}", libs_dir.display());
 
+  // The commands the runtime ships, which it looks for beside itself.
+  // Cleared first for the same reason `libs` is.
+  let cmds_dir = Path::new(&manifest_dir).join("cmds");
+  let out_cmds = copy_output_dir(&profile).join("cmds");
+  if out_cmds.exists() {
+    fs::remove_dir_all(&out_cmds).expect("Could not clear the copied cmds directory");
+  }
+  copy_to_output("cmds", &profile).expect("Could not copy cmds");
+  println!("cargo:rerun-if-changed={}", cmds_dir.display());
+
   copy_to_output("LICENSE", &env::var("PROFILE").unwrap()).expect("Could not copy license file");
   println!("cargo:rerun-if-changed=LICENSE");
 

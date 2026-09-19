@@ -943,7 +943,7 @@ def nested(n) {
 ```
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 6
 ```
 

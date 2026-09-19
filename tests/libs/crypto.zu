@@ -4,7 +4,7 @@
  * Comprehensive test suite for the crypto standard library module.
  *
  * Run:
- *   zuri test_crypto.zu
+ *   zuri run test_crypto.zu
  *
  * All tests use the built-in `assert` statement.  A failed assertion
  * prints "Illegal State" and the failing line; a passing run prints a

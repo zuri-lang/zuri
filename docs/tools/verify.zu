@@ -11,10 +11,10 @@
  * contains a fragment:
  *
  * ```
- * zuri docs/tools/verify.zu                  # the book and the reference
- * zuri docs/tools/verify.zu book             # only the book
- * zuri docs/tools/verify.zu book ch04        # only the book's chapter 4
- * zuri docs/tools/verify.zu reference net    # only the net pages
+ * zuri run docs/tools/verify.zu                  # the book and the reference
+ * zuri run docs/tools/verify.zu book             # only the book
+ * zuri run docs/tools/verify.zu book ch04        # only the book's chapter 4
+ * zuri run docs/tools/verify.zu reference net    # only the net pages
  * ```
  *
  * A block tagged `zuri,ignore` is skipped. There are five legitimate
@@ -70,7 +70,7 @@ def _run(source: string) {
   var path = os.join_paths(WORK, 'block-${os.pid()}.zu')
   file(path, 'w').write(source)
 
-  var child = os.spawn(ZURI, [path], { cwd: WORK })
+  var child = os.spawn(ZURI, ['run', path], { cwd: WORK })
   var status = child.wait(TIMEOUT_MS)
 
   if status == nil {

@@ -11,7 +11,7 @@
  * Run it from the repository root:
  *
  * ```
- * zuri docs/tools/reference/generate.zu
+ * zuri run docs/tools/reference/generate.zu
  * ```
  *
  * The doc blocks are audited first, and a defect there is reported

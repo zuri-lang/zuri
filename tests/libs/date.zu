@@ -4,7 +4,7 @@
  * Comprehensive test suite for the date standard library module.
  *
  * Run:
- *   zuri test_date.zu
+ *   zuri run test_date.zu
  *
  * Test groups:
  *   1.  Constants

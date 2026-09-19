@@ -256,7 +256,7 @@ def helper_path(name) {
 }
 
 def run_helper(name) {
-  return os.exec(os.exe_path, helper_path(name))
+  return os.exec(os.exe_path, 'run', helper_path(name))
 }
 
 var help_bare = run_helper('args_help_no_commands.zu')

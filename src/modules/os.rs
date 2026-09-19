@@ -127,13 +127,11 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   let platform_val = vm.heap_mut().alloc_string(std::env::consts::OS);
   members.push(("platform", platform_val));
 
-  // The current CLI only ever accepts a single (script path) argument
-  //: see `zuri.rs`'s `args.len() > 2` guard; so there is never
-  // anything past the executable and the script path itself to skip;
-  // kept as a real (if today always-empty) skip(2) so this keeps
-  // working the moment extra-argument support is added there.
-  let args: Vec<Value> = std::env::args()
-    // .skip(2)
+  // The executable resolves this before the VM exists, so `run` and a
+  // command both arrive here as the runtime, the script, and then the
+  // script's own arguments.
+  let args: Vec<Value> = crate::cli::script_args()
+    .into_iter()
     .map(|a| vm.heap_mut().alloc_string(a))
     .collect();
   let args_val = vm.heap_mut().alloc_list(args);

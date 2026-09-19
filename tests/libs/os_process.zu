@@ -73,7 +73,7 @@ def child(name, body) {
   handle.write(body)
   handle.close()
 
-  return [path]
+  return ['run', path]
 }
 
 var p1 = os.spawn(interpreter, child('emit', 'echo \'spawned output\'\n'))

@@ -36,7 +36,7 @@
  * ```
  *
  * ```console
- * $ zuri tests
+ * $ zuri run tests
  * ```
  *
  * The script that is currently running is left out as well, whatever
@@ -301,7 +301,7 @@ def _spawn(directory, path, options) {
 
   return os.spawn(
     os.exe_path,
-    [os.join_paths(directory, path)],
+    ['run', os.join_paths(directory, path)],
     {
       env: environment,
       stdin: 'null',

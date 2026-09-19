@@ -167,7 +167,7 @@ task.cancel()
 ```
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 {status: ok}
 201
 ```

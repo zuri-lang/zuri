@@ -34,7 +34,7 @@ echo 'Bookmark keeper.'
 ```
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 Bookmark keeper.
 ```
 
@@ -53,7 +53,7 @@ echo 'You typed: ' + title
 ```
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 Title: Zuri docs
 You typed: Zuri docs
 ```
@@ -527,7 +527,7 @@ main()
 A session looks like this:
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 Bookmark keeper. 0 saved.
 
 (a)dd (l)ist (f)ind (r)emove (q)uit > a

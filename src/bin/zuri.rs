@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
+use zuri::cli::{self, Launch, Script};
 use zuri::compiler::parser::ParserError;
 use zuri::compiler::token::KEYWORD_TOKENS;
 use zuri::vm::modules::install_root_libs;
@@ -22,6 +23,18 @@ mod shared;
 
 fn print_repl_help() {
   println!("Press <tab> for autocomplete suggestions");
+}
+
+/// What the runtime is. `--version` prints it on its own; the REPL
+/// prints the same thing with a note that it is interactive, so the two
+/// report the same build in the same shape.
+fn print_version(suffix: &str) {
+  println!(
+    "Zuri {} (running on ZuriVM {}){suffix}",
+    env!("ZURI_VERSION"),
+    env!("ZVM_VERSION")
+  );
+  println!("Build No. => {}", env!("ZURI_BUILD_TIME"));
 }
 
 fn format_parse_errors(errors: &[ParserError], path: &str, source: &str) -> String {
@@ -62,12 +75,7 @@ fn run_repl(vm: &mut VM) {
       .collect::<Vec<_>>(),
   );
 
-  println!(
-    "Zuri {} (running on ZuriVM {}), REPL/Interactive mode = ON",
-    env!("ZURI_VERSION"),
-    env!("ZVM_VERSION")
-  );
-  println!("Build No. => {}", env!("ZURI_BUILD_TIME"));
+  print_version(", REPL/Interactive mode = ON");
   println!("Type \".exit\" to quit, \".help\" for help or \".credits\" for more information");
 
   // let stdin = io::stdin();
@@ -148,35 +156,18 @@ fn io_error_reason(e: &std::io::Error) -> String {
   }
 }
 
-/// Resolves the launch target exactly like the original C implementation:
-/// a directory runs its own `index.zu` if present, otherwise aborts with
-/// "No entrypoint found in the directory"; anything else is read as-is,
-/// with a real file-system error also aborting via `abort_launch` rather
-/// than panicking.
-fn run_file(vm: &mut VM, file: &str) {
-  let path = Path::new(file);
-  let resolved = if path.is_dir() {
-    let entry = path.join("index.zu");
-    if !entry.is_file() {
-      abort_launch(file, "No entrypoint found in the directory");
-    }
-    entry
-  } else {
-    path.to_path_buf()
-  };
-
-  let content = match fs::read_to_string(&resolved) {
+/// Compiles and runs one already-resolved script. Everything about
+/// which file that is was settled before the VM was built; all that is
+/// left here is a read that can still fail on permissions, and the
+/// compile and run themselves.
+///
+/// `name` is what the user typed, so a failure names the path or the
+/// command they used rather than whatever it resolved to.
+fn run_script(vm: &mut VM, path: &Path, name: &str, display_path: Rc<str>) {
+  let content = match fs::read_to_string(path) {
     Ok(content) => content,
-    Err(e) => abort_launch(file, &io_error_reason(&e)),
+    Err(e) => abort_launch(name, &io_error_reason(&e)),
   };
-
-  // Canonicalize so stack traces show a full, unambiguous path,
-  // matching the target format; falls back to the given (possibly
-  // relative) path if that fails for any reason.
-  let display_path: Rc<str> = Rc::from(
-    zuri::builtins::file::canonical_path(&resolved.to_string_lossy())
-      .unwrap_or_else(|_| resolved.display().to_string()),
-  );
 
   vm.set_root_path(display_path.to_string());
   vm.init_entry_globals(&display_path);
@@ -224,19 +215,60 @@ fn run_file(vm: &mut VM, file: &str) {
   }
 }
 
-fn main() {
-  // zuri::compiler::compiler_test::run_test();
-  // zuri::vm::vm_test::run_test();
+/// The path a stack trace shows: full and unambiguous, falling back to
+/// the path as given if it cannot be canonicalized.
+fn display_path_of(path: &Path) -> Rc<str> {
+  Rc::from(
+    zuri::builtins::file::canonical_path(&path.to_string_lossy())
+      .unwrap_or_else(|_| path.display().to_string()),
+  )
+}
 
-  let args = env::args().collect::<Vec<_>>();
+fn main() {
+  let argv = env::args().collect::<Vec<_>>();
+
+  let launch = match cli::resolve(argv.get(1..).unwrap_or_default()) {
+    Ok(launch) => launch,
+    Err(e) => abort_launch(&e.name, &e.reason),
+  };
+
+  // Settled before the VM exists, because building it is already
+  // enough to have a module ask what `os.args` holds.
+  let script = match launch {
+    Launch::Version => {
+      print_version("");
+      return;
+    },
+    Launch::Repl => None,
+    Launch::Script(script) => {
+      let display_path = display_path_of(&script.path);
+      cli::set_script_args(os_args(&argv, &display_path, &script));
+
+      Some((script, display_path))
+    },
+  };
 
   let heap = Heap::new();
   let mut vm = VM::new(heap);
   vm.init();
 
-  if args.len() > 1 {
-    run_file(&mut vm, &args[1]);
-  } else {
-    run_repl(&mut vm);
+  match script {
+    Some((script, display_path)) => {
+      run_script(&mut vm, &script.path, &script.name, display_path)
+    },
+    None => run_repl(&mut vm),
   }
+}
+
+/// The list `os.args` reports: the runtime, the script, then the
+/// script's own arguments. Nothing of zuri's own dispatch survives
+/// into it, so `run` and a command hand a program the same shape.
+fn os_args(argv: &[String], display_path: &str, script: &Script) -> Vec<String> {
+  let mut args = Vec::with_capacity(script.args.len() + 2);
+
+  args.push(argv.first().cloned().unwrap_or_else(|| "zuri".to_string()));
+  args.push(display_path.to_string());
+  args.extend(script.args.iter().cloned());
+
+  args
 }

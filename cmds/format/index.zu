@@ -1,7 +1,7 @@
 /**
  * The `format` command: lay out Zuri source in the project's own style.
  *
- *   zuri apps/format <path>
+ *   zuri format <path>
  *
  * `path` is a single `.zu` file, formatted in place, or a directory,
  * whose `.zu` files are all formatted, its subdirectories included. Left

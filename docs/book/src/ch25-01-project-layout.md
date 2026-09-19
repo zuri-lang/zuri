@@ -21,7 +21,7 @@ taskboard/
   static/
     app.css
   tests/
-    index.zu            `zuri tests` runs the rest
+    index.zu            `zuri run tests` runs the rest
     task.zu             one file per layer
     board.zu
     api.zu
@@ -119,7 +119,7 @@ if __root__ == __file__ {
 
 Three things are happening in that short file.
 
-**`if __root__ == __file__` is the whole trick.** `zuri taskboard` runs the
+**`if __root__ == __file__` is the whole trick.** `zuri run taskboard` runs the
 directory, finds `index.zu`, and the two are equal, so the body runs and
 the server starts. `import .taskboard` from another program leaves them
 different — `__root__` is that program's entry file — so nothing starts,
@@ -163,7 +163,7 @@ var COLUMNS = ['todo', 'doing', 'done']
 Four things to notice.
 
 **Every environment lookup has a fallback**, so the application runs with
-no configuration at all. `git clone`, `zuri taskboard`, and it works. A
+no configuration at all. `git clone`, `zuri run taskboard`, and it works. A
 program that requires six environment variables before it will start is a
 program nobody tries.
 

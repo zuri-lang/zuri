@@ -64,7 +64,7 @@ generating reference from libs/
 Or run the generator directly:
 
 ```console
-$ zuri docs/tools/reference/generate.zu
+$ zuri run docs/tools/reference/generate.zu
 ```
 
 Editing a page under `reference/src` is pointless; the next run
@@ -185,21 +185,21 @@ reasons to tag one:
 Everything else must run. A tag is a statement that the example cannot be
 checked, not a way to avoid checking it.
 
-`zuri docs/tools/verify.zu` reports the count it ran. When that number
+`zuri run docs/tools/verify.zu` reports the count it ran. When that number
 falls after a change, a block was tagged rather than fixed.
 
 That rule is enforced, not just stated. This runs every example in the book
 and compares what it printed against the `console` block beneath it:
 
 ```console
-$ zuri docs/tools/verify.zu
+$ zuri run docs/tools/verify.zu
 ```
 
 Name a book, and a fragment of a filename, to check one part of it while
 you are working:
 
 ```console
-$ zuri docs/tools/verify.zu book ch04
+$ zuri run docs/tools/verify.zu book ch04
 ```
 
 **Limits are stated as rules, not as caveats.** "The `const` keyword is
@@ -210,7 +210,7 @@ blocks in `libs/_*.stub.zu`, read with the `zuri` module's own parser, so
 the reference can never drift from the documentation the runtime ships:
 
 ```console
-$ zuri docs/tools/book/generate.zu
+$ zuri run docs/tools/book/generate.zu
 ```
 
 That rewrites `appendix-04-builtins.md`, `appendix-05-type-methods.md` and
@@ -240,7 +240,7 @@ reference.
 as part of both generators and reports anything it finds:
 
 ```console
-$ zuri docs/tools/audit.zu
+$ zuri run docs/tools/audit.zu
 161 files checked, no problems found
 ```
 
@@ -267,7 +267,7 @@ book helps nobody — but they exit non-zero so the problem is not missed.
 Links are checked separately, across both books at once:
 
 ```console
-$ zuri docs/tools/links.zu
+$ zuri run docs/tools/links.zu
 220 pages checked, every link resolves
 ```
 
@@ -277,5 +277,5 @@ from the repository root and the figures follow whatever the module
 actually does:
 
 ```console
-$ zuri docs/book/src/imagine/figures.zu
+$ zuri run docs/book/src/imagine/figures.zu
 ```

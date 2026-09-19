@@ -46,12 +46,12 @@ test.conduct(os.dir_name(__file__))
 ```
 
 ```console
-$ zuri tests
+$ zuri run tests
 ```
 
 `tests/` gets an `index.zu` for the same reason `models/` and `storage/`
 do: a directory handed to `zuri` runs its `index.zu`. The application is
-`zuri taskboard`, so its tests are `zuri tests`, and neither needs a file
+`zuri run taskboard`, so its tests are `zuri run tests`, and neither needs a file
 name remembering.
 
 `conduct` leaves `index.zu` out of discovery, and never runs the script
@@ -515,7 +515,7 @@ were checking.
 Run it:
 
 ```console
-$ zuri tests
+$ zuri run tests
 
   zuri test  3 files in tests
 

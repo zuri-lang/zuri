@@ -15,8 +15,8 @@
  * attached with `=`; both spellings mean the same thing:
  *
  * ```sh
- * $ zuri myprogram.zu --name Alice
- * $ zuri myprogram.zu --name=Alice
+ * $ zuri run myprogram.zu --name Alice
+ * $ zuri run myprogram.zu --name=Alice
  * ```
  *
  * The split is on the first `=`, so `--path=a=b` sets `path` to
@@ -24,7 +24,7 @@
  * begins with a dash, since `--name -5` reads `-5` as an option:
  *
  * ```sh
- * $ zuri myprogram.zu --offset=-5
+ * $ zuri run myprogram.zu --offset=-5
  * ```
  *
  * A short option takes its value as the next argument only.
@@ -53,7 +53,7 @@
  * Running the following command:
  *
  * ```sh
- * zuri myprogram.zu -h
+ * zuri run myprogram.zu -h
  * ```
  *
  * Prints the following help output:
@@ -77,10 +77,10 @@
  * Typical invocations:
  *
  * ```sh
- * $ zuri myprogram.zu -h
- * $ zuri myprogram.zu --name Alice --count 3
- * $ zuri myprogram.zu call --verbose
- * $ zuri myprogram.zu call --help
+ * $ zuri run myprogram.zu -h
+ * $ zuri run myprogram.zu --name Alice --count 3
+ * $ zuri run myprogram.zu call --verbose
+ * $ zuri run myprogram.zu call --help
  * ```
  *
  * If we change the last line of the program to `echo
@@ -88,13 +88,13 @@
  * the following CLI call will yield the given result.
  *
  * ```sh
- * $ zuri myprogram.zu --name "Kirk"
+ * $ zuri run myprogram.zu --name "Kirk"
  * {options: {name: Kirk, count: 1}, command: nil, indexes: []}
  * 
- * $ zuri myprogram.zu call
+ * $ zuri run myprogram.zu call
  * {options: {count: 1}, command: {name: call, value: nil}, indexes: []}
  * 
- * $ zuri myprogram.zu call -v
+ * $ zuri run myprogram.zu call -v
  * {options: {verbose: true, count: 1}, command: {name: call, value: nil}, indexes: []}
  * ```
  *
@@ -102,14 +102,14 @@
  * result/error:
  *
  * ```sh
- * $ zuri myprogram.zu --name
+ * $ zuri run myprogram.zu --name
  * error: option --name expects <name>
  * ```
  *
  * You may even get help on a command directly like below:
  *
  * ```sh
- * $ zuri myprogram.zu --help call
+ * $ zuri run myprogram.zu --help call
  * Usage: myprogram call [OPTIONS]
  *
  *   Make a phone call

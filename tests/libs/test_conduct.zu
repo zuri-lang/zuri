@@ -260,7 +260,7 @@ assert conduct.discover(SELF, nil) == ['one.zu'],
 assert conduct.discover(SELF, { ignore: [] }).contains('index.zu'),
   'though an ignore list of your own can take it back'
 
-var self_run = os.spawn(os.exe_path, [SELF], { stdin: 'null' })
+var self_run = os.spawn(os.exe_path, ['run', SELF], { stdin: 'null' })
 var self_code = self_run.wait()
 var self_out = self_run.read_stdout().to_string()
 
@@ -276,7 +276,7 @@ file(os.join_paths(SELF, 'two.zu'), 'w').write(
   "})\n"
 )
 
-var self_failed = os.spawn(os.exe_path, [SELF], { stdin: 'null' })
+var self_failed = os.spawn(os.exe_path, ['run', SELF], { stdin: 'null' })
 
 assert self_failed.wait() == 1,
   'conduct must end the process with 1 when a file failed, with nothing added to say so'

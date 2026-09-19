@@ -19,7 +19,7 @@ echo 'Hello, world!'
 Run it:
 
 ```console
-$ zuri main.zu
+$ zuri run main.zu
 Hello, world!
 ```
 
@@ -69,18 +69,18 @@ arguments. Use `echo` for output meant for a human reading a terminal, and
 
 ## Running a Directory
 
-If you point `zuri` at a directory instead of a file, it looks for
-`index.zu` inside it and runs that:
+`run` takes a directory as readily as a file. Point it at one and it
+looks for `index.zu` inside and runs that:
 
 ```console
-$ zuri hello
+$ zuri run hello
 Hello, world!
 ```
 
 If there is no `index.zu`, you get told so plainly:
 
 ```console
-$ zuri hello
+$ zuri run hello
 (Zuri):
   Launch aborted for hello
   Reason: No entrypoint found in the directory
@@ -89,3 +89,65 @@ $ zuri hello
 This is the same rule the module system uses for packages, which we will
 get to in [Chapter 8](ch08-00-modules.md). A directory with an `index.zu`
 is a unit you can run *or* import.
+
+Leave the path off and `run` launches the directory you are standing in,
+which is how a project is usually started:
+
+```console
+$ cd hello
+$ zuri run
+Hello, world!
+```
+
+Everything after the path belongs to the program rather than to `zuri`,
+so a script reads its own flags exactly as it would anywhere else:
+
+```console
+$ zuri run main.zu --name Ada --verbose
+```
+
+[Chapter 20](ch20-00-args.md) covers reading them.
+
+## Commands
+
+A first word that is not `run` names a command instead of a path:
+
+```console
+$ zuri greet Ada
+Hello, Ada!
+```
+
+A command is a `.zu` file, or a directory with an `index.zu`, sitting in
+a `cmds` directory. A project keeps its own in `.zuri/cmds`, so either of
+these answers to `zuri greet`:
+
+```text
+.zuri/cmds/greet.zu           # a command in one file
+.zuri/cmds/greet/index.zu     # a command with room to grow
+```
+
+The directory wins if both are there, so a command that has outgrown one
+file takes over the name as soon as its `index.zu` lands. Until then the
+directory is not a command, and the file goes on answering.
+
+The commands the runtime itself ships live in the `cmds` directory beside
+the executable, and those win over a project's. Everything after the name
+is forwarded to the command untouched, flags included.
+
+A name that matches nothing is refused rather than guessed at:
+
+```console
+$ zuri gret Ada
+(Zuri):
+  Launch aborted for gret
+  Reason: Unknown command
+```
+
+One flag sits outside all of this. `zuri --version` reports the build and
+runs nothing:
+
+```console
+$ zuri --version
+Zuri 0.1.0 (running on ZuriVM 0.1.0)
+Build No. => 2026-09-10 23:19:10 UTC
+```

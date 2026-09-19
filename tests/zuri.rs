@@ -43,7 +43,7 @@ fn run_fixture(zu_path_str: &str) {
   let output = Command::new("sh")
     .arg("-c")
     .arg(format!(
-      "{} {} 2>&1",
+      "{} run {} 2>&1",
       shell_quote(bin),
       shell_quote(zu_path_str)
     ))
@@ -90,7 +90,7 @@ fn run_exit_code_fixture(zu_path_str: &str) {
   let output = Command::new("sh")
     .arg("-c")
     .arg(format!(
-      "{} {} 2>&1",
+      "{} run {} 2>&1",
       shell_quote(bin),
       shell_quote(zu_path_str)
     ))
@@ -118,3 +118,304 @@ include!(concat!(
   env!("CARGO_MANIFEST_DIR"),
   "/tests/generated/zu_conformance_generated.rs"
 ));
+
+/// The launch rules the executable implements: `zuri run` for scripts
+/// and packages, a bare first word for a command. Each case builds the
+/// tree it needs under Cargo's own test temp directory, so nothing
+/// here depends on the shape of the checkout it runs in.
+mod launch {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+  use std::process::{Command, Output};
+
+  /// A fresh directory for one case, named after it so a failure says
+  /// where to look.
+  fn case(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("launch").join(name);
+
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("failed to create the case directory");
+
+    dir
+  }
+
+  fn write(path: &Path, source: &str) {
+    if let Some(parent) = path.parent() {
+      fs::create_dir_all(parent).expect("failed to create a fixture directory");
+    }
+
+    fs::write(path, source).expect("failed to write a fixture");
+  }
+
+  /// Runs the built executable from `cwd`, with stderr folded in so a
+  /// launch failure is as readable as ordinary output.
+  fn zuri(cwd: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .args(args)
+      .current_dir(cwd)
+      .output()
+      .expect("failed to run zuri")
+  }
+
+  fn combined(output: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+
+    text.replace("\r\n", "\n")
+  }
+
+  /// Asserts the executable aborted with the house launch-failure
+  /// message naming `name` and `reason`.
+  fn assert_aborted(output: &Output, name: &str, reason: &str) {
+    let text = combined(output);
+    let expected = format!("  Launch aborted for {name}\n  Reason: {reason}");
+
+    assert!(
+      text.contains("(Zuri):") && text.contains(&expected),
+      "\n--- expected to contain ---\n{expected}\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1), "launch failures exit 1");
+  }
+
+  fn assert_ran(output: &Output, expected: &str) {
+    let text = combined(output);
+
+    assert!(
+      output.status.success(),
+      "\n{} did not exit cleanly\n--- output ---\n{text}\n",
+      env!("CARGO_BIN_EXE_zuri")
+    );
+    assert!(
+      text.contains(expected),
+      "\n--- expected to contain ---\n{expected}\n--- actual ---\n{text}\n"
+    );
+  }
+
+  /// Reports the arguments the script was handed, which is the shape
+  /// `os.args[2,]` is documented to have.
+  const REPORT_ARGS: &str = "import os\n\necho 'ran ${os.args[2,]}'\n";
+
+  #[test]
+  fn version_reports_the_build_without_running_anything() {
+    let dir = case("version");
+    // An entrypoint that would announce itself if `--version` were ever
+    // read as a path or a command.
+    write(&dir.join("index.zu"), "echo 'ran the entrypoint'\n");
+
+    let output = zuri(&dir, &["--version"]);
+    let text = combined(&output);
+
+    assert!(output.status.success(), "--version must exit 0\n{text}");
+    assert!(
+      !text.contains("ran the entrypoint"),
+      "--version must not launch anything\n--- actual ---\n{text}\n"
+    );
+
+    // The same two lines the REPL opens with, minus its own note that
+    // it is interactive.
+    let mut lines = text.lines();
+    let version = lines.next().unwrap_or_default();
+
+    assert!(
+      version.starts_with("Zuri ") && version.contains("(running on ZuriVM "),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert!(
+      !version.contains("REPL"),
+      "--version must not claim to be interactive\n--- actual ---\n{text}\n"
+    );
+    assert!(
+      lines.next().unwrap_or_default().starts_with("Build No. => "),
+      "\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn run_uses_the_working_directory_entrypoint() {
+    let dir = case("run_cwd_entry");
+    write(&dir.join("index.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["run"]), "ran []");
+  }
+
+  #[test]
+  fn run_without_an_entrypoint_aborts() {
+    let dir = case("run_cwd_no_entry");
+    let output = zuri(&dir, &["run"]);
+
+    // The working directory is named in full, since the user typed no
+    // path for the message to quote back.
+    let text = combined(&output);
+    assert!(
+      text.contains("Reason: No entrypoint found in the directory"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+  }
+
+  #[test]
+  fn run_launches_a_script() {
+    let dir = case("run_script");
+    write(&dir.join("main.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["run", "main.zu"]), "ran []");
+  }
+
+  #[test]
+  fn run_launches_a_directory_entrypoint() {
+    let dir = case("run_directory");
+    write(&dir.join("package").join("index.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["run", "package"]), "ran []");
+  }
+
+  #[test]
+  fn run_on_a_directory_without_an_entrypoint_aborts() {
+    let dir = case("run_directory_no_entry");
+    fs::create_dir_all(dir.join("package")).expect("failed to create the package directory");
+
+    assert_aborted(
+      &zuri(&dir, &["run", "package"]),
+      "package",
+      "No entrypoint found in the directory",
+    );
+  }
+
+  #[test]
+  fn run_on_a_missing_path_aborts() {
+    let dir = case("run_missing");
+
+    assert_aborted(
+      &zuri(&dir, &["run", "nowhere.zu"]),
+      "nowhere.zu",
+      "No such file or directory",
+    );
+  }
+
+  #[test]
+  fn run_on_a_file_that_is_not_a_script_aborts() {
+    let dir = case("run_not_a_script");
+    write(&dir.join("notes.txt"), "echo 'hello'\n");
+
+    assert_aborted(
+      &zuri(&dir, &["run", "notes.txt"]),
+      "notes.txt",
+      "Not a Zuri script",
+    );
+  }
+
+  #[test]
+  fn run_forwards_the_rest_to_the_script() {
+    let dir = case("run_forwards");
+    write(&dir.join("main.zu"), REPORT_ARGS);
+
+    assert_ran(
+      &zuri(&dir, &["run", "main.zu", "build", "--force", "-n"]),
+      "ran [build, --force, -n]",
+    );
+  }
+
+  #[test]
+  fn a_flag_after_run_belongs_to_the_entrypoint() {
+    let dir = case("run_leading_flag");
+    write(&dir.join("index.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["run", "--force"]), "ran [--force]");
+  }
+
+  #[test]
+  fn a_project_command_runs_from_a_script() {
+    let dir = case("command_script");
+    write(&dir.join(".zuri/cmds/greet.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["greet", "world", "--loud"]), "ran [world, --loud]");
+  }
+
+  #[test]
+  fn a_project_command_runs_from_a_directory() {
+    let dir = case("command_directory");
+    write(&dir.join(".zuri/cmds/greet/index.zu"), REPORT_ARGS);
+
+    assert_ran(&zuri(&dir, &["greet", "world"]), "ran [world]");
+  }
+
+  #[test]
+  fn a_command_directory_wins_over_a_command_file() {
+    let dir = case("command_directory_precedence");
+    write(&dir.join(".zuri/cmds/greet.zu"), "echo 'ran the file'\n");
+    write(&dir.join(".zuri/cmds/greet/index.zu"), REPORT_ARGS);
+
+    let output = zuri(&dir, &["greet", "world"]);
+    let text = combined(&output);
+
+    assert!(
+      !text.contains("ran the file"),
+      "a command file shadowed the directory beside it\n--- actual ---\n{text}\n"
+    );
+    assert_ran(&output, "ran [world]");
+  }
+
+  #[test]
+  fn a_command_directory_without_an_entrypoint_is_not_a_command() {
+    let dir = case("command_directory_no_entry");
+    fs::create_dir_all(dir.join(".zuri/cmds/greet")).expect("failed to create the command");
+
+    assert_aborted(&zuri(&dir, &["greet"]), "greet", "Unknown command");
+  }
+
+  #[test]
+  fn a_command_file_answers_for_an_empty_directory_beside_it() {
+    let dir = case("command_directory_falls_through");
+    write(&dir.join(".zuri/cmds/greet.zu"), REPORT_ARGS);
+    fs::create_dir_all(dir.join(".zuri/cmds/greet")).expect("failed to create the command");
+
+    assert_ran(&zuri(&dir, &["greet", "world"]), "ran [world]");
+  }
+
+  #[test]
+  fn a_shipped_command_wins_over_a_project_one() {
+    let dir = case("command_precedence");
+    write(&dir.join(".zuri/cmds/format.zu"), "echo 'the project copy'\n");
+
+    let output = zuri(&dir, &["format", "--help"]);
+    let text = combined(&output);
+
+    assert!(
+      !text.contains("the project copy"),
+      "a project command shadowed one the runtime ships\n--- actual ---\n{text}\n"
+    );
+    assert_ran(&output, "Usage: format");
+  }
+
+  #[test]
+  fn an_unknown_command_aborts() {
+    let dir = case("command_unknown");
+
+    assert_aborted(&zuri(&dir, &["nowhere"]), "nowhere", "Unknown command");
+  }
+
+  #[test]
+  fn a_path_never_names_a_command() {
+    let dir = case("command_traversal");
+    write(&dir.join(".zuri/cmds/greet.zu"), REPORT_ARGS);
+
+    // Both spellings would resolve inside the command directory if the
+    // name were joined onto it unchecked.
+    assert_aborted(&zuri(&dir, &["./greet"]), "./greet", "Unknown command");
+    assert_aborted(
+      &zuri(&dir, &["../cmds/greet"]),
+      "../cmds/greet",
+      "Unknown command",
+    );
+  }
+
+  #[test]
+  fn a_script_is_not_launched_as_a_command() {
+    let dir = case("command_is_not_a_path");
+    write(&dir.join("main.zu"), REPORT_ARGS);
+
+    // `run` is the only way to reach a file; a bare path is a command
+    // name that happens to contain a dot.
+    assert_aborted(&zuri(&dir, &["main.zu"]), "main.zu", "Unknown command");
+  }
+}

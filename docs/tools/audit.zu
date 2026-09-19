@@ -10,7 +10,7 @@
  * Run it on its own, or let `reference.zu` run it for you:
  *
  * ```
- * zuri docs/tools/audit.zu
+ * zuri run docs/tools/audit.zu
  * ```
  *
  * Exits non-zero when anything is reported.

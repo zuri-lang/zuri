@@ -303,6 +303,7 @@ fn generate(doc: &Doc) -> Result<(), String> {
   println!("generating {} from libs/", doc.name);
 
   let status = Command::new(&zuri)
+    .arg("run")
     .arg(root.join(script))
     .env("ZURI_ROOT", &root)
     .current_dir(&root)

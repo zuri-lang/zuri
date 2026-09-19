@@ -314,7 +314,7 @@ like a number.
 reach for when memory rather than logic is the question:
 
 ```console
-$ ZURI_GC_LOG=1 zuri main.zu
+$ ZURI_GC_LOG=1 zuri run main.zu
 ```
 
 [Chapter 22](ch22-00-performance.md) lists the rest of the runtime's

@@ -1,6 +1,6 @@
 # The formatter's test suite. Run the whole thing with:
 #
-#   zuri apps/format/tests
+#   zuri run cmds/format/tests
 #
 # Each source file has a test file beside it here; this conductor finds
 # them and runs each in a process of its own.

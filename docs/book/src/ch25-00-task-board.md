@@ -10,7 +10,7 @@ persistence. The HTTP server for routing, middleware and static files. Wire
 for server-rendered HTML. `os` for configuration and signals. `log` for
 output.
 
-No dependencies. Nothing to install. `zuri taskboard` and it runs.
+No dependencies. Nothing to install. `zuri run taskboard` and it runs.
 
 ## What It Does
 
