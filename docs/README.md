@@ -58,7 +58,7 @@ the pages without rendering anything:
 ```console
 $ cargo docs generate reference
 generating reference from libs/
-34 modules, 148 pages, 2952 documented names
+... modules, ... pages, ... documented names
 ```
 
 Or run the generator directly:
@@ -241,7 +241,7 @@ as part of both generators and reports anything it finds:
 
 ```console
 $ zuri run docs/tools/audit.zu
-161 files checked, no problems found
+... files checked, no problems found
 ```
 
 It catches three things. A doc block that is never closed. A code fence
@@ -268,7 +268,7 @@ Links are checked separately, across both books at once:
 
 ```console
 $ zuri run docs/tools/links.zu
-220 pages checked, every link resolves
+... pages checked, every link resolves
 ```
 
 The images in the Imagine chapter are produced by
