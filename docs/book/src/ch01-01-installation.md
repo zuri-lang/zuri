@@ -65,7 +65,8 @@ Type ".exit" to quit, ".help" for help or ".credits" for more information
 That `%>` is the Zuri prompt. Type `.exit` to leave.
 
 `zuri --version` reports the same build without opening a session, which
-is the one to reach for from a script or a CI job:
+is the one to reach for from a script or a CI job, and `zuri --help`
+adds everything the runtime can run from here:
 
 ```console
 $ zuri --version

@@ -1,4 +1,7 @@
 /**
+ * @command format
+ * @description Lay out Zuri source in the project style.
+ * 
  * The `format` command: lay out Zuri source in the project's own style.
  *
  *   zuri format <path>

@@ -215,6 +215,53 @@ fn run_script(vm: &mut VM, path: &Path, name: &str, display_path: Rc<str>) {
   }
 }
 
+/// The top-level help: what this is, how to invoke it, and every
+/// command it can reach from where it was run.
+///
+/// Laid out the way `args.Parser` lays out a command's own help, so the
+/// two read as the same program talking.
+fn print_help() {
+  print_version("");
+
+  println!();
+  println!("Usage: zuri                    start the interactive REPL");
+  println!("       zuri run [PATH]         run a script, a package, or this directory");
+  println!("       zuri <command> [ARGS]   run a command");
+  println!();
+  println!("OPTIONS:");
+  println!("  -h, --help     Show this help message and exit");
+  println!("  -v, --version  Show version information and exit");
+
+  let commands = cli::list_commands();
+  let width = commands.name_width();
+
+  print_commands("COMMANDS", &commands.global, width);
+  print_commands("PROJECT COMMANDS", &commands.local, width);
+
+  if !commands.is_empty() {
+    println!();
+    println!("Run \"zuri <command> --help\" for help on a specific command.");
+  }
+}
+
+/// One headed run of commands, left out entirely when there are none
+/// to put under it.
+fn print_commands(title: &str, commands: &[cli::Command], width: usize) {
+  if commands.is_empty() {
+    return;
+  }
+
+  println!();
+  println!("{title}:");
+
+  for command in commands {
+    match command.description.is_empty() {
+      true => println!("  {}", command.name),
+      false => println!("  {:width$}  {}", command.name, command.description),
+    }
+  }
+}
+
 /// The path a stack trace shows: full and unambiguous, falling back to
 /// the path as given if it cannot be canonicalized.
 fn display_path_of(path: &Path) -> Rc<str> {
@@ -237,6 +284,10 @@ fn main() {
   let script = match launch {
     Launch::Version => {
       print_version("");
+      return;
+    },
+    Launch::Help => {
+      print_help();
       return;
     },
     Launch::Repl => None,

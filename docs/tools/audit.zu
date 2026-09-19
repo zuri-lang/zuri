@@ -1,11 +1,15 @@
 /**
- * Checks the standard library's doc blocks for defects that would reach
- * the book.
+ * Checks the doc blocks of everything the runtime ships for defects that
+ * would reach a reader.
  *
  * Appendices D and E are generated from `libs/`, so a malformed doc block
  * there becomes a malformed page here. The renderer defends against the
  * worst of it, but the stub is the source of truth and is where a problem
  * should be fixed.
+ *
+ * `cmds/` is held to the same standard, and to one more: a command names
+ * and describes itself in its doc block, and `zuri --help` lists it by
+ * those two tags and nothing else.
  *
  * Run it on its own, or let `reference.zu` run it for you:
  *
@@ -19,8 +23,11 @@
 import os
 import zuri
 
+import .docs
+
 var ROOT = os.dir_name(os.dir_name(os.dir_name(__file__)))
 var LIBS = os.join_paths(ROOT, 'libs')
+var CMDS = os.join_paths(ROOT, 'cmds')
 
 # One thing wrong with one doc block.
 class Finding {
@@ -243,20 +250,118 @@ def check_source(path: string, source: string) {
   return findings
 }
 
-# Every `.zu` file under `libs/`, as paths relative to it.
+# The command a file under `cmds/` is the entry point for, or `nil` for
+# the files a command keeps beside itself. `name` is relative to
+# `cmds/`, so `format.zu` and `format/index.zu` both name `format`
+# while `format/engine.zu` and `format/tests/index.zu` name nothing.
+def _entry_command(name: string) {
+  var enclosing = os.dir_name(name)
+  var base = os.base_name(name)
+
+  if enclosing == '' or enclosing == '.' {
+    if base == 'index.zu' {
+      return nil
+    }
+
+    return base[0, base.length() - 3]
+  }
+
+  # Only a command's own directory counts, never one nested inside it.
+  var outer = os.dir_name(enclosing)
+
+  if base == 'index.zu' and (outer == '' or outer == '.') {
+    return enclosing
+  }
+
+  return nil
+}
+
+# Every `.zu` file the audit covers. `command` names the command a file
+# is the entry point for, and is `nil` for everything else.
 def _sources() {
-  return os.read_dir(LIBS, true).filter(@(name) => name.ends_with('.zu')).sort()
+  var found = []
+
+  for name in os.read_dir(LIBS, true) {
+    if name.ends_with('.zu') {
+      found.append({
+        path: os.join_paths(LIBS, name),
+        relative: os.join_paths('libs', name),
+        command: nil,
+      })
+    }
+  }
+
+  if !os.dir_exists(CMDS) {
+    return found
+  }
+
+  for name in os.read_dir(CMDS, true) {
+    if !name.ends_with('.zu') {
+      continue
+    }
+
+    found.append({
+      path: os.join_paths(CMDS, name),
+      relative: os.join_paths('cmds', name),
+      command: _entry_command(name),
+    })
+  }
+
+  return found
+}
+
+# What a command has to say about itself. `zuri --help` reads these two
+# tags and nothing else, so a command missing either is a command the
+# listing cannot describe.
+def check_command(path: string, name: string, source: string) {
+  var findings = []
+  var blocks = _doc_blocks(source)
+
+  if blocks.is_empty() or blocks[0].body == nil {
+    findings.append(Finding(
+      path,
+      1,
+      'command has no doc block',
+      'zuri --help reads @command and @description from it'
+    ))
+
+    return findings
+  }
+
+  var block = docs.parse(blocks[0].body.split('\n'))
+  var declared = block.all('command')
+  var described = block.all('description')
+
+  if declared.is_empty() {
+    findings.append(Finding(path, blocks[0].line, 'command does not name itself',
+      'add "@command ${name}" to the doc block'))
+  } else if declared[0].text.trim() != name {
+    findings.append(Finding(path, blocks[0].line, 'command names itself wrongly',
+      '@command says "${declared[0].text.trim()}" but this file answers to "${name}"'))
+  }
+
+  if described.is_empty() or described[0].text.trim() == '' {
+    findings.append(Finding(path, blocks[0].line, 'command has no description',
+      'add "@description <one line>", which is what zuri --help lists'))
+  }
+
+  return findings
 }
 
 def run() {
   var findings = []
 
-  for name in _sources() {
-    var path = os.join_paths(LIBS, name)
-    var relative = os.join_paths('libs', name)
+  for source in _sources() {
+    var text = file(source.path).read()
 
-    for finding in check_source(relative, file(path).read()) {
+    for finding in check_source(source.relative, text) {
       findings.append(finding)
+    }
+
+    if source.command != nil {
+      for finding in check_command(source.relative, source.command, text) {
+        findings.append(finding)
+      }
     }
   }
 

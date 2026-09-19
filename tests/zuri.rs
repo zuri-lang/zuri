@@ -230,6 +230,133 @@ mod launch {
     );
   }
 
+  /// The line a help listing gives one command, without its indent.
+  fn listed<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    text
+      .lines()
+      .map(str::trim_end)
+      .find(|line| line.starts_with(&format!("  {name}")))
+      .map(|line| line.trim_start())
+  }
+
+  /// A command that says what it is, the way a real one does.
+  fn command_source(name: &str, description: &str) -> String {
+    format!("/**\n * @command {name}\n * @description {description}\n */\n\necho 'ran {name}'\n")
+  }
+
+  #[test]
+  fn help_lists_the_commands_the_runtime_ships() {
+    let dir = case("help_shipped");
+    // Would announce itself if `--help` ever launched anything.
+    write(&dir.join("index.zu"), "echo 'ran the entrypoint'\n");
+
+    let output = zuri(&dir, &["--help"]);
+    let text = combined(&output);
+
+    assert!(output.status.success(), "--help must exit 0\n{text}");
+    assert!(
+      !text.contains("ran the entrypoint"),
+      "--help must not launch anything\n--- actual ---\n{text}\n"
+    );
+
+    // It opens with what `--version` reports, then the usage.
+    assert!(text.starts_with("Zuri "), "\n--- actual ---\n{text}\n");
+    assert!(text.contains("Build No. => "), "\n--- actual ---\n{text}\n");
+    assert!(text.contains("Usage: zuri"), "\n--- actual ---\n{text}\n");
+    assert!(text.contains("\nCOMMANDS:\n"), "\n--- actual ---\n{text}\n");
+
+    // `format` ships in `cmds/`, and must arrive described.
+    let line = listed(&text, "format")
+      .unwrap_or_else(|| panic!("format was not listed\n--- actual ---\n{text}\n"));
+
+    assert!(
+      line.len() > "format".len(),
+      "format was listed with no description: {line:?}"
+    );
+  }
+
+  #[test]
+  fn the_short_flags_match_the_long_ones() {
+    let dir = case("short_flags");
+
+    assert_eq!(
+      combined(&zuri(&dir, &["-h"])),
+      combined(&zuri(&dir, &["--help"])),
+      "-h must print exactly what --help prints"
+    );
+    assert_eq!(
+      combined(&zuri(&dir, &["-v"])),
+      combined(&zuri(&dir, &["--version"])),
+      "-v must print exactly what --version prints"
+    );
+  }
+
+  #[test]
+  fn help_lists_a_projects_own_commands() {
+    let dir = case("help_project");
+    write(
+      &dir.join(".zuri/cmds/lint.zu"),
+      &command_source("lint", "Check the project for the mistakes CI rejects."),
+    );
+    // A description long enough to wrap, which is written as an
+    // indented continuation of the tag.
+    write(
+      &dir.join(".zuri/cmds/deploy/index.zu"),
+      "/**\n * @command deploy\n * @description Ship the current build to staging,\n *    then wait for the health check.\n */\n",
+    );
+
+    let output = zuri(&dir, &["--help"]);
+    let text = combined(&output);
+
+    assert!(text.contains("\nPROJECT COMMANDS:\n"), "\n--- actual ---\n{text}\n");
+    assert_eq!(
+      listed(&text, "lint"),
+      Some("lint    Check the project for the mistakes CI rejects."),
+      "\n--- actual ---\n{text}\n"
+    );
+
+    // The wrapped continuation arrives joined onto one line.
+    assert_eq!(
+      listed(&text, "deploy"),
+      Some("deploy  Ship the current build to staging, then wait for the health check."),
+      "\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn help_leaves_out_a_project_command_a_shipped_one_hides() {
+    let dir = case("help_shadowed");
+    write(
+      &dir.join(".zuri/cmds/format.zu"),
+      &command_source("format", "The project copy, which can never run."),
+    );
+
+    let text = combined(&zuri(&dir, &["--help"]));
+
+    assert!(
+      !text.contains("The project copy"),
+      "a command that can never run was listed\n--- actual ---\n{text}\n"
+    );
+    assert!(
+      !text.contains("PROJECT COMMANDS"),
+      "the section must go entirely when it would be empty\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn help_lists_a_command_that_describes_nothing() {
+    let dir = case("help_undescribed");
+    write(&dir.join(".zuri/cmds/bare.zu"), "echo 'bare'\n");
+
+    let text = combined(&zuri(&dir, &["--help"]));
+
+    assert_eq!(
+      listed(&text, "bare"),
+      Some("bare"),
+      "a command with no doc block must still be listed by name\n--- actual ---\n{text}\n"
+    );
+  }
+
   #[test]
   fn run_uses_the_working_directory_entrypoint() {
     let dir = case("run_cwd_entry");

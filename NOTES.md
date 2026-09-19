@@ -17,7 +17,7 @@
 - The `postgres` and `sqlite` module have been replaced with the respective submodules of the new `sql` module. The `sql`.
 - The `curl` module has been removed from Zuri.
 - The `env` module has been added to the standard library. It reads a `.env` file into the process environment and reads values back out converted to the type the program wants.
-- The executable no longer runs a bare path. `zuri` alone is still the REPL, `zuri run [path]` runs a script, a package directory, or the working directory's own `index.zu`, and any other first word names a command. Commands are a directory with an `index.zu` or a `.zu` file, looked up in that order, resolved from the `cmds` directory beside the runtime first and a project's `.zuri/cmds` second. Everything after the path or the command name is forwarded to the program, so `os.args` reads the same in both cases. `zuri --version` reports the build and runs nothing.
+- The executable no longer runs a bare path. `zuri` alone is still the REPL, `zuri run [path]` runs a script, a package directory, or the working directory's own `index.zu`, and any other first word names a command. Commands are a directory with an `index.zu` or a `.zu` file, looked up in that order, resolved from the `cmds` directory beside the runtime first and a project's `.zuri/cmds` second. Everything after the path or the command name is forwarded to the program, so `os.args` reads the same in both cases. `zuri --version` reports the build and `zuri --help` adds the commands available from here, both taking a short spelling (`-v`, `-h`) and running nothing. A command names and describes itself with `@command` and `@description` in its doc block, which is what the listing reads.
 
 
 # CHANGELOGS

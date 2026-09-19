@@ -143,11 +143,61 @@ $ zuri gret Ada
   Reason: Unknown command
 ```
 
-One flag sits outside all of this. `zuri --version` reports the build and
-runs nothing:
+A command says what it is in its own doc block, with two tags. `zuri
+--help` lists every command it can reach by exactly those:
+
+<span class="filename">Filename: .zuri/cmds/greet.zu</span>
+
+```zuri,ignore
+/**
+ * @command greet
+ * @description Say hello to somebody by name.
+ */
+
+import os
+
+echo 'Hello, ${os.args[2]}!'
+```
+
+```console
+$ zuri --help
+Zuri 0.1.0 (running on ZuriVM 0.1.0)
+Build No. => 2026-09-10 23:19:10 UTC
+
+Usage: zuri                    start the interactive REPL
+       zuri run [PATH]         run a script, a package, or this directory
+       zuri <command> [ARGS]   run a command
+
+OPTIONS:
+  -h, --help     Show this help message and exit
+  -v, --version  Show version information and exit
+
+COMMANDS:
+  format  Lay out Zuri source in the project style.
+
+PROJECT COMMANDS:
+  greet   Say hello to somebody by name.
+
+Run "zuri <command> --help" for help on a specific command.
+```
+
+A description too long for one line carries on below it, indented:
+
+```zuri,ignore
+/**
+ * @command deploy
+ * @description Ship the current build to staging, then wait for
+ *    the health check to come back green.
+ */
+```
+
+Two flags sit outside all of this and run nothing. `zuri --help` is the
+listing above, and `zuri --version` reports just the build:
 
 ```console
 $ zuri --version
 Zuri 0.1.0 (running on ZuriVM 0.1.0)
 Build No. => 2026-09-10 23:19:10 UTC
 ```
+
+Both take the short spelling too, `-h` and `-v`.
