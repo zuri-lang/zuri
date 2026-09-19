@@ -145,7 +145,7 @@ engine, which is what makes the routes testable: hand `register()` a board
 backed by a temporary directory and the same code runs against it.
 
 This is the "pass dependencies in" habit from
-[Debugging](ch23-00-debugging.md), applied at the layer where it costs
+[Debugging](ch24-00-debugging.md), applied at the layer where it costs
 nothing and buys the most.
 
 ### Rendering the Board
@@ -294,7 +294,7 @@ and safe to go back to.
 
 ## Why These Handlers Catch and the API's Do Not
 
-The API handlers in [The JSON API](ch24-04-api.md) let errors propagate,
+The API handlers in [The JSON API](ch25-04-api.md) let errors propagate,
 because the middleware turns them into status codes. These catch, because a
 browser submitting a form does not want a 422 page — it wants the board
 back with a message on it.

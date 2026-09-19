@@ -510,13 +510,13 @@ captured 12 characters
 
 Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
 for when the body might raise and you want its output anyway. This is
-what lets [Chapter 22](ch22-00-testing.md) assert on what a function
+what lets [Chapter 23](ch23-00-testing.md) assert on what a function
 prints, and keep a passing test's output out of the report.
 
 ### `test`
 
 Suites, matchers, mocks, snapshots and reports. Covered in
-[Chapter 22](ch22-00-testing.md).
+[Chapter 23](ch23-00-testing.md).
 
 ```zuri,ignore
 import test { * }
@@ -562,7 +562,21 @@ false
 ### `args`
 
 A command-line parser with subcommands, typed options, automatic
-`--help` and wrapped terminal output.
+`--help` and wrapped terminal output. Covered in
+[Chapter 20](ch20-00-args.md).
+
+```zuri,ignore
+import args
+
+var parser = args.Parser('greet')
+parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
+parser.add_command('history', 'Show past greetings')
+
+var parsed = parser.parse()
+```
+
+The help text is written from the same declarations that read the
+arguments, so the two cannot drift apart.
 
 ### `log`
 
@@ -594,7 +608,7 @@ Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
 reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
 fully in [Chapter 15](ch15-00-http.md), and used throughout
-[Chapter 24](ch24-00-task-board.md).
+[Chapter 25](ch25-00-task-board.md).
 
 ## Databases
 
@@ -704,7 +718,7 @@ true
 list
 ```
 
-[Chapter 20](ch20-00-metaprogramming.md) is the full treatment.
+[Chapter 21](ch21-00-metaprogramming.md) is the full treatment.
 
 ### `math`
 

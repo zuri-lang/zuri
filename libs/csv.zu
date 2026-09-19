@@ -959,7 +959,7 @@ class Reader {
 
 /**
  * An incremental, row-by-row CSV writer that wraps a Zuri
- * `io.file` object (or any object implementing `.write()` and
+ * `file` object (or any object implementing `.write()` and
  * `.close()`).
  *
  * ### Example: writing dicts (with header)

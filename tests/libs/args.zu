@@ -2,7 +2,8 @@
  * test_args.zu
  *
  * Test suite for the `args` standard library module: option types and
- * their defaults, bundling/abbreviation, `--` end-of-options, positional
+ * their defaults, bundling/abbreviation, attached `--name=value` values,
+ * `--` end-of-options, positional
  * arguments, sub-commands (every value-type variant plus action
  * callbacks), deprecation warnings, `set_terminal_width()`, and the help/
  * usage text a real invocation produces (including the process-exiting
@@ -123,6 +124,42 @@ assert p_dashdash.parse(['--', '-f']).indexes == ['-f'],
 ok('"--" ends option parsing; everything after is positional')
 
 # ---------------------------------------------------------------------------
+# Attached values: --name=value
+# ---------------------------------------------------------------------------
+assert new_parser().parse(['--name=Kirk']).options.name == 'Kirk',
+  'a long option must accept its value attached with "="'
+assert new_parser().parse(['--name', 'Kirk']).options.name ==
+  new_parser().parse(['--name=Kirk']).options.name,
+  'the attached and separated spellings must mean the same thing'
+ok('attached value on a STRING option')
+
+assert new_parser().parse(['--count=10']).options.count == 10,
+  'an attached value must be coerced by the option\'s declared type'
+assert new_parser().parse(['--level=high']).options.level == 'high',
+  'an attached value must be validated against the option\'s choices'
+assert new_parser().parse(['--color=g']).options.color == 'green',
+  'an attached value must be mapped through a dictionary of choices'
+assert new_parser().parse(['--maybe=here']).options.maybe == 'here',
+  'an OPTIONAL option must take an attached value rather than guessing'
+ok('attached values coerce, validate and map like separated ones')
+
+assert new_parser().parse(['--nam=Kirk']).options.name == 'Kirk',
+  'an abbreviated long option must still accept an attached value'
+ok('abbreviation and attachment combine')
+
+assert new_parser().parse(['--name=a=b']).options.name == 'a=b',
+  'only the first "=" separates the option from its value'
+assert new_parser().parse(['--name=']).options.name == '',
+  'an attached empty value must be an empty string, not a missing value'
+assert new_parser().parse(['--name=-5']).options.name == '-5',
+  'an attached value may begin with a dash, which the separated form cannot'
+ok('the first "=" splits; empty and dash-leading values survive')
+
+assert new_parser().parse(['--tags=a', '--tags=b']).options.tags == ['a', 'b'],
+  'a repeated LIST option must collect one attached value per occurrence'
+ok('attached values accumulate on a LIST option')
+
+# ---------------------------------------------------------------------------
 # Positional arguments
 # ---------------------------------------------------------------------------
 var p_pos = args.Parser('pos')
@@ -227,6 +264,8 @@ assert help_bare.exit_code == 0, '-h must exit 0'
 assert help_bare.output.contains('Usage: bare [OPTIONS]'), 'usage line must reflect the parser name with no COMMAND slot (no commands registered)'
 assert help_bare.output.contains('-x, --x <x>'), 'a STRING option with no explicit metavar must default to its own name, not a generic <VALUE>'
 assert !help_bare.output.contains('VALUE'), 'the old generic <VALUE> placeholder must never appear'
+assert !help_bare.output.contains('for help on a specific command'),
+  'a parser with no commands must not offer help on one'
 ok('-h prints usage/help and exits 0, with a name-derived option placeholder')
 
 var help_command = run_helper('args_help_command.zu')
@@ -247,6 +286,8 @@ assert help_metavar.exit_code == 0, '-h must exit 0'
 assert help_metavar.output.contains('-t, --threshold <threshold>'), 'an INT option with no explicit metavar must default to its own name, not its type'
 assert help_metavar.output.contains('-l, --label <text>'), 'an explicit metavar must be honored verbatim'
 assert help_metavar.output.contains('commit <message>'), 'add_command()\'s metavar option must customize a command\'s own value placeholder'
+assert help_metavar.output.contains('for help on a specific command'),
+  'a parser that does have commands must point at their help'
 ok('option and command metavars render correctly in help text')
 
 var missing_value = run_helper('args_missing_value_error.zu')
@@ -259,6 +300,20 @@ var unknown_opt = run_helper('args_unknown_option_error.zu')
 assert unknown_opt.exit_code == 1, 'an unknown option must exit non-zero'
 assert unknown_opt.output.contains('unknown option: --bogus'), 'the error message must name the unrecognized option'
 ok('an unknown option prints a clear error and exits 1')
+
+var attached_flag = run_helper('args_attached_flag_error.zu')
+assert attached_flag.exit_code == 1,
+  'an attached value on a NONE-type option must exit non-zero'
+assert attached_flag.output.contains('option --verbose takes no value'),
+  'the error must say that the flag carries no value, not that it is unknown'
+ok('a value attached to a plain flag prints a clear error and exits 1')
+
+var bundle_typo = run_helper('args_bundle_typo_error.zu')
+assert bundle_typo.exit_code == 1,
+  'a bundle holding an undeclared character must exit non-zero'
+assert bundle_typo.output.contains('unknown option: -vZ'),
+  'the error must name the whole bundle rather than silently keeping the part that resolved'
+ok('a typo inside a short bundle is rejected rather than dropped')
 
 var required_missing = run_helper('args_required_missing_error.zu')
 assert required_missing.exit_code == 1, 'a missing required option must exit non-zero'

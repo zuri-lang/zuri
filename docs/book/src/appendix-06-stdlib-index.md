@@ -64,7 +64,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 | `env` | a `.env` file into the environment, and typed values back out | [19](ch19-00-env.md) |
 | `io` | standard streams, the terminal, and in-memory files | [9](ch09-00-files.md), [10](ch10-00-binary-data.md) |
 | `stat` | the `S_IS*` predicates over a file mode | [13](ch13-00-stdlib-tour.md) |
-| `args` | a command-line parser with subcommands and `--help` | [13](ch13-00-stdlib-tour.md) |
+| `args` | a command-line parser with subcommands and `--help` | [20](ch20-00-args.md) |
 | `log` | levelled, structured logging with pluggable transports | [13](ch13-00-stdlib-tour.md) |
 | `isolate` | OS-thread concurrency, channels and broadcasts | [11](ch11-00-isolates.md) |
 
@@ -72,7 +72,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `test` | suites, matchers, test doubles, snapshots and reports | [22](ch22-00-testing.md) |
+| `test` | suites, matchers, test doubles, snapshots and reports | [23](ch23-00-testing.md) |
 
 ## Databases
 
@@ -103,7 +103,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 
 | Module | What it is for | Book |
 | --- | --- | --- |
-| `zuri` | lexing, parsing, compiling and runtime reflection | [20](ch20-00-metaprogramming.md) |
+| `zuri` | lexing, parsing, compiling and runtime reflection | [21](ch21-00-metaprogramming.md) |
 | `math` | the mathematical constants | [4](ch04-02-numbers.md) |
 
 ## Packages and Their Submodules

@@ -276,7 +276,7 @@ echo zuri.compile('var a = 2 * 3 ** 2').map(@(i) => i.op)
 Read the order: the multiply happens **before** the power. That is `**`
 sitting at the same precedence level as `*` and associating left, so
 `2 * 3 ** 2` is `(2 * 3) ** 2` and not what most people first read. The
-bytecode settles it in one line. [Chapter 20](ch20-00-metaprogramming.md)
+bytecode settles it in one line. [Chapter 21](ch21-00-metaprogramming.md)
 covers `zuri.compile()` and `zuri.parse()` properly.
 
 ### Narrow It With `assert`
@@ -317,7 +317,7 @@ reach for when memory rather than logic is the question:
 $ ZURI_GC_LOG=1 zuri main.zu
 ```
 
-[Chapter 21](ch21-00-performance.md) lists the rest of the runtime's
+[Chapter 22](ch22-00-performance.md) lists the rest of the runtime's
 diagnostic switches alongside what each one measures.
 
 ## The Traps Worth Knowing by Heart

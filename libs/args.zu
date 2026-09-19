@@ -9,6 +9,30 @@
  * abbreviated long-option matching, `--` end-of-options, and
  * `@file` argument expansion.
  *
+ * ### How a value reaches an option
+ *
+ * A long option takes its value either as the next argument or
+ * attached with `=`; both spellings mean the same thing:
+ *
+ * ```sh
+ * $ zuri myprogram.zu --name Alice
+ * $ zuri myprogram.zu --name=Alice
+ * ```
+ *
+ * The split is on the first `=`, so `--path=a=b` sets `path` to
+ * `a=b`. The attached form is the only way to pass a value that
+ * begins with a dash, since `--name -5` reads `-5` as an option:
+ *
+ * ```sh
+ * $ zuri myprogram.zu --offset=-5
+ * ```
+ *
+ * A short option takes its value as the next argument only.
+ * `-n Alice` works; `-n=Alice` does not, because a short token is
+ * a bundle of single-character flags and `=` is not one of them.
+ * Every character in such a bundle has to name an option, so a
+ * typo in `-vq` is an error rather than a silently dropped flag.
+ *
  * ### Quick start
  *
  * ```zuri
@@ -198,6 +222,25 @@ def _strip_ansi(text) {
     }
   }
   return result
+}
+
+# Strips spaces, tabs and carriage returns from both ends. `trim()`
+# removes one named character at a time, which is not enough for a line
+# that came out of a file somebody else wrote.
+def _strip_blanks(text) {
+  var start = 0
+  var end = text.length()
+  var blank = [' ', '\t', '\r', '\n']
+
+  while start < end and blank.contains(text[start]) {
+    start++
+  }
+
+  while end > start and blank.contains(text[end - 1]) {
+    end--
+  }
+
+  return text[start, end]
 }
 
 def _visual_len(text) {
@@ -752,8 +795,27 @@ class Parser < _Optionable {
       # --- handle flags (only when not past --) ---
       if !end_of_opts and arg.starts_with('-') and arg.length() > 1 {
 
+        # A long option may carry its value in the same token, joined by
+        # the first '='. Only the long form: a short option is a single
+        # character and '-n=x' would be read as a bundle instead, which
+        # is the convention every other parser of this shape follows.
+        # Everything downstream works off `lookup` (the option as
+        # written, without its value) and `inline` (the value, or nil
+        # when the next token carries it).
+        var lookup = arg
+        var inline = nil
+
+        if arg.starts_with('--') {
+          var split_at = arg.index_of('=')
+
+          if split_at > 2 {
+            lookup = arg[0, split_at]
+            inline = arg[split_at + 1,]
+          }
+        }
+
         # Check for built-in --help / -h at any position (even after command)
-        if arg == '--help' or arg == '-h' {
+        if (lookup == '--help' or lookup == '-h') and inline == nil {
           help_shown = true
           # If a command has already been found, show its help
           if command_found and command {
@@ -772,15 +834,15 @@ class Parser < _Optionable {
         var source = command_found ? command.options : self.options
 
         # Attempt to resolve the flag
-        var matched = self._resolve_option(source, arg)
+        var matched = self._resolve_option(source, lookup)
 
         if matched == nil {
           # Unknown flag
           if command_found {
             self._command_error(command.name,
-              'unknown option ${arg} for command "${command.name}"')
+              'unknown option ${lookup} for command "${command.name}"')
           } else {
-            self._option_error(arg, 'unknown option: ${arg}')
+            self._option_error(lookup, 'unknown option: ${lookup}')
           }
         }
 
@@ -791,10 +853,24 @@ class Parser < _Optionable {
           }
 
           if option.type == NONE {
+            if inline != nil {
+              self._option_error(option.long_name,
+                'option --${option.long_name} takes no value')
+            }
             parsed_args.options.set(option.long_name, true)
           } else if option.type == OPTIONAL {
-            # Consume next token if it exists and looks like a value (not a flag)
-            if i + 1 < cli_args.length() and !cli_args[i + 1].starts_with('-') {
+            # An attached value settles it without the guessing below.
+            if inline != nil {
+              var attached
+              catch {
+                attached = _get_real_value(option, inline)
+              } as e
+              if e {
+                self._option_error(option.long_name, e.message)
+              }
+              self._validate_choice(option, inline, '--${option.long_name}')
+              parsed_args.options.set(option.long_name, attached)
+            } else if i + 1 < cli_args.length() and !cli_args[i + 1].starts_with('-') {
               i++
               var v
               catch {
@@ -810,12 +886,21 @@ class Parser < _Optionable {
               parsed_args.options.set(option.long_name, true)
             }
           } else if option.type == LIST {
-            # Collect all following non-flag tokens as list elements
             var lst = []
-            while i + 1 < cli_args.length() and !cli_args[i + 1].starts_with('-') {
-              i++
-              lst.append(cli_args[i])
+
+            if inline != nil {
+              # `--tag=a` is one element. Repeat the option to add more,
+              # rather than letting one token smuggle in a separator
+              # nobody declared.
+              lst.append(inline)
+            } else {
+              # Collect all following non-flag tokens as list elements
+              while i + 1 < cli_args.length() and !cli_args[i + 1].starts_with('-') {
+                i++
+                lst.append(cli_args[i])
+              }
             }
+
             if lst.is_empty() {
               self._option_error(option.long_name,
                 'option --${option.long_name} expects at least one value')
@@ -830,7 +915,8 @@ class Parser < _Optionable {
             }
           } else {
             # All other typed options expect exactly one value token
-            if i + 1 >= cli_args.length() or cli_args[i + 1].starts_with('-') {
+            if inline == nil and
+                (i + 1 >= cli_args.length() or cli_args[i + 1].starts_with('-')) {
               var word = option.metavar ? option.metavar : option.long_name.lower()
               var msg = 'option --${option.long_name} expects ' + _metavar(word, option.type)
               if option.type == CHOICE and !option.choices.is_empty() {
@@ -839,8 +925,13 @@ class Parser < _Optionable {
               }
               self._option_error(option.long_name, msg)
             }
-            i++
-            var raw_val = cli_args[i]
+
+            var raw_val = inline
+
+            if raw_val == nil {
+              i++
+              raw_val = cli_args[i]
+            }
             var coerced
             catch {
               coerced = _get_real_value(option, raw_val)
@@ -1050,12 +1141,24 @@ class Parser < _Optionable {
     # Short flag(s): -abc => [a, b, c]
     if name.starts_with('-') and name.length() >= 2 and name[1] != '-' {
       for ch in name[1,] {
+        var found = nil
+
         for opt in source {
           if opt.short_name == ch {
-            result.append(opt)
+            found = opt
             break
           }
         }
+
+        # Every character in a bundle has to name an option. Dropping
+        # the ones that do not would let a typo through: `-vZ` would
+        # quietly mean `-v`, which is the opposite of what a parser is
+        # for.
+        if found == nil {
+          return []
+        }
+
+        result.append(found)
       }
     }
     return result
@@ -1108,15 +1211,21 @@ class Parser < _Optionable {
     for arg in args_list {
       if arg.starts_with('@') {
         var path = arg[1,]
-        var f = io.file(path, 'r')
-        if !f {
+        var handle = file(path, 'r')
+
+        if !handle.exists() {
           io.stderr.write(_error_text('error: cannot open argument file: ${path}\n'))
           os.exit(1)
         }
-        var content = f.read()
-        f.close()
+
+        var content = handle.read()
+        handle.close()
+
         for line in content.split('\n') {
-          var trimmed = line.trim()
+          # One argument per line, and `trim()` only takes the single
+          # character it is given, so a file written on Windows would
+          # otherwise leave a carriage return glued to every value.
+          var trimmed = _strip_blanks(line)
           if trimmed != '' result.append(trimmed)
         }
       } else {
@@ -1364,11 +1473,14 @@ class Parser < _Optionable {
       echo ''
     }
 
-    var footer = 'Run "${self.name} --help [COMMAND]" for help on a specific command.'
-    for line in _wrap_lines(footer, self.terminal_width) {
-      echo _muted(line)
+    # Only worth saying when there is a command to ask about.
+    if !self.commands.is_empty() {
+      var footer = 'Run "${self.name} --help [COMMAND]" for help on a specific command.'
+      for line in _wrap_lines(footer, self.terminal_width) {
+        echo _muted(line)
+      }
+      echo ''
     }
-    echo ''
   }
 
   # Print help for a single command and exit

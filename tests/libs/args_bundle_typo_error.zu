@@ -1,0 +1,9 @@
+# A short bundle holding a character that names no option exits 1, so
+# this is spawned as a real subprocess from tests/libs/args.zu. No .out
+# file on purpose; it's a helper, not a fixture in its own right.
+import args
+
+var p = args.Parser('bundle', false)
+p.add_option('verbose', 'Verbose', {short_name: 'v'})
+p.add_option('quiet', 'Quiet', {short_name: 'q'})
+p.parse(['-vZ'])

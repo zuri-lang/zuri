@@ -1,0 +1,9 @@
+# A NONE-type option given an attached value calls os.exit(1) via
+# _option_error, so this is spawned as a real subprocess from
+# tests/libs/args.zu. No .out file on purpose; it's a helper, not a
+# fixture in its own right.
+import args
+
+var p = args.Parser('attached', false)
+p.add_option('verbose', 'Verbose', {short_name: 'v'})
+p.parse(['--verbose=loud'])
