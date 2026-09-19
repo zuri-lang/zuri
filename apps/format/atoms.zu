@@ -154,7 +154,7 @@ def stream(source: string) {
     if _starts_string(token) {
       var end = string_end(source, token.start)
 
-      atoms.append(Atom('String', source[token.start, end], token.line))
+      atoms.append(Atom('String', source[token.start,end], token.line))
 
       # Skip every token the lexer produced for the pieces of this
       # string.

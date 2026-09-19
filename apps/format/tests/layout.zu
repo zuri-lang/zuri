@@ -3,7 +3,7 @@
 
 import test { * }
 
-import ..index { format }
+import ..engine { format }
 
 # The formatted source, split into its lines with the trailing blank
 # dropped, so a test can point at one line.

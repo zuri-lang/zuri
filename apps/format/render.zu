@@ -87,7 +87,7 @@ def _without_trailing_comma(items) {
   if last >= 0
     and items[last].node == 'tok'
     and items[last].atom.kind == 'Comma' {
-    return items[0, last]
+    return items[0,last]
   }
 
   return items
@@ -95,9 +95,7 @@ def _without_trailing_comma(items) {
 
 # The one-line text of a bracket group.
 def _group_text(group) {
-  var items = group.kind == 'index'
-    ? group.items
-    : _without_trailing_comma(group.items)
+  var items = group.kind == 'index' ? group.items : _without_trailing_comma(group.items)
 
   var inner = flat(items, group.kind == 'dict', group.kind == 'index')
 
@@ -242,11 +240,7 @@ def _space(prev, cur, state) {
 # list's.
 def _state(in_dict: bool, in_index: bool) {
   return {
-    ternary: 0,
-    optional: false,
-    unary: false,
-    in_dict,
-    in_index,
+    ternary: 0, optional: false, unary: false, in_dict, in_index,
     in_type: false,
   }
 }

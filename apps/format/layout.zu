@@ -272,8 +272,8 @@ def emit_statement(items: list, depth: number, lines: list, ctx: dict) {
   }
 
   var breaker = items[at]
-  var head = items[0, at]
-  var tail = items[at + 1, items.length()]
+  var head = items[0,at]
+  var tail = items[at + 1,items.length()]
 
   if breaker.kind == 'block' {
     _emit_line(head, depth, _brace_suffix(head), lines, ctx)
@@ -339,8 +339,8 @@ def _emit_group_block(
 
   var opener = _openers(group.kind)
   var block = group.items[inner_at]
-  var pre = group.items[0, inner_at]
-  var post = group.items[inner_at + 1, group.items.length()]
+  var pre = group.items[0,inner_at]
+  var post = group.items[inner_at + 1,group.items.length()]
 
   var prefix = head + [_raw(group.open.kind, opener.open)] + pre
 
@@ -661,8 +661,8 @@ def _wrap(items: list, depth: number, suffix: string, lines: list, ctx: dict) {
   }
 
   var group = items[at]
-  var head = items[0, at]
-  var tail = items[at + 1, items.length()]
+  var head = items[0,at]
+  var tail = items[at + 1,items.length()]
 
   # Descend through wrapper groups that hold a single collection and
   # nothing else, so `.to_equal([...])` breaks the list inside rather

@@ -6,88 +6,90 @@ import test { * }
 
 import os
 
-import ..index { format, format_file, FormatError }
+import ..engine { format, format_file, FormatError }
 
 # A bare `$`, so a source string can spell out `${` without the test file
 # interpolating it.
 var S = '$'
 
-describe('format', @{
-  it('ends the result with a single trailing newline', @{
-    expect(format('var x = 1')).to_be('var x = 1\n')
-  })
+describe(
+  'format', @{
+    it('ends the result with a single trailing newline', @{
+      expect(format('var x = 1')).to_be('var x = 1\n')
+    })
 
-  it('is a fixed point: formatting its own output changes nothing', @{
-    var once = format('def  g(a,b,c){var x={p:p,q:2}\nreturn x}')
+    it('is a fixed point: formatting its own output changes nothing', @{
+      var once = format('def  g(a,b,c){var x={p:p,q:2}\nreturn x}')
 
-    expect(format(once)).to_be(once)
-  })
+      expect(format(once)).to_be(once)
+    })
 
-  it('keeps a trailing comment at the end of its line', @{
-    expect(format('var x = 1 # note')).to_be('var x = 1 # note\n')
-  })
+    it('keeps a trailing comment at the end of its line', @{
+      expect(format('var x = 1 # note')).to_be('var x = 1 # note\n')
+    })
 
-  it('never touches the inside of an interpolated string', @{
-    var source = "echo 'a  " + S + "{x}  b'"
+    it('never touches the inside of an interpolated string', @{
+      var source = "echo 'a  " + S + "{x}  b'"
 
-    expect(format(source)).to_be(source + '\n')
-  })
+      expect(format(source)).to_be(source + '\n')
+    })
 
-  # `s[1]` reads one character and `s[1,]` slices to the end, so the
-  # comma a list would happily lose is load-bearing here.
-  it('keeps the trailing comma that makes a subscript a slice', @{
-    expect(format('echo s[1,]')).to_be('echo s[1,]\n')
-    expect(format('echo s[1,][0]')).to_be('echo s[1,][0]\n')
-    expect(format('echo self.items[2,]')).to_be('echo self.items[2,]\n')
-  })
+    # `s[1]` reads one character and `s[1,]` slices to the end, so the
+    # comma a list would happily lose is load-bearing here.
+    it('keeps the trailing comma that makes a subscript a slice', @{
+      expect(format('echo s[1,]')).to_be('echo s[1,]\n')
+      expect(format('echo s[1,][0]')).to_be('echo s[1,][0]\n')
+      expect(format('echo self.items[2,]')).to_be('echo self.items[2,]\n')
+    })
 
-  # The other direction: `s[,3]` slices from the start, and its comma
-  # splits the subscript into two parts, which is exactly what a broken
-  # list literal looks like.
-  it('keeps a subscript that slices from the start', @{
-    expect(format('echo s[,3]')).to_be('echo s[,3]\n')
-    expect(format('echo s[,n + 1]')).to_be('echo s[,n + 1]\n')
-    expect(format('echo f()[,3]')).to_be('echo f()[,3]\n')
-    expect(format('echo s[,5][1,]')).to_be('echo s[,5][1,]\n')
-  })
+    # The other direction: `s[,3]` slices from the start, and its comma
+    # splits the subscript into two parts, which is exactly what a broken
+    # list literal looks like.
+    it('keeps a subscript that slices from the start', @{
+      expect(format('echo s[,3]')).to_be('echo s[,3]\n')
+      expect(format('echo s[,n + 1]')).to_be('echo s[,n + 1]\n')
+      expect(format('echo f()[,3]')).to_be('echo f()[,3]\n')
+      expect(format('echo s[,5][1,]')).to_be('echo s[,5][1,]\n')
+    })
 
-  it('closes a subscript up around its commas', @{
-    expect(format('echo value[, 5]')).to_be('echo value[,5]\n')
-    expect(format('echo value[5, ]')).to_be('echo value[5,]\n')
-    expect(format('echo value[2, 5]')).to_be('echo value[2,5]\n')
-    expect(format('echo value[ 2 , 5 ]')).to_be('echo value[2,5]\n')
-  })
+    it('closes a subscript up around its commas', @{
+      expect(format('echo value[, 5]')).to_be('echo value[,5]\n')
+      expect(format('echo value[5, ]')).to_be('echo value[5,]\n')
+      expect(format('echo value[2, 5]')).to_be('echo value[2,5]\n')
+      expect(format('echo value[ 2 , 5 ]')).to_be('echo value[2,5]\n')
+    })
 
-  it('leaves the spacing of a list, a call and a dictionary alone', @{
-    expect(format('echo [1,2,3]')).to_be('echo [1, 2, 3]\n')
-    expect(format('echo call(a,b)')).to_be('echo call(a, b)\n')
-    expect(format('var d = {a: 1,b: 2}')).to_be('var d = { a: 1, b: 2 }\n')
-  })
+    it('leaves the spacing of a list, a call and a dictionary alone', @{
+      expect(format('echo [1,2,3]')).to_be('echo [1, 2, 3]\n')
+      expect(format('echo call(a,b)')).to_be('echo call(a, b)\n')
+      expect(format('var d = {a: 1,b: 2}')).to_be('var d = { a: 1, b: 2 }\n')
+    })
 
-  it('spaces a call nested inside a subscript by its own rules', @{
-    expect(format('echo value[f(1, 2),5]')).to_be('echo value[f(1, 2),5]\n')
-  })
+    it('spaces a call nested inside a subscript by its own rules', @{
+      expect(format('echo value[f(1, 2),5]')).to_be('echo value[f(1, 2),5]\n')
+    })
 
-  it('leaves a long slice-from-the-start whole', @{
-    var source = 'echo another_rather_long_receiver_name_for_testing_breaks' +
+    it('leaves a long slice-from-the-start whole', @{
+      var source = 'echo another_rather_long_receiver_name_for_testing_breaks' +
       '[,some_deliberately_long_list_name.length() - 4]'
 
-    expect(format(source)).to_be(source + '\n')
-  })
+      expect(format(source)).to_be(source + '\n')
+    })
 
-  it('still drops a trailing comma from a list, a call and a dictionary', @{
-    expect(format('var x = [1, 2,]')).to_be('var x = [1, 2]\n')
-    expect(format('f(a, b,)')).to_be('f(a, b)\n')
-    expect(format('var d = { a: 1, }')).to_be('var d = { a: 1 }\n')
-  })
+    it('still drops a trailing comma from a list, a call and a dictionary', @{
+      expect(format('var x = [1, 2,]')).to_be('var x = [1, 2]\n')
+      expect(format('f(a, b,)')).to_be('f(a, b)\n')
+      expect(format('var d = { a: 1, }')).to_be('var d = { a: 1 }\n')
+    })
 
-  it('leaves a long subscript whole rather than breaking its commas', @{
-    var source = 'var value = a_rather_long_receiver_name' +
+    it('leaves a long subscript whole rather than breaking its commas', @{
+      var source = 'var value = a_rather_long_receiver_name' +
       '[first_index_expression,second_index_expression_here]'
 
-    expect(format(source)).to_be(source + '\n')
-  })
-})
+      expect(format(source)).to_be(source + '\n')
+    })
+  }
+)
 
 describe('the safety net', @{
   it('raises a FormatError, which is an Error', @{

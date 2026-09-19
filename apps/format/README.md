@@ -7,21 +7,25 @@ long lines broken across the brackets and operators that carry them.
 ## Running it
 
 ```sh
-zuri apps/format/main.zu <path>
+zuri apps/format <path>
 ```
 
 `path` is a single `.zu` file, formatted in place, or a directory, whose
-`.zu` files are all formatted, its subdirectories included.
+`.zu` files are all formatted, its subdirectories included. Left off, it
+formats the current directory.
 
 ```sh
 # format one file
-zuri apps/format/main.zu libs/date.zu
+zuri apps/format libs/date.zu
 
 # format a whole tree
-zuri apps/format/main.zu libs
+zuri apps/format libs
+
+# format the current directory
+zuri apps/format
 
 # report what would change without writing anything (exit 1 if any would)
-zuri apps/format/main.zu --dry-run libs
+zuri apps/format --dry-run libs
 ```
 
 `--dry-run` (or `-n`) is what a commit hook or CI wants: it names the
@@ -61,8 +65,8 @@ skipped. This is why it can be run across a whole tree without fear.
   a block or a dictionary.
 - `render.zu` — one-line rendering and the spacing rules.
 - `layout.zu` — the line breaking: blocks, closures, comments, wrapping.
-- `index.zu` — `format(source)` and the safety check.
-- `main.zu` — the command itself.
+- `engine.zu` — `format(source)` and the safety check.
+- `index.zu` — the command itself, the entry point `zuri apps/format` runs.
 
 The parser is Zuri's own (`zuri.tokenize`), not a second one to keep in
 step with the language.

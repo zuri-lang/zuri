@@ -1,181 +1,118 @@
 /**
- * @module format.index
+ * The `format` command: lay out Zuri source in the project's own style.
  *
- * The engine behind the `format` command (see `main.zu`). `format`
- * takes a source string and returns the same program laid out by the
- * project's style: two spaces to a level, one statement to a line,
- * spacing the way a reader expects it, and long lines broken across the
- * brackets that carry them.
+ *   zuri apps/format <path>
  *
- * It never changes what a program does. Before returning, it checks the
- * result holds the same tokens as the input; a `FormatError` is raised
- * rather than handing back a program that reads differently, so the
- * command can leave that file as it was.
+ * `path` is a single `.zu` file, formatted in place, or a directory,
+ * whose `.zu` files are all formatted, its subdirectories included. Left
+ * off, it formats the current directory. The `dry-run` flag reports what
+ * would change without writing anything, which is what a commit hook or
+ * CI wants.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
-import .atoms
-import .tree
-import .render { CONTINUES_AFTER, CONTINUES_BEFORE }
-import .layout
+import args
+import os
+import os.process { exit }
 
-/**
- * Raised when formatting a source would have changed the tokens it
- * holds. It means a bug in the formatter, never a fault in the source,
- * and the source should be left as it was.
- */
-class FormatError < Error {
-}
+import .engine
 
-# The closers a trailing comma can sit before.
-var _CLOSERS = ['Rparen', 'Rbracket', 'Rbrace']
+# Every `.zu` file `path` points at: the one file, or every file under
+# the directory, deepest included, in a stable order.
+def _targets(path: string) {
+  if os.is_dir(path) {
+    var found = []
 
-# The tokens that carry meaning, for the safety check: the atom stream
-# without the whitespace markers, and without a comma right before a
-# closer, since keeping or dropping a trailing comma is the formatter's
-# own call and never changes the program.
-#
-# A subscript is the exception. `s[1]` and `s[1,]` are an item and a
-# slice, so the comma before that `]` is part of the program and has to
-# count. `_closings()` is what says which `]` is which.
-def _signature(source: string) {
-  var kept = []
-  var closings = _closings(source, kept)
-
-  var out = []
-  var index = 0
-
-  while index < kept.length() {
-    var atom = kept[index]
-    var next = index + 1 < kept.length() ? kept[index + 1] : nil
-    var trailing = atom.kind == 'Comma'
-      and next != nil
-      and _CLOSERS.contains(next.kind)
-      and !closings[index + 1]
-
-    # `name: name` and its shorthand `name` are the same to the check:
-    # collapse the pair so the rewrite reads as no change.
-    var second = index + 2 < kept.length() ? kept[index + 2] : nil
-
-    if atom.kind == 'Identifier'
-      and next != nil
-      and next.kind == 'Colon'
-      and second != nil
-      and second.kind == 'Identifier'
-      and second.text == atom.text {
-      out.append('Identifier ${atom.text}')
-      index += 3
-
-      continue
+    for name in os.read_dir(path, true) {
+      if name.ends_with('.zu') {
+        found.append(os.join_paths(path, name))
+      }
     }
 
-    if !trailing {
-      out.append('${atom.kind} ${atom.text}')
-    }
-
-    index += 1
+    return found.sort()
   }
 
-  return out
+  return [path]
 }
 
-# Fills `kept` with the atoms that carry meaning and returns a list
-# alongside it, true at every `]` that closes a subscript rather than a
-# list literal.
-#
-# The decision is `tree.opens_subscript()`, the one the parser makes,
-# reading the atom before the `[` on its own line. Both layers have to
-# answer the same way or a source and its formatting would compare as
-# different programs when they are not.
-def _closings(source: string, kept: list) {
-  var closings = []
-  var opened = []
-  var previous = nil
-
-  for atom in atoms.stream(source) {
-    if atom.kind == 'Newline' or atom.kind == 'Blank' {
-      previous = nil
-
-      continue
-    }
-
-    var closes_subscript = false
-
-    if atom.kind == 'Lbracket' {
-      opened.append(tree.opens_subscript(previous))
-    } else if atom.kind == 'Rbracket' and !opened.is_empty() {
-      closes_subscript = opened.pop()
-    }
-
-    kept.append(atom)
-    closings.append(closes_subscript)
-    previous = atom
-  }
-
-  return closings
-}
-
-def _same(left: list, right: list) {
-  if left.length() != right.length() {
-    return false
-  }
-
-  var index = 0
-
-  while index < left.length() {
-    if left[index] != right[index] {
-      return false
-    }
-
-    index += 1
-  }
-
-  return true
-}
-
-/**
- * Formats `source`, returning the laid-out program with a single
- * trailing newline.
- *
- * @param string source
- * @returns string
- * @throws FormatError if the result would not hold the same tokens as
- *    the input.
- */
-def format(source: string) {
-  var stream = atoms.stream(source)
-  var nodes = tree.parse(stream)
-  var ctx = { after: CONTINUES_AFTER, before: CONTINUES_BEFORE }
-  var lines = []
-
-  layout.emit_seq(nodes, 0, lines, ctx)
-
-  var result = '\n'.join(lines)
-
-  if result != '' {
-    result += '\n'
-  }
-
-  if !_same(_signature(source), _signature(result)) {
-    raise FormatError('formatting would have changed the tokens of the source')
-  }
-
-  return result
-}
-
-/**
- * Reads `path`, formats it, and returns the result. Does not write
- * anything back.
- *
- * @param string path
- * @returns string
- */
-def format_file(path: string) {
+# Formats one file. Returns `'unchanged'`, `'changed'` (written, unless
+# checking), or `'would-change'` when checking. Raises through on a
+# `FormatError`, which the caller turns into a skip.
+def _apply(path: string, dry_run: bool) {
   var handle = file(path, 'r')
   var source = handle.read()
 
   handle.close()
 
-  return format(source)
+  var formatted = engine.format(source)
+
+  if formatted == source {
+    return 'unchanged'
+  }
+
+  if dry_run {
+    return 'would-change'
+  }
+
+  var out = file(path, 'w')
+
+  out.write(formatted)
+  out.close()
+
+  return 'changed'
 }
+
+def main() {
+  var parser = args.Parser('format', false)
+
+  parser.description = 'Lay out Zuri source in the project style.'
+  parser.add_index('path', 'A .zu file, or a directory to format through')
+  parser.add_option(
+    'dry-run', 'Report what would change without writing anything',
+    { short_name: 'n' },
+  )
+
+  var parsed = parser.parse()
+  var path = parsed.indexes.is_empty() ? os.cwd() : parsed.indexes[0]
+  var dry_run = parsed.options.get('dry-run', false)
+
+  if !os.is_dir(path) and !file(path).exists() {
+    echo 'format: no such file or directory: ${path}'
+
+    exit(1)
+  }
+
+  var changed = 0
+  var unchanged = 0
+  var skipped = 0
+
+  for target in _targets(path) {
+    catch {
+      var outcome = _apply(target, dry_run)
+
+      if outcome == 'unchanged' {
+        unchanged += 1
+      } else {
+        changed += 1
+
+        echo dry_run ? 'would format ${target}' : 'formatted ${target}'
+      }
+    } as error {
+      skipped += 1
+
+      echo 'skipped ${target}: ${error.message}'
+    }
+  }
+
+  var verb = dry_run ? 'would change' : 'changed'
+
+  echo '${changed} ${verb}, ${unchanged} already formatted, ${skipped} skipped'
+
+  # In dry_run mode a would-be change is a non-zero exit, so a hook fails.
+  if dry_run and changed > 0 {
+    exit(1)
+  }
+}
+
+main()
