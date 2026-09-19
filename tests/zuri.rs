@@ -546,3 +546,160 @@ mod launch {
     assert_aborted(&zuri(&dir, &["main.zu"]), "main.zu", "Unknown command");
   }
 }
+
+/// The `test` command end to end: the tree it finds, the one file a
+/// name picks out, and the status a failing run leaves behind. The
+/// rules themselves are covered in Zuri, under `cmds/test/tests`;
+/// this is here to prove the command the runtime ships reaches them.
+mod test_command {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+  use std::process::{Command, Output};
+
+  fn write(path: &Path, source: &str) {
+    if let Some(parent) = path.parent() {
+      fs::create_dir_all(parent).expect("failed to create a fixture directory");
+    }
+
+    fs::write(path, source).expect("failed to write a fixture");
+  }
+
+  /// A project with one passing file, one failing file, and one a
+  /// level down, so discovery and reporting both have something to
+  /// say.
+  fn project(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+      .join("test_command")
+      .join(name);
+
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("failed to create the case directory");
+
+    write(
+      &dir.join("tests/pass.zu"),
+      "import test { * }\n\nit('passes', @{\n  expect(1).to_equal(1)\n})\n",
+    );
+    write(
+      &dir.join("tests/fail.zu"),
+      "import test { * }\n\nit('fails', @{\n  expect(1).to_equal(2)\n})\n",
+    );
+    write(
+      &dir.join("tests/deep/nested.zu"),
+      "import test { * }\n\nit('is nested', @{\n  expect(true).to_be_truthy()\n})\n",
+    );
+
+    dir
+  }
+
+  fn zuri(cwd: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .args(args)
+      .current_dir(cwd)
+      .env("NO_COLOR", "1")
+      .output()
+      .expect("failed to run zuri")
+  }
+
+  fn combined(output: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+
+    text.replace("\r\n", "\n")
+  }
+
+  #[test]
+  fn it_conducts_the_tests_directory() {
+    let dir = project("whole");
+    let output = zuri(&dir, &["test"]);
+    let text = combined(&output);
+
+    for name in ["pass.zu", "fail.zu", "nested.zu"] {
+      assert!(text.contains(name), "{name} never ran\n--- actual ---\n{text}\n");
+    }
+
+    assert_eq!(
+      output.status.code(),
+      Some(1),
+      "a failing file must leave a failing status\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn a_name_picks_out_one_file_with_or_without_its_extension() {
+    let dir = project("one_file");
+
+    for target in ["pass", "pass.zu"] {
+      let output = zuri(&dir, &["test", target]);
+      let text = combined(&output);
+
+      assert!(
+        output.status.success(),
+        "`zuri test {target}` did not exit cleanly\n--- actual ---\n{text}\n"
+      );
+      assert!(
+        text.contains("pass.zu") && !text.contains("fail.zu"),
+        "`zuri test {target}` ran the wrong files\n--- actual ---\n{text}\n"
+      );
+    }
+  }
+
+  #[test]
+  fn a_name_reaches_into_a_subdirectory() {
+    let dir = project("nested");
+    let output = zuri(&dir, &["test", "nested"]);
+    let text = combined(&output);
+
+    assert!(
+      output.status.success() && text.contains("nested.zu"),
+      "\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn list_prints_the_files_and_runs_none_of_them() {
+    let dir = project("listing");
+    let output = zuri(&dir, &["test", "--list"]);
+    let text = combined(&output);
+
+    let listed: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+
+    assert_eq!(
+      listed,
+      vec!["tests/deep/nested.zu", "tests/fail.zu", "tests/pass.zu"],
+      "\n--- actual ---\n{text}\n"
+    );
+    assert!(output.status.success(), "--list must exit 0\n{text}");
+  }
+
+  #[test]
+  fn a_name_that_matches_nothing_is_refused() {
+    let dir = project("missing");
+    let output = zuri(&dir, &["test", "nowhere"]);
+    let text = combined(&output);
+
+    assert!(
+      text.contains("test: there is no test file or directory named 'nowhere'"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+  }
+
+  #[test]
+  fn a_project_with_no_tests_directory_is_told_so() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+      .join("test_command")
+      .join("empty");
+
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("failed to create the case directory");
+
+    let output = zuri(&dir, &["test"]);
+    let text = combined(&output);
+
+    assert!(
+      text.contains("there is no 'tests' directory here"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+  }
+}

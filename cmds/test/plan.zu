@@ -1,0 +1,436 @@
+/**
+ * Turning what was typed after `zuri test` into a `conduct()` call.
+ *
+ * The command itself only parses flags and prints; every rule about
+ * what `zuri test mytest` actually runs, and what `--timeout 30s`
+ * actually means, lives here where it can be tested without spawning
+ * a single process.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+/** The directory a bare `zuri test` looks in. */
+var TESTS = 'tests'
+
+# The suffixes `--timeout` accepts. `ms` sits ahead of `s` so that
+# `500ms` is read as milliseconds rather than as `500m` plus a stray
+# letter.
+var UNITS = [
+  { suffix: 'ms', millis: 1 },
+  { suffix: 's', millis: 1000 },
+  { suffix: 'm', millis: 60000 },
+  { suffix: 'h', millis: 3600000 },
+]
+
+/**
+ * Raised for anything the reader can put right by typing something
+ * else. The command prints the message and exits `1`; anything that
+ * is not one of these is a bug and goes up unhandled.
+ */
+class UsageError < Error {}
+
+# `text` as a whole number, or `nil` when it is anything else.
+# `to_number()` answers `0` for both `'0'` and `'abc'`, and telling
+# those two apart is the entire job here.
+def _whole(text: string) {
+  var digits = text.trim()
+
+  if !is_dict(digits.match('/^[0-9]+$/')) {
+    return nil
+  }
+
+  return digits.to_number().int()
+}
+
+# Whether `path` is rooted, in which case it names exactly itself and
+# is never looked for under `tests/`.
+def _is_absolute(path: string) {
+  if path.starts_with('/') or path.starts_with('\\') {
+    return true
+  }
+
+  # A Windows drive letter: `C:\work`, `c:/work`.
+  return path.length() > 2 and path[1, 2] == ':' and
+    (path[2, 3] == '\\' or path[2, 3] == '/')
+}
+
+# Every path `target` could mean, in the order they are tried.
+def _candidates(root: string, target: string) {
+  var bare = !target.ends_with('.zu')
+
+  if _is_absolute(target) {
+    return bare ? [target, target + '.zu'] : [target]
+  }
+
+  var found = [os.join_paths(root, TESTS, target)]
+
+  if bare {
+    found.append(os.join_paths(root, TESTS, target + '.zu'))
+  }
+
+  found.append(os.join_paths(root, target))
+
+  if bare {
+    found.append(os.join_paths(root, target + '.zu'))
+  }
+
+  return found
+}
+
+# A last resort for a bare name: every file under `tests`, however
+# deep, whose own name matches it. A name that only exists in a
+# subdirectory is still the name a reader will type.
+def _search(root: string, target: string) {
+  var tests = os.join_paths(root, TESTS)
+
+  if target.contains('/') or target.contains('\\') or !os.dir_exists(tests) {
+    return []
+  }
+
+  var wanted = target.ends_with('.zu') ? target : target + '.zu'
+  var found = []
+
+  for name in os.read_dir(tests, true) {
+    if os.base_name(name) != wanted {
+      continue
+    }
+
+    if !os.is_dir(os.join_paths(tests, name)) {
+      found.append(name)
+    }
+  }
+
+  return found.sort()
+}
+
+/**
+ * Where the tests named by `target` live.
+ *
+ * With no target this is the `tests` directory of `root`. With one it
+ * is the first of these that exists, tried in order: the path under
+ * `tests`, the same with `.zu` added, and then both of those again
+ * from `root` itself. `tests` comes first so that a name shared with
+ * something else in the project still means the test: `zuri test
+ * mytest` and `zuri test mytest.zu` both land on `tests/mytest.zu`,
+ * while `zuri test cmds/format/tests`, which is under no `tests`
+ * directory of its own, runs that directory. An absolute target names
+ * itself and is never looked for under `tests`.
+ *
+ * A bare name that none of those find is looked for once more, by
+ * filename alone, anywhere under `tests`, so a file in a
+ * subdirectory answers to its own name. Two files of that name is
+ * reported rather than guessed at.
+ *
+ * A directory is conducted whole. A file is conducted on its own, from
+ * the directory it sits in.
+ *
+ * @param ?string target: what was typed, or `nil` for the default.
+ * @param ?string root: the directory to resolve against, the working
+ *    directory by default.
+ * @returns dict: `{ directory, file }`, where `directory` is absolute
+ *    unless an absolute target said otherwise, and `file` is the one
+ *    file to run, or `nil` for the whole directory.
+ * @raises UsageError when nothing of that name exists.
+ */
+def resolve(target: ?string, root: ?string) {
+  if root == nil {
+    root = os.cwd()
+  }
+
+  if target == nil or target.trim() == '' {
+    var directory = os.join_paths(root, TESTS)
+
+    if !os.dir_exists(directory) {
+      raise UsageError(
+        "there is no '${TESTS}' directory here; name a file or a directory to run instead"
+      )
+    }
+
+    return { directory, file: nil }
+  }
+
+  for candidate in _candidates(root, target) {
+    if os.dir_exists(candidate) {
+      return { directory: candidate, file: nil }
+    }
+
+    if file(candidate).exists() {
+      return {
+        directory: os.dir_name(candidate),
+        file: os.base_name(candidate),
+      }
+    }
+  }
+
+  var matched = _search(root, target)
+
+  if matched.length() > 1 {
+    raise UsageError(
+      "'${target}' names ${matched.length()} files under '${TESTS}': "
+        + "${', '.join(matched)}; say which one"
+    )
+  }
+
+  if matched.length() == 1 {
+    var found = os.join_paths(root, TESTS, matched[0])
+
+    return { directory: os.dir_name(found), file: os.base_name(found) }
+  }
+
+  raise UsageError("there is no test file or directory named '${target}'")
+}
+
+/**
+ * How many test files to run at once.
+ *
+ * `auto` is one per logical CPU. Anything else has to be a whole
+ * number of at least one.
+ *
+ * @param ?string value
+ * @returns ?int: `nil` when the flag was not given, leaving
+ *    `conduct()` its own default of one.
+ * @raises UsageError when `value` is neither.
+ */
+def jobs_of(value: ?string) {
+  if value == nil {
+    return nil
+  }
+
+  if value.trim().lower() == 'auto' {
+    return os.num_cpus()
+  }
+
+  var jobs = _whole(value)
+
+  if jobs == nil or jobs < 1 {
+    raise UsageError(
+      "--jobs expects a whole number of 1 or more, or 'auto', got '${value}'"
+    )
+  }
+
+  return jobs
+}
+
+/**
+ * How long one file may run, in milliseconds.
+ *
+ * A bare number is already milliseconds, which is the unit
+ * `conduct()` itself works in. `ms`, `s`, `m` and `h` are the
+ * suffixes that say otherwise.
+ *
+ * @param ?string value
+ * @returns ?int: `nil` when the flag was not given, leaving
+ *    `conduct()` its own default of no limit.
+ * @raises UsageError when `value` is not a duration.
+ */
+def timeout_of(value: ?string) {
+  if value == nil {
+    return nil
+  }
+
+  var text = value.trim().lower()
+
+  for unit in UNITS {
+    if !text.ends_with(unit.suffix) {
+      continue
+    }
+
+    var amount = _whole(text[0, text.length() - unit.suffix.length()])
+
+    if amount != nil {
+      return amount * unit.millis
+    }
+
+    break
+  }
+
+  var millis = _whole(text)
+
+  if millis == nil {
+    raise UsageError(
+      "--timeout expects a duration such as 500ms, 30s, 2m or 1h, got '${value}'"
+    )
+  }
+
+  return millis
+}
+
+/**
+ * How many failing files to allow before the run stops.
+ *
+ * The flag on its own means stop at the first one. A count has to
+ * reach it attached, as `--bail=3`, because a count written as a
+ * separate word is indistinguishable from the test path.
+ *
+ * @param value: `nil` or `false` when the flag was not given, `true`
+ *    when it carried no count, otherwise the word that followed it.
+ * @returns ?int: `nil` when the flag was not given, leaving
+ *    `conduct()` its own default of never stopping early.
+ * @raises UsageError when the word that followed is not a count.
+ */
+def bail_of(value) {
+  if value == nil or value == false {
+    return nil
+  }
+
+  if value == true {
+    return 1
+  }
+
+  var count = _whole(value)
+
+  if count == nil {
+    raise UsageError(
+      "--bail expects a count, got '${value}'; attach it as --bail=<count>, "
+        + 'or put the test path before the flag'
+    )
+  }
+
+  return count
+}
+
+/**
+ * Extra environment for every test process.
+ *
+ * @param ?list values: `KEY=VALUE` words, as written.
+ * @returns ?dict: `nil` when the flag was not given.
+ * @raises UsageError when a word carries no `=`, or nothing before it.
+ */
+def env_of(values: ?list) {
+  if values == nil {
+    return nil
+  }
+
+  var environment = {}
+
+  for entry in values {
+    var at = entry.index_of('=')
+
+    if at < 1 {
+      raise UsageError("--env expects KEY=VALUE, got '${entry}'")
+    }
+
+    environment.set(entry[0, at], entry[at + 1,])
+  }
+
+  return environment
+}
+
+# Only what was actually asked for reaches `conduct()`. Everything
+# else is left absent so that the defaults documented there are the
+# ones that apply, rather than a second copy of them kept here.
+def _set(chosen, key: string, value) {
+  if value != nil {
+    chosen.set(key, value)
+  }
+}
+
+# `--match` and `--ignore` choose among the files in a directory.
+# Naming one file has already chosen, so the two together are a
+# contradiction worth saying out loud instead of quietly resolving.
+def _reject_directory_flags(parsed) {
+  for name in ['match', 'ignore'] {
+    if parsed.options.get(name, nil) != nil {
+      raise UsageError(
+        '--${name} chooses among the files in a directory, '
+          + 'so it cannot be combined with a single test file'
+      )
+    }
+  }
+}
+
+/**
+ * The `conduct()` options that `parsed` asks for.
+ *
+ * @param dict parsed: what `args.Parser.parse()` returned.
+ * @param ?string file: the one file to run, from `resolve()`.
+ * @returns dict: suitable as `conduct()`'s second argument. A flag
+ *    that was not given is absent rather than repeated here at its
+ *    default.
+ * @raises UsageError when a flag's value is not what it takes, or
+ *    when a directory-only flag was given alongside a single file.
+ */
+def options(parsed, file: ?string) {
+  var chosen = {}
+
+  if file != nil {
+    _reject_directory_flags(parsed)
+
+    # The one file, by name, and nothing else: no ignore list to
+    # second-guess it, and no reason to look any deeper.
+    chosen.set('match', [file])
+    chosen.set('ignore', [])
+    chosen.set('recursive', false)
+  } else {
+    _set(chosen, 'match', parsed.options.get('match', nil))
+    _set(chosen, 'ignore', parsed.options.get('ignore', nil))
+
+    if parsed.options.get('no-recursive', false) {
+      chosen.set('recursive', false)
+    }
+  }
+
+  _set(chosen, 'jobs', jobs_of(parsed.options.get('jobs', nil)))
+  _set(chosen, 'timeout', timeout_of(parsed.options.get('timeout', nil)))
+  _set(chosen, 'bail', bail_of(parsed.options.get('bail', nil)))
+  _set(chosen, 'env', env_of(parsed.options.get('env', nil)))
+
+  return chosen
+}
+
+/**
+ * The command's own argument parser.
+ *
+ * It lives beside the rules it feeds so that a flag and what the flag
+ * does are declared in one place, and so a test can put a command
+ * line through both.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('test', false)
+
+  parser.description = "Run a project's test files, each in its own process."
+  parser.epilog = 'With no target, the tests directory here is run whole.'
+
+  parser.add_index(
+    'target', 'A test file or a directory of them; the tests directory by default'
+  )
+
+  parser.add_option(
+    'jobs', 'How many files to run at once, or "auto" for one per CPU',
+    { short_name: 'j', type: args.STRING, metavar: 'count' },
+  )
+  parser.add_option(
+    'timeout', 'How long one file may run before it is killed, such as 30s',
+    { short_name: 't', type: args.STRING, metavar: 'duration' },
+  )
+  parser.add_option(
+    'bail', 'Stop after this many failing files; on its own, stop at the first',
+    { short_name: 'b', type: args.OPTIONAL, metavar: 'count' },
+  )
+  parser.add_option(
+    'match', 'Filename patterns to run, in place of *.zu',
+    { short_name: 'm', type: args.LIST, metavar: 'pattern' },
+  )
+  parser.add_option(
+    'ignore', 'Filename patterns to skip, in place of the defaults',
+    { short_name: 'i', type: args.LIST, metavar: 'pattern' },
+  )
+  parser.add_option(
+    'no-recursive', 'Only the files directly in the directory, not below it', nil
+  )
+  parser.add_option(
+    'env', 'Extra environment for every test process, as KEY=VALUE',
+    { short_name: 'e', type: args.LIST, metavar: 'assignment' },
+  )
+  parser.add_option(
+    'list', 'Print the files that would run, one to a line, and stop',
+    { short_name: 'l' },
+  )
+
+  return parser
+}

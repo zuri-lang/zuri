@@ -1,5 +1,4 @@
 use std::fmt::{self, Display};
-use std::io::IsTerminal;
 
 use nu_ansi_term::{Color, Style};
 
@@ -90,7 +89,7 @@ impl ParserError {
   // a syntax error and an uncaught error read as the same family of
   // diagnostic instead of two different tools' output pasted together.
   pub fn render(&self, path: &str, source: &str) -> String {
-    let use_color = std::io::stderr().is_terminal();
+    let use_color = crate::term::styled(&std::io::stderr());
     let err_style = if use_color {
       Style::new().fg(Color::Red).bold()
     } else {

@@ -1,0 +1,191 @@
+# Tests for the planning layer: which directory or file a target names,
+# and what the flags come out as on their way to `conduct()`.
+
+import os
+import test { * }
+
+import ..plan { UsageError, bail_of, env_of, jobs_of, options, parser, resolve, timeout_of }
+
+# A tree of empty files standing in for a project, so resolution can be
+# checked without a single test actually running.
+var FIXTURE = os.join_paths(os.dir_name(__file__), '_fixture')
+
+var TESTS = os.join_paths(FIXTURE, 'tests')
+
+# A command line, through the real parser the command uses.
+def parse(words) {
+  return parser().parse(words)
+}
+
+# The options a command line asks for, against a whole directory.
+def chosen(words) {
+  return options(parse(words), nil)
+}
+
+describe('resolve', @{
+  it('takes the tests directory when nothing was named', @{
+    expect(resolve(nil, FIXTURE)).to_equal({ directory: TESTS, file: nil })
+  })
+
+  it('refuses when there is no tests directory to take', @{
+    var bare = os.join_paths(FIXTURE, 'bare')
+
+    expect(@{ resolve(nil, bare) }).to_raise_instance_of(UsageError)
+    expect(@{ resolve(nil, bare) }).to_raise_with_message("no 'tests' directory")
+  })
+
+  it('finds a test file by its bare name', @{
+    expect(resolve('alpha', FIXTURE)).to_equal({ directory: TESTS, file: 'alpha.zu' })
+  })
+
+  it('finds the same file with its extension written out', @{
+    expect(resolve('alpha.zu', FIXTURE)).to_equal({ directory: TESTS, file: 'alpha.zu' })
+  })
+
+  it('finds a test file by the path it sits at', @{
+    expect(resolve('tests/alpha.zu', FIXTURE))
+      .to_equal({ directory: TESTS, file: 'alpha.zu' })
+  })
+
+  it('takes a directory under tests whole', @{
+    expect(resolve('deep', FIXTURE))
+      .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: nil })
+  })
+
+  it('takes a directory that is nowhere near tests', @{
+    expect(resolve('pkg', FIXTURE))
+      .to_equal({ directory: os.join_paths(FIXTURE, 'pkg'), file: nil })
+  })
+
+  it('takes a file that is nowhere near tests', @{
+    expect(resolve('loose', FIXTURE)).to_equal({ directory: FIXTURE, file: 'loose.zu' })
+  })
+
+  it('reaches into a subdirectory for a name it finds nowhere else', @{
+    expect(resolve('solo', FIXTURE))
+      .to_equal({ directory: os.join_paths(TESTS, 'deep'), file: 'solo.zu' })
+  })
+
+  it('says so rather than choosing between two files of one name', @{
+    expect(@{ resolve('twin', FIXTURE) }).to_raise_with_message('deep/twin.zu, other/twin.zu')
+  })
+
+  it('refuses a name that matches nothing', @{
+    expect(@{ resolve('nope', FIXTURE) }).to_raise_instance_of(UsageError)
+  })
+})
+
+describe('jobs_of', @{
+  it('leaves the default alone when the flag is absent', @{
+    expect(jobs_of(nil)).to_be_nil()
+  })
+
+  it('reads a count', @{
+    expect(jobs_of('4')).to_equal(4)
+  })
+
+  it('reads auto as one per CPU', @{
+    expect(jobs_of('auto')).to_equal(os.num_cpus())
+  })
+
+  it('refuses a count below one', @{
+    expect(@{ jobs_of('0') }).to_raise_instance_of(UsageError)
+  })
+
+  it('refuses anything that is not a count', @{
+    expect(@{ jobs_of('many') }).to_raise_instance_of(UsageError)
+  })
+})
+
+describe('timeout_of', @{
+  it('leaves the default alone when the flag is absent', @{
+    expect(timeout_of(nil)).to_be_nil()
+  })
+
+  it('reads a bare number as milliseconds', @{
+    expect(timeout_of('500')).to_equal(500)
+  })
+
+  it('reads every suffix it documents', @{
+    expect(timeout_of('500ms')).to_equal(500)
+    expect(timeout_of('30s')).to_equal(30000)
+    expect(timeout_of('2m')).to_equal(120000)
+    expect(timeout_of('1h')).to_equal(3600000)
+  })
+
+  it('refuses a duration in a unit it does not know', @{
+    expect(@{ timeout_of('30x') }).to_raise_instance_of(UsageError)
+  })
+})
+
+describe('bail_of', @{
+  it('leaves the default alone when the flag is absent', @{
+    expect(bail_of(nil)).to_be_nil()
+    expect(bail_of(false)).to_be_nil()
+  })
+
+  it('stops at the first failure when the flag carries no count', @{
+    expect(bail_of(true)).to_equal(1)
+  })
+
+  it('reads an attached count', @{
+    expect(bail_of('3')).to_equal(3)
+  })
+
+  it('says how to attach the count when a path was eaten instead', @{
+    expect(@{ bail_of('mytest') }).to_raise_with_message('--bail=<count>')
+  })
+})
+
+describe('env_of', @{
+  it('leaves the default alone when the flag is absent', @{
+    expect(env_of(nil)).to_be_nil()
+  })
+
+  it('reads assignments, keeping any further = in the value', @{
+    expect(env_of(['A=1', 'B=x=y'])).to_equal({ A: '1', B: 'x=y' })
+  })
+
+  it('refuses a word with nothing to assign', @{
+    expect(@{ env_of(['A']) }).to_raise_instance_of(UsageError)
+    expect(@{ env_of(['=1']) }).to_raise_instance_of(UsageError)
+  })
+})
+
+describe('options', @{
+  it('asks for nothing when nothing was asked for', @{
+    expect(chosen([])).to_equal({})
+  })
+
+  it('carries the flags through to conduct', @{
+    expect(chosen(['-j', '4', '-t', '30s', '--bail=2', '-e', 'A=1'])).to_equal({
+      jobs: 4,
+      timeout: 30000,
+      bail: 2,
+      env: { A: '1' },
+    })
+  })
+
+  it('replaces the discovery lists rather than adding to them', @{
+    expect(chosen(['-m', '*_test.zu', '-i', '_*', '--no-recursive'])).to_equal({
+      match: ['*_test.zu'],
+      ignore: ['_*'],
+      recursive: false,
+    })
+  })
+
+  it('narrows to one file, ignoring nothing and looking no deeper', @{
+    expect(options(parse([]), 'alpha.zu')).to_equal({
+      match: ['alpha.zu'],
+      ignore: [],
+      recursive: false,
+    })
+  })
+
+  it('refuses a discovery flag alongside a single file', @{
+    expect(@{ options(parse(['-m', '*.zu']), 'alpha.zu') })
+      .to_raise_instance_of(UsageError)
+    expect(@{ options(parse(['-i', '_*']), 'alpha.zu') })
+      .to_raise_instance_of(UsageError)
+  })
+})

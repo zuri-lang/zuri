@@ -1,0 +1,54 @@
+/**
+ * @command test
+ * @description Run a project's test files, each in its own process.
+ *
+ *   zuri test [target]
+ *
+ * `target` is a directory of test files, or one test file, with or
+ * without its `.zu` ending. Left off, it is the `tests` directory
+ * here. Everything the `test` module's `conduct()` can be told is a
+ * flag: how many files to run at once, how long to give one, when to
+ * stop, which names to run and which to skip.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import os.process { exit }
+
+import test { conduct, TestSetupError }
+import test.conduct { discover }
+import test.source { short_path }
+
+import .plan
+
+def main() {
+  var parsed = plan.parser().parse()
+  var target = parsed.indexes.is_empty() ? nil : parsed.indexes[0]
+
+  var where = plan.resolve(target, nil)
+  var options = plan.options(parsed, where.file)
+
+  # Nothing but the paths, so the list is worth piping somewhere.
+  if parsed.options.get('list', false) {
+    for path in discover(where.directory, options) {
+      echo short_path(os.join_paths(where.directory, path))
+    }
+
+    return
+  }
+
+  conduct(where.directory, options)
+}
+
+catch {
+  main()
+} as error {
+  if instance_of(error, plan.UsageError) or instance_of(error, TestSetupError) {
+    echo 'test: ${error.message}'
+
+    exit(1)
+  }
+
+  raise error
+}

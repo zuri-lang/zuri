@@ -616,25 +616,14 @@ A real project has a directory of them:
 ```text
 project/
   tests/
-    index.zu
     cart.zu
     pricing.zu
 ```
 
-<span class="filename">Filename: tests/index.zu</span>
-
-```zuri,ignore
-import os
-import test
-
-test.conduct(os.dir_name(__file__))
-```
-
-A directory handed to `zuri` runs its `index.zu`, so that one file makes
-the whole suite `zuri run tests`:
+`zuri test` runs the lot:
 
 ```console
-$ zuri run tests
+$ zuri test
 
   zuri test  2 files in tests
 
@@ -650,26 +639,101 @@ $ zuri run tests
   time 476ms
 ```
 
-`conduct` leaves `index.zu` out of discovery, and never runs the script
-that called it either, so the index cannot end up running itself. It ends
-the process with `1` when anything failed.
+There is nothing to write for this. The command finds the `tests`
+directory you ran it from, and ends the process with `1` when anything
+failed, so a CI job needs nothing added to it either.
 
 Each file runs in a process of its own. That is not an implementation
 detail you can ignore, because it is what you are buying:
 
-- A file that loops forever is killed, and the rest still run. Pass
-  `{ timeout: 30000 }` to say how long is too long.
+- A file that loops forever is killed, and the rest still run.
+  `--timeout 30s` says how long is too long.
 - A file that crashes, or calls `os.exit()` halfway through, is reported
   as a file that never reported rather than taking the run with it.
 - Global state, a module loaded for its side effect, a changed working
   directory: none of it leaks from one file into the next.
 
 Files are reported in the order they were discovered whatever order they
-finish in, so `{ jobs: 4 }` makes a big suite faster without making the
+finish in, so `--jobs 4` makes a big suite faster without making the
 report move around.
 
 A test file needs nothing special to be conducted. It declares its
 tests, and is equally runnable on its own.
+
+### Running One File
+
+Name it, with or without its `.zu`:
+
+```console
+$ zuri test pricing
+$ zuri test pricing.zu
+$ zuri test tests/pricing.zu
+```
+
+All three run `tests/pricing.zu`. A name is looked for under `tests`
+first, so a test keeps its own name even when something else in the
+project shares it, and a name that is nowhere to be found under that
+directory is looked for once more by filename alone anywhere beneath it,
+so a file in a subdirectory answers to its own name.
+
+A directory works too, wherever it sits:
+
+```console
+$ zuri test tests/api
+$ zuri test packages/store/tests
+```
+
+### The Flags
+
+| Flag | What it does |
+| --- | --- |
+| `-j, --jobs <count>` | How many files to run at once. `auto` is one per CPU. Default `1`. |
+| `-t, --timeout <duration>` | How long one file may run before it is killed. `500ms`, `30s`, `2m`, `1h`, or a bare number of milliseconds. Default: no limit. |
+| `-b, --bail [count]` | Stop after this many failing files. On its own, stop at the first. |
+| `-m, --match <pattern...>` | Filename patterns to run, in place of `*.zu`. |
+| `-i, --ignore <pattern...>` | Filename patterns to skip, in place of `_*`, `.*` and `index.zu`. |
+| `--no-recursive` | Only the files directly in the directory. |
+| `-e, --env <assignment...>` | Extra environment for every test process, as `KEY=VALUE`. |
+| `-l, --list` | Print the files that would run, one to a line, and stop. |
+
+```console
+$ zuri test --jobs auto --timeout 30s
+$ zuri test --bail
+$ zuri test --match '*_test.zu' '*_spec.zu'
+```
+
+`--bail` and the two pattern flags take as many words as follow them, so
+put the file you are naming ahead of them, or close them with `--`:
+
+```console
+$ zuri test pricing --bail
+$ zuri test --match '*_test.zu' -- pricing
+```
+
+A count for `--bail` has to be attached, `--bail=3`, for the same
+reason: a count written as a separate word is indistinguishable from the
+file.
+
+### Conducting a Suite Yourself
+
+`conduct()` is the function `zuri test` is built on, and a project that
+wants the run under its own control can call it directly. A directory
+handed to `zuri run` runs its `index.zu`, so one file makes the suite
+`zuri run tests`:
+
+<span class="filename">Filename: tests/index.zu</span>
+
+```zuri,ignore
+import os
+import test
+
+test.conduct(os.dir_name(__file__), { jobs: 4, timeout: 30000 })
+```
+
+It takes the same choices the flags do, as a dictionary, and returns the
+run rather than only reporting it. `conduct` leaves `index.zu` out of
+discovery, and never runs the script that called it either, so the index
+cannot end up running itself.
 
 ## Controlling a Run
 

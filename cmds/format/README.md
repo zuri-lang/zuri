@@ -77,5 +77,7 @@ A test file sits beside each source file under `tests/`, written with
 the `test` module. Run the lot with:
 
 ```sh
-zuri run cmds/format/tests
+zuri test cmds/format/tests
 ```
+
+or, from this directory, just `zuri test`.

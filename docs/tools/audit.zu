@@ -253,7 +253,7 @@ def check_source(path: string, source: string) {
 # The command a file under `cmds/` is the entry point for, or `nil` for
 # the files a command keeps beside itself. `name` is relative to
 # `cmds/`, so `format.zu` and `format/index.zu` both name `format`
-# while `format/engine.zu` and `format/tests/index.zu` name nothing.
+# while `format/engine.zu` and `format/tests/tree.zu` name nothing.
 def _entry_command(name: string) {
   var enclosing = os.dir_name(name)
   var base = os.base_name(name)

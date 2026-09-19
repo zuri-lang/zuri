@@ -240,7 +240,16 @@
  * that hangs or crashes takes nothing else down with it. See
  * {test.conduct}.
  *
- * Give the directory an `index.zu` and the whole suite is `zuri run tests`:
+ * `zuri test` is that call behind a command line, and is all a
+ * project needs to run its `tests` directory:
+ *
+ * ```console
+ * $ zuri test
+ * $ zuri test pricing      # just tests/pricing.zu
+ * ```
+ *
+ * Call `conduct()` yourself when the run wants to be under the
+ * project's own control:
  *
  * ```zuri,ignore
  * # tests/index.zu

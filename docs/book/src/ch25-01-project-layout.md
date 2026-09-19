@@ -21,7 +21,6 @@ taskboard/
   static/
     app.css
   tests/
-    index.zu            `zuri run tests` runs the rest
     task.zu             one file per layer
     board.zu
     api.zu

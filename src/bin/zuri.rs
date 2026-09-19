@@ -1,12 +1,13 @@
 use mimalloc::MiMalloc;
 use minus::{self, Pager};
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
 use zuri::cli::{self, Launch, Script};
 use zuri::compiler::parser::ParserError;
 use zuri::compiler::token::KEYWORD_TOKENS;
+use zuri::term::Palette;
 use zuri::vm::modules::install_root_libs;
 
 use itertools::Itertools;
@@ -29,12 +30,24 @@ fn print_repl_help() {
 /// prints the same thing with a note that it is interactive, so the two
 /// report the same build in the same shape.
 fn print_version(suffix: &str) {
+  let palette = Palette::for_stream(&io::stdout());
+
   println!(
-    "Zuri {} (running on ZuriVM {}){suffix}",
-    env!("ZURI_VERSION"),
-    env!("ZVM_VERSION")
+    "{} {}",
+    palette
+      .accent
+      .paint(format!("Zuri {}", env!("ZURI_VERSION"))),
+    palette.muted.paint(format!(
+      "(running on ZuriVM {}){suffix}",
+      env!("ZVM_VERSION")
+    ))
   );
-  println!("Build No. => {}", env!("ZURI_BUILD_TIME"));
+  println!(
+    "{}",
+    palette
+      .muted
+      .paint(format!("Build No. => {}", env!("ZURI_BUILD_TIME")))
+  );
 }
 
 fn format_parse_errors(errors: &[ParserError], path: &str, source: &str) -> String {
@@ -221,38 +234,55 @@ fn run_script(vm: &mut VM, path: &Path, name: &str, display_path: Rc<str>) {
 /// Laid out the way `args.Parser` lays out a command's own help, so the
 /// two read as the same program talking.
 fn print_help() {
+  let palette = Palette::for_stream(&io::stdout());
+
   print_version("");
 
   println!();
-  println!("Usage: zuri                    start the interactive REPL");
-  println!("       zuri run [PATH]         run a script, a package, or this directory");
-  println!("       zuri <command> [ARGS]   run a command");
+  println!(
+    "{} {}                    start the interactive REPL",
+    palette.heading.paint("Usage:"),
+    palette.accent.paint("zuri")
+  );
+  println!(
+    "       {} run [PATH]         run a script, a package, or this directory",
+    palette.accent.paint("zuri")
+  );
+  println!(
+    "       {} <command> [ARGS]   run a command",
+    palette.accent.paint("zuri")
+  );
   println!();
-  println!("OPTIONS:");
+  println!("{}", palette.heading.paint("OPTIONS:"));
   println!("  -h, --help     Show this help message and exit");
   println!("  -v, --version  Show version information and exit");
 
   let commands = cli::list_commands();
   let width = commands.name_width();
 
-  print_commands("COMMANDS", &commands.global, width);
-  print_commands("PROJECT COMMANDS", &commands.local, width);
+  print_commands("COMMANDS", &commands.global, width, &palette);
+  print_commands("PROJECT COMMANDS", &commands.local, width, &palette);
 
   if !commands.is_empty() {
     println!();
-    println!("Run \"zuri <command> --help\" for help on a specific command.");
+    println!(
+      "{}",
+      palette
+        .muted
+        .paint("Run \"zuri <command> --help\" for help on a specific command.")
+    );
   }
 }
 
 /// One headed run of commands, left out entirely when there are none
 /// to put under it.
-fn print_commands(title: &str, commands: &[cli::Command], width: usize) {
+fn print_commands(title: &str, commands: &[cli::Command], width: usize, palette: &Palette) {
   if commands.is_empty() {
     return;
   }
 
   println!();
-  println!("{title}:");
+  println!("{}", palette.heading.paint(format!("{title}:")));
 
   for command in commands {
     match command.description.is_empty() {

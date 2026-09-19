@@ -174,6 +174,7 @@ OPTIONS:
 
 COMMANDS:
   format  Lay out Zuri source in the project style.
+  test    Run a project's test files, each in its own process.
 
 PROJECT COMMANDS:
   greet   Say hello to somebody by name.

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::io::IsTerminal;
 use std::ops::{Neg, Shl, Shr};
 use std::rc::Rc;
 use std::sync::LazyLock;
@@ -1382,7 +1381,7 @@ impl VM {
   /// `path:line` locator with no snippet.
   pub fn format_uncaught(&self, exc: Value, entry_path: &str, entry_source: &str) -> String {
     let summary = self.describe_error(exc);
-    let use_color = std::io::stderr().is_terminal();
+    let use_color = crate::term::styled(&std::io::stderr());
     let err_style = if use_color {
       Style::new().fg(Color::Red).bold()
     } else {

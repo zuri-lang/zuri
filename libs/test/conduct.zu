@@ -9,6 +9,11 @@
  * test.conduct('tests')
  * ```
  *
+ * `zuri test` is this call behind a command line, with every option
+ * below as a flag, so a project gets a test runner without writing
+ * one. Call `conduct()` directly when the run wants to be under the
+ * project's own control.
+ *
  * ### One process per file
  *
  * A test file is an ordinary Zuri script, and each one is run as one:
@@ -24,8 +29,9 @@
  *
  * ### The index is not a test file
  *
- * `index.zu` is left out of discovery. A directory handed to `zuri`
- * runs its `index.zu`, so a suite is started by putting one there:
+ * `index.zu` is left out of discovery. A directory handed to `zuri
+ * run` runs its `index.zu`, so a suite that wants to start itself
+ * puts one there:
  *
  * ```zuri,ignore
  * # tests/index.zu
@@ -171,10 +177,10 @@ def _wanted(name, options) {
 /**
  * Every test file under `directory`, in the order they will run.
  *
- * `index.zu` is never one of them. A directory handed to `zuri` runs
- * its `index.zu`, so that file is the thing that starts a suite rather
- * than a part of one, and conducting a directory from inside its own
- * index is the shape this is written for. Pass an `ignore` list of
+ * `index.zu` is never one of them. A directory handed to `zuri run`
+ * runs its `index.zu`, so that file is the thing that starts a suite
+ * rather than a part of one, and conducting a directory from inside
+ * its own index is the shape this is written for. Pass an `ignore` list of
  * your own when a file of that name really is a test.
  *
  * The script that is currently running is left out too, whatever it is
