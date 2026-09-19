@@ -130,7 +130,7 @@ handlers, zero `catch` blocks.
 Not one handler catches either, and every one of them is one to five lines
 as a direct result.
 
-The middleware in [the next section](ch23-06-middleware.md) catches both
+The middleware in [the next section](ch24-06-middleware.md) catches both
 and turns them into a 404 and a 422. **There is exactly one place in this
 application that knows which domain error means which status code**, and it
 is not in a route.

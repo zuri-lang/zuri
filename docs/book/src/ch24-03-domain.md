@@ -300,7 +300,7 @@ route handler, which cannot reach the private function at all.
 
 Every layer above can therefore assume a `Task` it is holding is valid,
 which is why no route handler in
-[The JSON API](ch23-04-api.md) re-checks a title.
+[The JSON API](ch24-04-api.md) re-checks a title.
 
 ## Why Not the `validate` Module?
 

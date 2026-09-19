@@ -159,7 +159,7 @@ Almost all of it.
 | 13 | `json`, `uuid`, `date`, `log` |
 | 14 | Wire: layout, slots, loops, filters, escaping |
 | 16 | the request log, and the error shapes that make it readable |
-| 19 | the suite in [Testing the Board](ch23-08-testing.md) |
+| 19 | the suite in [Testing the Board](ch24-08-testing.md) |
 
 What it did not use is as informative. There are no isolates, because one
 process is enough. There is no `validate`, because the rules belong to the
@@ -188,5 +188,5 @@ the underscore earn its keep.
 parameters, with the same code serving the HTML page and the API.
 
 Every one of those is a change to one layer. That is what the layout was
-for, and [Testing the Board](ch23-08-testing.md) is how you make any of
+for, and [Testing the Board](ch24-08-testing.md) is how you make any of
 them without holding your breath.

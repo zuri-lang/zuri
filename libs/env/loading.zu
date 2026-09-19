@@ -1,0 +1,383 @@
+/**
+ * @module loading
+ *
+ * The loader: which sources to read, in what order, and what to do
+ * with the names that come out of them.
+ *
+ * A load is three steps that stay separate. The sources are scanned
+ * into names and values, the `$` references among them are resolved,
+ * and then the result is written into the process environment. Calling
+ * `read()` instead of `load()` stops after the second, which is what
+ * makes a `.env` file inspectable without anything being set.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .errors { EnvError, MissingFile }
+import .expand { expand }
+import .parser { * }
+
+/**
+ * What a load did.
+ *
+ * `values` is everything the sources defined, after expansion, in the
+ * order the names were first seen. The three lists beside it account
+ * for each name and each file, so a program never has to guess whether
+ * its configuration actually arrived.
+ *
+ * ```zuri,ignore
+ * var result = env.load()
+ *
+ * if result.files.is_empty() {
+ *   log.warn('no .env file was found; using the environment as it stands')
+ * }
+ *
+ * for name in result.skipped {
+ *   log.debug('${name} was already set, so the file did not change it')
+ * }
+ * ```
+ *
+ * @property dict values Every name the sources defined, after expansion.
+ * @property list applied The names written into the process environment.
+ * @property list skipped The names left alone because they were already set.
+ * @property list files The paths that were read.
+ * @property list missing The paths that were not there.
+ * @printable
+ */
+class Result {
+
+  @new() {
+    self.values = {}
+    self.applied = []
+    self.skipped = []
+    self.files = []
+    self.missing = []
+  }
+
+  to_string() {
+    return '<env.Result ${self.values.length()} values, ' +
+      '${self.applied.length()} applied, ${self.skipped.length()} skipped>'
+  }
+}
+
+# Answers what a name is worth while values are being expanded.
+#
+# The rule it implements is the one the module documents: a reference
+# resolves to the value the name will hold once the load has finished,
+# which is the process environment's when the process environment wins
+# and the file's when the file does.
+class _Resolution {
+
+  @new(raw, override_existing, expanding) {
+    self._raw = raw
+    self._override = override_existing
+    self._expanding = expanding
+    self._done = {}
+    self._stack = []
+  }
+
+  lookup(name) {
+    if !self._override {
+      var current = os.get_env(name)
+
+      if current != nil and current != '' {
+        return current
+      }
+    }
+
+    if self._raw.contains(name) {
+      if self._stack.contains(name) {
+        # `PATH=${PATH}:/opt/bin` is a definition reaching past itself
+        # to the environment it is extending, exactly as a shell reads
+        # it. Any longer loop is a mistake worth naming.
+        if self._stack.last() == name {
+          return os.get_env(name)
+        }
+
+        raise EnvError(
+          'circular reference: ' + ' -> '.join(self._stack) + ' -> ' + name
+        )
+      }
+
+      return self.value_of(name)
+    }
+
+    return os.get_env(name)
+  }
+
+  value_of(name) {
+    if self._done.contains(name) {
+      return self._done.get(name)
+    }
+
+    var entry = self._raw.get(name)
+    var value
+
+    if !self._expanding or !entry.expandable {
+      value = _unescape(entry)
+    } else {
+      self._stack.append(name)
+
+      catch {
+        value = expand(entry.value, @(other) {
+          return self.lookup(other)
+        })
+      } as error {
+        self._stack.pop()
+        raise error
+      }
+
+      self._stack.pop()
+    }
+
+    self._done.set(name, value)
+
+    return value
+  }
+}
+
+/**
+ * Builds a load: the sources it reads and the four decisions it makes
+ * about them.
+ *
+ * Every setting returns the loader, so a whole configuration is one
+ * expression:
+ *
+ * ```zuri,ignore
+ * import env
+ *
+ * var result = env.loader()
+ *   .path('.env')
+ *   .path('.env.local')
+ *   .override()
+ *   .load()
+ * ```
+ *
+ * Sources are read in the order they were added and layered on top of
+ * one another, so the last source to define a name is the one that
+ * defines it. That is what makes the pair above work: `.env` holds
+ * what the team shares and `.env.local` holds what one machine does
+ * differently.
+ *
+ * A loader is reusable. Nothing about it changes when `load()` runs,
+ * so the same one can be kept and run again.
+ */
+class Loader {
+
+  @new() {
+    self._sources = []
+    self._override = false
+    self._expanding = true
+    self._required = false
+  }
+
+  /**
+   * Adds a file to read.
+   *
+   * A leading `~` is expanded to the home directory, and a relative
+   * path is resolved against the current working directory. A file
+   * that is not there is not an error unless `required()` says so.
+   *
+   * @param string path
+   * @returns Loader
+   */
+  path(path: string) {
+    self._sources.append({ path: os.expand_user(path) })
+
+    return self
+  }
+
+  /**
+   * Adds several files to read, in the order given.
+   *
+   * @param list paths
+   * @returns Loader
+   */
+  paths(paths: list) {
+    for path in paths {
+      self.path(path)
+    }
+
+    return self
+  }
+
+  /**
+   * Adds text to read, as though it were the contents of a file.
+   *
+   * This is how configuration that arrived over the network, out of a
+   * secret store, or from a test fixture goes through exactly the same
+   * parsing, expansion and precedence as a file on disk.
+   *
+   * @param string text
+   * @returns Loader
+   */
+  source(text: string) {
+    self._sources.append({ text })
+
+    return self
+  }
+
+  /**
+   * Sets whether a name already present in the process environment is
+   * replaced by the one the sources define.
+   *
+   * Off by default, which is what makes a `.env` file a set of
+   * defaults: whatever the shell, the orchestrator or the CI runner
+   * already set survives, and the file fills in the rest. Turn it on
+   * and the file wins instead.
+   *
+   * A variable set to the empty string counts as unset either way.
+   *
+   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @returns Loader
+   */
+  override(enabled: ?bool) {
+    self._override = enabled == nil ? true : enabled
+
+    return self
+  }
+
+  /**
+   * Sets whether `$` references inside values are resolved.
+   *
+   * On by default. Turn it off and every value is used exactly as it
+   * was written, which is what a file of opaque secrets wants.
+   *
+   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @returns Loader
+   */
+  expand(enabled: ?bool) {
+    self._expanding = enabled == nil ? true : enabled
+
+    return self
+  }
+
+  /**
+   * Sets whether a file that is not there is an error.
+   *
+   * Off by default, because the same program usually runs both on a
+   * laptop with a `.env` file and on a server where the orchestrator
+   * supplies the environment directly. Turn it on where the file is
+   * genuinely part of the deployment and its absence should stop the
+   * program rather than surface later as a missing setting.
+   *
+   * @param ?bool enabled Defaults to `true` when the argument is left out.
+   * @returns Loader
+   * @throws MissingFile from `load()` and `read()` when a file is absent.
+   */
+  required(enabled: ?bool) {
+    self._required = enabled == nil ? true : enabled
+
+    return self
+  }
+
+  # Scans every source in order and returns the names it defined, last
+  # definition winning, paired with the order they first appeared in.
+  _collect(result) {
+    var raw = {}
+    var order = []
+
+    for source in self._sources {
+      var text
+
+      if source.contains('text') {
+        text = source.text
+      } else {
+        var handle = file(source.path)
+
+        if !handle.exists() {
+          if self._required {
+            raise MissingFile(source.path)
+          }
+
+          result.missing.append(source.path)
+          continue
+        }
+
+        text = handle.read()
+        result.files.append(source.path)
+      }
+
+      for entry in _scan(text) {
+        if !raw.contains(entry.name) {
+          order.append(entry.name)
+        }
+
+        raw.set(entry.name, entry)
+      }
+    }
+
+    return { raw, order }
+  }
+
+  _run(apply) {
+    var result = Result()
+    var collected = self._collect(result)
+    var resolution = _Resolution(collected.raw, self._override, self._expanding)
+
+    for name in collected.order {
+      result.values.set(name, resolution.value_of(name))
+    }
+
+    if !apply {
+      return result
+    }
+
+    for name, value in result.values {
+      var current = os.get_env(name)
+
+      if self._override or current == nil or current == '' {
+        os.set_env(name, value, true)
+        result.applied.append(name)
+      } else {
+        result.skipped.append(name)
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Reads the sources and returns what they hold, without touching the
+   * process environment.
+   *
+   * `$` references still resolve, and they resolve the same way they
+   * would during a real load, so what comes back is what `load()`
+   * would have set.
+   *
+   * The `applied` and `skipped` lists on the result are empty, because
+   * nothing was applied and nothing was skipped.
+   *
+   * @returns Result
+   * @throws ParseError when a source is not a valid environment file.
+   * @throws MissingFile when `required()` is on and a file is absent.
+   */
+  read() {
+    return self._run(false)
+  }
+
+  /**
+   * Reads the sources and writes what they hold into the process
+   * environment.
+   *
+   * A name already set to a non-empty value is left alone and recorded
+   * in `Result.skipped`, unless `override()` is on. Everything else is
+   * set and recorded in `Result.applied`.
+   *
+   * ```zuri,ignore
+   * import env
+   *
+   * env.loader().path('.env').required().load()
+   * ```
+   *
+   * @returns Result
+   * @throws ParseError when a source is not a valid environment file.
+   * @throws MissingFile when `required()` is on and a file is absent.
+   * @throws MissingVariable when a `${NAME:?reason}` reference finds nothing.
+   */
+  load() {
+    return self._run(true)
+  }
+}

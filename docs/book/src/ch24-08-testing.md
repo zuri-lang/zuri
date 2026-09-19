@@ -2,7 +2,7 @@
 
 The application works. This section is about keeping it working, and it is
 the last thing the layering from
-[Laying Out the Project](ch23-01-project-layout.md) pays for.
+[Laying Out the Project](ch24-01-project-layout.md) pays for.
 
 Recall the shape:
 
@@ -291,7 +291,7 @@ nothing to do with what the test was checking.
 ## The Routes
 
 `register(server, board)` takes its two collaborators as arguments. That
-was presented in [The JSON API](ch23-04-api.md) as being about seeding a
+was presented in [The JSON API](ch24-04-api.md) as being about seeding a
 demo board; here is the other half of what it buys.
 
 A handler needs three things: something to register on, a request, and a
@@ -469,7 +469,7 @@ Faking is for the things that are slow, remote or awkward, and a temporary
 file is none of those.
 
 **`lets the model reject a bad body`.** From
-[Handlers Do Not Handle Errors](ch23-04-api.md#handlers-do-not-handle-errors):
+[Handlers Do Not Handle Errors](ch24-04-api.md#handlers-do-not-handle-errors):
 the handler does not catch anything, so an invalid title comes back out of
 the handler as a `TaskError`. That is the behaviour the middleware relies
 on, and this asserts it directly rather than through the middleware.
@@ -533,6 +533,6 @@ direct consequence of the layering: every arrow points one way, and every
 layer takes its collaborators as arguments rather than importing them.
 
 The layering was justified in
-[Laying Out the Project](ch23-01-project-layout.md) on the grounds that it
+[Laying Out the Project](ch24-01-project-layout.md) on the grounds that it
 makes each layer readable on its own. This is the other half of the claim,
 and it is the half you feel every day.

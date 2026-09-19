@@ -132,7 +132,7 @@ serialisers, debuggers and test helpers, where reaching into an object is
 the entire point. Regular code should not use them.
 
 The `zuri` module goes further, with a full reflection API over classes,
-functions and modules. [Chapter 19](ch19-00-metaprogramming.md) covers it.
+functions and modules. [Chapter 20](ch20-00-metaprogramming.md) covers it.
 
 ## Designing With Sealed Classes
 

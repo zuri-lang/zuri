@@ -38,6 +38,32 @@ describe('parse', @{
     expect(group_kinds('[1, 2, 3]')).to_equal(['bracket'])
   })
 
+  it('reads a bracket after a name as a subscript', @{
+    expect(group_kinds('var x = s[1]')).to_equal(['index'])
+  })
+
+  it('reads a bracket after a closer as a subscript', @{
+    expect(group_kinds('var x = f()[0]')).to_equal(['paren', 'index'])
+    expect(group_kinds("var x = { a: 1 }['a']")).to_equal(['dict', 'index'])
+  })
+
+  it('reads a bracket after a string as a subscript', @{
+    expect(group_kinds("var x = 'hi'[0]")).to_equal(['index'])
+  })
+
+  it('reads a bracket opening a line as a list', @{
+    expect(group_kinds('var x = y\n[1, 2]')).to_equal(['bracket'])
+  })
+
+  it('reads a bracket after an operator or comma as a list', @{
+    expect(group_kinds('var x = [1]')).to_equal(['bracket'])
+    expect(group_kinds('return [1]')).to_equal(['bracket'])
+
+    var call = first_group(parse(stream('f(a, [1])')))
+
+    expect(first_group(call.items).kind).to_be('bracket')
+  })
+
   it('reads a brace after `=` as a dictionary', @{
     expect(group_kinds('var d = { a: 1 }')).to_equal(['dict'])
   })

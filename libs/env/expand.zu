@@ -1,0 +1,245 @@
+/**
+ * @module expand
+ *
+ * Resolving the `$` references inside a value.
+ *
+ * The syntax is the shell's, because that is what a `.env` file looks
+ * like to everyone who has ever written one, and the modifiers are the
+ * four from POSIX parameter expansion that earn their place in a
+ * configuration file: a fallback, an override, and a demand.
+ *
+ * Nothing here reads the environment itself. Every lookup goes through
+ * the `resolve` function the caller supplies, which is what lets the
+ * loader answer with the value a name is about to have rather than the
+ * one it has now.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { EnvError, MissingVariable }
+
+def _is_name_start(ch) {
+  if ch == '_' {
+    return true
+  }
+
+  if ch == '' {
+    return false
+  }
+
+  var c = ch.ord()
+  return (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+}
+
+def _is_name_char(ch) {
+  if _is_name_start(ch) {
+    return true
+  }
+
+  if ch == '' {
+    return false
+  }
+
+  var c = ch.ord()
+  return c >= 48 and c <= 57
+}
+
+# Walks one value, copying it through and replacing each reference with
+# whatever `resolve` answers for it.
+class _Expander {
+
+  @new(source, resolve) {
+    self._src = source
+    self._len = source.length()
+    self._resolve = resolve
+    self._pos = 0
+  }
+
+  _peek() {
+    if self._pos >= self._len {
+      return ''
+    }
+
+    return self._src[self._pos]
+  }
+
+  run() {
+    var out = []
+
+    while self._pos < self._len {
+      var ch = self._src[self._pos]
+
+      # `\$` is how a value says it wants a dollar sign and no
+      # expansion. The backslash goes, the dollar stays.
+      if ch == '\\' and self._pos + 1 < self._len and self._src[self._pos + 1] == '$' {
+        out.append('$')
+        self._pos += 2
+        continue
+      }
+
+      if ch != '$' {
+        out.append(ch)
+        self._pos++
+        continue
+      }
+
+      out.append(self._reference())
+    }
+
+    return ''.join(out)
+  }
+
+  _reference() {
+    self._pos++
+
+    if self._peek() == '{' {
+      return self._braced()
+    }
+
+    if !_is_name_start(self._peek()) {
+      # A dollar that names nothing is just a dollar.
+      return '$'
+    }
+
+    var start = self._pos
+
+    while _is_name_char(self._peek()) {
+      self._pos++
+    }
+
+    var found = self._resolve(self._src[start, self._pos])
+
+    return found == nil ? '' : found
+  }
+
+  # Reads from `{` to the `}` that closes it, allowing a nested
+  # reference inside a fallback, then hands the text to `_modified()`.
+  _braced() {
+    self._pos++
+
+    var start = self._pos
+    var depth = 1
+
+    while self._pos < self._len {
+      var ch = self._src[self._pos]
+
+      if ch == '\\' {
+        self._pos += 2
+        continue
+      }
+
+      if ch == '{' {
+        depth++
+      } else if ch == '}' {
+        depth--
+
+        if depth == 0 {
+          var body = self._src[start, self._pos]
+          self._pos++
+          return _modified(body, self._resolve)
+        }
+      }
+
+      self._pos++
+    }
+
+    raise EnvError('unterminated reference in ' + self._src)
+  }
+}
+
+# Applies one `${name}` body, modifier and all.
+def _modified(body, resolve) {
+  if !_is_name_start(body.length() > 0 ? body[0] : '') {
+    raise EnvError('$' + '{' + body + '} does not name a variable')
+  }
+
+  var cut = 0
+
+  while cut < body.length() and _is_name_char(body[cut]) {
+    cut++
+  }
+
+  var name = body[0, cut]
+  var rest = body[cut,]
+
+  var found = resolve(name)
+
+  if rest == '' {
+    return found == nil ? '' : found
+  }
+
+  # A leading colon widens every modifier from "is it set" to "is it
+  # set to something", which is the test a configuration file wants.
+  var empty_counts_as_unset = rest[0] == ':'
+
+  if empty_counts_as_unset {
+    rest = rest[1,]
+  }
+
+  var modifier = rest.length() > 0 ? rest[0] : ''
+  var word = rest[1,]
+
+  if !['-', '+', '?'].contains(modifier) {
+    raise EnvError(
+      '$' + '{' + body + '} uses a modifier this module does not know'
+    )
+  }
+
+  var present = found != nil and !(empty_counts_as_unset and found == '')
+
+  if modifier == '-' {
+    return present ? found : expand(word, resolve)
+  }
+
+  if modifier == '+' {
+    return present ? expand(word, resolve) : ''
+  }
+
+  if present {
+    return found
+  }
+
+  var reason = expand(word, resolve)
+
+  raise MissingVariable(name, reason == '' ? nil : reason)
+}
+
+/**
+ * Replaces every `$` reference in `value` with what `resolve` answers,
+ * and returns the result.
+ *
+ * `resolve` is called with one variable name and returns its value, or
+ * `nil` when the name has none. Everything the caller wants to decide
+ * about precedence, recursion and cycles is decided inside it.
+ *
+ * The forms understood are `$NAME`, `${NAME}`, and `${NAME}` carrying
+ * one of three modifiers:
+ *
+ * | Written | Means |
+ * | - | - |
+ * | `${NAME:-fallback}` | the value, or `fallback` when it is unset or empty |
+ * | `${NAME-fallback}` | the value, or `fallback` when it is unset |
+ * | `${NAME:+instead}` | `instead` when the value is set and not empty, otherwise nothing |
+ * | `${NAME+instead}` | `instead` when the value is set, otherwise nothing |
+ * | `${NAME:?reason}` | the value, or a `MissingVariable` carrying `reason` |
+ * | `${NAME?reason}` | the same, counting an empty value as set |
+ *
+ * The text after a modifier is itself expanded, so `${HOST:-${FALLBACK_HOST}}`
+ * does what it looks like. A `$` that names nothing stands for itself,
+ * and `\$` is always a literal dollar sign.
+ *
+ * @param string value
+ * @param function resolve
+ * @returns string
+ * @throws EnvError when a reference is not closed or carries a modifier
+ *    that does not exist.
+ * @throws MissingVariable when a `${NAME:?reason}` reference finds nothing.
+ */
+def expand(value: string, resolve: function) {
+  # Values without a dollar in them are the overwhelming majority.
+  if !value.contains('$') {
+    return value
+  }
+
+  return _Expander(value, resolve).run()
+}

@@ -1,0 +1,150 @@
+/**
+ * @module errors
+ *
+ * Every error the `env` module raises, under one root.
+ *
+ * `EnvError` is that root. The three subclasses separate the cases
+ * worth handling differently: a file that will not parse, a file that
+ * was demanded and is not there, and a variable a program cannot run
+ * without.
+ *
+ * Each one carries the detail a message alone cannot. `ParseError`
+ * knows the line and column it stopped at, `MissingFile` knows the
+ * path it looked for, and `MissingVariable` knows the name it wanted.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+/**
+ * Base class for every error this module raises.
+ *
+ * Catch this to catch anything `env` can do.
+ *
+ * @printable
+ */
+class EnvError < Error {
+  @new(message) {
+    parent(message)
+    self.type = 'EnvError'
+  }
+
+  to_string() {
+    return '<${self.type}: ${self.message}>'
+  }
+}
+
+/**
+ * A source could not be parsed.
+ *
+ * `line` and `column` are both 1-based and point at the character the
+ * parser gave up on, which is where the fix goes.
+ *
+ * ```zuri,ignore
+ * catch {
+ *   env.parse('12FACTOR=yes')
+ * } as error {
+ *   echo '${error.message} (line ${error.line}, column ${error.column})'
+ * }
+ * ```
+ *
+ * @property number line The 1-based line the error was found on.
+ * @property number column The 1-based column within that line.
+ * @printable
+ */
+class ParseError < EnvError {
+  /**
+   * The 1-based line the parser stopped at.
+   * @type number
+   */
+  var line = 0
+
+  /**
+   * The 1-based column within that line.
+   * @type number
+   */
+  var column = 0
+
+  /**
+   * @param string message
+   * @param number line
+   * @param number column
+   * @constructor
+   */
+  @new(message: string, line: number, column: number) {
+    parent(message)
+
+    self.type = 'ParseError'
+    self.line = line
+    self.column = column
+  }
+
+  to_string() {
+    return '<ParseError: ${self.message} at line ${self.line}, column ${self.column}>'
+  }
+}
+
+/**
+ * A file the loader was told to require is not there.
+ *
+ * Only `Loader.required()` produces this. A loader left at its default
+ * treats an absent file as an empty one and records the path in
+ * `Result.missing` instead.
+ *
+ * @property string path The path that was looked for.
+ * @printable
+ */
+class MissingFile < EnvError {
+  /**
+   * The path that was looked for, after `~` was expanded.
+   * @type string
+   */
+  var path = ''
+
+  /**
+   * @param string path
+   * @constructor
+   */
+  @new(path: string) {
+    parent('no environment file at ${path}')
+
+    self.type = 'MissingFile'
+    self.path = path
+  }
+
+  to_string() {
+    return '<MissingFile: ${self.path}>'
+  }
+}
+
+/**
+ * A variable a program said it needed is not configured.
+ *
+ * Raised by `require()` and by the `${NAME:?reason}` form during
+ * expansion.
+ *
+ * @property string name The name of the variable that was wanted.
+ * @printable
+ */
+class MissingVariable < EnvError {
+  /**
+   * The name of the variable that was wanted.
+   * @type string
+   */
+  var name = ''
+
+  /**
+   * @param string name
+   * @param ?string message A reason to use instead of the default text.
+   * @constructor
+   */
+  @new(name: string, message: ?string) {
+    parent(message or '${name} is not set')
+
+    self.type = 'MissingVariable'
+    self.name = name
+  }
+
+  to_string() {
+    return '<MissingVariable: ${self.name}>'
+  }
+}

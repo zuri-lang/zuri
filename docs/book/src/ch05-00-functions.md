@@ -29,7 +29,7 @@ echo [1, 2, 3].map(double)
 ```
 
 That one property is what makes `map`, `filter`, `reduce`, every callback
-in the standard library, and every route handler in Chapter 20 possible.
+in the standard library, and every route handler in Chapter 15 possible.
 
 Note the shape of those two calls. `operations.twice` *reads* the function
 out of the dictionary, and then you call what you read. Writing

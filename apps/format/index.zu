@@ -35,14 +35,13 @@ var _CLOSERS = ['Rparen', 'Rbracket', 'Rbrace']
 # without the whitespace markers, and without a comma right before a
 # closer, since keeping or dropping a trailing comma is the formatter's
 # own call and never changes the program.
+#
+# A subscript is the exception. `s[1]` and `s[1,]` are an item and a
+# slice, so the comma before that `]` is part of the program and has to
+# count. `_closings()` is what says which `]` is which.
 def _signature(source: string) {
   var kept = []
-
-  for atom in atoms.stream(source) {
-    if atom.kind != 'Newline' and atom.kind != 'Blank' {
-      kept.append(atom)
-    }
-  }
+  var closings = _closings(source, kept)
 
   var out = []
   var index = 0
@@ -53,6 +52,7 @@ def _signature(source: string) {
     var trailing = atom.kind == 'Comma'
       and next != nil
       and _CLOSERS.contains(next.kind)
+      and !closings[index + 1]
 
     # `name: name` and its shorthand `name` are the same to the check:
     # collapse the pair so the rewrite reads as no change.
@@ -78,6 +78,42 @@ def _signature(source: string) {
   }
 
   return out
+}
+
+# Fills `kept` with the atoms that carry meaning and returns a list
+# alongside it, true at every `]` that closes a subscript rather than a
+# list literal.
+#
+# The decision is `tree.opens_subscript()`, the one the parser makes,
+# reading the atom before the `[` on its own line. Both layers have to
+# answer the same way or a source and its formatting would compare as
+# different programs when they are not.
+def _closings(source: string, kept: list) {
+  var closings = []
+  var opened = []
+  var previous = nil
+
+  for atom in atoms.stream(source) {
+    if atom.kind == 'Newline' or atom.kind == 'Blank' {
+      previous = nil
+
+      continue
+    }
+
+    var closes_subscript = false
+
+    if atom.kind == 'Lbracket' {
+      opened.append(tree.opens_subscript(previous))
+    } else if atom.kind == 'Rbracket' and !opened.is_empty() {
+      closes_subscript = opened.pop()
+    }
+
+    kept.append(atom)
+    closings.append(closes_subscript)
+    previous = atom
+  }
+
+  return closings
 }
 
 def _same(left: list, right: list) {

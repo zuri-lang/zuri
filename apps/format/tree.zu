@@ -12,6 +12,12 @@
  * expression, right after `=`, `(`, `,`, `return`, `:` or an operator,
  * is a dictionary; anywhere else it opens a block.
  *
+ * A `[` is read the same way. Directly after something that has a
+ * value it subscripts that value, and the commas inside it are part of
+ * what it means: `s[1]`, `s[1,]`, `s[,3]` and `s[1,3]` are four
+ * different reads. Anywhere else it opens a list, whose trailing comma
+ * is the formatter's to add or drop.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -26,11 +32,37 @@ var _DICT_BEFORE = [
   'GreaterEq', 'And', 'Or', 'Amp', 'Bar', 'Xor', 'Lshift', 'Rshift', 'Urshift',
 ]
 
+# The atom kinds a `[` can follow and still be subscripting what came
+# before it. Anything else in front of it and it opens a list.
+var _INDEXABLE = [
+  'Identifier', 'Self_', 'String', 'Rparen', 'Rbracket', 'Rbrace',
+]
+
 # The matching closer for each opener.
 var _CLOSER = { 'Lparen': 'Rparen', 'Lbracket': 'Rbracket', 'Lbrace': 'Rbrace' }
 
 def _tok(atom) {
   return { node: 'tok', atom }
+}
+
+/**
+ * Whether a `[` written directly after `previous` subscripts it rather
+ * than opening a list literal.
+ *
+ * `previous` is the atom before the bracket on the same line, or `nil`
+ * when the bracket begins one. A bracket that begins a line is always
+ * a list: nobody writes a receiver and its subscript on two lines, and
+ * reading it the other way would turn a list statement into an index.
+ *
+ * @param ?Atom previous
+ * @returns bool
+ */
+def opens_subscript(previous) {
+  if previous == nil {
+    return false
+  }
+
+  return _INDEXABLE.contains(previous.kind)
 }
 
 def _skip_trivia(items, from) {
@@ -101,6 +133,33 @@ def _shorthand(items) {
   return out
 }
 
+# The atom the last item on the current line ends with, or nil when
+# nothing precedes it on that line. A block's closing brace does not
+# count: `}` ends a statement, and what follows it starts a new one.
+def _prev_on_line(items) {
+  var index = items.length() - 1
+
+  while index >= 0 {
+    var item = items[index]
+
+    if item.node == 'newline' or item.node == 'blank' {
+      return nil
+    }
+
+    if item.node == 'tok' {
+      return item.atom
+    }
+
+    if item.node == 'group' {
+      return item.kind == 'block' ? nil : item.close
+    }
+
+    index -= 1
+  }
+
+  return nil
+}
+
 # The last real token in `items`, skipping newlines and blanks, or nil.
 def _last_token(items) {
   var index = items.length() - 1
@@ -158,7 +217,7 @@ def _in_import(items) {
  *
  * - `{ node: 'tok', atom }`
  * - `{ node: 'group', kind, open, items, close }` where `kind` is
- *   `'paren'`, `'bracket'`, `'dict'` or `'block'`
+ *   `'paren'`, `'bracket'`, `'index'`, `'dict'` or `'block'`
  * - `{ node: 'newline' }` or `{ node: 'blank' }`
  *
  * @param list atoms
@@ -202,7 +261,7 @@ def _parse_seq(atoms: list, state: dict, closer) {
       if atom.kind == 'Lparen' {
         kind = 'paren'
       } else if atom.kind == 'Lbracket' {
-        kind = 'bracket'
+        kind = opens_subscript(_prev_on_line(items)) ? 'index' : 'bracket'
       } else if _is_dict(before) or _in_import(items) {
         kind = 'dict'
       } else if before == nil and (closer == 'Rparen' or closer == 'Rbracket') {

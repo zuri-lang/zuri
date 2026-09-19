@@ -74,7 +74,8 @@ def _piece(node, breakable) {
 }
 
 # Drops a trailing comma and the newlines after it. A group kept on one
-# line loses the trailing comma a broken one would carry.
+# line loses the trailing comma a broken one would carry. A subscript
+# never goes through here: its commas say what it means.
 def _without_trailing_comma(items) {
   var last = items.length() - 1
 
@@ -94,13 +95,17 @@ def _without_trailing_comma(items) {
 
 # The one-line text of a bracket group.
 def _group_text(group) {
-  var inner = flat(_without_trailing_comma(group.items), group.kind == 'dict')
+  var items = group.kind == 'index'
+    ? group.items
+    : _without_trailing_comma(group.items)
+
+  var inner = flat(items, group.kind == 'dict', group.kind == 'index')
 
   if group.kind == 'paren' {
     return '(${inner})'
   }
 
-  if group.kind == 'bracket' {
+  if group.kind == 'bracket' or group.kind == 'index' {
     return '[${inner}]'
   }
 
@@ -181,6 +186,13 @@ def _space(prev, cur, state) {
     return ''
   }
 
+  # A subscript's commas are part of one expression rather than a list
+  # of separate ones, so they close up: `s[2,5]` and `s[,5]`, the way
+  # the bounds of a slice read as a single thing.
+  if state.in_index and pk == 'Comma' {
+    return ''
+  }
+
   # A relative import keeps its space: `import .sibling` and
   # `import ..sibling`, not `import.sibling`. A parent import spells its
   # `..` as a range token, so both cases are covered here.
@@ -225,9 +237,18 @@ def _space(prev, cur, state) {
 }
 
 # A fresh spacing state for one line or one group. `in_dict` says whether
-# a `:` here separates a key from a value rather than a name from a type.
-def _state(in_dict: bool) {
-  return { ternary: 0, optional: false, unary: false, in_dict, in_type: false }
+# a `:` here separates a key from a value rather than a name from a type,
+# and `in_index` whether the commas here are a slice's rather than a
+# list's.
+def _state(in_dict: bool, in_index: bool) {
+  return {
+    ternary: 0,
+    optional: false,
+    unary: false,
+    in_dict,
+    in_index,
+    in_type: false,
+  }
 }
 
 /**
@@ -235,13 +256,20 @@ def _state(in_dict: bool) {
  * group inlined, newlines and blanks ignored. This is the shape a line
  * takes when it fits; when it does not, {render} breaks it instead.
  *
+ * `in_dict` and `in_index` say what the sequence sits inside, which is
+ * what decides whether a `:` introduces a type and whether a `,` takes
+ * a space after it. Both default to false, which is right for a whole
+ * statement.
+ *
  * @param list nodes
+ * @param ?bool in_dict
+ * @param ?bool in_index
  * @returns string
  */
-def flat(nodes: list, in_dict: ?bool) {
+def flat(nodes: list, in_dict: ?bool, in_index: ?bool) {
   var out = ''
   var prev = nil
-  var state = _state(in_dict == true)
+  var state = _state(in_dict == true, in_index == true)
 
   for node in nodes {
     if node.node == 'newline' or node.node == 'blank' {

@@ -1,0 +1,685 @@
+/**
+ * @module parser
+ *
+ * The scanner that turns the text of an environment file into names
+ * and values, and the writer that turns them back into text.
+ *
+ * The grammar is small enough to state in full. A source is a sequence
+ * of lines. A line is blank, a comment, or an assignment:
+ *
+ * ```text
+ * assignment := 'export'? NAME '=' value?
+ * NAME       := [A-Za-z_][A-Za-z0-9_]*
+ * value      := bare | '...' | "..." | `...`
+ * ```
+ *
+ * Everything interesting is in what each kind of value means, and that
+ * is documented on `parse()` where people will look for it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { ParseError }
+
+# What a backslash followed by each of these stands for inside a
+# double-quoted value. `\$` is deliberately absent: it survives the
+# scanner untouched so the expander can see it and decide.
+var _ESCAPES = {
+  'n':  '\n',
+  'r':  '\r',
+  't':  '\t',
+  'f':  12.chr(),
+  'v':  11.chr(),
+  'b':  8.chr(),
+  'a':  7.chr(),
+  'e':  27.chr(),
+  '0':  0.chr(),
+  '\\': '\\',
+  '"':  '"',
+  "'":  "'",
+  '`':  '`',
+}
+
+# A value safe to write without quotes. Anything outside this set, and
+# any empty value, gets double quotes from `stringify()`.
+var _BARE_SAFE = '/^[A-Za-z0-9_@%+=:,.\/-]+$/'
+
+# The one legal shape of a variable name.
+var _NAME = '/^[A-Za-z_][A-Za-z0-9_]*$/'
+
+# Digits for the `\xHH` escapes `stringify()` writes.
+var _HEX = '0123456789abcdef'
+
+def _is_space(ch) {
+  return ch == ' ' or ch == '\t'
+}
+
+def _is_name_start(ch) {
+  if ch == '_' {
+    return true
+  }
+
+  if ch == '' {
+    return false
+  }
+
+  var c = ch.ord()
+  return (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+}
+
+def _is_name_char(ch) {
+  if _is_name_start(ch) {
+    return true
+  }
+
+  if ch == '' {
+    return false
+  }
+
+  var c = ch.ord()
+  return c >= 48 and c <= 57
+}
+
+# The numeric value of one hex digit, or -1 if it isn't one.
+def _hex_digit(ch) {
+  if ch == '' {
+    return -1
+  }
+
+  var c = ch.ord()
+
+  if c >= 48 and c <= 57 {
+    return c - 48
+  }
+
+  if c >= 65 and c <= 70 {
+    return c - 55
+  }
+
+  if c >= 97 and c <= 102 {
+    return c - 87
+  }
+
+  return -1
+}
+
+/**
+ * Returns true when `name` is a legal environment variable name.
+ *
+ * That means a letter or underscore, then any number of letters,
+ * digits and underscores. It is the same rule POSIX shells apply, and
+ * the same one the parser and `stringify()` enforce.
+ *
+ * @param string name
+ * @returns bool
+ */
+def is_name(name: string) {
+  return !!name.match(_NAME)
+}
+
+# Walks a source once, left to right, producing one record per
+# assignment. Each record is `{ name, value, expandable, line }`, where
+# `expandable` says whether the value was written in a form that allows
+# `$` references (bare text and double quotes) or not (single quotes
+# and backticks).
+class _Scanner {
+
+  @new(source) {
+    # A BOM at the head of the file is a byte-order marker, not part of
+    # the first name. Line endings are normalised here so that nothing
+    # downstream has to carry a second spelling of "end of line".
+    var text = source
+
+    if text.length() > 0 and text[0].ord() == 0xfeff {
+      text = text[1,]
+    }
+
+    self._src = text.replace('\r\n', '\n', false).replace('\r', '\n', false)
+    self._len = self._src.length()
+    self._pos = 0
+    self._line = 1
+    self._line_start = 0
+  }
+
+  _at_end() {
+    return self._pos >= self._len
+  }
+
+  _peek() {
+    if self._pos >= self._len {
+      return ''
+    }
+
+    return self._src[self._pos]
+  }
+
+  _peek_next() {
+    if self._pos + 1 >= self._len {
+      return ''
+    }
+
+    return self._src[self._pos + 1]
+  }
+
+  _column() {
+    return self._pos - self._line_start + 1
+  }
+
+  _advance() {
+    if self._src[self._pos] == '\n' {
+      self._line++
+      self._line_start = self._pos + 1
+    }
+
+    self._pos++
+  }
+
+  _fail(message) {
+    raise ParseError(message, self._line, self._column())
+  }
+
+  _skip_spaces() {
+    while !self._at_end() and _is_space(self._peek()) {
+      self._advance()
+    }
+  }
+
+  _skip_to_line_end() {
+    while !self._at_end() and self._peek() != '\n' {
+      self._advance()
+    }
+  }
+
+  # Consumes blank lines, indentation and whole-line comments, leaving
+  # the cursor either at the end of the source or on the first
+  # character of an assignment.
+  _skip_filler() {
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if _is_space(ch) or ch == '\n' {
+        self._advance()
+      } else if ch == '#' {
+        self._skip_to_line_end()
+      } else {
+        break
+      }
+    }
+  }
+
+  # True when the cursor sits on the word `export` used as a prefix
+  # rather than as the start of a name like `exported_at`.
+  _at_export() {
+    if self._pos + 6 > self._len {
+      return false
+    }
+
+    if self._src[self._pos, self._pos + 6] != 'export' {
+      return false
+    }
+
+    return _is_space(self._src[self._pos + 6])
+  }
+
+  _name() {
+    if !_is_name_start(self._peek()) {
+      self._fail('expected a variable name')
+    }
+
+    var start = self._pos
+
+    while !self._at_end() and _is_name_char(self._peek()) {
+      self._advance()
+    }
+
+    return self._src[start, self._pos]
+  }
+
+  # A value with no quotes around it. It runs to the end of the line or
+  # to a `#` that begins a comment, and loses the whitespace on either
+  # side.
+  _bare_value() {
+    var start = self._pos
+    var end = self._pos
+
+    while !self._at_end() {
+      var ch = self._peek()
+
+      if ch == '\n' {
+        break
+      }
+
+      # A `#` only opens a comment where a reader would see one: at the
+      # start of the value, or after a space. `db#1` is a password.
+      if ch == '#' and (self._pos == start or _is_space(self._src[self._pos - 1])) {
+        break
+      }
+
+      self._advance()
+
+      if !_is_space(ch) {
+        end = self._pos
+      }
+    }
+
+    return { value: self._src[start, end], expandable: true }
+  }
+
+  # `'...'` and `` `...` ``: every character stands for itself, right up
+  # to the closing mark. Newlines are part of the value.
+  _literal_value(quote) {
+    var opened_on = self._line
+    var opened_at = self._column()
+
+    self._advance()
+
+    var start = self._pos
+
+    while true {
+      if self._at_end() {
+        raise ParseError(
+          'unterminated ${quote} quoted value', opened_on, opened_at
+        )
+      }
+
+      if self._peek() == quote {
+        break
+      }
+
+      self._advance()
+    }
+
+    var value = self._src[start, self._pos]
+
+    self._advance()
+
+    return { value, expandable: false }
+  }
+
+  # `"..."`: backslash escapes are resolved here, newlines are kept,
+  # and `\$` is passed through for the expander.
+  _quoted_value() {
+    var opened_on = self._line
+    var opened_at = self._column()
+
+    self._advance()
+
+    var out = []
+
+    while true {
+      if self._at_end() {
+        raise ParseError('unterminated " quoted value', opened_on, opened_at)
+      }
+
+      var ch = self._peek()
+
+      if ch == '"' {
+        self._advance()
+        break
+      }
+
+      if ch == '\\' {
+        out.append(self._escape())
+        continue
+      }
+
+      out.append(ch)
+      self._advance()
+    }
+
+    return { value: ''.join(out), expandable: true }
+  }
+
+  _escape() {
+    self._advance()
+
+    if self._at_end() {
+      self._fail('a value ended on a backslash')
+    }
+
+    var ch = self._peek()
+
+    # A backslash at the end of a line joins it to the next one.
+    if ch == '\n' {
+      self._advance()
+      return ''
+    }
+
+    if ch == '$' {
+      self._advance()
+      return '\\$'
+    }
+
+    if ch == 'x' {
+      self._advance()
+      return self._hex_escape(2, 2)
+    }
+
+    if ch == 'u' {
+      self._advance()
+
+      if self._peek() == '{' {
+        self._advance()
+
+        var cp = self._hex_escape(1, 6)
+
+        if self._peek() != '}' {
+          self._fail('expected } to close a \\u{...} escape')
+        }
+
+        self._advance()
+        return cp
+      }
+
+      return self._hex_escape(4, 4)
+    }
+
+    var mapped = _ESCAPES.get(ch, nil)
+
+    if mapped != nil {
+      self._advance()
+      return mapped
+    }
+
+    # An escape nobody defined is far more likely to be a Windows path
+    # than a mistake, so it keeps both characters.
+    self._advance()
+    return '\\' + ch
+  }
+
+  # Reads between `least` and `most` hex digits and returns the
+  # character they name.
+  _hex_escape(least, most) {
+    var value = 0
+    var digits = 0
+
+    while digits < most {
+      var digit = _hex_digit(self._peek())
+
+      if digit < 0 {
+        break
+      }
+
+      value = value * 16 + digit
+      digits++
+      self._advance()
+    }
+
+    if digits < least {
+      self._fail('expected ${least} hexadecimal digits in an escape')
+    }
+
+    if value > 0x10ffff {
+      self._fail('${value} is not a Unicode codepoint')
+    }
+
+    return value.chr()
+  }
+
+  # After a quoted value the rest of the line has to be empty or a
+  # comment. Anything else is a quote that closed too early.
+  _expect_line_end(name) {
+    self._skip_spaces()
+
+    if self._at_end() or self._peek() == '\n' or self._peek() == '#' {
+      return
+    }
+
+    self._fail('unexpected text after the value of ${name}')
+  }
+
+  _assignment() {
+    if self._at_export() {
+      self._pos += 6
+      self._skip_spaces()
+    }
+
+    var line = self._line
+    var name = self._name()
+
+    self._skip_spaces()
+
+    if self._peek() != '=' {
+      self._fail("expected '=' after ${name}")
+    }
+
+    self._advance()
+    self._skip_spaces()
+
+    var ch = self._peek()
+    var parsed
+
+    if ch == '"' {
+      parsed = self._quoted_value()
+      self._expect_line_end(name)
+    } else if ch == "'" or ch == '`' {
+      parsed = self._literal_value(ch)
+      self._expect_line_end(name)
+    } else {
+      parsed = self._bare_value()
+    }
+
+    return {
+      name,
+      value: parsed.value,
+      expandable: parsed.expandable,
+      line,
+    }
+  }
+
+  scan() {
+    var entries = []
+
+    while true {
+      self._skip_filler()
+
+      if self._at_end() {
+        break
+      }
+
+      entries.append(self._assignment())
+    }
+
+    return entries
+  }
+}
+
+# Every assignment in `source`, in the order it was written, as
+# `{ name, value, expandable, line }` records. Later files in a load
+# are layered on top of earlier ones by name, so order matters and the
+# duplicates inside one source are kept rather than collapsed.
+def _scan(source) {
+  return _Scanner(is_bytes(source) ? source.to_string() : source).scan()
+}
+
+# Resolves `\$` to a literal `$` in a value that allows expansion.
+# Values in single quotes or backticks never allowed it, so theirs
+# stays as written.
+def _unescape(entry) {
+  if !entry.expandable {
+    return entry.value
+  }
+
+  return entry.value.replace('\\$', '$', false)
+}
+
+/**
+ * Reads the text of an environment file and returns its names and
+ * values.
+ *
+ * This is the syntax layer on its own: no `$` reference is resolved
+ * and nothing is written to the process environment. `load()` is what
+ * does both.
+ *
+ * ```zuri
+ * import env
+ *
+ * var values = env.parse('PORT=8080\nGREETING="hello there"')
+ *
+ * echo values.PORT
+ * echo values.GREETING
+ * ```
+ *
+ * ```console
+ * 8080
+ * hello there
+ * ```
+ *
+ * ### The rules
+ *
+ * A name is a letter or underscore followed by letters, digits and
+ * underscores. Anything else is a `ParseError` rather than a line
+ * quietly dropped, because a name a shell could never export is a
+ * typo every time.
+ *
+ * Blank lines are skipped, and so is everything from a `#` to the end
+ * of the line. Inside an unquoted value a `#` only opens a comment
+ * when it starts the value or follows a space, so `KEY=db#1` keeps its
+ * `#`.
+ *
+ * A leading `export` is allowed and ignored, so the same file can be
+ * fed to `source` in a shell.
+ *
+ * Values come in four forms:
+ *
+ * | Written | Means |
+ * | - | - |
+ * | `KEY=value` | the text up to a comment or the end of the line, trimmed at both ends |
+ * | `KEY='value'` | every character exactly as written, newlines included |
+ * | `` KEY=`value` `` | the same as single quotes, for values that contain both kinds |
+ * | `KEY="value"` | backslash escapes resolved, `$` references left for expansion |
+ *
+ * `KEY=` is an empty value, and an empty value counts as unconfigured
+ * everywhere else in this module.
+ *
+ * Inside double quotes, `\n`, `\r`, `\t`, `\f`, `\v`, `\b`, `\a`, `\e`
+ * and `\0` mean what they do in Zuri, `\xHH`, `\uHHHH` and `\u{H...}`
+ * name a codepoint, a backslash before a newline joins the two lines,
+ * and `\$` is a literal `$` that expansion will not touch. A backslash
+ * before anything else keeps both characters, so `"C:\Users"` survives
+ * intact.
+ *
+ * Line endings are normalised to `\n`, and a byte-order mark at the
+ * head of the file is discarded.
+ *
+ * ### Duplicates
+ *
+ * The last assignment to a name in a source wins, which is what makes
+ * commenting out the line above the one you want work.
+ *
+ * @param string|bytes source
+ * @returns dict
+ * @throws ParseError when the source is not a valid environment file.
+ */
+def parse(source: string|bytes) {
+  var values = {}
+
+  for entry in _scan(source) {
+    values.set(entry.name, _unescape(entry))
+  }
+
+  return values
+}
+
+# Renders one value the way an environment file spells it.
+def _render(name, value) {
+  var text = value
+
+  if is_bool(value) {
+    text = value ? 'true' : 'false'
+  } else if is_number(value) or is_bigint(value) {
+    text = value.to_string()
+  } else if is_bytes(value) {
+    text = value.to_string()
+  } else if !is_string(value) {
+    raise TypeError(
+      'stringify() cannot write a ${typeof(value)} as the value of ${name}'
+    )
+  }
+
+  if !!text.match(_BARE_SAFE) {
+    return text
+  }
+
+  var out = ['"']
+
+  for ch in text {
+    var code = ch.ord()
+
+    if ch == '\\' {
+      out.append('\\\\')
+    } else if ch == '"' {
+      out.append('\\"')
+    } else if ch == '$' {
+      out.append('\\$')
+    } else if ch == '\n' {
+      out.append('\\n')
+    } else if ch == '\r' {
+      out.append('\\r')
+    } else if ch == '\t' {
+      out.append('\\t')
+    } else if code < 32 or code == 127 {
+      out.append('\\x' + _HEX[code >> 4] + _HEX[code & 15])
+    } else {
+      out.append(ch)
+    }
+  }
+
+  out.append('"')
+
+  return ''.join(out)
+}
+
+/**
+ * Turns a dictionary of names and values into the text of an
+ * environment file.
+ *
+ * The output round-trips: feeding it back to `parse()` returns the
+ * same names and the same values. Values are written bare where that
+ * is unambiguous and double-quoted where it is not, and a `$` inside a
+ * value is escaped so that loading the file back does not expand it.
+ *
+ * ```zuri
+ * import env
+ *
+ * print(env.stringify({
+ *   PORT: 8080,
+ *   GREETING: 'hello there',
+ *   DEBUG: false,
+ * }))
+ * ```
+ *
+ * ```console
+ * PORT=8080
+ * GREETING="hello there"
+ * DEBUG=false
+ * ```
+ *
+ * Names are written in the order the dictionary holds them. A number,
+ * a bigint, a boolean or a bytes value is converted to its text; any
+ * other type is a `TypeError`, because guessing what a list should
+ * look like in an environment file is how configuration goes wrong
+ * silently.
+ *
+ * @param dict values
+ * @returns string
+ * @throws ValueError when a key is not a legal variable name.
+ * @throws TypeError when a value is of a type that has no spelling here.
+ */
+def stringify(values: dict) {
+  var lines = []
+
+  for name, value in values {
+    if !is_string(name) or !is_name(name) {
+      raise ValueError('${name} is not a legal environment variable name')
+    }
+
+    lines.append('${name}=${_render(name, value)}')
+  }
+
+  if lines.is_empty() {
+    return ''
+  }
+
+  return '${'\n'.join(lines)}\n'
+}

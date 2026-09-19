@@ -92,7 +92,7 @@ Every module in it was built by the same hands:
 | **Data** | `sql` (SQLite, PostgreSQL, MySQL, MariaDB), `json`, `yaml`, `csv`, `struct`, `base64`, `convert` |
 | **Correctness** | `validate`, `types`, `enum` |
 | **Security** | `crypto`, `hash`, `bcrypt`, `jwt`, `uuid` |
-| **The machine** | `os`, `io`, `args`, `log`, `date` |
+| **The machine** | `os`, `env`, `io`, `args`, `log`, `date` |
 | **Concurrency** | `isolate` (real OS threads, separate heaps, message passing) |
 | **Numbers** | `math`, `stat`, `array`, `set` |
 | **Archives** | `compress` (gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip) |

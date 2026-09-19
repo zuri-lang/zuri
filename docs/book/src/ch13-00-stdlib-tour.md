@@ -418,6 +418,25 @@ Processes, the filesystem, paths and the environment. Covered in
 ends, and `os.set_exit_code(code)` decides the status it ends with
 without ending it there and then.
 
+### `env`
+
+Configuration: a `.env` file read into the process environment, and
+values read back out already converted. Covered in
+[Chapter 19](ch19-00-env.md).
+
+```zuri,ignore
+import env
+
+env.load()
+
+var port = env.int('PORT', 8080)
+var debug = env.bool('DEBUG', false)
+var secret = env.require('SESSION_SECRET')
+```
+
+Names already set in the environment are left alone, so the file is a
+set of defaults and the deployment is what overrides them.
+
 ### `io`
 
 Standard streams, terminal control and in-memory files:
@@ -456,13 +475,13 @@ captured 12 characters
 
 Captures nest, and `capture_begin()`/`capture_end()` are the manual pair
 for when the body might raise and you want its output anyway. This is
-what lets [Chapter 21](ch21-00-testing.md) assert on what a function
+what lets [Chapter 22](ch22-00-testing.md) assert on what a function
 prints, and keep a passing test's output out of the report.
 
 ### `test`
 
 Suites, matchers, mocks, snapshots and reports. Covered in
-[Chapter 21](ch21-00-testing.md).
+[Chapter 22](ch22-00-testing.md).
 
 ```zuri,ignore
 import test { * }
@@ -540,7 +559,7 @@ Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
 WebSockets, server-sent events, multipart uploads, static files and a
 reverse proxy. Introduced in [Chapter 12](ch12-00-networking.md), covered
 fully in [Chapter 15](ch15-00-http.md), and used throughout
-[Chapter 23](ch23-00-task-board.md).
+[Chapter 24](ch24-00-task-board.md).
 
 ## Databases
 
@@ -650,7 +669,7 @@ true
 list
 ```
 
-[Chapter 19](ch19-00-metaprogramming.md) is the full treatment.
+[Chapter 20](ch20-00-metaprogramming.md) is the full treatment.
 
 ### `math`
 

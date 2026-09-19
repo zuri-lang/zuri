@@ -1,0 +1,265 @@
+/**
+ * @module values
+ *
+ * Reading configuration back out of the process environment, in the
+ * type the program actually wants.
+ *
+ * An environment variable is always text. A port is a number, a
+ * feature flag is a boolean, and an allow-list is a list, so somewhere
+ * that text has to be checked and converted. Doing it here means it is
+ * done the same way everywhere, and that a `PORT=eighty` is a loud
+ * error at startup rather than a silent zero halfway through the first
+ * request.
+ *
+ * ### Empty means unconfigured
+ *
+ * Every function here treats a variable set to the empty string
+ * exactly as it treats one that was never set at all: the default
+ * applies, and `require()` raises. This is the same rule `${NAME:-...}`
+ * follows, and it is what makes a `FLAG=` line, an unset shell
+ * variable and an orchestrator passing an empty value all mean one
+ * thing instead of three.
+ *
+ * `os.get_env()` is the unfiltered view for the rare case that needs
+ * to tell those apart.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .errors { MissingVariable }
+
+# Integers as an environment file can spell them: decimal, optionally
+# signed, and nothing else. No separators, no other base, because a
+# configuration value that has to be decoded twice is a bug waiting.
+var _INTEGER = '/^[+-]?[0-9]+$/'
+
+# Floats, with the exponent and the leading-point forms a config file
+# is entitled to use.
+var _FLOAT = '/^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$/'
+
+# Whitespace a value may be padded with on its way in.
+var _BLANK = [' ', '\t', '\r', '\n']
+
+# Every spelling of yes and no that turns up in real deployments.
+var _BOOLEANS = {
+  '1': true, 'true': true, 'yes': true, 'y': true, 'on': true,
+  '0': false, 'false': false, 'no': false, 'n': false, 'off': false,
+}
+
+# `trim()` takes one character at a time, and a value that came in
+# through a shell may be padded with any of four. This strips all of
+# them from both ends in one pass.
+def _trim(text) {
+  var start = 0
+  var end = text.length()
+
+  while start < end and _BLANK.contains(text[start]) {
+    start++
+  }
+
+  while end > start and _BLANK.contains(text[end - 1]) {
+    end--
+  }
+
+  return text[start, end]
+}
+
+# The raw value of `name`, or nil when it is unset or empty.
+def _configured(name) {
+  var value = os.get_env(name)
+
+  return value == nil or value == '' ? nil : value
+}
+
+/**
+ * Returns true when `name` is set to a non-empty value.
+ *
+ * ```zuri,ignore
+ * if env.has('SENTRY_DSN') {
+ *   reporting.enable(env.require('SENTRY_DSN'))
+ * }
+ * ```
+ *
+ * @param string name
+ * @returns bool
+ */
+def has(name: string) {
+  return _configured(name) != nil
+}
+
+/**
+ * Returns the value of `name`, or `default_value` when it is unset or
+ * empty.
+ *
+ * ```zuri,ignore
+ * var host = env.get('HOST', '127.0.0.1')
+ * ```
+ *
+ * @param string name
+ * @param ?any default_value Returned unchanged; `nil` when not given.
+ * @returns ?any
+ */
+def get(name: string, default_value: ?any) {
+  var value = _configured(name)
+
+  return value == nil ? default_value : value
+}
+
+/**
+ * Returns the value of `name`, and raises when it is unset or empty.
+ *
+ * This is the line to write for a setting the program cannot invent a
+ * default for. Failing here, at startup, beats failing later at the
+ * first request that needed it.
+ *
+ * ```zuri,ignore
+ * var secret = env.require('SESSION_SECRET')
+ * ```
+ *
+ * @param string name
+ * @param ?string message A reason to report instead of the default text.
+ * @returns string
+ * @throws MissingVariable when `name` is unset or empty.
+ */
+def require(name: string, message: ?string) {
+  var value = _configured(name)
+
+  if value == nil {
+    raise MissingVariable(name, message)
+  }
+
+  return value
+}
+
+/**
+ * Returns the value of `name` as an integer.
+ *
+ * The value must be a decimal integer, optionally signed. Anything
+ * else is a `ValueError` naming the variable, because a port of
+ * `eighty` is a mistake in the configuration and not a reason to fall
+ * back to a default.
+ *
+ * ```zuri,ignore
+ * var port = env.int('PORT', 8080)
+ * ```
+ *
+ * @param string name
+ * @param ?number default_value Returned when `name` is unset or empty.
+ * @returns ?number
+ * @throws ValueError when the value is not a decimal integer.
+ */
+def int(name: string, default_value: ?number) {
+  var value = _configured(name)
+
+  if value == nil {
+    return default_value
+  }
+
+  if !value.match(_INTEGER) {
+    raise ValueError('${name} must be a whole number, and is ${value}')
+  }
+
+  return value.to_number()
+}
+
+/**
+ * Returns the value of `name` as a number.
+ *
+ * Decimals and exponents are both accepted. Anything else is a
+ * `ValueError` naming the variable.
+ *
+ * ```zuri,ignore
+ * var timeout = env.float('REQUEST_TIMEOUT', 2.5)
+ * ```
+ *
+ * @param string name
+ * @param ?number default_value Returned when `name` is unset or empty.
+ * @returns ?number
+ * @throws ValueError when the value is not a number.
+ */
+def float(name: string, default_value: ?number) {
+  var value = _configured(name)
+
+  if value == nil {
+    return default_value
+  }
+
+  if !value.match(_FLOAT) {
+    raise ValueError('${name} must be a number, and is ${value}')
+  }
+
+  return value.to_number()
+}
+
+/**
+ * Returns the value of `name` as a boolean.
+ *
+ * `1`, `true`, `yes`, `y` and `on` are true; `0`, `false`, `no`, `n`
+ * and `off` are false. Case and surrounding whitespace do not matter.
+ * Anything else is a `ValueError`, so a `DEBUG=maybe` is caught rather
+ * than quietly read as true.
+ *
+ * ```zuri,ignore
+ * if env.bool('DEBUG', false) {
+ *   log.set_level(log.Debug)
+ * }
+ * ```
+ *
+ * @param string name
+ * @param ?bool default_value Returned when `name` is unset or empty.
+ * @returns ?bool
+ * @throws ValueError when the value is not one of the spellings above.
+ */
+def bool(name: string, default_value: ?bool) {
+  var value = _configured(name)
+
+  if value == nil {
+    return default_value
+  }
+
+  var word = _trim(value).lower()
+
+  if !_BOOLEANS.contains(word) {
+    raise ValueError('${name} must be true or false, and is ${value}')
+  }
+
+  return _BOOLEANS.get(word)
+}
+
+/**
+ * Returns the value of `name` split into a list.
+ *
+ * The value is split on `separator`, each item loses the whitespace
+ * around it, and empty items are dropped, so `A, B,,C ` and `A,B,C`
+ * give the same three items.
+ *
+ * ```zuri,ignore
+ * var origins = env.list('CORS_ORIGINS', ',', [])
+ * ```
+ *
+ * @param string name
+ * @param ?string separator Defaults to `','`.
+ * @param ?list default_value Returned when `name` is unset or empty.
+ * @returns ?list
+ */
+def list(name: string, separator: ?string, default_value: ?list) {
+  var value = _configured(name)
+
+  if value == nil {
+    return default_value
+  }
+
+  var items = []
+
+  for item in value.split(separator == nil ? ',' : separator) {
+    var trimmed = _trim(item)
+
+    if trimmed != '' {
+      items.append(trimmed)
+    }
+  }
+
+  return items
+}

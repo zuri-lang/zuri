@@ -371,7 +371,7 @@ def _openers(kind: string) {
     return { open: '(', close: ')' }
   }
 
-  if kind == 'bracket' {
+  if kind == 'bracket' or kind == 'index' {
     return { open: '[', close: ']' }
   }
 
@@ -730,7 +730,10 @@ def _only_group(items: list) {
       return nil
     }
 
-    if node.node != 'group' or node.kind == 'block' or node.items.is_empty() {
+    if node.node != 'group'
+      or node.kind == 'block'
+      or node.kind == 'index'
+      or node.items.is_empty() {
       return nil
     }
 
@@ -746,8 +749,12 @@ def _last_group(items: list) {
   while index >= 0 {
     var node = items[index]
 
+    # A subscript is never a place to break: filling its parts across
+    # lines would put a comma after the last one, and in a subscript
+    # that comma is the difference between an item and a slice.
     if node.node == 'group'
       and node.kind != 'block'
+      and node.kind != 'index'
       and !node.items.is_empty() {
       return index
     }

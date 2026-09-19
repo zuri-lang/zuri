@@ -64,7 +64,7 @@ Doc blocks are not only for readers. Because the parser keeps them, a
 program can read them: `zuri.parse()` returns each one as a `DocBlock` node
 sitting immediately before the declaration it documents, which is enough to
 build a documentation generator in a few dozen lines.
-[Chapter 19](ch19-00-metaprogramming.md) shows how.
+[Chapter 20](ch20-00-metaprogramming.md) shows how.
 
 ## Commenting Style
 

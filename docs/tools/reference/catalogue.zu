@@ -21,11 +21,6 @@ import ..markdown { * }
  */
 var GROUPS = [
   {
-    title: 'The Language Itself',
-    blurb: 'Types, reflection, and the compiler Zuri is written with.',
-    modules: ['types', 'enum', 'convert', 'zuri'],
-  },
-  {
     title: 'Text and Markup',
     blurb: 'Parsing, building and colouring text meant to be read.',
     modules: ['html', 'wire', 'url', 'mime', 'colors'],
@@ -47,8 +42,8 @@ var GROUPS = [
   },
   {
     title: 'The Machine',
-    blurb: 'The filesystem, other processes, the terminal, and the command line.',
-    modules: ['os', 'io', 'args', 'log'],
+    blurb: 'The filesystem, other processes, the terminal, the command line, and the configuration around them.',
+    modules: ['os', 'env', 'io', 'args', 'log'],
   },
   {
     title: 'Testing',
@@ -89,6 +84,11 @@ var GROUPS = [
     title: 'Mail',
     blurb: 'Messages, the three protocols that move them, and the servers at the far end.',
     modules: ['mail'],
+  },
+  {
+    title: 'The Language Itself',
+    blurb: 'Types, reflection, and the compiler Zuri is written with.',
+    modules: ['types', 'enum', 'convert', 'zuri'],
   },
 ]
 

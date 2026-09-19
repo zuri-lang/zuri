@@ -1,0 +1,183 @@
+/**
+ * @module env
+ *
+ * Configuration from a file, in the environment, in the type you
+ * wanted.
+ *
+ * A program's configuration belongs in its environment, and a
+ * developer's machine has nowhere convenient to put it. `env` closes
+ * that gap: it reads a `.env` file into the process environment at
+ * startup, and it reads values back out already converted to the
+ * number, boolean or list the program is going to use.
+ *
+ * ```zuri,ignore
+ * import env
+ *
+ * env.load()
+ *
+ * var port = env.int('PORT', 8080)
+ * var debug = env.bool('DEBUG', false)
+ * var secret = env.require('SESSION_SECRET')
+ * ```
+ *
+ * ### The file
+ *
+ * A `.env` file sits beside the program and is not committed. One
+ * name per line:
+ *
+ * ```dosini
+ * # The address to bind on.
+ * HOST=127.0.0.1
+ * PORT=8080
+ *
+ * DATABASE_URL="postgres://app:secret@${HOST}/app"
+ * SESSION_SECRET='r4w $tring, taken exactly as written'
+ *
+ * PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+ * MIIEvQIBADANBgkqh...
+ * -----END PRIVATE KEY-----"
+ * ```
+ *
+ * Unquoted values are trimmed and run to a comment or the end of the
+ * line. Double quotes resolve backslash escapes and allow `$`
+ * references. Single quotes and backticks take every character exactly
+ * as written. Values in any of the three quotes may span lines.
+ * `parse()` states the grammar in full.
+ *
+ * ### What already exists wins
+ *
+ * A name that is already set in the process environment is left alone,
+ * and the file fills in the rest. This is the whole point of the
+ * default: the file carries what a developer needs to run the program
+ * at all, and production sets the real values through the shell, the
+ * orchestrator or the CI runner without the file having to know.
+ *
+ * `Result` says exactly what happened, and `override()` reverses the
+ * rule where a file genuinely should win:
+ *
+ * ```zuri,ignore
+ * var result = env.loader().path('.env').override().load()
+ *
+ * echo result.applied   # the names this load set
+ * echo result.skipped   # the names that were already set
+ * ```
+ *
+ * Throughout the module, a variable set to the empty string counts as
+ * unset. `FLAG=` in a file, an empty shell variable and a name nobody
+ * ever set all mean the same thing, which is the one thing anybody
+ * means by them.
+ *
+ * ### References between values
+ *
+ * Values may refer to other values and to the environment around them,
+ * with the shell's syntax and three of its modifiers:
+ *
+ * ```dosini
+ * HOST=localhost
+ * PORT=${PORT:-8080}
+ * PUBLIC_URL=http://${HOST}:${PORT}
+ * CACHE_DIR=${XDG_CACHE_HOME:-${HOME}/.cache}/app
+ * SESSION_SECRET=${SESSION_SECRET:?the deploy must supply a session secret}
+ * ```
+ *
+ * A reference resolves to the value the name will hold once the load
+ * has finished, so `PORT=${PORT:-8080}` reads "whatever the
+ * environment already says, and 8080 when it says nothing" no matter
+ * which line of the file defines it. `\$` is a literal dollar sign,
+ * and a value in single quotes never expands at all.
+ *
+ * ### Layering files
+ *
+ * Sources are read in the order they are added, and the last one to
+ * define a name defines it:
+ *
+ * ```zuri,ignore
+ * env.loader()
+ *   .path('.env')         # what the team shares, committed as .env.example
+ *   .path('.env.local')   # what this machine does differently
+ *   .load()
+ * ```
+ *
+ * `source()` adds text instead of a file, so configuration that
+ * arrived from a secret store or a test fixture goes through the same
+ * parsing, expansion and precedence.
+ *
+ * ### Reading values back
+ *
+ * `get()` and `require()` answer with text. `int()`, `float()`,
+ * `bool()` and `list()` answer with the type and raise a `ValueError`
+ * naming the variable when the text is not one:
+ *
+ * ```zuri,ignore
+ * var port    = env.int('PORT', 8080)
+ * var timeout = env.float('REQUEST_TIMEOUT', 2.5)
+ * var debug   = env.bool('DEBUG', false)
+ * var origins = env.list('CORS_ORIGINS', ',', [])
+ * ```
+ *
+ * They read the process environment, not the file, so they answer the
+ * same whether a value came from `.env` or from the shell. That is
+ * what makes the same program run unchanged in both places.
+ *
+ * ### Do not commit it
+ *
+ * A `.env` file holds the values that differ between one deployment
+ * and the next, which is to say it holds the secrets. Commit a
+ * `.env.example` with every name and no real value, add `.env` to
+ * `.gitignore`, and let `required()` fail loudly on a machine where
+ * the file was never made.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import @.errors { EnvError, ParseError, MissingFile, MissingVariable }
+import @.parser { parse, stringify, is_name }
+import @.loading { Loader, Result }
+import @.values { get, has, require, int, float, bool, list }
+
+/**
+ * Returns a new `Loader`, for a load that needs more than the default.
+ *
+ * ```zuri,ignore
+ * import env
+ *
+ * var result = env.loader()
+ *   .path('.env')
+ *   .path('.env.local')
+ *   .required()
+ *   .load()
+ * ```
+ *
+ * @returns Loader
+ */
+def loader() {
+  return Loader()
+}
+
+/**
+ * Reads an environment file and writes what it holds into the process
+ * environment.
+ *
+ * The one line most programs need, and the first line most of them
+ * run. `path` defaults to `.env` in the current working directory, a
+ * leading `~` is expanded, and a file that is not there leaves the
+ * environment as it stands.
+ *
+ * Names already set to a non-empty value are left alone. `Loader` is
+ * where that, and everything else about a load, can be changed.
+ *
+ * ```zuri,ignore
+ * import env
+ *
+ * env.load()
+ * env.load('config/production.env')
+ * ```
+ *
+ * @param ?string path Defaults to `'.env'`.
+ * @returns Result
+ * @throws ParseError when the file is not a valid environment file.
+ * @throws MissingVariable when a `${NAME:?reason}` reference finds nothing.
+ */
+def load(path: ?string) {
+  return Loader().path(path == nil ? '.env' : path).load()
+}

@@ -127,7 +127,7 @@ class NotFoundError < Error {
 A custom error class, four lines, and it earns them. Every layer above can
 say `instance_of(error, NotFoundError)` instead of matching on a message
 string, and the middleware in
-[Middleware, Logging and Errors](ch23-06-middleware.md) turns exactly this
+[Middleware, Logging and Errors](ch24-06-middleware.md) turns exactly this
 class into a 404. Had `get()` raised a plain `Error('not found')`, that
 mapping would be a substring search.
 
@@ -226,7 +226,7 @@ columns and produce them in whatever order the data happened to be in.
 
 **It returns `to_view()` results, not `Task` objects.** A view carries the
 formatted date and the `is_done` flag already computed, so the template
-never has to. [Server-Rendered Pages](ch23-05-pages.md) explains why that
+never has to. [Server-Rendered Pages](ch24-05-pages.md) explains why that
 matters for templates specifically.
 
 **`{ name, tasks }` uses the shorthand.** Both keys match the variables
@@ -357,4 +357,4 @@ rename does not fix that: it guarantees the file is never half-written, not
 that two writers agree.
 
 This application runs one server process, so the question does not arise.
-[Running It for Real](ch23-07-running-it.md) is where it does.
+[Running It for Real](ch24-07-running-it.md) is where it does.

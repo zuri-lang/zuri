@@ -54,25 +54,26 @@
 - [Imagine: Images](ch16-00-imagine.md)
 - [Databases](ch17-00-sql.md)
 - [Mail](ch18-00-mail.md)
+- [Configuration and the Environment](ch19-00-env.md)
 
 # Going Deeper
 
-- [Metaprogramming and Reflection](ch19-00-metaprogramming.md)
-- [Performance and the JIT](ch20-00-performance.md)
-- [Testing](ch21-00-testing.md)
-- [Debugging](ch22-00-debugging.md)
+- [Metaprogramming and Reflection](ch20-00-metaprogramming.md)
+- [Performance and the JIT](ch21-00-performance.md)
+- [Testing](ch22-00-testing.md)
+- [Debugging](ch23-00-debugging.md)
 
 # The Capstone
 
-- [A Full-Stack Task Board](ch23-00-task-board.md)
-  - [Laying Out the Project](ch23-01-project-layout.md)
-  - [The Storage Layer](ch23-02-storage.md)
-  - [Validation and the Domain Model](ch23-03-domain.md)
-  - [The JSON API](ch23-04-api.md)
-  - [Server-Rendered Pages with Wire](ch23-05-pages.md)
-  - [Middleware, Logging and Errors](ch23-06-middleware.md)
-  - [Running It for Real](ch23-07-running-it.md)
-  - [Testing the Board](ch23-08-testing.md)
+- [A Full-Stack Task Board](ch24-00-task-board.md)
+  - [Laying Out the Project](ch24-01-project-layout.md)
+  - [The Storage Layer](ch24-02-storage.md)
+  - [Validation and the Domain Model](ch24-03-domain.md)
+  - [The JSON API](ch24-04-api.md)
+  - [Server-Rendered Pages with Wire](ch24-05-pages.md)
+  - [Middleware, Logging and Errors](ch24-06-middleware.md)
+  - [Running It for Real](ch24-07-running-it.md)
+  - [Testing the Board](ch24-08-testing.md)
 
 # Appendices
 

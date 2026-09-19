@@ -36,6 +36,11 @@ files that are not already formatted and exits non-zero if there are any.
 - **Breaks long lines** at their `and`/`or`, or across the brackets of a
   call or a literal, filling each line to the width. A broken collection
   keeps a trailing comma so a later edit touches one line, not two.
+- **Leaves a subscript alone.** `s[1]`, `s[1,]`, `s[,3]` and `s[1,3]` are
+  four different reads, so the commas inside a `[` that indexes
+  something are never added, dropped, or filled across lines, and they
+  close up: `s[2,5]`, not `s[2, 5]`. A `[` that opens a list is not a
+  subscript and keeps the spacing and the trailing-comma rule above.
 - **Keeps blocks open**: the statements inside a block each get their own
   line, always.
 - **Rewrites `name: name` to `name`** inside a dictionary, the shorthand

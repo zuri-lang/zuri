@@ -16,6 +16,7 @@
 - The `socket` module and `ssl` module has been dropped in favor of the `net` module.
 - The `postgres` and `sqlite` module have been replaced with the respective submodules of the new `sql` module. The `sql`.
 - The `curl` module has been removed from Zuri.
+- The `env` module has been added to the standard library. It reads a `.env` file into the process environment and reads values back out converted to the type the program wants.
 
 
 # CHANGELOGS
