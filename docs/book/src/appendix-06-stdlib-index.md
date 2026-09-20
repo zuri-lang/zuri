@@ -171,6 +171,8 @@ One module per element width, each exporting a single class.
 | `http.response` | the response object handlers return |
 | `http.headers` | `Headers`, with the field-name rules of RFC 9110 |
 | `http.cookies` | `Cookie` and `CookieJar` |
+| `http.session` | server-side sessions, and the stores that keep them |
+| `http.session.sql` | keeping sessions in a relational database |
 | `http.body` | reading and writing message bodies |
 | `http.multipart` | `multipart/form-data`, including file uploads |
 | `http.files` | serving files from disk, with ranges and caching |

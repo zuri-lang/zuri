@@ -1,0 +1,127 @@
+#!-- part of the http module
+
+/**
+ * @module http.session.memory
+ *
+ * The session store that keeps everything in the isolate's own heap.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .store { SessionStore }
+
+/**
+ * Keeps sessions in a dictionary, for as long as the isolate that
+ * made the store lives.
+ *
+ * It is the right store for a test, where a session has to survive a
+ * handful of requests and nothing more, and for a single-process
+ * development server. It is the wrong store for anything serving real
+ * traffic:
+ *
+ * - Nothing survives a restart. Every session in flight ends when the
+ *   process does, deploy included.
+ * - Nothing is shared. `http.serve()` runs each worker in its own
+ *   isolate with its own heap, so a browser whose next request lands
+ *   on a different worker arrives with a session that worker has
+ *   never heard of.
+ *
+ * `FileStore` has neither problem and needs no more setup than this
+ * does, which is why it, and not this, is the default.
+ *
+ * @printable
+ */
+class MemoryStore < SessionStore {
+
+  # Storage key to `[payload, expires_at]`.
+  var _entries = {}
+
+  /**
+   * @param ?dict options: `gc_probability` (default `0.01`)
+   */
+  @new(options: ?dict) {
+    var settings = options == nil ? {} : options
+
+    self._entries = {}
+    self.gc_probability = settings.get('gc_probability', 0.01)
+  }
+
+  /**
+   * How many sessions are held, expired ones that have not yet been
+   * swept included.
+   *
+   * @returns number
+   */
+  length() {
+    return self._entries.length()
+  }
+
+  /**
+   * Drops every session at once.
+   */
+  clear() {
+    self._entries.clear()
+  }
+
+  read(key: string) {
+    var entry = self._entries.get(key, nil)
+
+    if entry == nil {
+      return nil
+    }
+
+    if entry[1] <= time() {
+      self._entries.remove(key)
+
+      return nil
+    }
+
+    return entry[0]
+  }
+
+  write(key: string, payload: string, expires_at: number) {
+    self._entries[key] = [payload, expires_at]
+
+    self.maybe_gc()
+  }
+
+  touch(key: string, expires_at: number) {
+    var entry = self._entries.get(key, nil)
+
+    if entry == nil {
+      return false
+    }
+
+    entry[1] = expires_at
+
+    return true
+  }
+
+  destroy(key: string) {
+    self._entries.remove(key)
+  }
+
+  gc(now: number) {
+    var expired = []
+
+    for key, entry in self._entries {
+      if entry[1] <= now {
+        expired.append(key)
+      }
+    }
+
+    for key in expired {
+      self._entries.remove(key)
+    }
+
+    return expired.length()
+  }
+
+  to_string() {
+    return '<MemoryStore ${self._entries.length()} sessions>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

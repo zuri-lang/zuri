@@ -1,0 +1,307 @@
+#!-- part of the http module
+
+/**
+ * @module http.session.sql
+ *
+ * The session store that keeps sessions in a relational database.
+ *
+ * It lives in its own submodule, rather than alongside the other
+ * stores, so that a program using the default file store never loads
+ * the `sql` module or any of its adapters.
+ *
+ * ```zuri,ignore
+ * import http
+ * import http.session
+ * import http.session.sql { SqlStore }
+ * import sql
+ *
+ * var store = SqlStore(sql.pool('postgres://localhost/app'))
+ * store.migrate()
+ *
+ * server.use(session.session({ store }))
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .store { SessionError, SessionStore }
+
+import sql
+
+# What the table is called when the store is not told otherwise.
+var DEFAULT_TABLE = 'sessions'
+
+# The engines whose upsert this module knows how to spell. Anything
+# else is written with an update followed, if it changed nothing, by
+# an insert.
+var _CONFLICT_ENGINES = ['sqlite', 'postgres']
+var _DUPLICATE_ENGINES = ['mysql', 'mariadb']
+
+/**
+ * Keeps sessions in one table of a relational database.
+ *
+ * The table is three columns - the storage key, the payload, and when
+ * the session stops being valid - and `migrate()` creates it on
+ * whichever engine is in use.
+ *
+ * ### What it takes
+ *
+ * Either a `sql.Connection` or a `sql.Pool`. A server wants the pool:
+ * a connection is used by one isolate at a time, and the pool is what
+ * hands each request one and takes it back.
+ *
+ * A connection belongs to the isolate that opened it and cannot be
+ * shared, so under `http.serve()` each worker builds its own pool and
+ * its own store inside `setup`, rather than being handed one from
+ * outside.
+ *
+ * ### Concurrency
+ *
+ * Every write is a single statement, so a reader never sees half a
+ * session. Two requests writing the same session at the same moment
+ * both succeed and the later one wins. Nothing here takes a lock.
+ *
+ * @printable
+ */
+class SqlStore < SessionStore {
+
+  var _db
+  var _table
+  var _pooled = false
+  var _engine
+
+  /**
+   * @param {Connection|Pool} database: where the table lives
+   * @param ?dict options: `table` (default `'sessions'`) and
+   *    `gc_probability` (default `0.01`)
+   * @throws SessionError if the table name is not a plain identifier
+   */
+  @new(database, options: ?dict) {
+    var settings = options == nil ? {} : options
+
+    self._db = database
+    self._pooled = instance_of(database, sql.Pool)
+    self._table = settings.get('table', DEFAULT_TABLE)
+    self.gc_probability = settings.get('gc_probability', 0.01)
+
+    # The table name cannot be bound as a parameter, so it is spelled
+    # into every statement below. Nothing but a plain identifier is
+    # allowed to get that far.
+    if !_is_identifier(self._table) {
+      raise SessionError(
+        "'${self._table}' is not a usable table name; it has to be " +
+          'letters, digits and underscores, starting with a letter or an ' +
+          'underscore'
+      )
+    }
+  }
+
+  /**
+   * The table sessions are kept in.
+   *
+   * @returns string
+   */
+  table() {
+    return self._table
+  }
+
+  /**
+   * Creates the table and its index if they are not already there.
+   *
+   * Safe to call on every start: an existing table is left exactly as
+   * it is, and nothing in it is touched.
+   *
+   * The columns are portable rather than ideal for any one engine. An
+   * application that wants a different shape - a partitioned table, a
+   * different collation, an engine-specific TTL - creates the table
+   * itself and skips this.
+   *
+   * | Column | Type | |
+   * | - | - | - |
+   * | `id` | `varchar(64)` | the storage key, primary key |
+   * | `payload` | `text` | what the session holds |
+   * | `expires_at` | `bigint` | epoch seconds |
+   *
+   * @returns SqlStore: this same instance, for chaining
+   */
+  migrate() {
+    self._run(@(database) {
+      database.exec(
+        'create table if not exists ${self._table} (' +
+          'id varchar(64) not null, ' +
+          'payload text not null, ' +
+          'expires_at bigint not null, ' +
+          'primary key (id))'
+      )
+
+      # The sweep is the only thing that reads by expiry, and on a
+      # table of any size it is the difference between a seek and a
+      # scan. `create index if not exists` is not portable, so the
+      # index is looked for instead.
+      var wanted = '${self._table}_expires_at'
+      var present = false
+
+      for index in database.schema.indexes(self._table, nil) {
+        if index.name.lower() == wanted {
+          present = true
+        }
+      }
+
+      if !present {
+        database.exec(
+          'create index ${wanted} on ${self._table} (expires_at)'
+        )
+      }
+    })
+
+    return self
+  }
+
+  read(key: string) {
+    var row = self._run(@(database) {
+      return database.fetch_one(
+        'select payload, expires_at from ${self._table} where id = ?', [key]
+      )
+    })
+
+    if row == nil {
+      return nil
+    }
+
+    if row.expires_at <= time() {
+      self.destroy(key)
+
+      return nil
+    }
+
+    return row.payload
+  }
+
+  write(key: string, payload: string, expires_at: number) {
+    var expiry = expires_at.floor()
+
+    self._run(@(database) {
+      var engine = self._engine_of(database)
+
+      if _CONFLICT_ENGINES.contains(engine) {
+        database.exec(
+          'insert into ${self._table} (id, payload, expires_at) ' +
+            'values (?, ?, ?) on conflict (id) do update set ' +
+            'payload = excluded.payload, expires_at = excluded.expires_at',
+          [key, payload, expiry]
+        )
+
+        return
+      }
+
+      if _DUPLICATE_ENGINES.contains(engine) {
+        database.exec(
+          'insert into ${self._table} (id, payload, expires_at) ' +
+            'values (?, ?, ?) on duplicate key update ' +
+            'payload = values(payload), expires_at = values(expires_at)',
+          [key, payload, expiry]
+        )
+
+        return
+      }
+
+      # An adapter this module has never heard of. Updating first and
+      # inserting only when nothing was there is what every engine
+      # understands.
+      var changed = database.exec(
+        'update ${self._table} set payload = ?, expires_at = ? where id = ?',
+        [payload, expiry, key]
+      )
+
+      if changed.rows_affected == 0 {
+        database.exec(
+          'insert into ${self._table} (id, payload, expires_at) ' +
+            'values (?, ?, ?)',
+          [key, payload, expiry]
+        )
+      }
+    })
+
+    self.maybe_gc()
+  }
+
+  touch(key: string, expires_at: number) {
+    var changed = self._run(@(database) {
+      return database.exec(
+        'update ${self._table} set expires_at = ? where id = ?',
+        [expires_at.floor(), key]
+      )
+    })
+
+    return changed.rows_affected > 0
+  }
+
+  destroy(key: string) {
+    self._run(@(database) {
+      database.exec('delete from ${self._table} where id = ?', [key])
+    })
+  }
+
+  gc(now: number) {
+    var removed = self._run(@(database) {
+      return database.exec(
+        'delete from ${self._table} where expires_at <= ?', [now.floor()]
+      )
+    })
+
+    return removed.rows_affected
+  }
+
+  # Runs `body` against a real connection. A pool lends one out and
+  # takes it back; a connection already is one.
+  _run(body) {
+    if self._pooled {
+      return self._db.with_connection(body)
+    }
+
+    return body(self._db)
+  }
+
+  # Which engine is answering, looked up once and remembered. It
+  # decides nothing but how an upsert is spelled.
+  _engine_of(database) {
+    if self._engine == nil {
+      self._engine = database.driver_name()
+    }
+
+    return self._engine
+  }
+
+  to_string() {
+    return '<SqlStore ${self._table}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _is_identifier(name) {
+  if !is_string(name) or name.is_empty() {
+    return false
+  }
+
+  iter var i = 0; i < name.length(); i++ {
+    var code = name[i].ord()
+
+    var letter = (code >= 65 and code <= 90) or (code >= 97 and code <= 122)
+    var digit = code >= 48 and code <= 57
+
+    if letter or code == 95 {
+      continue
+    }
+
+    if digit and i > 0 {
+      continue
+    }
+
+    return false
+  }
+
+  return true
+}

@@ -1,0 +1,321 @@
+#!-- part of the http module
+
+/**
+ * @module http.session.file
+ *
+ * The session store that keeps one file per session.
+ *
+ * It is the default because it needs nothing set up: no database, no
+ * daemon, no schema. It is also shared, which matters the moment a
+ * server runs on more than one core - `http.serve()` puts every
+ * worker in its own isolate, and a store held in memory would give
+ * each of them a different set of sessions.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..util
+
+import .store { SessionError, SessionStore }
+
+import hash
+import os
+
+# What a session file is called, after the storage key.
+var SUFFIX = '.session'
+
+# The mode a session directory is created with: readable, writable and
+# searchable by its owner, and by nobody else.
+var DIRECTORY_MODE = 0c700
+
+# The mode a session file is created with.
+var FILE_MODE = 0c600
+
+/**
+ * The directory sessions are kept in when a `FileStore` is not told
+ * where to put them: a private subdirectory of the platform's
+ * temporary directory, named after the working directory of the
+ * program that asked.
+ *
+ * The temporary directory itself is deliberately not used. It is
+ * world-writable, and on a shared machine world-readable, so a
+ * session file dropped straight into it can be read by every other
+ * account on the host - which is the oldest way there is to be logged
+ * in as somebody else. The subdirectory is created `0700` and checked
+ * before it is used.
+ *
+ * Naming it after the working directory keeps two programs on one
+ * machine from sharing a session space by accident, and keeps the
+ * same program's sessions across a restart.
+ *
+ * @note The platform's temporary directory is cleared on a schedule
+ *    the platform decides, and on most of them at every reboot.
+ *    Sessions kept here therefore survive a restart of the server but
+ *    not necessarily a restart of the machine. Anything that has to
+ *    outlive the host names its own directory.
+ * @returns string
+ */
+def default_directory() {
+  return os.join_paths(
+    os.temp_dir(), 'zuri-sessions-' + hash.sha256(os.cwd())[0, 16]
+  )
+}
+
+/**
+ * Keeps each session in its own file, named after the session's
+ * storage key.
+ *
+ * ```zuri,ignore
+ * import http.session
+ *
+ * server.use(session.session({
+ *   store: session.FileStore('/var/lib/app/sessions'),
+ * }))
+ * ```
+ *
+ * A file holds its expiry on the first line and the payload on the
+ * rest, so a sweep can decide whether to keep a session without
+ * understanding what is in it.
+ *
+ * ### Writing
+ *
+ * A write goes to a uniquely named file in the same directory and is
+ * then renamed over the real one, which the filesystem does
+ * atomically. A reader therefore sees either the previous session or
+ * the new one, never a half-written mixture, and a server killed
+ * mid-write leaves the previous session intact.
+ *
+ * Two requests writing the same session at the same moment - the
+ * usual cause being parallel requests from one browser tab - both
+ * succeed, and the one that renames last is the one that survives.
+ * Nothing here serialises them.
+ *
+ * ### Permissions
+ *
+ * A session file is a bearer credential in the same way the cookie
+ * is. The directory is created `0700` and each file `0600`, and a
+ * directory that anyone outside the owner can reach is refused
+ * outright rather than used. Pass `strict_permissions: false` to
+ * accept one anyway, which is occasionally what a deployment with its
+ * own access control wants and is never what a default should do.
+ *
+ * On Windows the mode check does not run, because the mode a file
+ * reports there does not describe who can open it.
+ *
+ * @printable
+ */
+class FileStore < SessionStore {
+
+  var _directory
+
+  /**
+   * @param ?string directory: where to keep the files; defaults to
+   *    `default_directory()`. Created, with every parent it needs, if
+   *    it is not already there
+   * @param ?dict options: `gc_probability` (default `0.01`) and
+   *    `strict_permissions` (default `true`)
+   * @throws SessionError if the directory cannot be created, is not a
+   *    directory, or is reachable by users other than its owner
+   */
+  @new(directory: ?string, options: ?dict) {
+    var settings = options == nil ? {} : options
+
+    self._directory = directory == nil ? default_directory() : directory
+    self.gc_probability = settings.get('gc_probability', 0.01)
+
+    self._prepare(settings.get('strict_permissions', true))
+  }
+
+  /**
+   * The directory the sessions are in.
+   *
+   * @returns string
+   */
+  directory() {
+    return self._directory
+  }
+
+  read(key: string) {
+    var path = self._path(key)
+
+    if !file(path).exists() {
+      return nil
+    }
+
+    var contents = self._contents(path)
+
+    if contents == nil {
+      return nil
+    }
+
+    if contents[0] <= time() {
+      self.destroy(key)
+
+      return nil
+    }
+
+    return contents[1]
+  }
+
+  write(key: string, payload: string, expires_at: number) {
+    var target = self._path(key)
+
+    # A name nothing else will pick, in the directory the final file
+    # lives in, so the rename below stays within one filesystem and is
+    # therefore atomic.
+    var staged = '${target}.${util.random_token(16)}'
+
+    catch {
+      var handle = file(staged, 'w')
+
+      handle.write('${expires_at.floor()}\n${payload}')
+      handle.close()
+
+      file(staged).chmod(FILE_MODE)
+
+      os.rename(staged, target)
+    } as error {
+      if file(staged).exists() {
+        file(staged).delete()
+      }
+
+      raise SessionError(
+        'could not write the session to ${self._directory}: ${error.message}'
+      )
+    }
+
+    self.maybe_gc()
+  }
+
+  destroy(key: string) {
+    var path = self._path(key)
+
+    if file(path).exists() {
+      file(path).delete()
+    }
+  }
+
+  gc(now: number) {
+    var removed = 0
+
+    for name in os.read_dir(self._directory) {
+      if !name.ends_with(SUFFIX) {
+        continue
+      }
+
+      var path = os.join_paths(self._directory, name)
+      var contents = self._contents(path)
+
+      # A file that cannot be read as a session is one another
+      # process is part way through replacing, or one that was never
+      # ours. Neither is this sweep's business.
+      if contents == nil {
+        continue
+      }
+
+      if contents[0] <= now {
+        catch {
+          file(path).delete()
+
+          removed++
+        } as error
+      }
+    }
+
+    return removed
+  }
+
+  # The expiry and the payload of the file at `path`, or `nil` when it
+  # is not a session file this store wrote.
+  _contents(path: string) {
+    var text
+
+    catch {
+      var handle = file(path, 'r')
+
+      text = handle.read()
+      handle.close()
+    } as error {
+      return nil
+    }
+
+    var newline = text.index_of('\n')
+
+    if newline < 1 {
+      return nil
+    }
+
+    var header = text[0, newline]
+
+    if !_is_digits(header) {
+      return nil
+    }
+
+    return [header.to_number(), text[newline + 1,]]
+  }
+
+  _path(key: string) {
+    return os.join_paths(self._directory, key + SUFFIX)
+  }
+
+  # Makes sure the directory is there and is ours alone.
+  _prepare(strict: bool) {
+    if !os.dir_exists(self._directory) {
+      catch {
+        os.create_dir(self._directory, DIRECTORY_MODE, true)
+      } as error {
+        raise SessionError(
+          'could not create the session directory ${self._directory}: ' +
+            error.message
+        )
+      }
+    }
+
+    if !os.dir_exists(self._directory) {
+      raise SessionError(
+        '${self._directory} is not a directory sessions can be kept in'
+      )
+    }
+
+    if !strict or os.platform == 'windows' {
+      return
+    }
+
+    var mode = file(self._directory).stats().mode
+
+    # Group access is a deployment's decision to make - an application
+    # and its administrators often share a group on purpose. Access
+    # for everyone else never is.
+    if mode & 0c007 != 0 {
+      raise SessionError(
+        'the session directory ${self._directory} is open to every user ' +
+          'on this machine (mode ${mode.oct()}); tighten it, or pass ' +
+          'strict_permissions: false to use it anyway'
+      )
+    }
+  }
+
+  to_string() {
+    return '<FileStore ${self._directory}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _is_digits(text: string) {
+  if text.is_empty() {
+    return false
+  }
+
+  iter var i = 0; i < text.length(); i++ {
+    var code = text[i].ord()
+
+    if code < 48 or code > 57 {
+      return false
+    }
+  }
+
+  return true
+}

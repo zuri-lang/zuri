@@ -1,0 +1,222 @@
+#!-- part of the http module
+
+/**
+ * @module http.session.store
+ *
+ * What a session store is, and the error every one of them raises.
+ *
+ * A store is the only part of a session that touches durable state.
+ * It never sees a session identifier, only the key derived from one,
+ * and it never sees the session's contents, only the opaque string
+ * the session layer serialised them into. That split is what lets a
+ * store be swapped without the rest of the stack knowing, and what
+ * lets a leaked store - a directory listing, a database dump, a
+ * backup tape - hand over nothing that can be replayed as a cookie.
+ *
+ * Implementing one means five methods: `read()`, `write()`,
+ * `destroy()`, `gc()`, and optionally `touch()`, which has a working
+ * default built on the first two.
+ *
+ * ```zuri,ignore
+ * class RedisStore < session.SessionStore {
+ *   @new(client) {
+ *     self._client = client
+ *   }
+ *
+ *   read(key) {
+ *     return self._client.get('session:' + key)
+ *   }
+ *
+ *   write(key, payload, expires_at) {
+ *     var ttl = (expires_at - time()).ceil()
+ *
+ *     self._client.set_with_ttl('session:' + key, payload, ttl)
+ *   }
+ *
+ *   destroy(key) {
+ *     self._client.remove('session:' + key)
+ *   }
+ *
+ *   gc(now) {
+ *     # Redis expires keys itself.
+ *     return 0
+ *   }
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..errors { HttpError }
+
+import hash
+
+/**
+ * Raised when a session cannot be read, written or configured: a
+ * storage directory that cannot be created or is open to other users
+ * on the machine, a payload larger than the configured ceiling, an
+ * unknown option, or a store method an implementation forgot.
+ *
+ * It is an `HttpError`, so a server already catching those catches
+ * this as well.
+ *
+ * @printable
+ */
+class SessionError < HttpError {
+  to_string() {
+    return '<SessionError: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * The key a store files a session under: the SHA-256 of the session
+ * identifier, as 64 lowercase hex characters.
+ *
+ * Storing the digest rather than the identifier means the contents of
+ * a store cannot be turned back into cookies. Someone who reads the
+ * directory, the table, or a backup of either learns what is in the
+ * sessions but cannot resume one, because the value the browser
+ * presents is the preimage.
+ *
+ * It also settles the shape of a key once and for all: 64 hex
+ * characters make a safe filename and a fixed-width primary key,
+ * whatever a client put in its cookie.
+ *
+ * @param string id
+ * @returns string
+ */
+def storage_key(id: string) {
+  return hash.sha256(id)
+}
+
+/**
+ * What every session store implements.
+ *
+ * The methods here raise `SessionError`, so a store that forgets one
+ * fails where the gap is rather than somewhere further down.
+ *
+ * Every timestamp is epoch seconds, as `time()` reports them.
+ */
+class SessionStore {
+
+  /**
+   * The chance, between `0` and `1`, that a write also sweeps
+   * expired sessions.
+   *
+   * Nothing schedules a sweep, so one has to ride along with ordinary
+   * traffic. At the default of `0.01` a store is swept roughly once
+   * per hundred writes, which keeps a busy server tidy without making
+   * any single request pay often. Set it to `0` where a cron job or a
+   * timer calls `gc()` instead.
+   *
+   * @type number
+   */
+  var gc_probability = 0.01
+
+  /**
+   * The payload stored under `key`, or `nil` when there is none or
+   * the one there has expired.
+   *
+   * A store that finds an expired entry removes it rather than
+   * leaving it for the sweep.
+   *
+   * @param string key
+   * @returns ?string
+   */
+  read(key: string) {
+    raise SessionError('a session store has to implement read()')
+  }
+
+  /**
+   * Stores `payload` under `key`, replacing whatever was there, and
+   * records when it stops being valid.
+   *
+   * @param string key
+   * @param string payload
+   * @param number expires_at
+   */
+  write(key: string, payload: string, expires_at: number) {
+    raise SessionError('a session store has to implement write()')
+  }
+
+  /**
+   * Moves the expiry of an existing entry without rewriting its
+   * contents, which is what a rolling idle timeout does on a request
+   * that only read the session.
+   *
+   * The default reads the payload and writes it back. A store whose
+   * backend can change the expiry on its own - a single-column
+   * `UPDATE`, a `TTL` command - overrides this with that.
+   *
+   * @param string key
+   * @param number expires_at
+   * @returns bool: whether an entry was there to touch
+   */
+  touch(key: string, expires_at: number) {
+    var payload = self.read(key)
+
+    if payload == nil {
+      return false
+    }
+
+    self.write(key, payload, expires_at)
+
+    return true
+  }
+
+  /**
+   * Removes the entry stored under `key`. Removing one that is not
+   * there is not an error.
+   *
+   * @param string key
+   */
+  destroy(key: string) {
+    raise SessionError('a session store has to implement destroy()')
+  }
+
+  /**
+   * Removes every entry that expired on or before `now`.
+   *
+   * @param number now
+   * @returns number: how many entries were removed
+   */
+  gc(now: number) {
+    raise SessionError('a session store has to implement gc()')
+  }
+
+  /**
+   * Runs `gc()` with probability `gc_probability`, and otherwise does
+   * nothing. A store calls this from its own `write()`.
+   *
+   * A sweep that fails raises out of the write that triggered it: a
+   * store that cannot sweep is a store that will not be able to write
+   * for much longer either, and swallowing that hides a full disk or
+   * a dead connection until the next outage.
+   *
+   * @returns bool: whether a sweep ran
+   */
+  maybe_gc() {
+    if self.gc_probability <= 0 {
+      return false
+    }
+
+    if rand(0, 1) >= self.gc_probability {
+      return false
+    }
+
+    self.gc(time())
+
+    return true
+  }
+
+  /**
+   * Releases whatever the store holds open. The default does nothing,
+   * which is right for a store that holds nothing.
+   */
+  close() {
+  }
+}

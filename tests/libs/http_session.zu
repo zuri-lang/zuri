@@ -1,0 +1,957 @@
+/**
+ * test_http_session.zu
+ *
+ * `http.session`: the store contract and the three stores that
+ * implement it, the `Session` object, the middleware that carries one
+ * across a request, and the whole thing end to end over real sockets
+ * with a browser-shaped client.
+ */
+
+import http
+import http.cookies { parse_cookie_header }
+import http.headers { Headers }
+import http.request { HttpRequest }
+import http.response { HttpResponse }
+import http.session { * }
+import http.session.sql { SqlStore }
+
+import isolate
+import os
+import sql
+import .http_session_app
+
+isolate.configure(8)
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as e
+  return true
+}
+
+def message_of(fn) {
+  catch {
+    fn()
+    return ''
+  } as e {
+    return e.message
+  }
+}
+
+# A key of the shape a store is handed: 64 hex characters.
+def key_of(seed) {
+  return storage_key(seed)
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  http.session module — test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# ---------------------------------------------------------------------------
+# The contract
+# ---------------------------------------------------------------------------
+
+var bare = SessionStore()
+
+assert raises(@() { bare.read('k') }), 'an unimplemented read() raises'
+assert raises(@() { bare.write('k', 'p', 1) }), 'an unimplemented write() raises'
+assert raises(@() { bare.destroy('k') }), 'an unimplemented destroy() raises'
+assert raises(@() { bare.gc(1) }), 'an unimplemented gc() raises'
+assert instance_of(SessionError('x'), Error), 'SessionError is an Error'
+assert instance_of(SessionError('x'), http.HttpError),
+  'and an HttpError, so a server catching those catches this'
+ok('an unimplemented store fails where the gap is')
+
+assert storage_key('abc').length() == 64, 'a storage key is 64 characters'
+assert storage_key('abc') == storage_key('abc'), 'and is the same every time'
+assert storage_key('abc') != storage_key('abd'), 'and differs for different ids'
+assert storage_key('abc').index_of('abc') == -1,
+  'a storage key does not carry the identifier it was made from'
+ok('a storage key is the digest of the identifier, not the identifier')
+
+# The default touch() is read-then-write, so a store that implements
+# only the three required methods gets a working one.
+class MinimalStore < SessionStore {
+  var entries = {}
+
+  @new() {
+    self.entries = {}
+    self.gc_probability = 0
+  }
+
+  read(key) {
+    var entry = self.entries.get(key, nil)
+    return entry == nil ? nil : entry[0]
+  }
+
+  write(key, payload, expires_at) {
+    self.entries[key] = [payload, expires_at]
+  }
+
+  destroy(key) {
+    self.entries.remove(key)
+  }
+
+  gc(now) {
+    return 0
+  }
+}
+
+var minimal = MinimalStore()
+
+minimal.write('k', 'payload', 100)
+
+assert minimal.touch('k', 900), 'the default touch() reports that it found one'
+assert minimal.entries['k'][1] == 900, 'and moves the expiry'
+assert minimal.entries['k'][0] == 'payload', 'leaving the payload alone'
+assert !minimal.touch('missing', 900), 'and reports a miss for one that is not there'
+ok('SessionStore supplies a working touch() on top of read and write')
+
+# ---------------------------------------------------------------------------
+# MemoryStore
+# ---------------------------------------------------------------------------
+
+var memory = MemoryStore({ gc_probability: 0 })
+
+memory.write('a', 'one', time() + 100)
+memory.write('b', 'two', time() + 100)
+
+assert memory.read('a') == 'one', 'a payload comes back as it went in'
+assert memory.read('missing') == nil, 'a key that was never written reads nil'
+assert memory.length() == 2, 'the store knows how many it holds'
+
+memory.write('a', 'again', time() + 100)
+assert memory.read('a') == 'again', 'a second write replaces the first'
+assert memory.length() == 2, 'without adding a second entry'
+
+assert memory.touch('a', time() + 500), 'touch finds an entry'
+memory.destroy('b')
+assert memory.read('b') == nil, 'a destroyed entry is gone'
+
+memory.write('c', 'stale', time() - 1)
+assert memory.read('c') == nil, 'an entry past its expiry reads as nothing'
+assert memory.length() == 1, 'and is dropped rather than left behind'
+
+memory.write('d', 'stale', time() - 1)
+memory.write('e', 'fresh', time() + 100)
+assert memory.gc(time()) == 1, 'a sweep removes exactly the expired entries'
+assert memory.read('e') == 'fresh', 'and leaves the rest'
+
+memory.clear()
+assert memory.length() == 0, 'clear() empties the store'
+ok('MemoryStore reads, writes, expires and sweeps')
+
+# ---------------------------------------------------------------------------
+# FileStore
+# ---------------------------------------------------------------------------
+
+var default_store = FileStore()
+var default_directory_path = default_store.directory()
+
+assert default_directory_path.starts_with(os.temp_dir()),
+  'the default directory is under the temporary directory'
+assert default_directory_path != os.temp_dir(),
+  'but is never the temporary directory itself'
+assert os.dir_exists(default_directory_path), 'and it exists once a store is made'
+
+if os.platform != 'windows' {
+  assert file(default_directory_path).stats().mode & 0c077 == 0,
+    'the default directory is readable and writable by its owner alone'
+}
+
+assert FileStore().directory() == default_directory_path,
+  'the same program gets the same default directory every time'
+ok('the default session directory is private, and under the temporary directory')
+
+var directory = os.create_temp_dir('zuri-session-test')
+os.chmod(directory, 0c700)
+
+var files = FileStore(directory, { gc_probability: 0 })
+
+assert files.directory() == directory, 'a store reports where it keeps things'
+
+files.write(key_of('one'), 'first payload', time() + 100)
+
+assert files.read(key_of('one')) == 'first payload', 'a session survives a round trip'
+
+var names = os.read_dir(directory).filter(@(name) => name.ends_with('.session'))
+
+assert names.length() == 1, 'one session is one file'
+assert names[0] == key_of('one') + '.session',
+  'named after the storage key, so the identifier is nowhere on disk'
+
+if os.platform != 'windows' {
+  assert file(os.join_paths(directory, names[0])).stats().mode & 0c077 == 0,
+    'and readable by its owner alone'
+}
+
+files.write(key_of('one'), 'second payload', time() + 100)
+
+assert files.read(key_of('one')) == 'second payload', 'a rewrite replaces the payload'
+assert os.read_dir(directory).filter(@(name) => name.ends_with('.session')).length() == 1,
+  'and leaves no staging file behind'
+
+files.write(key_of('two'), 'gone', time() - 1)
+
+assert files.read(key_of('two')) == nil, 'a file past its expiry reads as nothing'
+assert !file(os.join_paths(directory, key_of('two') + '.session')).exists(),
+  'and is removed rather than left for the sweep'
+
+files.write(key_of('three'), 'stale', time() - 1)
+files.write(key_of('four'), 'fresh', time() + 100)
+
+assert files.gc(time()) == 1, 'a sweep removes the expired file'
+assert files.read(key_of('four')) == 'fresh', 'and leaves the rest'
+
+files.destroy(key_of('four'))
+assert files.read(key_of('four')) == nil, 'a destroyed session is gone'
+files.destroy(key_of('four'))
+ok('FileStore keeps one file per session, named after the storage key')
+
+# A file that is not one of ours is skipped rather than read as a
+# session or deleted.
+var stranger = file(os.join_paths(directory, 'notes.txt'), 'w')
+stranger.write('nothing to do with sessions')
+stranger.close()
+
+var damaged = file(os.join_paths(directory, key_of('bad') + '.session'), 'w')
+damaged.write('no header here')
+damaged.close()
+
+assert files.read(key_of('bad')) == nil, 'a file with no expiry header is not a session'
+assert files.gc(time()) == 0, 'and a sweep leaves it alone'
+assert file(os.join_paths(directory, 'notes.txt')).exists(),
+  'as it leaves anything that is not a session file'
+ok('FileStore ignores what it did not write')
+
+if os.platform != 'windows' {
+  var open_directory = os.create_temp_dir('zuri-session-open')
+  os.chmod(open_directory, 0c777)
+
+  assert raises(@() { FileStore(open_directory) }),
+    'a directory every user on the machine can reach is refused'
+  assert message_of(@() { FileStore(open_directory) }).index_of('strict_permissions') > -1,
+    'and the refusal says how to override it'
+
+  var lenient = FileStore(open_directory, { strict_permissions: false })
+  assert lenient.directory() == open_directory, 'which the override then does'
+
+  os.remove_dir(open_directory, true)
+  ok('FileStore refuses a world-accessible directory unless told otherwise')
+}
+
+# ---------------------------------------------------------------------------
+# Driving the middleware
+# ---------------------------------------------------------------------------
+
+# One request through a middleware chain, with whatever cookie a
+# previous call handed back.
+def visit(middleware, cookie, body) {
+  return request_with(middleware, cookie, 'GET', '/', false, body)
+}
+
+def request_with(middleware, cookie, method, target, secure, body) {
+  var headers = Headers()
+
+  if cookie != nil {
+    headers.set('Cookie', cookie)
+  }
+
+  var request = HttpRequest(method, target, headers)
+  request.cookies = parse_cookie_header(cookie == nil ? '' : cookie)
+  request.secure = secure
+
+  var response = HttpResponse()
+
+  middleware(request, response, @() {
+    if body != nil {
+      body(request.session())
+    }
+  })
+
+  var sent = response.cookie_headers()
+  var value = nil
+
+  if !sent.is_empty() {
+    var header = sent[0]
+    var semicolon = header.index_of(';')
+
+    value = semicolon > -1 ? header[0, semicolon] : header
+  }
+
+  return { request, response, sent, cookie: value }
+}
+
+var store = MemoryStore({ gc_probability: 0 })
+var plain = session({ store })
+
+var untouched = visit(plain, nil, nil)
+
+assert untouched.sent.is_empty(), 'a request that never touches its session sets no cookie'
+assert store.length() == 0, 'and stores nothing'
+assert untouched.response.headers.get('vary', nil) == nil,
+  'and does not claim the answer depended on a cookie'
+ok('a request that ignores its session costs nothing')
+
+var looked = visit(plain, nil, @(s) { s.get('anything') })
+
+assert looked.sent.is_empty(), 'reading an empty session still sets no cookie'
+assert store.length() == 0, 'and still stores nothing'
+assert looked.response.headers.get('vary', nil) == 'Cookie',
+  'but the answer did depend on the cookie, so it says so'
+ok('reading a session that does not exist creates nothing')
+
+var first = visit(plain, nil, @(s) {
+  assert s.is_new(), 'a request with no cookie has a new session'
+  assert s.id() == nil, 'which has no identifier until something is written'
+
+  s.set('user', 'ada')
+
+  assert s.id() != nil, 'writing gives it one'
+})
+
+assert first.cookie != nil, 'a session that was written sends a cookie'
+assert store.length() == 1, 'and leaves exactly one record'
+assert first.sent[0].index_of('HttpOnly') > -1, 'the cookie is hidden from scripts'
+assert first.sent[0].index_of('SameSite=Lax') > -1, 'and is not sent on a cross-site POST'
+assert first.sent[0].index_of('Path=/') > -1, 'and covers the whole site'
+assert first.sent[0].index_of('Max-Age') == -1,
+  'and ends with the browser session unless asked otherwise'
+ok('the first write starts a session and sends its cookie')
+
+var identifier = first.cookie[first.cookie.index_of('=') + 1,]
+
+assert identifier.length() == ID_LENGTH, 'an identifier is the documented length'
+assert store.read(storage_key(identifier)) != nil,
+  'and the record is filed under its digest'
+assert store.read(identifier) == nil, 'not under the identifier itself'
+
+var stored = store.read(storage_key(identifier))
+
+assert stored.index_of(identifier) == -1,
+  'nothing in the stored payload can be replayed as a cookie'
+assert stored.index_of('ada') > -1, 'though what the session holds is in there'
+ok('what is stored cannot be turned back into a cookie')
+
+var second = visit(plain, first.cookie, @(s) {
+  assert !s.is_new(), 'a request carrying a known cookie is not a new session'
+  assert s.get('user') == 'ada', 'and finds what the last one wrote'
+  assert s.has('user'), 'has() agrees'
+  assert !s.has('missing'), 'and says no to what was never set'
+  assert s.get('missing', 'fallback') == 'fallback', 'a miss gives the fallback'
+  assert s.all() == { user: 'ada' }, 'all() hands back the contents'
+})
+
+assert second.sent.is_empty(), 'a request that only read sends no new cookie'
+ok('a session comes back on the next request')
+
+visit(plain, first.cookie, @(s) {
+  var copy = s.all()
+
+  copy['user'] = 'tampered'
+
+  assert s.get('user') == 'ada', 'all() hands back a copy, not the session itself'
+})
+
+visit(plain, first.cookie, @(s) {
+  s.set('extra', [1, 2, { nested: true }])
+})
+
+visit(plain, first.cookie, @(s) {
+  assert s.get('extra') == [1, 2, { nested: true }],
+    'lists and dictionaries survive the round trip'
+
+  s.remove('extra')
+  s.remove('never there')
+})
+
+visit(plain, first.cookie, @(s) {
+  assert !s.has('extra'), 'a removed value is gone'
+  assert s.get('user') == 'ada', 'and the rest is untouched'
+})
+ok('values are read, written and removed across requests')
+
+# ---------------------------------------------------------------------------
+# Rotation, ending, and fixation
+# ---------------------------------------------------------------------------
+
+var rotated = visit(plain, first.cookie, @(s) {
+  s.regenerate()
+})
+
+assert rotated.cookie != nil, 'regenerating sends the new identifier'
+assert rotated.cookie != first.cookie, 'which is not the old one'
+assert store.length() == 1, 'and the old record is gone, not merely orphaned'
+
+visit(plain, rotated.cookie, @(s) {
+  assert s.get('user') == 'ada', 'the contents carry across a regeneration'
+})
+
+visit(plain, first.cookie, @(s) {
+  assert s.is_new(), 'and the identifier that was replaced no longer resolves'
+})
+ok('regenerate() replaces the identifier and destroys the old record')
+
+var cleared = visit(plain, rotated.cookie, @(s) {
+  s.clear()
+})
+
+visit(plain, rotated.cookie, @(s) {
+  assert !s.is_new(), 'clear() does not end the session'
+  assert s.all().is_empty(), 'it only empties it'
+})
+ok('clear() empties a session without ending it')
+
+var ended = visit(plain, rotated.cookie, @(s) {
+  s.destroy()
+})
+
+assert store.length() == 0, 'destroy() removes the record'
+assert ended.sent[0].index_of('Max-Age=0') > -1, 'and expires the cookie'
+
+visit(plain, rotated.cookie, @(s) {
+  assert s.is_new(), 'so the identifier no longer resolves'
+})
+ok('destroy() ends a session and expires its cookie')
+
+var restarted = visit(plain, nil, @(s) {
+  s.set('user', 'alan')
+  s.destroy()
+  s.set('user', 'anonymous')
+})
+
+assert restarted.cookie != nil,
+  'writing after a destroy in the same request sends the new cookie'
+assert restarted.sent[0].index_of('Max-Age=0') == -1,
+  'rather than the expired one the destroy asked for'
+
+visit(plain, restarted.cookie, @(s) {
+  assert s.get('user') == 'anonymous', 'and the new session is the one stored'
+})
+
+visit(plain, restarted.cookie, @(s) { s.destroy() })
+
+var from_nothing = visit(plain, nil, @(s) {
+  assert s.id() == nil, 'a session with no cookie has no identifier'
+
+  s.regenerate()
+
+  assert s.id() != nil, 'and regenerating gives it one'
+
+  s.set('user', 'ada')
+})
+
+visit(plain, from_nothing.cookie, @(s) {
+  assert s.get('user') == 'ada',
+    'so a sign-in that regenerates first works with no session to start from'
+})
+
+visit(plain, from_nothing.cookie, @(s) { s.destroy() })
+ok('a session survives being destroyed and started again in one request')
+
+# ---------------------------------------------------------------------------
+# Flashes
+# ---------------------------------------------------------------------------
+
+var flash_store = MemoryStore({ gc_probability: 0 })
+var flashed = session({ store: flash_store })
+
+var set_flash = visit(flashed, nil, @(s) {
+  s.flash('notice', 'saved')
+})
+
+var read_flash = visit(flashed, set_flash.cookie, @(s) {
+  assert s.flashes() == { notice: 'saved' }, 'flashes() shows what is waiting'
+  assert s.take_flash('notice') == 'saved', 'and take_flash() delivers it'
+  assert s.take_flash('notice', 'gone') == 'gone',
+    'taking the same one twice in a request does not repeat it'
+})
+
+visit(flashed, set_flash.cookie, @(s) {
+  assert s.take_flash('notice', 'gone') == 'gone', 'a flash is delivered once'
+})
+ok('a flash is delivered exactly once')
+
+var unread = visit(flashed, set_flash.cookie, @(s) {
+  s.flash('notice', 'second try')
+})
+
+visit(flashed, set_flash.cookie, @(s) { s.get('anything else') })
+
+visit(flashed, set_flash.cookie, @(s) {
+  assert s.take_flash('notice', 'gone') == 'gone',
+    'a request that read the session spends the flash without asking for it'
+})
+
+visit(flashed, set_flash.cookie, @(s) { s.flash('again', 'x') })
+visit(flashed, set_flash.cookie, nil)
+
+visit(flashed, set_flash.cookie, @(s) {
+  assert s.take_flash('again') == 'x',
+    'while a request that never touched the session leaves it waiting'
+})
+ok('an unread flash does not turn up on a later page')
+
+# ---------------------------------------------------------------------------
+# Signing
+# ---------------------------------------------------------------------------
+
+# Counts what reaches the store, which is the whole point of signing.
+class CountingStore < MemoryStore {
+  var reads = 0
+
+  @new() {
+    parent({ gc_probability: 0 })
+    self.reads = 0
+  }
+
+  read(key) {
+    self.reads++
+    return parent.read(key)
+  }
+}
+
+var counting = CountingStore()
+var signed = session({ store: counting, secret: 'a shared secret' })
+
+var issued = visit(signed, nil, @(s) { s.set('user', 'grace') })
+var value = issued.cookie[issued.cookie.index_of('=') + 1,]
+
+assert value.length() == ID_LENGTH + 65, 'a signed cookie carries the identifier and its HMAC'
+assert value[ID_LENGTH] == '.', 'separated by a dot'
+
+visit(signed, issued.cookie, @(s) {
+  assert s.get('user') == 'grace', 'a cookie this server signed is accepted'
+})
+
+counting.reads = 0
+
+var forged = 'zuri_session=' + value[0, ID_LENGTH] + '.' + 'f' * 64
+
+visit(signed, forged, @(s) {
+  assert s.is_new(), 'a cookie with the wrong signature is not accepted'
+})
+
+visit(signed, 'zuri_session=' + value[0, ID_LENGTH], @(s) {
+  assert s.is_new(), 'nor is an unsigned one, once a secret is set'
+})
+
+visit(signed, 'zuri_session=' + 'not a session identifier at all', @(s) {
+  assert s.is_new(), 'nor is anything that is not the right shape'
+})
+
+assert counting.reads == 0,
+  'and none of them reached the store, which is what signing is for'
+ok('a signed cookie is verified before the store is consulted')
+
+var unsigned_store = MemoryStore({ gc_probability: 0 })
+var unsigned = session({ store: unsigned_store })
+var unsigned_issued = visit(unsigned, nil, @(s) { s.set('k', 1) })
+
+visit(unsigned, unsigned_issued.cookie, @(s) {
+  assert s.get('k') == 1, 'an unsigned deployment reads its own cookies'
+})
+
+var other = session({ store: unsigned_store, secret: 'added later' })
+
+visit(other, unsigned_issued.cookie, @(s) {
+  assert s.is_new(), 'and turning signing on refuses the cookies issued before it'
+})
+ok('signing is all or nothing, in both directions')
+
+var shaped = MemoryStore({ gc_probability: 0 })
+var shapes = session({ store: shaped })
+
+for junk in ['', 'x', '../../etc/passwd', 'a' * 200, 'a' * 42 + '!'] {
+  visit(shapes, 'zuri_session=' + junk, @(s) {
+    assert s.is_new(), 'a malformed identifier resolves to nothing'
+  })
+}
+
+assert shaped.length() == 0, 'and creates nothing'
+ok('a malformed identifier is refused on its shape alone')
+
+# ---------------------------------------------------------------------------
+# The two clocks
+# ---------------------------------------------------------------------------
+
+var clock_store = MemoryStore({ gc_probability: 0 })
+var idle = session({
+  store: clock_store, idle_timeout: 1, lifetime: nil, touch_interval: 0.5,
+})
+
+var idling = visit(idle, nil, @(s) { s.set('k', 1) })
+
+os.sleep(1.2)
+
+visit(idle, idling.cookie, @(s) {
+  assert s.is_new(), 'a session left idle past its timeout is gone'
+})
+ok('the idle timeout ends a session that stopped being used')
+
+var live = session({
+  store: clock_store, idle_timeout: 1, lifetime: nil, touch_interval: 0.1,
+})
+
+var living = visit(live, nil, @(s) { s.set('k', 1) })
+
+os.sleep(0.6)
+visit(live, living.cookie, @(s) { s.get('k') })
+os.sleep(0.6)
+
+visit(live, living.cookie, @(s) {
+  assert !s.is_new(), 'a session used inside the window rolls forward'
+  assert s.get('k') == 1, 'with its contents intact'
+})
+ok('activity rolls the idle timeout forward')
+
+var capped = session({
+  store: clock_store, idle_timeout: nil, lifetime: 1, touch_interval: 0.1,
+})
+
+var capping = visit(capped, nil, @(s) { s.set('k', 1) })
+
+os.sleep(0.5)
+visit(capped, capping.cookie, @(s) { s.get('k') })
+os.sleep(0.7)
+
+visit(capped, capping.cookie, @(s) {
+  assert s.is_new(), 'the absolute lifetime ends a session however active it was'
+})
+ok('the absolute lifetime is not rolled forward by activity')
+
+var rare = MemoryStore({ gc_probability: 0 })
+var throttled = session({ store: rare, idle_timeout: 3600, touch_interval: 1800 })
+var throttling = visit(throttled, nil, @(s) { s.set('k', 1) })
+var before_touch = nil
+
+visit(throttled, throttling.cookie, @(s) {
+  before_touch = s.touched_at()
+})
+
+os.sleep(0.2)
+
+visit(throttled, throttling.cookie, @(s) {
+  assert s.touched_at() == before_touch,
+    'a read inside the touch interval does not write to the store'
+})
+ok('a read-only request touches the store at most once per interval')
+
+assert raises(@() { session({ store: rare, idle_timeout: 60, touch_interval: 60 }) }),
+  'a touch interval that never fires inside the idle window is refused'
+ok('a touch interval has to be shorter than the idle timeout')
+
+# ---------------------------------------------------------------------------
+# Cookie attributes
+# ---------------------------------------------------------------------------
+
+var attribute_store = MemoryStore({ gc_probability: 0 })
+var attributed = session({ store: attribute_store })
+
+var over_tls = request_with(attributed, nil, 'GET', '/', true, @(s) { s.set('k', 1) })
+
+assert over_tls.sent[0].index_of('Secure') > -1,
+  'a request over TLS gets a Secure cookie without being told'
+
+var over_plain = visit(attributed, nil, @(s) { s.set('k', 1) })
+
+assert over_plain.sent[0].index_of('Secure') == -1,
+  'and one over cleartext does not, so development works'
+
+var forced_secure = session({ store: attribute_store, secure: true })
+var behind_proxy = visit(forced_secure, nil, @(s) { s.set('k', 1) })
+
+assert behind_proxy.sent[0].index_of('Secure') > -1,
+  'a deployment behind a terminating proxy can say so'
+ok('Secure follows the request unless the deployment overrides it')
+
+var persistent = session({
+  store: attribute_store, persistent: true, idle_timeout: 60, lifetime: nil,
+})
+
+var kept = visit(persistent, nil, @(s) { s.set('k', 1) })
+
+assert kept.sent[0].index_of('Max-Age=60') > -1,
+  'a persistent cookie carries the remaining lifetime'
+
+var kept_again = visit(persistent, kept.cookie, @(s) { s.get('k') })
+
+assert !kept_again.sent.is_empty(),
+  'and is resent on every request, so the window moves with the visitor'
+ok('a persistent cookie outlives the browser and rolls forward')
+
+var named = session({
+  store: attribute_store,
+  name: '__Host-session',
+  secure: true,
+  domain: nil,
+})
+
+var prefixed = request_with(named, nil, 'GET', '/', true, @(s) { s.set('k', 1) })
+
+assert prefixed.sent[0].starts_with('__Host-session='), 'a cookie can be named'
+assert prefixed.sent[0].index_of('Secure') > -1, 'and the __Host- rules are applied'
+assert prefixed.sent[0].index_of('Domain') == -1, 'including having no Domain'
+ok('the cookie name, and its prefix rules, are honoured')
+
+var strict = session({
+  store: attribute_store, same_site: 'Strict', path: '/app', domain: 'example.com',
+})
+
+var scoped = visit(strict, nil, @(s) { s.set('k', 1) })
+
+assert scoped.sent[0].index_of('SameSite=Strict') > -1, 'SameSite can be set'
+assert scoped.sent[0].index_of('Path=/app') > -1, 'as can the path'
+assert scoped.sent[0].index_of('Domain=example.com') > -1, 'and the domain'
+ok('path, domain and SameSite are configurable')
+
+var varying = visit(plain, nil, @(s) { s.get('k') })
+
+assert varying.response.headers.get_all('vary').length() == 1,
+  'a session-dependent answer says Vary: Cookie'
+
+var already = HttpResponse()
+var pre_set = session({ store: attribute_store })
+var pre_request = HttpRequest('GET', '/', Headers())
+
+already.headers.set('Vary', 'Accept, Cookie')
+pre_set(pre_request, already, @() {
+  pre_request.session().get('k')
+})
+
+assert already.headers.get_all('vary').length() == 1,
+  'and does not add a second one when it is already there'
+ok('Vary: Cookie is added once, and only when the session was used')
+
+var streamed_store = MemoryStore({ gc_probability: 0 })
+var streamer = session({ store: streamed_store })
+
+var streamed = HttpResponse()
+var streaming = HttpRequest('GET', '/', Headers())
+
+streamed.commit()
+streamer(streaming, streamed, @() {
+  streaming.session().set('k', 1)
+})
+
+assert streamed.cookie_headers().is_empty(),
+  'a response already on the wire cannot carry a Set-Cookie'
+assert streamed_store.length() == 0,
+  'so a session started there is not written either, since nothing could present it'
+
+var existing = visit(streamer, nil, @(s) { s.set('k', 1) })
+var late = HttpResponse()
+var late_request = HttpRequest('GET', '/', Headers())
+
+late_request.cookies = parse_cookie_header(existing.cookie)
+late.commit()
+
+streamer(late_request, late, @() {
+  late_request.session().set('k', 2)
+})
+
+visit(streamer, existing.cookie, @(s) {
+  assert s.get('k') == 2,
+    'while a session that already exists is still written, cookie or no cookie'
+})
+ok('a committed response drops the cookie rather than storing what cannot be reached')
+
+# ---------------------------------------------------------------------------
+# Limits and configuration
+# ---------------------------------------------------------------------------
+
+var limited = session({ store: attribute_store, max_size: 256 })
+
+assert raises(@() { visit(limited, nil, @(s) { s.set('blob', 'x' * 1000) }) }),
+  'a session larger than the ceiling is refused'
+assert message_of(@() { visit(limited, nil, @(s) { s.set('blob', 'x' * 1000) }) })
+  .index_of('256') > -1,
+  'and the refusal names the ceiling'
+ok('a session that grew too large is refused rather than written')
+
+assert message_of(@() { session({ nmae: 'typo' }) }).index_of('nmae') > -1,
+  'an option that does not exist is named back'
+assert raises(@() { session({ idle_timeout: nil, lifetime: nil }) }),
+  'a session with neither clock is refused'
+assert raises(@() { session({ same_site: 'Loose' }) }),
+  'SameSite has to be one of the three the standard defines'
+assert raises(@() { session({ same_site: 'None', secure: false }) }),
+  'SameSite None without Secure is a cookie no browser stores'
+assert raises(@() { session({ touch_interval: 0 }) }),
+  'an interval has to be a positive number of seconds'
+assert raises(@() { session({ idle_timeout: -1 }) }),
+  'as does a timeout'
+ok('a misconfigured session fails where it is registered')
+
+var no_middleware = HttpRequest('GET', '/', Headers())
+
+assert raises(@() { no_middleware.session() }),
+  'asking for a session without the middleware raises'
+assert message_of(@() { no_middleware.session() }).index_of('session()') > -1,
+  'and says what to register'
+ok('a request with no session middleware says so')
+
+# ---------------------------------------------------------------------------
+# SqlStore
+# ---------------------------------------------------------------------------
+
+var database = sql.open(':memory:')
+var rows = SqlStore(database, { gc_probability: 0 })
+
+rows.migrate()
+rows.migrate()
+
+assert database.schema.has_table('sessions', nil), 'migrate() creates the table'
+assert database.schema.indexes('sessions', nil)
+  .some(@(index) => index.name == 'sessions_expires_at'),
+  'and the index the sweep needs'
+assert rows.table() == 'sessions', 'which is named sessions unless told otherwise'
+ok('migrate() is safe to run on every start')
+
+rows.write(key_of('one'), 'first', time() + 100)
+
+assert rows.read(key_of('one')) == 'first', 'a session survives a round trip'
+
+rows.write(key_of('one'), 'second', time() + 100)
+
+assert rows.read(key_of('one')) == 'second', 'a second write replaces the first'
+assert database.fetch_value('select count(*) from sessions', nil, 0) == 1,
+  'rather than adding a row'
+
+assert rows.touch(key_of('one'), time() + 500), 'touch finds the row'
+assert !rows.touch(key_of('absent'), time() + 500), 'and reports a miss'
+
+rows.write(key_of('two'), 'stale', time() - 1)
+
+assert rows.read(key_of('two')) == nil, 'a row past its expiry reads as nothing'
+
+rows.write(key_of('three'), 'stale', time() - 1)
+rows.write(key_of('four'), 'fresh', time() + 100)
+
+assert rows.gc(time()) == 1, 'a sweep removes the expired rows'
+assert rows.read(key_of('four')) == 'fresh', 'and leaves the rest'
+
+rows.destroy(key_of('four'))
+assert rows.read(key_of('four')) == nil, 'a destroyed session is gone'
+
+assert raises(@() { SqlStore(database, { table: 'sessions; drop table x' }) }),
+  'a table name that is not a plain identifier is refused'
+ok('SqlStore reads, writes, expires and sweeps')
+
+var sql_session = session({ store: rows })
+var sql_issued = visit(sql_session, nil, @(s) { s.set('user', 'hopper') })
+
+visit(sql_session, sql_issued.cookie, @(s) {
+  assert s.get('user') == 'hopper', 'a session kept in a database comes back'
+})
+
+var pool = sql.pool(':memory:')
+var pooled = SqlStore(pool, { gc_probability: 0 })
+
+pooled.migrate()
+pooled.write(key_of('pooled'), 'through a pool', time() + 100)
+
+assert pooled.read(key_of('pooled')) == 'through a pool',
+  'a pool is as usable as a connection'
+
+pool.close()
+database.close()
+ok('a session store works over a connection and over a pool')
+
+# ---------------------------------------------------------------------------
+# End to end, over real sockets
+# ---------------------------------------------------------------------------
+
+var served_from = os.create_temp_dir('zuri-session-served')
+os.chmod(served_from, 0c700)
+
+var channel = isolate.channel(1)
+var task = isolate.spawn(http_session_app.session_server, channel, served_from)
+var base = 'http://' + channel.recv()
+
+var browser = http.HttpClient()
+browser.enable_cookies()
+
+assert browser.get(base + '/').as_text() == 'anonymous',
+  'a page that never touches the session answers'
+assert browser.cookie_jar.length() == 0, 'and hands out no cookie'
+
+assert browser.get(base + '/count').as_text() == '1', 'the first visit counts one'
+assert browser.cookie_jar.length() == 1, 'and the browser is now carrying a session'
+assert browser.get(base + '/count').as_text() == '2', 'the second counts two'
+assert browser.get(base + '/count').as_text() == '3', 'and so on'
+ok('a session follows a real client across requests')
+
+var anonymous = browser.get(base + '/whoami').as_dict()
+
+assert anonymous.account == nil, 'nobody is signed in yet'
+assert anonymous.fresh == false, 'though the session itself is not new'
+
+var signing_in = browser.post(base + '/login/ada', nil).as_dict()
+
+assert signing_in.before != signing_in.after,
+  'signing in replaces the identifier, so a planted one cannot be used'
+
+assert browser.get(base + '/notice').as_text() == 'signed in',
+  'the flash set while signing in is delivered on the next page'
+assert browser.get(base + '/notice').as_text() == 'nothing',
+  'and only on that one'
+ok('a flash set on one request is read on the next and then spent')
+
+var identified = browser.get(base + '/whoami').as_dict()
+
+assert identified.account == 'ada', 'the account is on the session afterwards'
+assert identified.id == signing_in.after, 'under the new identifier'
+assert browser.get(base + '/count').as_text() == '4',
+  'with everything the session already held still there'
+ok('signing in rotates the identifier and keeps the session')
+
+var kept_files = os.read_dir(served_from)
+  .filter(@(name) => name.ends_with('.session'))
+
+assert kept_files.length() == 1, 'one live session is one file on the server'
+
+browser.post(base + '/logout', nil)
+
+assert os.read_dir(served_from)
+  .filter(@(name) => name.ends_with('.session')).length() == 0,
+  'signing out removes the file'
+
+var after_logout = browser.get(base + '/whoami').as_dict()
+
+assert after_logout.account == nil, 'and the account is gone'
+assert after_logout.fresh == true, 'on a session the server does not recognise'
+ok('signing out ends the session on both sides')
+
+var stranger_client = http.HttpClient()
+stranger_client.enable_cookies()
+
+assert stranger_client.get(base + '/count').as_text() == '1',
+  'a different client starts its own session'
+ok('sessions are not shared between clients')
+
+browser.close()
+stranger_client.close()
+
+catch {
+  http.get(base + '/quit')
+}
+
+task.join(5000)
+
+os.remove_dir(served_from, true)
+os.remove_dir(directory, true)
+os.remove_dir(default_directory_path, true)
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} checks passed.'
+echo '═══════════════════════════════════════════════════════'

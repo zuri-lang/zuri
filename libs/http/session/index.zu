@@ -1,0 +1,1066 @@
+#!-- part of the http module
+
+/**
+ * @module http.session
+ *
+ * Server-side sessions: a small amount of state that belongs to one
+ * visitor, kept on the server and found again by a cookie the browser
+ * sends back.
+ *
+ * Only the identifier travels. Whatever the session holds stays in a
+ * store the server controls, so a visitor can neither read it nor
+ * change it, and the cookie is worth nothing to anyone who cannot
+ * present the exact value that was issued.
+ *
+ * ### Using it
+ *
+ * ```zuri,ignore
+ * import http
+ * import http.session
+ *
+ * var server = http.server(3000)
+ *
+ * server.use(session.session())
+ *
+ * server.post('/login', @(request, response) {
+ *   var account = authenticate(request.form())
+ *
+ *   # A new identifier, so a session identifier planted beforehand is
+ *   # not the one that ends up logged in.
+ *   request.session().regenerate()
+ *   request.session().set('account', account.id)
+ *
+ *   response.redirect('/')
+ * })
+ *
+ * server.get('/', @(request, response) {
+ *   var id = request.session().get('account', nil)
+ *
+ *   response.html(id == nil ? render_guest() : render_account(id))
+ * })
+ *
+ * server.listen()
+ * ```
+ *
+ * `session()` is middleware, so it is registered once and every
+ * handler below it can reach `request.session()`.
+ *
+ * ### Nothing happens until something uses it
+ *
+ * A request that never touches its session costs nothing: no store
+ * read, no store write, and no `Set-Cookie`. A store record is
+ * created the first time something is written, which is what keeps a
+ * crawler working through a public site from filling the store with
+ * empty sessions.
+ *
+ * A request that only reads an existing session writes nothing back
+ * either, beyond moving the idle expiry along at most once every
+ * `touch_interval` seconds.
+ *
+ * ### Where it is kept
+ *
+ * `FileStore` is the default, in a private directory under the
+ * platform's temporary directory. It needs no setup and it is shared
+ * between the workers `http.serve()` starts, which a store held in
+ * memory is not.
+ *
+ * ```zuri,ignore
+ * server.use(session.session({
+ *   store: session.FileStore('/var/lib/app/sessions'),
+ * }))
+ * ```
+ *
+ * A relational database works as well, from `http.session.sql`, which
+ * is a separate import so that a program using the default store
+ * never loads the `sql` module:
+ *
+ * ```zuri,ignore
+ * import http.session.sql { SqlStore }
+ * import sql
+ *
+ * var store = SqlStore(sql.pool('postgres://localhost/app'))
+ * store.migrate()
+ *
+ * server.use(session.session({ store }))
+ * ```
+ *
+ * Anything else - Redis, a key-value service, a table of your own
+ * shape - is a subclass of `SessionStore`.
+ *
+ * ### Options
+ *
+ * | Option | Default | Meaning |
+ * | - | - | - |
+ * | `store` | a `FileStore` in the default directory | where sessions are kept |
+ * | `name` | `'zuri_session'` | the cookie's name |
+ * | `path` | `'/'` | the cookie's path |
+ * | `domain` | `nil` | the cookie's domain; `nil` scopes it to the exact host |
+ * | `secure` | `nil` | `nil` follows the request's own scheme |
+ * | `http_only` | `true` | hides the cookie from scripts |
+ * | `same_site` | `'Lax'` | `'Strict'`, `'Lax'` or `'None'` |
+ * | `persistent` | `false` | whether the cookie outlives the browser |
+ * | `idle_timeout` | `7200` | seconds of inactivity before a session ends |
+ * | `lifetime` | `86400` | seconds a session may live however active |
+ * | `touch_interval` | `60`, or half `idle_timeout` when that is less | how often a read-only request moves the idle expiry |
+ * | `max_size` | `65536` | the largest payload a session may serialise to |
+ * | `secret` | `nil` | signs the cookie, so a forged one is refused without a store read |
+ * | `gc_probability` | `0.01` | passed to a default `FileStore`; ignored when `store` is given |
+ *
+ * ### Two clocks
+ *
+ * `idle_timeout` rolls forward while the visitor is active;
+ * `lifetime` does not. A session ends at whichever comes first, so a
+ * tab left open overnight is still asked to sign in again. Either may
+ * be `nil` to remove that limit, but not both.
+ *
+ * ### Signing the cookie
+ *
+ * An identifier is 32 bytes from the platform's cryptographic
+ * generator, which is far beyond guessing. Signing adds nothing
+ * against that, and everything against volume: with `secret` set, a
+ * cookie that was not issued by this server is thrown out after one
+ * HMAC, rather than after a read from disk or a query to the
+ * database. Set it on anything exposed to the open internet.
+ *
+ * ```zuri,ignore
+ * import env
+ *
+ * server.use(session.session({ secret: env.require('SESSION_SECRET') }))
+ * ```
+ *
+ * Every worker must be given the same secret, or a cookie issued by
+ * one is refused by the next.
+ *
+ * ### What a session may hold
+ *
+ * Whatever JSON holds: strings, numbers, booleans, `nil`, lists and
+ * dictionaries of those. A class instance is not JSON, and storing
+ * one raises when the session is written rather than coming back as
+ * something else.
+ *
+ * Sessions are for identity and small state - who is signed in, which
+ * steps of a form are done, what to say on the next page. A payload
+ * over `max_size` raises `SessionError`; the answer is a row in a
+ * database with the session holding its key.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import ..util
+
+import @.store { SessionError, SessionStore, storage_key }
+import @.file { FileStore, default_directory }
+import @.memory { MemoryStore }
+
+import base64
+import crypto
+import hash
+import json
+
+/**
+ * The payload format this module writes and reads.
+ *
+ * A session written by a different version is ignored rather than
+ * guessed at, so an upgrade signs people out instead of handing a
+ * handler fields that are not what it expects.
+ */
+var FORMAT = 1
+
+/**
+ * How many characters a session identifier has.
+ *
+ * Thirty-two bytes from the platform's cryptographic generator, in
+ * base64url without padding.
+ */
+var ID_LENGTH = 43
+
+# The characters base64url uses, which is the whole of what an
+# identifier may contain.
+var _ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz' +
+  '0123456789-_'
+
+# Every option `session()` accepts, with the value each takes when it
+# is not given.
+var _DEFAULTS = {
+  store: nil,
+  name: 'zuri_session',
+  path: '/',
+  domain: nil,
+  secure: nil,
+  http_only: true,
+  same_site: 'Lax',
+  persistent: false,
+  idle_timeout: 7200,
+  lifetime: 86400,
+  touch_interval: 60,
+  max_size: 65536,
+  secret: nil,
+  gc_probability: 0.01,
+}
+
+# The three values SameSite is allowed to take.
+var _SAME_SITE = ['Strict', 'Lax', 'None']
+
+/**
+ * One visitor's session.
+ *
+ * A handler reaches its own through `request.session()` rather than
+ * building one. The middleware makes it, hands it to the request, and
+ * writes it back afterwards.
+ *
+ * Nothing is read from the store until the first method that needs
+ * the contents is called, and nothing is written back unless
+ * something changed.
+ *
+ * @printable
+ */
+class Session {
+
+  var _store
+  var _config
+  var _presented
+  var _secure = false
+
+  var _id
+  var _key
+  var _data = {}
+
+  # Set during this request, readable on the next one.
+  var _outgoing = {}
+
+  # Set during the previous request, readable now.
+  var _incoming = {}
+
+  var _created
+  var _touched
+
+  var _loaded = false
+  var _exists = false
+  var _dirty = false
+  var _rotated = false
+  var _destroyed = false
+
+  /**
+   * @param SessionStore store
+   * @param dict config: as `session()` resolved it
+   * @param ?string presented: the cookie value the client sent, if any
+   * @param ?bool secure: whether the request arrived over TLS
+   */
+  @new(store, config: dict, presented: ?string, secure: ?bool) {
+    self._store = store
+    self._config = config
+    self._presented = presented
+    self._secure = secure == true
+
+    self._data = {}
+    self._outgoing = {}
+    self._incoming = {}
+  }
+
+  /**
+   * The session's identifier, or `nil` when it has none yet.
+   *
+   * A session that has never been written to has no identifier,
+   * because nothing has been stored for one to name.
+   *
+   * @returns ?string
+   */
+  id() {
+    self._load()
+
+    return self._id
+  }
+
+  /**
+   * Whether this request arrived without a session the store
+   * recognised - no cookie, a cookie that did not verify, or one
+   * naming a session that has expired or been destroyed.
+   *
+   * @returns bool
+   */
+  is_new() {
+    self._load()
+
+    return !self._exists
+  }
+
+  /**
+   * The value stored under `name`, or `fallback` when there is none.
+   *
+   * @param string name
+   * @param ?any fallback: defaults to `nil`
+   * @returns any
+   */
+  get(name: string, fallback) {
+    self._load()
+
+    return self._data.get(name, fallback)
+  }
+
+  /**
+   * Stores `value` under `name`.
+   *
+   * This is what brings a session into existence: the first `set()`
+   * on a new session assigns an identifier, and the middleware writes
+   * the record and sends the cookie when the response goes out.
+   *
+   * @param string name
+   * @param any value: anything JSON can carry
+   * @returns Session: this same instance, for chaining
+   */
+  set(name: string, value) {
+    self._load()
+
+    self._data[name] = value
+    self._dirty = true
+
+    self._begin()
+
+    return self
+  }
+
+  /**
+   * Whether anything is stored under `name`.
+   *
+   * @param string name
+   * @returns bool
+   */
+  has(name: string) {
+    self._load()
+
+    return self._data.contains(name)
+  }
+
+  /**
+   * Removes whatever is stored under `name`. Removing something that
+   * is not there changes nothing.
+   *
+   * @param string name
+   * @returns Session: this same instance, for chaining
+   */
+  remove(name: string) {
+    self._load()
+
+    if self._data.contains(name) {
+      self._data.remove(name)
+      self._dirty = true
+    }
+
+    return self
+  }
+
+  /**
+   * Everything the session holds, as a dictionary.
+   *
+   * The dictionary is a copy: writing to it does not change the
+   * session.
+   *
+   * @returns dict
+   */
+  all() {
+    self._load()
+
+    return self._data.clone()
+  }
+
+  /**
+   * Empties the session without ending it. The identifier, the
+   * cookie and the record all survive; only the contents go.
+   *
+   * Use `destroy()` to end the session itself, which is what signing
+   * out wants.
+   *
+   * @returns Session: this same instance, for chaining
+   */
+  clear() {
+    self._load()
+
+    if !self._data.is_empty() {
+      self._data.clear()
+      self._dirty = true
+    }
+
+    return self
+  }
+
+  /**
+   * Gives the session a new identifier, keeping everything it holds,
+   * and removes the record the old identifier named.
+   *
+   * Call this the moment an account signs in. Without it, an attacker
+   * who can set a cookie in the victim's browser beforehand - through
+   * a stray subdomain, an open redirect, a shared machine - knows the
+   * identifier the victim will be signed in under, and can simply use
+   * it. That is session fixation, and a new identifier is the whole
+   * of the defence.
+   *
+   * It is also worth doing whenever what the session means changes:
+   * an elevation to administrator, a step-up authentication.
+   *
+   * The absolute `lifetime` restarts here, since a new identifier
+   * begins a new session; the contents carry across.
+   *
+   * @returns Session: this same instance, for chaining
+   */
+  regenerate() {
+    self._load()
+
+    var previous = self._key
+
+    self._id = _new_id()
+    self._key = storage_key(self._id)
+    self._created = time()
+    self._touched = self._created
+    self._rotated = true
+    self._dirty = true
+    self._destroyed = false
+
+    if previous != nil {
+      self._store.destroy(previous)
+    }
+
+    return self
+  }
+
+  /**
+   * Ends the session: removes the record, empties the contents, and
+   * has the response expire the cookie.
+   *
+   * This is what signing out does. A handler may keep using the
+   * session object afterwards, and doing so starts a fresh session
+   * with a new identifier.
+   *
+   * @returns Session: this same instance, for chaining
+   */
+  destroy() {
+    self._load()
+
+    if self._key != nil {
+      self._store.destroy(self._key)
+    }
+
+    self._data.clear()
+    self._outgoing.clear()
+    self._incoming.clear()
+
+    self._id = nil
+    self._key = nil
+    self._created = nil
+    self._touched = nil
+    self._exists = false
+    self._dirty = false
+    self._rotated = false
+    self._destroyed = true
+
+    return self
+  }
+
+  /**
+   * Stores `value` under `name` for exactly the next request.
+   *
+   * This is the message a redirect needs to carry: the handler that
+   * did the work knows what happened, and the page the visitor is
+   * sent to is the one that has to say so.
+   *
+   * ```zuri,ignore
+   * server.post('/posts', @(request, response) {
+   *   create_post(request.form())
+   *
+   *   request.session().flash('notice', 'Your post is up.')
+   *   response.redirect('/posts')
+   * })
+   *
+   * server.get('/posts', @(request, response) {
+   *   response.html(render(request.session().take_flash('notice')))
+   * })
+   * ```
+   *
+   * A flash is spent by the next request that touches the session at
+   * all, whether or not that request asks for this one. A page that
+   * looked at the session and did not read the message does not
+   * leave it for the page after. A request that never touched its
+   * session - a static file, an image - leaves it waiting, which is
+   * what keeps the message for the page it was meant for.
+   *
+   * @param string name
+   * @param any value
+   * @returns Session: this same instance, for chaining
+   */
+  flash(name: string, value) {
+    self._load()
+
+    self._outgoing[name] = value
+    self._dirty = true
+
+    self._begin()
+
+    return self
+  }
+
+  /**
+   * Reads the flash stored under `name` by the previous request and
+   * removes it, so a second call in the same request does not get it
+   * again.
+   *
+   * @param string name
+   * @param ?any fallback: defaults to `nil`
+   * @returns any
+   */
+  take_flash(name: string, fallback) {
+    self._load()
+
+    if !self._incoming.contains(name) {
+      return fallback
+    }
+
+    var value = self._incoming[name]
+
+    self._incoming.remove(name)
+
+    return value
+  }
+
+  /**
+   * Every flash the previous request left, as a dictionary, without
+   * taking any of them.
+   *
+   * The dictionary is a copy.
+   *
+   * @returns dict
+   */
+  flashes() {
+    self._load()
+
+    return self._incoming.clone()
+  }
+
+  /**
+   * When the session was created, as epoch seconds, or `nil` when it
+   * has not been created yet.
+   *
+   * `regenerate()` restarts this.
+   *
+   * @returns ?number
+   */
+  started_at() {
+    self._load()
+
+    return self._created
+  }
+
+  /**
+   * When the session was last written or touched, as epoch seconds,
+   * or `nil` when it does not exist yet.
+   *
+   * A read-only request moves this at most once every
+   * `touch_interval` seconds, so it is a coarse measure of activity
+   * rather than the time of the last request.
+   *
+   * @returns ?number
+   */
+  touched_at() {
+    self._load()
+
+    return self._touched
+  }
+
+  /**
+   * When the session stops being valid, as epoch seconds, or `nil`
+   * when it does not exist yet.
+   *
+   * @returns ?number
+   */
+  expires_at() {
+    self._load()
+
+    return self._created == nil ? nil : self._expiry()
+  }
+
+  /**
+   * Writes the session to the store now, if anything changed.
+   *
+   * The middleware does this as the response goes out, so a handler
+   * rarely calls it. It is here for one that is about to do something
+   * long - stream a large body, wait on a slow service - and would
+   * rather not hold the change until afterwards.
+   *
+   * @returns bool: whether anything was written
+   * @throws SessionError if the session serialises to more than
+   *    `max_size` bytes
+   */
+  save() {
+    if !self._dirty or self._id == nil {
+      return false
+    }
+
+    self._touched = time()
+    self._store.write(self._key, self._encode(), self._expiry())
+
+    self._dirty = false
+    self._exists = true
+
+    return true
+  }
+
+  /**
+   * Writes the session and puts whatever the client needs on the
+   * response: the cookie for a session that is new or has a new
+   * identifier, an expired cookie for one that was destroyed.
+   *
+   * The middleware calls this once, after the rest of the chain has
+   * run. Calling it again does no harm and writes nothing more.
+   *
+   * @note A response that has already started going out cannot carry
+   *    a `Set-Cookie`. A session whose identifier has just changed is
+   *    then not written at all, since nothing could present it; an
+   *    existing session is still written, and only its cookie is
+   *    skipped. Start a session before streaming begins.
+   * @param HttpResponse response
+   */
+  commit(response) {
+    if self._destroyed {
+      self._vary(response)
+
+      if !response.is_committed() {
+        response.clear_cookie(self._config.name, {
+          domain: self._config.domain,
+          path: self._config.path,
+        })
+      }
+
+      self._destroyed = false
+
+      return
+    }
+
+    # Nothing ever asked for the session, so there is nothing to say
+    # about it - not even a Vary, since the answer did not depend on
+    # the cookie.
+    if !self._loaded {
+      return
+    }
+
+    self._vary(response)
+
+    var now = time()
+    var committed = response.is_committed()
+
+    # A session whose identifier has just changed is only reachable
+    # through the cookie carrying it. If the head is already on the
+    # wire there is no way to send that, and storing a record nobody
+    # can present is worse than storing nothing.
+    if self._rotated and committed {
+      return
+    }
+
+    if self._dirty {
+      self.save()
+    } else if self._exists {
+      self._roll(now)
+    }
+
+    var sends_cookie = self._rotated or self._config.persistent
+
+    if sends_cookie and !committed and self._id != nil {
+      response.set_cookie(
+        self._config.name,
+        _encode_cookie(self._id, self._config.secret),
+        self._attributes(now)
+      )
+
+      self._rotated = false
+    }
+  }
+
+  # Moves the idle expiry along for a request that only read the
+  # session, and not more often than `touch_interval` says.
+  _roll(now) {
+    if self._config.idle_timeout == nil {
+      return false
+    }
+
+    if now - self._touched < self._config.touch_interval {
+      return false
+    }
+
+    self._touched = now
+
+    return self._store.touch(self._key, self._expiry())
+  }
+
+  # Reads the session in, once, on the first call that needs it.
+  _load() {
+    if self._loaded {
+      return
+    }
+
+    self._loaded = true
+
+    var id = _decode_cookie(self._presented, self._config.secret)
+
+    if id == nil {
+      return
+    }
+
+    var key = storage_key(id)
+    var payload = self._store.read(key)
+
+    if payload == nil {
+      return
+    }
+
+    var record = _decode_payload(payload)
+
+    if record == nil {
+      return
+    }
+
+    var now = time()
+
+    if self._config.lifetime != nil
+      and record.created + self._config.lifetime <= now {
+      self._store.destroy(key)
+
+      return
+    }
+
+    self._id = id
+    self._key = key
+    self._data = record.data
+    self._incoming = record.flash
+    self._created = record.created
+    self._touched = record.touched
+    self._exists = true
+
+    # A flash is spent by being delivered, so the record has to change
+    # on this request whether or not the handler reads it. Otherwise
+    # the message turns up again on the next page.
+    if !self._incoming.is_empty() {
+      self._dirty = true
+    }
+  }
+
+  # Gives a session that has never existed an identifier, which is
+  # what makes the first write a real one. Writing to a session that
+  # was destroyed earlier in the same request starts a new one here,
+  # rather than leaving the response to expire a cookie it has just
+  # been told to set.
+  _begin() {
+    if self._id != nil {
+      return
+    }
+
+    self._id = _new_id()
+    self._key = storage_key(self._id)
+    self._created = time()
+    self._touched = self._created
+    self._rotated = true
+    self._destroyed = false
+  }
+
+  # When the session stops being valid: whichever of the two clocks
+  # runs out first, measured from the last time it was written or
+  # touched.
+  _expiry() {
+    var idle = self._config.idle_timeout == nil ?
+      nil :
+      self._touched + self._config.idle_timeout
+
+    var absolute = self._config.lifetime == nil ?
+      nil :
+      self._created + self._config.lifetime
+
+    if idle == nil {
+      return absolute
+    }
+
+    if absolute == nil {
+      return idle
+    }
+
+    return idle < absolute ? idle : absolute
+  }
+
+  _encode() {
+    var payload = json.encode({
+      v: FORMAT,
+      created: self._created.floor(),
+      touched: self._touched.floor(),
+      data: self._data,
+      flash: self._outgoing,
+    })
+
+    if payload.length() > self._config.max_size {
+      raise SessionError(
+        'the session serialises to ${payload.length()} bytes, over the ' +
+          '${self._config.max_size} byte limit'
+      )
+    }
+
+    return payload
+  }
+
+  _attributes(now) {
+    var attributes = {
+      path: self._config.path,
+      http_only: self._config.http_only,
+      same_site: self._config.same_site,
+      secure: self._config.secure == nil ? self._secure : self._config.secure,
+    }
+
+    if self._config.domain != nil {
+      attributes['domain'] = self._config.domain
+    }
+
+    if self._config.persistent {
+      attributes['max_age'] = (self._expiry() - now).floor()
+    }
+
+    return attributes
+  }
+
+  # The answer depended on the cookie, so a shared cache must not hand
+  # it to the next visitor.
+  _vary(response) {
+    for value in response.headers.get_all('vary') {
+      for part in value.split(',') {
+        var name = part.trim().lower()
+
+        if name == 'cookie' or name == '*' {
+          return
+        }
+      }
+    }
+
+    response.headers.add('Vary', 'Cookie')
+  }
+
+  to_string() {
+    return '<Session ${self._id == nil ? "unstarted" : self._id}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Middleware that finds each request's session and writes it back
+ * when the response goes out.
+ *
+ * Register it once, above anything that reads a session:
+ *
+ * ```zuri,ignore
+ * server.use(session.session({ secret: env.require('SESSION_SECRET') }))
+ * ```
+ *
+ * The session lands on `request.context['session']`, which
+ * `request.session()` reads.
+ *
+ * A handler that raises still has its session written, and the
+ * failure carries on to the error handler afterwards. That is what
+ * lets an error page show a flash the handler set before it failed.
+ *
+ * @param ?dict options: see the table at the top of this module
+ * @returns function(3)
+ * @throws SessionError if an option is not one this module has, or
+ *    holds a value it cannot mean
+ */
+def session(options: ?dict) {
+  var config = _configure(options)
+
+  return @(request, response, next) {
+    var current = Session(
+      config.store,
+      config,
+      request.cookies.get(config.name, nil),
+      request.secure
+    )
+
+    request.context['session'] = current
+
+    catch {
+      next()
+    } as error
+
+    current.commit(response)
+
+    # The session is written either way, and then the failure carries
+    # on to whoever handles it.
+    if error {
+      raise error
+    }
+  }
+}
+
+# Fills in what was not given, refuses what cannot be meant, and
+# builds the default store when none was supplied.
+def _configure(options) {
+  var given = options == nil ? {} : options
+
+  for name in given.keys() {
+    if !_DEFAULTS.contains(name) {
+      raise SessionError("'${name}' is not a session option")
+    }
+  }
+
+  var config = _DEFAULTS.clone()
+
+  config.extend(given)
+
+  # The default interval is capped at half the idle window, so that a
+  # short idle timeout does not collide with an interval nobody chose.
+  if !given.contains('touch_interval')
+    and config.idle_timeout != nil
+    and config.idle_timeout / 2 < config.touch_interval {
+    config['touch_interval'] = config.idle_timeout / 2
+  }
+
+  if config.idle_timeout == nil and config.lifetime == nil {
+    raise SessionError(
+      'a session needs at least one of idle_timeout and lifetime; with ' +
+        'neither, nothing ever expires'
+    )
+  }
+
+  _positive(config, 'idle_timeout', true)
+  _positive(config, 'lifetime', true)
+  _positive(config, 'touch_interval', false)
+  _positive(config, 'max_size', false)
+
+  if config.idle_timeout != nil
+    and config.touch_interval >= config.idle_timeout {
+    raise SessionError(
+      'touch_interval has to be shorter than idle_timeout, or a session in ' +
+        'constant use still expires because nothing moves its expiry'
+    )
+  }
+
+  if !_SAME_SITE.contains(config.same_site) {
+    raise SessionError(
+      "same_site is '${config.same_site}'; it has to be one of " +
+        "${', '.join(_SAME_SITE)}"
+    )
+  }
+
+  if config.same_site == 'None' and config.secure == false {
+    raise SessionError(
+      'same_site None is only stored by a browser on a Secure cookie, so ' +
+        'secure cannot be false alongside it'
+    )
+  }
+
+  if config.store == nil {
+    config['store'] = FileStore(nil, {
+      gc_probability: config.gc_probability,
+    })
+  }
+
+  return config
+}
+
+def _positive(config, name, nullable) {
+  var value = config[name]
+
+  if value == nil and nullable {
+    return
+  }
+
+  if !is_number(value) or value <= 0 {
+    raise SessionError('${name} has to be a positive number of seconds')
+  }
+}
+
+# A fresh identifier: 32 bytes from the platform's cryptographic
+# generator, in base64url. Thirty-two bytes is 44 base64 characters,
+# the last of which is only padding.
+def _new_id() {
+  var source = crypto.random_bytes(32)
+  var encoded = base64.encode(source)
+
+  source.dispose()
+
+  return encoded[0, ID_LENGTH].replace('+', '-', false).replace('/', '_', false)
+}
+
+# Whether `value` has the exact shape of an identifier this module
+# issues. Checked before the store is consulted, so a cookie full of
+# junk costs nothing to refuse.
+def _is_id(value) {
+  if !is_string(value) or value.length() != ID_LENGTH {
+    return false
+  }
+
+  iter var i = 0; i < value.length(); i++ {
+    if _ID_ALPHABET.index_of(value[i]) < 0 {
+      return false
+    }
+  }
+
+  return true
+}
+
+# What goes in the cookie: the identifier, and its HMAC when the
+# server has a secret to sign with.
+def _encode_cookie(id, secret) {
+  if secret == nil {
+    return id
+  }
+
+  return '${id}.${hash.hmac_sha256(secret, id)}'
+}
+
+# The identifier a cookie carries, or `nil` when it carries nothing
+# this server issued.
+def _decode_cookie(value, secret) {
+  if !is_string(value) or value.is_empty() {
+    return nil
+  }
+
+  var id = value
+
+  if secret != nil {
+    if value.length() != ID_LENGTH + 65 or value[ID_LENGTH] != '.' {
+      return nil
+    }
+
+    id = value[0, ID_LENGTH]
+
+    if !util.secure_equals(
+      value[ID_LENGTH + 1,], hash.hmac_sha256(secret, id)
+    ) {
+      return nil
+    }
+  }
+
+  return _is_id(id) ? id : nil
+}
+
+# A stored payload, or `nil` when it is not one this version wrote.
+def _decode_payload(payload) {
+  var record
+
+  catch {
+    record = json.decode(payload)
+  } as error {
+    return nil
+  }
+
+  if !is_dict(record) or record.get('v', nil) != FORMAT {
+    return nil
+  }
+
+  var data = record.get('data', nil)
+  var flash = record.get('flash', nil)
+  var created = record.get('created', nil)
+  var touched = record.get('touched', nil)
+
+  if !is_dict(data)
+    or !is_dict(flash)
+    or !is_number(created)
+    or !is_number(touched) {
+    return nil
+  }
+
+  return { data, flash, created, touched }
+}

@@ -15,6 +15,7 @@
 
 import .errors { HttpError, ProtocolError }
 import .headers { Headers }
+import .session.store { SessionError }
 import .multipart
 import .negotiate
 import .util
@@ -286,6 +287,34 @@ class HttpRequest {
    */
   cookie(name: string, fallback) {
     return self.cookies.get(name, fallback)
+  }
+
+  /**
+   * This request's session.
+   *
+   * The session is put here by `http.session.session()`, so a server
+   * that never registered that middleware has none, and asking for
+   * one says so rather than handing back `nil` for a handler to
+   * misread as an empty session.
+   *
+   * ```zuri,ignore
+   * request.session().set('account', account.id)
+   * ```
+   *
+   * @returns Session
+   * @throws SessionError if the session middleware is not registered
+   */
+  session() {
+    var current = self.context.get('session', nil)
+
+    if current == nil {
+      raise SessionError(
+        'this request has no session; register http.session.session() as ' +
+          'middleware on the server'
+      )
+    }
+
+    return current
   }
 
   /**

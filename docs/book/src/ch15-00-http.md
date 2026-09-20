@@ -41,7 +41,7 @@ a server.
   - [Static Files](#static-files)
   - [Compression](#compression)
   - [Streaming a Response Body](#streaming-a-response-body)
-  - [Cookies and Sessions](#cookies-and-sessions)
+  - [Setting Cookies](#setting-cookies)
   - [Content Negotiation](#content-negotiation)
 - [Built-in Middleware](#built-in-middleware)
   - [`logger()`](#logger)
@@ -55,6 +55,17 @@ a server.
   - [`etag()`](#etag)
   - [`force_https()`](#force_https)
   - [Ordering](#ordering)
+- [Sessions](#sessions)
+  - [Nothing Happens Until Something Uses It](#nothing-happens-until-something-uses-it)
+  - [Signing In](#signing-in)
+  - [Flash Messages](#flash-messages)
+  - [Where Sessions Are Kept](#where-sessions-are-kept)
+  - [When a Session Ends](#when-a-session-ends)
+  - [The Cookie](#the-cookie)
+  - [Signing the Cookie](#signing-the-cookie)
+  - [What a Session May Hold](#what-a-session-may-hold)
+  - [Across Workers](#across-workers)
+  - [What Sessions Do Not Do](#what-sessions-do-not-do)
 - [TLS](#tls)
 - [HTTP/2](#http2)
 - [WebSockets](#websockets)
@@ -1252,23 +1263,27 @@ Unless a `Content-Length` was set beforehand, the body is framed with
 chunked transfer encoding on HTTP/1.1 and as an ordinary DATA stream
 on HTTP/2 — the handler does not have to know which.
 
-### Cookies and Sessions
+### Setting Cookies
 
 ```zuri,ignore
-response.set_cookie('session', token, {
+response.set_cookie('theme', 'dark', {
   max_age: 86400,
   secure: true,
   same_site: 'Strict',
 })
 
-response.clear_cookie('session')
+response.clear_cookie('theme')
 ```
 
 `http_only` defaults to `true` and `same_site` to `'Lax'`, which are
-what a session cookie should have; pass them explicitly to opt out. A
-cookie whose name carries the `__Secure-` or `__Host-` prefix has that
-prefix's rules applied for it, rather than being sent in a form the
-browser will silently refuse to store.
+what a cookie carrying anything sensitive should have; pass them
+explicitly to opt out. A cookie whose name carries the `__Secure-` or
+`__Host-` prefix has that prefix's rules applied for it, rather than
+being sent in a form the browser will silently refuse to store.
+
+For state that belongs to a visitor rather than to the browser, use a
+session, which keeps the state on the server and puts only an
+identifier in the cookie. [Sessions](#sessions) covers it.
 
 ### Content Negotiation
 
@@ -1765,6 +1780,316 @@ might log, logging outside everything so it records what actually
 happened, cheap refusals before expensive ones, and anything that
 inspects the response body innermost, where the body exists.
 
+## Sessions
+
+A session is state that belongs to one visitor, kept on the server and
+found again by a cookie the browser sends back. Only the identifier
+travels, so a visitor can neither read what the session holds nor
+change it, and the cookie is worth nothing to anyone who cannot
+present the exact value that was issued.
+
+```zuri,ignore
+import http
+import http.session
+
+var server = http.server(3000)
+
+server.use(http.session.session())
+
+server.get('/', @(request, response) {
+  var seen = request.session().get('seen', 0) + 1
+
+  request.session().set('seen', seen)
+  response.text('visit ${seen}')
+})
+
+server.listen()
+```
+
+`session()` is middleware. Register it once, above anything that reads
+a session, and every handler below it reaches its own through
+`request.session()`.
+
+### Nothing Happens Until Something Uses It
+
+A request that never touches its session costs nothing: no read from
+the store, no write, and no `Set-Cookie`. The record is created the
+first time something is written to the session, which is what keeps a
+crawler working through a public site from filling the store with
+empty sessions.
+
+A request that only reads an existing session writes nothing back
+either, beyond moving the idle expiry along at most once every
+`touch_interval` seconds.
+
+### Signing In
+
+```zuri,ignore
+server.post('/login', @(request, response) {
+  var account = authenticate(request.form())
+
+  if account == nil {
+    response.status = 401
+    response.html(render_login('Those details do not match.'))
+
+    return
+  }
+
+  request.session().regenerate()
+  request.session().set('account', account.id)
+
+  response.redirect('/')
+})
+```
+
+`regenerate()` is the line to get right. It gives the session a new
+identifier and destroys the record the old one named, keeping
+everything the session holds.
+
+Without it, an attacker who can set a cookie in the victim's browser
+beforehand — through a stray subdomain, an open redirect, a shared
+machine — knows the identifier the victim will be signed in under, and
+can simply use it afterwards. That is session fixation, and a new
+identifier is the whole of the defence. Call it whenever what the
+session means changes: signing in, elevating to administrator, a
+step-up authentication.
+
+Signing out is `destroy()`, which removes the record and has the
+response expire the cookie:
+
+```zuri,ignore
+server.post('/logout', @(request, response) {
+  request.session().destroy()
+  response.redirect('/')
+})
+```
+
+`clear()` is the other one: it empties the session without ending it,
+keeping the identifier and the cookie.
+
+### Flash Messages
+
+A handler that does the work and redirects cannot render the message
+saying what happened. A flash carries it to the page that can:
+
+```zuri,ignore
+server.post('/posts', @(request, response) {
+  create_post(request.form())
+
+  request.session().flash('notice', 'Your post is up.')
+  response.redirect('/posts')
+})
+
+server.get('/posts', @(request, response) {
+  response.html(render(posts(), request.session().take_flash('notice')))
+})
+```
+
+A flash is spent by the next request that touches the session at all,
+whether or not that request asks for this one. A page that looked at
+the session and did not read the message does not leave it for the
+page after; a request that never touched its session — a static file,
+an image — leaves it waiting.
+
+### Where Sessions Are Kept
+
+Four things can hold a session, and swapping between them changes one
+line.
+
+**`FileStore`, one file per session.** This is the default, because it
+needs no setup and is shared between the workers `http.serve()`
+starts. Given no directory it uses a private subdirectory of the
+platform's temporary directory, created `0700`:
+
+```zuri,ignore
+server.use(http.session.session())
+```
+
+That directory is cleared on whatever schedule the platform keeps, and
+on most of them at every reboot, so name your own for anything that
+has to outlive the host:
+
+```zuri,ignore
+server.use(http.session.session({
+  store: http.session.FileStore('/var/lib/app/sessions'),
+}))
+```
+
+A session file is a bearer credential in the same way the cookie is.
+The directory is created `0700` and each file `0600`, and a directory
+that every user on the machine can reach is refused rather than used —
+which is why the temporary directory itself is never the default.
+Pass `strict_permissions: false` to accept one anyway.
+
+**`SqlStore`, one row per session.** It lives in its own import, so a
+program using the default store never loads the `sql` module:
+
+```zuri,ignore
+import http.session.sql { SqlStore }
+import sql
+
+var store = SqlStore(sql.pool('postgres://localhost/app'))
+store.migrate()
+
+server.use(http.session.session({ store }))
+```
+
+`migrate()` creates the table and its index if they are not there, and
+is safe to call on every start. It takes a `sql.Connection` or a
+`sql.Pool`; a server wants the pool.
+
+**`MemoryStore`, for a test.** Nothing survives a restart, and nothing
+is shared between workers, so a browser whose next request lands on a
+different worker arrives with a session that worker has never heard
+of. It is the right store for a test and the wrong one for traffic.
+
+**Something of your own.** A store is five methods, none of which sees
+an identifier or understands a payload:
+
+```zuri,ignore
+class RedisStore < http.session.SessionStore {
+  @new(client) {
+    self._client = client
+  }
+
+  read(key) {
+    return self._client.get('session:' + key)
+  }
+
+  write(key, payload, expires_at) {
+    self._client.set_with_ttl('session:' + key, payload, (expires_at - time()).ceil())
+  }
+
+  destroy(key) {
+    self._client.remove('session:' + key)
+  }
+
+  gc(now) {
+    # Redis expires keys itself.
+    return 0
+  }
+}
+```
+
+`touch()` has a working default built on `read()` and `write()`;
+override it where the backend can move an expiry on its own.
+
+The key a store is handed is the SHA-256 of the identifier, not the
+identifier. Someone who reads the directory, the table, or a backup of
+either learns what is in the sessions but cannot resume one, because
+the value the browser presents is the preimage.
+
+### When a Session Ends
+
+Two clocks, and a session ends at whichever runs out first:
+
+| Option | Default | |
+| --- | --- | --- |
+| `idle_timeout` | `7200` | seconds of inactivity; rolls forward while the visitor is active |
+| `lifetime` | `86400` | seconds the session may live however active it is |
+
+Either may be `nil` to remove that limit, but not both.
+
+The absolute lifetime is what asks a tab left open overnight to sign
+in again.
+
+`touch_interval` is how often a request that only read the session
+bothers to move the idle expiry. It is the difference between a store
+write on every request and a store write once a minute. It defaults to
+sixty seconds, or half the idle timeout where that is shorter, and one
+set by hand has to stay under `idle_timeout` — otherwise a session in
+constant use still expires, because nothing ever moves it.
+
+Nothing schedules a sweep of expired sessions, so one rides along with
+ordinary traffic: `gc_probability` (default `0.01`) is the chance that
+a write also sweeps. Set it to `0` where a cron job calls `store.gc()`
+instead.
+
+### The Cookie
+
+| Option | Default | |
+| --- | --- | --- |
+| `name` | `'zuri_session'` | |
+| `path` | `'/'` | |
+| `domain` | `nil` | `nil` scopes the cookie to the exact host, which is the narrower choice |
+| `secure` | `nil` | `nil` follows the request's own scheme |
+| `http_only` | `true` | |
+| `same_site` | `'Lax'` | `'Strict'`, `'Lax'` or `'None'` |
+| `persistent` | `false` | whether the cookie outlives the browser |
+
+`secure` following the request is what lets development over cleartext
+work while production over TLS gets `Secure` without being told. A
+deployment behind a proxy that terminates TLS sets `secure: true`
+itself.
+
+`persistent: false` sends a cookie that ends with the browser session,
+which is what a sign-in should normally do. `persistent: true` sends
+`Max-Age` instead, and moves it forward on every request.
+
+### Signing the Cookie
+
+An identifier is 32 bytes from the platform's cryptographic generator,
+which is far beyond guessing. Signing adds nothing against that, and
+everything against volume: with a secret set, a cookie this server did
+not issue is thrown out after one HMAC, rather than after a read from
+disk or a query to the database.
+
+```zuri,ignore
+import env
+
+server.use(http.session.session({ secret: env.require('SESSION_SECRET') }))
+```
+
+Set it on anything facing the open internet, and give every worker the
+same secret — a cookie issued by one is otherwise refused by the next.
+Turning signing on refuses the cookies issued before it, so it signs
+everyone out once.
+
+### What a Session May Hold
+
+Whatever JSON holds: strings, numbers, booleans, `nil`, lists and
+dictionaries of those. A class instance is not JSON, and storing one
+raises when the session is written.
+
+Sessions are for identity and small state — who is signed in, which
+steps of a form are done, what to say on the next page. A payload over
+`max_size` (default 65536 bytes) raises `SessionError`; the answer to
+that is a row in a database with the session holding its key.
+
+### Across Workers
+
+`http.serve()` runs each worker in its own isolate, so the store is
+built inside `setup` rather than handed in from outside:
+
+```zuri,ignore
+# app.zu
+import http
+import http.session
+
+def setup(server) {
+  server.use(http.session.session({
+    store: http.session.FileStore('/var/lib/app/sessions'),
+    secret: os.get_env('SESSION_SECRET'),
+  }))
+
+  server.get('/', @(request, response) {
+    response.text(request.session().get('account', 'nobody'))
+  })
+}
+```
+
+A `sql` connection belongs to the isolate that opened it, so a worker
+using `SqlStore` opens its own pool in `setup` too.
+
+### What Sessions Do Not Do
+
+Two requests writing the same session at the same moment — parallel
+requests from one browser tab, usually — both succeed, and the one
+that finishes last is the one that survives. The file store writes
+through a rename, so a reader never sees half a session, and the SQL
+store writes in one statement; neither takes a lock. Do not use a
+session as a counter that several requests increment at once.
+
 ## TLS
 
 ```zuri,ignore
@@ -2081,6 +2406,8 @@ implementation would have accepted:
 | `http.status` | status codes, reason phrases, and predicates |
 | `http.headers` | `Headers`, field validation, canonical names |
 | `http.cookies` | `Cookie`, `CookieJar`, and both cookie header formats |
+| `http.session` | `Session`, `SessionStore`, `FileStore`, `MemoryStore` |
+| `http.session.sql` | `SqlStore`, for sessions kept in a database |
 | `http.request` | `HttpRequest`, query string encoding and decoding |
 | `http.response` | `HttpResponse` |
 | `http.router` | `Router`, `Route`, `RouteMatch` |
@@ -2107,4 +2434,5 @@ it.
 Every error this module raises descends from `HttpError`:
 `ProtocolError` for a malformed message, `ConnectionError` for a
 connection that failed, `TimeoutError`, `TooLargeError`,
-`TooManyRedirectsError`, `StatusError` and `UnsupportedProtocolError`.
+`TooManyRedirectsError`, `StatusError`, `UnsupportedProtocolError` and
+`SessionError`.

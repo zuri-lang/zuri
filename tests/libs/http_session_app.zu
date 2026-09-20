@@ -1,0 +1,98 @@
+/**
+ * Helper module for `tests/libs/http_session.zu` - the server side of
+ * the end-to-end session test, in its own file because a spawned
+ * isolate resolves a function by module binding and a closure holding
+ * an imported module cannot cross the boundary.
+ *
+ * The server binds to port `0`, reports the port it was given back
+ * through a channel, and serves until a request for `/quit` arrives.
+ */
+
+import http
+import http.session
+
+# Serves the accept loop by hand rather than through `listen()`, so
+# the port can be reported before the first connection and so the loop
+# can be stopped from inside a handler.
+def _run(server, port_channel) {
+  server.keep_alive_timeout = 1000
+
+  server.bind()
+  port_channel.send(server.address().to_string())
+
+  while server.is_listening() {
+    var client
+
+    catch {
+      client = server.accept()
+    } as error
+
+    if error {
+      break
+    }
+
+    server.serve_connection(client)
+  }
+}
+
+/**
+ * A server with sessions kept in files: a visit counter, a sign-in
+ * that rotates the identifier, a sign-out that ends the session, and
+ * a flash carried across a redirect.
+ *
+ * @param Channel port_channel
+ * @param string directory: where the session files go
+ */
+def session_server(port_channel, directory) {
+  var server = http.HttpServer(0, '127.0.0.1')
+
+  server.use(http.session.session({
+    store: http.session.FileStore(directory),
+    secret: 'a secret the test and the server agree on',
+  }))
+
+  server.get('/', @(request, response) {
+    response.text('anonymous')
+  })
+
+  server.get('/count', @(request, response) {
+    var seen = request.session().get('seen', 0) + 1
+
+    request.session().set('seen', seen)
+    response.text('${seen}')
+  })
+
+  server.get('/whoami', @(request, response) {
+    response.json({
+      account: request.session().get('account', nil),
+      id: request.session().id(),
+      fresh: request.session().is_new(),
+    })
+  })
+
+  server.post('/login/:account', @(request, response) {
+    var before = request.session().id()
+
+    request.session().regenerate()
+    request.session().set('account', request.param('account', nil))
+    request.session().flash('notice', 'signed in')
+
+    response.json({ before, after: request.session().id() })
+  })
+
+  server.get('/notice', @(request, response) {
+    response.text(request.session().take_flash('notice', 'nothing'))
+  })
+
+  server.post('/logout', @(request, response) {
+    request.session().destroy()
+    response.text('bye')
+  })
+
+  server.get('/quit', @(request, response) {
+    response.text('stopping')
+    server.close()
+  })
+
+  _run(server, port_channel)
+}

@@ -123,6 +123,27 @@
  * requires, and content negotiation follows the quality weights the
  * client actually sent.
  *
+ * ### Sessions
+ *
+ * `http.session` keeps per-visitor state on the server and finds it
+ * again by a cookie:
+ *
+ * ```zuri
+ * import http.session
+ *
+ * server.use(http.session.session())
+ *
+ * server.get('/', @(request, response) {
+ *   var seen = request.session().get('seen', 0)
+ *
+ *   request.session().set('seen', seen + 1)
+ *   response.text('visit ${seen + 1}')
+ * })
+ * ```
+ *
+ * Sessions are kept in files by default, in a database through
+ * `http.session.sql`, or anywhere else a `SessionStore` can reach.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -143,6 +164,7 @@ import @.h1
 import @.server { HttpServer }
 import @.client { HttpClient }
 import @.middleware
+import @.session
 import @.proxy { LoadBalancer, ReverseProxy }
 import @.sse
 import @.websocket { WebSocket }
