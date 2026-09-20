@@ -47,8 +47,22 @@ def _has_comment_deep(nodes: list) {
   return false
 }
 
+# Whether a group holds nothing that gets printed.
+def _is_empty(items: list) {
+  for node in items {
+    if node.node != 'newline' and node.node != 'blank' {
+      return false
+    }
+  }
+
+  return true
+}
+
 # The first node that has to force a line break: a block, or a bracket
 # group with a block or a comment inside it. Returns its index, or -1.
+#
+# An empty block is not one: `{}` has no body to open out, and a stub
+# reads better with it closed up than with a blank pair of lines.
 def _find_break(items: list) {
   var index = 0
 
@@ -56,7 +70,7 @@ def _find_break(items: list) {
     var node = items[index]
 
     if node.node == 'group' {
-      if node.kind == 'block'
+      if (node.kind == 'block' and !_is_empty(node.items))
         or _has_block(node.items)
         or _has_comment_deep(node.items) {
         return index
@@ -169,6 +183,75 @@ def _next_real(nodes: list, from: number) {
   return nil
 }
 
+# The statement keywords that may own a body without bracing it.
+var _HEADERS = [
+  'If', 'Else', 'While', 'For', 'Iter', 'Do', 'Using', 'When', 'Default',
+  'Catch',
+]
+
+# Whether the last thing on this line is a block's `}` rather than a
+# dictionary's.
+def _ends_block(items: list) {
+  var index = items.length() - 1
+
+  while index >= 0 {
+    var node = items[index]
+
+    if node.node == 'group' {
+      return node.kind == 'block'
+    }
+
+    if node.node == 'tok' or node.node == 'raw' {
+      return false
+    }
+
+    index -= 1
+  }
+
+  return false
+}
+
+# Where a statement started in the source, or -1 when it holds nothing
+# that came from one.
+def _column(items: list) {
+  for node in items {
+    if node.node == 'tok' {
+      return node.atom.column
+    }
+
+    if node.node == 'group' {
+      return node.open.column
+    }
+  }
+
+  return -1
+}
+
+# Whether a statement is a header waiting for a body it never braced:
+# `if x`, `else`, `for a in b`. A header that already carries its body,
+# braced (`if x { ... }`) or not (`if x y = 1`), is not one of these.
+#
+# The braced case is the block group. The unbraced case is the author's
+# indentation, which is the only thing in the stream that distinguishes
+# `if x` from a complete `if x y = 1`: a body written on the next line
+# is indented past its header, and an `else` or the statement after is
+# not.
+def _is_header(items: list) {
+  var first = _next_real(items, 0)
+
+  if first == nil or !_HEADERS.contains(first.kind) {
+    return false
+  }
+
+  for node in items {
+    if node.node == 'group' and node.kind == 'block' {
+      return false
+    }
+  }
+
+  return true
+}
+
 # Splits a block body or the top level into statements, honouring line
 # continuations (a line ending on an operator or comma, or the next one
 # starting on one, is the same statement). Each result is
@@ -209,7 +292,14 @@ def split_statements(
       var next = _next_real(nodes, index + 1)
 
       var joins = last != nil and continues_after.contains(last.kind)
-      joins = joins or (next != nil and continues_before.contains(next.kind))
+
+      if !joins and next != nil and continues_before.contains(next.kind) {
+        # `else` pulls up onto the line that closed the block before it,
+        # `} else {`. It may not pull up onto anything else: a header
+        # that took its body unbraced ends its statement at the newline,
+        # and `if c x else y` on one line is not a statement Zuri reads.
+        joins = next.kind != 'Else' or _ends_block(current)
+      }
 
       if joins {
         index += 1
@@ -248,14 +338,50 @@ def emit_seq(nodes: list, depth: number, lines: list, ctx: dict) {
   var statements = split_statements(nodes, ctx.after, ctx.before)
   var first = true
 
+  # How far past `depth` each statement sits. Everything is level with
+  # its neighbours except the body of a header that never braced one,
+  # which keeps the indent that is the only sign it is a body at all.
+  var offsets = _body_offsets(statements)
+  var index = 0
+
   for statement in statements {
     if statement.blank_before and !first {
       lines.append('')
     }
 
-    emit_statement(statement.items, depth, lines, ctx)
+    emit_statement(statement.items, depth + offsets[index], lines, ctx)
     first = false
+    index += 1
   }
+}
+
+# One offset per statement: `0`, or one deeper for each unbraced header
+# stacked above it. A header only owns the statement that follows it,
+# and only while that statement is indented past it, which is how
+# `if x` followed by its body is told from `if x y = 1` followed by an
+# `else`.
+def _body_offsets(statements: list) {
+  var offsets = []
+  var open_headers = []
+  var index = 0
+
+  while index < statements.length() {
+    var column = _column(statements[index].items)
+
+    while !open_headers.is_empty() and column <= open_headers.last() {
+      open_headers.pop()
+    }
+
+    offsets.append(open_headers.length())
+
+    if _is_header(statements[index].items) {
+      open_headers.append(column)
+    }
+
+    index += 1
+  }
+
+  return offsets
 }
 
 /**

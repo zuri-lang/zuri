@@ -7,12 +7,19 @@
  * expects it, and long lines broken across the brackets that carry them.
  *
  * It never changes what a program does. Before returning, it checks the
- * result holds the same tokens as the input; a `FormatError` is raised
- * rather than handing back a program that reads differently, so the
- * command can leave that file as it was.
+ * result twice: that it holds the same tokens as the input, and that
+ * the parser still reads it. A `FormatError` is raised rather than
+ * handing back a program that reads differently, so the command can
+ * leave that file as it was.
+ *
+ * The two checks answer different questions. Tokens catch a character
+ * gained or lost; parsing catches a line break moved somewhere a break
+ * is what ends a statement, which no comparison of tokens can see.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
+
+import zuri
 
 import .atoms
 import .tree
@@ -140,7 +147,7 @@ def _same(left: list, right: list) {
  * @param string source
  * @returns string
  * @throws FormatError if the result would not hold the same tokens as
- *    the input.
+ *    the input, or would not parse.
  */
 def format(source: string) {
   var stream = atoms.stream(source)
@@ -160,7 +167,25 @@ def format(source: string) {
     raise FormatError('formatting would have changed the tokens of the source')
   }
 
+  if !_parses(result) {
+    raise FormatError('formatting would have produced source that does not parse')
+  }
+
   return result
+}
+
+# Whether the parser reads `source` at all. A newline is what ends a
+# statement in Zuri, so a layout that moves one can turn a program into
+# something the parser refuses even with every token still in place, and
+# the token check above is blind to exactly that.
+def _parses(source: string) {
+  catch {
+    zuri.parse(source)
+  } as error {
+    return false
+  }
+
+  return true
 }
 
 /**

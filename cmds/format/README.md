@@ -46,16 +46,27 @@ files that are not already formatted and exits non-zero if there are any.
   close up: `s[2,5]`, not `s[2, 5]`. A `[` that opens a list is not a
   subscript and keeps the spacing and the trailing-comma rule above.
 - **Keeps blocks open**: the statements inside a block each get their own
-  line, always.
+  line, always. An empty one stays closed up as `{}`.
+- **Leaves an unbraced body where it was.** `if x y = 1` is one line and
+  stays one line; a body written on the next line keeps the indent that
+  is the only thing marking it as a body. An `else` joins the line above
+  it only when that line closed a block, because `if c x else y` on one
+  line is not a statement Zuri reads.
 - **Rewrites `name: name` to `name`** inside a dictionary, the shorthand
   the project prefers.
 
 ## What it will not do
 
 It never changes what a program does. Before writing a file, it checks
-the result holds exactly the same tokens as the input; if a bug ever
-produced anything else, that file is left as it was and reported as
-skipped. This is why it can be run across a whole tree without fear.
+the result twice: that it holds exactly the same tokens as the input,
+and that the parser still reads it. If either check fails, that file is
+left as it was and reported as skipped. This is why it can be run across
+a whole tree without fear.
+
+The second check earns its place. A newline is what ends a statement in
+Zuri, so a line break moved to the wrong place turns a program into one
+the parser refuses with every token still in it, and no comparison of
+tokens can see that.
 
 ## How it is built
 

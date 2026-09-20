@@ -25,6 +25,18 @@ describe('stream', @{
     ])
   })
 
+  # The formatter lays out its own lines and ignores where the source
+  # put things, with one exception: an unbraced body is a body because
+  # it is indented, and nothing else in the stream says so.
+  it('carries the line and column each atom came from', @{
+    var out = stream('if a\n  b()').filter(@(a) => a.kind == 'Identifier')
+
+    expect(out[0].line).to_be(1)
+    expect(out[0].column).to_be(4)
+    expect(out[1].line).to_be(2)
+    expect(out[1].column).to_be(3)
+  })
+
   it('keeps an interpolated string whole, in one atom', @{
     var source = "echo 'a " + S + "{y + 1} b'"
 

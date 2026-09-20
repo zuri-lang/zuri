@@ -27,13 +27,19 @@ var QUOTES = ['\'', '"']
  * `'Plus'`, ...), `'String'` for a reassembled string, or `'Blank'`
  * for a run of blank lines that the source kept between two lines.
  *
+ * `line` and `column` are where the atom sat in the source. The
+ * formatter decides its own layout and ignores both, with one
+ * exception: a statement that owns a body without bracing it says so
+ * by indenting that body, and nothing else in the token stream does.
+ *
  * @printable
  */
 class Atom {
-  @new(kind: string, text: string, line: number) {
+  @new(kind: string, text: string, line: number, column: number) {
     self.kind = kind
     self.text = text
     self.line = line
+    self.column = column
   }
 
   is_comment() {
@@ -143,9 +149,9 @@ def stream(source: string) {
     # matters inside a bracket group, where the tree drops them.
     if !atoms.is_empty() {
       if newlines >= 2 {
-        atoms.append(Atom('Blank', '', token.line))
+        atoms.append(Atom('Blank', '', token.line, token.column))
       } else if newlines == 1 {
-        atoms.append(Atom('Newline', '', token.line))
+        atoms.append(Atom('Newline', '', token.line, token.column))
       }
     }
 
@@ -154,7 +160,7 @@ def stream(source: string) {
     if _starts_string(token) {
       var end = string_end(source, token.start)
 
-      atoms.append(Atom('String', source[token.start,end], token.line))
+      atoms.append(Atom('String', source[token.start,end], token.line, token.column))
 
       # Skip every token the lexer produced for the pieces of this
       # string.
@@ -167,7 +173,7 @@ def stream(source: string) {
       continue
     }
 
-    atoms.append(Atom(token.kind, token.text, token.line))
+    atoms.append(Atom(token.kind, token.text, token.line, token.column))
     index += 1
   }
 

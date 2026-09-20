@@ -118,6 +118,20 @@ def _group_text(group) {
 # carries what a single pair cannot decide on its own: an open ternary,
 # an optional-type marker, and whether the last `-`/`+` was unary.
 def _space(prev, cur, state) {
+  var pk = prev == nil ? '' : prev.kind
+  var ck = cur.kind
+
+  # Whether `prev` is a sign rather than an operator, decided back when
+  # it was itself the current token, since only the token to its left
+  # can tell the two apart. It has to be read here, for the gap after
+  # it, before `cur` overwrites it: in `a + -b` both are signs to test
+  # and only the first one's answer is the gap this call is deciding.
+  # Nothing at all to the left makes it a sign too, which is the `-1`
+  # opening a call, a subscript or a group.
+  var after_sign = state.unary
+
+  state.unary = (ck == 'Minus' or ck == 'Plus') and !_VALUE.contains(pk)
+
   if prev == nil {
     return ''
   }
@@ -128,8 +142,12 @@ def _space(prev, cur, state) {
     return ''
   }
 
-  var pk = prev.kind
-  var ck = cur.kind
+  # A comment always stands off from the code it trails, whatever that
+  # code ends on. `i++# skip` is the rest of the line disappearing into
+  # a `#` the reader did not expect to be there.
+  if ck == 'Comment' or ck == 'DocBlock' or pk == 'DocBlock' {
+    return ' '
+  }
 
   # A type annotation runs from a `:` (outside a dictionary) to the next
   # `,`, `=`, `)`, `{` or `=>`. Inside it, `|` and `&` join types with no
@@ -172,11 +190,7 @@ def _space(prev, cur, state) {
     return ''
   }
 
-  if ck == 'Minus' or ck == 'Plus' {
-    state.unary = prev == nil or !_VALUE.contains(pk)
-  }
-
-  if (pk == 'Minus' or pk == 'Plus') and state.unary {
+  if (pk == 'Minus' or pk == 'Plus') and after_sign {
     return ''
   }
 

@@ -29,6 +29,28 @@ describe('flat', @{
     expect(line('var x = -1')).to_be('var x = -1')
   })
 
+  it('treats a `-` opening a group as unary', @{
+    expect(line('var x = f(-1)')).to_be('var x = f(-1)')
+    expect(line('var x = a[-1]')).to_be('var x = a[-1]')
+    expect(line('var x = (-1)')).to_be('var x = (-1)')
+    expect(line('var x = [-1, -2]')).to_be('var x = [-1, -2]')
+  })
+
+  # `a + -b` has a sign and an operator side by side. Each has to be
+  # judged by what sits to its own left, not by what the other one is.
+  it('tells a sign after an operator from the operator', @{
+    expect(line('var x = -a + -b')).to_be('var x = -a + -b')
+    expect(line('var x = a - -b')).to_be('var x = a - -b')
+    expect(line('var x = 3 * -2')).to_be('var x = 3 * -2')
+    expect(line('var x = a - 1')).to_be('var x = a - 1')
+  })
+
+  it('stands a comment off from whatever it trails', @{
+    expect(line('i++ # skip')).to_be('i++ # skip')
+    expect(line('i-- # back')).to_be('i-- # back')
+    expect(line('f() # done')).to_be('f() # done')
+  })
+
   it('treats `-` between values as binary', @{
     expect(line('var x = a - 1')).to_be('var x = a - 1')
   })
