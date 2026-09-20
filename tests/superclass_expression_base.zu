@@ -1,0 +1,24 @@
+/**
+ * Support file for tests/superclass_expression.zu.
+ *
+ * Holds every way of reaching a class the fixture inherits from: the
+ * class itself, one parked in a dictionary, and one a call hands back.
+ */
+
+import @.superclass_expression_inner
+
+class Base {
+  @new(name) {
+    self.name = name
+  }
+
+  greet() {
+    return 'base/' + self.name
+  }
+}
+
+var REGISTRY = { store: Base }
+
+def pick() {
+  return Base
+}

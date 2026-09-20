@@ -1,0 +1,69 @@
+/**
+ * The class a declaration inherits from is an expression, not just a
+ * name in the current file. Anything anchored on an identifier counts:
+ * a member of an imported module, a member of a module that module
+ * imports, an entry pulled out of a dictionary, or whatever a call
+ * hands back. Each form below has to build a real class, run its
+ * parent's constructor through `parent()`, dispatch to the parent's
+ * method through `parent.method()`, and answer `instance_of` across
+ * the module boundary.
+ */
+
+import .superclass_expression_base
+
+class Child < superclass_expression_base.Base {
+  @new(name, extra) {
+    parent(name)
+    self.extra = extra
+  }
+
+  greet() {
+    return parent.greet() + '+' + self.extra
+  }
+}
+
+class Deep < superclass_expression_base.superclass_expression_inner.Inner {
+  @new() {
+    parent('deep')
+  }
+}
+
+class Indexed < superclass_expression_base.REGISTRY['store'] {
+  @new() {
+    parent('indexed')
+  }
+}
+
+class Called < superclass_expression_base.pick() {
+  @new() {
+    parent('called')
+  }
+}
+
+# An extension aimed at an imported class patches that class itself,
+# so it is the target, not this declaration, that gains the method.
+class Patch > superclass_expression_base.Base {
+  static shout(instance) {
+    return instance.greet().upper()
+  }
+}
+
+var child = Child('ada', 'x')
+
+echo child.greet()
+echo Deep().describe()
+echo Indexed().greet()
+echo Called().greet()
+echo superclass_expression_base.Base('raw').shout()
+
+echo instance_of(child, superclass_expression_base.Base)
+echo instance_of(
+  Deep(), superclass_expression_base.superclass_expression_inner.Inner,
+)
+echo instance_of(Indexed(), superclass_expression_base.Base)
+
+# A class body opens with `{` on the same line as the parent's name,
+# and that brace must never be read as the start of a dictionary.
+class Tight < superclass_expression_base.Base {}
+
+echo Tight('tight').greet()

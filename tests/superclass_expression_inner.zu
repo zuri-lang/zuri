@@ -1,0 +1,17 @@
+/**
+ * Support file for tests/superclass_expression.zu.
+ *
+ * Sits one module below `superclass_expression_base` so the fixture
+ * can name a class through a two-dot path, which is the shape a
+ * subclass of a packaged standard library class takes.
+ */
+
+class Inner {
+  @new(tag) {
+    self.tag = tag
+  }
+
+  describe() {
+    return 'inner/' + self.tag
+  }
+}

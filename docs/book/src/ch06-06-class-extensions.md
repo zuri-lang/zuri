@@ -144,17 +144,24 @@ class Orphan > NoSuchClass {
 Unhandled UndefinedError: undefined global 'NoSuchClass'
 ```
 
-It must also be a **bare identifier**. `class E > set.Set { ... }` does not
-parse; import the class by name first:
+The name does not have to be a bare one. Anything an expression starting
+with an identifier reaches works, so a class another module owns can be
+named straight through that module:
 
-```zuri,ignore
-import set { Set }
+```zuri
+import set
 
-class SetExtras > Set {
+class SetExtras > set.Set {
   static summary(s) {
     return 'set of ${s.length()}'
   }
 }
+
+echo set.Set([1, 2, 3]).summary()
+```
+
+```console
+set of 3
 ```
 
 Built-in types are not classes in scope, so `string`, `list`, `number` and

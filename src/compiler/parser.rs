@@ -2087,6 +2087,21 @@ impl<'a> Parser<'a> {
     Decl::Method(name, parameters, Box::new(body), is_variadic, is_static)
   }
 
+  /// The class named after the `<` or `>` of a class header.
+  ///
+  /// A plain name is the usual case, but a class is a value like any
+  /// other and the one being built on can live wherever a name reaches
+  /// it: another module (`http.session.SessionStore`), a static member,
+  /// an entry in a registry, or whatever a call hands back. The
+  /// reference has to start with an identifier, which is what keeps the
+  /// `{` that opens the body from ever looking like the start of one.
+  fn class_reference(&mut self, message: &str) -> Expr {
+    let name = consume_tok!(self, TokenKind::Identifier(_), message);
+    let mut expr = self.compose_id(name);
+
+    self.do_call(&mut expr)
+  }
+
   fn class_decl(&mut self) -> Decl {
     let name = consume_tok!(self, TokenKind::Identifier(_), "Class name expected.");
 
@@ -2101,24 +2116,13 @@ impl<'a> Parser<'a> {
     let mut last_member_was_method: Option<bool> = None;
 
     let superclass = if match_tok!(self, TokenKind::Less) {
-      let target_class_name =
-        consume_tok!(self, TokenKind::Identifier(_), "Superclass name expected.");
+      Some(Box::new(self.class_reference("Superclass name expected.")))
+    } else if match_tok!(self, TokenKind::Greater) {
+      is_extension = true;
 
-      Some(Box::new(self.compose_id(target_class_name)))
+      Some(Box::new(self.class_reference("Target class name expected.")))
     } else {
-      if match_tok!(self, TokenKind::Greater) {
-        is_extension = true;
-
-        let target_class_name = consume_tok!(
-          self,
-          TokenKind::Identifier(_),
-          "Target class name expected."
-        );
-
-        Some(Box::new(self.compose_id(target_class_name)))
-      } else {
-        None
-      }
+      None
     };
 
     self.ignore_newlines();

@@ -44,6 +44,41 @@ class that borrows from `Shape`. Turning it around —
 methods to `Shape` itself and creates no class at all. See
 [Class Extensions](ch06-06-class-extensions.md).
 
+## Naming the Parent
+
+A class is a value like any other, so the parent does not have to be a
+bare name in the current file. Anything an expression starting with a
+name can reach works, which is what lets you build on a class another
+module owns:
+
+```zuri
+import log
+
+class MemoryTransport < log.Transport {
+  @new() {
+    self.lines = []
+  }
+
+  handle(record) {
+    self.lines.append(record)
+  }
+}
+
+echo instance_of(MemoryTransport(), log.Transport)
+```
+
+```console
+true
+```
+
+Property access, indexing and calls all work the same way, so a parent
+picked out of a registry (`class Store < backends['redis']`) or handed
+back by a function (`class Store < chosen_backend()`) is as valid as a
+name. The expression is evaluated once, where the class is declared.
+
+The one rule is that it has to begin with a name. That is what keeps the
+`{` opening the body from ever being read as the start of a dictionary.
+
 ## `parent`
 
 `parent` means two related things.
