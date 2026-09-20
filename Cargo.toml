@@ -3,6 +3,12 @@ name = "zuri"
 version = "0.1.0"
 edition = "2024"
 
+# Repository chores that are not a build, kept out of the runtime crate
+# so that running one does not compile or relink it. `cargo sync` is the
+# one that exists.
+[workspace]
+members = ["xtask"]
+
 [dependencies]
 itertools = "0.15.0"
 libc = "0.2.189"
@@ -207,7 +213,6 @@ windows-sys = { version = "0.59", features = [
 
 [build-dependencies]
 chrono = "0.4.45"
-copy_to_output = "2.2.0"
 toml = "1.1.2"
 
 [package.metadata.zuri]

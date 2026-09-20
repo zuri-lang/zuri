@@ -1,6 +1,5 @@
 // build.rs
 use chrono::Utc;
-use copy_to_output::copy_to_output;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -47,34 +46,20 @@ fn main() {
   // Tell Cargo to re-run this script if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
 
-  let libs_dir = Path::new(&manifest_dir).join("libs");
-  // Cleared first, because `copy_to_output` only ever writes files; it
-  // never removes one that has since been deleted from `libs/`. Without
-  // this, splitting `libs/log.zu` into `libs/log/` leaves the old flat
-  // file sitting in the output beside the new directory, and module
-  // resolution finds the stale copy. That is a silent and very
-  // confusing failure, because `libs/` on disk looks entirely correct
-  // and only the build output disagrees.
+  // The standard library, the commands the runtime ships, and the
+  // licence it prints: everything it looks for beside its own
+  // executable. `cargo sync` puts the same bytes in the same place
+  // without a build, which is what `sync.rs` is included for.
   let profile = env::var("PROFILE").unwrap();
-  let out_libs = copy_output_dir(&profile).join("libs");
-  if out_libs.exists() {
-    fs::remove_dir_all(&out_libs).expect("Could not clear the copied libs directory");
-  }
-  copy_to_output("libs", &profile).expect("Could not copy libs");
-  println!("cargo:rerun-if-changed={}", libs_dir.display());
+  let root = Path::new(&manifest_dir);
 
-  // The commands the runtime ships, which it looks for beside itself.
-  // Cleared first for the same reason `libs` is.
-  let cmds_dir = Path::new(&manifest_dir).join("cmds");
-  let out_cmds = copy_output_dir(&profile).join("cmds");
-  if out_cmds.exists() {
-    fs::remove_dir_all(&out_cmds).expect("Could not clear the copied cmds directory");
-  }
-  copy_to_output("cmds", &profile).expect("Could not copy cmds");
-  println!("cargo:rerun-if-changed={}", cmds_dir.display());
+  sync_payload(root, &copy_output_dir(&profile)).expect("Could not copy the runtime payload");
 
-  copy_to_output("LICENSE", &env::var("PROFILE").unwrap()).expect("Could not copy license file");
-  println!("cargo:rerun-if-changed=LICENSE");
+  for name in PAYLOAD {
+    println!("cargo:rerun-if-changed={}", root.join(name).display());
+  }
+
+  println!("cargo:rerun-if-changed=xtask/src/sync.rs");
 
   generate_zu_conformance_tests(&manifest_dir);
   build_docs(&manifest_dir);
@@ -232,15 +217,15 @@ fn mdbook_available() -> bool {
     .unwrap_or(false)
 }
 
-/// Where `copy_to_output` puts things: the profile directory that holds
-/// the built binaries, which is what `libs/` is copied beside.
+/// The profile directory that holds the built binaries, which is what
+/// the runtime payload is copied beside.
 ///
 /// Derived by walking up from `OUT_DIR`
 /// (`<profile>/build/<pkg>-<hash>/out`) rather than by rebuilding
 /// `target/[{triple}/]{profile}` from parts, so a cross-compiled build's
 /// extra target-triple component is handled without having to detect it.
-/// Falls back to the relative path `copy_to_output` itself would use if
-/// `OUT_DIR` is ever missing or shaped unexpectedly.
+/// Falls back to the conventional relative path if `OUT_DIR` is ever
+/// missing or shaped unexpectedly.
 fn copy_output_dir(profile: &str) -> std::path::PathBuf {
   if let Some(out_dir) = env::var_os("OUT_DIR") {
     let path = Path::new(&out_dir);
@@ -426,3 +411,5 @@ fn escape_ident(s: &str) -> String {
     format!("r#{sanitized}")
   }
 }
+
+include!("xtask/src/sync.rs");

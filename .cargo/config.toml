@@ -14,3 +14,8 @@ clean-docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--"
 # The same tool with nothing assumed, for `cargo docs help` and for
 # passing a subcommand of your own choosing.
 docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--"]
+
+# Puts libs/ and cmds/ beside an already-built binary, so a change to a
+# `.zu` file takes effect without a rebuild. See `cargo sync help`.
+sync = ["run", "--quiet", "--package", "xtask", "--", "sync"]
+xtask = ["run", "--quiet", "--package", "xtask", "--"]
