@@ -613,9 +613,57 @@ impl<'a> Compiler<'a> {
     }
   }
 
-  /// `function foo(...) { ... }` as a declaration: compile the prototype,
-  /// materialize it as a closure at THIS point in the enclosing code
-  /// (crucial for recursion), and bind the result as a global.
+  /// Reserve a register and a local for every `def` written directly in
+  /// `statements`, before any of them is compiled. Two helpers defined
+  /// next to each other in the same block can then call each other
+  /// regardless of which one is written first, which is the whole point:
+  /// the compiler resolves names as it goes, so a name that is not a
+  /// local yet would fall through to a global lookup and never find the
+  /// sibling at all.
+  ///
+  /// Reserving the slot is not the same as defining the function. Until
+  /// the declaration itself runs, the slot holds nil, so a call placed
+  /// ABOVE the declaration raises rather than quietly working.
+  fn hoist_function_decls(&mut self, statements: &[Stmt]) {
+    let depth = self.cur().scope_depth;
+    let mut reserved: Vec<String> = Vec::new();
+
+    for stmt in statements {
+      let Stmt::Decl(decl) = stmt else {
+        continue;
+      };
+      let Decl::Function(token, ..) = decl.as_ref() else {
+        continue;
+      };
+
+      let name = Self::identifier_name(token);
+      // A repeated `def` of one name is reported by
+      // `compile_function_decl`; both declarations share the one slot.
+      if reserved.contains(&name) {
+        continue;
+      }
+      reserved.push(name.clone());
+
+      let reg = self.alloc_reg();
+      self.emit(Instr::LoadNil { dst: reg });
+      self.cur_mut().locals.push(Local {
+        name,
+        reg,
+        is_const: false,
+        depth,
+        captured: false,
+      });
+    }
+  }
+
+  /// `def foo(...) { ... }` as a declaration: compile the prototype and
+  /// materialize it as a closure at THIS point in the enclosing code,
+  /// which is what lets the body call itself.
+  ///
+  /// Where the result is bound follows `var` exactly. At the top level of
+  /// a module it becomes a module-level name; anywhere else it is a local
+  /// of the scope it was written in, and it goes away with that scope. A
+  /// helper defined inside a function belongs to that function.
   fn compile_function_decl(
     &mut self,
     token: &Token,
@@ -625,10 +673,9 @@ impl<'a> Compiler<'a> {
   ) {
     let name = Self::identifier_name(token);
 
-    // A `def` binds a module-level name, so a second one of the same
-    // name in the same scope silently replaces the first with no
-    // diagnostic at all. The REPL is exempt: redefining something you
-    // just typed is the point of it.
+    // Two `def`s of the same name in one scope would leave the second
+    // silently replacing the first, with no diagnostic at all. The REPL
+    // is exempt: redefining something you just typed is the point of it.
     if !self.is_repl {
       let depth = self.cur().scope_depth;
       if self
@@ -649,23 +696,63 @@ impl<'a> Compiler<'a> {
       }
     }
 
+    // The binding has to exist BEFORE the body compiles, so that a
+    // recursive call resolves to it as an upvalue instead of escaping to
+    // a global. `hoist_function_decls` has normally already put it there.
+    let local_reg = if self.at_module_top_level() {
+      None
+    } else {
+      let depth = self.cur().scope_depth;
+      let existing = self
+        .cur()
+        .locals
+        .iter()
+        .rev()
+        .take_while(|l| l.depth == depth)
+        .find(|l| l.name == name)
+        .map(|l| l.reg);
+
+      Some(existing.unwrap_or_else(|| {
+        let reg = self.alloc_reg();
+        self.emit(Instr::LoadNil { dst: reg });
+        self.cur_mut().locals.push(Local {
+          name: name.clone(),
+          reg,
+          is_const: false,
+          depth,
+          captured: false,
+        });
+        reg
+      }))
+    };
+
     let obj_fn = self.compile_function_prototype(token, params, body, is_variadic, false);
     let proto_val = self.heap.alloc_function(obj_fn);
     let const_idx = self.add_constant(proto_val);
 
-    let mark = self.cur().next_reg;
-    let dst = self.alloc_reg();
-    self.emit(Instr::Closure {
-      dst,
-      proto_const: const_idx,
-    });
-    let name_val = self.heap.alloc_string_old(name);
-    let name_const = self.add_constant(name_val);
-    self.emit(Instr::SetGlobal {
-      name_const,
-      src: dst,
-    });
-    self.free_regs_to(mark);
+    match local_reg {
+      Some(dst) => {
+        self.emit(Instr::Closure {
+          dst,
+          proto_const: const_idx,
+        });
+      },
+      None => {
+        let mark = self.cur().next_reg;
+        let dst = self.alloc_reg();
+        self.emit(Instr::Closure {
+          dst,
+          proto_const: const_idx,
+        });
+        let name_val = self.heap.alloc_string_old(name);
+        let name_const = self.add_constant(name_val);
+        self.emit(Instr::SetGlobal {
+          name_const,
+          src: dst,
+        });
+        self.free_regs_to(mark);
+      },
+    }
   }
 
   /// Like `compile_function_prototype`, but for a class method: register
@@ -2499,6 +2586,8 @@ impl<'a> Compiler<'a> {
         let mark = self.cur().next_reg;
         let locals_mark = self.cur().locals.len();
         self.cur_mut().scope_depth += 1;
+
+        self.hoist_function_decls(statements);
 
         for stmt in statements {
           self.compile_statement(stmt);

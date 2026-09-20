@@ -358,14 +358,13 @@ The exception is the top level of a script or module, where a second
 `var a` rebinds the existing global instead of erroring. That is what lets
 you retype a declaration in the REPL while you are experimenting.
 
-### Nested Functions Are Not Local
+### Functions Follow the Same Rule
 
-One scoping rule surprises nearly everyone, so it belongs here rather than
-in the functions chapter. A `def` written inside another function does not
-create a local name. It declares a module-level function, which becomes
-visible everywhere once the enclosing function has run:
+A `def` is scoped exactly like a `var`. One written at the top level of a
+file binds a module-level name; one written inside a function is a local of
+that function, and nothing outside can reach it:
 
-```zuri
+```zuri,ignore
 def outer() {
   def helper() {
     return 'from helper'
@@ -380,32 +379,11 @@ echo helper()
 
 ```console
 from helper
-from helper
-```
-
-If you want a helper that is genuinely local to one function, put an
-anonymous function in a `var`:
-
-```zuri,ignore
-def outer() {
-  var helper = @() => 'local only'
-
-  return helper()
-}
-
-echo outer()
-echo helper()
-```
-
-```console
-local only
 Unhandled UndefinedError: undefined global 'helper'
-  --> /path/to/main.zu:8
+  --> /path/to/main.zu:9
 ```
 
-The first call works because `helper` is a local variable inside `outer`.
-The second fails because, outside `outer`, no such name was ever created.
+The first call works because `helper` is a local of `outer`. The second
+fails because, outside `outer`, no such name was ever created.
 
-[Chapter 5](ch05-01-defining-functions.md) covers anonymous functions
-properly. For now: `def` inside `def` is module-level, `var f = @() => ...`
-is local.
+[Chapter 5](ch05-01-defining-functions.md) covers this in full.

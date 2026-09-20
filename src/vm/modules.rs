@@ -314,6 +314,30 @@ fn run_module_source(
 
 // Builtin native modules
 
+/// The key `VM::modules` caches `module_val` under, which is what a
+/// later `load_by_cache_key` needs to reach the same module again on
+/// another VM. `None` for a module that was never cached, which in
+/// practice means the entry script's own synthetic module.
+pub fn cache_key_of(vm: &VM, module_val: Value) -> Option<String> {
+  vm.modules
+    .iter()
+    .find(|&(_, &m)| m.is_obj() && m.as_obj() == module_val.as_obj())
+    .map(|(k, _)| k.clone())
+}
+
+/// Reaches the module `key` names, loading it if this VM has not seen
+/// it yet. The counterpart to `cache_key_of`: a `.zu` module comes back
+/// from its source path, a native one is rebuilt from its definition.
+pub fn load_by_cache_key(vm: &mut VM, key: &str) -> Option<Value> {
+  if let Some(&cached) = vm.modules.get(key) {
+    return Some(cached);
+  }
+  if let Some(name) = key.strip_prefix("builtin:") {
+    return builtin_module(vm, name);
+  }
+  load_from_candidate(vm, Path::new(key), key).ok()
+}
+
 /// Constructs (and caches, keyed as `"builtin:NAME"`) a synthetic
 /// module exposing a handful of already-registered natives under a
 /// namespace.

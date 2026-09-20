@@ -125,9 +125,9 @@ This is that list.
 **`list.sort()` mutates and returns; `list.reverse()` does neither to the
 original.** That asymmetry is the most common list bug in Zuri code.
 
-**A nested `def` binds a module-level name.** A function declared inside
-another function becomes visible module-wide once the outer one runs. Use
-an anonymous function in a `var` for a genuinely local helper.
+**A `def` scopes like a `var`.** At the top level of a file it binds a
+module-level name; anywhere else it is a local of the block it is written
+in, and it goes away with that block.
 
 **`import` is local by default.** If your module imports something and a
 third file cannot see it through you, add the `@`.

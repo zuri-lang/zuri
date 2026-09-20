@@ -2280,11 +2280,11 @@ http.serve(app.setup, {
 ```
 
 `setup` is called once inside each worker with that worker's own
-`HttpServer`. It can live in the main script or in a module. What it
-cannot do is reach for an imported module, because a module value
-cannot cross into an isolate, so a `setup` that needs one like the
-example above does, belongs in a module itself. The isolate resolves
-it there by name, and its imports are resolved again on that side.
+`HttpServer`. It can live in the main script or in a module, and it can
+use whatever it imports; a module it reaches for is loaded again inside
+the worker rather than shared with it. Putting it in a module of its own,
+as above, is still the better shape once it registers more than a couple
+of routes.
 
 Isolates share no memory, so anything a worker needs — a cache, a
 connection pool, a counter — is per worker. That is the trade the

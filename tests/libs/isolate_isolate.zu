@@ -38,6 +38,27 @@ def uses_module_global(n) {
   return n + counter_seed
 }
 
+# A helper declared inside another function is a local of it, so it
+# crosses structurally rather than by name.
+def make_nested_scaler(factor) {
+  def scale(n) {
+    return n * factor
+  }
+
+  return scale
+}
+
+# The same, but the helper also reaches a module this file imported;
+# the import is a local of this file's top level, which makes the
+# module one of the helper's captured values.
+def make_nested_module_user() {
+  def pool_is_up(n) {
+    return isolate.cpu_count() > 0 and n + counter_seed
+  }
+
+  return pool_is_up
+}
+
 def boom() {
   raise Error('boom from isolate')
 }

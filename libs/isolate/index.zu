@@ -134,15 +134,21 @@
  * declarations (preserving static fields, superclasses, and
  * method tables), and bound methods. - **Executable Code**:
  * Functions, closures (capturing upvalues), anonymous lambdas,
- * and top-level scripts. - **Native Handles**: `Ptr` handles
- * (moved linearly), `Channel` handles, and `Isolate` handles.
+ * and top-level scripts. 
+ * - **Modules**: imported modules and module bindings, including 
+ * one a closure captured. 
+ * - **Native Handles**: `Ptr` handles (moved linearly), 
+ * `Channel` handles, and `Isolate` handles.
+ *
+ * A module is reloaded on the receiving isolate rather than
+ * copied, so the recipient gets that isolate's own instance of
+ * it, with its own top-level state.
  *
  * ### Non-Transferable Types
  *
- * Attempting to transmit any of the following values across a
- * isolate boundary will immediately raise a `IsolateError`: -
- * Active operating system file handles (`file(...)`) - Module
- * namespaces or module binding references
+ * Attempting to transmit an active operating system file handle
+ * (`file(...)`) across a isolate boundary raises an
+ * `IsolateError`.
  *
  * ## Native Resources & Ownership Transfer
  *

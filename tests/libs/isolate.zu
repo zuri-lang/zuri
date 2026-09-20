@@ -46,6 +46,42 @@ def test_closure_capturing_local() {
   echo 'test_closure_capturing_local passed'
 }
 
+def test_nested_def_crosses_structurally() {
+  var scale = isolate_isolate.make_nested_scaler(3)
+  var t = isolate.spawn(scale, 7)
+  assert t.join() == 21,
+    'a function declared inside another must cross an isolate boundary'
+  echo 'test_nested_def_crosses_structurally passed'
+}
+
+def test_nested_def_carrying_a_module() {
+  var check = isolate_isolate.make_nested_module_user()
+  var t = isolate.spawn(check, 5)
+  assert t.join() == 105,
+    'a nested function must carry the modules it captured across'
+  echo 'test_nested_def_carrying_a_module passed'
+}
+
+def test_nested_def_declared_in_the_entry_script() {
+  def triple(n) {
+    return n * 3
+  }
+
+  var t = isolate.spawn(triple, 14)
+  assert t.join() == 42,
+    'a helper declared in the entry script must still be spawnable'
+  echo 'test_nested_def_declared_in_the_entry_script passed'
+}
+
+def test_module_crosses_as_an_argument() {
+  var t = isolate.spawn(@(g, text) {
+    return g.decompress(g.compress(text)).to_string()
+  }, gzip, 'round trip')
+  assert t.join() == 'round trip',
+    'a module passed as an argument must be reloaded on the other side'
+  echo 'test_module_crosses_as_an_argument passed'
+}
+
 def test_closure_mutation_independence() {
   var state = [0]
   var bump = @() {
@@ -1139,6 +1175,10 @@ test_basic_spawn_join()
 test_join_is_repeatable()
 test_is_done_and_try_join()
 test_closure_capturing_local()
+test_nested_def_crosses_structurally()
+test_nested_def_carrying_a_module()
+test_nested_def_declared_in_the_entry_script()
+test_module_crosses_as_an_argument()
 test_closure_mutation_independence()
 test_recursive_closure()
 test_closure_references_module_global()

@@ -225,10 +225,11 @@ echo log_line('info')
 [info] 
 ```
 
-## Functions Are Module-Scoped
+## Where a `def` Binds
 
-A named `def` binds a **module-level** name wherever it is written. That
-includes a `def` nested inside another function:
+A `def` scopes exactly like a `var`. Written at the top level of a file it
+binds a module-level name. Written anywhere else it binds a local of the
+block it appears in, and it goes away with that block:
 
 ```zuri
 def outer() {
@@ -240,20 +241,140 @@ def outer() {
 }
 
 echo outer()
-echo helper()
+
+catch {
+  helper()
+} as e {
+  echo e.message
+}
 ```
 
 ```console
 from helper
-from helper
+undefined global 'helper'
 ```
 
-`helper` becomes visible at module level the moment `outer()` runs, because
-running `outer` is what executes the declaration. Before that call, the
-name does not exist at all.
+A helper defined inside a function belongs to that function. Nothing
+outside can reach it, and nothing outside can be broken by it.
 
-When you want a helper that stays private to one function, bind an
-anonymous function to a `var`:
+That extends to any block, not just a function body:
+
+```zuri
+def choose(verbose) {
+  if verbose {
+    def describe(n) {
+      return 'the number ${n}'
+    }
+
+    return describe(7)
+  }
+
+  return '7'
+}
+
+echo choose(true)
+echo choose(false)
+```
+
+```console
+the number 7
+7
+```
+
+### Calling One Helper From Another
+
+Helpers declared next to each other can call each other, in either
+direction:
+
+```zuri
+def parity(n) {
+  def even(k) {
+    if k == 0 {
+      return true
+    }
+
+    return odd(k - 1)
+  }
+
+  def odd(k) {
+    if k == 0 {
+      return false
+    }
+
+    return even(k - 1)
+  }
+
+  return even(n)
+}
+
+echo parity(10)
+echo parity(7)
+```
+
+```console
+true
+false
+```
+
+`even` mentions `odd` before `odd` is written, and that works because the
+compiler reserves a slot for every `def` in a block before it compiles any
+of them. What it does not do is move the declaration: until the `def` line
+itself runs, the slot holds nil, so calling a helper from *above* its
+declaration raises.
+
+A helper can also call itself:
+
+```zuri
+def factorial_of(n) {
+  def factorial(k) {
+    if k <= 1 {
+      return 1
+    }
+
+    return k * factorial(k - 1)
+  }
+
+  return factorial(n)
+}
+
+echo factorial_of(6)
+```
+
+```console
+720
+```
+
+### A Helper Captures What Surrounds It
+
+A nested `def` is a closure over the locals around it, and it outlives the
+call that created it:
+
+```zuri
+def make_counter(start) {
+  var count = start
+
+  def bump() {
+    count++
+    return count
+  }
+
+  return bump
+}
+
+var bump = make_counter(10)
+
+echo bump()
+echo bump()
+```
+
+```console
+11
+12
+```
+
+An anonymous function bound to a `var` does the same job, and is the better
+choice when the helper is a one-liner or is being passed straight into
+something else:
 
 ```zuri
 def outer() {
@@ -269,7 +390,8 @@ echo outer()
 private
 ```
 
-That one is an ordinary local, and it disappears when `outer` returns.
+Pick whichever reads better. A `def` gives the function a real name in
+stack traces and can recurse without the extra `var`; a lambda is shorter.
 
 ## One Declaration Per Name
 
@@ -310,8 +432,9 @@ arguments as optional and branch in the body — which is what the
 `greeting` parameter above is doing.
 
 The check is per **scope**, exactly like `var`'s. A function declared
-inside another does not *compile-error* against a top-level one of the same
-name:
+inside another is a separate declaration in a separate scope, so the
+compiler allows it, and it shadows the outer one for as long as its own
+scope lasts:
 
 ```zuri
 def render() {
@@ -332,43 +455,12 @@ echo render()
 
 ```console
 inner
-inner
-```
-
-Look at the second line, and remember that a nested `def` binds a
-**module-level** name. The two declarations are in different scopes, so the
-compiler allows both — and then running `wrapper()` executes the inner
-declaration, which rebinds the module-level `render`. The top-level version
-is gone from that point on.
-
-So the compile-time rule and the runtime behaviour answer different
-questions. The rule stops you writing two declarations that obviously
-conflict; it cannot stop a nested one from replacing an outer one when it
-runs, because that only happens if and when the outer function is called.
-
-The practical advice is simply to keep function names distinct across a
-module. When you genuinely want a helper local to one function, use an
-anonymous function in a `var`, which creates no module-level name at all:
-
-```zuri
-def render() {
-  return 'top level'
-}
-
-def wrapper() {
-  var render = @() => 'inner'
-
-  return render()
-}
-
-echo wrapper()
-echo render()
-```
-
-```console
-inner
 top level
 ```
+
+`wrapper`'s own `render` is a local of `wrapper`. It answers every call
+made inside that function and disappears when the call ends, leaving the
+module-level `render` untouched.
 
 Classes follow the same rule for their methods:
 
@@ -437,6 +529,11 @@ true
 `is_even` refers to `is_odd` before it exists. That is fine, because the
 reference is resolved when `is_even(10)` runs, by which time both
 declarations have executed.
+
+Helpers nested inside a function get the same freedom by a different
+route: their slots are reserved together, before any of their bodies
+compile. Either way, what matters is that every declaration has run by the
+time the first call is made.
 
 ## Functions as Values
 

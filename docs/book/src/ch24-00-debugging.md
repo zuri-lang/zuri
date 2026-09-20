@@ -346,8 +346,8 @@ zero. Validate the text before converting it.
 **A method call on a string result was discarded.** `name.trim()` does
 nothing on its own; strings are immutable, so you must assign the result.
 
-**A nested `def` is module-level.** A function declared inside another
-becomes visible everywhere once the outer one runs.
+**A nested `def` is local.** A function declared inside another is scoped
+to it, like a `var`, and nothing outside that scope can call it.
 
 **`x++` evaluates to the new value.** Unlike C and JavaScript.
 

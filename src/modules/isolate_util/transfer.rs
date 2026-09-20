@@ -50,8 +50,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::vm::chunk::{Chunk, Instr, JumpKey, ParamTypeCheck};
 use crate::vm::object::{
-  JitInfo, NativeFn, NativeFunction, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState,
-  write_barrier,
+  JitInfo, NativeFn, NativeFunction, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor,
+  UpvalueState, write_barrier,
 };
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -216,6 +216,27 @@ pub enum TransferValue {
   ChannelHandle(Arc<pool::ChannelState>),
   /// A `Isolate` handle; same reasoning as `ChannelHandle`.
   IsolateHandle(Arc<pool::IsolateState>),
+  /// An imported module, carried as the key it is cached under rather
+  /// than as anything copied out of it; the destination loads the same
+  /// module for itself and gets its own independent copy.
+  ///
+  /// This is the same bargain `Home` strikes, and it rests on the same
+  /// property: a module's top level is declarations, it runs once, and
+  /// the result is cached. What it buys is the ordinary case of a
+  /// helper that uses an import; `import json` at the top of a file is
+  /// a local of that file's own scope, so every function below it that
+  /// mentions `json` captures the module as an upvalue and would
+  /// otherwise be unable to cross.
+  ///
+  /// `binding` is set when the source value was the promoted binding
+  /// `import PATH [as NAME]` produces rather than the bare module, and
+  /// holds the local name it was bound under; promotion is re-derived
+  /// on the destination from that name, exactly as the import itself
+  /// would have.
+  Module {
+    key: String,
+    binding: Option<String>,
+  },
   Ref(u32),
 }
 
@@ -541,10 +562,27 @@ fn capture_value(
     return Ok(TransferValue::Ref(idx));
   }
 
+  if v.is_module() || v.is_module_binding() {
+    let (module, binding) = if v.is_module() {
+      (v, None)
+    } else {
+      let b = v.as_module_binding();
+      (b.module, Some(b.bind_name.clone()))
+    };
+    let key = crate::vm::modules::cache_key_of(vm, module).ok_or_else(|| {
+      format!(
+        "cannot send module '{}' across isolates; it was never loaded from a \
+         file or a builtin",
+        module.as_module().name
+      )
+    })?;
+    return Ok(TransferValue::Module { key, binding });
+  }
+
   Err(format!(
     "cannot send a {} across isolates; only nil, bool, number, string, \
      bytes, bigint, range, list, dict, instance, class, bound method, \
-     function, and native-pointer values can cross",
+     function, module, and native-pointer values can cross",
     v.type_name()
   ))
 }
@@ -1010,6 +1048,7 @@ pub fn materialize(vm: &mut VM, graph: &TransferGraph) -> Result<Value, String> 
         vm.heap_mut()
           .alloc_ptr(pool::ISOLATE_PTR_TYPE, state.clone()),
       ),
+      TransferValue::Module { key, binding } => resolve_module(vm, key, binding.as_deref()),
       TransferValue::Ref(_) => unreachable!(),
     };
   }
@@ -1068,6 +1107,7 @@ fn materialize_value(
       vm.heap_mut()
         .alloc_ptr(pool::ISOLATE_PTR_TYPE, state.clone()),
     ),
+    TransferValue::Module { key, binding } => resolve_module(vm, key, binding.as_deref()),
     TransferValue::Ref(idx) => materialize_ref(vm, *idx, arena, node_pin),
   }
 }
@@ -1382,6 +1422,29 @@ fn materialize_prototype(
   vm.define_global(key, fn_val);
 
   Ok(vm.pinned(p))
+}
+
+/// Loads the module `key` names on this isolate and hands back either
+/// the module itself or the promoted binding an `import` of it would
+/// have produced, matching whichever shape crossed the boundary.
+fn resolve_module(vm: &mut VM, key: &str, binding: Option<&str>) -> Result<Value, String> {
+  let module = crate::vm::modules::load_by_cache_key(vm, key)
+    .ok_or_else(|| format!("could not load module '{}' on this isolate", key))?;
+
+  let Some(bind_name) = binding else {
+    return Ok(module);
+  };
+
+  let promoted = {
+    let m = module.as_module();
+    m.namespace.get(bind_name).filter(|v| v.is_callable())
+  };
+
+  Ok(vm.heap_mut().alloc_module_binding(ObjModuleBinding {
+    module,
+    promoted,
+    bind_name: bind_name.to_string(),
+  }))
 }
 
 fn resolve_named(vm: &mut VM, home: &Home, name: &str, kind: &NamedKind) -> Result<Value, String> {

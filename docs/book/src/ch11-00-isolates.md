@@ -37,37 +37,38 @@ immediately. `join()` waits for it and gives you the result. Calling
 
 ### What Can Be Spawned
 
-**The function you spawn must not capture a module.** A module is one of
-the few things that cannot cross the boundary, and a function that
-references an imported name captures the module it came from.
+Any function: a top-level `def`, a helper declared inside another function,
+a lambda, a bound method. What it captures travels with it, including the
+modules it uses:
 
-`square` above is fine: it touches nothing but its own argument. This is
-not:
-
-```zuri,ignore
+```zuri
 import isolate
-import net
+import json
 
-def serve(channel) {
-  var listener = net.TcpStream()
-  # ...
+def encode_all(items) {
+  return items.map(@(item) => json.encode(item)).length()
 }
 
-isolate.spawn(serve, channel)
+echo isolate.spawn(encode_all, [{ a: 1 }, { b: 2 }]).join()
 ```
 
 ```console
-Unhandled IsolateError: cannot send a module across isolates
+2
 ```
 
-`serve` refers to `net`, which is a module-level binding in *this* file, so
-spawning it tries to send `net` along with it.
+A module is not copied the way a list is. The isolate loads the same module
+for itself and uses its own copy, which is why this works at all: module
+top levels are declarations, they run once, and the result is cached. A
+module built out of live per-process state is the case to think twice
+about, since the isolate gets a fresh one rather than yours.
 
-There are two ways round it, and both are worth knowing.
+Two things still cannot be spawned. **A native function or a class** as the
+spawn target itself; wrap it in a `def`. And **a resource handle** such as
+an open socket or file is *moved* rather than copied, so the side that
+handed it over no longer has it.
 
-**Put the worker in its own module.** Inside `work.zu`, `net` is resolved
-when the worker runs, in the isolate's own namespace, rather than captured
-from yours:
+Putting the worker in its own module stays the better structure once it
+grows past a few lines:
 
 <span class="filename">Filename: work.zu</span>
 
@@ -89,11 +90,12 @@ import .work
 isolate.spawn(work.serve, channel)
 ```
 
-This is the shape the rest of this book uses, and it is good structure
-anyway: worker code tends to want its own file.
+That is the shape the rest of this book uses. A worker reached by name is
+resolved in the isolate's own namespace, so nothing about it has to be
+reconstructed.
 
-**Or import inside the function.** An `import` in the body runs in the
-isolate, so nothing is captured:
+An `import` written inside the function body works too, and runs in the
+isolate:
 
 ```zuri
 import isolate
@@ -110,9 +112,6 @@ echo isolate.spawn(make_id).join()
 ```console
 36
 ```
-
-That is the compact option for a short worker. Use the separate module once
-the worker is more than a few lines.
 
 The arguments are copied, not shared. An isolate that mutates a list it was
 handed is mutating its own copy:
@@ -410,16 +409,13 @@ catch {
 ```
 
 ```console
-cannot send a file across isolates; only nil, bool, number, string, bytes, bigint, range, list, dict, instance, class, bound method, function, and native-pointer values can cross
+cannot send a file across isolates; only nil, bool, number, string, bytes, bigint, range, list, dict, instance, class, bound method, function, module, and native-pointer values can cross
 ```
 
-The message lists what *can* cross, which is the more useful half. Files
-and modules are the two you will meet; both are handles onto something the
-receiving isolate has no access to.
-
-That is also the real reason behind the spawn rule above: a function
-referencing an imported name carries the module with it, and a module
-cannot cross.
+The message lists what *can* cross, which is the more useful half. An open
+file is the one you will meet: it is a handle onto a position in a
+descriptor this process owns, and there is no copy of that to hand over.
+Send the path instead and let the worker open it.
 
 ### The Cost Model
 

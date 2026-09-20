@@ -1,0 +1,16 @@
+inner
+UndefinedError: undefined global 'inner'
+nested
+module level
+720
+[false, true]
+TypeError: cannot call object of type nil
+11
+12
+1
+hidden
+UndefinedError: undefined global 'hidden'
+[0, 10, 20]
+42
+UndefinedError: undefined global 'twice'
+module level names are unchanged

@@ -345,10 +345,9 @@ def tls_server(port: number, cert_chain: string, private_key: string, host: ?str
  * `setup` is called once inside each worker with that worker's own
  * `HttpServer`, and registers the routes, middleware and settings the
  * worker should serve with. It may be defined in the main script or in
- * a module; what it may not do is reach for an imported module, since
- * a module value cannot cross the boundary. A `setup` that needs one
- * belongs in a module itself, where the isolate resolves it by name
- * and its imports are resolved again on that side.
+ * a module, and may use whatever it imports; an imported module is
+ * reloaded inside the worker rather than shared with it, so the worker
+ * gets its own copy of that module's top-level state.
  *
  * The calling isolate binds the socket and accepts connections,
  * handing each one to a worker. It does not return until the server

@@ -1,0 +1,182 @@
+/**
+ * A `def` written inside a function belongs to that function. It is a
+ * local of the scope it appears in, exactly like `var`, and nothing
+ * outside that scope can see it.
+ */
+
+def outer() {
+  def inner() {
+    return 'inner'
+  }
+
+  return inner()
+}
+
+echo outer()
+
+catch {
+  inner()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+# A nested declaration shadows a module-level one for the length of the
+# scope it is written in, and never replaces it.
+def render() {
+  return 'module level'
+}
+
+def wrapper() {
+  def render() {
+    return 'nested'
+  }
+
+  return render()
+}
+
+echo wrapper()
+echo render()
+
+# The body sees its own binding, so recursion needs nothing special.
+def factorial_of(n) {
+  def factorial(k) {
+    if k <= 1 {
+      return 1
+    }
+
+    return k * factorial(k - 1)
+  }
+
+  return factorial(n)
+}
+
+echo factorial_of(6)
+
+# Two helpers declared side by side can call each other regardless of
+# which one comes first.
+def parity(n) {
+  def even(k) {
+    if k == 0 {
+      return true
+    }
+
+    return odd(k - 1)
+  }
+
+  def odd(k) {
+    if k == 0 {
+      return false
+    }
+
+    return even(k - 1)
+  }
+
+  return [even(n), odd(n)]
+}
+
+echo parity(7)
+
+# Calling one above its own declaration finds the reserved slot, which
+# is still nil at that point.
+def too_early() {
+  soon()
+
+  def soon() {
+    return 'never reached'
+  }
+}
+
+catch {
+  too_early()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+# A helper captures the locals around it and outlives the call that
+# built it.
+def make_counter(start) {
+  var count = start
+
+  def bump() {
+    count++
+    return count
+  }
+
+  return bump
+}
+
+var bump = make_counter(10)
+
+echo bump()
+echo bump()
+echo make_counter(0)()
+
+# Scoping is per block, not per function.
+def blocky() {
+  if true {
+    def hidden() {
+      return 'hidden'
+    }
+
+    echo hidden()
+  }
+
+  catch {
+    hidden()
+  } as e {
+    echo '${e.type}: ${e.message}'
+  }
+}
+
+blocky()
+
+# The declaration runs once per iteration, so each pass leaves behind
+# its own function over its own locals.
+def stamps() {
+  var made = []
+
+  iter var i = 0; i < 3; i++ {
+    var tag = i * 10
+
+    def stamp() {
+      return tag
+    }
+
+    made.append(stamp)
+  }
+
+  return made.map(@(f) => f())
+}
+
+echo stamps()
+
+# Methods are ordinary functions in this respect too.
+class Box {
+  @new(value) {
+    self.value = value
+  }
+
+  doubled() {
+    def twice(n) {
+      return n * 2
+    }
+
+    return twice(self.value)
+  }
+}
+
+echo Box(21).doubled()
+
+catch {
+  twice(1)
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+# A `def` at the top level of a module still binds a module-level name,
+# and a repeat of one in the same scope is still a compile error.
+def visible() {
+  return 'module level names are unchanged'
+}
+
+echo visible()
