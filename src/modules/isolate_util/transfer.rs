@@ -1429,7 +1429,7 @@ fn materialize_prototype(
 /// have produced, matching whichever shape crossed the boundary.
 fn resolve_module(vm: &mut VM, key: &str, binding: Option<&str>) -> Result<Value, String> {
   let module = crate::vm::modules::load_by_cache_key(vm, key)
-    .ok_or_else(|| format!("could not load module '{}' on this isolate", key))?;
+    .map_err(|e| format!("could not load module '{}' on this isolate: {}", key, e))?;
 
   let Some(bind_name) = binding else {
     return Ok(module);

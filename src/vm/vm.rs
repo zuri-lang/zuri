@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::ops::{Neg, Shl, Shr};
 use std::rc::Rc;
-use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
+use std::sync::{LazyLock, Mutex, PoisonError};
 
 use nu_ansi_term::{Color, Style};
 use num_bigint::BigInt;
@@ -1084,8 +1084,27 @@ impl VM {
 
   /// Records the entry-file path; every module loaded afterward gets this
   /// as its own `__root__`. Call before `run`; not used in REPL mode.
+  ///
+  /// The path is published process-wide as well. An isolate builds its
+  /// own `VM` on its own thread and never runs the entry script, so
+  /// `adopt_app_root_path` is the only way the modules it loads can see
+  /// the same `__root__` the main VM's do.
   pub fn set_root_path(&mut self, path: impl Into<String>) {
-    self.root_path = Some(path.into());
+    let path = path.into();
+    *app_root_path_slot()
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
+    self.root_path = Some(path);
+  }
+
+  /// Takes on the entry-file path the application was started with, if
+  /// there is one. What an isolate's VM calls once it is built, so that
+  /// `__root__` means the same file on every thread.
+  pub fn adopt_app_root_path(&mut self) {
+    self.root_path = app_root_path_slot()
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone();
   }
 
   /// Seeds `__file__`/`__root__` into the VM's root global table, making
@@ -6816,4 +6835,12 @@ impl Drop for VM {
   fn drop(&mut self) {
     drop(self.jit_compiler.take());
   }
+}
+
+/// The entry file `__root__` names, shared by every VM in the process.
+/// Written once by `VM::set_root_path` on the main thread before the
+/// program runs and only read afterward.
+fn app_root_path_slot() -> &'static Mutex<Option<String>> {
+  static SLOT: Mutex<Option<String>> = Mutex::new(None);
+  &SLOT
 }

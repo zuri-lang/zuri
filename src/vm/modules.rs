@@ -328,14 +328,21 @@ pub fn cache_key_of(vm: &VM, module_val: Value) -> Option<String> {
 /// Reaches the module `key` names, loading it if this VM has not seen
 /// it yet. The counterpart to `cache_key_of`: a `.zu` module comes back
 /// from its source path, a native one is rebuilt from its definition.
-pub fn load_by_cache_key(vm: &mut VM, key: &str) -> Option<Value> {
+/// A failure comes back as the rendered error the load itself raised;
+/// on an isolate that text is all the caller ever gets to see, so
+/// swallowing it would leave a module that cannot load looking exactly
+/// like one that does not exist.
+pub fn load_by_cache_key(vm: &mut VM, key: &str) -> Result<Value, String> {
   if let Some(&cached) = vm.modules.get(key) {
-    return Some(cached);
+    return Ok(cached);
   }
   if let Some(name) = key.strip_prefix("builtin:") {
-    return builtin_module(vm, name);
+    return builtin_module(vm, name).ok_or_else(|| format!("no builtin module named '{}'", name));
   }
-  load_from_candidate(vm, Path::new(key), key).ok()
+  match load_from_candidate(vm, Path::new(key), key) {
+    Ok(module) => Ok(module),
+    Err(exc) => Err(vm.describe_error(exc)),
+  }
 }
 
 /// Constructs (and caches, keyed as `"builtin:NAME"`) a synthetic

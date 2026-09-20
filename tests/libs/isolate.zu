@@ -39,6 +39,13 @@ def test_is_done_and_try_join() {
   echo 'test_is_done_and_try_join passed'
 }
 
+def test_module_reading_root_loads_on_the_isolate() {
+  var t = isolate.spawn(isolate_isolate.root_matches, __root__)
+  assert t.join() == true,
+    '__root__ must name the same entry file inside an isolate'
+  echo 'test_module_reading_root_loads_on_the_isolate passed'
+}
+
 def test_closure_capturing_local() {
   var add5 = isolate_isolate.make_adder(5)
   var t = isolate.spawn(add5, 10)
@@ -1174,6 +1181,7 @@ def test_pool_size_and_cpu_count() {
 test_basic_spawn_join()
 test_join_is_repeatable()
 test_is_done_and_try_join()
+test_module_reading_root_loads_on_the_isolate()
 test_closure_capturing_local()
 test_nested_def_crosses_structurally()
 test_nested_def_carrying_a_module()

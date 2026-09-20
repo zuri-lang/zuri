@@ -282,6 +282,13 @@ impl IsolateIsolate {
   fn new() -> Self {
     let mut vm = VM::new(Heap::new_for_isolate());
     vm.init();
+
+    // An isolate runs inside the same application as the main thread
+    // and loads modules out of the same tree, so `__root__` has to name
+    // the same entry file here as it does there. Nothing else on this
+    // thread ever sets it: the entry script is never run again.
+    vm.adopt_app_root_path();
+
     IsolateIsolate { vm }
   }
 }

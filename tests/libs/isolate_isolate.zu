@@ -9,6 +9,16 @@ import isolate
 
 var counter_seed = 100
 
+# `__root__` names the entry file, and it has to name the same one on
+# every thread. An isolate loads this module for itself, so a module
+# variable reading `__root__` at its top level is what catches an
+# isolate VM that was never told what the application's root is.
+var root_file = __root__
+
+def root_matches(expected) {
+  return root_file == expected
+}
+
 def square(n) {
   return n * n
 }
