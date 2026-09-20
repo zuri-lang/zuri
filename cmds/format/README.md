@@ -33,20 +33,35 @@ files that are not already formatted and exits non-zero if there are any.
 
 ## What it does
 
+Its job is indentation, spacing, and the lines that are too long for the
+width. Where a line break already is, is not its business.
+
+- **Keeps the lines you wrote.** A list opened out one item to a line, a
+  concatenation carried across several, a call whose arguments were
+  spread on purpose: each of those stays as it is and is re-indented,
+  never packed back together. A collection written on one line stays on
+  one line. That holds for the blank line a `class` or a `def` opens on,
+  and for an empty block written across two lines.
 - **Indents** two spaces per level of nesting, driven by the blocks.
+  Everything after a statement's first line sits one level under it,
+  however many breaks it took to lay the statement out.
 - **Spaces** tokens by the rules the language reads by: around binary
   operators, after commas, none around `.` or inside a call's
-  parentheses, none around `|` in a type, and so on.
-- **Breaks long lines** at their `and`/`or`, or across the brackets of a
-  call or a literal, filling each line to the width. A broken collection
-  keeps a trailing comma so a later edit touches one line, not two.
-- **Leaves a subscript alone.** `s[1]`, `s[1,]`, `s[,3]` and `s[1,3]` are
-  four different reads, so the commas inside a `[` that indexes
-  something are never added, dropped, or filled across lines, and they
-  close up: `s[2,5]`, not `s[2, 5]`. A `[` that opens a list is not a
-  subscript and keeps the spacing and the trailing-comma rule above.
+  parentheses, none around `|` in a type, and so on. An empty `iter`
+  clause keeps the space that shows it is there: `iter ; i < n; i++`.
+- **Breaks a long line** at its loosest operator, or across the brackets
+  of a call or a literal, filling each line to the width. It breaks only
+  where the break resolves the overflow; a line with nowhere useful to
+  break is left as it was written. A collection the formatter breaks
+  itself keeps a trailing comma so a later edit touches one line, not
+  two.
+- **Never adds or drops a subscript's commas.** `s[1]`, `s[1,]`, `s[,3]`
+  and `s[1,3]` are four different reads, so a `[` that indexes something
+  is never filled across lines and its commas are left as they are. They
+  are spaced like any other comma, `s[2, 5]`, except the one opening a
+  slice from the start, which belongs to the bound it precedes: `s[,3]`.
 - **Keeps blocks open**: the statements inside a block each get their own
-  line, always. An empty one stays closed up as `{}`.
+  line, always. An empty one written as `{}` stays `{}`.
 - **Leaves an unbraced body where it was.** `if x y = 1` is one line and
   stays one line; a body written on the next line keeps the indent that
   is the only thing marking it as a body. An `else` joins the line above
@@ -75,7 +90,8 @@ tokens can see that.
 - `tree.zu` — the tokens grouped by their brackets, each `{` decided to be
   a block or a dictionary.
 - `render.zu` — one-line rendering and the spacing rules.
-- `layout.zu` — the line breaking: blocks, closures, comments, wrapping.
+- `layout.zu` — the lines: the breaks the source had, blocks, closures,
+  comments, and the wrapping of what is left too long.
 - `engine.zu` — `format(source)` and the safety check.
 - `index.zu` — the command itself, the entry point `zuri format` runs.
 

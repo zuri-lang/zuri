@@ -31,6 +31,78 @@ describe('blocks', @{
   })
 })
 
+# The line breaks in the source are the layout. A collection opened out
+# one item to a line, an expression continued across several, arguments
+# spread out on purpose: each of those is a decision the formatter keeps
+# and re-indents rather than one it makes again.
+describe('the lines the author wrote', @{
+  it('keeps a list opened out one item to a line', @{
+    expect(lines('var xs = [\n  1,\n  2,\n  3,\n]')).to_equal([
+      'var xs = [', '  1,', '  2,', '  3,', ']',
+    ])
+  })
+
+  it('keeps a list that was written on one line on one line', @{
+    expect(lines('var xs = [1, 2, 3]')).to_equal(['var xs = [1, 2, 3]'])
+  })
+
+  it('keeps the breaks in a multi-line concatenation', @{
+    expect(lines("var s = 'aaa' +\n  'bbb' +\n  'ccc'")).to_equal([
+      "var s = 'aaa' +", "  'bbb' +", "  'ccc'",
+    ])
+  })
+
+  it('keeps arguments where they were spread out', @{
+    expect(lines('f(\n  alpha,\n  beta,\n)')).to_equal([
+      'f(', '  alpha,', '  beta,', ')',
+    ])
+    expect(lines('f(alpha, beta,\n  gamma)')).to_equal([
+      'f(alpha, beta,', '  gamma)',
+    ])
+  })
+
+  # The break belongs to the bracket that was opened, and every opener
+  # above it reads as part of reaching that bracket.
+  it('opens the bracket that was opened, not the one around it', @{
+    expect(lines('f(g(\n  alpha,\n  beta,\n))')).to_equal([
+      'f(g(', '  alpha,', '  beta,', '))',
+    ])
+  })
+
+  # An item begins after a comma however it opens, so a negative number
+  # on its own line is an item rather than a subtraction of the one
+  # above it.
+  it('reads a negative on its own line as the next item', @{
+    expect(lines('var xs = [\n  0.0,\n  -1.5,\n]')).to_equal([
+      'var xs = [', '  0.0,', '  -1.5,', ']',
+    ])
+  })
+
+  it('keeps the blank line a block opens on', @{
+    expect(lines('class C {\n\n  m() {\n    return 1\n  }\n}')).to_equal([
+      'class C {', '', '  m() {', '    return 1', '  }', '}',
+    ])
+  })
+
+  it('keeps an empty block that was written open', @{
+    expect(lines('def f() {\n}')).to_equal(['def f() {', '}'])
+  })
+
+  # Whatever it takes to lay a statement out, everything after its first
+  # line sits at one level under it, never two.
+  it('holds every continuation of a statement at one level', @{
+    var source = 'assert aaaaaaaaaaaaaaaaaaaa == bbbbbbbbbbbbbbbbbbbbbb ' +
+      'and cccccccccccccccc == dddddddddd and e == f,\n  \'message\''
+
+    expect(lines(source)).to_equal([
+      'assert aaaaaaaaaaaaaaaaaaaa == bbbbbbbbbbbbbbbbbbbbbb',
+      '  and cccccccccccccccc == dddddddddd',
+      '  and e == f,',
+      '  \'message\'',
+    ])
+  })
+})
+
 describe('breaking long lines', @{
   var chain = 'var ok = alpha and beta and gamma and delta and epsilon and zeta and eta and theta'
 
@@ -54,5 +126,53 @@ describe('breaking long lines', @{
     expect(out[0]).to_be('foo(')
     expect(out[out.length() - 1]).to_be(')')
     expect(out[out.length() - 2].rtrim(',')).to_end_with('zeta')
+  })
+
+  it('breaks a long concatenation at its own operator', @{
+    var long = 'var text = \'' + 'a' * 40 + '\' + \'' + 'b' * 40 + '\''
+
+    expect(lines(long)).to_equal([
+      'var text = \'' + 'a' * 40 + '\'', '  + \'' + 'b' * 40 + '\'',
+    ])
+  })
+
+  # A break that leaves a line still past the width, with no bracket on
+  # it to spread out, has not paid for itself.
+  it('leaves a long line whole when no break resolves it', @{
+    var source = 'x[idx] = (x0[idx] + a * (x[idx - 1] + x[idx + 1] + ' +
+      'x[prev + i] + x[next + i] + x[above + i] + x[below + i])) * inv_c'
+
+    expect(lines(source)).to_equal([source])
+  })
+
+  # A ternary binds looser than anything else on the line, so that is
+  # where the break goes; the `:` that introduces a type is not one of
+  # its branches and never a place to break.
+  it('breaks a long ternary at its branches', @{
+    var source = 'var items = group.kind == \'index\' ? group.items : ' +
+      '_without_trailing_comma(group.items)'
+
+    expect(lines(source)).to_equal([
+      'var items = group.kind == \'index\'',
+      '  ? group.items',
+      '  : _without_trailing_comma(group.items)',
+    ])
+  })
+
+  it('leaves the colon of a type annotation alone', @{
+    var source = 'var x: ?number = some_quite_long_call(alpha) + ' +
+      'another_quite_long_call(beta) + 1'
+
+    expect(lines(source)).to_equal([source])
+  })
+
+  it('breaks the innermost call that has arguments to spread', @{
+    var source = 'findings.append(Finding(path, 1, \'command has no doc ' +
+      'block\', \'zuri --help reads @command and @description from it\'))'
+
+    var out = lines(source)
+
+    expect(out[0]).to_be('findings.append(Finding(')
+    expect(out[out.length() - 1]).to_be('))')
   })
 })

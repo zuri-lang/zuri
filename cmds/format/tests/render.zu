@@ -67,6 +67,13 @@ describe('flat', @{
     expect(line('import ..sibling')).to_be('import ..sibling')
   })
 
+  # `iter;` reads as a statement that went wrong. The space is the only
+  # thing showing the first clause is deliberately empty.
+  it('keeps the space before an empty iter clause', @{
+    expect(line('iter ; i < n; i++')).to_be('iter ; i < n; i++')
+    expect(line('iter var i = 0; i < n; i++')).to_be('iter var i = 0; i < n; i++')
+  })
+
   it('spaces a ternary across its `?` and `:`', @{
     expect(line('var s = big ? one : two')).to_be('var s = big ? one : two')
   })

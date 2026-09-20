@@ -14,8 +14,10 @@ var LIMIT = 80
 var INDENT = '  '
 
 # Tokens that stand for a value, used to tell a binary `-`/`+` from a
-# unary one and a call/index bracket from a grouping/list one.
-var _VALUE = [
+# unary one and a call/index bracket from a grouping/list one. The
+# layout layer asks the same question when it picks where to break a
+# long line, so this is the one list both read.
+var VALUE_ENDS = [
   'Identifier', 'Integer', 'Double', 'BigNumber', 'BinNumber', 'OctNumber',
   'HexNumber', 'String', 'Self_', 'Parent', 'True', 'False', 'Nil', 'Rparen',
   'Rbracket', 'Rbrace',
@@ -87,7 +89,7 @@ def _without_trailing_comma(items) {
   if last >= 0
     and items[last].node == 'tok'
     and items[last].atom.kind == 'Comma' {
-    return items[0,last]
+    return items[0, last]
   }
 
   return items
@@ -95,7 +97,8 @@ def _without_trailing_comma(items) {
 
 # The one-line text of a bracket group.
 def _group_text(group) {
-  var items = group.kind == 'index' ? group.items : _without_trailing_comma(group.items)
+  var items = group.kind
+    == 'index' ? group.items : _without_trailing_comma(group.items)
 
   var inner = flat(items, group.kind == 'dict', group.kind == 'index')
 
@@ -130,9 +133,14 @@ def _space(prev, cur, state) {
   # opening a call, a subscript or a group.
   var after_sign = state.unary
 
-  state.unary = (ck == 'Minus' or ck == 'Plus') and !_VALUE.contains(pk)
+  state.unary = (ck == 'Minus' or ck == 'Plus') and !VALUE_ENDS.contains(pk)
 
   if prev == nil {
+    # A subscript that opens on its comma slices from the start, `s[,3]`,
+    # and that comma reads as part of the bound rather than as a
+    # separator between two of them.
+    state.index_lead = ck == 'Comma'
+
     return ''
   }
 
@@ -194,14 +202,19 @@ def _space(prev, cur, state) {
     return ''
   }
 
+  # An `iter` that starts nothing writes an empty first clause, and the
+  # space is what shows it is there: `iter ; i < n; i++`, never `iter;`.
+  if ck == 'Semicolon' and pk == 'Iter' {
+    return ' '
+  }
+
   if ck == 'Comma' or ck == 'Semicolon' or ck == 'Rparen' or ck == 'Rbracket' {
     return ''
   }
 
-  # A subscript's commas are part of one expression rather than a list
-  # of separate ones, so they close up: `s[2,5]` and `s[,5]`, the way
-  # the bounds of a slice read as a single thing.
-  if state.in_index and pk == 'Comma' {
+  # Every other comma in a subscript separates the bounds of a slice and
+  # takes the space any other comma does: `s[2, 5]`, `s[a, b.length()]`.
+  if state.in_index and pk == 'Comma' and state.index_lead {
     return ''
   }
 
@@ -255,7 +268,7 @@ def _space(prev, cur, state) {
 def _state(in_dict: bool, in_index: bool) {
   return {
     ternary: 0, optional: false, unary: false, in_dict, in_index,
-    in_type: false,
+    in_type: false, index_lead: false,
   }
 }
 

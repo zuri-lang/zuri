@@ -65,8 +65,16 @@ describe(
     # what ends a statement, so the result is put back through the
     # parser before it is handed over.
     it('refuses a result the parser will not read', @{
-      expect(@{ format('if a b = 1 else b = 2') })
+      expect(@{
+        format('if a b = 1 else b = 2')
+      })
         .to_raise_instance_of(FormatError)
+    })
+
+    it('keeps the space that shows an iter clause is empty', @{
+      expect(format('iter ;i < n;i++ {\n  work()\n}')).to_be(
+        'iter ; i < n; i++ {\n  work()\n}\n'
+      )
     })
 
     it('leaves an empty block closed up', @{
@@ -100,11 +108,17 @@ describe(
       expect(format('echo s[,5][1,]')).to_be('echo s[,5][1,]\n')
     })
 
-    it('closes a subscript up around its commas', @{
+    # The comma between two bounds separates them the way any comma
+    # does. The one that opens a slice from the start is not a separator
+    # at all, and closes up against the bound it belongs to.
+    it('spaces a subscript around its commas', @{
       expect(format('echo value[, 5]')).to_be('echo value[,5]\n')
       expect(format('echo value[5, ]')).to_be('echo value[5,]\n')
-      expect(format('echo value[2, 5]')).to_be('echo value[2,5]\n')
-      expect(format('echo value[ 2 , 5 ]')).to_be('echo value[2,5]\n')
+      expect(format('echo value[2,5]')).to_be('echo value[2, 5]\n')
+      expect(format('echo value[ 2 , 5 ]')).to_be('echo value[2, 5]\n')
+      expect(format('echo t[space + 1,text.length()]')).to_be(
+        'echo t[space + 1, text.length()]\n'
+      )
     })
 
     it('leaves the spacing of a list, a call and a dictionary alone', @{
@@ -114,12 +128,12 @@ describe(
     })
 
     it('spaces a call nested inside a subscript by its own rules', @{
-      expect(format('echo value[f(1, 2),5]')).to_be('echo value[f(1, 2),5]\n')
+      expect(format('echo value[f(1, 2),5]')).to_be('echo value[f(1, 2), 5]\n')
     })
 
     it('leaves a long slice-from-the-start whole', @{
       var source = 'echo another_rather_long_receiver_name_for_testing_breaks' +
-      '[,some_deliberately_long_list_name.length() - 4]'
+        '[,some_deliberately_long_list_name.length() - 4]'
 
       expect(format(source)).to_be(source + '\n')
     })
@@ -132,7 +146,7 @@ describe(
 
     it('leaves a long subscript whole rather than breaking its commas', @{
       var source = 'var value = a_rather_long_receiver_name' +
-      '[first_index_expression,second_index_expression_here]'
+        '[first_index_expression, second_index_expression_here]'
 
       expect(format(source)).to_be(source + '\n')
     })
