@@ -1790,7 +1790,6 @@ present the exact value that was issued.
 
 ```zuri,ignore
 import http
-import http.session
 
 var server = http.server(3000)
 
