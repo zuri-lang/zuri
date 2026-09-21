@@ -210,6 +210,36 @@ def test_refusals() {
   echo 'test_refusals passed'
 }
 
+def test_accept_on_a_non_blocking_listener() {
+  var path = socket_path('nonblocking')
+  clean(path)
+
+  var server = net.UnixStream()
+  server.bind(path)
+  server.set_non_blocking(true)
+
+  # Nobody waiting is an answer, not a failure.
+  assert server.accept() == nil,
+    'accept() reports an empty queue rather than raising'
+
+  var client = net.UnixStream()
+  client.connect(path)
+
+  var accepted = server.accept()
+  assert accepted != nil, 'and hands over a connection once one is waiting'
+  assert accepted.local_address() == path
+
+  assert server.accept() == nil, 'with nobody left behind it'
+
+  accepted.close()
+  client.close()
+  server.close()
+  clean(path)
+
+  echo 'test_accept_on_a_non_blocking_listener passed'
+}
+
+
 def test_poll_accepts_a_unix_socket() {
   var ends = net.pair()
 
@@ -302,6 +332,7 @@ test_bind_and_connect()
 test_shutdown_ends_the_conversation()
 test_timeouts()
 test_refusals()
+test_accept_on_a_non_blocking_listener()
 test_poll_accepts_a_unix_socket()
 test_mysql_over_a_socket()
 test_postgres_over_a_socket()

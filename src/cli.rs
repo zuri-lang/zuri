@@ -154,7 +154,10 @@ fn entrypoint_of(dir: &Path, name: &str) -> Result<PathBuf, LaunchError> {
 
   match entry.is_file() {
     true => Ok(entry),
-    false => Err(LaunchError::new(name, "No entrypoint found in the directory")),
+    false => Err(LaunchError::new(
+      name,
+      "No entrypoint found in the directory",
+    )),
   }
 }
 

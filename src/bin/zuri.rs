@@ -334,9 +334,7 @@ fn main() {
   vm.init();
 
   match script {
-    Some((script, display_path)) => {
-      run_script(&mut vm, &script.path, &script.name, display_path)
-    },
+    Some((script, display_path)) => run_script(&mut vm, &script.path, &script.name, display_path),
     None => run_repl(&mut vm),
   }
 }

@@ -94,6 +94,7 @@ class Cluster {
    */
   @new(listener, connections, workers: list) {
     self._listener = listener
+    self._acceptor = net.Acceptor(listener)
     self._connections = connections
     self._workers = workers
     self._running = false
@@ -120,12 +121,18 @@ class Cluster {
       var client = nil
 
       catch {
-        client = self._listener.accept()
+        client = self._acceptor.next()
       } as error {
         if !self._running {
           break
         }
 
+        continue
+      }
+
+      # Nothing arrived within the interval. Round again, which is
+      # what gives close() and a trapped signal their turn.
+      if client == nil {
         continue
       }
 
@@ -142,7 +149,7 @@ class Cluster {
    * @returns Cluster itself.
    */
   accept_one() {
-    self._connections.send(self._listener.accept())
+    self._connections.send(self._acceptor.wait_for_one())
 
     return self
   }

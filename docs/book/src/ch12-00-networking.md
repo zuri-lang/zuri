@@ -11,7 +11,9 @@ the main program, which is how you test network code without two terminals.
 ## TCP
 
 A `TcpStream` is both ends. `bind()` and `accept()` make it a listener;
-`connect()` makes it a client.
+`connect()` makes it a client. `accept()` blocks until someone connects,
+unless the listener was put in non-blocking mode, in which case it answers
+`nil` when nobody is waiting.
 
 <span class="filename">Filename: server.zu</span>
 
@@ -300,6 +302,92 @@ right tool when you have thousands of mostly-idle connections and the wrong
 tool when you have a handful of busy ones, where an isolate per connection
 is simpler and faster.
 
+### Accepting without parking the thread
+
+`accept()` on a blocking listener waits inside the runtime. Nothing else on
+that thread gets a turn while it waits: a signal trapped with
+`os.on_signal()` is not delivered, and a flag telling the server to stop is
+not read, until a connection happens to arrive. On an idle server that is
+never, which is why Ctrl+C on one can appear to do nothing at all.
+
+`net.Acceptor` is the accept loop without that problem. It puts the listener
+into non-blocking mode and waits on a poller instead. `next()` hands over a
+connection when there is one and returns `nil` when its interval passes with
+nothing arriving, which is the loop's chance to look at whatever else it has
+to look at.
+
+```zuri
+import net
+
+var listener = net.TcpStream()
+listener.bind('127.0.0.1:0')
+
+var acceptor = net.Acceptor(listener, 50)
+
+# Nobody has connected yet, so the round comes back empty.
+echo acceptor.next()
+
+var client = net.TcpStream()
+client.connect(listener.local_address())
+
+var served = acceptor.wait_for_one()
+
+echo served.peer_address().ip().to_string()
+
+served.close()
+client.close()
+listener.close()
+```
+
+```console
+nil
+127.0.0.1
+```
+
+The interval decides how soon a stopped server notices, not how soon a
+connection is served: one that arrives wakes the wait at once. Nothing is
+added while connections are arriving either, because `next()` tries
+`accept()` first and reaches for the poller only when the queue is empty.
+
+That turns a server into something Ctrl+C can stop:
+
+```zuri,ignore
+import net
+import os
+
+var listener = net.TcpStream()
+listener.bind('127.0.0.1:8080')
+
+var running = true
+
+os.on_signal('INT', @() {
+  running = false
+  return true
+})
+
+var acceptor = net.Acceptor(listener)
+
+while running {
+  var client = acceptor.next()
+
+  if client == nil {
+    continue
+  }
+
+  serve(client)
+}
+
+listener.close()
+```
+
+The handler returns `true` to say it has taken responsibility for the
+signal. A handler that returns anything falsy declines, and the process
+then dies of the signal as it would have with nothing registered at all.
+
+`http` accepts this way in both `HttpServer.listen()` and `http.serve()`, and
+so do the SMTP and IMAP servers in `mail`. A server built on any of them is
+already stoppable.
+
 ## Above the Socket Layer
 
 Everything so far has been bytes on a socket. Most programs want a protocol
@@ -333,6 +421,7 @@ A rough guide to which layer you want:
 | a protocol of your own design | `net.tcp` and `struct` |
 | discovery, telemetry, games | `net.udp` |
 | anything waiting on many sockets at once | `net.poll` |
+| a server that has to stop on Ctrl+C | `net.Acceptor` |
 
 ## A Worked Example
 

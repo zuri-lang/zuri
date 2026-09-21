@@ -429,10 +429,9 @@ def serve(setup, options: ?dict) {
   }
 
   var running = [true]
+  var acceptor = net.Acceptor(listener)
 
   if on_ready != nil {
-    # Closing the listener is what breaks the blocking accept below;
-    # there is no other way to interrupt it.
     on_ready(listener.local_address(), @() {
       running[0] = false
       catch {
@@ -445,7 +444,14 @@ def serve(setup, options: ?dict) {
 
   catch {
     while running[0] {
-      var client = listener.accept()
+      var client = acceptor.next()
+
+      # Nothing arrived within the interval. Round again, which is
+      # what gives `stop()` and a trapped signal their turn.
+      if client == nil {
+        continue
+      }
+
       connections.send(client)
 
       served++
@@ -467,8 +473,8 @@ def serve(setup, options: ?dict) {
     listener.close()
   }
 
-  # A listener closed by `stop()` makes the pending accept fail; that
-  # is the shutdown path working, not an error to report.
+  # A listener closed by `stop()` makes the accept that follows fail;
+  # that is the shutdown path working, not an error to report.
   if accept_error != nil and running[0] {
     raise accept_error
   }

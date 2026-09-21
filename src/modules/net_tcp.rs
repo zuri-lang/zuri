@@ -1,4 +1,4 @@
-use std::io::{Error, Read, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
@@ -383,11 +383,21 @@ impl ZuriTcp {
     }
   }
 
-  fn accept(&self) -> Result<(TcpStream, SocketAddr), String> {
-    if let Some(listener) = &self.listener {
-      listener.accept().map_err(|e| e.to_string())
-    } else {
-      Err("".to_string())
+  /// The next pending connection, or `None` when the listener is
+  /// non-blocking and nothing has arrived yet.
+  ///
+  /// `WouldBlock` is the answer to "is anyone waiting", not a
+  /// failure, so it comes back as `None` rather than as an error a
+  /// caller would have to recognise from the platform's own wording.
+  fn accept(&self) -> Result<Option<(TcpStream, SocketAddr)>, String> {
+    let Some(listener) = &self.listener else {
+      return Err("".to_string());
+    };
+
+    match listener.accept() {
+      Ok(pair) => Ok(Some(pair)),
+      Err(e) if e.kind() == ErrorKind::WouldBlock => Ok(None),
+      Err(e) => Err(e.to_string()),
     }
   }
 }
@@ -784,7 +794,9 @@ fn tcp_accept(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
   let tcp = ptr.downcast_mut::<ZuriTcp>().unwrap();
 
-  let (stream, _) = tcp.accept()?;
+  let Some((stream, _)) = tcp.accept()? else {
+    return Ok(Value::nil());
+  };
 
   let mut new_tcp = ZuriTcp::new();
   new_tcp.set_stream(stream);

@@ -153,14 +153,27 @@ class UnixStream {
   /**
    * Waits for a connection and returns it.
    *
-   * Blocks until someone connects, unless `set_non_blocking(true)` was
-   * called, in which case it raises when nobody is waiting.
+   * Blocks until someone connects. In non-blocking mode (see
+   * `set_non_blocking()`) it never blocks: it returns `nil` when
+   * nobody is waiting, which is an answer rather than a failure.
    *
-   * @returns UnixStream The connected end of the new conversation.
+   * The accepted stream can carry its own blocking mode, which
+   * is a platform's default rather than this listener's. Set it
+   * explicitly with `set_non_blocking()` on the returned stream
+   * if it matters.
+   *
+   * @returns ?UnixStream The connected end of the new conversation,
+   *    or `nil` in non-blocking mode with nobody waiting.
    * @throws Error if this socket is not listening.
    */
   accept() {
-    return UnixStream(_net_unix.unix_accept(self._ptr))
+    var client = _net_unix.unix_accept(self._ptr)
+
+    if client == nil {
+      return nil
+    }
+
+    return UnixStream(client)
   }
 
   /**

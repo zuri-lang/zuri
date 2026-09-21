@@ -14,7 +14,7 @@
 //! than at import with a missing name.
 
 #[cfg(unix)]
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 #[cfg(unix)]
@@ -341,7 +341,13 @@ fn unix_accept(ctx: &mut ZuriContext) -> Result<Value, String> {
       .as_ref()
       .ok_or("Socket is not bound to a path")?;
 
-    listener.accept().map_err(|e| e.to_string())?.0
+    match listener.accept() {
+      Ok((stream, _)) => stream,
+      // Nothing waiting on a non-blocking listener is the answer to
+      // "is anyone there", not a failure.
+      Err(e) if e.kind() == ErrorKind::WouldBlock => return Ok(Value::nil()),
+      Err(e) => return Err(e.to_string()),
+    }
   };
 
   Ok(

@@ -2120,7 +2120,9 @@ impl<'a> Parser<'a> {
     } else if match_tok!(self, TokenKind::Greater) {
       is_extension = true;
 
-      Some(Box::new(self.class_reference("Target class name expected.")))
+      Some(Box::new(
+        self.class_reference("Target class name expected."),
+      ))
     } else {
       None
     };

@@ -139,6 +139,7 @@ class ImapServer {
     self.store = store
 
     self._listener = nil
+    self._acceptor = nil
     self._tls = nil
     self._running = false
     self._on_error = nil
@@ -225,6 +226,7 @@ class ImapServer {
 
     self._listener = net.TcpStream()
     self._listener.bind('${self.host}:${self.port}')
+    self._acceptor = net.Acceptor(self._listener)
 
     return self
   }
@@ -247,7 +249,7 @@ class ImapServer {
    */
   accept() {
     self.bind()
-    self.serve_connection(self._listener.accept())
+    self.serve_connection(self._acceptor.wait_for_one())
 
     return self
   }
@@ -270,13 +272,19 @@ class ImapServer {
       var client = nil
 
       catch {
-        client = self._listener.accept()
+        client = self._acceptor.next()
       } as error {
         if !self._running {
           break
         }
 
         self._report(error, nil)
+        continue
+      }
+
+      # Nothing arrived within the interval. Round again, which is
+      # what gives close() and a trapped signal their turn.
+      if client == nil {
         continue
       }
 
@@ -297,6 +305,7 @@ class ImapServer {
     if self._listener != nil {
       self._listener.close()
       self._listener = nil
+      self._acceptor = nil
     }
 
     return self

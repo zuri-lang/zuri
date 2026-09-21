@@ -359,3 +359,166 @@ class Poller {
     return self.to_string()
   }
 }
+
+
+# How long `Acceptor.next()` waits on the poller before giving up on a
+# round, when the caller does not say.
+var _DEFAULT_ACCEPT_INTERVAL = 100
+
+
+/**
+ * An accept loop that never parks the thread inside `accept()`.
+ *
+ * A blocking `accept()` waits inside the runtime, where nothing else
+ * on the thread gets a turn: a signal trapped with `os.on_signal()`
+ * is not delivered, and a flag telling the server to stop is not
+ * read, until a connection happens to arrive. On an idle server that
+ * is never, which is why Ctrl+C on one can appear to do nothing.
+ *
+ * An `Acceptor` puts the listener into non-blocking mode and waits on
+ * a `Poller` instead. `next()` hands over a connection when there is
+ * one, and returns `nil` when the interval passes with nothing
+ * arriving, which is the loop's chance to look at whatever else it
+ * has to look at.
+ *
+ * ```zuri
+ * import net
+ * import os
+ *
+ * var listener = net.TcpStream()
+ * listener.bind('127.0.0.1:8080')
+ *
+ * var running = [true]
+ *
+ * os.on_signal('INT', @() {
+ *   running[0] = false
+ *   return true
+ * })
+ *
+ * var acceptor = net.Acceptor(listener)
+ *
+ * while running[0] {
+ *   var client = acceptor.next()
+ *
+ *   if client == nil {
+ *     continue
+ *   }
+ *
+ *   echo 'connection from ${client.peer_address()}'
+ *   client.close()
+ * }
+ * ```
+ *
+ * Nothing is added while connections are arriving: `next()` tries
+ * `accept()` first, and only consults the poller when the queue is
+ * empty.
+ *
+ * @printable
+ */
+class Acceptor {
+
+  var _listener
+  var _poller
+  var _interval = _DEFAULT_ACCEPT_INTERVAL
+  var _address
+
+  /**
+   * Takes over `listener`, which must already be bound.
+   *
+   * The listener is put into non-blocking mode and left that way, so
+   * a caller that also accepts from it directly gets `nil` when
+   * nothing is waiting rather than a blocking wait.
+   *
+   * @param {TcpStream|UnixStream} listener: bound and listening
+   * @param ?number interval: Milliseconds `next()` waits before
+   *    giving up on a round. Defaults to `100`. A connection that
+   *    arrives wakes the wait at once, so this is the idle interval
+   *    rather than added latency: it decides how soon a stopped
+   *    server and a trapped signal are noticed.
+   * @throws ValueError if `interval` is negative, which would wait
+   *    forever and defeat the point.
+   * @throws Error if the listener is not bound, or cannot be put
+   *    into non-blocking mode.
+   */
+  @new(listener, interval: ?number) {
+    if interval != nil {
+      if interval < 0 {
+        raise ValueError('interval must not be negative')
+      }
+
+      self._interval = interval
+    }
+
+    listener.set_non_blocking(true)
+
+    self._listener = listener
+    self._poller = Poller()
+    self._poller.add(listener, 0, READABLE)
+
+    # Kept from here rather than asked for on demand, so printing an
+    # acceptor whose listener has since been closed still says which
+    # one it was.
+    self._address = listener.local_address().to_string()
+  }
+
+  /**
+   * The next connection, or `nil` when the interval passed with
+   * nothing arriving.
+   *
+   * `nil` means "go round again", never "there will be no more".
+   *
+   * The connection comes back in blocking mode whatever mode the
+   * listener is in, since what usually follows is a request pipeline
+   * written against blocking reads bounded by timeouts.
+   *
+   * @returns ?TcpStream|?UnixStream
+   * @throws Error on an underlying accept failure, including the
+   *    listener having been closed.
+   */
+  next() {
+    var client = self._listener.accept()
+
+    if client == nil {
+      self._poller.wait(self._interval)
+      return nil
+    }
+
+    client.set_non_blocking(false)
+
+    return client
+  }
+
+  /**
+   * Waits for a connection however long it takes, the way a blocking
+   * `accept()` would, while still coming up for air every interval.
+   *
+   * @returns TcpStream|UnixStream
+   * @throws Error on an underlying accept failure
+   */
+  wait_for_one() {
+    while true {
+      var client = self.next()
+
+      if client != nil {
+        return client
+      }
+    }
+  }
+
+  /**
+   * The listener this accepts from.
+   *
+   * @returns TcpStream|UnixStream
+   */
+  listener() {
+    return self._listener
+  }
+
+  to_string() {
+    return '<Acceptor on ${self._address}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}

@@ -225,23 +225,35 @@ class TcpStream {
   }
 
   /**
-   * Accepts a new incoming connection, blocking until one
-   * arrives (subject to non-blocking mode, if enabled via
-   * `set_non_blocking()`). Only valid once this instance has
-   * been `bind()`-ed.
+   * Accepts a new incoming connection. Only valid once this
+   * instance has been `bind()`-ed.
    *
-   * Returns a fully connected `TcpStream` for the new client.
+   * Blocks until a connection arrives, and returns a fully
+   * connected `TcpStream` for the new client. To find out who
+   * connected, call `peer_address()` on it.
    *
-   * To find out who connected, call `peer_address()` on the
-   * returned stream.
+   * In non-blocking mode (see `set_non_blocking()`) it never
+   * blocks: it returns `nil` when no connection is waiting. That
+   * is an answer, not a failure, so nothing is raised for it.
    *
-   * @returns TcpStream a stream connected to the newly accepted
-   *    client
+   * The accepted stream can carry its own blocking mode, which
+   * is a platform's default rather than this listener's. Set it
+   * explicitly with `set_non_blocking()` on the returned stream if
+   * it matters.
+   *
+   * @returns ?TcpStream a stream connected to the newly accepted
+   *    client, or `nil` in non-blocking mode with nobody waiting
    * @throws Error on an underlying I/O error, or if this
    *    instance has not been bound
    */
   accept() {
-    return TcpStream(_net_tcp.tcp_accept(self._ptr))
+    var client = _net_tcp.tcp_accept(self._ptr)
+
+    if client == nil {
+      return nil
+    }
+
+    return TcpStream(client)
   }
 
   /**

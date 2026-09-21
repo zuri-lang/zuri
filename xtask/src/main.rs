@@ -128,7 +128,10 @@ fn copy_into(root: &Path, target: &Path) {
       println!("synced {summary} into {}", display(root, target));
     },
     Err(e) => {
-      eprintln!("cargo sync: could not sync into {}: {e}", display(root, target));
+      eprintln!(
+        "cargo sync: could not sync into {}: {e}",
+        display(root, target)
+      );
       process::exit(1);
     },
   }

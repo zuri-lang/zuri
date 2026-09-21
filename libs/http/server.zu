@@ -238,6 +238,7 @@ class HttpServer {
   var _router
   var _middleware = []
   var _listening = false
+  var _acceptor
   var _tls_config
   var _not_found
   var _error_handler
@@ -686,17 +687,23 @@ class HttpServer {
       var client
 
       catch {
-        client = self.socket.accept()
+        client = self._acceptor.next()
       } as accept_error
 
       if accept_error {
-        # A closed listener is how close() breaks this loop, and is
-        # not an error worth reporting.
+        # A listener closed under it is what a stopped server looks
+        # like from here, and is not an error worth reporting.
         if !self._listening {
           break
         }
 
         self._report(accept_error, nil)
+        continue
+      }
+
+      # Nothing arrived within the interval. Round again, which is
+      # what gives a stopped server and a trapped signal their turn.
+      if client == nil {
         continue
       }
 
@@ -707,6 +714,11 @@ class HttpServer {
   /**
    * Binds and starts listening without accepting anything, so a
    * caller can drive the accept loop itself.
+   *
+   * The listener is left in non-blocking mode, since `accept()` and
+   * `listen()` here go through a `net.Acceptor`. A caller driving its
+   * own loop over `socket` directly gets `nil` from `accept()`
+   * whenever nothing is waiting.
    *
    * @throws HttpError if the socket cannot be bound
    */
@@ -725,6 +737,7 @@ class HttpServer {
       raise HttpError('could not bind ${self.host}:${self.port}: ${error.message}')
     }
 
+    self._acceptor = net.Acceptor(self.socket)
     self._listening = true
   }
 
@@ -732,10 +745,21 @@ class HttpServer {
    * Accepts one connection, blocking until one arrives. Only valid
    * after `bind()`.
    *
-   * @returns TcpStream
+   * Returns `nil` if the server is stopped while this is waiting,
+   * since there is then nothing left to wait for.
+   *
+   * @returns ?TcpStream
    */
   accept() {
-    return self.socket.accept()
+    while self._listening {
+      var client = self._acceptor.next()
+
+      if client != nil {
+        return client
+      }
+    }
+
+    return nil
   }
 
   /**
@@ -761,9 +785,9 @@ class HttpServer {
   }
 
   /**
-   * Stops the server and closes the listening socket. A blocked
-   * `accept()` in `listen()` fails as a result, which is what ends
-   * the loop.
+   * Stops the server and closes the listening socket. The accept loop
+   * reads the stopped flag on its next round and ends, within one
+   * `net.Acceptor` interval of this call.
    */
   close() {
     self._listening = false

@@ -164,6 +164,74 @@ assert poller.length() == 1, 'leaving the rest alone'
 assert !poller.remove(1), 'and removing it twice is not an error'
 
 # ---------------------------------------------------------------------------
+# accept() on a non-blocking listener
+# ---------------------------------------------------------------------------
+
+# The pairing a polled accept loop depends on: the poller says whether
+# anyone is waiting, and accept() answers with nobody rather than
+# failing when they are not.
+var idle = net.TcpStream()
+idle.bind('127.0.0.1:0')
+idle.set_non_blocking(true)
+
+var idle_address = '127.0.0.1:${idle.local_address().port()}'
+var idle_poller = net.Poller()
+idle_poller.add(idle, 0, net.READABLE)
+
+assert idle_poller.wait(50).length() == 0, 'nothing is waiting on a fresh listener'
+assert idle.accept() == nil, 'and accept() says so instead of raising'
+
+var caller = net.TcpStream()
+caller.connect(idle_address)
+
+assert wait_for(idle_poller, 0, 2000) & net.READABLE != 0,
+  'a connection waiting makes the listener readable'
+
+var answered = idle.accept()
+assert answered != nil, 'and accept() hands it over'
+assert instance_of(answered, net.TcpStream), 'as a connected stream'
+
+assert idle.accept() == nil, 'with nobody left behind it'
+ok('a non-blocking accept() reports an empty queue as nil')
+
+answered.close()
+caller.close()
+idle.close()
+
+# ---------------------------------------------------------------------------
+# Acceptor
+# ---------------------------------------------------------------------------
+
+var served_by = net.TcpStream()
+served_by.bind('127.0.0.1:0')
+
+var acceptor = net.Acceptor(served_by, 20)
+var acceptor_address = '127.0.0.1:${served_by.local_address().port()}'
+
+assert acceptor.listener() == served_by, 'an acceptor knows its listener'
+assert acceptor.next() == nil, 'and reports an empty round as nil'
+
+var knocker = net.TcpStream()
+knocker.connect(acceptor_address)
+
+var taken = acceptor.wait_for_one()
+assert taken != nil, 'wait_for_one() waits until there is one'
+
+# Whatever mode the listener is in, the connection is handed over
+# blocking, so a read timeout on it means what it says.
+taken.set_read_timeout(50)
+assert raises(@() { taken.read_exact(4) }),
+  'so a read with nothing sent times out rather than returning empty'
+
+assert raises(@() { net.Acceptor(served_by, -1) }),
+  'a negative interval is refused, since it would wait forever'
+ok('an Acceptor accepts without parking the thread')
+
+taken.close()
+knocker.close()
+served_by.close()
+
+# ---------------------------------------------------------------------------
 # A socket moved to another isolate
 # ---------------------------------------------------------------------------
 

@@ -131,7 +131,9 @@ mod launch {
   /// A fresh directory for one case, named after it so a failure says
   /// where to look.
   fn case(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("launch").join(name);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+      .join("launch")
+      .join(name);
 
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("failed to create the case directory");
@@ -225,7 +227,10 @@ mod launch {
       "--version must not claim to be interactive\n--- actual ---\n{text}\n"
     );
     assert!(
-      lines.next().unwrap_or_default().starts_with("Build No. => "),
+      lines
+        .next()
+        .unwrap_or_default()
+        .starts_with("Build No. => "),
       "\n--- actual ---\n{text}\n"
     );
   }
@@ -308,7 +313,10 @@ mod launch {
     let output = zuri(&dir, &["--help"]);
     let text = combined(&output);
 
-    assert!(text.contains("\nPROJECT COMMANDS:\n"), "\n--- actual ---\n{text}\n");
+    assert!(
+      text.contains("\nPROJECT COMMANDS:\n"),
+      "\n--- actual ---\n{text}\n"
+    );
     assert_eq!(
       listed(&text, "lint"),
       Some("lint    Check the project for the mistakes CI rejects."),
@@ -455,7 +463,10 @@ mod launch {
     let dir = case("command_script");
     write(&dir.join(".zuri/cmds/greet.zu"), REPORT_ARGS);
 
-    assert_ran(&zuri(&dir, &["greet", "world", "--loud"]), "ran [world, --loud]");
+    assert_ran(
+      &zuri(&dir, &["greet", "world", "--loud"]),
+      "ran [world, --loud]",
+    );
   }
 
   #[test]
@@ -502,7 +513,10 @@ mod launch {
   #[test]
   fn a_shipped_command_wins_over_a_project_one() {
     let dir = case("command_precedence");
-    write(&dir.join(".zuri/cmds/format.zu"), "echo 'the project copy'\n");
+    write(
+      &dir.join(".zuri/cmds/format.zu"),
+      "echo 'the project copy'\n",
+    );
 
     let output = zuri(&dir, &["format", "--help"]);
     let text = combined(&output);
@@ -614,7 +628,10 @@ mod test_command {
     let text = combined(&output);
 
     for name in ["pass.zu", "fail.zu", "nested.zu"] {
-      assert!(text.contains(name), "{name} never ran\n--- actual ---\n{text}\n");
+      assert!(
+        text.contains(name),
+        "{name} never ran\n--- actual ---\n{text}\n"
+      );
     }
 
     assert_eq!(
