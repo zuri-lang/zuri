@@ -35,9 +35,10 @@ import .errors { TransactionError }
 /**
  * An open transaction.
  *
- * It carries the same query and exec methods a connection does, so
- * code inside a transaction reads the same as code outside one. Every
- * statement it runs goes to the connection the transaction is on.
+ * It carries the same query, exec and CRUD methods a connection does,
+ * so code inside a transaction reads the same as code outside one.
+ * Every statement it runs goes to the connection the transaction is
+ * on.
  *
  * @printable
  */
@@ -151,6 +152,18 @@ class Transaction {
   }
 
   /**
+   * Inserts several rows in one statement.
+   *
+   * @param string table
+   * @param list rows Dictionaries of column to value.
+   * @returns number How many rows were inserted.
+   */
+  insert_many(table: string, rows: list) {
+    self._active()
+    return self.connection.insert_many(table, rows)
+  }
+
+  /**
    * Updates the rows matching `where`.
    *
    * @param string table
@@ -173,6 +186,44 @@ class Transaction {
   delete(table: string, where) {
     self._active()
     return self.connection.delete(table, where)
+  }
+
+  /**
+   * Selects the rows matching `where`.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @param dict|nil options `columns`, `order`, `limit` and `offset`.
+   * @returns ResultSet
+   */
+  find(table: string, where, options) {
+    self._active()
+    return self.connection.find(table, where, options)
+  }
+
+  /**
+   * The first row matching `where`, or nil.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @param dict|nil options
+   * @returns dict|nil
+   */
+  find_one(table: string, where, options) {
+    self._active()
+    return self.connection.find_one(table, where, options)
+  }
+
+  /**
+   * How many rows match `where`.
+   *
+   * @param string table
+   * @param dict|nil where
+   * @returns number
+   */
+  count(table: string, where) {
+    self._active()
+    return self.connection.count(table, where)
   }
 
   /**

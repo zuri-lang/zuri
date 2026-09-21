@@ -6,6 +6,16 @@
 import sql
 import sql.errors { TransactionError, ClosedError }
 
+def raises(fn) {
+  catch {
+    fn()
+    return false
+  } as _error {
+  }
+
+  return true
+}
+
 def fresh() {
   var db = sql.open(':memory:')
   db.exec('create table t (id integer primary key, name text)', nil)
@@ -173,9 +183,54 @@ def test_transaction_helpers() {
   echo 'test_transaction_helpers passed'
 }
 
+def test_transaction_reads() {
+  var db = fresh()
+
+  db.transaction(@(tx) {
+    assert tx.insert_many('t', [{ name: 'a' }, { name: 'b' }, { name: 'c' }]) == 3
+
+    # A read inside the transaction sees what the transaction has
+    # written and nobody else has yet.
+    assert tx.count('t', nil) == 3
+    assert tx.count('t', { name: 'b' }) == 1
+    assert tx.find('t', nil, { order: ['name desc'] }).column('name') ==
+      ['c', 'b', 'a']
+    assert tx.find_one('t', { name: 'b' }, nil).name == 'b'
+    assert tx.find_one('t', { name: 'nobody' }, nil) == nil
+  }, nil)
+
+  assert db.count('t', nil) == 3
+
+  # And a rollback takes the reads' subject with it.
+  catch {
+    db.transaction(@(tx) {
+      tx.insert('t', { name: 'd' }, nil)
+      assert tx.count('t', nil) == 4
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+
+  assert db.count('t', nil) == 3
+
+  # A finished transaction refuses them the way it refuses the rest.
+  var tx = db.begin(nil)
+  tx.commit()
+
+  assert raises(@() { tx.count('t', nil) })
+  assert raises(@() { tx.find('t', nil, nil) })
+  assert raises(@() { tx.find_one('t', nil, nil) })
+  assert raises(@() { tx.insert_many('t', [{ name: 'e' }]) })
+
+  db.close()
+  echo 'test_transaction_reads passed'
+}
+
+
 test_commit_and_rollback()
 test_nesting()
 test_manual()
 test_isolation()
 test_savepoints_by_name()
 test_transaction_helpers()
+test_transaction_reads()

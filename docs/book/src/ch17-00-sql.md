@@ -23,8 +23,7 @@ whatever SQL they genuinely spell differently.
 - [Querying and Fetching](#querying-and-fetching)
 - [Parameters](#parameters)
 - [Rows, Columns and Types](#rows-columns-and-types)
-- [Inserting and Ids](#inserting-and-ids)
-- [Updating, Deleting and Finding](#updating-deleting-and-finding)
+- [The CRUD Helpers](#the-crud-helpers)
 - [Transactions](#transactions)
 - [Streaming Large Results](#streaming-large-results)
 - [Prepared Statements](#prepared-statements)
@@ -494,7 +493,21 @@ PostgreSQL's `numeric` and MySQL's `DECIMAL` columns read and write as
 `Decimal` automatically. SQLite has no exact decimal type, so store one
 as text or as an integer count of the smallest unit.
 
-## Inserting and Ids
+## The CRUD Helpers
+
+Four calls on a connection write no SQL at all. `insert()`, `update()`,
+`delete()` and `find()` take a table name and dictionaries, build the
+statement for whichever engine is on the other end, and bind every
+value as a parameter.
+
+They are here because the statements they replace are the ones least
+worth writing by hand. They are mechanical, they differ between
+dialects in small ways that only show up in production, and a string
+built by concatenation is where an injection gets in. Anything harder
+than a flat list of conditions is still written as SQL, and the two
+mix freely on the same connection.
+
+### Inserting and ids
 
 `insert()` takes a table and a dictionary, and returns the new row's
 id:
@@ -529,6 +542,8 @@ Where the key is not the column to return, name it:
 db.insert('events', { name: 'started' }, { returning: 'uuid' })
 ```
 
+### Several rows at once
+
 Several rows go in one statement, split so that no single statement
 binds more parameters than the engine allows:
 
@@ -554,7 +569,10 @@ Every row has to name the same columns. A row naming a different set
 raises rather than being padded with nulls, because a missing column
 and a null column mean different things.
 
-## Updating, Deleting and Finding
+### Finding rows
+
+`find()` answers with a `ResultSet`, `count()` with a number, and
+`find_one()` with the first row as a dictionary:
 
 ```zuri
 import sql
@@ -586,9 +604,130 @@ db.close()
 1290
 ```
 
+A `find_one()` that matches nothing answers `nil`. That is the answer,
+not a failure, so nothing is raised for it:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find_one('posts', { title: 'On Bugs' }).views
+echo db.find_one('posts', { title: 'Never Written' })
+
+db.close()
+```
+
+```console
+1290
+nil
+```
+
+### What a filter can say
+
 A condition's value decides what it means. A plain value is equality, a
 list is `IN`, an empty list matches nothing, and `nil` is `IS NULL`
 rather than `= NULL`, which no row ever satisfies.
+
+Several conditions in one dictionary are joined with `AND`. There is no
+`OR`, which is the first thing to write as SQL:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.count('posts', { published: true, author_id: 1 })
+echo db.count('posts', { published: true, views: [87, 1290] })
+
+db.close()
+```
+
+```console
+1
+1
+```
+
+Passing `nil` as the whole filter matches every row. That has to be
+asked for rather than happening because a dictionary came out empty,
+which is what stands between a filter built from user input and an
+`UPDATE` with no `WHERE`.
+
+### Ordering, limits and pages
+
+`order` is a list of column names, each optionally followed by ` asc`
+or ` desc`, applied in the order given:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find('posts', nil, { order: ['views desc'] }).column('title')
+echo db.find('posts', nil, { order: ['author_id asc', 'views desc'] }).column('title')
+
+db.close()
+```
+
+```console
+[On Bugs, On Compilers, On Engines, On Looms]
+[On Engines, On Looms, On Bugs, On Compilers]
+```
+
+`limit` and `offset` are whole numbers of rows, and together they are a
+page. A page past the end is empty rather than an error:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+def page(number, size) {
+  return db.find('posts', nil, {
+    columns: ['title'],
+    order: ['views desc'],
+    limit: size,
+    offset: (number - 1) * size,
+  }).column('title')
+}
+
+echo page(1, 2)
+echo page(2, 2)
+echo page(3, 2)
+
+db.close()
+```
+
+```console
+[On Bugs, On Compilers]
+[On Engines, On Looms]
+[]
+```
+
+A limit and an offset go into the statement text rather than being
+bound, because not every engine allows a parameter in either place.
+That leaves them as the one part of a built statement that is not a
+parameter, so each is checked before it goes in:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+catch {
+  db.find('posts', nil, { limit: 2.5 })
+} as error {
+  echo error.message
+}
+
+db.close()
+```
+
+```console
+a limit is a whole number of rows, not 2.5
+```
+
+### Updating and deleting
 
 `update()` and `delete()` return how many rows changed:
 
@@ -612,9 +751,10 @@ db.close()
 1
 ```
 
-Passing `nil` as the condition changes or deletes every row, which has
-to be asked for rather than happening because a dictionary came out
-empty.
+They read a filter exactly as `find()` does, `nil` included: passing it
+changes or deletes every row.
+
+### Values that are not values
 
 Where a value is not a value, `sql.raw()` marks a fragment to be used
 as written:
@@ -636,13 +776,79 @@ db.close()
 11
 ```
 
+A `Raw` is accepted everywhere a column or a value is, which is what
+makes an aggregate or a subquery reachable without leaving the
+helpers:
+
+```zuri
+import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find('posts', nil, {
+  columns: [sql.raw('count(*) as n'), sql.raw('sum(views) as total')],
+}).first()
+
+echo db.count('posts', {
+  author_id: sql.raw("(select id from authors where name = 'Ada Lovelace')"),
+})
+
+db.close()
+```
+
+```console
+{n: 4, total: 2429}
+2
+```
+
 > `raw()` is exactly as dangerous as it sounds. A fragment built from
 > anything a user supplied is a SQL injection. Build them from
 > literals, and keep values in the parameters where they belong.
 
-These four cover a flat list of equality conditions and stop there.
-There is no join here, no subquery and no expression tree, because
-SQL is a better language for those than any chain of method calls.
+### Inside a transaction
+
+A `Transaction` carries all of them, and they mean the same thing
+there. A read inside one sees what that transaction has written and
+nobody else has committed yet:
+
+```zuri
+import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (id integer primary key, n integer)')
+
+db.transaction(@(tx) {
+  tx.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+
+  echo tx.count('t')
+  echo tx.find('t', nil, { order: ['n desc'] }).column('n')
+
+  tx.update('t', { n: 9 }, { n: 1 })
+  tx.delete('t', { n: 3 })
+})
+
+echo db.find('t', nil, { order: ['n asc'] }).column('n')
+
+db.close()
+```
+
+```console
+3
+[3, 2, 1]
+[2, 9]
+```
+
+A rollback takes those rows with it, the reads included, and a
+transaction that has already committed refuses them the way it refuses
+everything else.
+
+### Where they stop
+
+These calls cover a flat list of equality conditions and stop there.
+There is no join, no `OR` and no expression tree, because SQL is a
+better language for those than any chain of method calls. A query that
+wants one is a `query()` or a `fetch_all()` on the same connection,
+next to the helpers rather than instead of them.
 
 ## Transactions
 
@@ -1668,3 +1874,13 @@ On a `Connection`:
 | `driver`, `driver_name`, `capabilities`, `supports` | what this engine is |
 | `native` | the adapter underneath |
 | `ping`, `close`, `is_closed` | the connection itself |
+
+On a `Transaction`:
+
+| | |
+| --- | --- |
+| `query`, `exec` | run a statement |
+| `fetch_one`, `fetch_all`, `fetch_value` | read a result |
+| `insert`, `insert_many`, `update`, `delete`, `find`, `find_one`, `count` | the same helpers a connection has |
+| `commit`, `rollback`, `is_finished` | ending it |
+| `connection`, `nested` | what it is running on, and whether it is a savepoint |
