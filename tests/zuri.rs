@@ -270,13 +270,13 @@ mod launch {
     assert!(text.contains("Usage: zuri"), "\n--- actual ---\n{text}\n");
     assert!(text.contains("\nCOMMANDS:\n"), "\n--- actual ---\n{text}\n");
 
-    // `format` ships in `cmds/`, and must arrive described.
-    let line = listed(&text, "format")
-      .unwrap_or_else(|| panic!("format was not listed\n--- actual ---\n{text}\n"));
+    // `fmt` ships in `cmds/`, and must arrive described.
+    let line = listed(&text, "fmt")
+      .unwrap_or_else(|| panic!("fmt was not listed\n--- actual ---\n{text}\n"));
 
     assert!(
-      line.len() > "format".len(),
-      "format was listed with no description: {line:?}"
+      line.len() > "fmt".len(),
+      "fmt was listed with no description: {line:?}"
     );
   }
 
@@ -335,8 +335,8 @@ mod launch {
   fn help_leaves_out_a_project_command_a_shipped_one_hides() {
     let dir = case("help_shadowed");
     write(
-      &dir.join(".zuri/cmds/format.zu"),
-      &command_source("format", "The project copy, which can never run."),
+      &dir.join(".zuri/cmds/fmt.zu"),
+      &command_source("fmt", "The project copy, which can never run."),
     );
 
     let text = combined(&zuri(&dir, &["--help"]));
@@ -514,18 +514,18 @@ mod launch {
   fn a_shipped_command_wins_over_a_project_one() {
     let dir = case("command_precedence");
     write(
-      &dir.join(".zuri/cmds/format.zu"),
+      &dir.join(".zuri/cmds/fmt.zu"),
       "echo 'the project copy'\n",
     );
 
-    let output = zuri(&dir, &["format", "--help"]);
+    let output = zuri(&dir, &["fmt", "--help"]);
     let text = combined(&output);
 
     assert!(
       !text.contains("the project copy"),
       "a project command shadowed one the runtime ships\n--- actual ---\n{text}\n"
     );
-    assert_ran(&output, "Usage: format");
+    assert_ran(&output, "Usage: fmt");
   }
 
   #[test]
@@ -831,7 +831,7 @@ mod init_command {
     zuri(&dir, &["init", "app", "--yes", "--vcs", "none"]);
 
     let root = dir.join("app");
-    let output = zuri(&root, &["format", "--dry-run", "."]);
+    let output = zuri(&root, &["fmt", "--dry-run", "."]);
     let text = combined(&output);
 
     assert!(
