@@ -1,16 +1,18 @@
 /**
  * @command format
- * @description Formats all Zuri files in the given path, or the current directory.
+ * @description Formats all Zuri files in the given path, or the 
+ *    current directory.
  * 
- * The `format` command: lay out Zuri source in the project's own style.
+ * The `format` command formats all Zuri files in the given path, or 
+ * the current directory.
  *
- *   zuri format <path>
+ *   zuri format [path]
  *
- * `path` is a single `.zu` file, formatted in place, or a directory,
- * whose `.zu` files are all formatted, its subdirectories included. Left
- * off, it formats the current directory. The `dry-run` flag reports what
- * would change without writing anything, which is what a commit hook or
- * CI wants.
+ * `path` is either a single `.zu` file, which is formatted in place, or
+ * a directory, in which case every `.zu` file inside it is formatted,
+ * subdirectories included. If no path is given, the current directory is
+ * formatted. The `--dry-run` flag shows what would change without
+ * writing anything, which is what a commit hook or a CI job wants.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -66,10 +68,70 @@ def _apply(path: string, dry_run: bool) {
   return 'changed'
 }
 
+# `3 files`, or `1 file` when there is only the one of them.
+def _count(number: int, noun: string) {
+  return '${number} ${noun}${number == 1 ? "" : "s"}'
+}
+
+# What became of the files that were not rewritten. Left as its own
+# sentence so the counts read as English rather than as a tally.
+def _rest(unchanged: int, skipped: int) {
+  var said = []
+
+  if unchanged > 0 {
+    var verb = unchanged == 1 ? 'was' : 'were'
+
+    said.append('${_count(unchanged, "file")} ${verb} already formatted')
+  }
+
+  if skipped > 0 {
+    var verb = skipped == 1 ? 'was' : 'were'
+
+    said.append('${_count(skipped, "file")} ${verb} skipped')
+  }
+
+  return ' and '.join(said)
+}
+
+# The closing line. Counts on their own read as machine output, and
+# this is the line a reader actually stops on.
+def _summary(changed: int, unchanged: int, skipped: int, dry_run: bool) {
+  if changed + unchanged + skipped == 0 {
+    return 'There is no Zuri source here to format.'
+  }
+
+  var lead = 'Nothing to do.'
+
+  if changed > 0 {
+    if dry_run {
+      lead = '${_count(changed, "file")} would change.'
+    } else {
+      lead = 'Formatted ${_count(changed, "file")}.'
+    }
+  } else if dry_run {
+    lead = 'Nothing would change.'
+  }
+
+  # Nothing to rewrite and nothing to skip is the everyday case, and
+  # it deserves the sentence that says so outright.
+  if changed == 0 and skipped == 0 {
+    if unchanged == 1 {
+      return '${lead} The only file here is already formatted.'
+    }
+
+    return '${lead} All ${unchanged} files are already formatted.'
+  }
+
+  var rest = _rest(unchanged, skipped)
+
+  return rest.is_empty() ? lead : '${lead} ${rest}.'
+}
+
 def main() {
   var parser = args.Parser('format', false)
 
   parser.description = 'Formats all Zuri files in the given path, or the current directory.'
+  parser.epilog = 'If no path is given, all Zuri files in the current directory are formatted.'
   parser.add_index(
     'path', 'A .zu file, or a directory to format, subdirectories included'
   )
@@ -83,7 +145,7 @@ def main() {
   var dry_run = parsed.options.get('dry-run', false)
 
   if !os.is_dir(path) and !file(path).exists() {
-    echo 'format: no such file or directory: ${path}'
+    echo 'format: there is no file or directory at ${path}'
 
     exit(1)
   }
@@ -110,9 +172,7 @@ def main() {
     }
   }
 
-  var verb = dry_run ? 'would change' : 'changed'
-
-  echo '${changed} ${verb}, ${unchanged} already formatted, ${skipped} skipped'
+  echo _summary(changed, unchanged, skipped, dry_run)
 
   # In dry_run mode a would-be change is a non-zero exit, so a hook fails.
   if dry_run and changed > 0 {

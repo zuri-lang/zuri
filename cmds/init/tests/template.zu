@@ -16,8 +16,9 @@ def written(words) {
 }
 
 describe('manifest_file', @{
-  it('opens with a word about what the file is for', @{
-    expect(template.manifest_file(written([])).starts_with('#')).to_be_true()
+  it('opens on the project table, with nothing above it', @{
+    expect(template.manifest_file(written([])).starts_with('[project]'))
+      .to_be_true()
   })
 
   it('reads back as the manifest it was given', @{

@@ -4,11 +4,12 @@
  *
  *   zuri test [target]
  *
- * `target` is a directory of test files, or one test file, with or
- * without its `.zu` ending. Left off, it is the `tests` directory
- * here. Everything the `test` module's `conduct()` can be told is a
- * flag: how many files to run at once, how long to give one, when to
- * stop, which names to run and which to skip.
+ * `target` is either a directory of test files or a single test file,
+ * written with or without its `.zu` ending. If no target is given, the
+ * `tests` directory here is used. Every option the `test` module's
+ * `conduct()` accepts is available as a flag: how many files to run at
+ * once, how long to give each one, when to stop, and which names to
+ * run or skip.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -29,7 +30,7 @@ def main() {
   var where = plan.resolve(target, nil)
   var options = plan.options(parsed, where.file)
 
-  # Nothing but the paths, so the list is worth piping somewhere.
+  # Nothing but the paths, so the list can be piped somewhere.
   if parsed.options.get('list', false) {
     for path in discover(where.directory, options) {
       echo short_path(os.join_paths(where.directory, path))

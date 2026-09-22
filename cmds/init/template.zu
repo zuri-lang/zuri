@@ -42,12 +42,7 @@ def _about(manifest) {
  * @returns string
  */
 def manifest_file(manifest) {
-  var lines = [
-    '# What this project is. `zuri` reads it; so do the people who',
-    '# come to the project after you.',
-  ]
-
-  return '\n'.join(lines) + '\n\n' + toml.dump(manifest)
+  return toml.dump(manifest)
 }
 
 /**

@@ -688,10 +688,10 @@ $ zuri test packages/store/tests
 | Flag | What it does |
 | --- | --- |
 | `-j, --jobs <count>` | How many files to run at once. `auto` is one per CPU. Default `1`. |
-| `-t, --timeout <duration>` | How long one file may run before it is killed. `500ms`, `30s`, `2m`, `1h`, or a bare number of milliseconds. Default: no limit. |
+| `-t, --timeout <duration>` | How long to give a single file before killing it. `500ms`, `30s`, `2m`, `1h`, or a bare number of milliseconds. Default: no limit. |
 | `-b, --bail [count]` | Stop after this many failing files. On its own, stop at the first. |
-| `-m, --match <pattern...>` | Filename patterns to run, in place of `*.zu`. |
-| `-i, --ignore <pattern...>` | Filename patterns to skip, in place of `_*`, `.*` and `index.zu`. |
+| `-m, --match <pattern...>` | Filename patterns to run, instead of `*.zu`. |
+| `-i, --ignore <pattern...>` | Filename patterns to skip, instead of `_*`, `.*` and `index.zu`. |
 | `--no-recursive` | Only the files directly in the directory. |
 | `-e, --env <assignment...>` | Extra environment for every test process, as `KEY=VALUE`. |
 | `-l, --list` | Print the files that would run, one to a line, and stop. |

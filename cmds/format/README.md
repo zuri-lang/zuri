@@ -1,18 +1,20 @@
 # format
 
-Lays out Zuri source in the project's own style: two spaces to a level,
-one statement to a line, the spacing a reader expects between tokens, and
-long lines broken across the brackets and operators that carry them.
+Formats all Zuri files in the given path, or the current directory in the 
+project's own style: two spaces to a level, one statement to a line, the 
+spacing a reader expects between tokens, and long lines broken across the 
+brackets and operators that carry them.
 
 ## Running it
 
 ```sh
-zuri format <path>
+zuri format [path]
 ```
 
-`path` is a single `.zu` file, formatted in place, or a directory, whose
-`.zu` files are all formatted, its subdirectories included. Left off, it
-formats the current directory.
+`path` is either a single `.zu` file, which is formatted in place, or a
+directory, in which case every `.zu` file inside it is formatted,
+subdirectories included. If no path is given, the current directory is
+formatted.
 
 ```sh
 # format one file
