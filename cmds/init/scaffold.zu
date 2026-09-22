@@ -79,7 +79,7 @@ def _ensure_dir(path: string) {
   }
 
   catch {
-    os.create_dir(path, nil, true)
+    os.create_dir(path, 0c775, true)
   } as error {
     raise ScaffoldError("could not create '${path}': ${error.message}")
   }
