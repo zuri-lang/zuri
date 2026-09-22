@@ -57,7 +57,7 @@ var CONTINUES_BEFORE = [
 ]
 
 def _atom(kind: string, text: string) {
-  return { kind, text }
+  return { kind, text, ternary: false }
 }
 
 # The lead and trail tokens of a node, and its own one-line text.
@@ -118,8 +118,8 @@ def _group_text(group) {
 }
 
 # The space, `' '` or `''`, that goes between `prev` and `cur`. `state`
-# carries what a single pair cannot decide on its own: an open ternary,
-# an optional-type marker, and whether the last `-`/`+` was unary.
+# carries what a single pair cannot decide on its own: whether the last
+# `-`/`+` was a sign, and whether a `:` here opens a type.
 def _space(prev, cur, state) {
   var pk = prev == nil ? '' : prev.kind
   var ck = cur.kind
@@ -144,9 +144,10 @@ def _space(prev, cur, state) {
     return ''
   }
 
-  if state.optional {
-    state.optional = false
-
+  # The `?` of an optional type binds to the name after it, `?string`.
+  # A conditional's does not, and the tree has already said which this
+  # one is.
+  if pk == 'Question' and !prev.ternary {
     return ''
   }
 
@@ -174,21 +175,9 @@ def _space(prev, cur, state) {
     return ''
   }
 
-  if ck == 'Question' {
-    if pk == 'Colon' {
-      state.optional = true
-
-      return ' '
-    }
-
-    state.ternary += 1
-
-    return ' '
-  }
-
-  if ck == 'Colon' and state.ternary > 0 {
-    state.ternary -= 1
-
+  # Either spelling of `?` stands off from what comes before it, and a
+  # `:` does too once the tree has marked it as a conditional's.
+  if ck == 'Question' or (ck == 'Colon' and cur.ternary) {
     return ' '
   }
 
@@ -267,8 +256,7 @@ def _space(prev, cur, state) {
 # list's.
 def _state(in_dict: bool, in_index: bool) {
   return {
-    ternary: 0, optional: false, unary: false, in_dict, in_index,
-    in_type: false, index_lead: false,
+    unary: false, in_dict, in_index, in_type: false, index_lead: false,
   }
 }
 

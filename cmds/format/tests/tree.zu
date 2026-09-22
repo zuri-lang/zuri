@@ -29,6 +29,32 @@ def token_texts(group) {
   return group.items.filter(@(n) => n.node == 'tok').map(@(n) => n.atom.text)
 }
 
+# Every `?` and `:` in `source`, in order, each paired with whether the
+# tree read it as part of a conditional. Nested groups are walked, since
+# that is where the counting has to start over.
+def branch_marks(source) {
+  return _marks(parse(stream(source)))
+}
+
+def _marks(nodes) {
+  var found = []
+
+  for node in nodes {
+    if node.node == 'group' {
+      found += _marks(node.items)
+
+      continue
+    }
+
+    if node.node == 'tok'
+      and (node.atom.kind == 'Question' or node.atom.kind == 'Colon') {
+      found.append([node.atom.text, node.atom.ternary])
+    }
+  }
+
+  return found
+}
+
 describe('parse', @{
   it('groups a call in parentheses', @{
     expect(group_kinds('f(a, b)')).to_equal(['paren'])
@@ -95,5 +121,51 @@ describe('shorthand', @{
     var dict = first_group(parse(stream('var d = { x: x + 1 }')))
 
     expect(token_texts(dict)).to_equal(['x', ':', 'x', '+', '1'])
+  })
+})
+
+describe('branches', @{
+  it('marks the `?` and `:` of a conditional', @{
+    expect(branch_marks('var s = a ? b : c')).to_equal([
+      ['?', true],
+      [':', true],
+    ])
+  })
+
+  it('leaves the `?` of an optional type unmarked', @{
+    expect(branch_marks('def f(a: ?string) {')).to_equal([
+      [':', false],
+      ['?', false],
+    ])
+  })
+
+  it('leaves the `:` of a dictionary key unmarked', @{
+    expect(branch_marks('var d = { k: a ? b : c, j: 2 }')).to_equal([
+      [':', false],
+      ['?', true],
+      [':', true],
+      [':', false],
+    ])
+  })
+
+  # A branch is a bracket depth of its own, so a dictionary written
+  # inside one starts the count over rather than spending the `:` that
+  # still has to close the branch.
+  it('starts the count over inside a branch of its own', @{
+    expect(branch_marks('var d = a ? { k: 1 } : { k: 2 }')).to_equal([
+      ['?', true],
+      [':', false],
+      [':', true],
+      [':', false],
+    ])
+  })
+
+  it('pairs a conditional nested in another', @{
+    expect(branch_marks('var s = a ? b ? 1 : 2 : 3')).to_equal([
+      ['?', true],
+      ['?', true],
+      [':', true],
+      [':', true],
+    ])
   })
 })

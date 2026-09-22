@@ -18,6 +18,16 @@
  * different reads. Anywhere else it opens a list, whose trailing comma
  * is the formatter's to add or drop.
  *
+ * The `?` and `:` of a conditional are settled here too, and marked on
+ * the atoms themselves. A `?` opens a branch unless it follows a `:`,
+ * where it spells an optional type instead, and the next `:` at the
+ * same depth closes that branch. Both halves of a conditional always
+ * sit at one bracket depth, so counting them as the tree is built is
+ * the whole of the rule. Nothing further down has to work it out again,
+ * which matters because a conditional written across several lines
+ * leaves its `?` on one and its `:` on the next, and neither line can
+ * read the other.
+ *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
@@ -107,7 +117,7 @@ def _shorthand(items) {
       var colon = _skip_trivia(items, index + 1)
       var value = colon < items.length() ? _skip_trivia(
         items, colon + 1,
-      ): items.length()
+      ) : items.length()
 
       if colon < items.length()
         and _is_tok(items[colon], 'Colon')
@@ -231,6 +241,8 @@ def parse(atoms: list) {
 
 def _parse_seq(atoms: list, state: dict, closer) {
   var items = []
+  var branches = 0
+  var previous = nil
 
   while state.at < atoms.length() {
     var atom = atoms[state.at]
@@ -284,9 +296,20 @@ def _parse_seq(atoms: list, state: dict, closer) {
       }
 
       items.append({ node: 'group', kind, open, items: inner, close })
+      previous = _CLOSER[open.kind]
 
       continue
     }
+
+    if atom.kind == 'Question' and previous != 'Colon' {
+      atom.ternary = true
+      branches += 1
+    } else if atom.kind == 'Colon' and branches > 0 {
+      atom.ternary = true
+      branches -= 1
+    }
+
+    previous = atom.kind
 
     items.append(_tok(atom))
     state.at += 1

@@ -76,6 +76,22 @@ describe('flat', @{
 
   it('spaces a ternary across its `?` and `:`', @{
     expect(line('var s = big ? one : two')).to_be('var s = big ? one : two')
+    expect(line('var s = a ? b ? 1 : 2 : 3')).to_be('var s = a ? b ? 1 : 2 : 3')
+  })
+
+  # `?` and `:` each spell two things, and a branch of a conditional can
+  # hold either of the other two: a dictionary key, or an optional type.
+  it('tells a conditional from an optional type and a dictionary key', @{
+    expect(line('def f(a: ?string, b: ?int)')).to_be(
+      'def f(a: ?string, b: ?int)'
+    )
+    expect(line('var d = { k: a ? b : c, j: 2 }')).to_be(
+      'var d = { k: a ? b : c, j: 2 }'
+    )
+    expect(line('var d = a ? { k: 1 } : { k: 2 }')).to_be(
+      'var d = a ? { k: 1 } : { k: 2 }'
+    )
+    expect(line('var x: ?int = a ? b : c')).to_be('var x: ?int = a ? b : c')
   })
 
   it('applies the shorthand rewrite inside a dictionary', @{

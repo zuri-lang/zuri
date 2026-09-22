@@ -32,6 +32,12 @@ var QUOTES = ['\'', '"']
  * exception: a statement that owns a body without bracing it says so
  * by indenting that body, and nothing else in the token stream does.
  *
+ * `ternary` is only ever true of a `?` or a `:`, and says this one
+ * belongs to a conditional rather than to a type or a dictionary key.
+ * The two spellings are the same character, so the tree settles which
+ * is which while it still has the whole expression in front of it and
+ * writes the answer here.
+ *
  * @printable
  */
 class Atom {
@@ -40,6 +46,7 @@ class Atom {
     self.text = text
     self.line = line
     self.column = column
+    self.ternary = false
   }
 
   is_comment() {

@@ -28,6 +28,17 @@ describe(
       expect(format('var x = 1 # note')).to_be('var x = 1 # note\n')
     })
 
+    # A conditional written across lines leaves its `?` at the end of
+    # one and its `:` at the start of the next, and neither line holds
+    # enough to tell that `:` from the one that introduces a type.
+    it('keeps the space around a `?` and `:` written on separate lines', @{
+      var trailing = 'var s = rest.is_empty() ?\n  lead :\n  lead + rest\n'
+      var leading = 'var s = a ?\n  b\n  : c\n'
+
+      expect(format(trailing)).to_be(trailing)
+      expect(format(leading)).to_be(leading)
+    })
+
     # `if c x else y` on one line is not a statement Zuri reads: the
     # newline is what ends the unbraced body. Pulling the `else` up onto
     # it holds every token and still breaks the file.

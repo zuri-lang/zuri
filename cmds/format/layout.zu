@@ -829,16 +829,15 @@ def _last_index(items: list) {
 # that kind at the top level, not inside a bracket group, with an
 # operand on either side of it.
 #
-# Three kinds need more than their spelling to tell. A `+` or a `-` with
-# nothing of value to its left is a sign on what follows it. A `?` opens
-# a branch only when a value stands to its left, since `x: ?int` spells
-# an optional type with the same character. And the `:` that closes a
-# branch is told from the one that introduces a type by whether there is
-# a branch open to close.
+# A `+` or a `-` with nothing of value to its left is a sign on what
+# follows it rather than an operator, and nothing can be broken at a
+# sign. A `?` or a `:` breaks only when it belongs to a conditional,
+# which the tree settled and wrote on the atom; the same characters
+# spell an optional type and a dictionary key, and neither is an
+# operator to break at.
 def _break_points(items: list, kinds: list) {
   var points = []
   var previous = nil
-  var branches = 0
   var index = 0
 
   for node in items {
@@ -851,20 +850,8 @@ def _break_points(items: list, kinds: list) {
     var kind = node.node == 'tok' ? node.atom.kind : ''
     var breaks = previous != nil and kinds.contains(kind)
 
-    if kind == 'Question' {
-      var opens = _ends_value(previous)
-
-      breaks = breaks and opens
-
-      if opens {
-        branches += 1
-      }
-    } else if kind == 'Colon' {
-      breaks = breaks and branches > 0
-
-      if branches > 0 {
-        branches -= 1
-      }
+    if kind == 'Question' or kind == 'Colon' {
+      breaks = breaks and node.atom.ternary
     } else if kind == 'Plus' or kind == 'Minus' {
       breaks = breaks and _ends_value(previous)
     }
