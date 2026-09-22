@@ -1,6 +1,6 @@
 /**
  * @command format
- * @description Lay out Zuri source in the project style.
+ * @description Formats all Zuri files in the given path, or the current directory.
  * 
  * The `format` command: lay out Zuri source in the project's own style.
  *
@@ -69,7 +69,7 @@ def _apply(path: string, dry_run: bool) {
 def main() {
   var parser = args.Parser('format', false)
 
-  parser.description = 'Lay out Zuri source in the project style.'
+  parser.description = 'Formats all Zuri files in the given path, or the current directory.'
   parser.add_index(
     'path', 'A .zu file, or a directory to format, subdirectories included'
   )

@@ -1,6 +1,6 @@
 /**
  * @command init
- * @description Scaffold a new Zuri project.
+ * @description Creates a new Zuri package.
  *
  * The `init` command: start a project with everything it needs and
  * nothing it does not.

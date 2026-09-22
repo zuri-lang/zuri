@@ -393,7 +393,7 @@ def options(parsed, file: ?string) {
 def parser() {
   var parser = args.Parser('test', false)
 
-  parser.description = "Run a project's test files, each in its own process."
+  parser.description = "Run the tests."
   parser.epilog = 'If no target is given, everything in the tests directory is run.'
 
   parser.add_index(

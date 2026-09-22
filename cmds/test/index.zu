@@ -1,6 +1,6 @@
 /**
  * @command test
- * @description Run a project's test files, each in its own process.
+ * @description Run the tests.
  *
  *   zuri test [target]
  *
