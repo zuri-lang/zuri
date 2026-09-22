@@ -417,7 +417,7 @@ echo greet.english.hello('Grace')
 ```
 
 ```console
-$ zuri run .
+$ zuri run
 Hello, Ada
 Bonjour, Ada
 Hello, Grace

@@ -1,0 +1,182 @@
+/**
+ * Writing a project out.
+ *
+ * `layout()` says what a project consists of and what goes in each
+ * file, which is the part worth reading and worth testing. `create()`
+ * puts it on disk, and never writes over a file that is already
+ * there: a project initialized inside an existing directory keeps
+ * everything that directory already had.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import os.process { spawn }
+
+import .plan { clean }
+import .template
+
+/** The file whose presence means a project is already here. */
+var MANIFEST = 'project.toml'
+
+/** The directories every project has. */
+var DIRECTORIES = ['app', 'tests']
+
+/**
+ * Raised when the project cannot be written: something is in the way,
+ * or a directory refuses to be created.
+ */
+class ScaffoldError < Error {}
+
+/**
+ * Every file a new project holds, in the order they are created.
+ *
+ * @param dict manifest: as `plan.manifest()` returns it.
+ * @returns list: dicts of `{ path, contents }`, where `path` is
+ *    relative to the project root and always uses `/`.
+ */
+def layout(manifest) {
+  return [
+    { path: MANIFEST, contents: template.manifest_file(manifest) },
+    { path: 'index.zu', contents: template.root_index(manifest) },
+    { path: 'app/index.zu', contents: template.app_index(manifest) },
+    { path: 'tests/app.test.zu', contents: template.app_test(manifest) },
+    { path: 'README.md', contents: template.readme(manifest) },
+    { path: '.gitignore', contents: template.gitignore() },
+    { path: '.gitattributes', contents: template.gitattributes() },
+  ]
+}
+
+/**
+ * Whether `directory` already holds a project.
+ *
+ * An empty `project.toml` does not count. Half-finished scaffolding
+ * is worth finishing rather than refusing.
+ *
+ * @param string directory
+ * @returns bool
+ */
+def has_project(directory: string) {
+  var manifest = file(os.join_paths(directory, MANIFEST))
+
+  if !manifest.exists() {
+    return false
+  }
+
+  return !clean(manifest.read()).is_empty()
+}
+
+# Creates `path` and everything above it, unless it is already there.
+def _ensure_dir(path: string) {
+  if os.dir_exists(path) {
+    return
+  }
+
+  if file(path).exists() {
+    raise ScaffoldError(
+      "'${path}' is a file, but the project needs a directory there"
+    )
+  }
+
+  catch {
+    os.create_dir(path, nil, true)
+  } as error {
+    raise ScaffoldError("could not create '${path}': ${error.message}")
+  }
+}
+
+# Writes `contents` to `path`, which is known not to exist.
+def _write(path: string, contents: string) {
+  catch {
+    var handle = file(path, 'w')
+
+    handle.write(contents)
+    handle.close()
+  } as error {
+    raise ScaffoldError("could not write '${path}': ${error.message}")
+  }
+}
+
+/**
+ * Writes the project described by `manifest` into `directory`.
+ *
+ * The directory is created if it is not there. Files are written
+ * only where nothing exists already, so initializing over an
+ * existing directory adds what is missing and disturbs nothing else.
+ * The manifest is the one exception: `replace_manifest` writes it
+ * again over whatever was there, which is what `--force` asks for.
+ *
+ * @param string directory: the project root, absolute.
+ * @param dict manifest
+ * @param ?dict options:
+ *    - `dry_run` (`bool`): work out the answer and write nothing.
+ *      Default `false`.
+ *    - `replace_manifest` (`bool`): write `project.toml` even when
+ *      one is there. Default `false`.
+ * @returns dict: `{ created, kept }`, each a list of paths relative
+ *    to the project root, in layout order.
+ * @raises ScaffoldError when a directory or a file cannot be made.
+ */
+def create(directory: string, manifest, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var dry_run = options.get('dry_run', false)
+  var replace_manifest = options.get('replace_manifest', false)
+
+  if !dry_run {
+    _ensure_dir(directory)
+
+    for name in DIRECTORIES {
+      _ensure_dir(os.join_paths(directory, name))
+    }
+  }
+
+  var created = []
+  var kept = []
+
+  for entry in layout(manifest) {
+    var target = os.join_paths(directory, entry.path)
+    var exists = file(target).exists()
+
+    if exists and !(entry.path == MANIFEST and replace_manifest) {
+      kept.append(entry.path)
+
+      continue
+    }
+
+    if !dry_run {
+      _write(target, entry.contents)
+    }
+
+    created.append(entry.path)
+  }
+
+  return { created, kept }
+}
+
+/**
+ * Creates a git repository in `directory`.
+ *
+ * @param string directory
+ * @returns bool: whether git ran and was happy. A machine without
+ *    git, or a git that refuses, is not worth failing a scaffold
+ *    over, so this reports rather than raises.
+ */
+def init_git(directory: string) {
+  if os.which('git') == nil {
+    return false
+  }
+
+  catch {
+    var child = spawn(
+      'git', ['init', '--quiet'],
+      { cwd: directory, stdout: 'pipe', stderr: 'pipe' },
+    )
+
+    return child.wait() == 0
+  } as error {
+    return false
+  }
+}

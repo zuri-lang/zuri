@@ -1,0 +1,259 @@
+# Tests for the planning layer: what a project may be called, where it
+# lands, and what the command line settles before anything is written.
+
+import os
+import test { * }
+
+import ..plan {
+  DEFAULT_LICENSE,
+  DEFAULT_VERSION,
+  FALLBACK_NAME,
+  UsageError,
+  answers,
+  check_name,
+  check_version,
+  clean,
+  inside_git_repo,
+  manifest,
+  parser,
+  suggest_name,
+  target_of,
+  wants_git,
+  was_given,
+  words_of,
+}
+
+# Somewhere a project would be made. Nothing here touches the disk, so
+# it never has to actually be there.
+var ROOT = os.join_paths(os.dir_name(__file__), 'sandbox')
+
+# A command line, through the real parser the command uses.
+def parse(words) {
+  return parser().parse(words)
+}
+
+# The answers a command line settles, against `ROOT`.
+def chosen(words) {
+  return answers(parse(words), ROOT)
+}
+
+describe('clean', @{
+  it('collapses every run of whitespace', @{
+    expect(clean('  a \n b\t\tc  ')).to_equal('a b c')
+  })
+
+  it('takes the newline off what another program printed', @{
+    expect(clean('Ada Lovelace\n')).to_equal('Ada Lovelace')
+  })
+})
+
+describe('suggest_name', @{
+  it('keeps a name that was already one', @{
+    expect(suggest_name('my-app')).to_equal('my-app')
+  })
+
+  it('lowercases and joins up what a directory is really called', @{
+    expect(suggest_name('My Project (v2)')).to_equal('my-project-v2')
+  })
+
+  it('drops the separators it would otherwise begin or end on', @{
+    expect(suggest_name('__draft__')).to_equal('draft')
+  })
+
+  it('falls back when nothing usable is left', @{
+    expect(suggest_name('///')).to_equal(FALLBACK_NAME)
+  })
+
+  it('suggests something check_name accepts, whatever it is given', @{
+    expect(check_name(suggest_name('Über Café 2026!'))).to_equal('ber-caf-2026')
+  })
+})
+
+describe('check_name', @{
+  it('takes a name apart from the spaces around it', @{
+    expect(check_name('  my-app  ')).to_equal('my-app')
+  })
+
+  it('takes digits, hyphens and underscores in the middle', @{
+    expect(check_name('web_2-server')).to_equal('web_2-server')
+  })
+
+  it('refuses an empty name', @{
+    expect(@{ check_name('   ') }).to_raise_instance_of(UsageError)
+  })
+
+  it('refuses capitals and spaces', @{
+    expect(@{ check_name('My App') }).to_raise_instance_of(UsageError)
+  })
+
+  it('refuses a name that ends on a separator', @{
+    expect(@{ check_name('my-app-') }).to_raise_instance_of(UsageError)
+  })
+
+  it('refuses a name longer than the limit', @{
+    expect(@{ check_name('a' * 65) }).to_raise_with_message('at most 64')
+  })
+})
+
+describe('check_version', @{
+  it('takes three numbers', @{
+    expect(check_version('1.4.0')).to_equal('1.4.0')
+  })
+
+  it('takes a pre-release and build metadata with them', @{
+    expect(check_version('2.0.0-rc.1+build.5')).to_equal('2.0.0-rc.1+build.5')
+  })
+
+  it('refuses two numbers', @{
+    expect(@{ check_version('1.2') }).to_raise_instance_of(UsageError)
+  })
+
+  it('refuses something that is not a version at all', @{
+    expect(@{ check_version('latest') })
+      .to_raise_with_message('is not a valid version')
+  })
+})
+
+describe('words_of', @{
+  it('answers nothing for nothing', @{
+    expect(words_of(nil)).to_equal([])
+  })
+
+  it('keeps a list as the words it already is', @{
+    expect(words_of(['cli', 'tools'])).to_equal(['cli', 'tools'])
+  })
+
+  it('splits a typed line on its commas', @{
+    expect(words_of('cli, tools ,  web')).to_equal(['cli', 'tools', 'web'])
+  })
+
+  it('drops the blanks a trailing comma leaves behind', @{
+    expect(words_of('cli,,')).to_equal(['cli'])
+  })
+})
+
+describe('answers', @{
+  it('names the project after the directory it is going into', @{
+    expect(chosen([]).name).to_equal('sandbox')
+  })
+
+  it('starts at the default version under the default license', @{
+    expect(chosen([]).version).to_equal(DEFAULT_VERSION)
+    expect(chosen([]).license).to_equal(DEFAULT_LICENSE)
+  })
+
+  it('takes the name the command line gave it', @{
+    expect(chosen(['--name', 'my-app']).name).to_equal('my-app')
+  })
+
+  it('checks the name the command line gave it', @{
+    expect(@{ chosen(['--name', 'My App']) }).to_raise_instance_of(UsageError)
+  })
+
+  it('checks the version the command line gave it', @{
+    expect(@{ chosen(['--version', 'one']) }).to_raise_instance_of(UsageError)
+  })
+
+  it('takes every author that followed the flag', @{
+    var given = chosen(['--author', 'Ada <ada@example.com>', 'Grace'])
+
+    expect(given.authors).to_equal(['Ada <ada@example.com>', 'Grace'])
+  })
+
+  it('takes the keywords that followed the flag', @{
+    expect(chosen(['-k', 'cli', 'tools']).keywords).to_equal(['cli', 'tools'])
+  })
+
+  it('leaves what the command line said nothing about', @{
+    expect(chosen([]).description).to_equal('')
+    expect(chosen([]).homepage).to_equal('')
+  })
+})
+
+describe('was_given', @{
+  it('knows a flag that was typed', @{
+    expect(was_given(parse(['--license', 'MIT']), 'license')).to_be_true()
+  })
+
+  it('knows a flag that was not', @{
+    expect(was_given(parse([]), 'license')).to_be_false()
+  })
+})
+
+describe('manifest', @{
+  it('always states the name, version, description, authors and license', @{
+    var written = manifest(chosen([])).project
+
+    expect(written.contains('name')).to_be_true()
+    expect(written.contains('version')).to_be_true()
+    expect(written.contains('description')).to_be_true()
+    expect(written.contains('authors')).to_be_true()
+    expect(written.contains('license')).to_be_true()
+  })
+
+  it('leaves out what has nothing to say', @{
+    var written = manifest(chosen([])).project
+
+    expect(written.contains('keywords')).to_be_false()
+    expect(written.contains('homepage')).to_be_false()
+    expect(written.contains('repository')).to_be_false()
+  })
+
+  it('writes what does', @{
+    var given = chosen(['-k', 'cli', '--homepage', 'https://example.com'])
+    var written = manifest(given).project
+
+    expect(written.keywords).to_equal(['cli'])
+    expect(written.homepage).to_equal('https://example.com')
+  })
+
+  it('leaves room for dependencies', @{
+    expect(manifest(chosen([])).dependencies).to_equal({})
+  })
+})
+
+describe('target_of', @{
+  it('takes the directory it was pointed at when nothing was typed', @{
+    expect(target_of(parse([]), ROOT)).to_equal(os.abs_path(ROOT))
+  })
+
+  it('resolves a relative path against it', @{
+    expect(target_of(parse(['sub']), ROOT))
+      .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
+  })
+
+  it('takes an absolute path exactly as it stands', @{
+    expect(target_of(parse(['/srv/app']), ROOT)).to_equal('/srv/app')
+  })
+
+  it('reads a path through the parser, flags and all', @{
+    var parsed = parse(['--name', 'my-app', 'sub'])
+
+    expect(target_of(parsed, ROOT))
+      .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
+  })
+})
+
+describe('wants_git', @{
+  it('does nothing when told none', @{
+    expect(wants_git(parse(['--vcs', 'none']), ROOT)).to_be_false()
+  })
+
+  it('does it when told git, repository or no repository', @{
+    expect(wants_git(parse(['--vcs', 'git']), ROOT)).to_be_true()
+  })
+
+  it('leaves a directory that is already in a repository alone', @{
+    expect(wants_git(parse([]), os.dir_name(__file__))).to_be_false()
+  })
+})
+
+describe('inside_git_repo', @{
+  it('knows this project is one', @{
+    expect(inside_git_repo(os.dir_name(__file__))).to_be_true()
+  })
+
+  it('knows the root of the filesystem is not', @{
+    expect(inside_git_repo('/')).to_be_false()
+  })
+})

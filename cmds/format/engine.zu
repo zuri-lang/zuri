@@ -164,11 +164,11 @@ def format(source: string) {
   }
 
   if !_same(_signature(source), _signature(result)) {
-    raise FormatError('formatting would have changed the tokens of the source')
+    raise FormatError('formatting would have changed the code, not just its layout')
   }
 
   if !_parses(result) {
-    raise FormatError('formatting would have produced source that does not parse')
+    raise FormatError('formatting would have produced code that no longer parses')
   }
 
   return result

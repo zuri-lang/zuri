@@ -1,0 +1,156 @@
+# Tests for the files a project is scaffolded with: what goes in them,
+# and that the Zuri among them is Zuri the runtime accepts.
+
+import os
+import test { * }
+import toml
+
+import ..plan { answers, manifest, parser }
+import ..template
+
+var ROOT = os.join_paths(os.dir_name(__file__), 'sandbox')
+
+# The manifest a command line describes, against `ROOT`.
+def written(words) {
+  return manifest(answers(parser().parse(words), ROOT))
+}
+
+describe('manifest_file', @{
+  it('opens with a word about what the file is for', @{
+    expect(template.manifest_file(written([])).starts_with('#')).to_be_true()
+  })
+
+  it('reads back as the manifest it was given', @{
+    var given = written(['-n', 'my-app', '--version', '1.2.3', '-k', 'cli'])
+    var read = toml.parse(template.manifest_file(given))
+
+    expect(read.project.name).to_equal('my-app')
+    expect(read.project.version).to_equal('1.2.3')
+    expect(read.project.keywords).to_equal(['cli'])
+  })
+
+  it('leaves the dependencies table empty and waiting', @{
+    expect(toml.parse(template.manifest_file(written([]))).dependencies)
+      .to_equal({})
+  })
+
+  it('survives a description with quotes in it', @{
+    var given = written(['-d', 'The "one" true app'])
+    var read = toml.parse(template.manifest_file(given))
+
+    expect(read.project.description).to_equal('The "one" true app')
+  })
+})
+
+describe('root_index', @{
+  it('re-exports the application', @{
+    expect(template.root_index(written([]))).to_contain('import @.app { * }')
+  })
+
+  it('starts the application only when it is what was run', @{
+    expect(template.root_index(written([])))
+      .to_contain('if __root__ == __file__ {')
+  })
+
+  it('titles itself after the project', @{
+    expect(template.root_index(written(['-n', 'my-app']))).to_contain('my-app')
+  })
+
+  it('says something about a project that said nothing', @{
+    expect(template.root_index(written(['-n', 'my-app'])))
+      .to_contain('One line on what my-app is.')
+  })
+
+  it('keeps a description from closing the doc block early', @{
+    var source = template.root_index(written(['-d', 'ends in */ trouble']))
+
+    expect(source).to_contain('ends in * / trouble')
+  })
+
+  it('keeps a description on one line', @{
+    var source = template.root_index(written(['-d', 'two\nlines']))
+
+    expect(source).to_contain(' * two lines')
+  })
+})
+
+describe('app_index', @{
+  it('declares itself the app module', @{
+    expect(template.app_index(written([]))).to_contain('@module app')
+  })
+
+  it('writes the greeting as an interpolation, not a concatenation', @{
+    expect(template.app_index(written([])))
+      .to_contain("return 'Hello, $" + '{name or "world"}!\'')
+  })
+
+  it('gives the project a main to start from', @{
+    expect(template.app_index(written([]))).to_contain('def main() {')
+  })
+})
+
+describe('app_test', @{
+  it('reaches the app from the tests directory', @{
+    expect(template.app_test(written([]))).to_contain('import ..app { greet }')
+  })
+
+  it('tests what the app module exports', @{
+    expect(template.app_test(written([]))).to_contain("describe('greet'")
+  })
+})
+
+describe('readme', @{
+  it('leads with the project name', @{
+    expect(template.readme(written(['-n', 'my-app'])).starts_with('# my-app'))
+      .to_be_true()
+  })
+
+  it('says how to run it and how to test it', @{
+    var text = template.readme(written([]))
+
+    expect(text).to_contain('zuri run')
+    expect(text).to_contain('zuri test')
+  })
+
+  it('names the license when there is one', @{
+    expect(template.readme(written(['-l', 'Apache-2.0'])))
+      .to_contain('Apache-2.0')
+  })
+
+  it('leaves the section out when there is not', @{
+    expect(template.readme(written(['-l', '']))).not.to_contain('## License')
+  })
+})
+
+describe('gitignore', @{
+  it('keeps the commands a project ships', @{
+    expect(template.gitignore()).to_contain('!.zuri/cmds/')
+  })
+})
+
+describe('gitattributes', @{
+  it('tells a host the project is Zuri', @{
+    expect(template.gitattributes()).to_contain('linguist-language=Zuri')
+  })
+})
+
+describe('every file', @{
+  it('ends on exactly one newline', @{
+    var given = written([])
+
+    var texts = [
+      template.manifest_file(given),
+      template.root_index(given),
+      template.app_index(given),
+      template.app_test(given),
+      template.readme(given),
+      template.gitignore(),
+      template.gitattributes(),
+    ]
+
+    for text in texts {
+      expect(text.ends_with('\n')).to_be_true()
+      expect(text.ends_with('\n\n')).to_be_false()
+    }
+  })
+})

@@ -1,0 +1,179 @@
+# Tests for writing a project out: what gets created, what is left
+# alone, and what a project that already exists looks like.
+
+import os
+import os.tempfile { create_temp_dir }
+import test { * }
+
+import ..plan { answers, manifest, parser }
+import ..scaffold { MANIFEST, ScaffoldError, create, has_project, layout }
+
+# A manifest to write, without a command line behind it.
+def a_manifest(words) {
+  return manifest(answers(parser().parse(words), '/somewhere/my-app'))
+}
+
+# A directory nobody else is using, thrown away afterwards.
+def in_sandbox(work: function) {
+  var directory = create_temp_dir('zuri-init-')
+
+  catch {
+    work(directory)
+  } as error {
+    os.remove_dir(directory, true)
+
+    raise error
+  }
+
+  os.remove_dir(directory, true)
+}
+
+# The text of a file under `directory`.
+def contents(directory: string, path: string) {
+  var handle = file(os.join_paths(directory, path), 'r')
+  var text = handle.read()
+
+  handle.close()
+
+  return text
+}
+
+describe('layout', @{
+  it('starts with the manifest and covers the whole project', @{
+    var paths = []
+
+    for entry in layout(a_manifest([])) {
+      paths.append(entry.path)
+    }
+
+    expect(paths).to_equal([
+      MANIFEST,
+      'index.zu',
+      'app/index.zu',
+      'tests/app.test.zu',
+      'README.md',
+      '.gitignore',
+      '.gitattributes',
+    ])
+  })
+
+  it('gives every file something to hold', @{
+    for entry in layout(a_manifest([])) {
+      expect(entry.contents.is_empty()).to_be_false()
+    }
+  })
+})
+
+describe('create', @{
+  it('writes the whole project into an empty directory', @{
+    in_sandbox(@(directory) {
+      var outcome = create(directory, a_manifest(['-n', 'my-app']), nil)
+
+      expect(outcome.created.length()).to_equal(7)
+      expect(outcome.kept).to_equal([])
+
+      expect(os.dir_exists(os.join_paths(directory, 'app'))).to_be_true()
+      expect(os.dir_exists(os.join_paths(directory, 'tests'))).to_be_true()
+      expect(contents(directory, MANIFEST)).to_contain('name = "my-app"')
+    })
+  })
+
+  it('creates a directory that is not there yet', @{
+    in_sandbox(@(directory) {
+      var nested = os.join_paths(directory, 'one', 'two')
+
+      create(nested, a_manifest([]), nil)
+
+      expect(file(os.join_paths(nested, 'index.zu')).exists()).to_be_true()
+    })
+  })
+
+  it('leaves everything alone the second time round', @{
+    in_sandbox(@(directory) {
+      create(directory, a_manifest([]), nil)
+
+      var outcome = create(directory, a_manifest([]), nil)
+
+      expect(outcome.created).to_equal([])
+      expect(outcome.kept.length()).to_equal(7)
+    })
+  })
+
+  it('writes the manifest again when asked, and nothing else', @{
+    in_sandbox(@(directory) {
+      create(directory, a_manifest(['-n', 'first']), nil)
+
+      var outcome = create(
+        directory, a_manifest(['-n', 'second']), { replace_manifest: true },
+      )
+
+      expect(outcome.created).to_equal([MANIFEST])
+      expect(contents(directory, MANIFEST)).to_contain('name = "second"')
+      expect(contents(directory, 'README.md')).to_contain('# first')
+    })
+  })
+
+  it('keeps a file the directory already had', @{
+    in_sandbox(@(directory) {
+      var readme = file(os.join_paths(directory, 'README.md'), 'w')
+
+      readme.write('mine')
+      readme.close()
+
+      var outcome = create(directory, a_manifest([]), nil)
+
+      expect(outcome.kept).to_equal(['README.md'])
+      expect(contents(directory, 'README.md')).to_equal('mine')
+    })
+  })
+
+  it('writes nothing at all on a dry run', @{
+    in_sandbox(@(directory) {
+      var outcome = create(directory, a_manifest([]), { dry_run: true })
+
+      expect(outcome.created.length()).to_equal(7)
+      expect(file(os.join_paths(directory, MANIFEST)).exists()).to_be_false()
+      expect(os.dir_exists(os.join_paths(directory, 'app'))).to_be_false()
+    })
+  })
+
+  it('refuses a project root that is really a file', @{
+    in_sandbox(@(directory) {
+      var blocker = os.join_paths(directory, 'taken')
+      var handle = file(blocker, 'w')
+
+      handle.write('')
+      handle.close()
+
+      expect(@{ create(blocker, a_manifest([]), nil) })
+        .to_raise_instance_of(ScaffoldError)
+    })
+  })
+})
+
+describe('has_project', @{
+  it('says no to a directory with nothing in it', @{
+    in_sandbox(@(directory) {
+      expect(has_project(directory)).to_be_false()
+    })
+  })
+
+  it('says yes once a project has been written there', @{
+    in_sandbox(@(directory) {
+      create(directory, a_manifest([]), nil)
+
+      expect(has_project(directory)).to_be_true()
+    })
+  })
+
+  it('says no to a manifest with nothing in it', @{
+    in_sandbox(@(directory) {
+      var empty = file(os.join_paths(directory, MANIFEST), 'w')
+
+      empty.write('   \n')
+      empty.close()
+
+      expect(has_project(directory)).to_be_false()
+    })
+  })
+})

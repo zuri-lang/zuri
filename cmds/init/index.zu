@@ -1,0 +1,289 @@
+/**
+ * @command init
+ * @description Scaffold a new Zuri project.
+ *
+ * The `init` command: start a project with everything it needs and
+ * nothing it does not.
+ *
+ *   zuri init [path]
+ *
+ * `path` is where the project goes, created if it is not there yet.
+ * Left off, the directory you are standing in becomes the project.
+ * What the project is called, what version it starts at and who
+ * wrote it are asked for when there is somebody to ask, and taken
+ * from the directory, the defaults and git when there is not.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import colors
+import io
+import os
+import os.process { exit }
+
+import .plan
+import .scaffold
+import .template
+
+# The runtime paints its own output on exactly these terms, and a
+# command that disagreed with it would look like a different program.
+var _paint = os.get_env('NO_COLOR') == nil and io.stdout.is_tty()
+
+def _heading(text) {
+  if !_paint {
+    return text
+  }
+
+  var green = colors.text(text, colors.text_color.green)
+
+  return colors.text(green, colors.style.bold)
+}
+
+def _accent(text) {
+  if !_paint {
+    return text
+  }
+
+  var cyan = colors.text(text, colors.text_color.cyan)
+
+  return colors.text(cyan, colors.style.bold)
+}
+
+def _muted(text) {
+  if !_paint {
+    return text
+  }
+
+  return colors.text(text, colors.text_color.dark_grey)
+}
+
+# Whether there is a reader at the other end of this to answer a
+# question. A pipe, a CI job or `--yes` all mean the defaults stand.
+def _interactive(parsed) {
+  if parsed.options.get('yes', false) {
+    return false
+  }
+
+  catch {
+    return io.stdin.is_tty()
+  } as error {
+    return false
+  }
+}
+
+# One question, with the current answer offered as the default.
+def _ask(label: string, current: string) {
+  var offer = current.is_empty() ? '' : _muted(' (${current})')
+  var typed = plan.clean(io.readline('  ${label}${offer}: '))
+
+  return typed.is_empty() ? current : typed
+}
+
+# The same, for an answer that has to pass `check` before it is
+# accepted. A bad answer is said out loud and asked for again, which
+# beats losing the other seven answers to one typo.
+def _ask_checked(label: string, current: string, check: function) {
+  while true {
+    var typed = _ask(label, current)
+
+    catch {
+      return check(typed)
+    } as error {
+      if !instance_of(error, plan.UsageError) {
+        raise error
+      }
+
+      echo '  ${_muted(error.message)}'
+    }
+  }
+}
+
+# Everything the command line left open, asked for in turn. What a
+# flag already settled is never asked about.
+def _interview(parsed, chosen, directory: string) {
+  echo ''
+  echo '  ${_heading("Creating a new project in")} ${directory}'
+  echo '  ${_muted("Press enter to accept the given defaults.")}'
+  echo ''
+
+  if !plan.was_given(parsed, 'name') {
+    var name = _ask_checked('project name', chosen.name, plan.check_name)
+
+    chosen.set('name', name)
+  }
+
+  if !plan.was_given(parsed, 'version') {
+    var version = _ask_checked('version', chosen.version, plan.check_version)
+
+    chosen.set('version', version)
+  }
+
+  if !plan.was_given(parsed, 'description') {
+    chosen.set('description', _ask('description', chosen.description))
+  }
+
+  if !plan.was_given(parsed, 'author') {
+    var authors = _ask('author', ', '.join(chosen.authors))
+
+    chosen.set('authors', plan.words_of(authors))
+  }
+
+  if !plan.was_given(parsed, 'license') {
+    chosen.set('license', _ask('license', chosen.license))
+  }
+
+  if !plan.was_given(parsed, 'keywords') {
+    var keywords = _ask('keywords', ', '.join(chosen.keywords))
+
+    chosen.set('keywords', plan.words_of(keywords))
+  }
+
+  if !plan.was_given(parsed, 'homepage') {
+    chosen.set('homepage', _ask('homepage', chosen.homepage))
+  }
+
+  if !plan.was_given(parsed, 'repository') {
+    chosen.set('repository', _ask('repository', chosen.repository))
+  }
+
+  return chosen
+}
+
+# The manifest as it will be written, and the chance to say no to it.
+def _confirm(directory: string, manifest) {
+  echo ''
+  echo '  ${_heading("About to write")} ${os.join_paths(directory, scaffold.MANIFEST)}'
+  echo ''
+
+  for line in template.manifest_file(manifest).split('\n') {
+    echo '  ${line}'
+  }
+
+  var typed = io.readline('  Is this OK? ${_muted("(yes)")} ')
+  var answer = plan.clean(typed).lower()
+
+  return answer.is_empty() or answer.starts_with('y')
+}
+
+# What to type next, once the project is there. The `cd` is worth
+# printing only when it actually goes somewhere.
+def _next_steps(directory: string) {
+  var steps = []
+  var where = os.relative_path(os.cwd(), directory)
+
+  if where != '.' {
+    steps.append('cd ${where}')
+  }
+
+  steps.append('zuri run')
+  steps.append('zuri test')
+
+  return steps
+}
+
+# The label column, right-aligned so the paths line up under each
+# other whatever the verbs turn out to be.
+def _row(label: string, width: int, text: string, quiet: bool) {
+  var padded = ' ' * (width - label.length()) + label
+
+  return '  ${quiet ? _muted(padded) : _heading(padded)}  ${quiet ? _muted(text) : text}'
+}
+
+def _report(directory: string, manifest, outcome, dry_run: bool, git: bool) {
+  var verb = dry_run ? 'would add' : 'added'
+  var width = outcome.kept.is_empty() ? verb.length() : verb.length().max(4)
+
+  echo ''
+  echo '  ${_heading("zuri init")}  ${_accent(manifest.project.name)} ${manifest.project.version}'
+  echo ''
+
+  for path in outcome.created {
+    echo _row(verb, width, path, false)
+  }
+
+  for path in outcome.kept {
+    echo _row('kept', width, path, true)
+  }
+
+  if git {
+    var note = dry_run ? 'a repository would be created' : 'repository created'
+
+    echo ''
+    echo _row('git', width, note, false)
+  }
+
+  if dry_run {
+    echo ''
+    echo '  ${_muted("nothing was written")}'
+
+    return
+  }
+
+  echo ''
+  echo '  ${_heading("Your project is ready.")}'
+
+  for step in _next_steps(directory) {
+    echo '  ${_muted("$")} ${step}'
+  }
+
+  echo ''
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var directory = plan.target_of(parsed, nil)
+
+  var force = parsed.options.get('force', false)
+  var dry_run = parsed.options.get('dry-run', false)
+
+  if scaffold.has_project(directory) and !force {
+    raise plan.UsageError(
+      "a project already exists in '${directory}'; use --force to rewrite its "
+        + '${scaffold.MANIFEST} and leave everything else alone'
+    )
+  }
+
+  var chosen = plan.answers(parsed, directory)
+  var interactive = _interactive(parsed)
+
+  if interactive {
+    chosen = _interview(parsed, chosen, directory)
+  }
+
+  var manifest = plan.manifest(chosen)
+
+  if interactive and !_confirm(directory, manifest) {
+    echo '  ${_muted("nothing was written")}'
+
+    exit(1)
+  }
+
+  # Asked before anything is written, so that `--vcs nonsense` is
+  # refused while the directory is still untouched.
+  var git = plan.wants_git(parsed, directory)
+
+  var outcome = scaffold.create(
+    directory, manifest, { dry_run, replace_manifest: force },
+  )
+
+  if git and !dry_run {
+    git = scaffold.init_git(directory)
+  }
+
+  _report(directory, manifest, outcome, dry_run, git)
+}
+
+catch {
+  main()
+} as error {
+  var usage = instance_of(error, plan.UsageError)
+  var blocked = instance_of(error, scaffold.ScaffoldError)
+
+  if usage or blocked {
+    echo 'init: ${error.message}'
+
+    exit(1)
+  }
+
+  raise error
+}

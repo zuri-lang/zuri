@@ -720,3 +720,289 @@ mod test_command {
     assert_eq!(output.status.code(), Some(1));
   }
 }
+
+/// The `init` command end to end: the tree it writes, the project that
+/// tree turns out to be, and what it refuses to do twice. The rules
+/// themselves are covered in Zuri, under `cmds/init/tests`; this is
+/// here to prove the command the runtime ships reaches them, and that
+/// what it scaffolds actually runs.
+mod init_command {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+  use std::process::{Command, Output};
+
+  /// An empty directory to initialize a project in or under.
+  fn case(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+      .join("init_command")
+      .join(name);
+
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("failed to create the case directory");
+
+    dir
+  }
+
+  fn zuri(cwd: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .args(args)
+      .current_dir(cwd)
+      .env("NO_COLOR", "1")
+      .output()
+      .expect("failed to run zuri")
+  }
+
+  fn combined(output: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+
+    text.replace("\r\n", "\n")
+  }
+
+  fn read(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|_| panic!("{} was never written", path.display()))
+  }
+
+  /// Every file the layout promises, as paths under the project root.
+  const LAYOUT: [&str; 7] = [
+    "project.toml",
+    "index.zu",
+    "app/index.zu",
+    "tests/app.test.zu",
+    "README.md",
+    ".gitignore",
+    ".gitattributes",
+  ];
+
+  #[test]
+  fn it_writes_the_whole_layout() {
+    let dir = case("layout");
+    let output = zuri(&dir, &["init", "myproject", "--yes", "--vcs", "none"]);
+    let text = combined(&output);
+
+    assert!(
+      output.status.success(),
+      "init did not exit cleanly\n--- actual ---\n{text}\n"
+    );
+
+    let root = dir.join("myproject");
+
+    for path in LAYOUT {
+      assert!(
+        root.join(path).is_file(),
+        "{path} was never written\n--- actual ---\n{text}\n"
+      );
+    }
+
+    assert!(
+      read(&root.join("project.toml")).contains("name = \"myproject\""),
+      "the manifest was not named after the project"
+    );
+  }
+
+  #[test]
+  fn what_it_writes_runs_and_passes_its_own_tests() {
+    let dir = case("runnable");
+
+    zuri(&dir, &["init", "app", "--yes", "--vcs", "none"]);
+
+    let root = dir.join("app");
+    let run = zuri(&root, &["run"]);
+    let ran = combined(&run);
+
+    assert!(
+      run.status.success() && ran.contains("Hello, world!"),
+      "the scaffolded project did not run\n--- actual ---\n{ran}\n"
+    );
+
+    let tested = zuri(&root, &["test"]);
+    let report = combined(&tested);
+
+    assert!(
+      tested.status.success(),
+      "the scaffolded tests did not pass\n--- actual ---\n{report}\n"
+    );
+  }
+
+  #[test]
+  fn what_it_writes_is_already_formatted() {
+    let dir = case("formatted");
+
+    zuri(&dir, &["init", "app", "--yes", "--vcs", "none"]);
+
+    let root = dir.join("app");
+    let output = zuri(&root, &["format", "--dry-run", "."]);
+    let text = combined(&output);
+
+    assert!(
+      output.status.success(),
+      "the scaffolded source was not in the project style\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn with_no_path_it_initializes_where_it_stands() {
+    let dir = case("here");
+    let output = zuri(&dir, &["init", "--yes", "--vcs", "none"]);
+    let text = combined(&output);
+
+    assert!(
+      output.status.success() && dir.join("project.toml").is_file(),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert!(
+      read(&dir.join("project.toml")).contains("name = \"here\""),
+      "the project was not named after the directory it went into"
+    );
+  }
+
+  #[test]
+  fn the_command_line_settles_what_it_would_otherwise_ask() {
+    let dir = case("flags");
+
+    let output = zuri(
+      &dir,
+      &[
+        "init",
+        "--yes",
+        "--vcs",
+        "none",
+        "--name",
+        "my-app",
+        "--version",
+        "2.1.0",
+        "--description",
+        "Does one thing.",
+        "--license",
+        "Apache-2.0",
+        "--homepage",
+        "https://example.com",
+      ],
+    );
+
+    let text = combined(&output);
+    assert!(output.status.success(), "\n--- actual ---\n{text}\n");
+
+    let manifest = read(&dir.join("project.toml"));
+
+    for line in [
+      "name = \"my-app\"",
+      "version = \"2.1.0\"",
+      "description = \"Does one thing.\"",
+      "license = \"Apache-2.0\"",
+      "homepage = \"https://example.com\"",
+    ] {
+      assert!(
+        manifest.contains(line),
+        "{line} never reached the manifest\n--- actual ---\n{manifest}\n"
+      );
+    }
+  }
+
+  #[test]
+  fn a_project_is_never_initialized_twice() {
+    let dir = case("twice");
+
+    zuri(&dir, &["init", "--yes", "--vcs", "none"]);
+
+    let output = zuri(&dir, &["init", "--yes", "--vcs", "none"]);
+    let text = combined(&output);
+
+    assert!(
+      text.contains("a project already exists"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+  }
+
+  #[test]
+  fn force_rewrites_the_manifest_and_leaves_the_rest() {
+    let dir = case("force");
+
+    zuri(&dir, &["init", "--yes", "--vcs", "none", "--name", "first"]);
+
+    let output = zuri(
+      &dir,
+      &["init", "--yes", "--vcs", "none", "--force", "--name", "second"],
+    );
+
+    let text = combined(&output);
+    assert!(output.status.success(), "\n--- actual ---\n{text}\n");
+
+    assert!(
+      read(&dir.join("project.toml")).contains("name = \"second\""),
+      "the manifest was not written again"
+    );
+    assert!(
+      read(&dir.join("README.md")).contains("# first"),
+      "--force disturbed a file that was not the manifest"
+    );
+  }
+
+  #[test]
+  fn a_dry_run_reports_and_writes_nothing() {
+    let dir = case("dry");
+    let output = zuri(&dir, &["init", "--yes", "--vcs", "none", "--dry-run"]);
+    let text = combined(&output);
+
+    assert!(output.status.success(), "\n--- actual ---\n{text}\n");
+
+    for path in LAYOUT {
+      assert!(
+        text.contains(path),
+        "{path} was not reported\n--- actual ---\n{text}\n"
+      );
+      assert!(
+        !dir.join(path).exists(),
+        "{path} was written on a dry run\n--- actual ---\n{text}\n"
+      );
+    }
+  }
+
+  #[test]
+  fn a_name_it_cannot_use_is_refused_before_anything_is_written() {
+    let dir = case("bad_name");
+    let output = zuri(&dir, &["init", "--yes", "--name", "My App"]);
+    let text = combined(&output);
+
+    assert!(
+      text.contains("init: 'My App' cannot be used as a project name"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+      !dir.join("project.toml").exists(),
+      "a refused name still wrote a project"
+    );
+  }
+
+  #[test]
+  fn a_version_it_cannot_use_is_refused_too() {
+    let dir = case("bad_version");
+    let output = zuri(&dir, &["init", "--yes", "--version", "1.2"]);
+    let text = combined(&output);
+
+    assert!(
+      text.contains("init: '1.2' is not a valid version"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(output.status.code(), Some(1));
+  }
+
+  #[test]
+  fn it_arrives_described_in_the_listing() {
+    let dir = case("listed");
+    let text = combined(&zuri(&dir, &["--help"]));
+
+    let line = text
+      .lines()
+      .map(str::trim)
+      .find(|line| line.starts_with("init"))
+      .unwrap_or_else(|| panic!("init was not listed\n--- actual ---\n{text}\n"));
+
+    assert!(
+      line.len() > "init".len(),
+      "init was listed with no description: {line:?}"
+    );
+  }
+}

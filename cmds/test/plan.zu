@@ -169,8 +169,8 @@ def resolve(target: ?string, root: ?string) {
 
   if matched.length() > 1 {
     raise UsageError(
-      "'${target}' names ${matched.length()} files under '${TESTS}': "
-        + "${', '.join(matched)}; say which one"
+      "'${target}' matches ${matched.length()} files under '${TESTS}': "
+        + "${', '.join(matched)}; say which one you mean"
     )
   }
 
@@ -335,8 +335,8 @@ def _reject_directory_flags(parsed) {
   for name in ['match', 'ignore'] {
     if parsed.options.get(name, nil) != nil {
       raise UsageError(
-        '--${name} chooses among the files in a directory, '
-          + 'so it cannot be combined with a single test file'
+        '--${name} picks files out of a directory, so it cannot be used '
+          + 'when a single test file was named'
       )
     }
   }
@@ -394,10 +394,10 @@ def parser() {
   var parser = args.Parser('test', false)
 
   parser.description = "Run a project's test files, each in its own process."
-  parser.epilog = 'With no target, the tests directory here is run whole.'
+  parser.epilog = 'If no target is given, everything in the tests directory is run.'
 
   parser.add_index(
-    'target', 'A test file or a directory of them; the tests directory by default'
+    'target', 'A test file, or a directory of them; the tests directory by default'
   )
 
   parser.add_option(
@@ -405,7 +405,7 @@ def parser() {
     { short_name: 'j', type: args.STRING, metavar: 'count' },
   )
   parser.add_option(
-    'timeout', 'How long one file may run before it is killed, such as 30s',
+    'timeout', 'How long to give a single file before killing it, such as 30s',
     { short_name: 't', type: args.STRING, metavar: 'duration' },
   )
   parser.add_option(
@@ -413,15 +413,16 @@ def parser() {
     { short_name: 'b', type: args.OPTIONAL, metavar: 'count' },
   )
   parser.add_option(
-    'match', 'Filename patterns to run, in place of *.zu',
+    'match', 'Filename patterns to run, instead of *.zu',
     { short_name: 'm', type: args.LIST, metavar: 'pattern' },
   )
   parser.add_option(
-    'ignore', 'Filename patterns to skip, in place of the defaults',
+    'ignore', 'Filename patterns to skip, instead of the defaults',
     { short_name: 'i', type: args.LIST, metavar: 'pattern' },
   )
   parser.add_option(
-    'no-recursive', 'Only the files directly in the directory, not below it', nil
+    'no-recursive',
+    'Only the files directly in the directory, not those below it', nil,
   )
   parser.add_option(
     'env', 'Extra environment for every test process, as KEY=VALUE',

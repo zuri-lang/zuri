@@ -1,0 +1,253 @@
+/**
+ * The files a new project starts with.
+ *
+ * Every function here takes the manifest and returns one file's
+ * whole text, trailing newline and all. Nothing touches the disk, so
+ * what a project is scaffolded with can be read back in a test
+ * exactly as it would be written.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import toml
+
+import .plan { clean }
+
+# `${` cannot be written inside a Zuri string: it always opens an
+# interpolation, and a backslash does not stop it. The source these
+# templates emit interpolates for itself, so it spells the opener out.
+var _OPEN = '$' + '{'
+
+# One line of prose, safe to drop into a doc block: no newlines to
+# break it up, and no `*/` to close the block early.
+def _one_line(text) {
+  return clean(text).replace('*/', '* /', false)
+}
+
+# The description shown wherever a project left its own blank.
+def _about(manifest) {
+  var description = _one_line(manifest.project.description)
+
+  if description.is_empty() {
+    return 'One line on what ${manifest.project.name} is.'
+  }
+
+  return description
+}
+
+/**
+ * The `project.toml` describing `manifest`.
+ *
+ * @param dict manifest: as `plan.manifest()` returns it.
+ * @returns string
+ */
+def manifest_file(manifest) {
+  var lines = [
+    '# What this project is. `zuri` reads it; so do the people who',
+    '# come to the project after you.',
+  ]
+
+  return '\n'.join(lines) + '\n\n' + toml.dump(manifest)
+}
+
+/**
+ * The project's entry point, `index.zu`.
+ *
+ * @param dict manifest
+ * @returns string
+ */
+def root_index(manifest) {
+  var lines = [
+    '/**',
+    ' * ${manifest.project.name}',
+    ' *',
+    ' * ${_about(manifest)}',
+    ' *',
+    " * Everything `app` exports is re-exported from here, so this file",
+    ' * is the whole of the project as far as anything importing it is',
+    ' * concerned.',
+    ' */',
+    '',
+    'import @.app { * }',
+    '',
+    '# Running the project starts it. Importing it does not, so another',
+    '# project can build on this one without setting it going.',
+    'if __root__ == __file__ {',
+    '  main()',
+    '}',
+    '',
+  ]
+
+  return '\n'.join(lines)
+}
+
+/**
+ * The application module, `app/index.zu`.
+ *
+ * @param dict manifest
+ * @returns string
+ */
+def app_index(manifest) {
+  var head = [
+    '/**',
+    ' * @module app',
+    ' *',
+    ' * The application itself. The project root re-exports everything',
+    ' * declared here, so whatever this module exports is what the',
+    ' * project offers.',
+    ' */',
+    '',
+    '/**',
+    ' * A greeting for `name`.',
+    ' *',
+    ' * @param ?string name: who to greet; the world at large when left',
+    ' *    off.',
+    ' * @returns string',
+    ' */',
+    'def greet(name: ?string) {',
+    '',
+  ]
+
+  var tail = [
+    '}',
+    '',
+    '/**',
+    ' * Runs the application.',
+    ' *',
+    ' * This is where `zuri run` arrives. Everything the project does',
+    ' * of its own accord starts here.',
+    ' */',
+    'def main() {',
+    '  echo greet()',
+    '}',
+    '',
+  ]
+
+  var greeting = "  return 'Hello, " + _OPEN + 'name or "world"}!\'\n'
+
+  return '\n'.join(head) + greeting + '\n'.join(tail)
+}
+
+/**
+ * The starting test, `tests/app.test.zu`.
+ *
+ * @param dict manifest
+ * @returns string
+ */
+def app_test(manifest) {
+  var lines = [
+    "# Tests for the application's exports. `zuri test` runs every file",
+    '# in this directory, each in a process of its own.',
+    '',
+    'import test { * }',
+    '',
+    'import ..app { greet }',
+    '',
+    "describe('greet', @{",
+    "  it('greets the world when it is given nobody', @{",
+    "    expect(greet()).to_equal('Hello, world!')",
+    '  })',
+    '',
+    "  it('greets whoever it is handed', @{",
+    "    expect(greet('Zuri')).to_equal('Hello, Zuri!')",
+    '  })',
+    '})',
+    '',
+  ]
+
+  return '\n'.join(lines)
+}
+
+/**
+ * The project's `README.md`.
+ *
+ * @param dict manifest
+ * @returns string
+ */
+def readme(manifest) {
+  var project = manifest.project
+
+  var lines = [
+    '# ${project.name}',
+    '',
+    _about(manifest),
+    '',
+    '## Running it',
+    '',
+    '```sh',
+    'zuri run',
+    '```',
+    '',
+    '## Testing it',
+    '',
+    '```sh',
+    'zuri test',
+    '```',
+    '',
+    '## Layout',
+    '',
+    '| Path | What it holds |',
+    '| --- | --- |',
+    '| `index.zu` | The entry point: re-exports `app`, and starts it when run. |',
+    '| `app/` | The application. What it exports, the project exports. |',
+    '| `tests/` | The tests, one file at a time, run by `zuri test`. |',
+    '| `project.toml` | The name, the version, and everything else about the project. |',
+    '',
+  ]
+
+  if !project.license.is_empty() {
+    lines.append('## License')
+    lines.append('')
+    lines.append('${project.license}')
+    lines.append('')
+  }
+
+  return '\n'.join(lines)
+}
+
+/**
+ * The project's `.gitignore`.
+ *
+ * @returns string
+ */
+def gitignore() {
+  var lines = [
+    "# Zuri's own working directory. Commands the project ships are",
+    '# part of it and stay.',
+    '.zuri/*',
+    '!.zuri/cmds/',
+    '',
+    '# Editors',
+    '.vscode/',
+    '.idea/',
+    '.vs/',
+    '*.swp',
+    '',
+    '# Operating systems',
+    '.DS_Store',
+    'Thumbs.db',
+    '',
+    '# Logs and scratch',
+    '*.log',
+    'tmp/',
+    '',
+  ]
+
+  return '\n'.join(lines)
+}
+
+/**
+ * The project's `.gitattributes`, which is what makes a host count
+ * the project as Zuri rather than guess at it.
+ *
+ * @returns string
+ */
+def gitattributes() {
+  var lines = [
+    '*.zu linguist-detectable',
+    '*.zu linguist-language=Zuri',
+    '',
+  ]
+
+  return '\n'.join(lines)
+}

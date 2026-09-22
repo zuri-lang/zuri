@@ -1,0 +1,521 @@
+/**
+ * Turning what was typed after `zuri init` into a project to write.
+ *
+ * The command itself prompts and prints; every rule about what a
+ * project may be called, which directory it lands in, and what ends
+ * up in its `project.toml` lives here, where it can be tested without
+ * a single file being created.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+import os.process { spawn }
+
+/** The version a project starts life at. */
+var DEFAULT_VERSION = '0.1.0'
+
+/** The license a project declares when its author says nothing else. */
+var DEFAULT_LICENSE = 'MIT'
+
+/** The name used when a directory cannot supply a usable one. */
+var FALLBACK_NAME = 'zuri-app'
+
+/** The longest a project name may be. */
+var NAME_LIMIT = 64
+
+# A name is a lowercase word, or several joined by single hyphens or
+# underscores, and it begins and ends on something alphanumeric. Wide
+# enough for what people actually type, narrow enough to stay a
+# directory name, a URL segment and a display name all at once.
+var _NAME_PATTERN = '/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/'
+
+# Semantic versioning: three numbers, then the optional pre-release and
+# build metadata that `1.0.0-rc.1+build.5` carries.
+var _VERSION_PATTERN = '/^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$/'
+
+/**
+ * Raised for anything the reader can put right by typing something
+ * else. The command prints the message and exits `1`; anything that
+ * is not one of these is a bug and goes up unhandled.
+ */
+class UsageError < Error {}
+
+/**
+ * `text` with its whitespace settled: every run of it becomes one
+ * space, and the ends lose theirs entirely.
+ *
+ * `trim()` knows only about spaces, and text arriving from a
+ * terminal or from another program ends in a newline, so everything
+ * read from outside comes through here first.
+ *
+ * @param text
+ * @returns string
+ */
+def clean(text) {
+  return text.to_string().replace('/\\s+/', ' ', true).trim()
+}
+
+# Whether `path` is rooted, in which case it names exactly itself and
+# is never resolved against anything.
+def _is_absolute(path: string) {
+  if path.starts_with('/') or path.starts_with('\\') {
+    return true
+  }
+
+  # A Windows drive letter: `C:\work`, `c:/work`.
+  return path.length() > 2 and path[1, 2] == ':' and
+    (path[2, 3] == '\\' or path[2, 3] == '/')
+}
+
+# What `git config` says about `key`, or `nil` when git is not
+# installed, has no such setting, or fails for any other reason. A
+# scaffolder guessing at an author never gets to be the reason the
+# command fails.
+def _git_config(key: string) {
+  if os.which('git') == nil {
+    return nil
+  }
+
+  catch {
+    var child = spawn(
+      'git', ['config', '--get', key],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+
+    var value = clean(child.read_stdout().to_string())
+
+    if child.wait() != 0 or value.is_empty() {
+      return nil
+    }
+
+    return value
+  } as error {
+    return nil
+  }
+}
+
+/**
+ * A usable project name built out of `text`.
+ *
+ * Lower-cases it, turns every run of characters a name may not hold
+ * into a single hyphen, and trims the separators off both ends. A
+ * directory called `My Project (v2)` suggests `my-project-v2`.
+ *
+ * @param string text
+ * @returns string: a name that `check_name()` accepts, falling back
+ *    to `zuri-app` when `text` has nothing usable left in it.
+ */
+def suggest_name(text: string) {
+  var suggested = text.lower().replace('/[^a-z0-9_-]+/', '-', true)
+
+  while suggested.starts_with('-') or suggested.starts_with('_') {
+    suggested = suggested[1,]
+  }
+
+  while suggested.ends_with('-') or suggested.ends_with('_') {
+    suggested = suggested[0, suggested.length() - 1]
+  }
+
+  if suggested.length() > NAME_LIMIT {
+    suggested = suggested[0, NAME_LIMIT]
+
+    while suggested.ends_with('-') or suggested.ends_with('_') {
+      suggested = suggested[0, suggested.length() - 1]
+    }
+  }
+
+  return suggested.is_empty() ? FALLBACK_NAME : suggested
+}
+
+/**
+ * `raw` as a project name.
+ *
+ * @param string raw: what was typed, leading and trailing spaces and
+ *    all.
+ * @returns string: the trimmed name.
+ * @raises UsageError when it is empty, too long, or holds anything
+ *    but lowercase letters, digits, hyphens and underscores between
+ *    alphanumeric ends.
+ */
+def check_name(raw: string) {
+  var name = clean(raw)
+
+  if name.is_empty() {
+    raise UsageError('a project needs a name')
+  }
+
+  if name.length() > NAME_LIMIT {
+    raise UsageError(
+      "'${name}' is ${name.length()} characters long, but a project name can be "
+        + 'at most ${NAME_LIMIT}'
+    )
+  }
+
+  if !is_dict(name.match(_NAME_PATTERN)) {
+    raise UsageError(
+      "'${name}' cannot be used as a project name; use lowercase letters, "
+        + 'digits, hyphens and underscores, and begin and end with a letter '
+        + 'or a digit'
+    )
+  }
+
+  return name
+}
+
+/**
+ * `raw` as a version.
+ *
+ * @param string raw
+ * @returns string: the trimmed version.
+ * @raises UsageError when it is not semantic versioning: three
+ *    numbers, optionally followed by a pre-release and build
+ *    metadata.
+ */
+def check_version(raw: string) {
+  var version = clean(raw)
+
+  if !is_dict(version.match(_VERSION_PATTERN)) {
+    raise UsageError(
+      "'${version}' is not a valid version; use major.minor.patch, such as "
+        + '${DEFAULT_VERSION}'
+    )
+  }
+
+  return version
+}
+
+/**
+ * A list of words out of whatever `value` is.
+ *
+ * A list arrives from the flag, which takes as many words as follow
+ * it. A string arrives from the prompt, where one line holding
+ * commas is what people type. Both come out the same: trimmed, with
+ * the blanks dropped and the order kept.
+ *
+ * @param value: a `list`, a `string`, or `nil`.
+ * @returns list
+ */
+def words_of(value) {
+  if value == nil {
+    return []
+  }
+
+  var raw = is_list(value) ? value : value.split(',')
+  var words = []
+
+  for word in raw {
+    var trimmed = clean(word)
+
+    if !trimmed.is_empty() {
+      words.append(trimmed)
+    }
+  }
+
+  return words
+}
+
+/**
+ * The author a new project is attributed to, read from git.
+ *
+ * @returns list: `['Name <email>']`, `['Name']` when git has no
+ *    email for this machine, or empty when it has no name either.
+ */
+def default_authors() {
+  var name = _git_config('user.name')
+
+  if name == nil {
+    return []
+  }
+
+  var email = _git_config('user.email')
+
+  return email == nil ? [name] : ['${name} <${email}>']
+}
+
+/**
+ * Everything a project is given when nothing is said about it.
+ *
+ * The name comes from the directory it is being created in, the
+ * author from git, and the rest from the constants above.
+ *
+ * @param string directory: the project's root, absolute or not.
+ * @returns dict: every answer `manifest()` reads, filled in.
+ */
+def defaults(directory: string) {
+  return {
+    name: suggest_name(os.base_name(directory)),
+    version: DEFAULT_VERSION,
+    description: '',
+    authors: default_authors(),
+    license: DEFAULT_LICENSE,
+    keywords: [],
+    homepage: '',
+    repository: '',
+  }
+}
+
+# The flags that carry a plain line of text, and the answer each one
+# settles.
+var _TEXT_FLAGS = ['description', 'license', 'homepage', 'repository']
+
+/**
+ * The answers `parsed` states outright, over the defaults for the
+ * rest.
+ *
+ * Nothing here prompts. What the command line did not say keeps the
+ * value `defaults()` gave it, which is also the default the prompt
+ * offers when there is a reader to ask.
+ *
+ * @param dict parsed: what `args.Parser.parse()` returned.
+ * @param string directory: the project's root.
+ * @returns dict
+ * @raises UsageError when a flag's value is not what it takes.
+ */
+def answers(parsed, directory: string) {
+  var chosen = defaults(directory)
+  var given = parsed.options
+
+  if given.get('name', nil) != nil {
+    chosen.set('name', check_name(given.get('name')))
+  }
+
+  if given.get('version', nil) != nil {
+    chosen.set('version', check_version(given.get('version')))
+  }
+
+  for flag in _TEXT_FLAGS {
+    if given.get(flag, nil) != nil {
+      chosen.set(flag, clean(given.get(flag)))
+    }
+  }
+
+  if given.get('author', nil) != nil {
+    chosen.set('authors', words_of(given.get('author')))
+  }
+
+  if given.get('keywords', nil) != nil {
+    chosen.set('keywords', words_of(given.get('keywords')))
+  }
+
+  return chosen
+}
+
+/**
+ * Whether `parsed` asked for a flag by name.
+ *
+ * The prompt asks about everything the command line left open, so it
+ * needs to know what the command line closed.
+ *
+ * @param dict parsed
+ * @param string flag
+ * @returns bool
+ */
+def was_given(parsed, flag: string) {
+  return parsed.options.get(flag, nil) != nil
+}
+
+/**
+ * The `project.toml` that `chosen` describes.
+ *
+ * `name`, `version`, `description`, `authors` and `license` are
+ * always written, empty or not, so the file states the whole shape a
+ * project has. `keywords`, `homepage` and `repository` are written
+ * only once they say something.
+ *
+ * @param dict chosen: the answers, as `answers()` returns them.
+ * @returns dict: ready for `toml.dump()`, in the order it should
+ *    appear in the file.
+ */
+def manifest(chosen) {
+  var project = {
+    name: chosen.name,
+    version: chosen.version,
+    description: chosen.description,
+    authors: chosen.authors,
+    license: chosen.license,
+  }
+
+  if !chosen.keywords.is_empty() {
+    project.set('keywords', chosen.keywords)
+  }
+
+  if !chosen.homepage.is_empty() {
+    project.set('homepage', chosen.homepage)
+  }
+
+  if !chosen.repository.is_empty() {
+    project.set('repository', chosen.repository)
+  }
+
+  return { project, dependencies: {} }
+}
+
+/**
+ * The directory the project is written into.
+ *
+ * A path that was typed is taken as it stands when it is absolute,
+ * and resolved against `root` when it is not. Nothing typed means
+ * `root` itself, which is how `zuri init` initializes the directory
+ * somebody is already standing in.
+ *
+ * @param dict parsed
+ * @param ?string root: the directory to resolve against, the working
+ *    directory by default.
+ * @returns string: an absolute path, whether or not anything is
+ *    there yet.
+ */
+def target_of(parsed, root: ?string) {
+  if root == nil {
+    root = os.cwd()
+  }
+
+  if parsed.indexes.is_empty() {
+    return os.abs_path(root)
+  }
+
+  var typed = clean(parsed.indexes[0])
+
+  if typed.is_empty() {
+    return os.abs_path(root)
+  }
+
+  if _is_absolute(typed) {
+    return os.abs_path(typed)
+  }
+
+  return os.abs_path(os.join_paths(root, typed))
+}
+
+/**
+ * Whether the new project gets a git repository of its own.
+ *
+ * `--vcs` settles it outright. Left off, a repository is created
+ * when git is installed and the directory is not already inside one,
+ * which is the only case where a fresh repository is what anybody
+ * wanted.
+ *
+ * @param dict parsed
+ * @param string directory: the project's root.
+ * @returns bool
+ * @raises UsageError when `--vcs` names something other than `git`
+ *    or `none`.
+ */
+def wants_git(parsed, directory: string) {
+  var asked = parsed.options.get('vcs', nil)
+
+  if asked != nil {
+    var choice = clean(asked).lower()
+
+    if choice == 'none' {
+      return false
+    }
+
+    if choice != 'git' {
+      raise UsageError("--vcs takes 'git' or 'none', got '${asked}'")
+    }
+
+    return true
+  }
+
+  if os.which('git') == nil {
+    return false
+  }
+
+  return !inside_git_repo(directory)
+}
+
+/**
+ * Whether `directory`, or anything above it, already holds a `.git`.
+ *
+ * @param string directory
+ * @returns bool
+ */
+def inside_git_repo(directory: string) {
+  var here = os.abs_path(directory)
+
+  while true {
+    if os.dir_exists(os.join_paths(here, '.git')) {
+      return true
+    }
+
+    var up = os.dir_name(here)
+
+    if up == here {
+      return false
+    }
+
+    here = up
+  }
+}
+
+/**
+ * The command's own argument parser.
+ *
+ * It lives beside the rules it feeds so that a flag and what the flag
+ * does are declared in one place, and so a test can put a command
+ * line through both.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('init', false)
+
+  parser.description = 'Scaffold a new Zuri project.'
+  parser.epilog = 'If no path is given, the project will be created in the current working directory.'
+
+  parser.add_index(
+    'path', 'Where the project goes, created if missing; os.cwd() by default'
+  )
+
+  parser.add_option(
+    'name', 'The name of the project; the directory name by default',
+    { short_name: 'n', type: args.STRING, metavar: 'name' },
+  )
+  parser.add_option(
+    'version', 'The version the project starts at, as major.minor.patch',
+    { type: args.STRING, metavar: 'version' },
+  )
+  parser.add_option(
+    'description', 'A single line saying what the project does',
+    { short_name: 'd', type: args.STRING, metavar: 'text' },
+  )
+  parser.add_option(
+    'author', 'Who wrote it, as "Name <email>"; taken from git by default',
+    { short_name: 'a', type: args.LIST, metavar: 'author' },
+  )
+  parser.add_option(
+    'license', 'The license the project is released under, as an SPDX identifier',
+    { short_name: 'l', type: args.STRING, metavar: 'license' },
+  )
+  parser.add_option(
+    'keywords', 'Keywords people might search for the project by',
+    { short_name: 'k', type: args.LIST, metavar: 'keyword' },
+  )
+  parser.add_option(
+    'homepage', 'The address of the project homepage or its documentation',
+    { type: args.STRING, metavar: 'url' },
+  )
+  parser.add_option(
+    'repository', 'The address of the repository the source lives in',
+    { type: args.STRING, metavar: 'url' },
+  )
+  parser.add_option(
+    'yes', 'Accept every default without asking any questions',
+    { short_name: 'y' },
+  )
+  parser.add_option(
+    'vcs', 'Whether to create a git repository; either git or none',
+    { type: args.CHOICE, choices: ['git', 'none'], metavar: 'kind' },
+  )
+  parser.add_option(
+    'force',
+    'Rewrite project.toml even when a project already exists here', nil,
+  )
+  parser.add_option(
+    'dry-run', 'Show what would be written without writing anything', nil
+  )
+
+  return parser
+}

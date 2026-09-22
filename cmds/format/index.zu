@@ -70,9 +70,11 @@ def main() {
   var parser = args.Parser('format', false)
 
   parser.description = 'Lay out Zuri source in the project style.'
-  parser.add_index('path', 'A .zu file, or a directory to format through')
+  parser.add_index(
+    'path', 'A .zu file, or a directory to format, subdirectories included'
+  )
   parser.add_option(
-    'dry-run', 'Report what would change without writing anything',
+    'dry-run', 'Show what would change without writing anything',
     { short_name: 'n' },
   )
 
