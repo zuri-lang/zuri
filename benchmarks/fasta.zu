@@ -35,7 +35,7 @@ const iubP = [
 ]
 
 const homosapiens = 'acgt'
-const  homosapiensP = [
+const homosapiensP = [
   0.3029549426680,
   0.1979883004921,
   0.1975473066391,
@@ -84,7 +84,7 @@ def randomFasta(seq, probability, n) {
     /* slowest idiomatic linear lookup.  Fast if len is short though. */
     iter ; j < len - 1; j++ {
       v -= probability[j]
-      if (v<0) break
+      if (v < 0) break
     }
 
     b += seq[j]

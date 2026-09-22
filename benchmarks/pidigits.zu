@@ -64,7 +64,6 @@ def calculatePi(arg: number) {
   }
 }
 
-
 var start = time()
 calculatePi(10_000)
 

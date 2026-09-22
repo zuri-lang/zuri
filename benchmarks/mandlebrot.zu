@@ -26,7 +26,7 @@ class Mandelbrot {
   compute()
   {
     echo "P4\n${self.size} ${self.size}\n"
-    iter var y = 0; y<self.size; y++ {
+    iter var y = 0; y < self.size; y++ {
       self.computeRow(y)
     }
     if (self.bufLen != 0) print(self.buf.take(self.bufLen))
@@ -36,12 +36,12 @@ class Mandelbrot {
   {
     var bits = 0
 
-    var Ci = (y*self.fac - 1.0)
+    var Ci = (y * self.fac - 1.0)
     var bufLocal = self.buf
-    iter var x = 0; x<self.size;x++ {
+    iter var x = 0; x < self.size; x++ {
       var Zr = 0.0
       var Zi = 0.0
-      var Cr = (x*self.fac - 1.5)
+      var Cr = (x * self.fac - 1.5)
       var i = 50
       var ZrN = 0
       var ZiN = 0
@@ -50,13 +50,13 @@ class Mandelbrot {
         Zr = ZrN - ZiN + Cr
         ZiN = Zi * Zi
         ZrN = Zr * Zr
-      } while (!(ZiN + ZrN > 4.0) and i-- > 0)
+      } while (!(ZiN + ZrN > 4.0) and i--> 0)
 
       bits = bits << 1
       if (i == 0) bits++
 
-      if (x%8 == 7) {
-        bufLocal[self.bufLen++ - 1] = bits
+      if (x % 8 == 7) {
+        bufLocal[self.bufLen++-1] = bits
         if (self.bufLen == BUFFER_SIZE) {
           print(bufLocal)
           self.bufLen = 0
@@ -64,9 +64,9 @@ class Mandelbrot {
         bits = 0
       }
     }
-    if (self.shift!=0) {
+    if (self.shift != 0) {
       bits = bits << self.shift
-      bufLocal[self.bufLen++ - 1] = bits
+      bufLocal[self.bufLen++-1] = bits
       if (self.bufLen == BUFFER_SIZE) {
         print(bufLocal)
         self.bufLen = 0

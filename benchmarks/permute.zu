@@ -23,7 +23,6 @@
 # By Richard Ore
 # Copied from https://github.com/smarr/are-we-fast-yet/blob/master/benchmarks/JavaScript/permute.js
 
-
 class Permute {
   @new() {
     self.count = 0
@@ -62,4 +61,3 @@ var start = time()
 echo Permute().benchmark() == 8_660
 
 echo '\nTotal time taken: ${time() - start}s'
-

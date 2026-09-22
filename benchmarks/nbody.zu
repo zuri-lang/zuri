@@ -141,7 +141,9 @@ class NBodySystem {
     iter var i = 0; i < size; i++ {
       var bodyi = bodies[i]
 
-      e += 0.5 * bodyi.mass * (bodyi.vx * bodyi.vx + bodyi.vy * bodyi.vy + bodyi.vz * bodyi.vz)
+      e += 0.5
+        * bodyi.mass
+        * (bodyi.vx * bodyi.vx + bodyi.vy * bodyi.vy + bodyi.vz * bodyi.vz)
 
       iter var j = i + 1; j < size; j++ {
         var bodyj = bodies[j]

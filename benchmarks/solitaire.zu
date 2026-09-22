@@ -55,12 +55,12 @@ Otherwise, move returns false. */
 def move(pos, dir) {
   moves++
 
-  if board[pos] == '●' and board[pos+dir] == '●' and
-    board[pos+2*dir] == '○' {
-      board[pos] = '○'
-      board[pos+dir] = '○'
-      board[pos+2*dir] = '●'
-      return true
+  if board[pos] == '●' and board[pos + dir] == '●' and
+    board[pos + 2 * dir] == '○' {
+    board[pos] = '○'
+    board[pos + dir] = '○'
+    board[pos + 2 * dir] = '●'
+    return true
   }
   return false
 }
@@ -68,8 +68,8 @@ def move(pos, dir) {
 # unmove reverts a previously executed valid move.
 def unmove(pos, dir) {
   board[pos] = '●'
-	board[pos+dir] = '●'
-	board[pos+2*dir] = '○'
+  board[pos + dir] = '●'
+  board[pos + 2 * dir] = '○'
 }
 
 /* 
@@ -90,11 +90,11 @@ def solve() {
 
       # found a peg
       for dir in dirs {
-        
+
         # try each direction
         if move(pos, dir) {
           # a valid move was found and executed,
-					# see if this new board has a solution
+          # see if this new board has a solution
           if solve() {
             unmove(pos, dir)
             echo ''.join(board)

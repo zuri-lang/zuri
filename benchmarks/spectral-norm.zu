@@ -13,7 +13,7 @@ var u = [1] * ARRAY_LENGTH
 var v = []
 
 def eval_A(i, j) {
-  return 1.0/((i+j)*(i+j+1)/2+i+1)
+  return 1.0 / ((i + j) * (i + j + 1) / 2 + i + 1)
 }
 
 def vector_times_array(vector) {
@@ -21,7 +21,7 @@ def vector_times_array(vector) {
   while i < ARRAY_LENGTH {
     var sum = 0, j = 0
     while j < ARRAY_LENGTH {
-      sum += eval_A(i,j) * vector[j]
+      sum += eval_A(i, j) * vector[j]
       j += 1
     }
     arr.append(sum)
@@ -36,7 +36,7 @@ def vector_times_array_transposed(vector) {
   while i < ARRAY_LENGTH {
     var sum = 0, j = 0
     while j < ARRAY_LENGTH {
-      sum += eval_A(j,i) * vector[j]
+      sum += eval_A(j, i) * vector[j]
       j += 1
     }
     arr.append(sum)
@@ -59,11 +59,11 @@ iter var i = 0; i < 10; i++ {
 
 var vBv = 0, vv = 0, i = 0
 while i < ARRAY_LENGTH {
-  vBv += u[i]*v[i]
-  vv += v[i]*v[i]
+  vBv += u[i] * v[i]
+  vv += v[i] * v[i]
   i += 1
 }
 
-echo (vBv/vv ** 0.5).fixed(9)
+echo (vBv / vv ** 0.5).fixed(9)
 
 echo '\nTotal time taken: ${time() - start}s'

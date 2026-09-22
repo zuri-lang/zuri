@@ -4,7 +4,7 @@
 # https://github.com/smarr/are-we-fast-yet/blob/master/benchmarks/JavaScript/list.js
 
 class Element {
-  @new(v){
+  @new(v) {
     self.val = v
     self.next = nil
   }

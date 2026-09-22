@@ -62,7 +62,7 @@ var K_WORK = 1_001
 var BUFSIZE = 4
 
 class Packet {
-  @new(l,i,k) {
+  @new(l, i, k) {
     self.link = l
     self.ident = i
     self.kind = k
@@ -73,7 +73,7 @@ class Packet {
   append_to(lst) {
     self.link = nil
     if lst == nil {
-        return self
+      return self
     } else {
       var p = lst
       var next = p.link
@@ -216,7 +216,7 @@ var taskWorkArea = TaskWorkArea()
 
 class Task < TaskState {
 
-  @new(i,p,w,initialState,r) {
+  @new(i, p, w, initialState, r) {
     self.link = taskWorkArea.taskList
     self.ident = i
     self.priority = p
@@ -232,11 +232,11 @@ class Task < TaskState {
     taskWorkArea.taskTab[i] = self
   }
 
-  fn(pkt,r) {
+  fn(pkt, r) {
     raise Error('not implemented')
   }
 
-  addPacket(p,old) {
+  addPacket(p, old) {
     if self.input == nil {
       self.input = p
       self.packet_pending = true
@@ -244,7 +244,6 @@ class Task < TaskState {
     } else p.append_to(self.input)
     return old
   }
-
 
   runTask() {
     var msg
@@ -257,22 +256,19 @@ class Task < TaskState {
         self.packetPending()
     } else msg = nil
 
-    return self.fn(msg,self.handle)
+    return self.fn(msg, self.handle)
   }
-
 
   waitTask() {
     self.task_waiting = true
     return self
   }
 
-
   hold() {
     taskWorkArea.holdCount += 1
     self.task_holding = true
     return self.link
   }
-
 
   release(i) {
     var t = self.findtcb(i)
@@ -284,15 +280,13 @@ class Task < TaskState {
     }
   }
 
-
   qpkt(pkt) {
     var t = self.findtcb(pkt.ident)
     taskWorkArea.qpktCount += 1
     pkt.link = nil
     pkt.ident = self.ident
-    return t.addPacket(pkt,self)
+    return t.addPacket(pkt, self)
   }
-
 
   findtcb(id) {
     var t = taskWorkArea.taskTab[id]
@@ -304,13 +298,12 @@ class Task < TaskState {
 
 # DeviceTask
 
-
 class DeviceTask < Task {
-  @new(i,p,w,s,r) {
-    parent(i,p,w,s,r)
+  @new(i, p, w, s, r) {
+    parent(i, p, w, s, r)
   }
 
-  fn(pkt,r) {
+  fn(pkt, r) {
     var d = r
     assert instance_of(d, DeviceTaskRec)
     if pkt == nil {
@@ -329,11 +322,11 @@ class DeviceTask < Task {
 }
 
 class HandlerTask < Task {
-  @new(i,p,w,s,r) {
-    parent(i,p,w,s,r)
+  @new(i, p, w, s, r) {
+    parent(i, p, w, s, r)
   }
 
-  fn(pkt,r) {
+  fn(pkt, r) {
     var h = r
     assert instance_of(h, HandlerTaskRec)
     if pkt != nil {
@@ -360,13 +353,12 @@ class HandlerTask < Task {
 
 # IdleTask
 
-
 class IdleTask < Task {
-  @new(i,p,w,s,r) {
-    parent(i,0,nil,s,r)
+  @new(i, p, w, s, r) {
+    parent(i, 0, nil, s, r)
   }
 
-  fn(pkt,r) {
+  fn(pkt, r) {
     var i = r
     assert instance_of(i, IdleTaskRec)
     i.count -= 1
@@ -386,11 +378,11 @@ class IdleTask < Task {
 var A = 'A'.ord()
 
 class WorkTask < Task {
-  @new(i,p,w,s,r) {
-    parent(i,p,w,s,r)
+  @new(i, p, w, s, r) {
+    parent(i, p, w, s, r)
   }
 
-  fn(pkt,r) {
+  fn(pkt, r) {
     var w = r
     assert instance_of(w, WorkerTaskRec)
     if pkt == nil return self.waitTask()
@@ -440,18 +432,22 @@ def run() {
   IdleTask(I_IDLE, 1, 10_000, TaskState().running(), IdleTaskRec())
 
   var wkq = Packet(nil, 0, K_WORK)
-  wkq = Packet(wkq , 0, K_WORK)
+  wkq = Packet(wkq, 0, K_WORK)
   WorkTask(I_WORK, 1_000, wkq, TaskState().waitingWithPacket(), WorkerTaskRec())
 
   wkq = Packet(nil, I_DEVA, K_DEV)
-  wkq = Packet(wkq , I_DEVA, K_DEV)
-  wkq = Packet(wkq , I_DEVA, K_DEV)
-  HandlerTask(I_HANDLERA, 2_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec())
+  wkq = Packet(wkq, I_DEVA, K_DEV)
+  wkq = Packet(wkq, I_DEVA, K_DEV)
+  HandlerTask(
+    I_HANDLERA, 2_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec(),
+  )
 
   wkq = Packet(nil, I_DEVB, K_DEV)
-  wkq = Packet(wkq , I_DEVB, K_DEV)
-  wkq = Packet(wkq , I_DEVB, K_DEV)
-  HandlerTask(I_HANDLERB, 3_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec())
+  wkq = Packet(wkq, I_DEVB, K_DEV)
+  wkq = Packet(wkq, I_DEVB, K_DEV)
+  HandlerTask(
+    I_HANDLERB, 3_000, wkq, TaskState().waitingWithPacket(), HandlerTaskRec(),
+  )
 
   wkq = nil
   DeviceTask(I_DEVA, 4_000, wkq, TaskState().waiting(), DeviceTaskRec())
@@ -461,7 +457,6 @@ def run() {
 
   return taskWorkArea.holdCount == 9_297 and taskWorkArea.qpktCount == 23_246
 }
-
 
 ####### TESTING .......
 var start = time()

@@ -1,19 +1,19 @@
 def make_counter() {
-    var count = 0
-    def counter() {
-        count = count + 1
-        return count
-    }
-    return counter
+  var count = 0
+  def counter() {
+    count = count + 1
+    return count
+  }
+  return counter
 }
 
 def make_accumulator(start) {
-    var total = start
-    def add(n) {
-        total = total + n
-        return total
-    }
-    return add
+  var total = start
+  def add(n) {
+    total = total + n
+    return total
+  }
+  return add
 }
 
 const start = time()
@@ -23,13 +23,13 @@ var n = 3000000
 var counter = make_counter()
 var last = 0
 iter var i = 0; i < n; i++ {
-    last = counter()
+  last = counter()
 }
 echo last
 
 var acc = make_accumulator(0)
 iter var i = 0; i < n; i++ {
-    acc(i)
+  acc(i)
 }
 echo acc(0)
 

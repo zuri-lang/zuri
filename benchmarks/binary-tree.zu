@@ -14,7 +14,7 @@ class TreeNode {
   }
 
   count() {
-    if self.left == nil 
+    if self.left == nil
       return 1
     return 1 + self.left.count() + self.right.count()
   }

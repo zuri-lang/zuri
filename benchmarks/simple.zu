@@ -28,4 +28,3 @@ simple(100000000)
 var end = time()
 
 echo '\nTime taken = ${end - start}s'
-

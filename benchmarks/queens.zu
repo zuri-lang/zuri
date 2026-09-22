@@ -23,7 +23,6 @@
 # Created by Richard Ore
 # based on https://github.com/smarr/are-we-fast-yet/blob/master/benchmarks/JavaScript/queens.js
 
-
 class Queens {
   @new() {
     self.free_maxes = nil

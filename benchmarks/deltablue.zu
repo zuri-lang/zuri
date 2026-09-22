@@ -309,7 +309,8 @@ class BinaryConstraint < AbstractConstraint {
   # reached.
   choose_method(mark) {
     if self.v1.mark == mark {
-      if self.v2.mark != mark and self.strength.stronger(self.v2.walk_strength) {
+      if self.v2.mark != mark
+        and self.strength.stronger(self.v2.walk_strength) {
         self.direction = FORWARD
       } else {
         self.direction = nil
@@ -318,7 +319,8 @@ class BinaryConstraint < AbstractConstraint {
     }
 
     if self.v2.mark == mark {
-      if self.v1.mark != mark and self.strength.stronger(self.v1.walk_strength) {
+      if self.v1.mark != mark
+        and self.strength.stronger(self.v1.walk_strength) {
         self.direction = BACKWARD
       } else {
         self.direction = nil

@@ -50,11 +50,11 @@ class Mandelbrot {
     var bits = 0
     var row = []
 
-    var Ci = (y*self.fac - 1.0)
-    iter var x = 0; x<self.size;x++ {
+    var Ci = (y * self.fac - 1.0)
+    iter var x = 0; x < self.size; x++ {
       var Zr = 0.0
       var Zi = 0.0
-      var Cr = (x*self.fac - 1.5)
+      var Cr = (x * self.fac - 1.5)
       var i = 50
       var ZrN = 0
       var ZiN = 0
@@ -63,17 +63,17 @@ class Mandelbrot {
         Zr = ZrN - ZiN + Cr
         ZiN = Zi * Zi
         ZrN = Zr * Zr
-      } while (!(ZiN + ZrN > 4.0) and i-- > 0)
+      } while (!(ZiN + ZrN > 4.0) and i--> 0)
 
       bits = bits << 1
       if (i == 0) bits++
 
-      if (x%8 == 7) {
+      if (x % 8 == 7) {
         row.append(bits)
         bits = 0
       }
     }
-    if (self.shift!=0) {
+    if (self.shift != 0) {
       bits = bits << self.shift
       row.append(bits)
     }

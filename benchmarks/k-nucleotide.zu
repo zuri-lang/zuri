@@ -92,7 +92,9 @@ def read_sequence(codes: bytes) {
       return [bytes(0), 0]
     }
 
-    if pos + 2 < size and data[pos + 1] == THREE_T and data[pos + 2] == THREE_H {
+    if pos + 2 < size
+      and data[pos + 1] == THREE_T
+      and data[pos + 2] == THREE_H {
       break
     }
 

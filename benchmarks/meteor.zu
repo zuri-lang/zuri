@@ -229,7 +229,10 @@ def build_neighbours() {
         var next_row = step_row(row, col, direction)
         var next_col = step_col(row, col, direction)
 
-        if next_row >= 0 and next_row < ROWS and next_col >= 0 and next_col < COLS {
+        if next_row >= 0
+          and next_row < ROWS
+          and next_col >= 0
+          and next_col < COLS {
           adjacent.append(next_row * COLS + next_col)
         }
       }

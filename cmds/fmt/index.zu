@@ -128,7 +128,7 @@ def _summary(changed: int, unchanged: int, skipped: int, dry_run: bool) {
 }
 
 def main() {
-  var parser = args.Parser('format', false)
+  var parser = args.Parser('fmt', false)
 
   parser.description = 'Formats all Zuri files in the given path, or the current directory.'
   parser.epilog = 'If no path is given, all Zuri files in the current directory are formatted.'
