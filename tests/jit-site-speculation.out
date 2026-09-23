@@ -1,0 +1,30 @@
+operands that stop being numbers:
+30000
+left-right
+2.75
+an element that stops being a number:
+199800000
+0ababcdcd
+a field that stops holding a number:
+899970000
+xyxy
+a call result that stops being a number:
+1349955000
+manymanymany
+an object that never left its stack slot, across a deopt:
+1349955000
+1799940000
+ababab
+cdcdcdcd
+field and method sites seeing a second class:
+420000
+240000
+remainder, floor division and powers stay numbers:
+4491500
+-1
+1.5
+-4
+1024
+globals read and written in a hot loop:
+90000
+x

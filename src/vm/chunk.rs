@@ -1,5 +1,5 @@
 use core::fmt;
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, OnceCell};
 
 use rustc_hash::FxHashMap;
 
@@ -538,6 +538,55 @@ pub enum JumpKey {
   Str(String),
 }
 
+/// Marks a filled `Chunk::global_cache` cell, so slot 0 of a
+/// non-root module still reads as resolved.
+const GLOBAL_CACHED: u64 = 1 << 63;
+
+/// Value kinds the interpreter records per instruction; see
+/// `Chunk::feedback`. Each is one bit, so a site that has seen several
+/// kinds holds their union and a site that has seen exactly one holds a
+/// single bit.
+pub mod kind {
+  /// A number with no fractional part.
+  pub const INT: u8 = 1 << 0;
+  /// Any other number: a fraction, an infinity or NaN.
+  pub const FLOAT: u8 = 1 << 1;
+  pub const STRING: u8 = 1 << 2;
+  pub const LIST: u8 = 1 << 3;
+  pub const INSTANCE: u8 = 1 << 4;
+  pub const BOOL: u8 = 1 << 5;
+  pub const NIL: u8 = 1 << 6;
+  /// Every other heap value: dicts, bytes, bigints, callables, classes,
+  /// ranges and so on.
+  pub const OTHER: u8 = 1 << 7;
+
+  pub const NUMBER: u8 = INT | FLOAT;
+
+  /// The kind bit for one value.
+  #[inline]
+  pub fn of(v: super::Value) -> u8 {
+    if v.is_number() {
+      let n = v.as_number();
+      if n.is_finite() && n.trunc() == n {
+        return INT;
+      }
+      return FLOAT;
+    }
+    if v.is_nil() {
+      return NIL;
+    }
+    if !v.is_obj() {
+      return BOOL;
+    }
+    match unsafe { &*v.as_obj() }.tag() {
+      crate::vm::object::OBJ_TAG_STR => STRING,
+      crate::vm::object::OBJ_TAG_LIST => LIST,
+      crate::vm::object::OBJ_TAG_INSTANCE => INSTANCE,
+      _ => OTHER,
+    }
+  }
+}
+
 /// One `Instr::GetField`/`Instr::SetField` site's monomorphic inline
 /// cache entry: see `Chunk::field_cache`.
 ///
@@ -717,15 +766,18 @@ pub struct Chunk {
   /// build a stack trace on a raised or uncaught error: see
   /// `VM::build_stacktrace`.
   pub lines: Vec<u32>,
-  /// Inline cache for global variable access: maps a GetGlobal/
-  /// SetGlobal/AssignGlobal instruction's own position in `code` to
-  /// the global slot it resolved to the FIRST time it executed. Every
-  /// later execution of that same instruction skips the name lookup
-  /// (a string hash + FxHashMap probe) entirely and indexes straight
-  /// into VM::global_slots. Never invalidated; once a name resolves
+  /// Inline cache for global variable access: one cell per instruction
+  /// position, holding the slot a GetGlobal/SetGlobal/AssignGlobal at
+  /// that position resolved to the first time it ran. Every later run
+  /// of that instruction indexes straight into the slot with no name
+  /// lookup and no hash probe. Never invalidated; once a name resolves
   /// to a slot it keeps that slot for the life of the VM (globals are
   /// never renamed or removed, only reassigned in place).
-  pub global_cache: RefCell<FxHashMap<usize, (bool, u32)>>,
+  ///
+  /// A cell packs `(is_root, slot)` as `GLOBAL_CACHED | slot << 1 |
+  /// is_root`, and `0` means unresolved. Read and written only through
+  /// `cached_global` and `cache_global`.
+  global_cache: OnceCell<Box<[Cell<u64>]>>,
   /// Monomorphic inline cache for `Instr::GetField`/`Instr::SetField`
   /// on an INSTANCE receiver (never consulted by the interpreter, which
   /// has no analogous per-instruction cache of its own); one cell per
@@ -769,6 +821,19 @@ pub struct Chunk {
   /// relocation; flagging clearly rather than leaving silent. The
   /// primitive half has no such hazard: a `NativeFunction` is `'static`.
   invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
+  /// What the interpreter has seen at each instruction, as a union of
+  /// `kind` bits, one byte per instruction position. Arithmetic, bitwise
+  /// and ordering instructions record their operands, since those are
+  /// what a compiled guard has to check; nothing else records anything.
+  ///
+  /// Only the interpreter writes here. Compiled code reads a snapshot
+  /// taken when the function is compiled, and a guard that fails in
+  /// compiled code returns control to the interpreter, which goes on
+  /// recording; so a site whose values change shape after compilation
+  /// is seen again before the next compile.
+  ///
+  /// A byte of zero means the site never ran interpreted.
+  feedback: OnceCell<Box<[Cell<u8>]>>,
   /// One entry per `Instr::CheckParamType` this chunk emits, in the
   /// order they're emitted (parameter order); `check_idx` indexes
   /// straight into this, same relationship `const_idx` has to
@@ -808,15 +873,88 @@ impl Chunk {
       .get(ip)
   }
 
+  /// The global slot the instruction at `ip` resolved to, as
+  /// `(is_root, slot)`, or `None` if it has not resolved yet.
+  #[inline]
+  pub fn cached_global(&self, ip: usize) -> Option<(bool, u32)> {
+    let packed = self.global_cache.get()?.get(ip)?.get();
+    if packed == 0 {
+      return None;
+    }
+    Some((packed & 1 == 1, (packed >> 1) as u32))
+  }
+
+  /// Records what the global instruction at `ip` resolved to. A
+  /// position past the end of the cache (the REPL grows a live chunk)
+  /// is not cached and simply resolves again next time.
+  pub fn cache_global(&self, ip: usize, (is_root, slot): (bool, u32)) {
+    let cells = self
+      .global_cache
+      .get_or_init(|| (0..self.code.len()).map(|_| Cell::new(0)).collect());
+    if let Some(cell) = cells.get(ip) {
+      cell.set(GLOBAL_CACHED | (slot as u64) << 1 | is_root as u64);
+    }
+  }
+
+  /// Adds `bits` to what the site at `ip` has seen. Writes only when
+  /// something new turns up, so a site that settled long ago costs a
+  /// load and a compare.
+  #[inline]
+  pub fn record(&self, ip: usize, bits: u8) {
+    let cells = self
+      .feedback
+      .get_or_init(|| (0..self.code.len()).map(|_| Cell::new(0)).collect());
+    if let Some(cell) = cells.get(ip) {
+      let seen = cell.get();
+      if seen | bits != seen {
+        cell.set(seen | bits);
+      }
+    }
+  }
+
+  /// A copy of every site's feedback, one byte per instruction. All
+  /// zeroes for a chunk that never ran interpreted.
+  pub fn feedback_snapshot(&self) -> Vec<u8> {
+    match self.feedback.get() {
+      Some(cells) => cells.iter().map(Cell::get).collect(),
+      None => vec![0; self.code.len()],
+    }
+  }
+
+  /// The receiver class each filled field-cache cell holds, keyed by
+  /// instruction position.
+  pub fn field_class_snapshot(&self) -> FxHashMap<usize, u64> {
+    let Some(cells) = self.field_cache.get() else {
+      return FxHashMap::default();
+    };
+    cells
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.class_bits.get() != 0)
+      .map(|(ip, c)| (ip, c.class_bits.get()))
+      .collect()
+  }
+
+  /// Everything the site at `ip` has seen so far, or `0` when it has
+  /// never run interpreted.
+  pub fn feedback_at(&self, ip: usize) -> u8 {
+    self
+      .feedback
+      .get()
+      .and_then(|cells| cells.get(ip))
+      .map_or(0, Cell::get)
+  }
+
   pub fn new() -> Chunk {
     Chunk {
       code: Vec::new(),
       constants: Vec::new(),
       jump_tables: Vec::new(),
       lines: Vec::new(),
-      global_cache: RefCell::new(FxHashMap::default()),
+      global_cache: OnceCell::new(),
       field_cache: OnceCell::new(),
       invoke_cache: OnceCell::new(),
+      feedback: OnceCell::new(),
       param_checks: Vec::new(),
     }
   }

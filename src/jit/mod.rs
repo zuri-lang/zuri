@@ -409,6 +409,19 @@ pub struct CompileFacts {
   /// Drop every field-class bet in this function; see
   /// `JitInfo::field_speculation_off`.
   pub field_speculation_off: bool,
+  /// `Chunk::feedback` as it stood when compilation was requested, one
+  /// byte of `chunk::kind` bits per instruction. Copied rather than read
+  /// in place because the interpreter keeps writing the live cells while
+  /// a worker compiles.
+  pub site_kinds: Vec<u8>,
+  /// Take no type bets from `site_kinds` at all; see
+  /// `JitInfo::site_speculation_off`.
+  pub site_speculation_off: bool,
+  /// For each `GetField`/`SetField` site whose field cache held a class
+  /// when compilation was requested, that class's `Value` bits and the
+  /// field's slot on it; see `VM::resolve_site_classes`. Copied for the
+  /// same reason as `site_kinds`.
+  pub site_classes: FxHashMap<usize, (u64, u16)>,
 }
 
 /// One construction site's compile-time view of the class it builds.

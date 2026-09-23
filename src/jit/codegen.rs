@@ -29,8 +29,10 @@ use cranelift_module::{FuncId, Module};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::atomic::AtomicBool;
 
+use smallvec::SmallVec;
+
 use crate::jit::{CallTarget, CompileFacts, escape, typeflow};
-use crate::vm::chunk::{Instr, ParamType};
+use crate::vm::chunk::{Instr, ParamType, kind};
 use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
 use crate::vm::vm;
@@ -65,12 +67,19 @@ const FRAMES_CAP_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_CAP_OFFSET
 const REGS_LEN_CACHE_OFFSET: i32 = vm::VM_REGS_LEN_CACHE_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of `VM::jit_scalar_roots_len`.
 const JIT_SCALAR_ROOTS_LEN_OFFSET: i32 = vm::VM_JIT_SCALAR_ROOTS_LEN_OFFSET as i32;
-/// Byte offset (from a `*mut VM`) of `VM::has_open_upvalues`.
-const HAS_OPEN_UPVALUES_OFFSET: i32 = vm::VM_HAS_OPEN_UPVALUES_OFFSET as i32;
 /// Byte offset (from a `*mut VM`) of `VM::pending_deopt_ip`.
 const PENDING_DEOPT_IP_OFFSET: i32 = vm::VM_PENDING_DEOPT_IP_OFFSET as i32;
-/// Byte offset (from a `*mut VM`) of `VM::jit_pending_error`.
-const JIT_PENDING_EXCEPTION_OFFSET: i32 = vm::VM_JIT_PENDING_EXCEPTION_OFFSET as i32;
+/// What compiled code returns when it leaves because of an error or a
+/// deopt rather than a `Return`. The bits are a quiet NaN carrying tag
+/// `0`, which no `Value` ever has: numbers are canonicalized away from it
+/// and nil, true and false use tags 1 to 3. A compiled caller compares
+/// the returned bits against this and only looks at
+/// `VM::pending_deopt_ip` and `VM::jit_pending_error` when they match,
+/// so an ordinary return costs one compare instead of two loads.
+///
+/// Callers entered from Rust (`VM::invoke_compiled`) still read those
+/// two fields directly and never look at this.
+const PENDING_RETURN: u64 = value::QNAN;
 /// Byte offset (from a `*mut VM`) of `VM::jit_call_depth`.
 const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
 /// Byte offsets of each `CallFrame` field, relative to one frame slot's
@@ -811,6 +820,9 @@ struct FuncCompiler<'a, 'b> {
   /// These values dominate every dispatch block, so using them
   /// directly is both cheaper and simpler.
   entry_reg_values: Vec<IrValue>,
+  /// The entry signature's register-passed arguments, for
+  /// `seed_registers` to take parameters from on an ordinary entry.
+  fast_args: [IrValue; 4],
   /// The subset of `f64_tracked` whose float Variable is the register's
   /// ONLY definition, with the integer view rebuilt on demand at the
   /// few places that still want one.
@@ -923,6 +935,10 @@ struct FuncCompiler<'a, 'b> {
   /// before the call to load the class. The plan has to outlive that;
   /// the OSR entry paths are built from it.
   planned_scalar_instances: FxHashMap<u8, (StackSlot, usize)>,
+  /// For each register in `planned_scalar_instances`, where its construct
+  /// reaches (`scalar_site_reaches`), worked out once when the plan is made
+  /// so each deopt exit can ask without redoing the analysis.
+  scalar_reach: FxHashMap<u8, Vec<bool>>,
   /// Construct sites whose GC root is registered once in the entry
   /// block rather than on every execution. Only sites inside a loop
   /// qualify: registering the same unchanging slot address on every
@@ -983,6 +999,20 @@ struct FuncCompiler<'a, 'b> {
   is_specialized_pass: bool,
   active_guarded_classes: FxHashMap<u8, u64>,
   shutdown: Option<&'a AtomicBool>,
+  /// Which sites this compilation guards on the kinds the interpreter
+  /// recorded there; see `select_site_speculation`.
+  site_spec: typeflow::SiteSpeculation,
+  /// Registers some closure created here captures; see
+  /// `typeflow::captured_registers`. Every definition of one also goes
+  /// straight to memory, where the closure reads it. A value that only
+  /// reached its `Variable` would be invisible to the closure until some
+  /// later flush happened to write it, and none does once liveness has
+  /// the register dead. Reading needs nothing extra: a closure can only
+  /// change the register during a call, and every call reloads the
+  /// registers still live after it.
+  captured: Vec<bool>,
+  /// See `jit::CompileFacts::site_classes`.
+  site_classes: FxHashMap<usize, (u64, u16)>,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -1428,6 +1458,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     } else {
       None
     };
+    let site_spec = Self::select_site_speculation(
+      proto,
+      &facts.site_kinds,
+      &facts.deopt_sites,
+      facts.site_speculation_off,
+    );
     let type_facts = typeflow::analyze(
       proto,
       &preds,
@@ -1440,6 +1476,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       None,
       &list_facts,
       None,
+      &site_spec,
     );
     let string_facts = typeflow::analyze_string(proto, &preds);
     let bool_facts = typeflow::analyze_bool(proto, &preds);
@@ -1491,6 +1528,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       f64_tracked: Vec::new(),
       f64_canonical: Vec::new(),
       entry_reg_values: Vec::new(),
+      fast_args: [IrValue::from_u32(0); 4],
       global_vars: FxHashMap::default(),
       current_ip: 0,
       liveness,
@@ -1510,6 +1548,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       scalar_instances: FxHashMap::default(),
       scalar_fields: FxHashMap::default(),
       planned_scalar_instances: FxHashMap::default(),
+      scalar_reach: FxHashMap::default(),
       hoisted_scalar_roots: FxHashSet::default(),
       scalar_lists: FxHashMap::default(),
       frame_can_open_upvalues: proto
@@ -1536,12 +1575,77 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
       shutdown,
+      site_spec,
+      captured: typeflow::captured_registers(proto),
+      site_classes: facts.site_classes,
     }
   }
 
   #[inline]
   fn proven_numeric(&self, ip: usize, r: u8) -> bool {
-    self.type_facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r)
+    self.type_facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r) || self.operand_guarded(ip, r)
+  }
+
+  /// Whether `r` is one of the operands the guard emitted at the top of
+  /// `ip`'s own translation has already checked to be a number. Only ever
+  /// true while that same instruction is being translated, which is the
+  /// only time anything asks about `ip`.
+  #[inline]
+  fn operand_guarded(&self, ip: usize, r: u8) -> bool {
+    self.site_spec.operands.contains(&ip)
+      && typeflow::guarded_operands(&self.proto.chunk.code[ip]).contains(&r)
+  }
+
+  /// The instructions this compilation speculates on, chosen from what
+  /// the interpreter recorded at each site before the function got hot
+  /// (`CompileFacts::site_kinds`).
+  ///
+  /// A site qualifies when every operand it has seen is a number. The
+  /// arithmetic or ordering instruction there then checks its unproven
+  /// operands and leaves for the interpreter if one is not a number,
+  /// instead of carrying a call to the generic helper whose result could be
+  /// anything; that one change is what lets everything downstream of the
+  /// site be proven. A value read from a list, a field or a call needs no
+  /// check of its own: the first arithmetic that uses it checks it, and
+  /// every later use is proven by that check.
+  ///
+  /// A site that has never run interpreted has recorded nothing and is not
+  /// speculated on, and neither is one that an earlier compilation of this
+  /// function already gave up at. A loop header charged with a deopt means
+  /// an on-stack-replacement entry found a register the loop's bets did not
+  /// allow, and no single site can be blamed for that, so the whole
+  /// function goes without.
+  fn select_site_speculation(
+    proto: &ObjFunction,
+    site_kinds: &[u8],
+    deopt_sites: &FxHashSet<usize>,
+    off: bool,
+  ) -> typeflow::SiteSpeculation {
+    let mut spec = typeflow::SiteSpeculation::default();
+    if off || site_kinds.is_empty() {
+      return spec;
+    }
+    let code = &proto.chunk.code;
+    for (ip, instr) in code.iter().enumerate() {
+      if let Instr::Jmp { offset } = *instr
+        && offset < 0
+      {
+        let header = (ip as isize + 1 + offset as isize) as usize;
+        if deopt_sites.contains(&header) {
+          return typeflow::SiteSpeculation::default();
+        }
+      }
+    }
+    for (ip, instr) in code.iter().enumerate() {
+      let seen = site_kinds.get(ip).copied().unwrap_or(0);
+      if seen == 0 || seen & !kind::NUMBER != 0 || deopt_sites.contains(&ip) {
+        continue;
+      }
+      if !typeflow::guarded_operands(instr).is_empty() {
+        spec.operands.insert(ip);
+      }
+    }
+    spec
   }
 
   #[inline]
@@ -1905,9 +2009,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let eight = self.fb.ins().iconst(types::I64, 8);
     self.base_bytes = self.fb.ins().imul(self.base_param, eight);
 
-    let neg1 = self.fb.ins().iconst(types::I32, -1);
-    let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
-
     let num_regs = self.proto.num_registers as usize;
     self.reg_vars = (0..num_regs)
       .map(|_| self.fb.declare_var(types::I64))
@@ -1923,36 +2024,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .map(|_| self.fb.declare_var(types::I64))
       .collect();
     let zero = self.fb.ins().iconst(types::I64, 0);
-    for r in 0..num_regs {
-      let mem_v = self.load_reg_mem(r as u8);
-      let v = if r < 4 && r < self.proto.arity as usize {
-        self.fb.ins().select(is_normal, fast_args[r], mem_v)
-      } else {
-        mem_v
-      };
-      // Seeds BOTH views in the entry block, which dominates every
-      // other block in the function (the general body, the specialized
-      // body, and every OSR target alike). That's what lets any later
-      // block read either view without having to prove some
-      // intervening definition reached it, and it's why the two bodies
-      // can disagree about which registers are canonical. Deliberately
-      // not `def_reg_both`: this one place wants both views
-      // unconditionally, canonical or not.
-      self.fb.def_var(self.reg_vars[r], v);
-      if self.f64_tracked[r] {
-        let f = self
-          .fb
-          .ins()
-          .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), v);
-        self.fb.def_var(self.reg_vars_f64[r], f);
-      }
-      if self.int_tracked[r] {
-        let f = self.to_f64(v);
-        let iv = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
-        self.fb.def_var(self.reg_vars_int[r], iv);
-      }
-      self.entry_reg_values.push(v);
-    }
+    // Registers are seeded per entry route rather than here; see
+    // `seed_registers`. The placeholders below are only ever read for a
+    // register a route has seeded.
+    self.fast_args = fast_args;
+    self.entry_reg_values = vec![zero; num_regs];
     for r in 0..num_regs as u8 {
       let ptr_v = self.fb.declare_var(types::I64);
       let f_ptr_v = self.fb.declare_var(types::I64);
@@ -2042,6 +2118,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.speculative_num_lists,
           &list_facts,
           self.speculative_lists,
+          &self.site_spec,
         );
         Some((blocks, facts, list_facts))
       } else {
@@ -2099,6 +2176,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           3,
         ));
         self.planned_scalar_instances.insert(dst, (s, ip));
+        let reach = self.scalar_site_reaches(ip, dst);
+        self.scalar_reach.insert(dst, reach);
         if in_loop[ip] {
           self.hoisted_scalar_roots.insert(ip);
           hoisted.push((s, info.field_count));
@@ -2132,7 +2211,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // and it touches only `jit_scalar_roots`, never
         // `VM::registers`, so there is nothing for `refresh_regs` to
         // re-read either. Both cost a block split at every site.
-        self.call_helper("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
+        self.call_helper_raw("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
       }
     }
 
@@ -2233,33 +2312,55 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     Ok(std::mem::take(&mut self.osr_ids))
   }
 
-  /// `osr_param == -1` -> ordinary entry; `osr_param == id` -> jump
-  /// straight into `blocks[ip]` for whichever `ip` that `id` was
-  /// assigned to in `run`. A linear compare chain (not a `br_table`)
-  ///; the number of loop headers in one function is always small,
-  /// and this avoids depending on `JumpTableData`'s exact API for
-  /// what's a cold, one-time-per-call dispatch anyway.
+  /// Gives each register its value on entry through the route that lands
+  /// at `ip`, defining both of its views the way every later definition
+  /// does, and records the value in `entry_reg_values` for the route's
+  /// own guards.
   ///
-  /// If `specialized` is `Some((blocks, facts))`, EVERY entry point
-  /// (ordinary AND each OSR target) gets its own guard picking between
-  /// the specialized and general body, built from `facts.numeric_mask_at`
-  /// AT THAT SPECIFIC bytecode position; not from a single fixed
-  /// mask re-checked everywhere. This is the sound way to validate an
-  /// OSR jump straight into the MIDDLE of the specialized body: at
-  /// `ip == 0` `numeric_mask_at` is exactly the original speculated
-  /// parameter mask (so ordinary entry is unaffected by this
-  /// generalization), but at any OTHER `ip` it's whatever the SAME
-  /// dataflow proof actually established is live and provably numeric
-  /// AT THAT POINT; precisely the claim the code there is about to
-  /// rely on, re-validated against real, current register values. See
-  /// `typeflow::TypeFacts::numeric_mask_at`'s own docs for why
-  /// re-checking the ORIGINAL entry mask at a later `ip` instead would
-  /// NOT be sound (a speculated register can be reassigned between
-  /// entry and that point in a way a same-register recheck can't see).
-  /// An OSR target where NOTHING is provably numeric (the mask is
-  /// empty; the loop never touches the speculated value at all)
-  /// skips the guard and routes straight to the general body: the
-  /// specialized block there would be behaviorally identical anyway.
+  /// An ordinary entry (`ip == 0`) takes the first four parameters from
+  /// the signature's argument registers and reads from memory only the
+  /// other parameters and whatever else is live at `ip` 0, which is
+  /// nothing in a function the compiler built. Every other register is
+  /// written before it is read on every path, so defining it here would
+  /// only be a load nothing uses. An on-stack-replacement route reads
+  /// every register from memory, where the interpreter left them; it runs
+  /// once per entry into a loop, not once per call.
+  fn seed_registers(&mut self, ip: usize) {
+    let num_regs = self.proto.num_registers as usize;
+    let arity = self.proto.arity as usize;
+    for r in 0..num_regs {
+      let v = if ip == 0 {
+        if r < 4 && r < arity {
+          self.fast_args[r]
+        } else if r < arity || self.liveness.is_live(0, r as u8) {
+          self.load_reg_mem(r as u8)
+        } else {
+          continue;
+        }
+      } else {
+        self.load_reg_mem(r as u8)
+      };
+      // Deliberately not `def_reg_both`: a route wants both views
+      // unconditionally, canonical or not, since the two bodies are free
+      // to disagree about which registers are canonical and either one
+      // may be what this route leads into.
+      self.fb.def_var(self.reg_vars[r], v);
+      if self.f64_tracked[r] {
+        let f = self
+          .fb
+          .ins()
+          .bitcast(types::F64, cranelift_codegen::ir::MemFlagsData::new(), v);
+        self.fb.def_var(self.reg_vars_f64[r], f);
+      }
+      if self.int_tracked[r] {
+        let f = self.to_f64(v);
+        let iv = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        self.fb.def_var(self.reg_vars_int[r], iv);
+      }
+      self.entry_reg_values[r] = v;
+    }
+  }
+
   fn emit_osr_scalar_list_init(&mut self, ip: usize) {
     if ip == 0 {
       return;
@@ -2273,7 +2374,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let slot_addr = self.fb.ins().stack_addr(types::I64, slot, 0);
       let dst_c = self.u64c(dst as u64);
       let count_c = self.u64c(count as u64);
-      self.call_helper(
+      self.call_helper_raw(
         "zuri_jit_init_osr_scalar_list",
         &[self.vm_param, self.base_param, dst_c, slot_addr, count_c],
       );
@@ -2300,7 +2401,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let slot_addr = self.fb.ins().stack_addr(types::I64, slot, 0);
       let dst_c = self.u64c(dst as u64);
       let count_c = self.u64c(count as u64);
-      self.call_helper(
+      self.call_helper_raw(
         "zuri_jit_init_osr_scalar_instance",
         &[self.vm_param, self.base_param, dst_c, slot_addr, count_c],
       );
@@ -2418,6 +2519,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(passed);
   }
 
+  /// `osr_param == -1` -> ordinary entry; `osr_param == id` -> jump
+  /// straight into `blocks[ip]` for whichever `ip` that `id` was
+  /// assigned to in `run`. A linear compare chain (not a `br_table`)
+  ///; the number of loop headers in one function is always small,
+  /// and this avoids depending on `JumpTableData`'s exact API for
+  /// what's a cold, one-time-per-call dispatch anyway.
+  ///
+  /// If `specialized` is `Some((blocks, facts))`, EVERY entry point
+  /// (ordinary AND each OSR target) gets its own guard picking between
+  /// the specialized and general body, built from `facts.numeric_mask_at`
+  /// AT THAT SPECIFIC bytecode position; not from a single fixed
+  /// mask re-checked everywhere. This is the sound way to validate an
+  /// OSR jump straight into the MIDDLE of the specialized body: at
+  /// `ip == 0` `numeric_mask_at` is exactly the original speculated
+  /// parameter mask (so ordinary entry is unaffected by this
+  /// generalization), but at any OTHER `ip` it's whatever the SAME
+  /// dataflow proof actually established is live and provably numeric
+  /// AT THAT POINT; precisely the claim the code there is about to
+  /// rely on, re-validated against real, current register values. See
+  /// `typeflow::TypeFacts::numeric_mask_at`'s own docs for why
+  /// re-checking the ORIGINAL entry mask at a later `ip` instead would
+  /// NOT be sound (a speculated register can be reassigned between
+  /// entry and that point in a way a same-register recheck can't see).
+  /// An OSR target where NOTHING is provably numeric (the mask is
+  /// empty; the loop never touches the speculated value at all)
+  /// skips the guard and routes straight to the general body: the
+  /// specialized block there would be behaviorally identical anyway.
   fn emit_entry_dispatch(
     &mut self,
     osr_param: IrValue,
@@ -2447,6 +2575,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       routes.push((route, 0));
     }
 
+    // Where each OSR route lands in the general body. See
+    // `emit_general_osr_guard`: once this compilation speculates on site
+    // feedback, the general body's facts at a loop header rest on guards
+    // the interpreter never ran, so entering there has to check them.
+    let mut general_entries: Vec<(Block, usize)> = Vec::new();
+    let mut general_route: FxHashMap<usize, Block> = FxHashMap::default();
+    for &(_, ip) in &targets {
+      if ip != 0 && !self.site_spec.operands.is_empty() {
+        let b = self.fb.create_block();
+        general_route.insert(ip, b);
+        general_entries.push((b, ip));
+      }
+    }
+    let general_of =
+      |ip: usize, blocks: &[Block]| general_route.get(&ip).copied().unwrap_or(blocks[ip]);
+
     for (id, ip) in targets {
       self.fb.switch_to_block(next_check);
       let id_const = self.fb.ins().iconst(types::I32, id as i64);
@@ -2471,6 +2615,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if let Some((spec_blocks, spec_facts, spec_list_facts)) = specialized {
       for (route_block, ip) in routes {
         self.fb.switch_to_block(route_block);
+        self.seed_registers(ip);
         self.emit_osr_scalar_list_init(ip);
         let num_mask = spec_facts.numeric_mask_at(ip);
         // At `ip == 0` the parameters still hold their arguments, so
@@ -2553,10 +2698,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           {
             self.fb.ins().jump(spec_blocks[ip], &[]);
           } else {
-            self.fb.ins().jump(self.blocks[ip], &[]);
+            let general = general_of(ip, &self.blocks);
+            self.fb.ins().jump(general, &[]);
           }
           continue;
         }
+        let fail = general_of(ip, &self.blocks);
         let mut guard: Option<IrValue> = None;
         for bit in 0..64u8 {
           if num_mask & (1u64 << bit) != 0 {
@@ -2570,10 +2717,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         }
         if let Some(g) = guard {
           let num_passed_block = self.fb.create_block();
-          self
-            .fb
-            .ins()
-            .brif(g, num_passed_block, &[], self.blocks[ip], &[]);
+          self.fb.ins().brif(g, num_passed_block, &[], fail, &[]);
           self.fb.switch_to_block(num_passed_block);
         }
         if list_mask != 0 {
@@ -2582,10 +2726,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               let v = self.entry_reg_values[bit as usize];
               let is_obj = self.is_obj(v);
               let obj_passed_block = self.fb.create_block();
-              self
-                .fb
-                .ins()
-                .brif(is_obj, obj_passed_block, &[], self.blocks[ip], &[]);
+              self.fb.ins().brif(is_obj, obj_passed_block, &[], fail, &[]);
               self.fb.switch_to_block(obj_passed_block);
 
               let ptr = self.obj_ptr(v);
@@ -2596,7 +2737,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               self
                 .fb
                 .ins()
-                .brif(is_list, list_passed_block, &[], self.blocks[ip], &[]);
+                .brif(is_list, list_passed_block, &[], fail, &[]);
               self.fb.switch_to_block(list_passed_block);
             }
           }
@@ -2616,16 +2757,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
               );
               let is_int = self.fb.ins().band(is_num, is_whole);
               let int_passed_block = self.fb.create_block();
-              self
-                .fb
-                .ins()
-                .brif(is_int, int_passed_block, &[], self.blocks[ip], &[]);
+              self.fb.ins().brif(is_int, int_passed_block, &[], fail, &[]);
               self.fb.switch_to_block(int_passed_block);
             }
           }
         }
+        // `numeric_mask_at` only reaches the first 64 registers; a
+        // register past that the specialized facts claim is checked here.
+        if ip != 0 {
+          self.emit_numeric_entry_checks(ip, spec_facts, 64, fail);
+        }
         if elem_int_mask != 0 || elem_num_mask != 0 {
-          let fail = self.blocks[ip];
           // Every parameter `typeflow` gave an identity of its own,
           // which is every one already proven to be a list, not just
           // the ones being bet on. Their claims are cleared
@@ -2641,9 +2783,73 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     } else {
       for (route_block, ip) in routes {
         self.fb.switch_to_block(route_block);
+        self.seed_registers(ip);
         self.emit_osr_scalar_list_init(ip);
-        self.fb.ins().jump(self.blocks[ip], &[]);
+        let general = general_of(ip, &self.blocks);
+        self.fb.ins().jump(general, &[]);
       }
+    }
+
+    for (block, ip) in general_entries {
+      self.fb.switch_to_block(block);
+      self.emit_general_osr_guard(ip);
+    }
+  }
+
+  /// The general body's own entry check for an on-stack-replacement route
+  /// into the loop headed at `ip`, used whenever this compilation
+  /// speculates on site feedback. Every live register the general facts
+  /// claim is numeric at `ip` is checked. The claim may rest on a guard
+  /// further round the loop, and the interpreter that ran the loop until
+  /// now never ran that guard, so it could have left anything there.
+  /// Failing leaves for the interpreter at `ip` and charges the deopt to
+  /// the loop header, which turns site speculation off for the next
+  /// compilation of this function.
+  fn emit_general_osr_guard(&mut self, ip: usize) {
+    let fail = self.fb.create_block();
+    let facts = std::mem::take(&mut self.type_facts);
+    self.emit_numeric_entry_checks(ip, &facts, 0, fail);
+    self.type_facts = facts;
+    let target = self.blocks[ip];
+    self.fb.ins().jump(target, &[]);
+    self.fb.set_cold_block(fail);
+    self.fb.switch_to_block(fail);
+    self.emit_deopt(ip);
+  }
+
+  /// Branches to `fail` unless every register from `first` up that is live
+  /// at `ip` and that `facts` claims numeric there really holds a number
+  /// on entry. Leaves the builder in the block where every check passed.
+  ///
+  /// Registers are read through their variables rather than from
+  /// `entry_reg_values`: the general body's guard block is reached from
+  /// the plain route and from every failed specialized route, and no one
+  /// route's seeded values are defined on the others.
+  fn emit_numeric_entry_checks(
+    &mut self,
+    ip: usize,
+    facts: &typeflow::TypeFacts,
+    first: usize,
+    fail: Block,
+  ) {
+    let num_regs = self.proto.num_registers as usize;
+    let mut guard: Option<IrValue> = None;
+    for r in first..num_regs {
+      let r8 = r as u8;
+      if !self.liveness.is_live(ip, r8) || !facts.is_numeric(ip, r8) {
+        continue;
+      }
+      let v = self.fb.use_var(self.reg_vars[r]);
+      let is_num = self.is_number(v);
+      guard = Some(match guard {
+        None => is_num,
+        Some(g) => self.fb.ins().band(g, is_num),
+      });
+    }
+    if let Some(g) = guard {
+      let passed = self.fb.create_block();
+      self.fb.ins().brif(g, passed, &[], fail, &[]);
+      self.fb.switch_to_block(passed);
     }
   }
 
@@ -2715,11 +2921,93 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   fn emit_deopt(&mut self, ip: usize) {
     self.flush_live(ip);
+    self.materialize_scalars(ip);
     let vm = self.vm_param;
     let ip_c = self.u64c(ip as u64);
     self.call_helper_raw("zuri_jit_deopt", &[vm, ip_c]);
-    let junk = self.i64c(0);
+    let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
+  }
+
+  /// Gives every scalar-replaced list or instance still live at `ip` a real
+  /// object in its register, just before a deopt hands the frame to the
+  /// interpreter there. Compiled code keeps such a value only in a stack
+  /// slot, which the interpreter cannot see and which disappears with the
+  /// native frame. Runs after the register flush, and nothing in it can
+  /// collect, so the flushed registers stay valid throughout.
+  fn materialize_scalars(&mut self, ip: usize) {
+    let vm = self.vm_param;
+    let lists: Vec<(u8, StackSlot, u8)> = self
+      .scalar_lists
+      .iter()
+      .filter(|&(&r, _)| self.liveness.is_live(ip, r))
+      .map(|(&r, &(slot, count))| (r, slot, count))
+      .collect();
+    for (r, slot, count) in lists {
+      let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let count_c = self.u64c(count as u64);
+      let v = self.call_helper_raw("zuri_jit_materialize_list", &[vm, addr, count_c]);
+      self.store_reg_mem(r, v);
+    }
+
+    let mut instances: Vec<(u8, StackSlot, u64, u16)> = Vec::new();
+    for (&r, &(slot, site)) in &self.planned_scalar_instances {
+      if !self.liveness.is_live(ip, r) || !self.scalar_reach.get(&r).is_some_and(|reach| reach[ip])
+      {
+        continue;
+      }
+      let Some(CallTarget::ConstructKnown { guard_bits, .. }) =
+        self.call_targets.get(&site).copied()
+      else {
+        continue;
+      };
+      let Some(info) = self.construct_info.get(&site) else {
+        continue;
+      };
+      instances.push((r, slot, guard_bits, info.field_count));
+    }
+    for (r, slot, class_bits, count) in instances {
+      let addr = self.fb.ins().stack_addr(types::I64, slot, 0);
+      let class_c = self.u64c(class_bits);
+      let count_c = self.u64c(count as u64);
+      let v = self.call_helper_raw(
+        "zuri_jit_materialize_instance",
+        &[vm, class_c, addr, count_c],
+      );
+      self.store_reg_mem(r, v);
+    }
+  }
+
+  /// Checks, before `instr` at `ip` runs, that each of its operands not
+  /// already proven is a number, and leaves for the interpreter at `ip`
+  /// when one is not. Nothing has happened yet at that point, so the
+  /// interpreter simply runs the instruction itself. See
+  /// `select_site_speculation`.
+  fn emit_operand_guard(&mut self, ip: usize, instr: &Instr) {
+    let mut guard: Option<IrValue> = None;
+    let mut checked: SmallVec<[u8; 2]> = SmallVec::new();
+    for r in typeflow::guarded_operands(instr) {
+      if checked.contains(&r) || self.type_facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r) {
+        continue;
+      }
+      checked.push(r);
+      let v = self.load_reg(r);
+      let is_num = self.is_number(v);
+      guard = Some(match guard {
+        None => is_num,
+        Some(g) => self.fb.ins().band(g, is_num),
+      });
+    }
+    let Some(guard) = guard else {
+      return;
+    };
+    let pass = self.fb.create_block();
+    let fail = self.fb.create_block();
+    self.fb.ins().brif(guard, pass, &[], fail, &[]);
+    self.fb.set_cold_block(fail);
+    self.fb.switch_to_block(fail);
+    self.emit_deopt(ip);
+    self.fb.switch_to_block(pass);
   }
 
   // ---------------------------------------------------------------
@@ -2816,6 +3104,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// never drift apart on some path.
   fn def_reg_both(&mut self, r: u8, v: IrValue) {
     self.invalidate_list_header(r);
+    if self.captured[r as usize] {
+      self.store_reg_mem(r, v);
+    }
     if self.is_f64_tracked(r) {
       let f = self.to_f64(v);
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
@@ -2840,6 +3131,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// still drops the integer view wherever nothing reads it.
   fn store_reg_f64(&mut self, r: u8, f: IrValue) {
     self.invalidate_list_header(r);
+    if self.captured[r as usize] {
+      let bits = self.from_f64(f);
+      self.store_reg_mem(r, bits);
+    }
     if self.is_f64_tracked(r) {
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
     }
@@ -3111,7 +3406,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.i64c(0);
+    let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
 
     self.fb.switch_to_block(ok_block);
@@ -3477,26 +3772,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// `emit_inline_frame_push`'s other half; inlines
   /// `zuri_jit_call_finish`'s job once the callee's own `call_indirect`
-  /// has returned. `new_base` must be the exact value passed to the
-  /// matching `emit_inline_frame_push` call (needed only for the rare
-  /// `close_upvalues_from` case); `ret_bits` is the callee's raw return
-  /// value.
+  /// has returned with `ret_bits`.
   ///
-  /// Every exit path here writes `dst` the same way
-  /// `zuri_jit_call_finish` itself always did; straight into `VM::
-  /// registers` memory, with `reg_cache[dst]` marked `Stale` rather than
-  /// going through `store_reg`'s `Variable`. That's deliberate, not an
-  /// oversight: this function has multiple internal branches (deopt,
-  /// error, ordinary success) that all reach the same `done_block`,
-  /// and `dst`'s `Variable` is never defined on the deopt/error
-  /// paths at all (they write memory directly, exactly like the helper
-  /// calls they replace). A `Dirty` marking on the success path only
-  /// would leave a LATER `load_reg(dst)` trusting a `Variable` that was
-  /// only ever defined on ONE of several incoming edges; unsound
-  /// regardless of which edge actually ran at runtime. Uniform `Stale`
-  /// is what `zuri_jit_call_finish`'s own call-based version already
-  /// guaranteed for free; this preserves that exactly.
-  fn emit_inline_frame_finish(&mut self, dst: u8, new_base: IrValue, ret_bits: IrValue) {
+  /// The common case is a single compare: bits other than
+  /// `PENDING_RETURN` mean the callee reached its `Return`, so the frame
+  /// is popped and `dst` is defined straight from the returned value.
+  /// Only the pending case looks at the VM, to tell a deopt (finished in
+  /// the interpreter, which leaves its answer in `dst`'s memory) from an
+  /// error (propagated by returning `PENDING_RETURN` again). Every path
+  /// reaches the join with the result as a block parameter, which then
+  /// defines `dst` both in memory and as its `Variable`.
+  fn emit_inline_frame_finish(&mut self, dst: u8, ret_bits: IrValue) {
     let vm = self.vm_param;
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
 
@@ -3511,7 +3797,20 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .store(flags, new_depth, vm, JIT_CALL_DEPTH_OFFSET);
 
     let done_block = self.fb.create_block();
+    let result = self.fb.append_block_param(done_block, types::I64);
 
+    // The callee leaves by a `Return` or not at all; see `PENDING_RETURN`.
+    let pending = self.u64c(PENDING_RETURN);
+    let is_pending = self.fb.ins().icmp(IntCC::Equal, ret_bits, pending);
+    let status_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_pending, status_block, &[], ok_block, &[]);
+
+    self.fb.set_cold_block(status_block);
+    self.fb.switch_to_block(status_block);
     let deopt_ip = self
       .fb
       .ins()
@@ -3519,60 +3818,40 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let neg1 = self.i64c(-1);
     let no_deopt = self.fb.ins().icmp(IntCC::Equal, deopt_ip, neg1);
     let deopt_block = self.fb.create_block();
-    let past_deopt_block = self.fb.create_block();
+    let exc_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(no_deopt, past_deopt_block, &[], deopt_block, &[]);
+      .brif(no_deopt, exc_block, &[], deopt_block, &[]);
 
+    self.fb.set_cold_block(deopt_block);
     self.fb.switch_to_block(deopt_block);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     self.call_checked("zuri_jit_finish_deopt", &[vm, base, dst_i]);
-    self.fb.ins().jump(done_block, &[]);
+    let resolved = self.load_reg_mem(dst);
+    self.fb.ins().jump(done_block, &[resolved.into()]);
 
-    self.fb.switch_to_block(past_deopt_block);
-    let exc = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, JIT_PENDING_EXCEPTION_OFFSET);
-    let nil = self.u64c(value::NIL_VAL);
-    let no_exc = self.fb.ins().icmp(IntCC::Equal, exc, nil);
-    let exc_block = self.fb.create_block();
-    let ok_block = self.fb.create_block();
-    self.fb.ins().brif(no_exc, ok_block, &[], exc_block, &[]);
-
+    self.fb.set_cold_block(exc_block);
     self.fb.switch_to_block(exc_block);
-    let junk = self.i64c(0);
+    let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
 
     self.fb.switch_to_block(ok_block);
-    let has_open = self
-      .fb
-      .ins()
-      .load(types::I8, flags, vm, HAS_OPEN_UPVALUES_OFFSET);
-    let zero8 = self.fb.ins().iconst(types::I8, 0);
-    let none_open = self.fb.ins().icmp(IntCC::Equal, has_open, zero8);
-    let pop_block = self.fb.create_block();
-    let close_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(none_open, pop_block, &[], close_block, &[]);
-
-    self.fb.switch_to_block(close_block);
-    let zero = self.i64c(0);
-    self.call_checked("zuri_jit_close_upvalues", &[vm, new_base, zero]);
-    self.fb.ins().jump(pop_block, &[]);
-
-    self.fb.switch_to_block(pop_block);
+    // Nothing is left open in the callee's window: a compiled function
+    // closes its own upvalues at `Return` whenever its bytecode can open
+    // any (see `frame_can_open_upvalues`), and deeper frames closed
+    // theirs on the way out.
     self.emit_pop_top_frame();
-    self.store_reg_mem(dst, ret_bits);
-    self.fb.ins().jump(done_block, &[]);
+    self.fb.ins().jump(done_block, &[ret_bits.into()]);
 
+    // Into memory as well as the `Variable`. Several emitters finish a
+    // call and then re-read `dst` from memory the way their slow path
+    // needs to (`resync_dst_from_memory`), and that read has to see this
+    // result whichever path produced it.
     self.fb.switch_to_block(done_block);
-    let v = self.load_reg_mem(dst);
-    self.store_reg(dst, v);
+    self.store_reg_mem(dst, result);
+    self.store_reg(dst, result);
   }
 
   /// Pops `VM::frames`' own top entry and restores `VM::
@@ -3606,17 +3885,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().store(flags, top_idx, vm, FRAMES_LEN_OFFSET);
   }
 
-  /// `emit_inline_frame_finish`'s construct-call counterpart; the
-  /// same deopt/error/upvalue/pop shape, but discarding the
-  /// constructor's own return value in favour of the instance
-  /// `emit_inline_construct` pinned, and needing the `gc_pins` release
-  /// `zuri_jit_take_constructed_instance` does. See `zuri_jit_new_finish`
-  /// 's own docs for why that release happens exactly here (after the
-  /// deopt/error checks; unlike the ordinary-call finish, this
-  /// one has a real resource to release regardless of which of those
-  /// two fire) and `emit_inline_frame_finish`'s own docs for why every
-  /// exit path writes `dst` the same uniform way.
-  fn emit_inline_construct_finish(&mut self, dst: u8, new_base: IrValue) {
+  /// `emit_inline_frame_finish`'s construct-call counterpart; the same
+  /// pending check and pop, but the result is the instance
+  /// `emit_inline_construct` pinned rather than the constructor's own
+  /// return value, and every path has to release that pin through
+  /// `zuri_jit_take_constructed_instance`. See `zuri_jit_new_finish`'s
+  /// own docs for why the release happens exactly where it does on each
+  /// path.
+  fn emit_inline_construct_finish(&mut self, dst: u8, ret_bits: IrValue) {
     let vm = self.vm_param;
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
 
@@ -3631,16 +3907,29 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .store(flags, new_depth, vm, JIT_CALL_DEPTH_OFFSET);
 
     let done_block = self.fb.create_block();
+    let result = self.fb.append_block_param(done_block, types::I64);
 
-    // Deopt is checked BEFORE the `gc_pins` release below, and NOT
-    // released on this branch until after `zuri_jit_finish_deopt`
-    // returns; matching `zuri_jit_new_finish`'s own strict ordering.
-    // Resolving a deopt resumes the constructor through the
-    // interpreter, which can run arbitrary Zuri code (a collection
-    // included); the instance must stay pinned for every moment that's
-    // happening, or a relocation would leave `gc_pins`' own copy
-    // correctly updated while a bare local `Value` read out beforehand
-    // silently didn't.
+    // The constructor's own return value is never the answer, but it
+    // still says whether the constructor finished; see `PENDING_RETURN`.
+    let pending = self.u64c(PENDING_RETURN);
+    let is_pending = self.fb.ins().icmp(IntCC::Equal, ret_bits, pending);
+    let status_block = self.fb.create_block();
+    let ok_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(is_pending, status_block, &[], ok_block, &[]);
+
+    // Deopt is checked BEFORE the `gc_pins` release, and NOT released on
+    // this branch until after `zuri_jit_finish_deopt` returns; matching
+    // `zuri_jit_new_finish`'s own strict ordering. Resolving a deopt
+    // resumes the constructor through the interpreter, which can run
+    // arbitrary Zuri code (a collection included); the instance must
+    // stay pinned for every moment that's happening, or a relocation
+    // would leave `gc_pins`' own copy correctly updated while a bare
+    // local `Value` read out beforehand silently didn't.
+    self.fb.set_cold_block(status_block);
+    self.fb.switch_to_block(status_block);
     let deopt_ip = self
       .fb
       .ins()
@@ -3648,72 +3937,53 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let neg1 = self.i64c(-1);
     let no_deopt = self.fb.ins().icmp(IntCC::Equal, deopt_ip, neg1);
     let deopt_block = self.fb.create_block();
-    let past_deopt_block = self.fb.create_block();
+    let exc_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(no_deopt, past_deopt_block, &[], deopt_block, &[]);
+      .brif(no_deopt, exc_block, &[], deopt_block, &[]);
 
+    self.fb.set_cold_block(deopt_block);
     self.fb.switch_to_block(deopt_block);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     // `zuri_jit_finish_deopt` writes ITS OWN resolved value into `dst`
     // on success; fine for the ordinary-call finish (that value IS
     // the answer), wrong here (the answer is always the instance, never
-    // whatever the constructor body itself returned). Overwritten
-    // unconditionally right after: cheap, and simpler than a construct-
-    // specific deopt-finish helper for a path this rare.
+    // whatever the constructor body itself returned). The instance is
+    // taken right after instead.
     self.call_checked("zuri_jit_finish_deopt", &[vm, base, dst_i]);
     let instance_after_deopt = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
-    self.store_reg_mem(dst, instance_after_deopt);
-    self.fb.ins().jump(done_block, &[]);
-
-    self.fb.switch_to_block(past_deopt_block);
-    // No deopt was pending, so nothing has run any Zuri code since the
-    // check above; safe to release the pin here, still strictly
-    // before the error check, matching the original's own order.
-    let instance = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
-    let exc = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, JIT_PENDING_EXCEPTION_OFFSET);
-    let nil = self.u64c(value::NIL_VAL);
-    let no_exc = self.fb.ins().icmp(IntCC::Equal, exc, nil);
-    let exc_block = self.fb.create_block();
-    let ok_block = self.fb.create_block();
-    self.fb.ins().brif(no_exc, ok_block, &[], exc_block, &[]);
-
-    self.fb.switch_to_block(exc_block);
-    let junk = self.i64c(0);
-    self.fb.ins().return_(&[junk]);
-
-    self.fb.switch_to_block(ok_block);
-    let has_open = self
-      .fb
-      .ins()
-      .load(types::I8, flags, vm, HAS_OPEN_UPVALUES_OFFSET);
-    let zero8 = self.fb.ins().iconst(types::I8, 0);
-    let none_open = self.fb.ins().icmp(IntCC::Equal, has_open, zero8);
-    let pop_block = self.fb.create_block();
-    let close_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(none_open, pop_block, &[], close_block, &[]);
+      .jump(done_block, &[instance_after_deopt.into()]);
 
-    self.fb.switch_to_block(close_block);
-    let zero = self.i64c(0);
-    self.call_checked("zuri_jit_close_upvalues", &[vm, new_base, zero]);
-    self.fb.ins().jump(pop_block, &[]);
+    // An error: the pin is still released, as it is on every other path.
+    self.fb.set_cold_block(exc_block);
+    self.fb.switch_to_block(exc_block);
+    self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
+    let junk = self.u64c(PENDING_RETURN);
+    self.fb.ins().return_(&[junk]);
 
-    self.fb.switch_to_block(pop_block);
+    // Nothing has run any Zuri code since the constructor returned, so
+    // the pin can go now.
+    self.fb.switch_to_block(ok_block);
+    let instance = self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
+    // Nothing is left open in the callee's window: a compiled function
+    // closes its own upvalues at `Return` whenever its bytecode can open
+    // any (see `frame_can_open_upvalues`), and deeper frames closed
+    // theirs on the way out.
     self.emit_pop_top_frame();
-    self.store_reg_mem(dst, instance);
-    self.fb.ins().jump(done_block, &[]);
+    self.fb.ins().jump(done_block, &[instance.into()]);
 
+    // Into memory as well as the `Variable`. Several emitters finish a
+    // call and then re-read `dst` from memory the way their slow path
+    // needs to (`resync_dst_from_memory`), and that read has to see this
+    // result whichever path produced it.
     self.fb.switch_to_block(done_block);
-    let v = self.load_reg_mem(dst);
-    self.store_reg(dst, v);
+    self.store_reg_mem(dst, result);
+    self.store_reg(dst, result);
   }
 
   /// Inlines `zuri_jit_construct_prepare`'s job for a `CallTarget::
@@ -4456,14 +4726,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       let instance_val = self.load_reg_mem_at_base(new_base, 0);
       let [a0, a1, a2, a3] = self.load_construct_arg_values(instance_val, func + 1, num_args);
       self.flush_live(self.current_ip);
-      self.fb.ins().call_indirect(
+      let call = self.fb.ins().call_indirect(
         sig,
         entry,
         &[vm_p, new_base, closure_bits, neg1, a0, a1, a2, a3],
       );
+      let ret_bits = self.fb.inst_results(call)[0];
       self.reload_live(self.current_ip);
       self.refresh_regs();
-      self.emit_inline_construct_finish(dst, new_base);
+      self.emit_inline_construct_finish(dst, ret_bits);
       self.fb.ins().jump(done_block, &[]);
     }
 
@@ -4695,7 +4966,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.reload_live(self.current_ip);
       self.refresh_regs();
     }
-    self.emit_inline_frame_finish(dst, new_base, ret_bits);
+    self.emit_inline_frame_finish(dst, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -6004,7 +6275,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(self.current_ip);
     self.refresh_regs();
-    self.emit_inline_frame_finish(dst, new_base, ret_bits);
+    self.emit_inline_frame_finish(dst, ret_bits);
     self.fb.ins().jump(join_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -6020,8 +6291,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
     self.fb.ins().jump(join_block, &[]);
 
+    // Both sides have already defined `dst`: the inline finish from the
+    // callee's return value, `emit_fast_call` from memory.
     self.fb.switch_to_block(join_block);
-    self.resync_dst_from_memory(dst);
   }
 
   fn emit_known_call(
@@ -6121,7 +6393,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(self.current_ip);
     self.refresh_regs();
-    self.emit_inline_frame_finish(dst, new_base, ret_bits);
+    self.emit_inline_frame_finish(dst, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -6349,7 +6621,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         self.reload_live(ip);
         self.refresh_regs();
       }
-      self.emit_inline_frame_finish(dst, new_base, ret_bits);
+      self.emit_inline_frame_finish(dst, ret_bits);
       self.fb.ins().jump(done_block, &[]);
     }
 
@@ -6615,7 +6887,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.i64c(0);
+    let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
 
     self.fb.switch_to_block(ok_block);
@@ -6781,15 +7053,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     {
       return None;
     }
-    if let Some(cell) = self.proto.chunk.field_cache_cell(ip) {
-      let c_bits = cell.class_bits.get();
-      if c_bits != 0 {
-        if let Some(slots) = self.known_classes.get(&c_bits) {
-          if let Some(&slot) = slots.get(name) {
-            return Some((c_bits, slot));
-          }
-        }
-      }
+    if let Some(&site) = self.site_classes.get(&ip) {
+      return Some(site);
     }
     self.find_unique_known_class_for_field(name)
   }
@@ -7719,7 +7984,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let ret_bits = self.fb.inst_results(call)[0];
     self.reload_live(ip);
     self.refresh_regs();
-    self.emit_inline_frame_finish(dst, new_base, ret_bits);
+    self.emit_inline_frame_finish(dst, ret_bits);
     self.fb.ins().jump(done_block, &[]);
 
     // Cold: first execution of this site, a receiver of a different class,
@@ -12095,7 +12360,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.i64c(0);
+    let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
 
     self.fb.switch_to_block(ok_block);
@@ -12404,6 +12669,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // already correct; all that's needed is invalidating this
     // compiler's OWN bookkeeping so later code in/after this block
     // re-reads it instead of trusting a stale `Variable`.
+    if self.site_spec.operands.contains(&ip) {
+      self.emit_operand_guard(ip, &instr);
+    }
     match instr {
       Instr::LoadConst { dst, const_idx } => {
         let const_val = self.proto.chunk.constants[const_idx as usize];
@@ -14268,7 +14536,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
       self.fb.switch_to_block(err_block);
-      let junk = self.i64c(0);
+      let junk = self.u64c(PENDING_RETURN);
       self.fb.ins().return_(&[junk]);
 
       self.fb.switch_to_block(ok_block);

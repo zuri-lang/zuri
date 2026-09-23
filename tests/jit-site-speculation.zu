@@ -1,0 +1,196 @@
+# Compiled code bets on the kinds of value the interpreter saw at each
+# site before a function got hot, and leaves for the interpreter when a
+# bet stops holding. Every function here warms up on one kind of value
+# and is then handed another, so each check crosses from compiled code
+# back to the interpreter at a different kind of site.
+
+echo 'operands that stop being numbers:'
+
+def combine(a, b) {
+  return a + b
+}
+
+var total = 0
+iter var i = 0; i < 30000; i++ {
+  total = combine(total, 1)
+}
+echo total
+echo combine('left-', 'right')
+echo combine(2.5, 0.25)
+
+echo 'an element that stops being a number:'
+
+def scaled_sum(xs) {
+  var acc = 0
+  iter var i = 0; i < xs.length(); i++ {
+    acc = acc + xs[i] * 2
+  }
+  return acc
+}
+
+var numbers = []
+iter var i = 0; i < 1000; i++ {
+  numbers.append(i)
+}
+
+var sums = 0
+iter var r = 0; r < 200; r++ {
+  sums = sums + scaled_sum(numbers)
+}
+echo sums
+echo scaled_sum(['ab', 'cd'])
+
+echo 'a field that stops holding a number:'
+
+class Cell {
+  @new(value) {
+    self.value = value
+  }
+}
+
+def doubled(cell) {
+  return cell.value * 2
+}
+
+var seen = 0
+iter var i = 0; i < 30000; i++ {
+  seen = seen + doubled(Cell(i))
+}
+echo seen
+echo doubled(Cell('xy'))
+
+echo 'a call result that stops being a number:'
+
+def pick(n) {
+  if n > 100000 {
+    return 'many'
+  }
+  return n
+}
+
+def tripled(n) {
+  return pick(n) * 3
+}
+
+var acc = 0
+iter var i = 0; i < 30000; i++ {
+  acc = acc + tripled(i)
+}
+echo acc
+echo tripled(200000)
+
+echo 'an object that never left its stack slot, across a deopt:'
+
+class Pair {
+  @new(a, b) {
+    self.a = a
+    self.b = b
+  }
+}
+
+# `p` and `v` are never allocated in compiled code; their fields live in
+# stack slots. When the multiply's bet fails, the interpreter takes over
+# with both still to be read, so they have to become real objects first.
+def pair_product(x, y) {
+  var p = Pair(x, y)
+  var r = p.a * p.b
+  return r + p.a
+}
+
+def list_product(x, y) {
+  var v = [x, y]
+  var r = v[0] * v[1]
+  return r + v[0]
+}
+
+var pairs = 0
+var lists = 0
+iter var i = 0; i < 30000; i++ {
+  pairs = pairs + pair_product(i, 2)
+  lists = lists + list_product(i, 3)
+}
+echo pairs
+echo lists
+echo pair_product('ab', 2)
+echo list_product('cd', 3)
+
+echo 'field and method sites seeing a second class:'
+
+class Circle {
+  @new(r) {
+    self.size = r
+  }
+
+  area() {
+    return self.size * self.size * 3
+  }
+}
+
+class Square {
+  @new(side) {
+    self.extra = 0
+    self.size = side
+  }
+
+  area() {
+    return self.size * self.size
+  }
+}
+
+def measure(shape) {
+  return shape.size + shape.area()
+}
+
+var circles = 0
+iter var i = 0; i < 30000; i++ {
+  circles = circles + measure(Circle(2))
+}
+echo circles
+
+var mixed = 0
+iter var i = 0; i < 30000; i++ {
+  if i % 2 == 0 {
+    mixed = mixed + measure(Circle(1))
+  } else {
+    mixed = mixed + measure(Square(3))
+  }
+}
+echo mixed
+
+echo 'remainder, floor division and powers stay numbers:'
+
+def mixed_ops(n) {
+  var out = 0
+  iter var i = 1; i <= n; i++ {
+    out = out + i % 7 + i // 3 + (i % 3) ** 2 - (0 - i) % 5
+  }
+  return out
+}
+
+var ops = 0
+iter var r = 0; r < 100; r++ {
+  ops = ops + mixed_ops(500)
+}
+echo ops
+echo -7 % 3
+echo 7.5 % 2
+echo -7 // 2
+echo 2 ** 10
+
+echo 'globals read and written in a hot loop:'
+
+var counter = 0
+var step = 3
+
+def bump() {
+  counter = counter + step
+}
+
+iter var i = 0; i < 30000; i++ {
+  bump()
+}
+echo counter
+step = 'x'
+counter = ''
+bump()
+echo counter

@@ -112,6 +112,40 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
 /// interpreter reads the exact same array it always does, starting
 /// fresh at `ip`. See `VM::pending_deopt_ip`'s own docs for the full
 /// reasoning and `VM::invoke_compiled` for where this is consumed.
+/// Builds the real list a scalar-replaced `Instr::MakeList` stands for,
+/// from the `count` values in its stack slot at `slot`. Called on the way
+/// out of a deopt, when the interpreter is about to read a register that
+/// compiled code never gave a real list.
+///
+/// Allocating cannot start a collection, so nothing moves between the
+/// caller's register flush and the store of the result.
+pub unsafe extern "C" fn zuri_jit_materialize_list(vm_ptr: *mut VM, slot: u64, count: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let items = unsafe { std::slice::from_raw_parts(slot as *const Value, count as usize) };
+  vm.heap.alloc_list(items.to_vec()).to_bits()
+}
+
+/// `zuri_jit_materialize_list` for a scalar-replaced instance of the
+/// class `class_bits`, whose `count` fields sit in the stack slot at
+/// `slot` in field-slot order.
+pub unsafe extern "C" fn zuri_jit_materialize_instance(
+  vm_ptr: *mut VM,
+  class_bits: u64,
+  slot: u64,
+  count: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let fields = unsafe { std::slice::from_raw_parts(slot as *const Value, count as usize) };
+  let instance = vm
+    .heap
+    .alloc_instance(Value::from_bits(class_bits), count as usize);
+  let inst = instance.as_instance();
+  for (i, &v) in fields.iter().enumerate() {
+    inst.fields[i].set(v);
+  }
+  instance.to_bits()
+}
+
 pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
@@ -1049,8 +1083,13 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // hand generated code a dangling closure pointer.
   //
   // The entry goes in alongside, which is what lets generated code take
-  // the whole call without coming back through here at all.
-  if !was_cached && let Some(c) = cell {
+  // the whole call without coming back through here at all. A hit with
+  // no entry is a cell the interpreter filled before the method had
+  // compiled code, so it is completed here rather than left to miss in
+  // generated code forever.
+  if let Some(c) = cell
+    && (!was_cached || c.entry.get() == 0)
+  {
     c.key.set(class_bits);
     c.payload.set(method.to_bits());
     c.entry.set(entry as usize as u64);
@@ -1786,7 +1825,7 @@ pub unsafe extern "C" fn zuri_jit_get_global(
   let gmod = func.globals_module;
   let instr_ip = instr_ip as usize;
 
-  let resolved = if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
+  let resolved = if let Some(cached) = func.chunk.cached_global(instr_ip) {
     Some(cached)
   } else {
     let name_val = Value::from_bits(name_bits);
@@ -1795,11 +1834,7 @@ pub unsafe extern "C" fn zuri_jit_get_global(
 
   match resolved {
     Some((is_root, slot)) => {
-      func
-        .chunk
-        .global_cache
-        .borrow_mut()
-        .insert(instr_ip, (is_root, slot));
+      func.chunk.cache_global(instr_ip, (is_root, slot));
       // Also populate the JIT-only array cache (`codegen::FuncCompiler`'s
       // inline fast path: see `JitInfo::global_slot_cache`'s own docs)
       // so every later execution of this instruction, from compiled
@@ -1838,17 +1873,13 @@ pub unsafe extern "C" fn zuri_jit_set_global(
   let gmod = func.globals_module;
   let instr_ip = instr_ip as usize;
 
-  let slot = if let Some(&(_, s)) = func.chunk.global_cache.borrow().get(&instr_ip) {
+  let slot = if let Some((_, s)) = func.chunk.cached_global(instr_ip) {
     s
   } else {
     let name_val = Value::from_bits(name_bits);
     let s = vm.get_or_create_slot_in(gmod, name_val.as_str().to_string());
     let is_root = gmod.is_none();
-    func
-      .chunk
-      .global_cache
-      .borrow_mut()
-      .insert(instr_ip, (is_root, s));
+    func.chunk.cache_global(instr_ip, (is_root, s));
     // See `zuri_jit_get_global`'s identical comment; only a root
     // resolution is safe to fast-path from generated code today.
     if is_root {
@@ -1874,7 +1905,7 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
   let gmod = func.globals_module;
   let instr_ip = instr_ip as usize;
 
-  let resolved = if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
+  let resolved = if let Some(cached) = func.chunk.cached_global(instr_ip) {
     Some(cached)
   } else {
     let name_val = Value::from_bits(name_bits);
@@ -1883,11 +1914,7 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
 
   match resolved {
     Some((is_root, slot)) => {
-      func
-        .chunk
-        .global_cache
-        .borrow_mut()
-        .insert(instr_ip, (is_root, slot));
+      func.chunk.cache_global(instr_ip, (is_root, slot));
       if is_root {
         func.jit.global_slot_cache[instr_ip].set(slot as i64);
       }
@@ -3052,6 +3079,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
   vec![
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
+    spec3!(zuri_jit_materialize_list),
+    spec4!(zuri_jit_materialize_instance),
     spec2!(zuri_jit_is_falsey),
     spec4!(zuri_jit_dict_get),
     spec4!(zuri_jit_dict_set),

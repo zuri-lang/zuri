@@ -135,6 +135,15 @@ impl JitEngine {
     }
   }
 
+  /// Puts the engine back in a usable state after a compile panicked
+  /// partway through. The builder context may still hold the abandoned
+  /// function's blocks and variables, and `FunctionBuilder` expects to
+  /// start from an empty one. Code already installed in `module` is
+  /// untouched, since compiled functions elsewhere still run from it.
+  pub fn recover_from_panic(&mut self) {
+    self.builder_ctx = FunctionBuilderContext::new();
+  }
+
   /// A clone of this engine's target ISA handle, independent of
   /// `module`: see `isa`'s own field docs. Cheap (an `Arc` bump).
   pub fn isa_handle(&self) -> Arc<dyn TargetIsa> {
@@ -178,7 +187,21 @@ impl JitEngine {
           .collect();
         (bytes, alignment, relocs)
       },
-      Err(e) => return Err(format!("backend compile failed: {e:?}")),
+      Err(e) => {
+        // In a debug build the verifier runs, and a rejection means this
+        // compiler emitted malformed IR. Say so on stderr, where every
+        // fixture's expected output would catch it, instead of letting
+        // the function drop quietly back to the interpreter. Release
+        // builds skip the verifier and never get here for this reason.
+        #[cfg(debug_assertions)]
+        if let cranelift_codegen::CodegenError::Verifier(errors) = &e.inner {
+          eprintln!(
+            "zuri: JIT emitted invalid IR for '{}': {errors}",
+            proto.display_name()
+          );
+        }
+        return Err(format!("backend compile failed: {:?}", e.inner));
+      },
     };
     let entry = self.install_compiled(pending.func_id, alignment, &bytes, &relocs)?;
     Ok((entry, std::mem::take(&mut pending.osr_ids)))

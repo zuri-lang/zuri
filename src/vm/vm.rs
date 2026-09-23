@@ -8,11 +8,11 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 use nu_ansi_term::{Color, Style};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::builtins;
 use crate::jit::{CompileFacts, EntryFn, background, escape, typeflow};
-use crate::vm::chunk::{Instr, JumpKey, ParamType};
+use crate::vm::chunk::{Instr, JumpKey, ParamType, kind};
 use crate::vm::natives;
 use crate::vm::object::{
   Heap, ListStorage, Obj, ObjClass, ObjClosure, ObjFunction, ObjModuleBinding, UpvalueDescriptor,
@@ -400,6 +400,16 @@ impl FrameStack {
   }
 }
 
+impl FrameStack {
+  /// `self[idx].ip = ip` without the bounds check, for the interpreter's
+  /// per-instruction sync, where `idx` is always the frame it is running.
+  #[inline(always)]
+  fn set_ip(&mut self, idx: usize, ip: usize) {
+    debug_assert!(idx < self.len);
+    unsafe { (*self.ptr.add(idx)).ip = ip };
+  }
+}
+
 impl std::ops::Index<usize> for FrameStack {
   type Output = CallFrame;
   #[inline]
@@ -632,13 +642,6 @@ pub struct VM {
   /// entry for that register instead of duplicating it, which is what lets
   /// two closures over the same variable see each other's writes.
   open_upvalues: Vec<(usize, Value)>,
-  /// Mirrors `!open_upvalues.is_empty()`, updated at `open_upvalues`'s
-  /// only two mutation sites (`capture_upvalue`, `close_upvalues_from
-  /// _slow`). `jit::codegen`'s inline call/return fast path reads this
-  /// to skip `close_upvalues_from` entirely for the overwhelmingly
-  /// common case; a function whose returning frame never had any of
-  /// its locals captured; with no helper call.
-  has_open_upvalues: Cell<bool>,
   frames: FrameStack,
   /// Backing storage for every global, indexed by slot. Slots are assigned
   /// lazily on first resolution (`get_or_create_global_slot`) and never
@@ -895,14 +898,8 @@ pub(crate) const VM_REGS_LEN_CACHE_OFFSET: usize = std::mem::offset_of!(VM, regs
 /// docs.
 pub(crate) const VM_JIT_SCALAR_ROOTS_LEN_OFFSET: usize =
   std::mem::offset_of!(VM, jit_scalar_roots_len);
-/// Byte offset of `VM::has_open_upvalues`: see that field's own docs.
-pub(crate) const VM_HAS_OPEN_UPVALUES_OFFSET: usize = std::mem::offset_of!(VM, has_open_upvalues);
 /// Byte offset of `VM::pending_deopt_ip`: see that field's own docs.
 pub(crate) const VM_PENDING_DEOPT_IP_OFFSET: usize = std::mem::offset_of!(VM, pending_deopt_ip);
-/// Byte offset of `VM::jit_pending_error`: see that field's own
-/// docs.
-pub(crate) const VM_JIT_PENDING_EXCEPTION_OFFSET: usize =
-  std::mem::offset_of!(VM, jit_pending_error);
 /// Byte offset of `VM::jit_call_depth`: see that field's own docs.
 pub(crate) const VM_JIT_CALL_DEPTH_OFFSET: usize = std::mem::offset_of!(VM, jit_call_depth);
 /// `MAX_JIT_CALL_DEPTH` itself, re-exported so `jit::codegen`'s inline
@@ -923,7 +920,6 @@ impl VM {
       frames: FrameStack::new(),
       jit_ip: 0,
       open_upvalues: Vec::new(),
-      has_open_upvalues: Cell::new(false),
       gc_pins: Vec::new(),
       pending_error: None,
       signal_callbacks: Vec::new(),
@@ -1219,25 +1215,20 @@ impl VM {
           false
         } else {
           let gmod = func.globals_module;
-          let (is_root, slot) =
-            if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
-              cached
-            } else {
-              let name_val = func.chunk.constants[name_const as usize];
-              let resolved = match self.resolve_global(gmod, name_val.as_str()) {
-                Some(r) => r,
-                None => {
-                  let msg = format!("undefined global '{}'", name_val.as_str());
-                  return Err(self.raise("UndefinedError", msg));
-                },
-              };
-              func
-                .chunk
-                .global_cache
-                .borrow_mut()
-                .insert(instr_ip, resolved);
-              resolved
+          let (is_root, slot) = if let Some(cached) = func.chunk.cached_global(instr_ip) {
+            cached
+          } else {
+            let name_val = func.chunk.constants[name_const as usize];
+            let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+              Some(r) => r,
+              None => {
+                let msg = format!("undefined global '{}'", name_val.as_str());
+                return Err(self.raise("UndefinedError", msg));
+              },
             };
+            func.chunk.cache_global(instr_ip, resolved);
+            resolved
+          };
           let target_class = self.read_resolved(gmod, is_root, slot);
           target_class.is_class() && {
             let mut cur = Some(v.as_instance().class);
@@ -1860,6 +1851,74 @@ impl VM {
     out
   }
 
+  /// The class and field slot each `GetField`/`SetField` site in `proto`
+  /// saw last, from its field cache, for every site whose class is still
+  /// reachable and names that field as a plain field.
+  ///
+  /// A cache cell is not a GC root, so its class bits are only trusted
+  /// once the same class turns up somewhere reachable: a global, or a
+  /// slot of any loaded module's namespace. That covers every class a
+  /// program declares at the top level of a file, which is where classes
+  /// are declared.
+  fn resolve_site_classes(&self, proto: &ObjFunction) -> FxHashMap<usize, (u64, u16)> {
+    let seen = proto.chunk.field_class_snapshot();
+    if seen.is_empty() {
+      return FxHashMap::default();
+    }
+
+    let mut reachable: FxHashSet<u64> = FxHashSet::default();
+    let mut add = |v: Value| {
+      if v.is_class() {
+        reachable.insert(v.to_bits());
+      }
+    };
+    for cell in &self.global_slots {
+      add(cell.get());
+    }
+    for mval in self.modules.values() {
+      if mval.is_module() {
+        for cell in &mval.as_module().namespace.slots {
+          add(cell.get());
+        }
+      }
+    }
+    if let Some(mval) = proto.globals_module
+      && mval.is_module()
+    {
+      for cell in &mval.as_module().namespace.slots {
+        add(cell.get());
+      }
+    }
+
+    let mut out = FxHashMap::default();
+    for (ip, bits) in seen {
+      if !reachable.contains(&bits) {
+        continue;
+      }
+      let name_const = match proto.chunk.code.get(ip) {
+        Some(Instr::GetField { name_const, .. }) | Some(Instr::SetField { name_const, .. }) => {
+          *name_const
+        },
+        _ => continue,
+      };
+      let Some(name) = proto.chunk.constants.get(name_const as usize) else {
+        continue;
+      };
+      if !name.is_string() {
+        continue;
+      }
+      let class_val = Value::from_bits(bits);
+      let class = class_val.as_class();
+      if class.methods.contains_key(name.as_str()) {
+        continue;
+      }
+      if let Some(&slot) = class.field_slots.get(name.as_str()) {
+        out.insert(ip, (bits, slot));
+      }
+    }
+    out
+  }
+
   fn resolve_known_classes(&self, proto: &ObjFunction) -> FxHashMap<u64, FxHashMap<String, u16>> {
     let mut out = FxHashMap::default();
 
@@ -2441,6 +2500,9 @@ impl VM {
       speculative_int_lists,
       speculative_num_lists,
       known_classes: self.resolve_known_classes(proto),
+      site_kinds: proto.chunk.feedback_snapshot(),
+      site_speculation_off: proto.jit.site_speculation_off.get(),
+      site_classes: self.resolve_site_classes(proto),
     };
 
     proto.jit.compiling.set(true);
@@ -2469,11 +2531,13 @@ impl VM {
       }
     };
     if !sent {
-      // The background thread is gone; shouldn't happen (it lives
-      // for the whole process), but if it did, undo the pin/flag so
-      // proto just stays interpreted forever rather than wedged in a
-      // permanent "compiling" state no result will ever clear.
+      // Every worker is gone, so no result will ever clear the flag.
+      // Undo the pin and leave `proto` interpreted for good. Marking it
+      // ineligible matters as much as clearing `compiling`: without it
+      // the next warm call would snapshot all of the facts above again
+      // only to fail the same send.
       proto.jit.compiling.set(false);
+      proto.jit.ineligible.set(true);
       self.pending_jit_compiles.pop();
     }
   }
@@ -3266,6 +3330,7 @@ impl VM {
     }
     if invalidations == MAX_JIT_INVALIDATIONS {
       proto.jit.field_speculation_off.set(true);
+      proto.jit.site_speculation_off.set(true);
       if crate::jit::log_enabled() {
         eprintln!(
           "[jit] '{}' recompiling with field speculation off after {} deopt site(s)",
@@ -3305,6 +3370,14 @@ impl VM {
       }
     }
     self.note_deopt_site(deopting_fn, deopt_ip);
+    // The compiled code has returned, and the stack slots it registered
+    // as roots went with its native frame. Anything the interpreter still
+    // needs from them was materialized into real objects before it left
+    // (see `codegen::FuncCompiler::emit_deopt`), so the entries go now
+    // rather than when the frame finally pops.
+    self
+      .jit_scalar_roots_len
+      .set(self.frames[frame_idx].scalar_roots_mark);
     self.frames[frame_idx].ip = deopt_ip;
     // The interpreter takes this frame over and syncs ip on every
     // instruction from here, so jit_ip stops being the truthful source.
@@ -4315,6 +4388,15 @@ impl VM {
       };
     }
 
+    // Feedback for the JIT: see `Chunk::feedback`. `seen!` records the
+    // kinds of the registers it names against the instruction being
+    // executed, which is always the one just before `ip`.
+    macro_rules! seen {
+      ($func:expr, $ip:expr, $base:expr, $($r:expr),+) => {
+        $func.chunk.record($ip - 1, 0 $(| kind::of(self.get_reg($base, $r)))+)
+      };
+    }
+
     // Cached "which frame/function/closure am I executing" state, refreshed
     // only where it actually changes (Call/Invoke/InvokeSuper/CallSuperCtor
     // push a frame, Return pops one, a caught error truncates several)
@@ -4326,11 +4408,15 @@ impl VM {
     let mut ip = self.frames[frame_idx].ip;
 
     'dispatch: loop {
-      if self.heap.needs_major_gc() {
-        self.collect_garbage();
-        closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
-      } else if self.heap.needs_minor_gc() {
-        self.collect_minor();
+      // `jit_gc_needed` is the one byte both GC conditions collapse into
+      // (see `Heap::update_jit_gc_needed`), so the common case is a
+      // single test rather than two comparisons against two thresholds.
+      if self.heap.jit_gc_needed {
+        if self.heap.needs_major_gc() {
+          self.collect_garbage();
+        } else if self.heap.needs_minor_gc() {
+          self.collect_minor();
+        }
         // func_ptr never needs this: ObjFunction always allocates old-
         // generation, so it never moves. The closure has no such
         // guarantee: an ObjClosure is an ordinary young allocation, so a
@@ -4380,7 +4466,7 @@ impl VM {
       // Synced every instruction, not just at frame-change points, because
       // any instruction can call self.raise(), which reads every active
       // frame's ip to build a stack trace.
-      self.frames[frame_idx].ip = ip;
+      self.frames.set_ip(frame_idx, ip);
 
       // A labeled block instead of an IIFE closure wrapping the match: the
       // closure was too large for LLVM to inline across, so every
@@ -4401,24 +4487,29 @@ impl VM {
           },
 
           Instr::Add { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(self.binary_add(base, dst, a, b, "+"), 'step);
           },
           Instr::Sub { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.binary_numeric(base, dst, a, b, "-", "@sub", |x, y| x - y, |x, y| Ok(&x - &y)),
               'step
             );
           },
           Instr::Mul { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(self.binary_mult(base, dst, a, b, "*"), 'step);
           },
           Instr::Div { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.binary_numeric(base, dst, a, b, "/", "@div", |x, y| x / y, big_div),
               'step
             );
           },
           Instr::Pow { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.binary_numeric(
                 base, dst, a, b, "**", "@pow",
@@ -4429,12 +4520,14 @@ impl VM {
             );
           },
           Instr::Mod { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.binary_numeric(base, dst, a, b, "%", "@mod", num_rem, big_rem),
               'step
             );
           },
           Instr::Floor { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.binary_numeric(
                 base, dst, a, b, "//", "@floordiv",
@@ -4445,24 +4538,28 @@ impl VM {
             );
           },
           Instr::BitAnd { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(base, dst, a, b, "&", "@and", |x, y| x & y, |x, y| &x & &y),
               'step
             );
           },
           Instr::BitOr { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(base, dst, a, b, "|", "@or", |x, y| x | y, |x, y| &x | &y),
               'step
             );
           },
           Instr::BitXor { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(base, dst, a, b, "^", "@xor", |x, y| x ^ y, |x, y| &x ^ &y),
               'step
             );
           },
           Instr::BitShl { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(
                 base, dst, a, b, "<<", "@lshift",
@@ -4473,6 +4570,7 @@ impl VM {
             );
           },
           Instr::BitShr { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(
                 base, dst, a, b, ">>", "@rshift",
@@ -4483,6 +4581,7 @@ impl VM {
             );
           },
           Instr::BitUshr { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.bitwise_numeric(
                 base, dst, a, b, ">>>", "@urshift",
@@ -4493,6 +4592,7 @@ impl VM {
             );
           },
           Instr::BitNot { dst, src } => {
+            seen!(func, ip, base, src);
             let v = self.get_reg(base, src);
             if v.is_number() {
               let narrowed = num_to_wrapped_i64(v.as_number());
@@ -4505,6 +4605,7 @@ impl VM {
             }
           },
           Instr::Neg { dst, src } => {
+            seen!(func, ip, base, src);
             let v = self.get_reg(base, src);
             if v.is_number() {
               self.set_reg(base, dst, Value::number(-v.as_number()));
@@ -4523,16 +4624,19 @@ impl VM {
             self.set_reg(base, dst, Value::bool(v.is_falsey()));
           },
           Instr::AddImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let va = self.get_reg(base, a);
             let vb = func.chunk.constants[imm_const as usize];
             let result = tri!(self.binary_add_values(va, vb, "+"), 'step);
             self.set_reg(base, dst, result);
           },
           Instr::SubImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             tri!(self.binary_numeric_imm(base, dst, a, imm, "-", "@sub", |x, y| x - y), 'step);
           },
           Instr::MulImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let va = self.get_reg(base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             // Mirrors binary_mult's string/list-repeat cases; only
@@ -4561,18 +4665,22 @@ impl VM {
             }
           },
           Instr::LtImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             tri!(self.compare_imm(base, dst, a, imm, "<", "@lt", |x, y| x < y), 'step);
           },
           Instr::LeImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             tri!(self.compare_imm(base, dst, a, imm, "<=", "@lte", |x, y| x <= y), 'step);
           },
           Instr::GtImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             tri!(self.compare_imm(base, dst, a, imm, ">", "@gt", |x, y| x > y), 'step);
           },
           Instr::GeImm { dst, a, imm_const } => {
+            seen!(func, ip, base, a);
             let imm = func.chunk.constants[imm_const as usize].as_number();
             tri!(self.compare_imm(base, dst, a, imm, ">=", "@gte", |x, y| x >= y), 'step);
           },
@@ -4605,18 +4713,22 @@ impl VM {
             self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
           },
           Instr::Lt { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(self.compare(base, dst, a, b, "<", "@lt", |x, y| x < y, |x, y| &x < &y), 'step);
           },
           Instr::Gt { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(self.compare(base, dst, a, b, ">", "@gt", |x, y| x > y, |x, y| &x > &y), 'step);
           },
           Instr::Le { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.compare(base, dst, a, b, "<=", "@lte", |x, y| x <= y, |x, y| &x <= &y),
               'step
             );
           },
           Instr::Ge { dst, a, b } => {
+            seen!(func, ip, base, a, b);
             tri!(
               self.compare(base, dst, a, b, ">=", "@gte", |x, y| x >= y, |x, y| &x >= &y),
               'step
@@ -4748,30 +4860,25 @@ impl VM {
           Instr::GetGlobal { dst, name_const } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let (is_root, slot) =
-              if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
-                cached
-              } else {
-                let name_val = func.chunk.constants[name_const as usize];
-                if !name_val.is_string() {
-                  break 'step Err(
-                    self.raise("TypeError", "expected a string constant for a global name"),
-                  );
-                }
-                let resolved = match self.resolve_global(gmod, name_val.as_str()) {
-                  Some(r) => r,
-                  None => {
-                    let msg = format!("undefined global '{}'", name_val.as_str());
-                    break 'step Err(self.raise("UndefinedError", msg));
-                  },
-                };
-                func
-                  .chunk
-                  .global_cache
-                  .borrow_mut()
-                  .insert(instr_ip, resolved);
-                resolved
+            let (is_root, slot) = if let Some(cached) = func.chunk.cached_global(instr_ip) {
+              cached
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              if !name_val.is_string() {
+                break 'step Err(
+                  self.raise("TypeError", "expected a string constant for a global name"),
+                );
+              }
+              let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+                Some(r) => r,
+                None => {
+                  let msg = format!("undefined global '{}'", name_val.as_str());
+                  break 'step Err(self.raise("UndefinedError", msg));
+                },
               };
+              func.chunk.cache_global(instr_ip, resolved);
+              resolved
+            };
             let v = self.read_resolved(gmod, is_root, slot);
             self.set_reg(base, dst, v);
           },
@@ -4779,7 +4886,7 @@ impl VM {
           Instr::SetGlobal { name_const, src } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let slot = if let Some(&(_, s)) = func.chunk.global_cache.borrow().get(&instr_ip) {
+            let slot = if let Some((_, s)) = func.chunk.cached_global(instr_ip) {
               s
             } else {
               let name_val = func.chunk.constants[name_const as usize];
@@ -4789,11 +4896,7 @@ impl VM {
                 );
               }
               let s = self.get_or_create_slot_in(gmod, name_val.as_str().to_string());
-              func
-                .chunk
-                .global_cache
-                .borrow_mut()
-                .insert(instr_ip, (gmod.is_none(), s));
+              func.chunk.cache_global(instr_ip, (gmod.is_none(), s));
               s
             };
             let v = self.get_reg(base, src);
@@ -4803,30 +4906,25 @@ impl VM {
           Instr::AssignGlobal { name_const, src } => {
             let instr_ip = ip - 1;
             let gmod = func.globals_module;
-            let (is_root, slot) =
-              if let Some(&cached) = func.chunk.global_cache.borrow().get(&instr_ip) {
-                cached
-              } else {
-                let name_val = func.chunk.constants[name_const as usize];
-                if !name_val.is_string() {
-                  break 'step Err(
-                    self.raise("TypeError", "expected a string constant for a global name"),
-                  );
-                }
-                let resolved = match self.resolve_global(gmod, name_val.as_str()) {
-                  Some(r) => r,
-                  None => {
-                    let msg = format!("undefined global '{}'", name_val.as_str());
-                    break 'step Err(self.raise("UndefinedError", msg));
-                  },
-                };
-                func
-                  .chunk
-                  .global_cache
-                  .borrow_mut()
-                  .insert(instr_ip, resolved);
-                resolved
+            let (is_root, slot) = if let Some(cached) = func.chunk.cached_global(instr_ip) {
+              cached
+            } else {
+              let name_val = func.chunk.constants[name_const as usize];
+              if !name_val.is_string() {
+                break 'step Err(
+                  self.raise("TypeError", "expected a string constant for a global name"),
+                );
+              }
+              let resolved = match self.resolve_global(gmod, name_val.as_str()) {
+                Some(r) => r,
+                None => {
+                  let msg = format!("undefined global '{}'", name_val.as_str());
+                  break 'step Err(self.raise("UndefinedError", msg));
+                },
               };
+              func.chunk.cache_global(instr_ip, resolved);
+              resolved
+            };
             let v = self.get_reg(base, src);
             self.write_resolved(gmod, is_root, slot, v);
           },
@@ -5044,16 +5142,32 @@ impl VM {
 
             let value = if receiver.is_instance() {
               let inst = receiver.as_instance();
-              let class = inst.class.as_class();
-              if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
+              let class_bits = inst.class.to_bits();
+              // The same per-site cell compiled code reads, so a site
+              // that ran interpreted hands the compiler the class it
+              // actually saw rather than leaving it to guess.
+              let cell = func.chunk.field_cache_cell(ip - 1);
+              if let Some(c) = cell.filter(|c| c.class_bits.get() == class_bits) {
+                inst.fields[c.byte_offset.get() as usize / size_of::<Value>()].get()
+              } else if let Some(&idx) = inst.class.as_class().field_slots.get(name_val.as_str()) {
+                if let Some(c) = cell {
+                  c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
+                  c.class_bits.set(class_bits);
+                }
                 inst.fields[idx as usize].get()
-              } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
+              } else if let Some(method) = inst
+                .class
+                .as_class()
+                .methods
+                .get(name_val.as_str())
+                .copied()
+              {
                 self.heap.alloc_bound_method(receiver, method)
               } else {
                 let msg = format!(
                   "undefined property '{}' on instance of '{}'",
                   name_val.as_str(),
-                  class.name
+                  inst.class.as_class().name
                 );
                 break 'step Err(self.raise("PropertyError", msg));
               }
@@ -5129,20 +5243,31 @@ impl VM {
 
             if receiver.is_instance() {
               let inst = receiver.as_instance();
-              let class = inst.class.as_class();
-              let idx = *tri!(
-                class
-                  .field_slots
-                  .get(name_val.as_str())
-                  .ok_or_else(|| format!(
-                    "undefined field '{}' on instance of '{}'",
-                    name_val.as_str(),
-                    class.name
-                  ))
-                  .map_err(|msg| self.raise("PropertyError", msg)),
-                'step
-              );
-              inst.fields[idx as usize].set(value);
+              let class_bits = inst.class.to_bits();
+              let cell = func.chunk.field_cache_cell(ip - 1);
+              let idx = if let Some(c) = cell.filter(|c| c.class_bits.get() == class_bits) {
+                c.byte_offset.get() as usize / size_of::<Value>()
+              } else {
+                let class = inst.class.as_class();
+                let idx = *tri!(
+                  class
+                    .field_slots
+                    .get(name_val.as_str())
+                    .ok_or_else(|| format!(
+                      "undefined field '{}' on instance of '{}'",
+                      name_val.as_str(),
+                      class.name
+                    ))
+                    .map_err(|msg| self.raise("PropertyError", msg)),
+                  'step
+                );
+                if let Some(c) = cell {
+                  c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
+                  c.class_bits.set(class_bits);
+                }
+                idx as usize
+              };
+              inst.fields[idx].set(value);
               write_barrier(receiver.as_obj());
             } else if receiver.is_class() {
               tri!(
@@ -5184,9 +5309,28 @@ impl VM {
             if receiver.is_instance() {
               let inst = receiver.as_instance();
               let class_val = inst.class;
-              let found = {
+              let class_bits = class_val.to_bits();
+              // The per-site cell compiled code dispatches through. Only
+              // a method that can never move goes in: the cell is not a
+              // GC root, so a young closure's address would go stale at
+              // the next minor collection. Class methods are allocated
+              // old, so in practice every method qualifies. `entry` is
+              // left for `zuri_jit_invoke_prepare` to fill once the
+              // method has compiled code.
+              let cell = func.chunk.invoke_cache_cell(ip - 1);
+              let found = if let Some(c) = cell.filter(|c| c.key.get() == class_bits) {
+                Some(Ok(Value::from_bits(c.payload.get())))
+              } else {
                 let class = class_val.as_class();
                 if let Some(m) = class.methods.get(method_name_val.as_str()).copied() {
+                  if let Some(c) = cell
+                    && m.is_closure()
+                    && !Heap::is_young(m.as_obj())
+                  {
+                    c.key.set(class_bits);
+                    c.payload.set(m.to_bits());
+                    c.entry.set(0);
+                  }
                   Some(Ok(m))
                 } else if let Some(&idx) = class.field_slots.get(method_name_val.as_str()) {
                   Some(Err(idx))
@@ -5606,7 +5750,6 @@ impl VM {
     }
     let v = self.heap.alloc_upvalue(UpvalueState::Open(abs_index));
     self.open_upvalues.push((abs_index, v));
-    self.has_open_upvalues.set(true);
     v
   }
 
@@ -5637,7 +5780,6 @@ impl VM {
         i += 1;
       }
     }
-    self.has_open_upvalues.set(!self.open_upvalues.is_empty());
   }
 
   #[inline]
@@ -6255,6 +6397,7 @@ impl VM {
 
     let before_bytes = self.heap.bytes_allocated();
     self.heap.reset_nursery();
+    self.heap.update_jit_gc_needed();
     if self.log_gc {
       eprintln!(
         "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",

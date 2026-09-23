@@ -297,15 +297,32 @@ fn compiler_loop(
     let proto = unsafe { &*job.proto.0 };
     let speculative_lists = job.facts.speculative_lists;
     let speculative_ints = job.facts.speculative_ints;
-    let (outcome, osr_ids) = match engine.compile_function(
-      proto,
-      job.speculative_params,
-      job.speculative_regs,
-      job.facts,
-      Some(&shutdown),
-    ) {
-      Ok((entry, osr_ids)) => (Ok(entry), osr_ids),
-      Err(e) => (Err(e), FxHashMap::default()),
+    // A panic inside Cranelift is a compiler bug, but it is a bug about
+    // this one function. Letting it unwind would take the worker down
+    // with it, and once every worker is gone nothing the VM queues ever
+    // compiles again. Report the function as ineligible instead and
+    // carry on with the next job.
+    let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      engine.compile_function(
+        proto,
+        job.speculative_params,
+        job.speculative_regs,
+        job.facts,
+        Some(&shutdown),
+      )
+    }));
+    let (outcome, osr_ids) = match compiled {
+      Ok(Ok((entry, osr_ids))) => (Ok(entry), osr_ids),
+      Ok(Err(e)) => (Err(e), FxHashMap::default()),
+      Err(payload) => {
+        engine.recover_from_panic();
+        let reason = payload
+          .downcast_ref::<&str>()
+          .map(|s| s.to_string())
+          .or_else(|| payload.downcast_ref::<String>().cloned())
+          .unwrap_or_else(|| "unknown panic".to_string());
+        (Err(format!("compiler panicked: {reason}")), FxHashMap::default())
+      },
     };
 
     if shutdown.load(Ordering::Relaxed) {

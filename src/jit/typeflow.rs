@@ -213,6 +213,7 @@ impl RegSet {
 /// position `ip`, i.e. before `ip`'s own instruction executes; what
 /// `codegen::FuncCompiler` consults when deciding whether an
 /// arithmetic op's operands need a runtime guard at all.
+#[derive(Default)]
 pub struct TypeFacts {
   entry: Vec<RegSet>,
   /// The registers proven to hold a list of nothing but numbers at
@@ -354,6 +355,7 @@ pub fn analyze(
   speculative_num_lists: Option<u64>,
   list_facts: &ListFacts,
   speculative_lists: Option<u64>,
+  site_spec: &SiteSpeculation,
 ) -> TypeFacts {
   let code = &proto.chunk.code;
   let code_len = code.len();
@@ -491,6 +493,7 @@ pub fn analyze(
           self_numeric_fields,
           numeric_fields,
           int_facts,
+          site_spec,
         ),
         transfer_elem(
           &elem[ip],
@@ -562,6 +565,7 @@ pub fn analyze(
           self_numeric_fields,
           numeric_fields,
           int_facts,
+          site_spec,
         ),
         transfer_elem(
           &elem[ip],
@@ -3351,7 +3355,22 @@ fn transfer(
   self_numeric_fields: &rustc_hash::FxHashSet<String>,
   numeric_fields: &rustc_hash::FxHashSet<String>,
   int_facts: Option<&IntFacts>,
+  site_spec: &SiteSpeculation,
 ) -> RegSet {
+  // Past an operand guard every checked operand is a number, or compiled
+  // code would have left for the interpreter already; so the instruction
+  // itself and everything after it see them as proven.
+  let refined;
+  let in_set = if site_spec.operands.contains(&ip) {
+    let mut r = in_set.clone();
+    for op in guarded_operands(instr) {
+      r.set(op, true);
+    }
+    refined = r;
+    &refined
+  } else {
+    in_set
+  };
   let mut out = in_set.clone();
   match *instr {
     Instr::LoadConst { dst, const_idx } => {
@@ -3401,8 +3420,13 @@ fn transfer(
 
     // Never numeric results (string, or otherwise never-a-number).
     Instr::Concat { dst, .. } => out.set(dst, false),
-    Instr::Pow { dst, .. } | Instr::Floor { dst, .. } | Instr::Mod { dst, .. } => {
-      out.set(dst, false)
+    // A number with a number always gives a number here, in the
+    // interpreter and in compiled code alike: `%` and `//` are float
+    // operations, and `**` on two numbers is `powf`. Only a bigint
+    // operand or an operator overload can give anything else, and
+    // neither is a number.
+    Instr::Pow { dst, a, b } | Instr::Floor { dst, a, b } | Instr::Mod { dst, a, b } => {
+      out.set(dst, in_set.get(a) && in_set.get(b))
     },
 
     // Any instruction whose result depends on something this pass
@@ -3582,6 +3606,52 @@ fn transfer(
     },
   }
   out
+}
+
+/// Which instructions compiled code speculates on, from the kinds the
+/// interpreter recorded at each site (`Chunk::feedback`). Every claim
+/// here is backed by a runtime check in `codegen` that leaves for the
+/// interpreter when it fails, so the analysis may treat a speculated
+/// value as proven from the check onward.
+#[derive(Default, Clone, Debug)]
+pub struct SiteSpeculation {
+  /// Instructions whose unproven operands are checked to be numbers
+  /// before the instruction runs. See `guarded_operands`.
+  pub operands: rustc_hash::FxHashSet<usize>,
+}
+
+/// The registers an operand guard on `instr` checks: the operands of an
+/// arithmetic, bitwise or ordering instruction. Empty for anything else,
+/// which is never an operand-speculation site.
+pub fn guarded_operands(instr: &Instr) -> SmallVec<[u8; 2]> {
+  match *instr {
+    Instr::Add { a, b, .. }
+    | Instr::Sub { a, b, .. }
+    | Instr::Mul { a, b, .. }
+    | Instr::Div { a, b, .. }
+    | Instr::Pow { a, b, .. }
+    | Instr::Floor { a, b, .. }
+    | Instr::Mod { a, b, .. }
+    | Instr::BitAnd { a, b, .. }
+    | Instr::BitOr { a, b, .. }
+    | Instr::BitXor { a, b, .. }
+    | Instr::BitShl { a, b, .. }
+    | Instr::BitShr { a, b, .. }
+    | Instr::BitUshr { a, b, .. }
+    | Instr::Lt { a, b, .. }
+    | Instr::Le { a, b, .. }
+    | Instr::Gt { a, b, .. }
+    | Instr::Ge { a, b, .. } => smallvec![a, b],
+    Instr::Neg { src, .. } | Instr::BitNot { src, .. } => smallvec![src],
+    Instr::AddImm { a, .. }
+    | Instr::SubImm { a, .. }
+    | Instr::MulImm { a, .. }
+    | Instr::LtImm { a, .. }
+    | Instr::LeImm { a, .. }
+    | Instr::GtImm { a, .. }
+    | Instr::GeImm { a, .. } => smallvec![a],
+    _ => SmallVec::new(),
+  }
 }
 
 /// The destination register of `instr`, if it's one of `transfer`'s
@@ -4029,6 +4099,34 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
 /// one of these would let a captured local's register be treated as
 /// dead and reused/discarded before the closure actually reads it,
 /// silently capturing the wrong value.
+/// The registers of `proto` that some closure it creates captures, one
+/// flag per register.
+///
+/// Such a register has a second reader that no bytecode here names: the
+/// closure reads it through its open upvalue, straight out of
+/// `VM::registers`, for as long as this frame lives. Liveness rightly
+/// treats it as dead past the capture as far as this function's own
+/// instructions go, so compiled code has to keep its memory current by
+/// some other means; see `codegen::FuncCompiler::captured`.
+pub fn captured_registers(proto: &ObjFunction) -> Vec<bool> {
+  use crate::vm::object::UpvalueDescriptor;
+
+  let mut captured = vec![false; proto.num_registers as usize];
+  for instr in &proto.chunk.code {
+    if let Instr::Closure { proto_const, .. } = *instr {
+      let nested = proto.chunk.constants[proto_const as usize].as_func();
+      for desc in &nested.upvalues {
+        if let UpvalueDescriptor::Local(n) = *desc
+          && let Some(flag) = captured.get_mut(n as usize)
+        {
+          *flag = true;
+        }
+      }
+    }
+  }
+  captured
+}
+
 fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
   use crate::vm::object::UpvalueDescriptor;
 
@@ -4364,6 +4462,7 @@ mod ref_classify_tests {
       None,
       &list_facts,
       None,
+      &SiteSpeculation::default(),
     )
   }
 

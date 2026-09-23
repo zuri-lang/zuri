@@ -1,0 +1,58 @@
+# A closure reads the locals it captured straight out of the frame that
+# declared them, so a compiled frame has to keep a captured local current
+# in memory every time it assigns one, not only when it next calls
+# something. Each function here runs well past the JIT's warm-up, so
+# every check is made by compiled code as well as by the interpreter.
+
+def ten() {
+  var parts = [4, 6]
+  return parts[0] + parts[1]
+}
+
+def reassigned(n) {
+  var x = 1
+  var read = @() => x
+  x = n + 1
+  var after_arithmetic = read()
+  x = ten()
+  var after_call = read()
+  x = 'text'
+  var after_constant = read()
+  return [after_arithmetic, after_call, after_constant]
+}
+
+# The closure writes the local too, and the frame has to see that.
+def written_back(n) {
+  var total = n
+  var bump = @(by) {
+    total = total + by
+  }
+  bump(2)
+  total = total * 10
+  bump(1)
+  return total
+}
+
+# A local captured inside a loop is captured afresh each time round.
+def per_iteration(n) {
+  var readers = []
+  iter var i = 0; i < 3; i++ {
+    var value = i * n
+    readers.append(@() => value)
+    value = value + 1
+  }
+  return readers.map(@(read) => read())
+}
+
+var last = nil
+var totals = 0
+var loops = nil
+iter var i = 0; i < 50000; i++ {
+  last = reassigned(i)
+  totals = totals + written_back(i)
+  loops = per_iteration(i)
+}
+
+echo last
+echo totals
+echo loops

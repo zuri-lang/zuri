@@ -652,6 +652,10 @@ pub struct JitInfo {
   /// is between guessing again and not guessing at all, and code that
   /// runs to completion beats code that bails out every call.
   pub field_speculation_off: Cell<bool>,
+  /// Set alongside `field_speculation_off`, and for the same reason:
+  /// compile once more without any of the type bets taken from
+  /// `Chunk::feedback`.
+  pub site_speculation_off: Cell<bool>,
   /// Set once an entry's element scan has actually failed, so the next
   /// compilation stops betting on what the parameters' lists hold.
   ///
@@ -744,6 +748,7 @@ impl JitInfo {
       deopt_sites: RefCell::new(rustc_hash::FxHashSet::default()),
       invalidations: Cell::new(0),
       field_speculation_off: Cell::new(false),
+      site_speculation_off: Cell::new(false),
       elem_speculation_off: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
