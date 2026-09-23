@@ -3182,8 +3182,10 @@ impl VM {
     // this object; the closure is also reachable from wherever
     // closure_val came from (a register, a method table, a field), and
     // relocating it alone would leave those other references pointing at a
-    // slot the collection has since reused.
-    self.collect_minor();
+    // slot the collection has since reused. Every young object is
+    // promoted, not just the ones that survived before: a first-time
+    // survivor would still be young, and could move again.
+    self.collect_minor_promoting_all();
     let new_val = self.pinned(mark);
     self.unpin(mark);
     new_val
@@ -6196,10 +6198,10 @@ impl VM {
   /// exposed to native code via the `gc` native. See `collect_minor` for
   /// the cheaper, far more frequent counterpart this normally relies on.
   pub(crate) fn collect_garbage(&mut self) {
-    // Flush the nursery first so every live object is uniformly
+    // Empty the nursery first so every live object is uniformly
     // chunk-resident by the time the mark-sweep pass below runs; it
     // needs no nursery-awareness of its own.
-    self.collect_minor();
+    self.collect_minor_promoting_all();
 
     let before_bytes = self.heap.bytes_allocated();
     let before_count = self.heap.object_count();
@@ -6381,18 +6383,25 @@ impl VM {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
 
+    // An old object whose children include a first-time survivor still
+    // points into the young generation once this collection is done, so
+    // it has to be in the remembered set for the next one, or that
+    // survivor would be found by nothing and die with a live reference
+    // to it. That covers the remembered objects scanned here and every
+    // object this collection promotes.
+    // When this collection cannot keep anything young, nothing can be
+    // left pointing into the young generation and the check is skipped.
+    let keeps = self.heap.keeps_survivors();
     for remembered_ptr in self.heap.drain_remembered() {
-      Self::walk_children_mut(remembered_ptr, |slot| {
-        // SAFETY: remembered_ptr is a live old object; walk_children_mut
-        // only yields pointers to genuine Value slots it owns.
-        Self::forward_slot(&mut self.heap, unsafe { &mut *slot }, &mut worklist)
-      });
+      if Self::forward_children(&mut self.heap, remembered_ptr, &mut worklist, keeps) {
+        write_barrier(remembered_ptr);
+      }
     }
 
     while let Some(ptr) = worklist.pop() {
-      Self::walk_children_mut(ptr, |slot| {
-        Self::forward_slot(&mut self.heap, unsafe { &mut *slot }, &mut worklist)
-      });
+      if Self::forward_children(&mut self.heap, ptr, &mut worklist, keeps) && !Heap::is_young(ptr) {
+        write_barrier(ptr);
+      }
     }
 
     let before_bytes = self.heap.bytes_allocated();
@@ -6407,6 +6416,39 @@ impl VM {
         self.heap.bytes_allocated(),
       );
     }
+  }
+
+  /// A minor collection that promotes every reachable young object,
+  /// survivors included, leaving the nursery empty. A major collection
+  /// needs that, since its mark phase only knows the old generation, and
+  /// so does anything that has to be sure a value will never move again.
+  pub(crate) fn collect_minor_promoting_all(&mut self) {
+    self.heap.set_promote_all(true);
+    self.collect_minor();
+    self.heap.set_promote_all(false);
+  }
+
+  /// Forwards every child of `ptr` during a minor collection and, when
+  /// `check_young` is set, says whether any of them is still young
+  /// afterwards, which happens only when it became a survivor.
+  fn forward_children(
+    heap: &mut Heap,
+    ptr: *const Obj,
+    worklist: &mut Vec<*const Obj>,
+    check_young: bool,
+  ) -> bool {
+    let mut holds_young = false;
+    Self::walk_children_mut(ptr, |slot| {
+      // SAFETY: walk_children_mut only yields pointers to genuine Value
+      // slots owned by a live object.
+      let slot = unsafe { &mut *slot };
+      let rewritten = Self::forward_slot(heap, slot, worklist);
+      if check_young && slot.is_obj() && Heap::is_young(slot.as_obj()) {
+        holds_young = true;
+      }
+      rewritten
+    });
+    holds_young
   }
 
   /// Resolves one slot that might hold a pointer to a young object,

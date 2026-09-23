@@ -2113,9 +2113,14 @@ struct GcBox {
   live: Cell<bool>,
   marked: Cell<bool>,
   generation: Cell<Generation>,
-  /// Set once this box has been pushed onto the remembered-set list
-  /// (see `write_barrier`), so a second write to the same old object
+  /// For an old box: set once it has been pushed onto the remembered-set
+  /// list (see `write_barrier`), so a second write to the same object
   /// before the next minor collection doesn't push it again.
+  ///
+  /// For a young box, which the write barrier never looks at: set once
+  /// it has survived a minor collection and been copied into the
+  /// survivor space. Surviving a second one promotes it. Compiled code's
+  /// inline allocation writes it clear, as `Heap::young_header` has it.
   remembered: Cell<bool>,
   /// For an old box, the index into `Heap::chunks` of the chunk that
   /// owns it. For a young box, the nursery epoch it was allocated in
@@ -2297,7 +2302,58 @@ pub struct Heap {
   field_arena_idx: usize,
   field_arena_cur: *mut Cell<Value>,
   field_arena_end: *mut Cell<Value>,
+  /// Young objects that have survived one minor collection, copied out
+  /// of eden into chunks of their own so the next cycle's allocation can
+  /// reuse eden from the start. A survivor that is still reachable at
+  /// the next minor collection is promoted; one that is not dies young
+  /// after all, which is the point: a structure that happened to be
+  /// under construction when a collection ran would otherwise go
+  /// straight to the old generation and cost a major collection to
+  /// reclaim.
+  survivor_chunks: Vec<NurseryChunk>,
+  /// Where the minor collection in progress copies this cycle's
+  /// survivors. Becomes `survivor_chunks` when it finishes.
+  survivor_next: Vec<NurseryChunk>,
+  /// Emptied survivor chunks kept for reuse.
+  survivor_spare: Vec<NurseryChunk>,
+  /// Survivors copied by the minor collection in progress, in objects
+  /// and `approx_size` bytes, and those of them that need finalizing,
+  /// for the next cycle's finalization list.
+  survivor_count: usize,
+  survivor_bytes: usize,
+  survivor_finalize: Vec<*const GcBox>,
+  /// Set for the length of a minor collection that must leave the
+  /// nursery empty: every reachable young object is promoted, whatever
+  /// its age. See `VM::collect_minor_promoting_all`.
+  promote_all: bool,
+  /// Whether first-time survivors are kept young at all. Holding one
+  /// back costs a second copy, which only pays when it then dies before
+  /// the next collection; a program building one large structure that
+  /// lives on would copy almost everything twice for nothing. So the
+  /// heap watches what becomes of its survivors (see
+  /// `decide_aging`) and stops aging while most of them survive again.
+  /// It starts off, and the first try comes after `AGING_PROBE_MIN`
+  /// collections: a program too short to reach that many has no major
+  /// collection to save.
+  aging: bool,
+  /// How many survivors the collection in progress is judging: the ones
+  /// the previous collection kept young.
+  judged_survivors: usize,
+  /// How many of those this collection found still reachable.
+  survivors_kept: usize,
+  /// Collections run since aging was switched off, and how many to run
+  /// before trying it again. See `decide_aging`.
+  cycles_without_aging: u32,
+  aging_probe_interval: u32,
+  /// Aging is on for one cycle as a try rather than because it paid.
+  aging_probe: bool,
 }
+
+/// The shortest and longest gap, in minor collections, between tries at
+/// aging while it is off. A try that finds aging still not worth it
+/// doubles the gap, and one that finds it worth it resets it.
+const AGING_PROBE_MIN: u32 = 8;
+const AGING_PROBE_MAX: u32 = 1024;
 
 /// How many field cells one young field arena chunk holds. A class
 /// with more fields than this gets an owned buffer instead.
@@ -2608,7 +2664,40 @@ impl Heap {
       field_arena_idx: 0,
       field_arena_cur: std::ptr::null_mut(),
       field_arena_end: std::ptr::null_mut(),
+      survivor_chunks: Vec::new(),
+      survivor_next: Vec::new(),
+      survivor_spare: Vec::new(),
+      survivor_count: 0,
+      survivor_bytes: 0,
+      survivor_finalize: Vec::new(),
+      promote_all: false,
+      aging: false,
+      judged_survivors: 0,
+      survivors_kept: 0,
+      cycles_without_aging: 0,
+      aging_probe_interval: AGING_PROBE_MIN,
+      aging_probe: false,
     }
+  }
+
+  /// The epoch after `epoch`. 0 is never a live epoch, so the count
+  /// goes from `u32::MAX` straight back to 1.
+  const fn next_epoch(epoch: u32) -> u32 {
+    if epoch == u32::MAX { 1 } else { epoch + 1 }
+  }
+
+  /// Can the minor collection about to run keep anything young? When it
+  /// cannot, every reachable young object ends up old, and nothing it
+  /// scans can be left pointing into the young generation.
+  pub(crate) fn keeps_survivors(&self) -> bool {
+    self.aging && !self.promote_all
+  }
+
+  /// Makes the next minor collection promote every reachable young
+  /// object rather than keeping first-time survivors young, and clears
+  /// that again. See `VM::collect_minor_promoting_all`.
+  pub(crate) fn set_promote_all(&mut self, on: bool) {
+    self.promote_all = on;
   }
 
   /// The first header word of a young box born in `epoch`: `live` in
@@ -2637,7 +2726,7 @@ impl Heap {
       }
     }
 
-    for chunk in self.nursery_chunks.iter() {
+    for chunk in self.nursery_chunks.iter().chain(self.survivor_chunks.iter()) {
       for gcbox in chunk.slots.iter() {
         if gcbox.chunk_idx != self.young_epoch {
           continue;
@@ -3298,13 +3387,61 @@ impl Heap {
       }
       inst.fields = owned;
     }
-    self.promoted_count += 1;
-    self.promoted_bytes += Self::approx_size(&moved);
-    let new_gcbox = self.promote_into_old(moved);
+    let bytes = Self::approx_size(&moved);
+    let aged = gcbox.remembered.get();
+    if aged {
+      self.survivors_kept += 1;
+    }
+    let new_gcbox = if self.promote_all || !self.aging || aged {
+      self.promoted_count += 1;
+      self.promoted_bytes += bytes;
+      self.promote_into_old(moved)
+    } else {
+      self.survivor_count += 1;
+      self.survivor_bytes += bytes;
+      self.copy_to_survivors(moved)
+    };
     gcbox.marked.set(true);
     gcbox.list_next.set(new_gcbox);
     worklist.push(unsafe { &(*new_gcbox).obj });
     unsafe { &(*new_gcbox).obj }
+  }
+
+  /// Copies a first-time survivor's payload into the survivor space for
+  /// the cycle about to start. The copy is stamped with that cycle's
+  /// epoch rather than this one's, so for the rest of this collection
+  /// `forward_or_promote` leaves pointers to it alone, exactly as it
+  /// does pointers into the old generation, and it is marked as having
+  /// survived once. Returns the new box's address.
+  fn copy_to_survivors(&mut self, obj: Obj) -> *const GcBox {
+    let finalize = Self::needs_finalizer(&obj);
+    let full = self
+      .survivor_next
+      .last()
+      .is_none_or(|c| c.slots.len() == c.slots.capacity());
+    if full {
+      let chunk = self.survivor_spare.pop().unwrap_or_else(|| NurseryChunk {
+        slots: Vec::with_capacity(CHUNK_SIZE),
+      });
+      self.survivor_next.push(chunk);
+    }
+    let chunk = self.survivor_next.last_mut().unwrap();
+    // Never beyond capacity (checked above), so the buffer never moves
+    // and the address taken below stays good.
+    chunk.slots.push(GcBox {
+      live: Cell::new(true),
+      marked: Cell::new(false),
+      obj,
+      generation: Cell::new(Generation::Young),
+      remembered: Cell::new(true),
+      list_next: Cell::new(std::ptr::null()),
+      chunk_idx: Self::next_epoch(self.young_epoch),
+    });
+    let gcbox: *const GcBox = chunk.slots.last().unwrap();
+    if finalize {
+      self.survivor_finalize.push(gcbox);
+    }
+    gcbox
   }
 
   /// Shared cleanup for one dead `Obj` found during `reset_nursery`'s
@@ -3347,8 +3484,9 @@ impl Heap {
 
   /// Reclaims the nursery after a minor collection's copy phase has
   /// fully drained its worklist. By then every young object still
-  /// reachable has been forwarded into the old generation, so the rest
-  /// is garbage, and none of it is visited: advancing `young_epoch`
+  /// reachable has been forwarded, into the old generation or, the first
+  /// time it survives, into the survivor space, so the rest is garbage,
+  /// and none of it is visited: advancing `young_epoch`
   /// turns every box of this cycle into one `forward_or_promote` and
   /// `mark_object` treat as dead, the field arena is simply rewound,
   /// and the only objects that need individual attention are the ones
@@ -3366,9 +3504,15 @@ impl Heap {
   /// within the next `YOUNG_NEXT_GC` bytes. Only chunks beyond the cap,
   /// left over from an unusually large burst, are freed.
   ///
+  /// The survivor space rotates: the survivors this collection copied
+  /// become the young generation's starting population, and the chunks
+  /// that held the last cycle's survivors, every one of them now either
+  /// promoted or dead, go back to the spare pool.
+  ///
   /// Accounting follows the same shape: the old generation's figures
-  /// plus what this cycle promoted, with everything else allocated
-  /// since the last reset gone.
+  /// plus what this cycle promoted, the new survivors counted as young
+  /// from the start, and everything else allocated since the last reset
+  /// gone.
   pub(crate) fn reset_nursery(&mut self) {
     let pool_budget = self.field_storage_pool_budget();
     let finalize_len = self.finalize_len();
@@ -3390,6 +3534,23 @@ impl Heap {
     if !self.finalize_cur.is_null() {
       self.finalize_cur = self.finalize_buf.as_mut_ptr();
     }
+    let carried = std::mem::take(&mut self.survivor_finalize);
+    for &gcbox in &carried {
+      self.register_finalizer(gcbox);
+    }
+    self.survivor_finalize = carried;
+    self.survivor_finalize.clear();
+
+    let spent = std::mem::take(&mut self.survivor_chunks);
+    for mut chunk in spent {
+      // SAFETY: as for eden below: every survivor here was promoted
+      // (moved out), dropped above, or owns nothing.
+      unsafe { chunk.slots.set_len(0) };
+      if self.survivor_spare.len() < Self::MAX_RETAINED_NURSERY_CHUNKS {
+        self.survivor_spare.push(chunk);
+      }
+    }
+    self.survivor_chunks = std::mem::take(&mut self.survivor_next);
 
     for chunk in self.nursery_chunks.iter_mut() {
       // SAFETY: every payload in this chunk has been moved out, dropped
@@ -3416,12 +3577,49 @@ impl Heap {
 
     self.advance_epoch();
 
-    self.bytes_allocated = self.bytes_allocated - self.young_bytes_allocated + self.promoted_bytes;
+    self.bytes_allocated = self.bytes_allocated - self.young_bytes_allocated
+      + self.promoted_bytes
+      + self.survivor_bytes;
     self.old_live_count += self.promoted_count;
-    self.live_count = self.old_live_count;
+    self.live_count = self.old_live_count + self.survivor_count;
+    self.young_bytes_allocated = self.survivor_bytes;
+    self.decide_aging();
     self.promoted_bytes = 0;
     self.promoted_count = 0;
-    self.young_bytes_allocated = 0;
+    self.survivor_bytes = 0;
+    self.survivor_count = 0;
+  }
+
+  /// Chooses whether the next collection keeps first-time survivors
+  /// young, from what became of the ones this collection judged. Aging
+  /// stays on while fewer than half of them were still reachable, and
+  /// goes off otherwise.
+  ///
+  /// With it off there is nothing to judge, so after a gap it comes back
+  /// on for one cycle to take a fresh reading. Every try costs a program
+  /// that keeps its survivors an extra copy of them, so the gap doubles
+  /// each time a try says no, up to `AGING_PROBE_MAX`, and returns to
+  /// `AGING_PROBE_MIN` once aging pays again.
+  fn decide_aging(&mut self) {
+    if self.judged_survivors > 0 {
+      self.aging = self.survivors_kept * 2 < self.judged_survivors;
+      if self.aging {
+        self.aging_probe_interval = AGING_PROBE_MIN;
+      } else if self.aging_probe {
+        self.aging_probe_interval = (self.aging_probe_interval * 2).min(AGING_PROBE_MAX);
+      }
+      self.aging_probe = false;
+      self.cycles_without_aging = 0;
+    } else if !self.aging {
+      self.cycles_without_aging += 1;
+      if self.cycles_without_aging >= self.aging_probe_interval {
+        self.aging = true;
+        self.aging_probe = true;
+        self.cycles_without_aging = 0;
+      }
+    }
+    self.judged_survivors = self.survivor_count;
+    self.survivors_kept = 0;
   }
 
   /// How many field arena chunks to keep between cycles: enough for a
@@ -3432,25 +3630,37 @@ impl Heap {
     self.young_next_gc / chunk_bytes + 1
   }
 
-  /// Starts a new nursery cycle, retiring every young box of the last.
+  /// Starts a new nursery cycle, retiring every young box of the last
+  /// except the survivors, which were stamped with the new epoch as they
+  /// were copied.
   ///
   /// The epoch is a `u32`, so after four billion cycles it comes back
   /// round, and a box from the cycle that first used a number would
-  /// read as alive again. Before reusing any number, every retained
-  /// nursery slot has its epoch cleared to 0, which no cycle uses.
+  /// read as alive again. Before any number is reused, every eden slot
+  /// and every survivor slot not holding one of the new survivors has
+  /// its epoch cleared to 0, which no cycle uses.
   fn advance_epoch(&mut self) {
-    self.young_epoch = self.young_epoch.wrapping_add(1);
-    if self.young_epoch == 0 {
-      for chunk in self.nursery_chunks.iter_mut() {
+    let wrapped = self.young_epoch == u32::MAX;
+    self.young_epoch = Self::next_epoch(self.young_epoch);
+    if wrapped {
+      let chunks = self
+        .nursery_chunks
+        .iter_mut()
+        .chain(self.survivor_spare.iter_mut())
+        .map(|c| (c, 0))
+        .chain(self.survivor_chunks.iter_mut().map(|c| {
+          let live = c.slots.len();
+          (c, live)
+        }));
+      for (chunk, first) in chunks {
         let base = chunk.slots.as_mut_ptr();
-        for i in 0..chunk.slots.capacity() {
+        for i in first..chunk.slots.capacity() {
           // SAFETY: in bounds of the chunk's buffer. The slot may never
           // have been written, so only this one field is written and
           // nothing is read.
           unsafe { std::ptr::addr_of_mut!((*base.add(i)).chunk_idx).write(0) };
         }
       }
-      self.young_epoch = 1;
     }
     self.young_header = Self::young_header_for(self.young_epoch);
   }
