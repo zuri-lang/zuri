@@ -258,6 +258,15 @@ pub fn obj_instance_fields_offset() -> usize {
     + std::mem::offset_of!(FieldStorage, ptr)
 }
 
+/// Where an instance's field count sits, as a `u32`, with the
+/// `borrowed` flag in the byte after it. Compiled code writes the two
+/// together when it allocates an instance inline.
+pub fn obj_instance_fields_len_offset() -> usize {
+  obj_payload_offset()
+    + std::mem::offset_of!(ObjInstance, fields)
+    + std::mem::offset_of!(FieldStorage, len)
+}
+
 pub fn obj_instance_fields_inline_offset() -> usize {
   obj_payload_offset()
     + std::mem::offset_of!(ObjInstance, fields)
@@ -1008,6 +1017,14 @@ pub struct ObjClass {
 /// time); so this only ever needs to support "allocate once, read/
 /// write elements through `Cell`, free once," never growth.
 ///
+/// Up to `INLINE_FIELDS` cells live in `inline`. Past that, `ptr`
+/// names the cells, and they come from one of two places. An instance
+/// born in the nursery takes them from the heap's young field arena
+/// (`borrowed` is set), which is reset wholesale at every minor
+/// collection, so a young instance owns nothing and its death costs
+/// nothing. An instance that survives is given a buffer of its own on
+/// promotion (`borrowed` clear), freed when it dies.
+///
 /// Derefs to `[Cell<Value>]` specifically so every existing
 /// `.get()`/`.set()`/indexing/`.iter()`/`.iter_mut()`/`.len()` call
 /// site (GC marking, field access, `Display`, ...) keeps working
@@ -1020,6 +1037,10 @@ pub const INLINE_FIELDS: usize = 2;
 pub struct FieldStorage {
   ptr: *mut Cell<Value>,
   len: u32,
+  /// The cells behind `ptr` belong to the young field arena rather
+  /// than to this storage. Sits in what would otherwise be padding, so
+  /// the struct stays the size `jit::codegen` expects.
+  borrowed: bool,
   inline: [Cell<Value>; INLINE_FIELDS],
 }
 
@@ -1031,6 +1052,7 @@ impl FieldStorage {
       FieldStorage {
         ptr: std::ptr::null_mut(),
         len: len as u32,
+        borrowed: false,
         inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
       }
     } else {
@@ -1038,20 +1060,58 @@ impl FieldStorage {
       FieldStorage {
         ptr: Box::into_raw(boxed) as *mut Cell<Value>,
         len: len as u32,
+        borrowed: false,
         inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
       }
     }
   }
 
+  /// Storage whose cells live in the young field arena at `ptr`, which
+  /// the caller has already filled with `Value::nil()`.
+  ///
+  /// # Safety
+  ///
+  /// `ptr` must name `len` initialized cells that stay valid until the
+  /// next minor collection, and `len` must exceed `INLINE_FIELDS`.
+  unsafe fn borrowed(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
+    FieldStorage {
+      ptr,
+      len: len as u32,
+      borrowed: true,
+      inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
+    }
+  }
+
+  /// Does this storage own a buffer that has to be freed or recycled
+  /// when the instance dies?
+  #[inline]
+  pub fn owns_buffer(&self) -> bool {
+    !self.ptr.is_null() && !self.borrowed
+  }
+
+  /// Are the cells on loan from the young field arena?
+  #[inline]
+  pub fn is_borrowed(&self) -> bool {
+    self.borrowed
+  }
+
+  /// Gives up an owned buffer, returning it for the caller to free or
+  /// recycle. Borrowed cells are not the storage's to give away, so for
+  /// those (and for inline storage) the pointer comes back null.
   pub fn into_raw_parts(self) -> (*mut Cell<Value>, usize) {
     let this = std::mem::ManuallyDrop::new(self);
-    (this.ptr, this.len as usize)
+    if this.borrowed {
+      (std::ptr::null_mut(), this.len as usize)
+    } else {
+      (this.ptr, this.len as usize)
+    }
   }
 
   pub unsafe fn from_raw_parts(ptr: *mut Cell<Value>, len: usize) -> FieldStorage {
     FieldStorage {
       ptr,
       len: len as u32,
+      borrowed: false,
       inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
     }
   }
@@ -1103,7 +1163,7 @@ impl std::ops::DerefMut for FieldStorage {
 
 impl Drop for FieldStorage {
   fn drop(&mut self) {
-    if !self.ptr.is_null() {
+    if self.owns_buffer() {
       unsafe {
         drop(Box::from_raw(std::slice::from_raw_parts_mut(
           self.ptr,
@@ -2057,12 +2117,12 @@ struct GcBox {
   /// (see `write_barrier`), so a second write to the same old object
   /// before the next minor collection doesn't push it again.
   remembered: Cell<bool>,
-  /// Index into `Heap::chunks` of the chunk that owns this box.
-  /// Needed so a minor collection's sweep; which finds dead young
-  /// objects via the intrusive young-list, not by iterating chunks --
-  /// still knows which chunk's own free-list/live-count to update,
-  /// exactly as `Heap::sweep`'s chunk-major iteration does today for a
-  /// full collection.
+  /// For an old box, the index into `Heap::chunks` of the chunk that
+  /// owns it. For a young box, the nursery epoch it was allocated in
+  /// (see `Heap::young_epoch`): a young box is alive only while this
+  /// matches the heap's current epoch, which is what lets a minor
+  /// collection retire every dead nursery object at once without
+  /// touching any of them.
   chunk_idx: u32,
   /// Intrusive singly-linked list, threaded through `GcBox` itself,
   /// used for BOTH the remembered set and the young-generation set --
@@ -2199,7 +2259,49 @@ pub struct Heap {
   /// forever; exactly the same "retain some, drop the rest" tradeoff
   /// `MAX_RETAINED_NURSERY_CHUNKS` already makes for nursery chunks.
   field_storage_pool: FieldStoragePool,
+  /// Which nursery cycle this is. Stamped into every young box's
+  /// `chunk_idx` at allocation and advanced by `reset_nursery`, so a
+  /// box from any earlier cycle, whose bytes are still sitting in a
+  /// retained chunk, reads as dead without anything having written to
+  /// it. Starts at 1; 0 is never a live epoch (see `advance_epoch`).
+  young_epoch: u32,
+  /// The first header word of a young box allocated this cycle: `live`
+  /// set and `young_epoch` in the `chunk_idx` half. Compiled code that
+  /// bump-allocates inline stores this word as-is rather than
+  /// rebuilding it.
+  young_header: u64,
+  /// Objects in the old generation, the part of `live_count` a minor
+  /// collection leaves alone. After one, `live_count` is exactly this.
+  old_live_count: usize,
+  /// What this cycle's minor collection has promoted so far, in
+  /// objects and in `approx_size` bytes. A reset keeps these and
+  /// discards the rest of the young generation's accounting.
+  promoted_count: usize,
+  promoted_bytes: usize,
+  /// Young objects whose payload owns memory outside the heap (a
+  /// string's buffer, a list's spilled elements, a dict, ...). Only
+  /// these need anything done when they die, so `reset_nursery` visits
+  /// this list rather than the whole nursery.
+  ///
+  /// The `Vec` is only ever used for its buffer: its length stays 0 and
+  /// `finalize_cur`/`finalize_end` bound the entries, so compiled code
+  /// can append with a compare, a store and a bump.
+  finalize_buf: Vec<*const GcBox>,
+  finalize_cur: *mut *const GcBox,
+  finalize_end: *mut *const GcBox,
+  /// Field cells for young instances with more than `INLINE_FIELDS`
+  /// fields, bump-allocated and reset wholesale by `reset_nursery`. A
+  /// survivor is given a buffer of its own on promotion, so nothing
+  /// outlives a cycle in here.
+  field_arena_chunks: Vec<Box<[Cell<Value>]>>,
+  field_arena_idx: usize,
+  field_arena_cur: *mut Cell<Value>,
+  field_arena_end: *mut Cell<Value>,
 }
+
+/// How many field cells one young field arena chunk holds. A class
+/// with more fields than this gets an owned buffer instead.
+const FIELD_ARENA_CHUNK_CELLS: usize = 64 * 1024;
 
 /// One fixed-capacity block of nursery `GcBox` storage; the young
 /// generation's counterpart to `GcChunk`, deliberately a separate,
@@ -2357,6 +2459,11 @@ pub(crate) const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: usize =
   std::mem::offset_of!(Heap, young_bytes_allocated);
 pub(crate) const HEAP_BYTES_ALLOCATED_OFFSET: usize = std::mem::offset_of!(Heap, bytes_allocated);
 pub(crate) const HEAP_LIVE_COUNT_OFFSET: usize = std::mem::offset_of!(Heap, live_count);
+pub(crate) const HEAP_YOUNG_HEADER_OFFSET: usize = std::mem::offset_of!(Heap, young_header);
+pub(crate) const HEAP_FINALIZE_CUR_OFFSET: usize = std::mem::offset_of!(Heap, finalize_cur);
+pub(crate) const HEAP_FINALIZE_END_OFFSET: usize = std::mem::offset_of!(Heap, finalize_end);
+pub(crate) const HEAP_FIELD_ARENA_CUR_OFFSET: usize = std::mem::offset_of!(Heap, field_arena_cur);
+pub(crate) const HEAP_FIELD_ARENA_END_OFFSET: usize = std::mem::offset_of!(Heap, field_arena_end);
 
 /// Frees every buffer still sitting in `field_storage_pool` when the
 /// `Heap` itself is torn down (process exit; there's exactly one
@@ -2489,7 +2596,26 @@ impl Heap {
       nursery_end: std::ptr::null_mut(),
       field_storage_pool: FieldStoragePool::new(),
       interned_strings: FxHashMap::default(),
+      young_epoch: 1,
+      young_header: Self::young_header_for(1),
+      old_live_count: 0,
+      promoted_count: 0,
+      promoted_bytes: 0,
+      finalize_buf: Vec::new(),
+      finalize_cur: std::ptr::null_mut(),
+      finalize_end: std::ptr::null_mut(),
+      field_arena_chunks: Vec::new(),
+      field_arena_idx: 0,
+      field_arena_cur: std::ptr::null_mut(),
+      field_arena_end: std::ptr::null_mut(),
     }
+  }
+
+  /// The first header word of a young box born in `epoch`: `live` in
+  /// the low byte (`marked`, `generation` and `remembered` all zero,
+  /// which is `Generation::Young`) and the epoch in `chunk_idx`.
+  const fn young_header_for(epoch: u32) -> u64 {
+    1 | ((epoch as u64) << 32)
   }
 
   #[inline]
@@ -2513,7 +2639,7 @@ impl Heap {
 
     for chunk in self.nursery_chunks.iter() {
       for gcbox in chunk.slots.iter() {
-        if !gcbox.live.get() {
+        if gcbox.chunk_idx != self.young_epoch {
           continue;
         }
         if let Obj::Func(proto) = &gcbox.obj {
@@ -2623,7 +2749,10 @@ impl Heap {
     // bytes happen to look like onto the mark worklist. See
     // `forward_or_promote`'s matching guard for how a dead pointer
     // reaches a collector in the first place.
-    if !gcbox.live.get() {
+    //
+    // A major collection empties the nursery before it marks anything,
+    // so a young box seen here is always one of those dead pointers.
+    if gcbox.generation.get() == Generation::Young || !gcbox.live.get() {
       return false;
     }
     !gcbox.marked.replace(true)
@@ -2704,6 +2833,7 @@ impl Heap {
     if self.nursery_cur == self.nursery_end {
       self.refill_nursery();
     }
+    let finalize = Self::needs_finalizer(&obj);
 
     // SAFETY: `refill_nursery` above guarantees `nursery_cur` now
     // points at a real, uninitialized, in-bounds slot of the active
@@ -2727,14 +2857,146 @@ impl Heap {
           generation: Cell::new(Generation::Young),
           remembered: Cell::new(false),
           list_next: Cell::new(std::ptr::null()),
-          // Unused for nursery objects: see `GcBox::chunk_idx`'s own
-          // docs; nothing ever looks this up for a `Young` box, since
-          // nursery chunks are never individually freed/reused
-          // mid-cycle.
-          chunk_idx: 0,
+          chunk_idx: self.young_epoch,
         },
       );
+      if finalize {
+        self.register_finalizer(slot);
+      }
       Value::obj(&(*slot).obj as *const Obj)
+    }
+  }
+
+  /// Does `obj` own memory outside the heap that has to be released
+  /// when it dies young? Everything else can be forgotten along with
+  /// its nursery slot.
+  ///
+  /// A list always answers yes, even while its elements fit inline:
+  /// it may spill to a buffer of its own later, and nothing re-asks
+  /// this question then.
+  fn needs_finalizer(obj: &Obj) -> bool {
+    match obj {
+      Obj::Str(s, _) => s.capacity() != 0,
+      Obj::Closure(c) => c.upvalues.spilled(),
+      Obj::Instance(i) => i.fields.owns_buffer(),
+      Obj::Range { .. } | Obj::Upvalue(_) | Obj::BoundMethod(_) | Obj::Native(_) => false,
+      Obj::Bytes(_)
+      | Obj::BigInt(_)
+      | Obj::List(_)
+      | Obj::Dict(_)
+      | Obj::Func(_)
+      | Obj::Class(_)
+      | Obj::File(_)
+      | Obj::Module(_)
+      | Obj::ModuleBinding(_)
+      | Obj::Ptr(_) => true,
+    }
+  }
+
+  /// Records a young box on the finalization list: see `finalize_buf`.
+  #[inline]
+  fn register_finalizer(&mut self, gcbox: *const GcBox) {
+    if self.finalize_cur == self.finalize_end {
+      self.grow_finalize_list();
+    }
+    // SAFETY: `grow_finalize_list` leaves at least one free entry
+    // between the cursor and the end of `finalize_buf`'s buffer.
+    unsafe {
+      *self.finalize_cur = gcbox;
+      self.finalize_cur = self.finalize_cur.add(1);
+    }
+  }
+
+  /// How many entries the finalization list holds this cycle.
+  fn finalize_len(&self) -> usize {
+    if self.finalize_cur.is_null() {
+      return 0;
+    }
+    // SAFETY: the cursor was derived from `finalize_buf`'s buffer and
+    // only ever moves forward within it.
+    unsafe { self.finalize_cur.offset_from(self.finalize_buf.as_ptr()) as usize }
+  }
+
+  /// Makes room on the finalization list, keeping what is already on it.
+  /// Called by `register_finalizer` and by the slow path of compiled
+  /// code's inline list allocation.
+  #[cold]
+  #[inline(never)]
+  pub(crate) fn grow_finalize_list(&mut self) {
+    let len = self.finalize_len();
+    let wanted = (len * 2).max(1024);
+    // SAFETY: the first `len` entries were written through the cursor;
+    // exposing them lets `reserve` carry them over, and they are plain
+    // pointers with nothing to drop.
+    unsafe { self.finalize_buf.set_len(len) };
+    self.finalize_buf.reserve(wanted - len);
+    let base = self.finalize_buf.as_mut_ptr();
+    let cap = self.finalize_buf.capacity();
+    unsafe {
+      self.finalize_buf.set_len(0);
+      self.finalize_cur = base.add(len);
+      self.finalize_end = base.add(cap);
+    }
+  }
+
+  /// Field cells for a young instance with `len` fields, taken from the
+  /// young field arena and set to `nil`. `None` when `len` is larger
+  /// than one arena chunk, in which case the instance owns its buffer.
+  fn arena_fields(&mut self, len: usize) -> Option<*mut Cell<Value>> {
+    if len > FIELD_ARENA_CHUNK_CELLS {
+      return None;
+    }
+    // Both cursors point into the same arena chunk, or are both null,
+    // which reads as no room left.
+    let room = (self.field_arena_end as usize - self.field_arena_cur as usize)
+      / std::mem::size_of::<Cell<Value>>();
+    if room < len {
+      self.refill_field_arena();
+    }
+    let cells = self.field_arena_cur;
+    // SAFETY: `refill_field_arena` leaves a whole chunk free, which is
+    // at least `len` cells.
+    unsafe {
+      self.field_arena_cur = cells.add(len);
+      for i in 0..len {
+        (*cells.add(i)).set(Value::nil());
+      }
+    }
+    Some(cells)
+  }
+
+  /// Moves the field arena's cursor to the next chunk, reusing one kept
+  /// from an earlier cycle when there is one. Also the slow path of
+  /// compiled code's inline instance allocation.
+  #[cold]
+  #[inline(never)]
+  pub(crate) fn refill_field_arena(&mut self) {
+    if !self.field_arena_cur.is_null() {
+      self.field_arena_idx += 1;
+    }
+    if self.field_arena_idx >= self.field_arena_chunks.len() {
+      let chunk = vec![Cell::new(Value::nil()); FIELD_ARENA_CHUNK_CELLS].into_boxed_slice();
+      self.field_arena_chunks.push(chunk);
+    }
+    let chunk = &mut self.field_arena_chunks[self.field_arena_idx];
+    let base = chunk.as_mut_ptr();
+    self.field_arena_cur = base;
+    self.field_arena_end = unsafe { base.add(chunk.len()) };
+  }
+
+  /// Field storage for a young instance: inline when it fits, on loan
+  /// from the field arena otherwise, and owned only for a class too
+  /// large for an arena chunk.
+  fn young_field_storage(&mut self, len: usize) -> FieldStorage {
+    if len <= INLINE_FIELDS {
+      return FieldStorage::new(len);
+    }
+    match self.arena_fields(len) {
+      // SAFETY: `arena_fields` just set all `len` cells to nil, and
+      // they stay valid until the next minor collection, which either
+      // promotes this instance (copying them out) or finds it dead.
+      Some(cells) => unsafe { FieldStorage::borrowed(cells, len) },
+      None => self.take_field_storage(len),
     }
   }
 
@@ -2835,6 +3097,7 @@ impl Heap {
     let size = Self::approx_size(&obj);
     self.bytes_allocated += size;
     self.live_count += 1;
+    self.old_live_count += 1;
     self.update_jit_gc_needed();
     let gcbox_ptr = self.promote_into_old(obj);
     let obj_ptr = unsafe { &(*gcbox_ptr).obj as *const Obj };
@@ -2960,16 +3223,15 @@ impl Heap {
     if gcbox.generation.get() != Generation::Young {
       return ptr;
     }
-    // A nursery slot `reset_nursery` has already finished with. Every
-    // slot it walks is marked dead, whether its payload was reclaimed
-    // (gone) or moved out by a forwarding promotion (a stub whose
-    // `list_next` may since have been swept and recycled). Neither is
-    // safe to follow, and nothing overwrote the box to say so:
-    // `generation` still reads `Young`, so without this the reclaimed
-    // case would promote a corpse into the old generation for
-    // `Heap::sweep` to drop a second time -- a straight double free --
-    // and the forwarded case would hand back a stale target for
-    // `walk_children_mut` to read.
+    // A box from an earlier nursery cycle. Its payload was either
+    // reclaimed or moved out by a forwarding promotion (leaving a stub
+    // whose `list_next` may since have been swept and recycled), and
+    // neither is safe to follow. `generation` still reads `Young`, so
+    // only the epoch tells it apart: without this the reclaimed case
+    // would promote a corpse into the old generation for `Heap::sweep`
+    // to drop a second time, a straight double free, and the forwarded
+    // case would hand back a stale target for `walk_children_mut` to
+    // read.
     //
     // A register outside the top frame's window is how one gets here.
     // `collect_minor` bounds its root scan to that window, so when a
@@ -2981,7 +3243,7 @@ impl Heap {
     // a register it has defined), so leaving the pointer alone is
     // exactly right: it is dead, and the collector's job here is simply
     // not to mistake it for something worth resurrecting.
-    if !gcbox.live.get() {
+    if gcbox.chunk_idx != self.young_epoch {
       return ptr;
     }
     if gcbox.marked.get() {
@@ -2992,7 +3254,7 @@ impl Heap {
     // read out yet; this takes ownership exactly once. Every future
     // reference to this SAME nursery slot takes the `marked` branch
     // above instead of reaching this read again.
-    let moved = unsafe { std::ptr::read(&gcbox.obj) };
+    let mut moved = unsafe { std::ptr::read(&gcbox.obj) };
     // `ptr::read` copies the bytes out but does NOT erase the source
     //; without overwriting it right now, this slot would still look
     // like a perfectly valid `Obj` sharing ownership of the SAME
@@ -3024,6 +3286,20 @@ impl Heap {
         },
       );
     }
+    // Fields on loan from the young field arena would vanish with it at
+    // the end of this collection, so a survivor takes them with it.
+    if let Obj::Instance(inst) = &mut moved
+      && inst.fields.is_borrowed()
+    {
+      let len = inst.fields.len();
+      let owned = self.take_field_storage(len);
+      for (to, from) in owned.iter().zip(inst.fields.iter()) {
+        to.set(from.get());
+      }
+      inst.fields = owned;
+    }
+    self.promoted_count += 1;
+    self.promoted_bytes += Self::approx_size(&moved);
     let new_gcbox = self.promote_into_old(moved);
     gcbox.marked.set(true);
     gcbox.list_next.set(new_gcbox);
@@ -3070,77 +3346,54 @@ impl Heap {
   }
 
   /// Reclaims the nursery after a minor collection's copy phase has
-  /// fully drained its worklist: by construction, every slot NOT
-  /// forwarded this cycle (`marked == false`) is garbage; nothing
-  /// still reachable can point at it, since `collect_minor` visited
-  /// every root and every live object's children before calling this.
-  /// Its `Obj` payload (and whatever it owns; a `String`'s buffer, a
-  /// `List`'s backing `SmallVec`, ...) is dropped in place via
-  /// `reclaim_dead_obj`, exactly what `sweep`/the old `sweep_young`
-  /// used to do for a dead slot. A forwarded slot's `obj` was already
-  /// MOVED OUT via `ptr::read` in `forward_or_promote`; dropping it
-  /// again here would be a double-free, which is exactly what `marked`
-  /// (this cycle's forwarding flag) exists to distinguish.
+  /// fully drained its worklist. By then every young object still
+  /// reachable has been forwarded into the old generation, so the rest
+  /// is garbage, and none of it is visited: advancing `young_epoch`
+  /// turns every box of this cycle into one `forward_or_promote` and
+  /// `mark_object` treat as dead, the field arena is simply rewound,
+  /// and the only objects that need individual attention are the ones
+  /// on the finalization list, whose payload owns memory elsewhere.
+  /// Of those, a forwarded one (`marked`) already had its payload moved
+  /// out, and an unforwarded one has it dropped here, its instance
+  /// field buffer, if any, going back to the pool.
   ///
-  /// After every slot in a chunk is handled, `set_len(0)` reclaims
-  /// that chunk's WHOLE buffer for the next cycle's allocations in
-  /// one step, without running `Vec`'s own per-element `Drop` glue a
-  /// second time over slots this function already handled by hand.
-  /// Every chunk up to `MAX_RETAINED_NURSERY_CHUNKS` is kept around
-  /// (emptied, not dropped) for the next cycle to bump-allocate into
-  /// with zero further allocator calls; unlike the old generation's
-  /// `sweep`, which genuinely wants to return a fully-empty chunk's
-  /// memory (old objects can live indefinitely, so an idle old chunk
-  /// is likely to stay idle), the nursery refills every single minor
-  /// collection by design, so a chunk it just emptied is overwhelmingly
-  /// likely to be needed again within the next `YOUNG_NEXT_GC` bytes
-  /// of allocation. Only genuinely excess chunks (beyond the cap, from
-  /// an unusually large one-off burst) get dropped, returning their
-  /// memory instead of holding it as permanent inventory forever.
+  /// Every nursery chunk's length drops to zero without running any
+  /// destructor, and chunks up to `MAX_RETAINED_NURSERY_CHUNKS` stay
+  /// allocated for the next cycle to bump-allocate into. Unlike the old
+  /// generation's `sweep`, which returns an empty chunk's memory because
+  /// an idle old chunk tends to stay idle, the nursery refills on every
+  /// cycle, so a chunk emptied now is almost certainly wanted again
+  /// within the next `YOUNG_NEXT_GC` bytes. Only chunks beyond the cap,
+  /// left over from an unusually large burst, are freed.
+  ///
+  /// Accounting follows the same shape: the old generation's figures
+  /// plus what this cycle promoted, with everything else allocated
+  /// since the last reset gone.
   pub(crate) fn reset_nursery(&mut self) {
-    // The active chunk's `slots.len()` is stale by design while it is
-    // being bump-allocated into; publish it before iterating, or
-    // every slot allocated since the last refill is invisible here and
-    // silently leaks its payload instead of being reclaimed.
-    self.sync_active_chunk_len();
     let pool_budget = self.field_storage_pool_budget();
-    let mut freed_count = 0usize;
-    let mut freed_bytes = 0usize;
-    for chunk in self.nursery_chunks.iter_mut() {
-      for gcbox in chunk.slots.iter_mut() {
-        // Dead either way by the time this loop is done with it: a
-        // forwarded slot is a stub whose payload now lives in the old
-        // generation, and an unmarked one is reclaimed just below.
-        // Recording that matters because nothing else does: the slot's
-        // BYTES outlive it until something allocates over them, and
-        // `generation` goes on reading `Young` the whole time. See
-        // `forward_or_promote`'s liveness guard for what reads this.
-        gcbox.live.set(false);
-        if !gcbox.marked.get() {
-          if let Obj::Instance(instance) = &gcbox.obj
-            && instance.fields.is_inline()
-          {
-            freed_bytes += std::mem::size_of::<Obj>()
-              + (instance.fields.len as usize) * std::mem::size_of::<Cell<Value>>();
-            freed_count += 1;
-            continue;
-          }
-          freed_bytes += Self::approx_size(&gcbox.obj);
-          // SAFETY: never forwarded (checked above), so `obj` was
-          // never moved out before now; this is its one and only
-          // move, mirroring `forward_or_promote`'s own `ptr::read` for
-          // the forwarded case. `chunk.slots.set_len(0)` below never
-          // runs any destructor over this slot again either way.
-          let obj = unsafe { std::ptr::read(&gcbox.obj) };
+    let finalize_len = self.finalize_len();
+    let entries = self.finalize_buf.as_ptr();
+    for i in 0..finalize_len {
+      // SAFETY: every entry was written by `register_finalizer` (or its
+      // inline twin in compiled code) this cycle and names a box in a
+      // nursery chunk that is still allocated.
+      let gcbox = unsafe { *entries.add(i) } as *mut GcBox;
+      unsafe {
+        if !(*gcbox).marked.get() {
+          // Never forwarded, so `obj` still owns its payload; this is
+          // its one and only move.
+          let obj = std::ptr::read(&(*gcbox).obj);
           Self::reclaim_dead_obj(&mut self.field_storage_pool, obj, pool_budget);
-          freed_count += 1;
         }
       }
-      // SAFETY: every slot in this chunk has either been moved out
-      // (forwarded) or dropped in place (above); none of them owns
-      // anything that still needs cleanup, so shrinking the logical
-      // length to 0 without running element destructors a second
-      // time is exactly right.
+    }
+    if !self.finalize_cur.is_null() {
+      self.finalize_cur = self.finalize_buf.as_mut_ptr();
+    }
+
+    for chunk in self.nursery_chunks.iter_mut() {
+      // SAFETY: every payload in this chunk has been moved out, dropped
+      // above, or owns nothing, so no destructor needs to run.
       unsafe { chunk.slots.set_len(0) };
     }
     self
@@ -3153,9 +3406,53 @@ impl Heap {
     // pointers here would bump into a freed chunk's buffer.
     self.nursery_cur = std::ptr::null_mut();
     self.nursery_end = std::ptr::null_mut();
-    self.bytes_allocated = self.bytes_allocated.saturating_sub(freed_bytes);
-    self.live_count = self.live_count.saturating_sub(freed_count);
+
+    self
+      .field_arena_chunks
+      .truncate(self.retained_field_arena_chunks());
+    self.field_arena_idx = 0;
+    self.field_arena_cur = std::ptr::null_mut();
+    self.field_arena_end = std::ptr::null_mut();
+
+    self.advance_epoch();
+
+    self.bytes_allocated = self.bytes_allocated - self.young_bytes_allocated + self.promoted_bytes;
+    self.old_live_count += self.promoted_count;
+    self.live_count = self.old_live_count;
+    self.promoted_bytes = 0;
+    self.promoted_count = 0;
     self.young_bytes_allocated = 0;
+  }
+
+  /// How many field arena chunks to keep between cycles: enough for a
+  /// nursery budget's worth of instances made of nothing but fields,
+  /// which no real cycle exceeds.
+  fn retained_field_arena_chunks(&self) -> usize {
+    let chunk_bytes = FIELD_ARENA_CHUNK_CELLS * std::mem::size_of::<Cell<Value>>();
+    self.young_next_gc / chunk_bytes + 1
+  }
+
+  /// Starts a new nursery cycle, retiring every young box of the last.
+  ///
+  /// The epoch is a `u32`, so after four billion cycles it comes back
+  /// round, and a box from the cycle that first used a number would
+  /// read as alive again. Before reusing any number, every retained
+  /// nursery slot has its epoch cleared to 0, which no cycle uses.
+  fn advance_epoch(&mut self) {
+    self.young_epoch = self.young_epoch.wrapping_add(1);
+    if self.young_epoch == 0 {
+      for chunk in self.nursery_chunks.iter_mut() {
+        let base = chunk.slots.as_mut_ptr();
+        for i in 0..chunk.slots.capacity() {
+          // SAFETY: in bounds of the chunk's buffer. The slot may never
+          // have been written, so only this one field is written and
+          // nothing is read.
+          unsafe { std::ptr::addr_of_mut!((*base.add(i)).chunk_idx).write(0) };
+        }
+      }
+      self.young_epoch = 1;
+    }
+    self.young_header = Self::young_header_for(self.young_epoch);
   }
 
   pub fn alloc_string(&mut self, s: impl Into<String>) -> Value {
@@ -3351,114 +3648,9 @@ impl Heap {
   }
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
-    let fields = self.take_field_storage(field_count);
+    let fields = self.young_field_storage(field_count);
     let size = std::mem::size_of::<Obj>() + field_count * size_of::<Cell<Value>>();
     self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
-  }
-
-  #[inline(always)]
-  pub fn alloc_instance_fast_0(&mut self, class: Value) -> Value {
-    if self.nursery_cur == self.nursery_end {
-      self.refill_nursery();
-    }
-    let slot = self.nursery_cur;
-    self.nursery_cur = unsafe { slot.add(1) };
-    let size = std::mem::size_of::<Obj>();
-    self.bytes_allocated += size;
-    self.young_bytes_allocated += size;
-    self.live_count += 1;
-    self.update_jit_gc_needed();
-
-    let fields = FieldStorage {
-      ptr: std::ptr::null_mut(),
-      len: 0,
-      inline: [Cell::new(Value::nil()), Cell::new(Value::nil())],
-    };
-    unsafe {
-      std::ptr::write(
-        slot,
-        GcBox {
-          live: Cell::new(true),
-          marked: Cell::new(false),
-          obj: Obj::Instance(ObjInstance { class, fields }),
-          generation: Cell::new(Generation::Young),
-          remembered: Cell::new(false),
-          list_next: Cell::new(std::ptr::null()),
-          chunk_idx: 0,
-        },
-      );
-      Value::obj(&(*slot).obj as *const Obj)
-    }
-  }
-
-  #[inline(always)]
-  pub fn alloc_instance_fast_1(&mut self, class: Value, f0: Value) -> Value {
-    if self.nursery_cur == self.nursery_end {
-      self.refill_nursery();
-    }
-    let slot = self.nursery_cur;
-    self.nursery_cur = unsafe { slot.add(1) };
-    let size = std::mem::size_of::<Obj>() + std::mem::size_of::<Cell<Value>>();
-    self.bytes_allocated += size;
-    self.young_bytes_allocated += size;
-    self.live_count += 1;
-    self.update_jit_gc_needed();
-
-    let fields = FieldStorage {
-      ptr: std::ptr::null_mut(),
-      len: 1,
-      inline: [Cell::new(f0), Cell::new(Value::nil())],
-    };
-    unsafe {
-      std::ptr::write(
-        slot,
-        GcBox {
-          live: Cell::new(true),
-          marked: Cell::new(false),
-          obj: Obj::Instance(ObjInstance { class, fields }),
-          generation: Cell::new(Generation::Young),
-          remembered: Cell::new(false),
-          list_next: Cell::new(std::ptr::null()),
-          chunk_idx: 0,
-        },
-      );
-      Value::obj(&(*slot).obj as *const Obj)
-    }
-  }
-
-  #[inline(always)]
-  pub fn alloc_instance_fast_2(&mut self, class: Value, f0: Value, f1: Value) -> Value {
-    if self.nursery_cur == self.nursery_end {
-      self.refill_nursery();
-    }
-    let slot = self.nursery_cur;
-    self.nursery_cur = unsafe { slot.add(1) };
-    let size = std::mem::size_of::<Obj>() + 2 * std::mem::size_of::<Cell<Value>>();
-    self.bytes_allocated += size;
-    self.young_bytes_allocated += size;
-    self.live_count += 1;
-    self.update_jit_gc_needed();
-
-    let fields = FieldStorage {
-      ptr: std::ptr::null_mut(),
-      len: 2,
-      inline: [Cell::new(f0), Cell::new(f1)],
-    };
-    unsafe {
-      std::ptr::write(
-        slot,
-        GcBox {
-          live: Cell::new(true),
-          marked: Cell::new(false),
-          obj: Obj::Instance(ObjInstance { class, fields }),
-          generation: Cell::new(Generation::Young),
-          remembered: Cell::new(false),
-          list_next: Cell::new(std::ptr::null()),
-          chunk_idx: 0,
-        },
-      );
-      Value::obj(&(*slot).obj as *const Obj)
-    }
   }
 
   /// Pops a recycled buffer of exactly `len` cells off
@@ -3594,6 +3786,7 @@ impl Heap {
     }
 
     self.live_count -= freed;
+    self.old_live_count -= freed;
     // Re-armed against the surviving OLD set specifically; the same
     // quantity `needs_major_gc` now tests, so `GC_HEAP_GROW_FACTOR`
     // means what it says: allow the long-lived set to grow by half

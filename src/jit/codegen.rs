@@ -115,6 +115,32 @@ const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
 const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
+const HEAP_YOUNG_HEADER_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
+const HEAP_FINALIZE_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
+const HEAP_FINALIZE_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
+const HEAP_FIELD_ARENA_CUR_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FIELD_ARENA_CUR_OFFSET) as i32;
+const HEAP_FIELD_ARENA_END_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FIELD_ARENA_END_OFFSET) as i32;
+
+/// Helpers that read the register file, and so are called with every
+/// live register flushed, but that never run Zuri code or reach a
+/// safepoint, so nothing can move while they run. Guarded instance
+/// pointers stay good across them, and keeping those is worth it: the
+/// field inline caches' miss paths sit right next to the hits they
+/// back up.
+///
+/// Both field helpers read or write a slot, fill the site's cache, and
+/// at most allocate a bound method or an error. Allocation never
+/// collects, and an error leaves compiled code altogether.
+fn helper_cannot_collect(name: &str) -> bool {
+  matches!(name, "zuri_jit_get_field" | "zuri_jit_set_field")
+}
+
+/// The widest class whose instances compiled code allocates inline.
+/// Every field is written `nil` with its own store, so past this the
+/// code grows faster than the call it replaces costs.
+const MAX_INLINE_INSTANCE_FIELDS: usize = 16;
 
 /// Compiles `proto`'s bytecode into `fb`'s function body. Returns the
 /// bytecode-ip -> osr-id map (`CompiledFunction::osr_ids`) on success,
@@ -2920,7 +2946,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn emit_deopt(&mut self, ip: usize) {
+    // This path never comes back into compiled code, so what it does to
+    // the guarded-instance cache must not reach the code emitted after
+    // it, which only runs when the deopt was not taken.
+    let guarded = std::mem::take(&mut self.active_guarded);
+    let guarded_classes = std::mem::take(&mut self.active_guarded_classes);
     self.flush_live(ip);
+    self.active_guarded = guarded;
+    self.active_guarded_classes = guarded_classes;
     self.materialize_scalars(ip);
     let vm = self.vm_param;
     let ip_c = self.u64c(ip as u64);
@@ -3157,6 +3190,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn flush_live(&mut self, ip: usize) {
+    // Every edge that runs Zuri code or reaches a safepoint flushes
+    // first, and a collection on the far side moves a young instance
+    // and its fields. The guarded pointers cached for it would still
+    // name the old copy, so they go. Helpers that cannot collect, the
+    // write barrier among them, do not come through here and keep them.
+    self.active_guarded.clear();
+    self.active_guarded_classes.clear();
     // Every call out of compiled code, to a helper or to another Zuri
     // function, flushes first; catching them all here covers the
     // direct and indirect call sites that never go through
@@ -3353,7 +3393,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// translated: see `current_ip`'s own docs.
   fn call_helper(&mut self, name: &str, args: &[IrValue]) -> IrValue {
     self.publish_ip();
-    self.flush_live(self.current_ip);
+    if helper_cannot_collect(name) {
+      let guarded = std::mem::take(&mut self.active_guarded);
+      let guarded_classes = std::mem::take(&mut self.active_guarded_classes);
+      self.flush_live(self.current_ip);
+      self.active_guarded = guarded;
+      self.active_guarded_classes = guarded_classes;
+    } else {
+      self.flush_live(self.current_ip);
+    }
     let result = self.call_helper_raw(name, args);
     self.reload_live(self.current_ip);
     result
@@ -4659,49 +4707,26 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.resync_dst_from_memory(dst);
       self.fb.ins().jump(done_block, &[]);
     } else if let Some(param_slots) = simple_ctor_param_slots {
-      let instance_val = if field_count == 2
-        && param_slots.len() == 2
-        && param_slots[0] == 0
-        && param_slots[1] == 1
-        && num_args == 2
-      {
-        let a0 = self.load_reg(func + 1);
-        let a1 = self.load_reg(func + 2);
-        self.call_helper_raw(
-          "zuri_jit_alloc_instance_fast_2",
-          &[vm_p, target_class, a0, a1],
+      let instance_val = self.emit_inline_instance_alloc(target_class, field_count);
+      let instance_ptr = self.obj_ptr(instance_val);
+      let fields_ptr = if field_count <= object::INLINE_FIELDS as u16 {
+        self.fb.ins().iadd_imm_s(
+          instance_ptr,
+          object::obj_instance_fields_inline_offset() as i64,
         )
-      } else if field_count == 1 && param_slots.len() == 1 && param_slots[0] == 0 && num_args == 1 {
-        let a0 = self.load_reg(func + 1);
-        self.call_helper_raw("zuri_jit_alloc_instance_fast_1", &[vm_p, target_class, a0])
-      } else if field_count == 0 && num_args == 0 {
-        self.call_helper_raw("zuri_jit_alloc_instance_fast_0", &[vm_p, target_class])
       } else {
-        let instance_val = self.call_helper_raw(
-          "zuri_jit_alloc_instance_fast",
-          &[vm_p, target_class, field_count_v],
-        );
-        let instance_ptr = self.obj_ptr(instance_val);
-        let fields_ptr = if field_count <= object::INLINE_FIELDS as u16 {
-          self.fb.ins().iadd_imm_s(
-            instance_ptr,
-            object::obj_instance_fields_inline_offset() as i64,
-          )
-        } else {
-          self.load_instance_fields_ptr(instance_ptr)
-        };
-        let trusted = cranelift_codegen::ir::MemFlagsData::trusted();
-        for (param, &field_slot) in param_slots.iter().enumerate() {
-          if param < num_args as usize {
-            let arg_val = self.load_reg(func + 1 + param as u8);
-            self
-              .fb
-              .ins()
-              .store(trusted, arg_val, fields_ptr, (field_slot as i32) * 8);
-          }
-        }
-        instance_val
+        self.load_instance_fields_ptr(instance_ptr)
       };
+      let trusted = cranelift_codegen::ir::MemFlagsData::trusted();
+      for (param, &field_slot) in param_slots.iter().enumerate() {
+        if param < num_args as usize {
+          let arg_val = self.load_reg(func + 1 + param as u8);
+          self
+            .fb
+            .ins()
+            .store(trusted, arg_val, fields_ptr, (field_slot as i32) * 8);
+        }
+      }
       self.store_reg(dst, instance_val);
       self.fb.ins().jump(done_block, &[]);
     } else {
@@ -11892,7 +11917,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.call_helper("zuri_jit_push_scalar_root", &[self.vm_param, addr, count_c]);
   }
 
-  fn emit_inline_make_list(&mut self, _ip: usize, dst: u8, start: u8, count: u8) {
+  /// Bump-allocates one young `GcBox` inline, exactly as
+  /// `Heap::alloc_sized` would: the nursery slot, its header, the heap's
+  /// byte and object accounting, and the GC flag. With `finalize` the
+  /// box also goes on the heap's finalization list, and with
+  /// `arena_cells` above zero that many field cells are taken from the
+  /// young field arena too (left for the caller to fill).
+  ///
+  /// Branches to `slow_block` when the nursery chunk, the finalization
+  /// list or the arena chunk has no room, and otherwise leaves the
+  /// builder in the block where everything succeeded. Returns the box's
+  /// address and, when asked for, the arena cells' address.
+  fn emit_young_alloc(
+    &mut self,
+    accounted_bytes: i64,
+    finalize: bool,
+    arena_cells: usize,
+    slow_block: Block,
+  ) -> (IrValue, Option<IrValue>) {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
     let vm = self.vm_param;
 
@@ -11904,26 +11946,70 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .fb
       .ins()
       .load(types::I64, flags, vm, HEAP_NURSERY_END_OFFSET);
-    let is_full = self.fb.ins().icmp(IntCC::Equal, cur, end);
+    let mut no_room = self.fb.ins().icmp(IntCC::Equal, cur, end);
+
+    let fin_cur = if finalize {
+      let fcur = self
+        .fb
+        .ins()
+        .load(types::I64, flags, vm, HEAP_FINALIZE_CUR_OFFSET);
+      let fend = self
+        .fb
+        .ins()
+        .load(types::I64, flags, vm, HEAP_FINALIZE_END_OFFSET);
+      let full = self.fb.ins().icmp(IntCC::Equal, fcur, fend);
+      no_room = self.fb.ins().bor(no_room, full);
+      Some(fcur)
+    } else {
+      None
+    };
+
+    let arena_cur = if arena_cells > 0 {
+      let acur = self
+        .fb
+        .ins()
+        .load(types::I64, flags, vm, HEAP_FIELD_ARENA_CUR_OFFSET);
+      let aend = self
+        .fb
+        .ins()
+        .load(types::I64, flags, vm, HEAP_FIELD_ARENA_END_OFFSET);
+      let room = self.fb.ins().isub(aend, acur);
+      let wanted = self.i64c((arena_cells * 8) as i64);
+      let short = self.fb.ins().icmp(IntCC::UnsignedLessThan, room, wanted);
+      no_room = self.fb.ins().bor(no_room, short);
+      Some(acur)
+    } else {
+      None
+    };
 
     let fast_block = self.fb.create_block();
-    let slow_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-
     self
       .fb
       .ins()
-      .brif(is_full, slow_block, &[], fast_block, &[]);
-
-    // Fast path: inline nursery bump-allocation
+      .brif(no_room, slow_block, &[], fast_block, &[]);
     self.fb.switch_to_block(fast_block);
+
     let next_cur = self.fb.ins().iadd_imm_s(cur, 64);
     self
       .fb
       .ins()
       .store(flags, next_cur, vm, HEAP_NURSERY_CUR_OFFSET);
+    if let Some(fcur) = fin_cur {
+      self.fb.ins().store(flags, cur, fcur, 0);
+      let next_fcur = self.fb.ins().iadd_imm_s(fcur, 8);
+      self
+        .fb
+        .ins()
+        .store(flags, next_fcur, vm, HEAP_FINALIZE_CUR_OFFSET);
+    }
+    if let Some(acur) = arena_cur {
+      let next_acur = self.fb.ins().iadd_imm_s(acur, (arena_cells * 8) as i64);
+      self
+        .fb
+        .ins()
+        .store(flags, next_acur, vm, HEAP_FIELD_ARENA_CUR_OFFSET);
+    }
 
-    // Update live_count
     let live = self
       .fb
       .ins()
@@ -11934,35 +12020,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, next_live, vm, HEAP_LIVE_COUNT_OFFSET);
 
-    // Update young_bytes_allocated and bytes_allocated
-    let size_bytes = 48 + (count as i64) * 8;
     let young = self
       .fb
       .ins()
       .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    let next_young = self.fb.ins().iadd_imm_s(young, size_bytes);
+    let next_young = self.fb.ins().iadd_imm_s(young, accounted_bytes);
     self
       .fb
       .ins()
       .store(flags, next_young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-
     let total = self
       .fb
       .ins()
       .load(types::I64, flags, vm, HEAP_BYTES_ALLOCATED_OFFSET);
-    let next_total = self.fb.ins().iadd_imm_s(total, size_bytes);
+    let next_total = self.fb.ins().iadd_imm_s(total, accounted_bytes);
     self
       .fb
       .ins()
       .store(flags, next_total, vm, HEAP_BYTES_ALLOCATED_OFFSET);
 
-    // Update jit_gc_needed if young exceeded the budget. `icmp`
-    // already yields i8 (see every other icmp-derived value in this
-    // file, which only ever gets uextended UP to i64, never to i8);
-    // extending it to its own type is a genuine Cranelift type error,
-    // caught by the verifier in debug builds ("arg 0 with type i8
-    // failed to satisfy type set") but silently accepted downstream
-    // in release, where the verifier is off (see `JitEngine::new`).
+    // Raise the GC flag once the young budget is spent. `icmp` already
+    // yields an i8, the flag's own width.
     let young_limit = self.i64c(self.young_budget);
     let need_gc = self
       .fb
@@ -11978,13 +12056,92 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .ins()
       .store(flags, combined_gc, vm, HEAP_JIT_GC_NEEDED_OFFSET);
 
-    // GcBox header (16 bytes at cur):
-    // Word 0 (offset 0): live=1, marked=0, gen=Young(0), remembered=0, chunk_idx=0 -> 1u64
-    let one64 = self.i64c(1);
+    // The header's first word (`live`, the flags, and this cycle's
+    // epoch) comes ready-made from the heap; the second is `list_next`.
+    let header = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_HEADER_OFFSET);
+    self.fb.ins().store(flags, header, cur, 0);
     let zero64 = self.i64c(0);
-    self.fb.ins().store(flags, one64, cur, 0);
-    // Word 1 (offset 8): list_next = null -> 0u64
     self.fb.ins().store(flags, zero64, cur, 8);
+
+    (cur, arena_cur)
+  }
+
+  /// Allocates a young instance of the class `class_bits` names, with
+  /// `field_count` fields all `nil`, and returns it as a `Value`. The
+  /// nursery bump happens inline, and so does the field arena bump for
+  /// a class too wide for the inline cells; only a full chunk, or a
+  /// class with more fields than is worth initializing inline, goes
+  /// through `zuri_jit_alloc_instance_fast`.
+  fn emit_inline_instance_alloc(&mut self, class_bits: IrValue, field_count: u16) -> IrValue {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let vm = self.vm_param;
+    let count = field_count as usize;
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    self.fb.append_block_param(done_block, types::I64);
+
+    if count <= MAX_INLINE_INSTANCE_FIELDS {
+      let accounted = (std::mem::size_of::<object::Obj>() + count * 8) as i64;
+      let arena_cells = if count > object::INLINE_FIELDS { count } else { 0 };
+      let (cur, arena) = self.emit_young_alloc(accounted, false, arena_cells, slow_block);
+
+      let obj = self.fb.ins().iadd_imm_s(cur, 16);
+      let tag = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+      self.fb.ins().store(flags, tag, obj, 0);
+      let class_off = object::obj_instance_class_offset() as i32;
+      self.fb.ins().store(flags, class_bits, obj, class_off);
+
+      let nil = self.u64c(value::NIL_VAL);
+      let fields_ptr_off = object::obj_instance_fields_offset() as i32;
+      let len_off = object::obj_instance_fields_len_offset() as i32;
+      let inline_off = object::obj_instance_fields_inline_offset() as i32;
+      // `len` and `borrowed` share one word, the rest of it padding.
+      let (cells_ptr, len_word) = match arena {
+        Some(cells) => (cells, count as i64 | (1i64 << 32)),
+        None => (self.i64c(0), count as i64),
+      };
+      self.fb.ins().store(flags, cells_ptr, obj, fields_ptr_off);
+      let len_word = self.i64c(len_word);
+      self.fb.ins().store(flags, len_word, obj, len_off);
+      self.fb.ins().store(flags, nil, obj, inline_off);
+      self.fb.ins().store(flags, nil, obj, inline_off + 8);
+      if let Some(cells) = arena {
+        for i in 0..count {
+          self.fb.ins().store(flags, nil, cells, (i * 8) as i32);
+        }
+      }
+
+      let tag_mask = self.u64c(value::QNAN | value::SIGN_BIT);
+      let instance = self.fb.ins().bor(obj, tag_mask);
+      self.fb.ins().jump(done_block, &[instance.into()]);
+    } else {
+      self.fb.ins().jump(slow_block, &[]);
+    }
+
+    self.fb.switch_to_block(slow_block);
+    let count_v = self.i64c(count as i64);
+    let instance = self.call_helper_raw("zuri_jit_alloc_instance_fast", &[vm, class_bits, count_v]);
+    self.fb.ins().jump(done_block, &[instance.into()]);
+
+    self.fb.switch_to_block(done_block);
+    self.fb.block_params(done_block)[0]
+  }
+
+  fn emit_inline_make_list(&mut self, _ip: usize, dst: u8, start: u8, count: u8) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let vm = self.vm_param;
+
+    let slow_block = self.fb.create_block();
+    let done_block = self.fb.create_block();
+    let size_bytes = 48 + (count as i64) * 8;
+    // A list goes on the finalization list whatever its size now: it
+    // can spill to a buffer of its own later.
+    let (cur, _) = self.emit_young_alloc(size_bytes, true, 0, slow_block);
+    let zero64 = self.i64c(0);
 
     // Obj::List payload (48 bytes starting at cur + 16):
     // Word 2 (offset 16): Obj tag = OBJ_TAG_LIST (3) -> 3u64

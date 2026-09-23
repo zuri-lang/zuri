@@ -1,0 +1,13 @@
+wide instances, most of them dying young:
+[10, 30010, 60010, 90010, 120010, 150010, 180010, 210010, 240010, 270010]
+8999099900
+survivors written with young values:
+[[2, 0] r2-0, [2, 1] r2-1, [2, 2] r2-2, [2, 3] r2-3, [2, 4] r2-4, [2, 5] r2-5, [2, 6] r2-6, [2, 7] r2-7, [2, 8] r2-8, [2, 9] r2-9]
+a chain built across collections:
+199990000
+108890
+399980000
+strings, lists and closures that die young:
+1388890
+fields read either side of a collection:
+600170000

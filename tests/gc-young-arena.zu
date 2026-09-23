@@ -1,0 +1,145 @@
+# An instance too wide for its inline cells borrows its fields from a
+# young arena that is thrown away at every minor collection, and one
+# that survives takes its fields with it on the way out. Strings, lists
+# and closures that die young are released without the collector
+# visiting anything else in the nursery. Every loop here runs well past
+# the JIT's warm-up and forces minor collections as it goes, so each
+# shape is built by compiled code as well as by the interpreter.
+
+class Wide {
+  @new(a, b, c, d, e) {
+    self.a = a
+    self.b = b
+    self.c = c
+    self.d = d
+    self.e = e
+  }
+
+  total() {
+    return self.a + self.b + self.c + self.d + self.e
+  }
+}
+
+class Link {
+  @new(value, next, tag, extra) {
+    self.value = value
+    self.next = next
+    self.tag = tag
+    self.extra = extra
+  }
+}
+
+# More than half the young budget in one allocation, so a minor
+# collection follows within a call or two.
+def pressure() {
+  return bytes(70_000_000).length()
+}
+
+echo 'wide instances, most of them dying young:'
+
+var kept = []
+var dropped = 0
+iter var i = 0; i < 60000; i++ {
+  var w = Wide(i, i + 1, i + 2, i + 3, i + 4)
+  if i % 6000 == 0 {
+    kept.append(w)
+  } else {
+    dropped = dropped + w.total()
+  }
+  if i % 5000 == 0 {
+    pressure()
+  }
+}
+echo kept.map(@(w) => w.total())
+echo dropped
+
+echo 'survivors written with young values:'
+
+iter var round = 0; round < 3; round++ {
+  iter var i = 0; i < kept.length(); i++ {
+    var w = kept[i]
+    w.e = 'r${round}-${i}'
+    w.a = [round, i]
+  }
+  pressure()
+  pressure()
+}
+echo kept.map(@(w) => '${w.a} ${w.e}')
+
+echo 'a chain built across collections:'
+
+var head = nil
+iter var i = 0; i < 20000; i++ {
+  head = Link(i, head, 'n${i}', [i, i * 2])
+  if i % 2500 == 0 {
+    pressure()
+  }
+}
+
+var sum = 0
+var tags = 0
+var extras = 0
+var node = head
+while node != nil {
+  sum = sum + node.value
+  tags = tags + node.tag.length()
+  extras = extras + node.extra[1]
+  node = node.next
+}
+echo sum
+echo tags
+echo extras
+
+echo 'strings, lists and closures that die young:'
+
+def churn(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    var s = 'item-${i}'
+    var l = [i, i + 1, i + 2, s]
+    var f = @() => s.length() + l.length()
+    total = total + f()
+    if i % 10000 == 0 {
+      pressure()
+    }
+  }
+  return total
+}
+
+echo churn(100000)
+
+echo 'fields read either side of a collection:'
+
+var adds = 0
+
+class Money {
+  @new(cents) {
+    self.cents = cents
+  }
+
+  # Now and then forces a collection, then refills the field arena with
+  # instances nobody keeps, so anything still reading a moved
+  # instance's old fields would see these instead.
+  @add(other) {
+    adds = adds + 1
+    if adds % 500 == 0 {
+      pressure()
+      iter var i = 0; i < 50; i++ {
+        Wide(-1, -1, -1, -1, -1)
+      }
+    }
+    return Money(self.cents + other.cents)
+  }
+}
+
+def around(w, m) {
+  var first = w.a
+  var doubled = m + m
+  return first + w.b + w.c + w.d + w.e + doubled.cents
+}
+
+var seen = 0
+iter var i = 0; i < 20000; i++ {
+  seen = seen + around(Wide(1, 2, 3, 4, i), Money(i))
+}
+echo seen
