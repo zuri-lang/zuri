@@ -3762,6 +3762,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let frame_off = self.fb.ins().imul_imm_s(frames_len, CALL_FRAME_SIZE);
     let frame_addr = self.fb.ins().iadd(frames_ptr, frame_off);
 
+    // This frame stops being the innermost one, so its position goes into
+    // its own frame now, as `VM::setup_closure_call` does on the helper
+    // path. `jit_ip` only ever describes the innermost compiled frame, so
+    // an error raised in the callee would otherwise report this caller
+    // at no line at all.
+    let here = self.i64c(self.current_ip as i64 + 1);
+    self.fb.ins().store(
+      flags,
+      here,
+      frame_addr,
+      CALL_FRAME_IP_OFFSET - CALL_FRAME_SIZE as i32,
+    );
+
     self
       .fb
       .ins()
