@@ -614,6 +614,34 @@ pub unsafe extern "C" fn zuri_jit_dict_contains(
   Value::bool(recv.dict_get(&key).is_some()).to_bits()
 }
 
+/// Whether every element of the list `list_ptr` points at is a number,
+/// or, with `whole` set, a whole number an `i64` holds exactly. The
+/// optimizing tier checks this once before a loop that reads the list,
+/// instead of checking each element it reads. Reads only; cannot
+/// allocate or collect.
+pub unsafe extern "C" fn zuri_jit_list_elems_are(_vm_ptr: *mut VM, list_ptr: u64, whole: u64) -> u64 {
+  let obj = unsafe { &*(list_ptr as *const crate::vm::object::Obj) };
+  let crate::vm::object::Obj::List(items) = obj else {
+    return 0;
+  };
+  // SAFETY: single-threaded, and this only reads.
+  let storage = unsafe { &*items.as_ptr() };
+  let holds = if whole != 0 {
+    // 2^63 itself is a whole number but not an `i64`; NaN and the
+    // infinities fail on `fract()`.
+    let limit = 9_223_372_036_854_775_808.0;
+    storage.iter().all(|e| {
+      e.is_number() && {
+        let n = e.as_number();
+        n.fract() == 0.0 && n >= -limit && n < limit
+      }
+    })
+  } else {
+    storage.iter().all(|e| e.is_number())
+  };
+  holds as u64
+}
+
 /// Every element-type bet an entry is placing, checked in one call.
 ///
 /// `int_mask` and `num_mask` name the registers claimed to hold a list
@@ -725,6 +753,11 @@ pub unsafe extern "C" fn zuri_jit_bitnot_slow(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
+  if v.is_number() {
+    let narrowed = crate::vm::value::num_to_wrapped_i64(v.as_number());
+    vm.set_reg(base as usize, dst as u8, Value::number((!narrowed) as f64));
+    return OK;
+  }
   match vm.try_operator_override(v, "@not", &[]) {
     Ok(Some(result)) => {
       vm.set_reg(base as usize, dst as u8, result);
@@ -742,6 +775,10 @@ pub unsafe extern "C" fn zuri_jit_bitnot_slow(
 pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64, src: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
+  if v.is_number() {
+    vm.set_reg(base as usize, dst as u8, Value::number(-v.as_number()));
+    return OK;
+  }
   if v.is_bigint() {
     let nv = vm.heap.alloc_bigint(-v.as_bigint());
     vm.set_reg(base as usize, dst as u8, nv);
@@ -768,6 +805,13 @@ pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64,
 /// in `codegen` doesn't apply; i.e. at least one operand is a heap
 /// object, which needs a real dereference `codegen` can't inline (see
 /// this module's docs on stable bit patterns vs. `Obj`'s layout).
+/// Zuri's `==` on two values, for the optimizing tier's inline equality
+/// once both turn out to be heap objects. Reads no register and neither
+/// allocates nor raises.
+pub unsafe extern "C" fn zuri_jit_values_equal(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+  Value::from_bits(a).equals(&Value::from_bits(b)) as u64
+}
+
 pub unsafe extern "C" fn zuri_jit_eq_slow(
   vm_ptr: *mut VM,
   base: u64,
@@ -3078,6 +3122,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec5!(zuri_jit_mul_slow),
     spec5!(zuri_jit_concat),
     spec5!(zuri_jit_eq_slow),
+    spec3!(zuri_jit_values_equal),
+    spec3!(zuri_jit_list_elems_are),
     spec5!(zuri_jit_neq_slow),
     spec5!(zuri_jit_subimm_slow),
     spec5!(zuri_jit_addimm_slow),

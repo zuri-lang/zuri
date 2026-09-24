@@ -1,0 +1,105 @@
+# Compiled loops can check once, before they start, that a list holds only
+# numbers, or only whole numbers, and then read its elements unchecked.
+# Each function here runs well past the JIT's warm-up with lists that
+# pass that check, then gets one that does not, or has a loop that could
+# change what a list holds, and has to behave exactly as the interpreter
+# does.
+
+def total(xs) {
+  var sum = 0
+  iter var i = 0; i < xs.length(); i++ {
+    sum = sum + xs[i]
+  }
+  return sum
+}
+
+# Reads through an index list, as a sparse matrix does.
+def gather(values, indices) {
+  var sum = 0
+  iter var i = 0; i < indices.length(); i++ {
+    sum = sum + values[indices[i]]
+  }
+  return sum
+}
+
+# Writes fractions into one list while indexing with the whole numbers
+# in another. Handing it the same list twice turns the indices into
+# fractions under its feet.
+def scatter(dst, values, indices) {
+  iter var i = 0; i < indices.length(); i++ {
+    dst[i] = values[indices[i]] + 0.5
+  }
+  return dst[0]
+}
+
+# Stores something other than a number into the list it reads.
+def poison(xs, at) {
+  var sum = 0
+  iter var i = 0; i < xs.length(); i++ {
+    if i == at {
+      xs[i] = 'x'
+    }
+    sum = sum + i
+  }
+  return sum
+}
+
+# A nest of loops, entered part way through when the inner loop gets hot.
+def nested(rows, cols, reps) {
+  var sum = 0
+  iter var r = 0; r < reps; r++ {
+    iter var i = 0; i < rows.length(); i++ {
+      var row = rows[i]
+      iter var j = 0; j < cols.length(); j++ {
+        sum = sum + row * cols[j] + r
+      }
+    }
+  }
+  return sum
+}
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+var numbers = []
+var wholes = []
+iter var i = 0; i < 50; i++ {
+  numbers.append(i * 0.25)
+  wholes.append(49 - i)
+}
+
+var sum = 0
+iter var r = 0; r < 2000; r++ {
+  sum = sum + total(numbers) + gather(numbers, wholes)
+  var dst = [0] * 50
+  sum = sum + scatter(dst, numbers, wholes)
+  sum = sum + poison([1, 2, 3], 5)
+}
+echo 'warm: ${sum}'
+echo nested([1, 2, 3], [4, 5, 6, 7], 20000)
+
+echo 'lists that break the check:'
+var mixed = numbers + ['end']
+echo attempt(@() => total(mixed))
+var fraction = wholes + [1.5]
+echo attempt(@() => gather(numbers, fraction))
+var shared = [1, 2, 3, 0]
+echo attempt(@() => scatter(shared, numbers, shared))
+echo shared
+var marked = [5, 6, 7]
+echo poison(marked, 1)
+echo marked
+echo attempt(@() => total(marked))
+
+echo 'still right afterwards:'
+echo total(numbers)
+echo gather(numbers, wholes)
+echo scatter([0] * 50, numbers, wholes)
+echo nested([2], [3, 4], 10)

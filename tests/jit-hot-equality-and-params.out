@@ -1,0 +1,20 @@
+[true, false, false, true, true, false, false, true, false, true, true, false, false, true, true, false, false, true, true, false, false, true, true, false, true, false, false, true, true, false, false, true, true, false]
+10
+8995628672
+[3000, 2]
+2273248
+rejected after warm-up:
+typed() expects parameter 'n' (argument 1) to be a number, got string
+typed() expects parameter 'k' (argument 2) to be an int, got number
+typed() expects parameter 's' (argument 3) to be a string, got number
+typed() expects parameter 'flag' (argument 4) to be a bool, got number
+typed() expects parameter 'maybe' (argument 5) to be a number, got string
+typed() expects parameter 'k' (argument 2) to be an int, got number
+typed() expects parameter 'k' (argument 2) to be an int, got number
+shapes() expects parameter 'xs' (argument 1) to be a list, got string
+shapes() expects parameter 'f' (argument 2) to be a function, got class
+shapes() expects parameter 'c' (argument 3) to be a type, got instance
+shapes() expects parameter 'either' (argument 4) to be a string or a number, got nil
+accepted again:
+9
+1

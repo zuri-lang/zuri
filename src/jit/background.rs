@@ -82,6 +82,9 @@ pub struct CompileJob {
   /// the log line (see `jit::typeflow::SpeculativeRegs`'s own docs).
   pub speculative_regs: Option<typeflow::SpeculativeRegs>,
   pub facts: CompileFacts,
+  /// Present when the function should go through the optimizing tier;
+  /// what its IR builder reads instead of `facts`.
+  pub tier2: Option<Box<crate::jit::ir::build::Feedback>>,
   /// Optional target for the finished result. When provided (e.g. for
   /// shared isolate workers), the result is sent to this channel and its
   /// `results_pending` flag is updated, allowing multiple VMs to share a single
@@ -110,6 +113,7 @@ impl CompileJob {
       speculative_params: None,
       speculative_regs: None,
       facts: CompileFacts::default(),
+      tier2: None,
       reply_to: None,
     }
   }
@@ -125,6 +129,8 @@ pub struct CompileResult {
   /// by the compile.
   pub speculative_lists: Option<u64>,
   pub speculative_ints: Option<u64>,
+  /// Which tier produced `outcome`.
+  pub tier: u8,
   /// `Ok(entry_fn)` on success or a human-readable failure reason.
   pub outcome: Result<EntryFn, String>,
 }
@@ -302,7 +308,27 @@ fn compiler_loop(
     // with it, and once every worker is gone nothing the VM queues ever
     // compiles again. Report the function as ineligible instead and
     // carry on with the next job.
+    let mut tier = 1;
+    let tier2 = job.tier2;
     let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      // The optimizing tier declines functions it cannot build; those
+      // still get the baseline tier's code.
+      if let Some(feedback) = &tier2 {
+        match engine.compile_tier2(proto, feedback, Some(&shutdown)) {
+          Ok(done) => {
+            tier = 2;
+            return Ok(done);
+          },
+          Err(reason) => {
+            if crate::jit::log_enabled() {
+              eprintln!(
+                "[jit] '{}' stays in the baseline tier: {reason}",
+                proto.display_name()
+              );
+            }
+          },
+        }
+      }
       engine.compile_function(
         proto,
         job.speculative_params,
@@ -336,6 +362,7 @@ fn compiler_loop(
       speculative_regs: job.speculative_regs,
       speculative_lists,
       speculative_ints,
+      tier,
       outcome,
     };
     if let Some((reply_tx, reply_pending)) = job.reply_to {

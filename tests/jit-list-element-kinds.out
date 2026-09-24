@@ -1,0 +1,15 @@
+warm: 1256500
+2402520000
+lists that break the check:
+306.25end
+index must be an integer, got 1.5
+0.75
+[0.75, 1, 1.25, 0.5]
+3
+[5, x, 7]
+5x7
+still right afterwards:
+306.25
+306.25
+12.75
+230

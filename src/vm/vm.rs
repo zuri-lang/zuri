@@ -2502,6 +2502,8 @@ impl VM {
       site_classes: self.resolve_site_classes(proto),
     };
 
+    let tier2 = crate::jit::tier2_enabled().then(|| Box::new(Self::tier2_feedback(proto)));
+
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);
     let sent = if let Some((job_tx, _, reply_tx, pending)) = &self.shared_compiler {
@@ -2510,6 +2512,7 @@ impl VM {
         speculative_params,
         speculative_regs,
         facts,
+        tier2,
         reply_to: Some((reply_tx.clone(), std::sync::Arc::clone(pending))),
       };
       job_tx.send(job).is_ok()
@@ -2519,6 +2522,7 @@ impl VM {
         speculative_params,
         speculative_regs,
         facts,
+        tier2,
         reply_to: None,
       };
       if let Some(tx) = self.jit_compiler().job_tx.as_ref() {
@@ -2536,6 +2540,51 @@ impl VM {
       proto.jit.compiling.set(false);
       proto.jit.ineligible.set(true);
       self.pending_jit_compiles.pop();
+    }
+  }
+
+  /// What the optimizing tier's IR builder speculates from, copied out
+  /// of the interpreter's caches here on the VM's own thread.
+  fn tier2_feedback(proto: &ObjFunction) -> crate::jit::ir::build::Feedback {
+    let chunk = &proto.chunk;
+    let mut fields = FxHashMap::default();
+    let mut invokes = FxHashMap::default();
+    let mut globals = FxHashMap::default();
+    for (ip, instr) in chunk.code.iter().enumerate() {
+      match instr {
+        Instr::GetField { .. } | Instr::SetField { .. } => {
+          if let Some(cell) = chunk.field_cache_cell(ip)
+            && cell.class_bits.get() != 0
+          {
+            let slot = (cell.byte_offset.get() / 8) as u16;
+            fields.insert(ip, (cell.class_bits.get(), slot));
+          }
+        },
+        Instr::Invoke { .. } => {
+          if let Some(cell) = chunk.invoke_cache_cell(ip)
+            && cell.key.get() != 0
+          {
+            invokes.insert(ip, cell.key.get());
+          }
+        },
+        Instr::GetGlobal { .. } | Instr::SetGlobal { .. } | Instr::AssignGlobal { .. } => {
+          let slot = proto.jit.global_slot_cache[ip].get();
+          if slot >= 0 {
+            globals.insert(ip, slot as u32);
+          }
+        },
+        _ => {},
+      }
+    }
+    crate::jit::ir::build::Feedback {
+      kinds: chunk.feedback_snapshot(),
+      fields,
+      invokes,
+      globals,
+      list_key: crate::builtins::list_method_key(),
+      blocked: proto.jit.deopt_sites.borrow().iter().copied().collect(),
+      sites_off: proto.jit.site_speculation_off.get(),
+      fields_off: proto.jit.field_speculation_off.get(),
     }
   }
 
@@ -2568,9 +2617,9 @@ impl VM {
       let proto = unsafe { &*result.proto.0 };
       match result.outcome {
         Ok(entry) => {
-          if crate::jit::log_enabled() {
+          if crate::jit::log_enabled() && result.tier == 1 {
             eprintln!(
-              "[jit] compiled '{}' ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
+              "[jit] compiled '{}' at tier 1 ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
               proto.display_name(),
               proto.chunk.code.len(),
               result.osr_ids.len(),
@@ -2578,6 +2627,16 @@ impl VM {
               result.speculative_regs.unwrap_or(0),
               result.speculative_lists.unwrap_or(0),
               result.speculative_ints.unwrap_or(0),
+            );
+          } else if crate::jit::log_enabled() {
+            // The masks above describe the baseline tier's speculation;
+            // the optimizing tier's lives in its IR.
+            eprintln!(
+              "[jit] compiled '{}' at tier {} ({} bytecode ops, {} osr point(s))",
+              proto.display_name(),
+              result.tier,
+              proto.chunk.code.len(),
+              result.osr_ids.len(),
             );
           }
           *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
@@ -4787,6 +4846,7 @@ impl VM {
             func: func_reg,
             num_args,
           } => {
+            seen!(func, ip, base, func_reg);
             tri!(self.dispatch_call(base, func_reg, num_args, dst), 'step);
             // dispatch_call may or may not have pushed a new frame (Closure
             // does, Native/Class/BoundMethod resolve synchronously and
@@ -5297,6 +5357,7 @@ impl VM {
             method_const,
             num_args,
           } => {
+            seen!(func, ip, base, obj);
             let receiver = self.get_reg(base, obj);
             let method_name_val = func.chunk.constants[method_const as usize];
             if !method_name_val.is_string() {
@@ -5556,12 +5617,14 @@ impl VM {
           },
 
           Instr::GetIndex { dst, obj, idx } => {
+            seen!(func, ip, base, obj);
             let ov = self.get_reg(base, obj);
             let iv = self.get_reg(base, idx);
             let result = tri!(self.index_get(ov, iv), 'step);
             self.set_reg(base, dst, result);
           },
           Instr::SetIndex { obj, idx, src } => {
+            seen!(func, ip, base, obj);
             let ov = self.get_reg(base, obj);
             let iv = self.get_reg(base, idx);
             let sv = self.get_reg(base, src);

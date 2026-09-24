@@ -294,6 +294,11 @@ pub fn method_table_key(receiver: Value) -> u64 {
   }
 }
 
+/// The `method_table_key` every list receiver gets.
+pub fn list_method_key() -> u64 {
+  Kind::List as u64 + 1
+}
+
 pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
   if receiver.is_class() {
     return None;

@@ -1,0 +1,140 @@
+# Loops whose counter indexes a list. Compiled code can check once, before
+# a loop starts, that its counter stays inside the list, instead of checking
+# every index as it goes. Each loop here runs well past the JIT's warm-up,
+# then gets a bound, a start or a list that breaks that check, and has to
+# fail exactly the way the interpreter does.
+
+var xs = []
+iter var i = 0; i < 64; i++ {
+  xs.append(i * 3)
+}
+
+var ys = []
+iter var i = 0; i < 80; i++ {
+  ys.append(i + 1)
+}
+
+# Up to the list's own length.
+def forward(list) {
+  var total = 0
+  iter var i = 0; i < list.length(); i++ {
+    total = total + list[i]
+  }
+  return total
+}
+
+# Up to a bound that is only safe while it stays within the list.
+def up_to(list, n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + list[i]
+  }
+  return total
+}
+
+# Up to and including a bound.
+def through(list, n) {
+  var total = 0
+  iter var i = 0; i <= n; i++ {
+    total = total + list[i]
+  }
+  return total
+}
+
+# Down to zero from wherever it starts.
+def backward(list, start) {
+  var total = 0
+  iter var i = start; i >= 0; i-- {
+    total = total + list[i]
+  }
+  return total
+}
+
+# From any start, including a negative one, which counts from the end.
+def between(list, start, n) {
+  var total = 0
+  iter var i = start; i < n; i++ {
+    total = total + list[i]
+  }
+  return total
+}
+
+def every_fourth(list) {
+  var total = 0
+  iter var i = 0; i < list.length(); i += 4 {
+    total = total + list[i]
+  }
+  return total
+}
+
+# One counter over two lists, each needing its own check.
+def paired(a, b) {
+  var total = 0
+  iter var i = 0; i < a.length(); i++ {
+    total = total + a[i] * b[i]
+  }
+  return total
+}
+
+def fill(list, n) {
+  iter var i = 0; i < n; i++ {
+    list[i] = i * 2
+  }
+  return list[n - 1]
+}
+
+# The counter is a number as well as an index.
+def halves(list) {
+  var total = 0
+  iter var i = 0; i < list.length(); i++ {
+    total = total + list[i] + i / 2
+  }
+  return total
+}
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+var scratch = []
+iter var i = 0; i < 64; i++ {
+  scratch.append(0)
+}
+
+var sum = 0
+iter var r = 0; r < 3000; r++ {
+  sum = sum + forward(xs) + up_to(xs, 64) + through(xs, 63)
+  sum = sum + backward(xs, 63) + between(xs, 0, 64) + every_fourth(xs)
+  sum = sum + paired(xs, ys) + fill(scratch, 64) + halves(xs)
+}
+echo 'warm: ${sum}'
+
+echo 'past the end:'
+echo attempt(@() => up_to(xs, 65))
+echo attempt(@() => through(xs, 64))
+echo attempt(@() => backward(xs, 64))
+echo attempt(@() => up_to(xs, 1e300))
+echo attempt(@() => paired(ys, xs))
+echo attempt(@() => fill(scratch, 65))
+
+echo 'unusual starts and bounds:'
+echo between(xs, -3, 2)
+echo attempt(@() => between(xs, 0.5, 3))
+echo attempt(@() => backward(xs, 2.5))
+echo up_to(xs, 0 / 0)
+echo up_to([], 0)
+echo backward(xs, -1)
+echo between(xs, 60, 62.5)
+
+echo 'still right afterwards:'
+echo forward(xs)
+echo up_to(xs, 10)
+echo backward(xs, 9)
+echo paired(xs, ys)
+echo halves(xs)

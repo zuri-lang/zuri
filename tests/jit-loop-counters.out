@@ -1,0 +1,22 @@
+warm: 902826000
+past the end:
+index 64 out of bounds (length 64)
+index 64 out of bounds (length 64)
+index 64 out of bounds (length 64)
+index 64 out of bounds (length 64)
+index 64 out of bounds (length 64)
+index 64 out of bounds (length 64)
+unusual starts and bounds:
+561
+index must be an integer, got 0.5
+index must be an integer, got 2.5
+0
+0
+0
+549
+still right afterwards:
+6048
+135
+135
+262080
+7056

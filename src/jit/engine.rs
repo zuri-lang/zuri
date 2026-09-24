@@ -162,8 +162,85 @@ impl JitEngine {
     facts: CompileFacts,
     shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
-    let mut pending =
-      self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
+    let pending = self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
+    self.finish(pending, proto, shutdown)
+  }
+
+  /// Compiles `proto` through the optimizing tier: bytecode to IR, the
+  /// IR passes, then lowering to Cranelift. `Err` means the IR builder
+  /// declined the function, or something after it failed; the caller
+  /// falls back to the baseline tier either way.
+  pub fn compile_tier2(
+    &mut self,
+    proto: &ObjFunction,
+    feedback: &crate::jit::ir::build::Feedback,
+    shutdown: Option<&std::sync::atomic::AtomicBool>,
+  ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
+    let mut ir = crate::jit::ir::build::build(proto, feedback)?;
+    crate::jit::ir::passes::run(&mut ir, feedback)?;
+    if crate::jit::log_ir_enabled() {
+      eprintln!("[jit] tier 2 IR for '{}':\n{ir}", proto.display_name());
+    }
+
+    self.next_id += 1;
+    let name = format!("zuri_fn_{}", self.next_id);
+    let sig = crate::jit::ir::lower::entry_signature(&self.module);
+    let func_id = self
+      .module
+      .declare_function(&name, Linkage::Local, &sig)
+      .map_err(|e| format!("failed to declare function: {e}"))?;
+    let mut ctx = self.module.make_context();
+    ctx.func.signature = sig;
+    ctx.func.name = UserFuncName::user(0, func_id.as_u32());
+
+    let osr_ids = {
+      let mut builder =
+        cranelift_frontend::FunctionBuilder::new(&mut ctx.func, &mut self.builder_ctx);
+      let osr_ids =
+        crate::jit::ir::lower::lower(&mut builder, &mut self.module, &self.helper_ids, proto, &ir)?;
+      builder.finalize(self.module.target_config());
+      osr_ids
+    };
+    if crate::jit::log_ir_enabled() {
+      eprintln!("[jit] tier 2 Cranelift IR for '{}':\n{}", proto.name, ctx.func.display());
+    }
+    if crate::jit::log_asm_enabled() {
+      self.asm_labels.insert(func_id, Self::asm_label(proto));
+    }
+    self.finish(
+      PendingCompile {
+        ctx,
+        func_id,
+        osr_ids,
+      },
+      proto,
+      shutdown,
+    )
+  }
+
+  fn asm_label(proto: &ObjFunction) -> String {
+    proto
+      .display_name()
+      .chars()
+      .map(|c| {
+        if c.is_alphanumeric() || c == '.' {
+          c
+        } else {
+          '_'
+        }
+      })
+      .collect()
+  }
+
+  /// Everything after a function's Cranelift IR exists: register
+  /// allocation and encoding, then installing the machine code.
+  fn finish(
+    &mut self,
+    mut pending: PendingCompile,
+    // Only named in the debug build's verifier report below.
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))] proto: &ObjFunction,
+    shutdown: Option<&std::sync::atomic::AtomicBool>,
+  ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
     if let Some(shutdown) = shutdown {
       if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
         return Err("compilation aborted: VM shutdown".to_string());
@@ -278,18 +355,7 @@ impl JitEngine {
       eprintln!("[jit] IR for '{}':\n{}", proto.name, ctx.func.display());
     }
     if crate::jit::log_asm_enabled() {
-      let label: String = proto
-        .display_name()
-        .chars()
-        .map(|c| {
-          if c.is_alphanumeric() || c == '.' {
-            c
-          } else {
-            '_'
-          }
-        })
-        .collect();
-      self.asm_labels.insert(func_id, label);
+      self.asm_labels.insert(func_id, Self::asm_label(proto));
     }
 
     Ok(PendingCompile {

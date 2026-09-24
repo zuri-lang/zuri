@@ -1,0 +1,128 @@
+# Equality, `**`, global writes and parameter type checks, each inside a
+# function that runs well past the JIT's warm-up. Compiled code tests these
+# inline, so every case the runtime distinguishes is covered: numbers by
+# value, strings and lists by content, instances by identity, nil and
+# booleans by themselves.
+
+class Point {
+  @new(x) {
+    self.x = x
+  }
+}
+
+def same(a, b) {
+  return a == b
+}
+
+def differ(a, b) {
+  return a != b
+}
+
+var p = Point(1)
+var q = Point(1)
+var nan = 0 / 0
+var pairs = [
+  [1, 1], [1, 2], [0, -0], [nan, nan], [1, '1'], ['ab', 'ab'], ['ab', 'ba'],
+  [nil, nil], [nil, false], [true, true], [true, 1], [[1, 2], [1, 2]],
+  [[1, [2]], [1, [2]]], [[nan], [nan]], [p, p], [p, q], [{ a: 1 }, { a: 1 }],
+]
+
+var results = []
+iter var r = 0; r < 2000; r++ {
+  results = []
+  iter var i = 0; i < pairs.length(); i++ {
+    results.append(same(pairs[i][0], pairs[i][1]))
+    results.append(differ(pairs[i][0], pairs[i][1]))
+  }
+}
+echo results
+
+# A list compared by content sees a change made between two comparisons.
+def compare_around_change(a, b) {
+  var before = a == b
+  a[0] = 99
+  var after = a == b
+  a[0] = b[0]
+  var code = before ? 10 : 0
+  return code + (after ? 1 : 0)
+}
+
+var changes = nil
+iter var r = 0; r < 2000; r++ {
+  changes = compare_around_change([1, 2], [1, 2])
+}
+echo changes
+
+def power_sum(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + i ** 2 + 2 ** (i % 5) + (i + 1) ** 0.5
+  }
+  return total
+}
+
+echo power_sum(3000).round()
+
+var counter = 0
+var last_seen = nil
+
+def bump(by) {
+  counter = counter + by
+  last_seen = by
+  return counter
+}
+
+iter var r = 0; r < 3000; r++ {
+  bump(r % 3)
+}
+echo [counter, last_seen]
+
+def typed(n: number, k: int, s: string, flag: bool, maybe: ?number) {
+  var extra = maybe or 0
+  if flag {
+    return n + k + (s == 'abc' ? 3 : 0) + extra
+  }
+  return n - k - extra
+}
+
+def shapes(xs: list, f: function, c: type, either: string|number) {
+  var total = either == 'x' ? 1 : 2
+  if either == 3 {
+    total = total + 10
+  }
+  return total
+}
+
+var typed_total = 0
+iter var r = 0; r < 3000; r++ {
+  typed_total = typed_total + typed(r * 0.5, r % 7, 'abc', r % 2 == 0, r % 3 == 0 ? nil : 1)
+  typed_total = typed_total + shapes([1, 2], @(x) => x * 2, Point, r % 2 == 0 ? 'x' : 3)
+}
+echo typed_total
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+echo 'rejected after warm-up:'
+echo attempt(@() => typed('1', 1, 'a', true, nil))
+echo attempt(@() => typed(1, 1.5, 'a', true, nil))
+echo attempt(@() => typed(1, 1, 2, true, nil))
+echo attempt(@() => typed(1, 1, 'a', 1, nil))
+echo attempt(@() => typed(1, 1, 'a', true, 'no'))
+echo attempt(@() => typed(1, nan, 'a', true, nil))
+echo attempt(@() => typed(1, 1 / 0, 'a', true, nil))
+echo attempt(@() => shapes('no', @(x) => x, Point, 1))
+echo attempt(@() => shapes([], Point, Point, 1))
+echo attempt(@() => shapes([], @(x) => x, p, 1))
+echo attempt(@() => shapes([], @(x) => x, Point, nil))
+
+echo 'accepted again:'
+echo typed(2, 3, 'abcd', true, 4)
+echo shapes([1], @(x) => x, Point, 'x')

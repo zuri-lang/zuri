@@ -68,6 +68,7 @@ pub mod background;
 pub mod codegen;
 pub mod engine;
 pub mod escape;
+pub mod ir;
 pub mod runtime;
 pub mod typeflow;
 pub mod warmup;
@@ -102,6 +103,15 @@ pub fn log_ir_enabled() -> bool {
 pub fn log_asm_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_ASM").is_some())
+}
+
+/// Compile through the optimizing tier's IR instead of the baseline
+/// translator, for every function the IR builder accepts;
+/// `ZURI_JIT_TIER2=1`. A function it declines is compiled by the baseline
+/// tier as before.
+pub fn tier2_enabled() -> bool {
+  static ENABLED: OnceLock<bool> = OnceLock::new();
+  *ENABLED.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v != "0"))
 }
 
 pub fn log_facts_enabled() -> bool {

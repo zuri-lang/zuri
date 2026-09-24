@@ -1,0 +1,159 @@
+# `using` dispatch, raising, closures and superclass calls, each inside a
+# function that runs well past the JIT's warm-up, so compiled code makes
+# every decision here as well as the interpreter.
+
+def label(x) {
+  using x {
+    when 1 {
+      return 'one'
+    }
+    when 2, 3 {
+      return 'two or three'
+    }
+    when 'a' {
+      return 'letter a'
+    }
+    when nil {
+      return 'nothing'
+    }
+    when true {
+      return 'yes'
+    }
+    default {
+      return 'other'
+    }
+  }
+}
+
+# No default: a subject matching nothing falls through past the block.
+def bonus(x) {
+  var extra = 0
+  using x {
+    when 10 {
+      extra = 100
+    }
+    when 20 {
+      extra = 200
+    }
+  }
+  return extra + 1
+}
+
+def checked(n) {
+  if n < 0 {
+    raise Error('negative: ${n}')
+  }
+  return n * 2
+}
+
+def attempt(n) {
+  var result = nil
+  catch {
+    result = checked(n)
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+# A local captured by a closure keeps changing after the capture, from
+# both sides.
+def tally(n) {
+  var count = n
+  var bump = @(by) {
+    count = count + by
+  }
+  var read = @() => count
+  iter var i = 0; i < 5; i++ {
+    bump(i)
+    count = count * 2
+  }
+  return read()
+}
+
+# A captured parameter.
+def adder(base) {
+  return @(x) => base + x
+}
+
+# A closure hot on its own, reading and writing its upvalues in a loop.
+def counter() {
+  var seen = 0
+  var total = 0
+  return @(n) {
+    iter var i = 0; i < n; i++ {
+      seen = seen + 1
+      total = total + i
+    }
+    return [seen, total]
+  }
+}
+
+class Shape {
+  @new(name) {
+    self.name = name
+  }
+
+  describe() {
+    return 'shape ${self.name}'
+  }
+}
+
+class Square < Shape {
+  @new(side) {
+    parent('square')
+    self.side = side
+  }
+
+  describe() {
+    return parent.describe() + ' of side ${self.side}'
+  }
+}
+
+def describe_all(n) {
+  var last = ''
+  iter var i = 0; i < n; i++ {
+    last = Square(i).describe()
+  }
+  return last
+}
+
+var subjects = [1, 2, 3, 'a', 'b', nil, true, false, 4.5]
+var labels = []
+var bonuses = 0
+iter var r = 0; r < 3000; r++ {
+  labels = []
+  iter var i = 0; i < subjects.length(); i++ {
+    labels.append(label(subjects[i]))
+  }
+  bonuses = bonuses + bonus(r % 30)
+}
+echo labels
+echo bonuses
+
+var raised = []
+iter var r = 0; r < 3000; r++ {
+  raised = [attempt(r % 7), attempt(0 - r % 3)]
+}
+echo raised
+
+var tallies = 0
+iter var r = 0; r < 3000; r++ {
+  tallies = tallies + tally(r % 5)
+}
+echo tallies
+
+var sums = 0
+iter var r = 0; r < 3000; r++ {
+  sums = sums + adder(r)(1)
+}
+echo sums
+
+var next = counter()
+var state = nil
+iter var r = 0; r < 3000; r++ {
+  state = next(r % 11)
+}
+echo state
+
+echo describe_all(3000)
