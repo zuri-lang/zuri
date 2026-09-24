@@ -8580,24 +8580,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // carries a safepoint (see `Instr::Jmp`/`JmpIfFalse`/`JmpIfTrue`),
     // so GC progress in a loop whose only call is an intrinsified one
     // is still guaranteed.
+    // `max`/`min` stay on the float path even for proven whole numbers:
+    // a whole-number register can hold `-0`, which its integer copy
+    // cannot, and the two zeros answer differently.
     let arg_reg = obj + 2;
-    if matches!(op, NumberIntrinsic::Max | NumberIntrinsic::Min)
-      && num_args == 1
-      && self.both_proven_int(ip, obj, arg_reg)
-    {
-      let ia = self.fb.use_var(self.reg_vars_int[obj as usize]);
-      let ib = self.fb.use_var(self.reg_vars_int[arg_reg as usize]);
-      let cc = match op {
-        NumberIntrinsic::Max => IntCC::SignedGreaterThan,
-        NumberIntrinsic::Min => IntCC::SignedLessThan,
-        _ => unreachable!(),
-      };
-      let cmp = self.fb.ins().icmp(cc, ia, ib);
-      let ir = self.fb.ins().select(cmp, ia, ib);
-      self.store_reg_int(dst, ir);
-      return;
-    }
-
     let recv = self.load_reg(obj);
     let arg = (num_args == 1).then(|| self.load_reg(arg_reg));
 
@@ -8726,16 +8712,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         let r = self.fb.ins().fcvt_from_sint(types::F64, i);
         self.from_f64(r)
       },
-      NumberIntrinsic::Max => {
+      NumberIntrinsic::Max | NumberIntrinsic::Min => {
+        // `builtins::number::larger`/`smaller`: a NaN gives way to the
+        // other number; otherwise Cranelift's `fmax`/`fmin`, which
+        // propagate NaN but count `-0` as less than `0`, as those do.
         let f1 = self.to_f64(recv);
-        let f2 = self.to_f64(arg.expect("max takes 1 arg"));
-        let r = self.fb.ins().fmax(f1, f2);
-        self.from_f64(r)
-      },
-      NumberIntrinsic::Min => {
-        let f1 = self.to_f64(recv);
-        let f2 = self.to_f64(arg.expect("min takes 1 arg"));
-        let r = self.fb.ins().fmin(f1, f2);
+        let f2 = self.to_f64(arg.expect("max and min take 1 arg"));
+        let m = if matches!(op, NumberIntrinsic::Max) {
+          self.fb.ins().fmax(f1, f2)
+        } else {
+          self.fb.ins().fmin(f1, f2)
+        };
+        let f1_nan = self.fb.ins().fcmp(FloatCC::Unordered, f1, f1);
+        let f2_nan = self.fb.ins().fcmp(FloatCC::Unordered, f2, f2);
+        let r = self.fb.ins().select(f2_nan, f1, m);
+        let r = self.fb.ins().select(f1_nan, f2, r);
         self.from_f64(r)
       },
       NumberIntrinsic::Round => {

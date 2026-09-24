@@ -134,18 +134,51 @@ fn max(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
-  Ok(Value::number(
-    ctx.args[0].as_number().max(ctx.args[1].as_number()),
-  ))
+  Ok(Value::number(larger(
+    ctx.args[0].as_number(),
+    ctx.args[1].as_number(),
+  )))
 }
 
 fn min(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 1, ArgType::Number);
 
-  Ok(Value::number(
-    ctx.args[0].as_number().min(ctx.args[1].as_number()),
-  ))
+  Ok(Value::number(smaller(
+    ctx.args[0].as_number(),
+    ctx.args[1].as_number(),
+  )))
+}
+
+/// `max()`: a NaN gives way to the other number, and `-0` counts as
+/// less than `0`. `f64::max` leaves the zeros to the platform, which
+/// answers differently on x86 and ARM; compiled code computes this same
+/// rule.
+pub fn larger(a: f64, b: f64) -> f64 {
+  if a.is_nan() {
+    return b;
+  }
+  if b.is_nan() {
+    return a;
+  }
+  if a == b {
+    return if a.is_sign_negative() { b } else { a };
+  }
+  if a > b { a } else { b }
+}
+
+/// `min()`, the mirror of `larger`.
+pub fn smaller(a: f64, b: f64) -> f64 {
+  if a.is_nan() {
+    return b;
+  }
+  if b.is_nan() {
+    return a;
+  }
+  if a == b {
+    return if a.is_sign_negative() { a } else { b };
+  }
+  if a < b { a } else { b }
 }
 
 fn factorial(ctx: &mut ZuriContext) -> Result<Value, String> {

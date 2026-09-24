@@ -195,11 +195,19 @@ class number {
   /**
    * Returns the larger of the number and _other_.
    *
+   * A `NaN` never wins: when one of the two is `NaN`, the other is
+   * returned, and only two `NaN`s give `NaN`. `-0` counts as smaller
+   * than `0`, so `(-0.0).max(0)` is `0` whichever side the zeros are on.
+   *
    * ```zuri-repl
    * %> 5.max(9)
    * 9
    * %> 9.max(5)
    * 9
+   * %> (0 / 0).max(3)
+   * 3
+   * %> (-0.0).max(0)
+   * 0
    * ```
    *
    * @param {number} other The number to compare against.
@@ -211,11 +219,19 @@ class number {
   /**
    * Returns the smaller of the number and _other_.
    *
+   * A `NaN` never wins: when one of the two is `NaN`, the other is
+   * returned, and only two `NaN`s give `NaN`. `-0` counts as smaller
+   * than `0`, so `0.min(-0.0)` is `-0` whichever side the zeros are on.
+   *
    * ```zuri-repl
    * %> 5.min(9)
    * 5
    * %> 9.min(5)
    * 5
+   * %> (0 / 0).min(3)
+   * 3
+   * %> 0.min(-0.0)
+   * -0
    * ```
    *
    * @param {number} other The number to compare against.
