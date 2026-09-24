@@ -189,10 +189,10 @@ pub struct CompiledFunction {
 ///   reassigned before this call site actually runs, so codegen still
 ///   guards it with a cheap value-identity comparison (`guard_bits`)
 ///   against the callee register's current contents at runtime,
-///   falling back to the ordinary resolver on a miss. `entry` is a raw
-///   `EntryFn` address, sound to bake as a compile-time immediate
-///   because `CompiledFunction`'s own docs guarantee compiled code is
-///   never unloaded or recompiled once produced.
+///   falling back to the ordinary resolver on a miss. `entry` only says
+///   the callee had compiled code when this caller compiled; the call
+///   itself reads the callee's current entry, since a callee that
+///   deoptimizes drops its code.
 /// - `Construct`: same proof as `Known`, except the global resolved to
 ///   a class; so this site is a constructor call, and codegen emits
 ///   `jit::runtime::zuri_jit_new_prepare`'s construction shape (which
@@ -229,13 +229,13 @@ pub struct CompiledFunction {
 pub enum CallTarget {
   SelfRecursive,
   Known {
-    /// The callee's compiled entry point, or `0` when it hasn't been
-    /// compiled yet. A `0` here still carries useful information --
-    /// `codegen` can inline such a callee (see
+    /// The callee's compiled entry point when this caller was compiled,
+    /// or `0` when it hadn't been compiled yet. A `0` here still carries
+    /// useful information: `codegen` can inline such a callee (see
     /// `FuncCompiler::try_emit_inlined_call`), which needs only its
     /// bytecode, not its machine code; so the resolution is recorded
     /// either way and `emit_known_call`'s direct-dispatch path is
-    /// gated on a non-zero entry.
+    /// gated on a non-zero entry. The call reads the entry afresh.
     entry: usize,
     /// The callee's prototype, as its `Value` bits; what generated
     /// code guards on.

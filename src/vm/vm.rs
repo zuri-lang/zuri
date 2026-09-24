@@ -5374,9 +5374,7 @@ impl VM {
               // a method that can never move goes in: the cell is not a
               // GC root, so a young closure's address would go stale at
               // the next minor collection. Class methods are allocated
-              // old, so in practice every method qualifies. `entry` is
-              // left for `zuri_jit_invoke_prepare` to fill once the
-              // method has compiled code.
+              // old, so in practice every method qualifies.
               let cell = func.chunk.invoke_cache_cell(ip - 1);
               let found = if let Some(c) = cell.filter(|c| c.key.get() == class_bits) {
                 Some(Ok(Value::from_bits(c.payload.get())))
@@ -5389,7 +5387,6 @@ impl VM {
                   {
                     c.key.set(class_bits);
                     c.payload.set(m.to_bits());
-                    c.entry.set(0);
                   }
                   Some(Ok(m))
                 } else if let Some(&idx) = class.field_slots.get(method_name_val.as_str()) {

@@ -95,8 +95,7 @@ const CALL_FRAME_COMPILED_OFFSET: i32 = vm::CALL_FRAME_COMPILED_OFFSET as i32;
 const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 /// Byte offset (from a `*const ObjFunction`) of its own compiled-entry
 /// cell: see `object::obj_function_jit_entry_offset`'s own docs for
-/// why `emit_inline_construct` reads this fresh on every call instead
-/// of baking it, unlike `emit_known_call`'s `entry`.
+/// why every direct call reads this fresh instead of baking it.
 const PROTO_JIT_ENTRY_OFFSET: i32 = object::obj_function_jit_entry_offset() as i32;
 /// Byte offsets (from a `*mut VM`) of `Heap::bytes_allocated`/`next_gc`
 /// (major) and `young_bytes_allocated` (minor); lets `emit_safepoint`
@@ -6326,7 +6325,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     dst: u8,
     func: u8,
     num_args: u8,
-    entry: usize,
     guard_bits: u64,
     proto_ptr: usize,
   ) {
@@ -6342,6 +6340,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let fast_block = self.fb.create_block();
     let done_block = self.fb.create_block();
     self.emit_callee_proto_guard(callee_val, guard_bits, slow_block);
+
+    // The callee's entry as it stands now. It was compiled when this
+    // caller was, but it may since have deoptimized and dropped that code.
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let proto_c = self.u64c(proto_ptr as u64);
+    let entry_addr = self
+      .fb
+      .ins()
+      .load(types::I64, flags, proto_c, PROTO_JIT_ENTRY_OFFSET);
+    let has_entry = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry_addr, 0);
+    let ready_block = self.fb.create_block();
+    self
+      .fb
+      .ins()
+      .brif(has_entry, ready_block, &[], slow_block, &[]);
+    self.fb.switch_to_block(ready_block);
 
     // Eligibility, exactly like `emit_self_call`'s: a compile-time fact
     // about the PROVEN callee (`emit_callee_proto_guard` already
@@ -6363,7 +6377,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().brif(is_ok, fast_block, &[], slow_block, &[]);
 
       self.fb.switch_to_block(fast_block);
-      let entry_addr = self.u64c(entry as u64);
       let sig = self.entry_sig_ref();
       let neg1 = self.fb.ins().iconst(types::I32, -1);
       let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
@@ -6405,7 +6418,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().jump(fast_block, &[]);
 
     self.fb.switch_to_block(fast_block);
-    let entry_addr = self.u64c(entry as u64);
     let sig = self.entry_sig_ref();
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let [a0, a1, a2, a3] = self.load_call_arg_values(func + 1, num_args);
@@ -7858,7 +7870,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// every single invoke.
   ///
   /// Emits, inline: receiver is an `Obj::Instance`, its class is bit-equal
-  /// to the cell's key, and the cell holds a compiled entry. On a hit the
+  /// to the cell's key, and the cached method has compiled code, read from
+  /// its prototype on every call since deoptimizing drops it. On a hit the
   /// only call left is `zuri_jit_direct_call_prepare`, which just checks
   /// depth and sets up the frame; the resolution, the shape checks, the
   /// stabilization and the closure/proto/entry chase all disappear. Any
@@ -7905,7 +7918,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let obj_block = self.fb.create_block();
     let inst_block = self.fb.create_block();
     let key_block = self.fb.create_block();
-    let entry_block = self.fb.create_block();
 
     let is_obj = self.is_obj(receiver);
     self.fb.ins().brif(is_obj, obj_block, &[], miss_block, &[]);
@@ -7927,21 +7939,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let key_hit = self.fb.ins().icmp(IntCC::Equal, class_val, key);
     self.fb.ins().brif(key_hit, key_block, &[], miss_block, &[]);
 
-    self.fb.switch_to_block(key_block);
-    let entry = self.fb.ins().load(types::I64, flags, cell_ptr, 16);
-    let zero = self.i64c(0);
-    let has_entry = self.fb.ins().icmp(IntCC::NotEqual, entry, zero);
-    self
-      .fb
-      .ins()
-      .brif(has_entry, entry_block, &[], miss_block, &[]);
-
     // From here the sequence is `emit_generic_call_inner`'s, which takes an
     // `Instr::Call` with no helper call at all. The only differences: the
     // callee arrives from the cache rather than a register, and an INVOKED
     // callee is of course a method, so that path's `not_method` check is
     // deliberately absent.
-    self.fb.switch_to_block(entry_block);
+    self.fb.switch_to_block(key_block);
     let method_bits = self.fb.ins().load(types::I64, flags, cell_ptr, 8);
     let closure_ptr = self.obj_ptr(method_bits);
     let func_val = self.fb.ins().load(
@@ -7980,11 +7983,19 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
     let not_variadic = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
     let sig_ok = self.fb.ins().band(arity_ok, not_variadic);
+    let entry = self.fb.ins().load(
+      types::I64,
+      flags,
+      proto_ptr,
+      PROTO_JIT_ENTRY_OFFSET,
+    );
+    let has_entry = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
+    let ready = self.fb.ins().band(sig_ok, has_entry);
     let frame_block = self.fb.create_block();
     self
       .fb
       .ins()
-      .brif(sig_ok, frame_block, &[], miss_block, &[]);
+      .brif(ready, frame_block, &[], miss_block, &[]);
 
     self.fb.switch_to_block(frame_block);
     let callee_num_regs8 = self.fb.ins().load(
@@ -13433,9 +13444,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             entry,
             guard_bits,
             proto_ptr,
-          }) if entry != 0 => {
-            self.emit_known_call(dst, func, num_args, entry, guard_bits, proto_ptr)
-          },
+          }) if entry != 0 => self.emit_known_call(dst, func, num_args, guard_bits, proto_ptr),
           Some(CallTarget::Known { .. }) => self.emit_generic_call(dst, func, num_args),
           Some(CallTarget::KnownNative {
             guard_fn,

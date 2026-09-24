@@ -1117,18 +1117,11 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
   // written before that call keeps the pre-move address, and the cell is
   // not a GC root, so nothing ever updates it. Every later hit would then
   // hand generated code a dangling closure pointer.
-  //
-  // The entry goes in alongside, which is what lets generated code take
-  // the whole call without coming back through here at all. A hit with
-  // no entry is a cell the interpreter filled before the method had
-  // compiled code, so it is completed here rather than left to miss in
-  // generated code forever.
   if let Some(c) = cell
-    && (!was_cached || c.entry.get() == 0)
+    && !was_cached
   {
     c.key.set(class_bits);
     c.payload.set(method.to_bits());
-    c.entry.set(entry as usize as u64);
   }
   // `1 + num_args`: the receiver the compiler already duplicated into
   // `obj + 1` occupies the callee's own register 0 ("self"): see

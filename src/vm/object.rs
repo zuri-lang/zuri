@@ -1833,16 +1833,13 @@ pub fn obj_closure_function_offset() -> usize {
 }
 
 /// Byte offset from a `*const ObjFunction` to its own compiled-entry
-/// cell (`JitInfo::entry`). Read directly by `jit::codegen`'s inline
-/// construct fast path (`emit_inline_construct`) instead of a helper
-/// call, for the same reason `emit_construct_known`'s existing
-/// `zuri_jit_construct_prepare` re-reads this fresh on every call
-/// rather than trusting a value baked at the CALLER's own compile
-/// time: a constructor's own compile can (and often does, since
-/// constructors tend to be small and simple) finish AFTER the caller
-/// that constructs it already has, and re-reading live is what lets
-/// the caller start using it the moment that happens, instead of
-/// being stuck on a stale `entry == 0` for the rest of the run.
+/// cell (`JitInfo::entry`). Every direct call generated code makes reads
+/// the callee's entry from here on each call rather than trusting a
+/// value baked at the caller's own compile time. The callee's code can
+/// change after that in both directions: a constructor often finishes
+/// compiling after the caller that constructs it, and a function that
+/// deoptimizes drops its code for good. A baked copy would miss the
+/// first and keep calling into the second, bailing out on every call.
 ///
 /// Sound to read as a plain `u64` with no further interpretation:
 /// `Cell<Option<EntryFn>>` has a null-pointer niche (a function pointer

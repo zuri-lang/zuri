@@ -622,20 +622,17 @@ pub struct FieldCacheCell {
 /// receiver, with `payload` the address of a `&'static NativeFunction`).
 /// The two can't be confused: a class's bits are a NaN-boxed pointer,
 /// nowhere near the handful of small integers a kind id uses.
+///
+/// A hit gives generated code everything it needs to call a compiled
+/// method without `zuri_jit_invoke_prepare`: the method, and through it
+/// the method's current entry. The entry is read from the method's own
+/// prototype on each call rather than copied in here, because a method
+/// that deoptimizes drops its code.
 #[derive(Clone, Debug, Default)]
 #[repr(C)]
 pub struct InvokeCacheCell {
   pub key: Cell<u64>,
   pub payload: Cell<u64>,
-  /// The callee's compiled entry point, or `0` when it has none yet.
-  ///
-  /// Carrying it here is what lets generated code skip
-  /// `zuri_jit_invoke_prepare` altogether on a hit: with the class key,
-  /// the resolved closure and its entry all readable from one cell, the
-  /// only thing left to call is the lean frame setup. `repr(C)` above is
-  /// load-bearing for that; `jit::codegen` addresses these three fields by
-  /// fixed offset.
-  pub entry: Cell<u64>,
 }
 
 /// One shape an `Instr::CheckParamType` may demand; deliberately a
