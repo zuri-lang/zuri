@@ -92,6 +92,29 @@ fn fail(vm: &mut VM, exc: Value) -> u64 {
   ERR
 }
 
+/// How an operator's slow path finishes once its result is in `dst`.
+///
+/// These paths are where compiled code allocates on an operator's
+/// behalf: a joined or repeated string, a repeated list, a character
+/// pulled out of a string, whatever an `@`-override builds. A loop made
+/// only of operators carries no collecting safepoint on its back edge,
+/// so the collection its allocations leave owed is run here, on the
+/// cold side, instead of being tested on every iteration. It is safe
+/// for the same reason the interpreter's per-instruction check is: the
+/// call site flushed every live register before the call and reloads
+/// them after, and the result is already in the register file.
+#[inline(always)]
+fn collected(vm: &mut VM) -> u64 {
+  if vm.heap.jit_gc_needed {
+    if vm.heap.needs_major_gc() {
+      vm.collect_garbage();
+    } else if vm.heap.needs_minor_gc() {
+      vm.collect_minor();
+    }
+  }
+  OK
+}
+
 // ---------------------------------------------------------------------
 // Register-array / GC-safepoint primitives
 // ---------------------------------------------------------------------
@@ -258,7 +281,7 @@ macro_rules! binary_slow {
         $big_op,
       );
       match r {
-        Ok(()) => OK,
+        Ok(()) => collected(vm),
         Err(e) => fail(vm, e),
       }
     }
@@ -382,7 +405,7 @@ macro_rules! compare_slow {
         $big_op,
       );
       match r {
-        Ok(()) => OK,
+        Ok(()) => collected(vm),
         Err(e) => fail(vm, e),
       }
     }
@@ -436,7 +459,7 @@ pub unsafe extern "C" fn zuri_jit_add_slow(
     return unsafe { zuri_jit_str_add(vm_ptr, base, dst, a, b) };
   }
   match vm.binary_add(base as usize, dst as u8, a as u8, b as u8, "+") {
-    Ok(()) => OK,
+    Ok(()) => collected(vm),
     Err(e) => fail(vm, e),
   }
 }
@@ -452,7 +475,7 @@ pub unsafe extern "C" fn zuri_jit_mul_slow(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   match vm.binary_mult(base as usize, dst as u8, a as u8, b as u8, "*") {
-    Ok(()) => OK,
+    Ok(()) => collected(vm),
     Err(e) => fail(vm, e),
   }
 }
@@ -469,7 +492,7 @@ pub unsafe extern "C" fn zuri_jit_str_add(
   let vb = vm.get_reg(base as usize, b as u8);
   if !va.is_string() || !vb.is_string() {
     match vm.binary_add(base as usize, dst as u8, a as u8, b as u8, "+") {
-      Ok(()) => return OK,
+      Ok(()) => return collected(vm),
       Err(e) => return fail(vm, e),
     }
   }
@@ -481,14 +504,14 @@ pub unsafe extern "C" fn zuri_jit_str_add(
       s.push_str(sb);
       let v = vm.heap.alloc_string(s);
       vm.set_reg(base as usize, dst as u8, v);
-      return OK;
+      return collected(vm);
     }
     vm.set_reg(base as usize, dst as u8, vb);
-    return OK;
+    return collected(vm);
   }
   if sb.is_empty() {
     vm.set_reg(base as usize, dst as u8, va);
-    return OK;
+    return collected(vm);
   }
   let total_len = sa.len() + sb.len();
   if dst == a && va.is_obj() && crate::vm::object::Heap::is_young(va.as_obj()) {
@@ -496,7 +519,7 @@ pub unsafe extern "C" fn zuri_jit_str_add(
     if let crate::vm::object::Obj::Str(s, _) = unsafe { &mut *obj_ptr } {
       if s.capacity() >= total_len {
         s.push_str(sb);
-        return OK;
+        return collected(vm);
       }
     }
   }
@@ -506,7 +529,7 @@ pub unsafe extern "C" fn zuri_jit_str_add(
   s.push_str(sb);
   let v = vm.heap.alloc_string(s);
   vm.set_reg(base as usize, dst as u8, v);
-  OK
+  collected(vm)
 }
 
 pub unsafe extern "C" fn zuri_jit_concat(
@@ -736,7 +759,7 @@ pub unsafe extern "C" fn zuri_jit_bitnot_slow(
   match vm.try_operator_override(v, "@not", &[]) {
     Ok(Some(result)) => {
       vm.set_reg(base as usize, dst as u8, result);
-      OK
+      collected(vm)
     },
     Ok(None) => {
       let msg = format!("cannot bitwise not a {}", v.argument_type_name());
@@ -753,12 +776,12 @@ pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64,
   if v.is_bigint() {
     let nv = vm.heap.alloc_bigint(-v.as_bigint());
     vm.set_reg(base as usize, dst as u8, nv);
-    return OK;
+    return collected(vm);
   }
   match vm.try_operator_override(v, "@neg", &[]) {
     Ok(Some(result)) => {
       vm.set_reg(base as usize, dst as u8, result);
-      OK
+      collected(vm)
     },
     Ok(None) => {
       let msg = format!("cannot negate a {}", v.argument_type_name());
@@ -817,7 +840,7 @@ macro_rules! imm_arith_slow {
       let imm = f64::from_bits(imm_bits);
       let r = vm.binary_numeric_imm(base as usize, dst as u8, a as u8, imm, $op_name, $deco, $op);
       match r {
-        Ok(()) => OK,
+        Ok(()) => collected(vm),
         Err(e) => fail(vm, e),
       }
     }
@@ -844,7 +867,7 @@ pub unsafe extern "C" fn zuri_jit_addimm_slow(
   match vm.binary_add_values(va, vb, "+") {
     Ok(result) => {
       vm.set_reg(base as usize, dst as u8, result);
-      OK
+      collected(vm)
     },
     Err(e) => fail(vm, e),
   }
@@ -873,7 +896,7 @@ pub unsafe extern "C" fn zuri_jit_mulimm_slow(
     };
     let v = vm.heap.alloc_string(s);
     vm.set_reg(base as usize, dst as u8, v);
-    return OK;
+    return collected(vm);
   }
   if va.is_list() {
     let count = imm as usize;
@@ -884,7 +907,7 @@ pub unsafe extern "C" fn zuri_jit_mulimm_slow(
     };
     let v = vm.heap.alloc_list(value);
     vm.set_reg(base as usize, dst as u8, v);
-    return OK;
+    return collected(vm);
   }
   match vm.binary_numeric_imm(
     base as usize,
@@ -895,7 +918,7 @@ pub unsafe extern "C" fn zuri_jit_mulimm_slow(
     "@mul",
     |x: f64, y: f64| x * y,
   ) {
-    Ok(()) => OK,
+    Ok(()) => collected(vm),
     Err(e) => fail(vm, e),
   }
 }
@@ -913,7 +936,7 @@ macro_rules! imm_compare_slow {
       let imm = f64::from_bits(imm_bits);
       let r = vm.compare_imm(base as usize, dst as u8, a as u8, imm, $op_name, $deco, $op);
       match r {
-        Ok(()) => OK,
+        Ok(()) => collected(vm),
         Err(e) => fail(vm, e),
       }
     }
@@ -2168,7 +2191,7 @@ pub unsafe extern "C" fn zuri_jit_get_index(
   match vm.index_get(ov, iv) {
     Ok(result) => {
       vm.set_reg(base, dst as u8, result);
-      OK
+      collected(vm)
     },
     Err(e) => fail(vm, e),
   }

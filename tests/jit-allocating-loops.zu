@@ -1,0 +1,38 @@
+# A loop has to collect as it goes, compiled as well as interpreted,
+# even when the only thing in it that allocates is an operator. Each
+# loop here builds several gigabytes of strings or lists of which only
+# the newest is ever reachable. Collected, each stays within a few
+# hundred megabytes; left uncollected, it runs past the address-space
+# cap the test runner sets and aborts.
+
+# Appending to a string builds a fresh copy whenever the old one has
+# no room left for the new text.
+def build(n) {
+  var s = ''
+  iter var i = 0; i < n; i++ {
+    s += 'x'
+  }
+  return s.length()
+}
+
+# A repeat count held in a variable takes the general multiply.
+def repeat_strings(n, width) {
+  var last = nil
+  iter var i = 0; i < n; i++ {
+    last = 'ab' * width
+  }
+  return last.length()
+}
+
+# A literal repeat count takes the immediate form of the multiply.
+def repeat_lists(n) {
+  var last = nil
+  iter var i = 0; i < n; i++ {
+    last = [0] * 5000
+  }
+  return last.length()
+}
+
+echo build(100000)
+echo repeat_strings(100000, 20000)
+echo repeat_lists(100000)

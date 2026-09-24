@@ -14510,6 +14510,56 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         true
       },
       Instr::Invoke { .. } => true,
+      // Reading a method off an instance builds a bound method, and
+      // the field helper that does it cannot collect, so the loop has
+      // to. A specialized read of a known class's field never gets
+      // there.
+      Instr::GetField { obj, name_const, .. } => {
+        let name = self.proto.chunk.constants[*name_const as usize].as_str();
+        !(self.is_specialized_pass && self.target_class_for_field(ip, *obj, name).is_some())
+      },
+      _ => false,
+    }
+  }
+
+  /// Whether the instruction at `ip` reaches a runtime slow path that
+  /// can collect: an operator on something other than numbers, or an
+  /// index into anything but a list. Those helpers run any collection
+  /// their allocation leaves owed before returning, so a caller that
+  /// skips flushing its registers around a call has to rule them out.
+  /// This compilation's facts rule them out where they prove the
+  /// operands.
+  fn may_collect_in_slow_path(&self, ip: usize) -> bool {
+    let instr = self.proto.chunk.code[ip];
+    match instr {
+      Instr::Add { a, b, .. }
+      | Instr::Sub { a, b, .. }
+      | Instr::Mul { a, b, .. }
+      | Instr::Div { a, b, .. }
+      | Instr::Pow { a, b, .. }
+      | Instr::Floor { a, b, .. }
+      | Instr::Mod { a, b, .. }
+      | Instr::BitAnd { a, b, .. }
+      | Instr::BitOr { a, b, .. }
+      | Instr::BitXor { a, b, .. }
+      | Instr::BitShl { a, b, .. }
+      | Instr::BitShr { a, b, .. }
+      | Instr::BitUshr { a, b, .. }
+      | Instr::Lt { a, b, .. }
+      | Instr::Le { a, b, .. }
+      | Instr::Gt { a, b, .. }
+      | Instr::Ge { a, b, .. } => !(self.proven_numeric(ip, a) && self.proven_numeric(ip, b)),
+      Instr::Neg { src, .. } | Instr::BitNot { src, .. } => !self.proven_numeric(ip, src),
+      Instr::AddImm { a, .. }
+      | Instr::SubImm { a, .. }
+      | Instr::MulImm { a, .. }
+      | Instr::LtImm { a, .. }
+      | Instr::LeImm { a, .. }
+      | Instr::GtImm { a, .. }
+      | Instr::GeImm { a, .. } => !self.proven_numeric(ip, a),
+      Instr::GetIndex { obj, idx, .. } => {
+        !(self.proven_list(ip, obj) && self.proven_numeric(ip, idx))
+      },
       _ => false,
     }
   }
@@ -14574,7 +14624,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             return false;
           }
         },
-        _ => {},
+        _ => {
+          if self.may_collect_in_slow_path(ip) {
+            return false;
+          }
+        },
       }
     }
     true
