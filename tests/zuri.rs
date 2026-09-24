@@ -12,11 +12,12 @@
 //! redundant with checks the fixture already does itself.
 
 use std::fs;
-use std::process::Command;
+use std::io::Read;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::time::Duration;
 
 fn run_fixture(zu_path_str: &str) {
   let manifest_dir = env!("CARGO_MANIFEST_DIR");
-  let bin = env!("CARGO_BIN_EXE_zuri");
   // Through the same helper the runtime itself uses, so both sides
   // spell a canonical path identically. Windows' own canonical form
   // carries a `\\?\` prefix that the runtime strips before any of it
@@ -34,22 +35,7 @@ fn run_fixture(zu_path_str: &str) {
     .unwrap_or_else(|e| panic!("failed to read {out_path_str}: {e}"));
   let expected = expected_raw.replace("@@ROOT", &root);
 
-  // Shells out through `sh -c '... 2>&1'` (rather than capturing
-  // stdout/stderr as separate pipes and concatenating them
-  // afterward) specifically to preserve TRUE chronological
-  // interleaving between echoed output and an eventual uncaught-
-  // error message; exactly what the original script's
-  // `"$BIN" "$zu" 2>&1` gave for free via real shell redirection.
-  let output = Command::new("sh")
-    .arg("-c")
-    .arg(format!(
-      "{} run {} 2>&1",
-      shell_quote(bin),
-      shell_quote(zu_path_str)
-    ))
-    .output()
-    .unwrap_or_else(|e| panic!("failed to run zuri on {zu_path_str}: {e}"));
-  let actual = String::from_utf8_lossy(&output.stdout).into_owned();
+  let (_, actual) = run_zuri(zu_path_str);
 
   // Both sides went through a `$(...)` command substitution in the
   // original script, which strips ALL trailing newlines; match that
@@ -86,26 +72,124 @@ fn run_fixture(zu_path_str: &str) {
 }
 
 fn run_exit_code_fixture(zu_path_str: &str) {
-  let bin = env!("CARGO_BIN_EXE_zuri");
-  let output = Command::new("sh")
-    .arg("-c")
-    .arg(format!(
-      "{} run {} 2>&1",
-      shell_quote(bin),
-      shell_quote(zu_path_str)
-    ))
-    .output()
-    .unwrap_or_else(|e| panic!("failed to run zuri on {zu_path_str}: {e}"));
+  let (status, output) = run_zuri(zu_path_str);
   assert!(
-    output.status.success(),
-    "\n{zu_path_str} exited with {}\n--- output ---\n{}\n",
-    output.status,
-    String::from_utf8_lossy(&output.stdout)
+    status.success(),
+    "\n{zu_path_str} exited with {status}\n--- output ---\n{output}\n"
   );
 }
 
-fn shell_quote(s: &str) -> String {
-  format!("'{}'", s.replace('\'', r"'\''"))
+/// The most resident memory a fixture may hold before it is stopped.
+/// A fixture that leaks fails on its own this way, long before it can
+/// exhaust the memory of the machine running the suite.
+const MEMORY_CAP_BYTES: u64 = 2 << 30;
+
+/// How often a running fixture's memory is checked against the cap.
+const MEMORY_POLL: Duration = Duration::from_millis(5);
+
+/// Runs the executable on one fixture, returning how it exited and
+/// everything it printed.
+///
+/// Stdout and stderr share a single pipe, so echoed output and an
+/// uncaught-error message arrive in the order they were written. The
+/// executable is spawned directly, with no shell in between, so the
+/// process held to `MEMORY_CAP_BYTES` is the fixture itself.
+fn run_zuri(zu_path_str: &str) -> (ExitStatus, String) {
+  let (mut output, writer) = std::io::pipe().expect("failed to create the output pipe");
+  let mut child = Command::new(env!("CARGO_BIN_EXE_zuri"))
+    .arg("run")
+    .arg(zu_path_str)
+    .stdin(Stdio::null())
+    .stdout(writer.try_clone().expect("failed to share the output pipe"))
+    .stderr(writer)
+    .spawn()
+    .unwrap_or_else(|e| panic!("failed to run zuri on {zu_path_str}: {e}"));
+
+  // Drained on its own thread, since a fixture that fills the pipe
+  // would otherwise block on its next write while this one waits for
+  // it to exit.
+  let collector = std::thread::spawn(move || {
+    let mut bytes = Vec::new();
+    let _ = output.read_to_end(&mut bytes);
+    bytes
+  });
+
+  let mut over_cap = false;
+  let status = loop {
+    if let Some(status) = child.try_wait().expect("failed to poll a fixture") {
+      break status;
+    }
+    if resident_bytes(&child).is_some_and(|bytes| bytes > MEMORY_CAP_BYTES) {
+      over_cap = true;
+      let _ = child.kill();
+      break child.wait().expect("failed to reap a fixture");
+    }
+    std::thread::sleep(MEMORY_POLL);
+  };
+
+  let bytes = collector.join().expect("the output collector panicked");
+  let mut text = String::from_utf8_lossy(&bytes).into_owned();
+  if over_cap {
+    text.push_str(&format!(
+      "\n--- stopped after passing {} MB resident ---\n",
+      MEMORY_CAP_BYTES >> 20
+    ));
+  }
+
+  (status, text)
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn resident_bytes(child: &Child) -> Option<u64> {
+  let statm = fs::read_to_string(format!("/proc/{}/statm", child.id())).ok()?;
+  let pages: u64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+  let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+
+  Some(pages * page_size as u64)
+}
+
+#[cfg(target_vendor = "apple")]
+fn resident_bytes(child: &Child) -> Option<u64> {
+  let mut info: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
+  let size = size_of::<libc::proc_taskinfo>() as libc::c_int;
+  let written = unsafe {
+    libc::proc_pidinfo(
+      child.id() as libc::c_int,
+      libc::PROC_PIDTASKINFO,
+      0,
+      (&raw mut info).cast(),
+      size,
+    )
+  };
+
+  (written == size).then_some(info.pti_resident_size)
+}
+
+#[cfg(windows)]
+fn resident_bytes(child: &Child) -> Option<u64> {
+  use std::os::windows::io::AsRawHandle;
+  use windows_sys::Win32::System::ProcessStatus::{
+    K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+  };
+
+  let mut counters: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+  let size = size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+  counters.cb = size;
+  let ok = unsafe { K32GetProcessMemoryInfo(child.as_raw_handle(), &mut counters, size) };
+
+  (ok != 0).then_some(counters.WorkingSetSize as u64)
+}
+
+/// Other platforms have no reader here, and their fixtures run
+/// uncapped.
+#[cfg(not(any(
+  target_os = "linux",
+  target_os = "android",
+  target_vendor = "apple",
+  windows
+)))]
+fn resident_bytes(_child: &Child) -> Option<u64> {
+  None
 }
 
 // Generated by `build.rs` into `tests/generated/`; a subdirectory,

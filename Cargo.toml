@@ -211,6 +211,14 @@ windows-sys = { version = "0.59", features = [
 ] }
 
 
+# The test harness reads each fixture's resident memory to hold it to a
+# cap; on Windows that is GetProcessMemoryInfo.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_ProcessStatus",
+] }
+
 [build-dependencies]
 chrono = "0.4.45"
 toml = "1.1.2"
