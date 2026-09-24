@@ -40,6 +40,7 @@ enum Key {
   Guard(GuardKind),
   Header(&'static str, u32),
   Elem(u32),
+  ListEnd(bool, u32, u32),
   Field(u16, u32),
   Global(u32, u32),
   Cell(u8, u32),
@@ -135,6 +136,10 @@ fn visit(
     // Writes and anything that may run code invalidate what they touch.
     match &inst.op {
       Op::StoreElem => versions.elems = bump(next),
+      Op::ListAppend => {
+        versions.header = bump(next);
+        versions.elems = bump(next);
+      },
       Op::StoreUpval => versions.upvals = bump(next),
       Op::StoreGlobal(_) => versions.globals = bump(next),
       Op::StoreField(slot) => {
@@ -208,10 +213,16 @@ fn key_of(op: &Op, v: &Versions) -> Option<Key> {
     Op::BNot => Key::Pure("bnot", 0),
     Op::EqConst(x) => Key::Pure("eq_const", x.to_bits()),
     Op::FPow => Key::Pure("fpow", 0),
+    Op::FUnary(u) => Key::Pure("funary", *u as u64),
+    Op::FMax => Key::Pure("fmax", 0),
+    Op::FMin => Key::Pure("fmin", 0),
+    Op::FTest(t) => Key::Pure("ftest", *t as u64),
+    Op::FCall(helper) => Key::Pure("fcall", helper.as_ptr() as u64),
     Op::Guard(kind) => Key::Guard(*kind),
     Op::ListLen => Key::Header("len", v.header),
     Op::ListData => Key::Header("data", v.header),
     Op::LoadElem => Key::Elem(v.elems),
+    Op::ListEnd { last } => Key::ListEnd(*last, v.header, v.elems),
     Op::LoadField(slot) => Key::Field(*slot, v.fields),
     Op::LoadGlobal(slot) => Key::Global(*slot, v.globals),
     Op::UpvalCell(n) => Key::Cell(*n, v.cells),

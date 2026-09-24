@@ -159,6 +159,33 @@ pub struct InlineFrame {
   pub closure: FrameClosure,
 }
 
+/// A number method that works on its receiver alone, as an `F64` to
+/// `F64` operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FUnary {
+  Sqrt,
+  Abs,
+  Floor,
+  Ceil,
+  Trunc,
+  /// Half away from zero.
+  Round,
+  /// -1, 1, or the receiver itself when it is a zero of either sign.
+  Sign,
+  /// Toward zero and saturated to the `i64` range, as `int()` gives.
+  Int,
+}
+
+/// A number method that answers a question about its receiver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FTest {
+  IsNan,
+  IsInf,
+  IsFinite,
+  /// `to_bool()`: at or above zero, which NaN is not.
+  NonNegative,
+}
+
 /// What a guard checks. A failed guard deoptimizes through its frame
 /// state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -289,6 +316,17 @@ pub enum Op {
   TaggedEq,
   /// `**` on two `F64`s.
   FPow,
+  /// A number method on an `F64`.
+  FUnary(FUnary),
+  /// `max()` and `min()` on two `F64`s: a NaN gives way to the other
+  /// number, and `-0` counts as less than `0`.
+  FMax,
+  FMin,
+  /// A number predicate on an `F64`, as a `Bool`.
+  FTest(FTest),
+  /// A number method the runtime computes, through the named helper,
+  /// on one or two `F64`s.
+  FCall(&'static str),
 
   /// Element count of a list, from its object pointer.
   ListLen,
@@ -296,6 +334,14 @@ pub enum Op {
   ListData,
   /// Element `idx` of an element buffer. Operands: data, idx.
   LoadElem,
+  /// A list's first element, or its last with `last` set, or nil when it
+  /// has none. Operand: list pointer.
+  ListEnd { last: bool },
+  /// `append()`: adds a value to the end of a list, growing it when it
+  /// is full, and runs the write barrier. Growing takes memory outside
+  /// the collected heap, so it never collects. Operands: list pointer,
+  /// value.
+  ListAppend,
   /// Stores into element `idx` and runs the write barrier. Operands: list
   /// pointer, data, idx, value.
   StoreElem,
@@ -354,6 +400,8 @@ impl Op {
       Op::ListLen
         | Op::ListData
         | Op::LoadElem
+        | Op::ListEnd { .. }
+        | Op::ListAppend
         | Op::StoreElem
         | Op::LoadField(_)
         | Op::StoreField(_)
@@ -379,6 +427,7 @@ impl Op {
     matches!(
       self,
       Op::Guard(_)
+        | Op::ListAppend
         | Op::StoreElem
         | Op::StoreField(_)
         | Op::StoreGlobal(_)

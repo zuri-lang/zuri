@@ -29,7 +29,8 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
-  BlockId, Cmp, FrameClosure, FrameState, Func, GuardKind, InlineFrame, Op, Terminator, Ty, ValueId,
+  BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame, Op,
+  Terminator, Ty, ValueId,
 };
 use crate::jit::typeflow;
 use crate::vm::chunk::{Instr, ParamType, kind};
@@ -860,6 +861,25 @@ impl<'a> Builder<'a> {
   /// A method call whose receiver has only ever been a list: the
   /// interpreter's receiver feedback, or the key compiled code left in
   /// the site's cache.
+  /// The list method a method call is, when its receiver has only ever
+  /// been a list and it is called with the arguments the method takes.
+  fn list_method(&self, ip: usize, method_const: u16, num_args: u8) -> Option<ListMethod> {
+    let name = self.cx.proto.chunk.constants[method_const as usize];
+    if !name.is_string() || !self.list_invoke_site(ip) {
+      return None;
+    }
+    let method = match name.as_str() {
+      "length" => ListMethod::Length,
+      "is_empty" => ListMethod::IsEmpty,
+      "first" => ListMethod::First,
+      "last" => ListMethod::Last,
+      "append" => ListMethod::Append,
+      _ => return None,
+    };
+    let arity = if matches!(method, ListMethod::Append) { 1 } else { 0 };
+    (num_args == arity).then_some(method)
+  }
+
   fn list_invoke_site(&self, ip: usize) -> bool {
     let feedback = self.cx.feedback;
     if feedback.fields_off || !feedback.open(ip) {
@@ -1173,19 +1193,75 @@ impl<'a> Builder<'a> {
         dst,
         obj,
         method_const,
-        num_args: 0,
-      } if self.list_invoke_site(ip)
-        && self.cx.proto.chunk.constants[method_const as usize].as_str() == "length" =>
-      {
+        num_args,
+      } if self.list_method(ip, method_const, num_args).is_some() => {
+        let method = self.list_method(ip, method_const, num_args).unwrap();
         let p = self.list_ptr(obj, ip);
-        let len = self.value(Op::ListLen, vec![p], Ty::I64);
-        *self.view_mut(dst) = RegView {
-          int: Some(len),
-          known: Known::Number,
-          ..RegView::EMPTY
-        };
+        match method {
+          ListMethod::Length => {
+            let len = self.value(Op::ListLen, vec![p], Ty::I64);
+            *self.view_mut(dst) = RegView {
+              int: Some(len),
+              known: Known::Number,
+              ..RegView::EMPTY
+            };
+          },
+          ListMethod::IsEmpty => {
+            let len = self.value(Op::ListLen, vec![p], Ty::I64);
+            let zero = self.value(Op::ConstI64(0), vec![], Ty::I64);
+            let empty = self.value(Op::ICmp(Cmp::Eq), vec![len, zero], Ty::Bool);
+            self.set_cond(dst, empty);
+          },
+          ListMethod::First | ListMethod::Last => {
+            let last = matches!(method, ListMethod::Last);
+            let v = self.value(Op::ListEnd { last }, vec![p], Ty::Tagged);
+            self.set_tagged(dst, v);
+          },
+          ListMethod::Append => {
+            let item = self.tagged(obj + 2);
+            self.push(Op::ListAppend, vec![p, item], None, None);
+            let nil = self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged);
+            self.set_tagged(dst, nil);
+          },
+        }
       },
 
+      Instr::Invoke {
+        dst,
+        obj,
+        method_const,
+        num_args,
+      } if self.number_method(ip, obj, method_const, num_args).is_some() => {
+        let method = self.number_method(ip, obj, method_const, num_args).unwrap();
+        let x = self.num(obj, ip);
+        let mut args = vec![x];
+        if num_args == 1 {
+          args.push(self.num(obj + 2, ip));
+        }
+        match method {
+          NumberMethod::Unary(u) => {
+            let r = self.value(Op::FUnary(u), args, Ty::F64);
+            self.set_num(dst, r);
+          },
+          NumberMethod::Max | NumberMethod::Min => {
+            let op = if matches!(method, NumberMethod::Max) {
+              Op::FMax
+            } else {
+              Op::FMin
+            };
+            let r = self.value(op, args, Ty::F64);
+            self.set_num(dst, r);
+          },
+          NumberMethod::Test(t) => {
+            let r = self.value(Op::FTest(t), args, Ty::Bool);
+            self.set_cond(dst, r);
+          },
+          NumberMethod::Call(helper, _) => {
+            let r = self.value(Op::FCall(helper), args, Ty::F64);
+            self.set_num(dst, r);
+          },
+        }
+      },
       Instr::Call { dst, func, num_args } if self.call_callee(ip, func).is_some() => {
         let callee = self.call_callee(ip, func).unwrap();
         let closure = FrameClosure::Reg(self.at(func));
@@ -1229,6 +1305,25 @@ impl<'a> Builder<'a> {
       _ => self.generic(ip, instr)?,
     }
     Ok(false)
+  }
+
+  /// The number method a method call is, when its receiver is known to
+  /// be a number or has only ever been one, and it is called with the
+  /// arguments the method takes. Its argument, if it has one, is checked
+  /// to be a number as well; anything else takes the method's own path,
+  /// which raises.
+  fn number_method(&self, ip: usize, obj: u8, method_const: u16, num_args: u8) -> Option<NumberMethod> {
+    let name = self.cx.proto.chunk.constants[method_const as usize];
+    if !name.is_string() {
+      return None;
+    }
+    let method = NumberMethod::of(name.as_str())?;
+    if method.arity() != num_args {
+      return None;
+    }
+    let known = self.view(obj).known == Known::Number;
+    (known || self.numeric_site(ip) && self.cx.feedback.kinds.get(ip).is_some_and(|&k| k != 0))
+      .then_some(method)
   }
 
   // --- calls built in place ---------------------------------------------
@@ -1595,6 +1690,81 @@ impl<'a> Builder<'a> {
         .iter()
         .any(|&i| self.func.inst(i).op.may_collect())
     })
+  }
+}
+
+/// A list method compiled to operations of its own, the same set the
+/// baseline tier handles inline.
+#[derive(Clone, Copy)]
+enum ListMethod {
+  Length,
+  IsEmpty,
+  First,
+  Last,
+  Append,
+}
+
+/// A number method compiled to an operation of its own, the same set the
+/// baseline tier handles inline.
+#[derive(Clone, Copy)]
+enum NumberMethod {
+  Unary(FUnary),
+  Max,
+  Min,
+  Test(FTest),
+  /// Computed by the named runtime helper, taking this many arguments
+  /// besides the receiver.
+  Call(&'static str, u8),
+}
+
+impl NumberMethod {
+  fn of(name: &str) -> Option<NumberMethod> {
+    use NumberMethod::*;
+    Some(match name {
+      "sqrt" => Unary(FUnary::Sqrt),
+      "abs" => Unary(FUnary::Abs),
+      "floor" => Unary(FUnary::Floor),
+      "ceil" => Unary(FUnary::Ceil),
+      "trunc" => Unary(FUnary::Trunc),
+      "round" => Unary(FUnary::Round),
+      "sign" => Unary(FUnary::Sign),
+      "int" => Unary(FUnary::Int),
+      "max" => Max,
+      "min" => Min,
+      "is_nan" => Test(FTest::IsNan),
+      "is_inf" => Test(FTest::IsInf),
+      "is_finite" => Test(FTest::IsFinite),
+      "to_bool" => Test(FTest::NonNegative),
+      "sin" => Call("zuri_jit_num_sin", 0),
+      "cos" => Call("zuri_jit_num_cos", 0),
+      "tan" => Call("zuri_jit_num_tan", 0),
+      "sinh" => Call("zuri_jit_num_sinh", 0),
+      "cosh" => Call("zuri_jit_num_cosh", 0),
+      "tanh" => Call("zuri_jit_num_tanh", 0),
+      "asin" => Call("zuri_jit_num_asin", 0),
+      "acos" => Call("zuri_jit_num_acos", 0),
+      "atan" => Call("zuri_jit_num_atan", 0),
+      "asinh" => Call("zuri_jit_num_asinh", 0),
+      "acosh" => Call("zuri_jit_num_acosh", 0),
+      "atanh" => Call("zuri_jit_num_atanh", 0),
+      "exp" => Call("zuri_jit_num_exp", 0),
+      "expm1" => Call("zuri_jit_num_expm1", 0),
+      "log" => Call("zuri_jit_num_log", 0),
+      "log2" => Call("zuri_jit_num_log2", 0),
+      "log10" => Call("zuri_jit_num_log10", 0),
+      "log1p" => Call("zuri_jit_num_log1p", 0),
+      "cbrt" => Call("zuri_jit_num_cbrt", 0),
+      "atan2" => Call("zuri_jit_num_atan2", 1),
+      _ => return None,
+    })
+  }
+
+  fn arity(self) -> u8 {
+    match self {
+      NumberMethod::Max | NumberMethod::Min => 1,
+      NumberMethod::Call(_, n) => n,
+      _ => 0,
+    }
   }
 }
 

@@ -1,0 +1,171 @@
+# Compiled code answers calls to built-in methods on its own, without
+# going through method lookup, once it knows what kind of value the
+# receiver is. Each function here runs well past the JIT's warm-up with
+# receivers of one kind, then gets values at the edges of what a method
+# does, a receiver of another kind, or an argument the method rejects,
+# and has to answer exactly as the interpreter does.
+
+def unary(xs) {
+  var out = 0
+  iter var i = 0; i < xs.length(); i++ {
+    var x = xs[i]
+    out = out + x.sqrt() + x.abs() + x.floor() + x.ceil() + x.trunc()
+    out = out + x.round() + x.sign() + x.int()
+  }
+  return out
+}
+
+def transcendental(xs) {
+  var out = 0
+  iter var i = 0; i < xs.length(); i++ {
+    var x = xs[i]
+    out = out + x.sin() + x.cos() + x.atan() + x.exp() + x.log1p()
+    out = out + x.cbrt() + x.atan2(2) + x.tanh()
+  }
+  return out
+}
+
+def bounds(xs, limit) {
+  var out = 0
+  iter var i = 0; i < xs.length(); i++ {
+    out = out + xs[i].max(limit) - xs[i].min(limit)
+  }
+  return out
+}
+
+def tests(xs) {
+  var count = 0
+  iter var i = 0; i < xs.length(); i++ {
+    var x = xs[i]
+    if x.is_finite() and !x.is_nan() and !x.is_inf() and x.to_bool() {
+      count = count + 1
+    }
+  }
+  return count
+}
+
+# Every method at once on a single value, for the edges.
+def all_of(x) {
+  return [
+    x.sqrt(), x.abs(), x.floor(), x.ceil(), x.trunc(), x.round(),
+    x.sign(), x.int(), x.max(0), x.min(0), x.is_nan(), x.is_inf(),
+    x.is_finite(), x.to_bool(), x.exp(), x.atan2(-1)
+  ]
+}
+
+def ends(lists) {
+  var out = 0
+  iter var i = 0; i < lists.length(); i++ {
+    var xs = lists[i]
+    if !xs.is_empty() {
+      out = out + xs.first() * 10 + xs.last()
+    }
+  }
+  return out
+}
+
+# Grows a list from nothing, past what fits inside the list object.
+def build(n) {
+  var xs = []
+  iter var i = 0; i < n; i++ {
+    xs.append(i * 2)
+  }
+  return xs
+}
+
+# Appends while its own test reads the length, so the length it reads
+# changes as it runs.
+def double_up(xs, limit) {
+  iter var i = 0; i < xs.length(); i++ {
+    if xs.length() < limit {
+      xs.append(xs[i] + 1)
+    }
+  }
+  return xs
+}
+
+# Appends strings made on the spot, so collections run between appends
+# into a list that may already be old.
+def labels(keep, n) {
+  iter var i = 0; i < n; i++ {
+    keep.append('item ${i}')
+  }
+  return keep.length()
+}
+
+def first_and_last(xs) {
+  return [xs.first(), xs.last(), xs.is_empty(), xs.length()]
+}
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+var numbers = []
+iter var i = 0; i < 40; i++ {
+  numbers.append(i * 0.75 + 0.25)
+}
+
+var sum = 0
+iter var r = 0; r < 2000; r++ {
+  sum = sum + unary(numbers) + transcendental(numbers) + bounds(numbers, 10)
+  sum = sum + tests(numbers) + all_of(r * 0.5)[0]
+  sum = sum + ends([[1, 2, 3], [], [4]]) + build(r % 7).length()
+  sum = sum + double_up([1, 2], 9).length() + first_and_last([r, 1, 2])[0]
+}
+var kept = []
+iter var r = 0; r < 300; r++ {
+  labels(kept, 20)
+}
+echo 'warm: ${sum.round()}'
+
+echo 'numbers at the edges:'
+var nan = 0 / 0
+var inf = 1 / 0
+echo all_of(nan)
+echo all_of(inf)
+echo all_of(-inf)
+echo all_of(0)
+echo all_of(-0.0)
+echo all_of(-2.5)
+echo all_of(2.5)
+echo all_of(-0.4)
+echo all_of(1e20)
+echo tests([nan, inf, -inf, -1, 0, 3])
+
+echo 'lists at the edges:'
+echo first_and_last([])
+echo first_and_last([nil])
+echo first_and_last([7])
+echo build(0)
+echo build(1)
+echo build(3)
+echo build(40).length()
+echo double_up([5], 6)
+echo double_up([], 6)
+echo kept.length()
+echo kept[0]
+echo kept[5999]
+echo ends([[], [1], [2, 3]])
+
+echo 'receivers of another kind:'
+echo attempt(@() => unary([4, 'nine']))
+echo attempt(@() => all_of(true))
+echo attempt(@() => bounds([1, 2], 'x'))
+echo attempt(@() => first_and_last('text'))
+echo attempt(@() => ends(['ab', [1]]))
+
+echo 'still right afterwards:'
+echo unary(numbers).round()
+echo transcendental(numbers).round()
+echo bounds(numbers, 10)
+echo tests(numbers)
+echo ends([[1, 2, 3], [], [4]])
+echo build(5)
+echo double_up([1, 2], 9)

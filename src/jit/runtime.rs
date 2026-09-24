@@ -2994,6 +2994,22 @@ pub unsafe extern "C" fn zuri_jit_call_native(
 /// is what lets `codegen` reach it through `call_helper_raw` (no
 /// flush/stale bracketing) instead of the register-cache-invalidating
 /// `call_helper`. Always returns `OK`; it has no failure mode.
+/// `append()` on a list with no room left: grows it and adds `item`,
+/// with the write barrier. Growing takes memory outside the collected
+/// heap, so this never collects.
+///
+/// # Safety
+///
+/// `list_ptr` is a live list object's pointer.
+pub unsafe extern "C" fn zuri_jit_list_push(_vm_ptr: *mut VM, list_ptr: u64, item: u64) -> u64 {
+  let obj = list_ptr as *const crate::vm::object::Obj;
+  if let crate::vm::object::Obj::List(items) = unsafe { &*obj } {
+    items.borrow_mut().push(Value::from_bits(item));
+  }
+  crate::vm::object::write_barrier(obj);
+  OK
+}
+
 pub unsafe extern "C" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) -> u64 {
   crate::vm::object::write_barrier(obj_ptr as *const crate::vm::object::Obj);
   OK
@@ -3121,6 +3137,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec2!(zuri_jit_deopt),
     spec4!(zuri_jit_deopt_inlined),
     spec2!(zuri_jit_ensure_registers),
+    spec3!(zuri_jit_list_push),
     spec3!(zuri_jit_materialize_list),
     spec4!(zuri_jit_materialize_instance),
     spec2!(zuri_jit_is_falsey),

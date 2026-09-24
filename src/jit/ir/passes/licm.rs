@@ -47,6 +47,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
 
   // What the loop does to memory decides which reads may move.
   let mut collects = false;
+  let mut writes_lists = false;
   let mut writes_elems = false;
   let mut writes_fields = false;
   let mut writes_upvals = false;
@@ -55,6 +56,10 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
     for &i in &f.block(b).insts {
       match f.inst(i).op {
         Op::StoreElem => writes_elems = true,
+        Op::ListAppend => {
+          writes_lists = true;
+          writes_elems = true;
+        },
         Op::StoreField(_) => writes_fields = true,
         Op::StoreUpval => writes_upvals = true,
         Op::StoreGlobal(_) => writes_globals = true,
@@ -120,7 +125,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
       let inst = f.inst(id).clone();
       let movable = match &inst.op {
         Op::Guard(_) => every_iteration(b),
-        Op::ListLen | Op::ListData => every_iteration(b) && !collects,
+        Op::ListLen | Op::ListData => every_iteration(b) && !collects && !writes_lists,
         Op::LoadElem => every_iteration(b) && !collects && !writes_elems,
         Op::LoadField(_) => every_iteration(b) && !collects && !writes_fields,
         Op::LoadGlobal(_) => every_iteration(b) && !collects && !writes_globals,
@@ -220,5 +225,10 @@ pub(super) fn is_pure(op: &Op) -> bool {
       | Op::BNot
       | Op::EqConst(_)
       | Op::FPow
+      | Op::FUnary(_)
+      | Op::FMax
+      | Op::FMin
+      | Op::FTest(_)
+      | Op::FCall(_)
   )
 }

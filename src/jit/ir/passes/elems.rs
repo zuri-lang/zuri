@@ -84,6 +84,7 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
           }
         },
         Op::StoreElem => stores.push((inst.args[0], stored(f, inst.args[3]))),
+        Op::ListAppend => stores.push((inst.args[0], stored(f, inst.args[1]))),
         _ => {},
       }
     }

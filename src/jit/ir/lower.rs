@@ -29,7 +29,7 @@ use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
 use super::{
-  BlockId, Cmp, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueId,
+  BlockId, Cmp, FTest, FUnary, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueId,
 };
 use crate::vm::chunk::Instr;
 use crate::vm::object::{self, ObjFunction};
@@ -328,6 +328,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let bits = self.call_pure("zuri_jit_num_powf", &[self.vm, x, y]);
         Some(self.to_f64(bits))
       },
+      Op::FUnary(u) => Some(self.funary(*u, av[0])),
+      Op::FMax => Some(self.fpick(true, av[0], av[1])),
+      Op::FMin => Some(self.fpick(false, av[0], av[1])),
+      Op::FTest(t) => Some(self.ftest(*t, av[0])),
+      Op::FCall(helper) => {
+        let mut args = vec![self.vm];
+        for &a in &av {
+          args.push(self.from_f64(a));
+        }
+        let bits = self.call_pure(helper, &args);
+        Some(self.to_f64(bits))
+      },
       Op::BoxF64 => Some(self.from_f64(av[0])),
       Op::BoxBool => Some(self.box_bool(av[0])),
       Op::IntToF64 => Some(self.fb.ins().fcvt_from_sint(types::F64, av[0])),
@@ -378,6 +390,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let off = self.fb.ins().imul_imm_s(av[1], 8);
         let addr = self.fb.ins().iadd(av[0], off);
         Some(self.fb.ins().load(types::I64, flags, addr, 0))
+      },
+      Op::ListEnd { last } => Some(self.list_end(av[0], *last)),
+      Op::ListAppend => {
+        self.list_append(av[0], inst.args[1]);
+        None
       },
       Op::StoreElem => {
         let list = av[0];
@@ -1285,6 +1302,73 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.block_params(done)[0]
   }
 
+  /// A number method on `f`, computed the way the runtime computes it.
+  fn funary(&mut self, u: FUnary, f: IrValue) -> IrValue {
+    match u {
+      FUnary::Sqrt => self.fb.ins().sqrt(f),
+      FUnary::Abs => self.fb.ins().fabs(f),
+      FUnary::Floor => self.fb.ins().floor(f),
+      FUnary::Ceil => self.fb.ins().ceil(f),
+      FUnary::Trunc => self.fb.ins().trunc(f),
+      FUnary::Round => {
+        let half = self.fb.ins().f64const(0.5);
+        let mag = self.fb.ins().fabs(f);
+        let up = self.fb.ins().fadd(mag, half);
+        let down = self.fb.ins().floor(up);
+        self.fb.ins().fcopysign(down, f)
+      },
+      FUnary::Sign => {
+        let zero = self.fb.ins().f64const(0.0);
+        let one = self.fb.ins().f64const(1.0);
+        let minus_one = self.fb.ins().f64const(-1.0);
+        let is_zero = self.fb.ins().fcmp(FloatCC::Equal, f, zero);
+        let is_pos = self.fb.ins().fcmp(FloatCC::GreaterThan, f, zero);
+        // A zero answers itself, which keeps the sign of -0.
+        let nonzero = self.fb.ins().select(is_pos, one, minus_one);
+        self.fb.ins().select(is_zero, f, nonzero)
+      },
+      FUnary::Int => {
+        let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        self.fb.ins().fcvt_from_sint(types::F64, i)
+      },
+    }
+  }
+
+  /// `max()` or `min()` as `builtins::number::larger` and `smaller`
+  /// answer them: a NaN gives way to the other number, and otherwise
+  /// Cranelift's own `fmax`/`fmin`, which count `-0` as less than `0`.
+  fn fpick(&mut self, max: bool, a: IrValue, b: IrValue) -> IrValue {
+    let m = if max {
+      self.fb.ins().fmax(a, b)
+    } else {
+      self.fb.ins().fmin(a, b)
+    };
+    let a_nan = self.fb.ins().fcmp(FloatCC::Unordered, a, a);
+    let b_nan = self.fb.ins().fcmp(FloatCC::Unordered, b, b);
+    let r = self.fb.ins().select(b_nan, a, m);
+    self.fb.ins().select(a_nan, b, r)
+  }
+
+  fn ftest(&mut self, t: FTest, f: IrValue) -> IrValue {
+    match t {
+      FTest::IsNan => self.fb.ins().fcmp(FloatCC::NotEqual, f, f),
+      FTest::IsInf => {
+        let mag = self.fb.ins().fabs(f);
+        let inf = self.fb.ins().f64const(f64::INFINITY);
+        self.fb.ins().fcmp(FloatCC::Equal, mag, inf)
+      },
+      FTest::IsFinite => {
+        let mag = self.fb.ins().fabs(f);
+        let inf = self.fb.ins().f64const(f64::INFINITY);
+        self.fb.ins().fcmp(FloatCC::LessThan, mag, inf)
+      },
+      FTest::NonNegative => {
+        let zero = self.fb.ins().f64const(0.0);
+        self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero)
+      },
+    }
+  }
+
   /// Whether `v` is a closure over the function whose `Value` bits are
   /// `proto_bits`.
   fn closure_of(&mut self, v: IrValue, proto_bits: u64) -> IrValue {
@@ -1549,6 +1633,74 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.switch_to_block(open);
     let addr = self.open_upval_addr(payload);
     self.fb.ins().store(flags, val, addr, 0);
+    self.fb.ins().jump(done, &[]);
+    self.fb.switch_to_block(done);
+  }
+
+  /// A list's first or last element, or nil when it is empty. The load
+  /// sits behind a real branch: an empty list's buffer may not exist.
+  fn list_end(&mut self, list: IrValue, last: bool) -> IrValue {
+    let len32 = self
+      .fb
+      .ins()
+      .load(types::I32, MemFlagsData::trusted(), list, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
+    let elem = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+    let nil = self.u64c(value::NIL_VAL);
+    self.fb.ins().brif(len, elem, &[], done, &[nil.into()]);
+    self.fb.switch_to_block(elem);
+    let data = self.list_data(list);
+    let addr = if last {
+      let idx = self.fb.ins().iadd_imm_s(len, -1);
+      let off = self.fb.ins().imul_imm_s(idx, 8);
+      self.fb.ins().iadd(data, off)
+    } else {
+      data
+    };
+    let v = self.fb.ins().load(types::I64, MemFlagsData::trusted(), addr, 0);
+    self.fb.ins().jump(done, &[v.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `append()`: stores straight into the list when it has room, and has
+  /// the runtime grow it when it has none.
+  fn list_append(&mut self, list: IrValue, item: ValueId) {
+    let flags = MemFlagsData::trusted();
+    let val = self.tagged_of(item);
+    let len32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
+    let heap = self.fb.ins().load(types::I64, flags, list, object::obj_list_ptr_offset());
+    let cap32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_cap_offset());
+    let cap = self.fb.ins().uextend(types::I64, cap32);
+    let inline_cap = self.u64c(crate::vm::list::INLINE_CAP as u64);
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let is_inline = self.fb.ins().icmp(IntCC::Equal, heap, zero);
+    let room = self.fb.ins().select(is_inline, inline_cap, cap);
+    let fits = self.fb.ins().icmp(IntCC::UnsignedLessThan, len, room);
+
+    let store = self.fb.create_block();
+    let grow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.ins().brif(fits, store, &[], grow, &[]);
+
+    self.fb.switch_to_block(store);
+    let inline = self.fb.ins().iadd_imm_s(list, object::obj_list_inline_offset() as i64);
+    let data = self.fb.ins().select(is_inline, inline, heap);
+    let off = self.fb.ins().imul_imm_s(len, 8);
+    let addr = self.fb.ins().iadd(data, off);
+    self.fb.ins().store(flags, val, addr, 0);
+    let new_len = self.fb.ins().iadd_imm_s(len, 1);
+    let new_len32 = self.fb.ins().ireduce(types::I32, new_len);
+    self.fb.ins().store(flags, new_len32, list, object::obj_list_len_offset());
+    self.barrier_for_store(item, val, list);
+    self.fb.ins().jump(done, &[]);
+
+    self.fb.switch_to_block(grow);
+    self.fb.set_cold_block(grow);
+    self.call_pure("zuri_jit_list_push", &[self.vm, list, val]);
     self.fb.ins().jump(done, &[]);
     self.fb.switch_to_block(done);
   }
