@@ -211,6 +211,20 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
   OK
 }
 
+/// Names the check a deoptimization about to happen is for, when that is
+/// not the position compiled code resumes at: a guard moved out of a
+/// loop resumes at the loop's start but belongs to its own instruction,
+/// in `proto`'s bytecode at `ip`.
+///
+/// # Safety
+///
+/// `proto` is a live `ObjFunction`.
+pub unsafe extern "C" fn zuri_jit_blame(vm_ptr: *mut VM, proto: u64, ip: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_blame.set((proto as usize, ip as usize));
+  OK
+}
+
 /// Grows the register file to `needed` registers, for compiled code whose
 /// frame reaches past its own function's registers.
 ///
@@ -3136,6 +3150,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
     spec4!(zuri_jit_deopt_inlined),
+    spec3!(zuri_jit_blame),
     spec2!(zuri_jit_ensure_registers),
     spec3!(zuri_jit_list_push),
     spec3!(zuri_jit_materialize_list),

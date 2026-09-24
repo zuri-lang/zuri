@@ -832,6 +832,10 @@ pub struct VM {
   /// compiled code, now with interpreter frames for the calls pushed
   /// above it. `usize::MAX` otherwise.
   pending_deopt_root: Cell<usize>,
+  /// Set alongside `pending_deopt_ip` when the check that failed is not
+  /// at the position compiled code resumes at: the function and position
+  /// it belongs to. `(0, 0)` otherwise.
+  pub(crate) pending_deopt_blame: Cell<(usize, usize)>,
   /// Functions the compile jobs in flight build calls to, keyed by the
   /// function being compiled. A reassigned global could otherwise leave
   /// a callee unreachable, and collected, while a compiler thread still
@@ -988,6 +992,7 @@ impl VM {
       jit_pending_error: Cell::new(Value::nil()),
       pending_deopt_ip: Cell::new(-1),
       pending_deopt_root: Cell::new(usize::MAX),
+      pending_deopt_blame: Cell::new((0, 0)),
       pending_jit_callees: Vec::new(),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
@@ -3635,8 +3640,13 @@ impl VM {
         );
       }
     }
-    if self.note_deopt_site(site_fn, deopt_ip) && compiled_idx != frame_idx {
-      // The code that bet wrong is the caller's, with the callee built in.
+    let (site_fn, site_ip) = match self.pending_deopt_blame.replace((0, 0)) {
+      (0, _) => (site_fn, deopt_ip),
+      (proto, ip) => (unsafe { &*(proto as *const ObjFunction) }, ip),
+    };
+    if self.note_deopt_site(site_fn, site_ip) && !std::ptr::eq(site_fn, deopting_fn) {
+      // The code that bet wrong is the compiled function's, whatever the
+      // check belonged to.
       self.invalidate_compiled(deopting_fn);
     }
     // The compiled code has returned, and the stack slots it registered

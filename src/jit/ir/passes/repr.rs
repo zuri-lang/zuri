@@ -121,6 +121,7 @@ pub fn run(f: &mut Func) {
               ip: header_ip.expect("a retyped parameter starts a bytecode block"),
               regs: f.entry_regs(b, &args),
               frame: f.block(b).frame,
+              blame: None,
             };
             let pos = f.block(pred).insts.len();
             f.insert(

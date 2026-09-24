@@ -116,6 +116,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
     ip: header_ip,
     regs: f.entry_regs(header, &pre_params),
     frame: f.block(header).frame,
+    blame: None,
   };
 
   for &b in order.iter().filter(|b| body.contains(b)) {
@@ -146,7 +147,11 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
         .iter()
         .map(|a| outside.get(a).copied().unwrap_or(*a))
         .collect();
-      let new_state = inst.state.as_ref().map(|_| state.clone());
+      // A moved guard resumes at the header but blames its own check.
+      let new_state = inst.state.as_ref().map(|old| FrameState {
+        blame: Some(old.site()),
+        ..state.clone()
+      });
       let pos = f.block(preheader).insts.len();
       let result_ty = inst.result.map(|r| f.ty(r));
       let moved = f.insert(preheader, pos, inst.op.clone(), args, result_ty, new_state);

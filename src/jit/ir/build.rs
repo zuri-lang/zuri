@@ -693,6 +693,7 @@ impl<'a> Builder<'a> {
       ip,
       regs,
       frame: self.cx.id,
+      blame: None,
     }
   }
 
@@ -1139,7 +1140,10 @@ impl<'a> Builder<'a> {
         let v = self.tagged(reg);
         let state = self.state(ip);
         self.push(
-          Op::Guard(GuardKind::Param(check_idx)),
+          Op::Guard(GuardKind::Param {
+            frame: self.cx.id,
+            check: check_idx,
+          }),
           vec![v],
           None,
           Some(state),
@@ -1638,6 +1642,7 @@ impl<'a> Builder<'a> {
         ip: header_ip,
         regs: regs.iter().copied().zip(args.iter().copied()).collect(),
         frame,
+        blame: None,
       };
       self.func.push(latch, Op::Safepoint, args.clone(), None, Some(state));
       // Anything the loop carries that could be an object has to be read

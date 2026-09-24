@@ -117,17 +117,34 @@ impl Cmp {
 /// `Func::frames`. The registers are those of every frame from the
 /// compiled function's own down to that one, numbered from the compiled
 /// function's frame.
+///
+/// A guard moved away from where the bytecode checks it resumes at the
+/// place it moved to, but its failure belongs to the check it was:
+/// `blame` names that one, as a frame and a position, so the site that
+/// stops speculating is the one that was wrong.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrameState {
   pub ip: usize,
   pub regs: Vec<(u8, ValueId)>,
   pub frame: u16,
+  pub blame: Option<(u16, usize)>,
 }
 
 impl FrameState {
   /// A state for the compiled function's own frame.
   pub fn root(ip: usize, regs: Vec<(u8, ValueId)>) -> FrameState {
-    FrameState { ip, regs, frame: 0 }
+    FrameState {
+      ip,
+      regs,
+      frame: 0,
+      blame: None,
+    }
+  }
+
+  /// The frame and position whose speculation failed when this state
+  /// is left through.
+  pub fn site(&self) -> (u16, usize) {
+    self.blame.unwrap_or((self.frame, self.ip))
   }
 }
 
@@ -207,11 +224,13 @@ pub enum GuardKind {
   Bounds,
   /// A `Bool` is true. Produces nothing.
   True,
-  /// The value passes the parameter type check with this index, in the
-  /// function the frame state belongs to. Only made for checks whose
-  /// every type can be tested inline. Produces nothing; a failed check
-  /// leaves the interpreter to raise.
-  Param(u16),
+  /// The value passes parameter type check `check` of the function in
+  /// `frame`. The frame is named here rather than taken from the guard's
+  /// state, since a guard hoisted out of a loop resumes at the loop header,
+  /// which may sit in an outer frame. Only made for checks whose every type
+  /// can be tested inline. Produces nothing; a failed check leaves the
+  /// interpreter to raise.
+  Param { frame: u16, check: u16 },
   /// The value is a closure whose prototype is the function whose `Value`
   /// bits are given. Produces nothing.
   Proto(u64),
@@ -229,7 +248,7 @@ impl GuardKind {
       GuardKind::List | GuardKind::Instance(_) => Some(Ty::Ptr),
       GuardKind::Bounds
       | GuardKind::True
-      | GuardKind::Param(_)
+      | GuardKind::Param { .. }
       | GuardKind::Proto(_)
       | GuardKind::Elems { .. } => None,
     }

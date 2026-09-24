@@ -216,6 +216,7 @@ impl<'f> Copier<'f> {
         ip: s.ip,
         regs: s.regs.iter().map(|&(r, v)| (r, map(v))).collect(),
         frame: s.frame,
+        blame: s.blame,
       };
       for i in self.f.block(c).insts.clone() {
         let inst = &mut self.f.insts[i.0 as usize];

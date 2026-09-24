@@ -104,6 +104,7 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
     ip: header_ip,
     regs: f.entry_regs(preheader, &f.block(preheader).params),
     frame: f.block(preheader).frame,
+    blame: None,
   };
   let mut lists: Vec<ValueId> = guards.keys().copied().collect();
   lists.sort();

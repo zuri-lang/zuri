@@ -494,9 +494,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
         (self.fb.ins().icmp(IntCC::UnsignedLessThan, x, len), None)
       },
       GuardKind::True => (x, None),
-      GuardKind::Param(check_idx) => {
-        let (proto, _) = self.frame(state.frame);
-        (self.param_check(x, proto, check_idx), None)
+      GuardKind::Param { frame, check } => {
+        let (proto, _) = self.frame(frame);
+        (self.param_check(x, proto, check), None)
       },
       GuardKind::Proto(bits) => (self.closure_of(x, bits), None),
       GuardKind::Elems { whole } => {
@@ -1089,6 +1089,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
   fn deopt(&mut self, state: &FrameState) {
     self.flush(state);
+    if let Some((frame, ip)) = state.blame {
+      let (proto, _) = self.frame(frame);
+      let proto_c = self.u64c(proto as *const ObjFunction as u64);
+      let ip_c = self.u64c(ip as u64);
+      self.call("zuri_jit_blame", &[self.vm, proto_c, ip_c]);
+    }
     let ip_c = self.u64c(state.ip as u64);
     if state.frame == 0 {
       self.call("zuri_jit_deopt", &[self.vm, ip_c]);

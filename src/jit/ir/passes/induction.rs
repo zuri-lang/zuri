@@ -410,6 +410,7 @@ impl Preheader {
       ip: header_ip,
       regs: f.entry_regs(c.preheader, &f.block(c.preheader).params),
       frame: f.block(c.preheader).frame,
+      blame: None,
     };
     Self {
       block: c.preheader,
