@@ -1,0 +1,59 @@
+/**
+ * Builds a large text report one piece at a time with `+=`, the way a
+ * template, a serializer or a log formatter does, then reads it back.
+ *
+ * Every other benchmark here builds strings no longer than a line, so
+ * none of them shows what appending to a string that is already large
+ * costs. A runtime that copies the whole string on every `+=` makes
+ * this quadratic in the size of the report.
+ *
+ * contributed by Richard Ore
+ */
+
+const ROWS = 200_000
+
+const NAMES = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot']
+
+/**
+ * One report: a header, then a row per record with its fields
+ * separated by commas.
+ */
+def report(rows) {
+  var text = 'id,name,score,flag\n'
+
+  iter var i = 0; i < rows; i++ {
+    text += i.to_string()
+    text += ','
+    text += NAMES[i % NAMES.length()]
+    text += ','
+    text += ((i * 7919) % 1000).to_string()
+    text += ','
+    text += i % 3 == 0 ? 'y' : 'n'
+    text += '\n'
+  }
+
+  return text
+}
+
+/**
+ * A checksum over a sample of the text, so the report has to be read
+ * back in full rather than just measured.
+ */
+def checksum(text) {
+  var total = 0
+  var i = 0
+  while i < text.length() {
+    total = (total * 31 + text[i].ord()) % 1_000_000_007
+    i += 997
+  }
+  return total
+}
+
+var start = time()
+
+var text = report(ROWS)
+echo text.length()
+echo checksum(text)
+echo text.lines().length()
+
+echo '\nTotal time taken: ${time() - start}s'

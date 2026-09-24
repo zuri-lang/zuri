@@ -9395,28 +9395,42 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // genuine string receiver.
     let recv = self.load_reg(obj);
 
-    if self.proven_string(ip, obj) {
-      let v = self.emit_string_intrinsic_value(op, recv);
-      self.store_reg(dst, v);
-      return;
-    }
-
-    let is_obj = self.is_obj(recv);
-    let checked_block = self.fb.create_block();
+    let flat_block = self.fb.create_block();
     let fast_block = self.fb.create_block();
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    self
+
+    if self.proven_string(ip, obj) {
+      self.fb.ins().jump(flat_block, &[]);
+    } else {
+      let is_obj = self.is_obj(recv);
+      let checked_block = self.fb.create_block();
+      self
+        .fb
+        .ins()
+        .brif(is_obj, checked_block, &[], slow_block, &[]);
+
+      self.fb.switch_to_block(checked_block);
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
+      let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
+      self.fb.ins().brif(is_str, flat_block, &[], slow_block, &[]);
+    }
+
+    // A rope's pieces sit where the length and data pointer would, so
+    // the header says nothing about it. The builtin knows a rope's
+    // length without assembling it.
+    self.fb.switch_to_block(flat_block);
+    let ptr = self.obj_ptr(recv);
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let form = self
       .fb
       .ins()
-      .brif(is_obj, checked_block, &[], slow_block, &[]);
-
-    self.fb.switch_to_block(checked_block);
-    let ptr = self.obj_ptr(recv);
-    let tag = self.obj_tag(ptr);
-    let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
-    let is_str = self.fb.ins().icmp(IntCC::Equal, tag, tag_str);
-    self.fb.ins().brif(is_str, fast_block, &[], slow_block, &[]);
+      .load(types::I8, flags, ptr, object::obj_str_ascii_offset());
+    let rope = self.fb.ins().iconst(types::I8, object::STR_ROPE as i64);
+    let is_rope = self.fb.ins().icmp(IntCC::Equal, form, rope);
+    self.fb.ins().brif(is_rope, slow_block, &[], fast_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let v = self.emit_string_intrinsic_value(op, recv);
@@ -9475,15 +9489,24 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       ptr
     };
 
+    // A rope's pieces sit where the length and data pointer would, so
+    // it has to be ruled out before either is trusted.
     self.fb.switch_to_block(len_block);
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let form = self
+      .fb
+      .ins()
+      .load(types::I8, flags, ptr, object::obj_str_ascii_offset());
+    let rope = self.fb.ins().iconst(types::I8, object::STR_ROPE as i64);
+    let is_flat = self.fb.ins().icmp(IntCC::NotEqual, form, rope);
     let byte_len = self
       .fb
       .ins()
       .load(types::I64, flags, ptr, object::obj_str_len_offset());
     let one = self.i64c(1);
     let single = self.fb.ins().icmp(IntCC::Equal, byte_len, one);
-    self.fb.ins().brif(single, fast_block, &[], slow_block, &[]);
+    let flat_single = self.fb.ins().band(is_flat, single);
+    self.fb.ins().brif(flat_single, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let data_ptr = self
@@ -10489,224 +10512,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(done_block);
   }
 
+  /// `a + b` on two proven strings. Every one of these allocates, and
+  /// `Heap::concat_strings` decides whether that is a flat copy or a
+  /// rope, so there is nothing to do inline.
   fn emit_str_add(&mut self, _ip: usize, dst: u8, a: u8, b: u8) {
-    let va = self.load_reg(a);
-    let vb = self.load_reg(b);
-    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-
-    let slow_block = self.fb.create_block();
-    let done_block = self.fb.create_block();
-
-    if dst == a {
-      let is_obj_a = self.is_obj(va);
-      let is_obj_b = self.is_obj(vb);
-      let both_obj = self.fb.ins().band(is_obj_a, is_obj_b);
-
-      let check_tags_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(both_obj, check_tags_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(check_tags_block);
-      let ptr_a = self.obj_ptr(va);
-      let ptr_b = self.obj_ptr(vb);
-      let tag_a = self.obj_tag(ptr_a);
-      let tag_b = self.obj_tag(ptr_b);
-      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
-      let is_str_a = self.fb.ins().icmp(IntCC::Equal, tag_a, tag_str);
-      let is_str_b = self.fb.ins().icmp(IntCC::Equal, tag_b, tag_str);
-      let both_str = self.fb.ins().band(is_str_a, is_str_b);
-
-      let check_inplace_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(both_str, check_inplace_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(check_inplace_block);
-      let gen_off = object::obj_to_gcbox_generation_offset();
-      let gen_byte = self.fb.ins().load(types::I8, flags, ptr_a, gen_off);
-      let zero_u8 = self.fb.ins().iconst(types::I8, 0); // Generation::Young is 0
-      let is_young_a = self.fb.ins().icmp(IntCC::Equal, gen_byte, zero_u8);
-
-      let young_inplace_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(is_young_a, young_inplace_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(young_inplace_block);
-      let len_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_len_offset());
-      let cap_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_cap_offset());
-      let len_b = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_b, object::obj_str_len_offset());
-      let total_len = self.fb.ins().iadd(len_a, len_b);
-      let can_fit = self
-        .fb
-        .ins()
-        .icmp(IntCC::UnsignedLessThanOrEqual, total_len, cap_a);
-
-      let append_1_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(can_fit, append_1_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(append_1_block);
-      let data_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_ptr_offset());
-      let data_b = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_b, object::obj_str_ptr_offset());
-      let dst_addr = self.fb.ins().iadd(data_a, len_a);
-      let one = self.i64c(1);
-      let is_one_char = self.fb.ins().icmp(IntCC::Equal, len_b, one);
-      let single_byte_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(is_one_char, single_byte_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(single_byte_block);
-      let b_byte = self.fb.ins().load(types::I8, flags, data_b, 0);
-      self.fb.ins().store(flags, b_byte, dst_addr, 0);
-      self
-        .fb
-        .ins()
-        .store(flags, total_len, ptr_a, object::obj_str_len_offset());
-      self.store_reg(dst, va);
-      self.fb.ins().jump(done_block, &[]);
-    } else {
-      self.fb.ins().jump(slow_block, &[]);
-    }
-
-    self.fb.switch_to_block(slow_block);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     let a_i = self.idx(a);
     let b_i = self.idx(b);
     self.call_checked("zuri_jit_str_add", &[self.vm_param, base, dst_i, a_i, b_i]);
     self.resync_dst_from_memory(dst);
-    self.fb.ins().jump(done_block, &[]);
-
-    self.fb.switch_to_block(done_block);
   }
 
+  /// `a + b` once the inline numeric test has failed: strings, lists,
+  /// bigints and `@add` all go through the general add.
   fn emit_str_add_dynamic(&mut self, _ip: usize, dst: u8, a: u8, b: u8, done_block: Block) {
-    let va = self.load_reg(a);
-    let vb = self.load_reg(b);
-    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
-
-    let slow_block = self.fb.create_block();
-
-    if dst == a {
-      let is_obj_a = self.is_obj(va);
-      let is_obj_b = self.is_obj(vb);
-      let both_obj = self.fb.ins().band(is_obj_a, is_obj_b);
-
-      let check_tags_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(both_obj, check_tags_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(check_tags_block);
-      let ptr_a = self.obj_ptr(va);
-      let ptr_b = self.obj_ptr(vb);
-      let tag_a = self.obj_tag(ptr_a);
-      let tag_b = self.obj_tag(ptr_b);
-      let tag_str = self.i64c(object::OBJ_TAG_STR as i64);
-      let is_str_a = self.fb.ins().icmp(IntCC::Equal, tag_a, tag_str);
-      let is_str_b = self.fb.ins().icmp(IntCC::Equal, tag_b, tag_str);
-      let both_str = self.fb.ins().band(is_str_a, is_str_b);
-
-      let check_inplace_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(both_str, check_inplace_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(check_inplace_block);
-      let gen_off = object::obj_to_gcbox_generation_offset();
-      let gen_byte = self.fb.ins().load(types::I8, flags, ptr_a, gen_off);
-      let zero_u8 = self.fb.ins().iconst(types::I8, 0); // Generation::Young is 0
-      let is_young_a = self.fb.ins().icmp(IntCC::Equal, gen_byte, zero_u8);
-
-      let young_inplace_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(is_young_a, young_inplace_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(young_inplace_block);
-      let len_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_len_offset());
-      let cap_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_cap_offset());
-      let len_b = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_b, object::obj_str_len_offset());
-      let total_len = self.fb.ins().iadd(len_a, len_b);
-      let can_fit = self
-        .fb
-        .ins()
-        .icmp(IntCC::UnsignedLessThanOrEqual, total_len, cap_a);
-
-      let append_1_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(can_fit, append_1_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(append_1_block);
-      let data_a = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_a, object::obj_str_ptr_offset());
-      let data_b = self
-        .fb
-        .ins()
-        .load(types::I64, flags, ptr_b, object::obj_str_ptr_offset());
-      let dst_addr = self.fb.ins().iadd(data_a, len_a);
-      let one = self.i64c(1);
-      let is_one_char = self.fb.ins().icmp(IntCC::Equal, len_b, one);
-      let single_byte_block = self.fb.create_block();
-      self
-        .fb
-        .ins()
-        .brif(is_one_char, single_byte_block, &[], slow_block, &[]);
-
-      self.fb.switch_to_block(single_byte_block);
-      let b_byte = self.fb.ins().load(types::I8, flags, data_b, 0);
-      self.fb.ins().store(flags, b_byte, dst_addr, 0);
-      self
-        .fb
-        .ins()
-        .store(flags, total_len, ptr_a, object::obj_str_len_offset());
-      self.store_reg(dst, va);
-      self.fb.ins().jump(done_block, &[]);
-    } else {
-      self.fb.ins().jump(slow_block, &[]);
-    }
-
-    self.fb.switch_to_block(slow_block);
     let base = self.base_param;
     let dst_i = self.idx(dst);
     let a_i = self.idx(a);

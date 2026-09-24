@@ -189,13 +189,14 @@ impl Value {
       return false;
     }
 
-    match unsafe { &*self.as_obj() } {
-      Obj::Str(text, ascii) => match ascii.get() {
+    let obj = unsafe { &*self.as_obj() };
+    match obj {
+      Obj::Str(string) => match string.form().get() {
         ASCII_YES => true,
         ASCII_NO => false,
         _ => {
-          let known = text.as_bytes().is_ascii();
-          ascii.set(if known { ASCII_YES } else { ASCII_NO });
+          let known = obj.str_text().as_bytes().is_ascii();
+          string.form().set(if known { ASCII_YES } else { ASCII_NO });
           known
         },
       },
@@ -293,10 +294,7 @@ impl Value {
 
   pub fn as_str(&self) -> &str {
     debug_assert!(self.is_string());
-    match unsafe { &*self.as_obj() } {
-      Obj::Str(s, _) => s.as_str(),
-      _ => unreachable!("as_str() called on a non-string Value"),
-    }
+    unsafe { &*self.as_obj() }.str_text()
   }
 
   pub fn as_func(&self) -> &ObjFunction {
@@ -753,7 +751,7 @@ impl Value {
     if self.is_obj() && other.is_obj() {
       unsafe {
         return match (&*self.as_obj(), &*other.as_obj()) {
-          (Obj::Str(a, _), Obj::Str(b, _)) => a == b,
+          (a @ Obj::Str(..), b @ Obj::Str(..)) => a.str_text() == b.str_text(),
           (Obj::BigInt(a), Obj::BigInt(b)) => a == b,
           (Obj::Bytes(a), Obj::Bytes(b)) => a.borrow().eq(&*b.borrow()),
           (Obj::Func(a), Obj::Func(b)) => std::ptr::eq(a, b),
@@ -985,7 +983,7 @@ impl std::fmt::Display for Value {
     } else if self.is_obj() {
       unsafe {
         match &*self.as_obj() {
-          Obj::Str(s, _) => write!(f, "{}", s),
+          obj @ Obj::Str(..) => write!(f, "{}", obj.str_text()),
           Obj::Bytes(s) => write!(
             f,
             "({})",

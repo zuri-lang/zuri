@@ -23,6 +23,228 @@ const CHUNK_SIZE: usize = 8192;
 /// than `Vec` or a `SmallVec`.
 pub use crate::vm::list::ListStorage;
 
+/// The payload of `Obj::Str`: a flat string or a rope, and a flag that
+/// says which, along with what is known about the text.
+///
+/// A rope keeps its pieces in the space a flat string keeps its
+/// `String`, so building one costs a nursery slot and nothing from the
+/// system allocator. The flag decides which of the two is live; it reads
+/// `STR_ROPE` exactly while the pieces are, and every other value means
+/// the `String` is.
+///
+/// The text is written once: at allocation, or when a rope is assembled
+/// the first time something reads it, through the same shared reference
+/// every reader holds. Text that has been read never changes, so a
+/// borrowed `&str` stays valid for as long as the object does.
+#[repr(C)]
+pub struct ObjStr {
+  repr: std::cell::UnsafeCell<StrRepr>,
+  form: Cell<u8>,
+}
+
+#[repr(C)]
+union StrRepr {
+  flat: std::mem::ManuallyDrop<String>,
+  rope: std::mem::ManuallyDrop<Rope>,
+}
+
+/// A string built by `+` and not yet assembled into one buffer: the
+/// `head` string followed by the first `tail_len` bytes of `tail`.
+///
+/// The tail is shared and only ever grows. Appending to a rope whose
+/// slice still ends where the tail does writes straight into it, and
+/// the result is a new rope over the longer slice. The rope that was
+/// appended to goes on reading its own shorter slice, so the write is
+/// invisible to it and to anything holding it. Once something has
+/// appended past a rope's end, the next append to that rope starts a
+/// fresh tail instead.
+///
+/// Lengths are 32-bit so the whole thing fits where a `String` sits; a
+/// concatenation that would pass `u32::MAX` bytes is copied flat.
+#[repr(C)]
+struct Rope {
+  head: Value,
+  tail: Rc<RopeTail>,
+  tail_len: u32,
+  /// Byte length of the whole string.
+  len: u32,
+  /// Codepoint count of the whole string, so `length()` never has to
+  /// assemble a rope to answer.
+  chars: u32,
+}
+
+struct RopeTail(std::cell::UnsafeCell<String>);
+
+impl RopeTail {
+  /// Room for the first piece and for this many bytes more, so a string
+  /// built a character at a time grows its tail in large steps.
+  const MIN_CAPACITY: usize = 64;
+
+  fn holding(piece: &str) -> Rc<Self> {
+    let mut text = String::with_capacity((piece.len() * 2).max(Self::MIN_CAPACITY));
+    text.push_str(piece);
+    Rc::new(Self(std::cell::UnsafeCell::new(text)))
+  }
+}
+
+impl Rope {
+  fn tail(&self) -> &String {
+    unsafe { &*self.tail.0.get() }
+  }
+
+  fn tail_text(&self) -> &str {
+    &self.tail()[..self.tail_len as usize]
+  }
+
+  /// Whether nothing has appended to the tail past this rope's slice.
+  fn owns_tail_end(&self) -> bool {
+    self.tail().len() == self.tail_len as usize
+  }
+}
+
+impl ObjStr {
+  pub fn flat(text: String, form: u8) -> Self {
+    debug_assert_ne!(form, STR_ROPE);
+    Self {
+      repr: std::cell::UnsafeCell::new(StrRepr {
+        flat: std::mem::ManuallyDrop::new(text),
+      }),
+      form: Cell::new(form),
+    }
+  }
+
+  fn rope(rope: Rope) -> Self {
+    Self {
+      repr: std::cell::UnsafeCell::new(StrRepr {
+        rope: std::mem::ManuallyDrop::new(rope),
+      }),
+      form: Cell::new(STR_ROPE),
+    }
+  }
+
+  /// The form flag: see `ObjStr`'s own docs.
+  #[inline]
+  pub fn form(&self) -> &Cell<u8> {
+    &self.form
+  }
+
+  #[inline]
+  fn is_rope(&self) -> bool {
+    self.form.get() == STR_ROPE
+  }
+
+  fn rope_parts(&self) -> Option<&Rope> {
+    self.is_rope().then(|| unsafe { &*(*self.repr.get()).rope })
+  }
+
+  /// The flat text, which must be live.
+  #[inline]
+  fn flat_text(&self) -> &String {
+    debug_assert!(!self.is_rope());
+    unsafe { &(*self.repr.get()).flat }
+  }
+
+  /// The contents, assembling a rope first if this is one. Every read
+  /// of a string's text goes through here.
+  #[inline]
+  pub fn text(&self) -> &str {
+    if self.is_rope() {
+      self.assemble();
+    }
+    self.flat_text().as_str()
+  }
+
+  /// Codepoint count. A rope keeps its own, so this never assembles one.
+  pub fn char_len(&self) -> usize {
+    match self.form.get() {
+      STR_ROPE => self.rope_parts().map_or(0, |rope| rope.chars as usize),
+      ASCII_YES => self.flat_text().len(),
+      _ => self.flat_text().chars().count(),
+    }
+  }
+
+  /// Byte length, without assembling a rope.
+  fn byte_len(&self) -> usize {
+    match self.rope_parts() {
+      Some(rope) => rope.len as usize,
+      None => self.flat_text().len(),
+    }
+  }
+
+  /// The head string of a rope, for the collector to mark.
+  pub(crate) fn rope_head(&self) -> Option<Value> {
+    self.rope_parts().map(|rope| rope.head)
+  }
+
+  /// The head string of a rope, for the collector to relocate.
+  pub(crate) fn rope_head_mut(&mut self) -> Option<&mut Value> {
+    if !self.is_rope() {
+      return None;
+    }
+    Some(unsafe { &mut (*self.repr.get_mut().rope).head })
+  }
+
+  /// Joins a rope's pieces into this string's own text, leaving it an
+  /// ordinary flat string. The heads it walks through are left as they
+  /// are.
+  #[cold]
+  fn assemble(&self) {
+    let rope = unsafe { &*(*self.repr.get()).rope };
+
+    let mut pieces: Vec<&str> = vec![rope.tail_text()];
+    let mut head = rope.head;
+    let base: &str = loop {
+      let Obj::Str(inner) = (unsafe { &*head.as_obj() }) else {
+        unreachable!("a rope's head is always a string");
+      };
+      match inner.rope_parts() {
+        Some(parts) => {
+          pieces.push(parts.tail_text());
+          head = parts.head;
+        },
+        None => break inner.flat_text().as_str(),
+      }
+    };
+
+    let mut joined = String::with_capacity(rope.len as usize);
+    joined.push_str(base);
+    for piece in pieces.iter().rev() {
+      joined.push_str(piece);
+    }
+    debug_assert_eq!(joined.len(), rope.len as usize);
+    drop(pieces);
+
+    // SAFETY: the rope is live (the flag says so) and nothing borrows
+    // from it past this point; it is dropped in place, then the flat
+    // text takes its space.
+    unsafe {
+      let repr = &mut *self.repr.get();
+      std::mem::ManuallyDrop::drop(&mut repr.rope);
+      repr.flat = std::mem::ManuallyDrop::new(joined);
+    }
+    self.form.set(ASCII_UNKNOWN);
+  }
+
+  /// Whether dropping this string releases memory of its own.
+  fn owns_memory(&self) -> bool {
+    self.is_rope() || self.flat_text().capacity() != 0
+  }
+}
+
+impl Drop for ObjStr {
+  fn drop(&mut self) {
+    // SAFETY: the flag names the live half of the union.
+    unsafe {
+      let repr = self.repr.get_mut();
+      if self.form.get() == STR_ROPE {
+        std::mem::ManuallyDrop::drop(&mut repr.rope);
+      } else {
+        std::mem::ManuallyDrop::drop(&mut repr.flat);
+      }
+    }
+  }
+}
+
 /// Everything a Value's pointer tag can point at.
 ///
 /// `#[repr(C, u8)]`, with an explicit discriminant on every variant;
@@ -52,28 +274,26 @@ pub use crate::vm::list::ListStorage;
 /// variant is ever added that's meaningfully larger than the rest.
 #[repr(C, u8)]
 pub enum Obj {
-  /// A string, plus a lazily-computed note on whether it is pure
-  /// ASCII: `ASCII_UNKNOWN` until something asks, then `ASCII_YES` or
-  /// `ASCII_NO`.
+  /// A string, its form flag, and the pieces of a rope.
+  ///
+  /// The flag says what is known about the text. `ASCII_UNKNOWN` until
+  /// something asks, then `ASCII_YES` or `ASCII_NO`; `STR_CONCAT` for a
+  /// flat string `+` produced, which a further `+` turns into a rope;
+  /// `STR_ROPE` for a string whose text has not been assembled yet, in
+  /// which case the text is empty and the third field holds the pieces.
   ///
   /// Indexing a Zuri string is by codepoint, but the bytes are UTF-8,
   /// so byte offset `i` only holds codepoint `i` when every byte before
   /// it is single-byte. Compiled code needs that fact in constant time
-  /// to index a string without a scan, and a scan is exactly what it is
-  /// trying to avoid; hence caching it here rather than recomputing.
+  /// to index a string without a scan, hence caching it here. It is
+  /// filled in lazily rather than at allocation, so building a string
+  /// by repeated concatenation never scans the intermediate results.
   ///
-  /// Deliberately lazy rather than filled in at allocation: building a
-  /// string by repeated concatenation allocates a fresh one each time,
-  /// and scanning every intermediate result would turn that loop
-  /// quadratic. Only code that actually indexes a string pays for it.
-  ///
-  /// The flag cannot go stale. `Obj::Str` holds no `RefCell`, so safe
-  /// code can never mutate one in place, and the single unsafe path
-  /// that does (`jit::codegen`'s in-place append) only ever appends a
-  /// one-BYTE string; a one-byte string is necessarily ASCII, since
-  /// every non-ASCII codepoint is two bytes or more in UTF-8, so an
-  /// ASCII string stays ASCII and a non-ASCII one stays non-ASCII.
-  Str(String, Cell<u8>) = 0,
+  /// A string's text is written once: at allocation, or when a rope is
+  /// assembled the first time something reads it. Text that has been
+  /// read never changes, so the flag cannot go stale and a borrowed
+  /// `&str` stays valid for as long as the object does.
+  Str(ObjStr) = 0,
   Bytes(RefCell<Vec<u8>>) = 1,
   BigInt(BigInt) = 2,
   /// A dynamically-sized list.
@@ -193,6 +413,29 @@ impl Obj {
     // as a `u8` at the very start of the type.
     unsafe { *(self as *const Obj as *const u8) }
   }
+
+  /// A flat string holding `text`.
+  pub fn string(text: String) -> Obj {
+    Obj::Str(ObjStr::flat(text, ASCII_UNKNOWN))
+  }
+
+  /// The contents of a string object, assembling a rope first if it is
+  /// one.
+  #[inline]
+  pub fn str_text(&self) -> &str {
+    let Obj::Str(string) = self else {
+      unreachable!("str_text() called on a non-string object");
+    };
+    string.text()
+  }
+
+  /// Codepoint count of a string object; never assembles a rope.
+  pub fn str_char_len(&self) -> usize {
+    let Obj::Str(string) = self else {
+      unreachable!("str_char_len() called on a non-string object");
+    };
+    string.char_len()
+  }
 }
 
 /// Byte offset from an `Obj`'s own address to where its payload
@@ -309,7 +552,7 @@ mod obj_repr_tests {
   #[test]
   fn tags_match_discriminants() {
     assert_eq!(
-      Obj::Str(String::new(), Cell::new(ASCII_UNKNOWN)).tag(),
+      Obj::string(String::new()).tag(),
       OBJ_TAG_STR
     );
     assert_eq!(Obj::Bytes(RefCell::new(Vec::new())).tag(), OBJ_TAG_BYTES);
@@ -1692,6 +1935,19 @@ pub const ASCII_YES: u8 = 1;
 /// codepoint index says nothing about a byte offset.
 pub const ASCII_NO: u8 = 2;
 
+/// `Obj::Str`'s flag for a flat string that `+` produced, ASCII not yet
+/// known. Appending to one builds a rope rather than copying it again,
+/// while a string that is concatenated once and then read never pays
+/// for one.
+pub const STR_CONCAT: u8 = 3;
+
+/// `Obj::Str`'s flag for a rope, whose pieces sit where a flat string
+/// keeps its `String`. Compiled code reads a string's data pointer and
+/// length straight out of the object, so it has to rule this out first.
+/// Its index paths do that already, since they only proceed on
+/// `ASCII_YES`.
+pub const STR_ROPE: u8 = 4;
+
 /// Byte offset from a proven-`Obj::Str` pointer to its cached ASCII
 /// flag, for compiled code to read directly.
 ///
@@ -1704,11 +1960,11 @@ pub const ASCII_NO: u8 = 2;
 pub fn obj_str_ascii_offset() -> i32 {
   static OFFSET: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
   *OFFSET.get_or_init(|| {
-    let probe = Obj::Str(String::from("probe"), Cell::new(ASCII_UNKNOWN));
+    let probe = Obj::string(String::from("probe"));
     let base = &probe as *const Obj as usize;
 
     match &probe {
-      Obj::Str(_, flag) => (flag as *const Cell<u8> as usize - base) as i32,
+      Obj::Str(string) => (string.form() as *const Cell<u8> as usize - base) as i32,
       _ => unreachable!("the probe was just built as an Obj::Str"),
     }
   })
@@ -1748,7 +2004,7 @@ fn obj_str_data_offsets() -> (i32, i32, i32) {
     let want_cap = probe_string.capacity();
     debug_assert_ne!(want_len, want_cap);
 
-    let probe = Obj::Str(probe_string, Cell::new(ASCII_UNKNOWN));
+    let probe = Obj::string(probe_string);
     let obj_bytes = unsafe {
       std::slice::from_raw_parts(
         &probe as *const Obj as *const u8,
@@ -1790,10 +2046,6 @@ pub fn obj_str_len_offset() -> i32 {
   obj_str_data_offsets().1
 }
 
-/// Byte offset from a proven-`Obj::Str` pointer to the string's capacity.
-pub fn obj_str_cap_offset() -> i32 {
-  obj_str_data_offsets().2
-}
 
 fn obj_bytes_data_offsets() -> (i32, i32) {
   static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
@@ -1891,7 +2143,7 @@ mod gcbox_layout_tests {
     assert_eq!(Generation::Old as u8, GENERATION_OLD_BYTE);
 
     let mut heap = Heap::default();
-    let v = heap.alloc(Obj::Str(String::from("probe"), Cell::new(ASCII_UNKNOWN)));
+    let v = heap.alloc(Obj::string(String::from("probe")));
     let obj = v.as_obj();
     let gen_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_generation_offset() as isize) };
     let rem_addr = unsafe { (obj as *const u8).offset(obj_to_gcbox_remembered_offset() as isize) };
@@ -2856,7 +3108,10 @@ impl Heap {
     use std::mem::size_of;
     size_of::<Obj>()
       + match obj {
-        Obj::Str(s, _) => s.len(),
+        Obj::Str(string) => match string.rope_parts() {
+          Some(_) => 0,
+          None => string.flat_text().len(),
+        },
         Obj::Bytes(b) => b.borrow().len(),
         Obj::BigInt(x) => size_of::<BigInt>() + x.bits() as usize,
         Obj::List(items) => items.borrow().len() * size_of::<Value>(),
@@ -2965,7 +3220,7 @@ impl Heap {
   /// this question then.
   fn needs_finalizer(obj: &Obj) -> bool {
     match obj {
-      Obj::Str(s, _) => s.capacity() != 0,
+      Obj::Str(string) => string.owns_memory(),
       Obj::Closure(c) => c.upvalues.spilled(),
       Obj::Instance(i) => i.fields.owns_buffer(),
       Obj::Range { .. } | Obj::Upvalue(_) | Obj::BoundMethod(_) | Obj::Native(_) => false,
@@ -3666,8 +3921,75 @@ impl Heap {
   }
 
   pub fn alloc_string(&mut self, s: impl Into<String>) -> Value {
-    self.alloc(Obj::Str(s.into(), Cell::new(ASCII_UNKNOWN)))
+    self.alloc(Obj::string(s.into()))
   }
+
+  /// `a + b` for two strings.
+  ///
+  /// Two flat strings are copied into a new one, as any single
+  /// concatenation has to be, and the result is flagged `STR_CONCAT`.
+  /// Appending to one of those, or to a rope, builds a rope instead: the
+  /// new piece goes into a shared tail buffer rather than a fresh copy
+  /// of everything before it, so a string built by `+=` in a loop costs
+  /// time in proportion to its length rather than its square. The text
+  /// is assembled once, when something first reads it.
+  ///
+  /// Both values must be strings.
+  pub fn concat_strings(&mut self, a: Value, b: Value) -> Value {
+    let Obj::Str(b_str) = (unsafe { &*b.as_obj() }) else {
+      unreachable!("concat_strings() called with a non-string");
+    };
+    let b_text = b_str.text();
+    if b_text.is_empty() {
+      return a;
+    }
+    let Obj::Str(a_str) = (unsafe { &*a.as_obj() }) else {
+      unreachable!("concat_strings() called with a non-string");
+    };
+
+    let total = a_str.byte_len() + b_text.len();
+    let form = a_str.form().get();
+    if total > u32::MAX as usize || (form != STR_ROPE && form != STR_CONCAT) {
+      let a_text = a_str.text();
+      if a_text.is_empty() {
+        return b;
+      }
+      let mut joined = String::with_capacity(total);
+      joined.push_str(a_text);
+      joined.push_str(b_text);
+      return self.alloc(Obj::Str(ObjStr::flat(joined, STR_CONCAT)));
+    }
+
+    let b_chars = b_str.char_len() as u32;
+    let rope = match a_str.rope_parts() {
+      Some(prior) if prior.owns_tail_end() => {
+        unsafe { (*prior.tail.0.get()).push_str(b_text) };
+        Rope {
+          head: prior.head,
+          tail: Rc::clone(&prior.tail),
+          tail_len: prior.tail_len + b_text.len() as u32,
+          len: total as u32,
+          chars: prior.chars + b_chars,
+        }
+      },
+      _ => Rope {
+        head: a,
+        tail: RopeTail::holding(b_text),
+        tail_len: b_text.len() as u32,
+        len: total as u32,
+        chars: a_str.char_len() as u32 + b_chars,
+      },
+    };
+
+    // The rope object itself is small, but the bytes it adds to a tail
+    // and the buffer it will be assembled into are real memory, so they
+    // count towards the next collection too.
+    let added = b_text.len() * 2;
+    self.bytes_allocated += added;
+    self.young_bytes_allocated += added;
+    self.alloc(Obj::Str(ObjStr::rope(rope)))
+  }
+
 
   /// Deliberately `alloc_old`, not `alloc`; for `Compiler`'s own
   /// use building a chunk's CONSTANT POOL (method/field/class names,
@@ -3706,7 +4028,7 @@ impl Heap {
       return existing;
     }
     let key: Box<str> = s.as_str().into();
-    let value = self.alloc_old(Obj::Str(s, Cell::new(ASCII_UNKNOWN)));
+    let value = self.alloc_old(Obj::string(s));
     self.interned_strings.insert(key, value);
     value
   }

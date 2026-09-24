@@ -339,7 +339,8 @@ fn char_offset_to_byte(s: &str, char_offset: usize) -> usize {
 fn length(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
 
-  Ok(Value::number(ctx.args[0].as_str().chars().count() as f64))
+  let receiver = unsafe { &*ctx.args[0].as_obj() };
+  Ok(Value::number(receiver.str_char_len() as f64))
 }
 
 fn upper(ctx: &mut ZuriContext) -> Result<Value, String> {

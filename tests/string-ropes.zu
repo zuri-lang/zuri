@@ -1,0 +1,216 @@
+# Strings built by `+` keep their pieces apart until something reads
+# them, and appending to one writes into a buffer it may share with
+# other strings. None of that may be visible: every string here has to
+# read back exactly as if each `+` had copied. The loops run well past
+# the JIT's warm-up, so compiled code builds and reads them too.
+
+def build(n) {
+  var s = ''
+  iter var i = 0; i < n; i++ {
+    s += 'ab'
+  }
+  return s
+}
+
+echo 'built by +=:'
+
+var built = build(5000)
+echo built.length()
+echo built[0, 6]
+echo built[-4,]
+echo built == 'ab' * 5000
+
+echo 'branches from one string:'
+
+# Two strings extended from the same one must not see each other's
+# additions, and the original must not see either.
+def branches() {
+  var results = []
+  iter var round = 0; round < 300; round++ {
+    var base = 'x'
+    base += 'y'
+    base += 'z'
+    var left = base + '-left'
+    var right = base + '-right'
+    var again = base + '!'
+    if round == 299 {
+      results.append(base)
+      results.append(left)
+      results.append(right)
+      results.append(again)
+    }
+  }
+  return results
+}
+
+echo branches()
+
+echo 'snapshots kept while building:'
+
+def snapshots(n) {
+  var s = ''
+  var kept = []
+  iter var i = 0; i < n; i++ {
+    s += '${i % 10}'
+    if i % 250 == 0 {
+      kept.append(s)
+    }
+  }
+  return kept.map(@(k) => '${k.length()}:${k[-3,]}')
+}
+
+echo snapshots(1200)
+
+echo 'prepending and self-append:'
+
+def prepend(n) {
+  var s = 'end'
+  iter var i = 0; i < n; i++ {
+    s = '${i % 10}' + s
+  }
+  return s
+}
+
+var front = prepend(2000)
+echo front.length()
+echo front[0, 5]
+echo front[-5,]
+
+var doubled = 'ab'
+iter var i = 0; i < 10; i++ {
+  doubled = doubled + doubled
+}
+echo doubled.length()
+echo doubled == 'ab' * 1024
+
+echo 'dict keys:'
+
+def keyed(n) {
+  var counts = {}
+  iter var i = 0; i < n; i++ {
+    var key = 'k'
+    key += '${i % 7}'
+    key += '-'
+    key += 'x'
+    counts.set(key, counts.get(key, 0) + 1)
+  }
+  return counts
+}
+
+var counts = keyed(7000)
+echo counts.length()
+echo counts['k3-x']
+echo counts.contains('k6-x')
+
+echo 'reading a rope every way:'
+
+def reads() {
+  var s = 'Hello'
+  s += ', '
+  s += 'world'
+  s += '!'
+  var chars = 0
+  for c in s {
+    chars += 1
+  }
+  return [
+    s,
+    s.length(),
+    s.is_empty(),
+    s[4],
+    s[7, 12],
+    chars,
+    s.upper(),
+    s.contains('world'),
+    s.index_of('o'),
+    s.split(', '),
+    s.starts_with('Hello'),
+    s.compare('Hellp'),
+    s == 'Hello, world!',
+    'said: ${s}',
+    s.replace('world', 'there'),
+  ]
+}
+
+iter var i = 0; i < 200; i++ {
+  reads()
+}
+echo reads()
+
+echo 'codepoints:'
+
+def unicode(n) {
+  var s = ''
+  iter var i = 0; i < n; i++ {
+    s += 'é'
+    s += 'a'
+    s += '☃'
+  }
+  return s
+}
+
+var wide = unicode(1000)
+echo wide.length()
+echo wide[0]
+echo wide[2]
+echo wide[-1]
+echo wide[1, 4]
+
+echo 'across collections:'
+
+# More than half the young budget in one allocation, so a minor
+# collection follows within a call or two.
+def pressure() {
+  return bytes(70_000_000).length()
+}
+
+def survive(n) {
+  var s = 'start'
+  var kept = []
+  iter var i = 0; i < n; i++ {
+    s += '.'
+    if i % 400 == 0 {
+      kept.append(s)
+      pressure()
+    }
+  }
+  return [s.length(), kept.map(@(k) => k.length())]
+}
+
+echo survive(2000)
+
+var old = build(3)
+pressure()
+pressure()
+var young = old + 'cd'
+young += 'ef'
+pressure()
+echo old
+echo young
+
+echo 'ord on a rope:'
+
+# A rope is never one character, so `ord()` has to reach the builtin
+# and raise, however its pieces happen to be laid out. The call sits in
+# its own function so it is compiled; a function with a `catch` is not.
+def code_of(s) {
+  return s.ord()
+}
+
+def ords(n) {
+  var raised = 0
+  iter var i = 0; i < n; i++ {
+    var s = 'p'
+    s += 'q'
+    s += 'r'
+    catch {
+      code_of(s)
+    } as e {
+      raised += 1
+    }
+    code_of('x')
+  }
+  return raised
+}
+
+echo ords(500)

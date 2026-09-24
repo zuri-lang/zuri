@@ -957,10 +957,7 @@ impl VM {
       method_table_generation: Cell::new(0),
     };
     for b in 0u8..128 {
-      vm.interned_ascii[b as usize] = vm.heap.alloc_old(Obj::Str(
-        String::from(b as char),
-        std::cell::Cell::new(crate::vm::object::ASCII_UNKNOWN),
-      ));
+      vm.interned_ascii[b as usize] = vm.heap.alloc_old(Obj::string(String::from(b as char)));
     }
     vm
   }
@@ -5986,16 +5983,7 @@ impl VM {
     // aborts the process rather than raising: `[1, 2] + 5` is a
     // TypeError the program can catch, not a crash it cannot.
     if va.is_string() && vb.is_string() {
-      // Both sides already strings, the common shape format! serves worst.
-      // Display for a string Value is its raw contents, so this produces a
-      // byte-identical result while skipping core::fmt's dynamic dispatch
-      // and String's default growth reallocation; one allocation, two
-      // memcpys.
-      let (a, b) = (va.as_str(), vb.as_str());
-      let mut s = String::with_capacity(a.len() + b.len());
-      s.push_str(a);
-      s.push_str(b);
-      return Ok(self.heap.alloc_string(s));
+      return Ok(self.heap.concat_strings(va, vb));
     } else if va.is_string() || vb.is_string() {
       let s = format!("{}{}", va, vb);
       return Ok(self.heap.alloc_string(s));
@@ -6552,8 +6540,12 @@ impl VM {
           mark(p);
         }
       },
-      Obj::Str(..)
-      | Obj::Bytes(_)
+      Obj::Str(string) => {
+        if let Some(head) = string.rope_head() {
+          mark(head);
+        }
+      },
+      Obj::Bytes(_)
       | Obj::BigInt(_)
       | Obj::Native(_)
       | Obj::File(_)
@@ -6661,8 +6653,12 @@ impl VM {
           relocate(p as *mut Value);
         }
       },
-      Obj::Str(..)
-      | Obj::Bytes(_)
+      Obj::Str(string) => {
+        if let Some(head) = string.rope_head_mut() {
+          relocate(head as *mut Value);
+        }
+      },
+      Obj::Bytes(_)
       | Obj::BigInt(_)
       | Obj::Native(_)
       | Obj::File(_)

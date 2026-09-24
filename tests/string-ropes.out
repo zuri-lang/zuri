@@ -1,0 +1,33 @@
+built by +=:
+10000
+ababab
+abab
+true
+branches from one string:
+[xyz, xyz-left, xyz-right, xyz!]
+snapshots kept while building:
+[1:0, 251:890, 501:890, 751:890, 1001:890]
+prepending and self-append:
+2003
+98765
+10end
+2048
+true
+dict keys:
+7
+1000
+true
+reading a rope every way:
+[Hello, world!, 13, false, o, world, 13, HELLO, WORLD!, true, 4, [Hello, world!], true, -1, true, said: Hello, world!, Hello, there!]
+codepoints:
+3000
+é
+☃
+☃
+a☃é
+across collections:
+[2005, [6, 406, 806, 1206, 1606]]
+ababab
+abababcdef
+ord on a rope:
+500

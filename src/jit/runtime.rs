@@ -496,39 +496,8 @@ pub unsafe extern "C" fn zuri_jit_str_add(
       Err(e) => return fail(vm, e),
     }
   }
-  let sa = va.as_str();
-  let sb = vb.as_str();
-  if sa.is_empty() {
-    if sb.len() == 1 {
-      let mut s = String::with_capacity(64);
-      s.push_str(sb);
-      let v = vm.heap.alloc_string(s);
-      vm.set_reg(base as usize, dst as u8, v);
-      return collected(vm);
-    }
-    vm.set_reg(base as usize, dst as u8, vb);
-    return collected(vm);
-  }
-  if sb.is_empty() {
-    vm.set_reg(base as usize, dst as u8, va);
-    return collected(vm);
-  }
-  let total_len = sa.len() + sb.len();
-  if dst == a && va.is_obj() && crate::vm::object::Heap::is_young(va.as_obj()) {
-    let obj_ptr = va.as_obj() as *mut crate::vm::object::Obj;
-    if let crate::vm::object::Obj::Str(s, _) = unsafe { &mut *obj_ptr } {
-      if s.capacity() >= total_len {
-        s.push_str(sb);
-        return collected(vm);
-      }
-    }
-  }
-  let cap = if total_len <= 64 { 64 } else { total_len };
-  let mut s = String::with_capacity(cap);
-  s.push_str(sa);
-  s.push_str(sb);
-  let v = vm.heap.alloc_string(s);
-  vm.set_reg(base as usize, dst as u8, v);
+  let joined = vm.heap.concat_strings(va, vb);
+  vm.set_reg(base as usize, dst as u8, joined);
   collected(vm)
 }
 
