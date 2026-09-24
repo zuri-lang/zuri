@@ -38,6 +38,17 @@ use crate::vm::vm;
 
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
 const REGS_LEN_CACHE_OFFSET: i32 = vm::VM_REGS_LEN_CACHE_OFFSET as i32;
+const INTERNED_ASCII_OFFSET: i32 = vm::VM_INTERNED_ASCII_OFFSET as i32;
+const HEAP_NURSERY_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_CUR_OFFSET) as i32;
+const HEAP_NURSERY_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_END_OFFSET) as i32;
+const HEAP_FINALIZE_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
+const HEAP_FINALIZE_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
+const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
+const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
+const HEAP_YOUNG_HEADER_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
@@ -258,7 +269,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let mut i = 0;
     while i < insts.len() {
       let id = insts[i];
-      if matches!(self.ir.inst(id).op, Op::Safepoint) {
+      if matches!(self.ir.inst(id).op, Op::Safepoint | Op::NewList { .. }) {
         // The reloads that follow a safepoint only have to read memory
         // when it actually collected.
         let mut reloads = Vec::new();
@@ -267,7 +278,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
           reloads.push(insts[j]);
           j += 1;
         }
-        self.lower_safepoint(id, &reloads);
+        if matches!(self.ir.inst(id).op, Op::Safepoint) {
+          self.lower_safepoint(id, &reloads);
+        } else {
+          self.lower_new_list(id, &reloads)?;
+        }
         i = j;
         continue;
       }
@@ -446,7 +461,83 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.lower_generic(*instr, *ip, *frame, inst.state.as_ref().unwrap())?;
         None
       },
-      Op::Safepoint => unreachable!("safepoints are lowered with their reloads"),
+      Op::Safepoint | Op::NewList { .. } => {
+        unreachable!("safepoints and allocations are lowered with their reloads")
+      },
+      Op::StrAscii => Some(self.str_ascii(av[0])),
+      Op::StrByteLen => Some(self.fb.ins().load(types::I64, flags, av[0], object::obj_str_len_offset())),
+      Op::StrByte => {
+        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_str_ptr_offset());
+        let addr = self.fb.ins().iadd(data, av[1]);
+        let b = self.fb.ins().load(types::I8, flags, addr, 0);
+        Some(self.fb.ins().uextend(types::I64, b))
+      },
+      Op::AsciiChar => {
+        let off = self.fb.ins().imul_imm_s(av[0], 8);
+        let table = self.fb.ins().iadd_imm_s(self.vm, INTERNED_ASCII_OFFSET as i64);
+        let addr = self.fb.ins().iadd(table, off);
+        Some(self.fb.ins().load(types::I64, flags, addr, 0))
+      },
+      Op::StrLength => Some(self.str_length(av[0])),
+      Op::StrOrd => Some(self.str_ord(av[0])),
+      Op::WrapIndex => {
+        let zero = self.fb.ins().iconst(types::I64, 0);
+        let negative = self.fb.ins().icmp(IntCC::SignedLessThan, av[0], zero);
+        let from_end = self.fb.ins().iadd(av[0], av[1]);
+        Some(self.fb.ins().select(negative, from_end, av[0]))
+      },
+      Op::GetIndex => {
+        let zero = self.fb.ins().f64const(0.0);
+        let usable = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, av[0], zero);
+        let whole = self.fb.ins().fcvt_to_sint_sat(types::I64, av[0]);
+        let none = self.fb.ins().iconst(types::I64, -1);
+        Some(self.fb.ins().select(usable, whole, none))
+      },
+      Op::BytesLen => Some(self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_len_offset())),
+      Op::BytesLoad => {
+        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
+        let addr = self.fb.ins().iadd(data, av[1]);
+        let b = self.fb.ins().load(types::I8, flags, addr, 0);
+        Some(self.fb.ins().uextend(types::I64, b))
+      },
+      Op::BytesStore => {
+        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
+        let addr = self.fb.ins().iadd(data, av[1]);
+        let b = self.fb.ins().ireduce(types::I8, av[2]);
+        self.fb.ins().store(flags, b, addr, 0);
+        None
+      },
+      Op::ListGetOr => Some(self.list_get_or(av[0], av[1], av[2])),
+      Op::DictGet => {
+        let (d, k, fallback) = (self.tagged_of(inst.args[0]), self.tagged_of(inst.args[1]), self.tagged_of(inst.args[2]));
+        Some(self.call_pure("zuri_jit_dict_get", &[self.vm, d, k, fallback]))
+      },
+      Op::DictSet => {
+        let (d, k, v) = (self.tagged_of(inst.args[0]), self.tagged_of(inst.args[1]), self.tagged_of(inst.args[2]));
+        self.call_pure("zuri_jit_dict_set", &[self.vm, d, k, v]);
+        None
+      },
+      Op::DictContains => {
+        let (d, k) = (self.tagged_of(inst.args[0]), self.tagged_of(inst.args[1]));
+        let answer = self.call_pure("zuri_jit_dict_contains", &[self.vm, d, k]);
+        let t = self.u64c(value::TRUE_VAL);
+        Some(self.fb.ins().icmp(IntCC::Equal, answer, t))
+      },
+      Op::DictLen => {
+        let d = self.tagged_of(inst.args[0]);
+        Some(self.call_pure("zuri_jit_dict_len", &[self.vm, d]))
+      },
+      Op::ObjLength => Some(self.obj_length(av[0])),
+      Op::IsBits(bits) => {
+        let want = self.u64c(*bits);
+        Some(self.fb.ins().icmp(IntCC::Equal, av[0], want))
+      },
+      Op::NextKey => Some(self.next_key(av[0], av[1])),
+      Op::RangeCount => {
+        let (_, _, _, count) = self.range_shape(av[0]);
+        Some(self.fb.ins().fcvt_to_sint_sat(types::I64, count))
+      },
+      Op::RangeAt => Some(self.range_at(av[0], av[1])),
     };
     if let Some(x) = out {
       self.def(inst.result, x);
@@ -487,6 +578,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       GuardKind::Instance(class) => {
         let ok = self.instance_of(x, class);
+        (ok, Some(self.obj_ptr(x)))
+      },
+      GuardKind::Tag(tag) => {
+        let ok = self.obj_tag_is(x, tag);
         (ok, Some(self.obj_ptr(x)))
       },
       GuardKind::Bounds => {
@@ -1373,6 +1468,315 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero)
       },
     }
+  }
+
+  /// `StrAscii`: the cached flag when the string has one, the runtime's
+  /// classification when it does not yet.
+  fn str_ascii(&mut self, s: IrValue) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let yes = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
+    let no = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_NO as i64);
+    let known = self.fb.ins().bor(yes, no);
+    let ask = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I8);
+    self.fb.ins().brif(known, done, &[yes.into()], ask, &[]);
+    self.fb.switch_to_block(ask);
+    self.fb.set_cold_block(ask);
+    let r = self.call_pure("zuri_jit_str_ascii", &[self.vm, s]);
+    let r8 = self.fb.ins().ireduce(types::I8, r);
+    self.fb.ins().jump(done, &[r8.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `length()` on a string: the byte length of an ASCII string, the
+  /// runtime's count for anything else.
+  fn str_length(&mut self, s: IrValue) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let ascii = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
+    let fast = self.fb.create_block();
+    let count = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+    self.fb.ins().brif(ascii, fast, &[], count, &[]);
+    self.fb.switch_to_block(fast);
+    let len = self.fb.ins().load(types::I64, flags, s, object::obj_str_len_offset());
+    self.fb.ins().jump(done, &[len.into()]);
+    self.fb.switch_to_block(count);
+    let n = self.call_pure("zuri_jit_str_length", &[self.vm, s]);
+    self.fb.ins().jump(done, &[n.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `ord()` on a string: a flat string one byte long is one ASCII
+  /// character, whose code is that byte; the runtime answers the rest,
+  /// with NaN where the method raises.
+  fn str_ord(&mut self, s: IrValue) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let flat = self.fb.ins().icmp_imm_s(IntCC::NotEqual, form, object::STR_ROPE as i64);
+    let fast = self.fb.create_block();
+    let check = self.fb.create_block();
+    let slow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::F64);
+    self.fb.ins().brif(flat, check, &[], slow, &[]);
+    self.fb.switch_to_block(check);
+    let len = self.fb.ins().load(types::I64, flags, s, object::obj_str_len_offset());
+    let single = self.fb.ins().icmp_imm_s(IntCC::Equal, len, 1);
+    self.fb.ins().brif(single, fast, &[], slow, &[]);
+    self.fb.switch_to_block(fast);
+    let data = self.fb.ins().load(types::I64, flags, s, object::obj_str_ptr_offset());
+    let b = self.fb.ins().load(types::I8, flags, data, 0);
+    let code = self.fb.ins().uextend(types::I64, b);
+    let f = self.fb.ins().fcvt_from_sint(types::F64, code);
+    self.fb.ins().jump(done, &[f.into()]);
+    self.fb.switch_to_block(slow);
+    let bits = self.call_pure("zuri_jit_str_ord", &[self.vm, s]);
+    let f = self.to_f64(bits);
+    self.fb.ins().jump(done, &[f.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `length()` on whatever `v` turns out to be: a list's, a string's, a
+  /// byte stream's or a dict's, and -1 for anything without one.
+  fn obj_length(&mut self, v: IrValue) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+    let none = self.fb.ins().iconst(types::I64, -1);
+    let is_obj = self.is_obj(v);
+    let tagged = self.fb.create_block();
+    self.fb.ins().brif(is_obj, tagged, &[], done, &[none.into()]);
+    self.fb.switch_to_block(tagged);
+    let p = self.obj_ptr(v);
+    let tag = self.fb.ins().load(types::I8, flags, p, 0);
+    let cases: [(u8, fn(&mut Self, IrValue, IrValue) -> IrValue); 4] = [
+      (object::OBJ_TAG_LIST, |l, p, _| {
+        let len32 = l.fb.ins().load(types::I32, MemFlagsData::trusted(), p, object::obj_list_len_offset());
+        l.fb.ins().uextend(types::I64, len32)
+      }),
+      (object::OBJ_TAG_STR, |l, p, _| l.str_length(p)),
+      (object::OBJ_TAG_BYTES, |l, p, _| {
+        l.fb.ins().load(types::I64, MemFlagsData::trusted(), p, object::obj_bytes_len_offset())
+      }),
+      (object::OBJ_TAG_DICT, |l, _, v| l.call_pure("zuri_jit_dict_len", &[l.vm, v])),
+    ];
+    for (want, count) in cases {
+      let hit = self.fb.ins().icmp_imm_s(IntCC::Equal, tag, want as i64);
+      let yes = self.fb.create_block();
+      let next = self.fb.create_block();
+      self.fb.ins().brif(hit, yes, &[], next, &[]);
+      self.fb.switch_to_block(yes);
+      let n = count(self, p, v);
+      self.fb.ins().jump(done, &[n.into()]);
+      self.fb.switch_to_block(next);
+    }
+    self.fb.ins().jump(done, &[none.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `get(idx, fallback)` on a list. The load sits behind a real branch:
+  /// past the end there may be no buffer to read.
+  fn list_get_or(&mut self, list: IrValue, idx: IrValue, fallback: IrValue) -> IrValue {
+    let flags = MemFlagsData::trusted();
+    let len32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_len_offset());
+    let len = self.fb.ins().uextend(types::I64, len32);
+    let inside = self.fb.ins().icmp(IntCC::UnsignedLessThan, idx, len);
+    let load = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+    self.fb.ins().brif(inside, load, &[], done, &[fallback.into()]);
+    self.fb.switch_to_block(load);
+    let data = self.list_data(list);
+    let off = self.fb.ins().imul_imm_s(idx, 8);
+    let addr = self.fb.ins().iadd(data, off);
+    let v = self.fb.ins().load(types::I64, flags, addr, 0);
+    self.fb.ins().jump(done, &[v.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// The iteration protocol's next key over `len` positions.
+  fn next_key(&mut self, prev: IrValue, len: IrValue) -> IrValue {
+    let nil = self.u64c(value::NIL_VAL);
+    let invalid = self.u64c(super::NO_VALUE);
+    let is_nil = self.fb.ins().icmp(IntCC::Equal, prev, nil);
+    let is_num = self.is_number(prev);
+
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    let empty = self.fb.ins().icmp(IntCC::Equal, len, zero);
+    let zero_f = self.fb.ins().f64const(0.0);
+    let first = self.from_f64(zero_f);
+    let after_nil = self.fb.ins().select(empty, nil, first);
+
+    let f = self.to_f64(prev);
+    let k = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    let last = self.fb.ins().iadd_imm_s(len, -1);
+    let below = self.fb.ins().icmp(IntCC::SignedLessThan, k, last);
+    let from_zero = self.fb.ins().icmp(IntCC::SignedGreaterThanOrEqual, k, zero);
+    let more = self.fb.ins().band(below, from_zero);
+    let next = self.fb.ins().iadd_imm_s(k, 1);
+    let next_f = self.fb.ins().fcvt_from_sint(types::F64, next);
+    let next_v = self.from_f64(next_f);
+    let after_num = self.fb.ins().select(more, next_v, nil);
+
+    let known = self.fb.ins().select(is_num, after_num, invalid);
+    self.fb.ins().select(is_nil, after_nil, known)
+  }
+
+  /// A range's lower bound, its step (a positive one, 1 standing in for
+  /// any other), whether it counts up, and how many values it yields.
+  fn range_shape(&mut self, r: IrValue) -> (IrValue, IrValue, IrValue, IrValue) {
+    let flags = MemFlagsData::trusted();
+    let lower = self.fb.ins().load(types::F64, flags, r, object::obj_range_lower_offset());
+    let upper = self.fb.ins().load(types::F64, flags, r, object::obj_range_upper_offset());
+    let step = self.fb.ins().load(types::F64, flags, r, object::obj_range_step_offset());
+    let zero = self.fb.ins().f64const(0.0);
+    let one = self.fb.ins().f64const(1.0);
+    let positive = self.fb.ins().fcmp(FloatCC::GreaterThan, step, zero);
+    let step = self.fb.ins().select(positive, step, one);
+    let diff = self.fb.ins().fsub(upper, lower);
+    let width = self.fb.ins().fabs(diff);
+    let steps = self.fb.ins().fdiv(width, step);
+    let count = self.fb.ins().ceil(steps);
+    let forward = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, upper, lower);
+    (lower, step, forward, count)
+  }
+
+  /// A range's value at position `pos`, or nil past its end.
+  fn range_at(&mut self, r: IrValue, pos: IrValue) -> IrValue {
+    let (lower, step, forward, count) = self.range_shape(r);
+    let zero = self.fb.ins().f64const(0.0);
+    let from_zero = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, pos, zero);
+    let below = self.fb.ins().fcmp(FloatCC::LessThan, pos, count);
+    let inside = self.fb.ins().band(from_zero, below);
+    let delta = self.fb.ins().fmul(pos, step);
+    let up = self.fb.ins().fadd(lower, delta);
+    let down = self.fb.ins().fsub(lower, delta);
+    let v = self.fb.ins().select(forward, up, down);
+    let v = self.from_f64(v);
+    let nil = self.u64c(value::NIL_VAL);
+    self.fb.ins().select(inside, v, nil)
+  }
+
+  /// A small list, bumped out of the nursery inline, with the reloads
+  /// that follow it: they read memory only on the path where the runtime
+  /// made the list instead and may have collected.
+  fn lower_new_list(&mut self, id: InstId, reloads: &[InstId]) -> Result<(), String> {
+    let inst = self.ir.inst(id).clone();
+    let Op::NewList { dst, start, count, frame } = inst.op else {
+      unreachable!()
+    };
+    let state = inst.state.as_ref().unwrap();
+    let flags = MemFlagsData::trusted();
+    let vm = self.vm;
+
+    let slow = self.fb.create_block();
+    let join = self.fb.create_block();
+    self.fb.append_block_param(join, types::I64);
+    for &r in reloads {
+      let result = self.ir.inst(r).result.unwrap();
+      self.fb.append_block_param(join, cl_type(self.ir.ty(result)));
+    }
+
+    // Room in the nursery, and on the finalization list every list joins
+    // since it may spill to a buffer of its own later.
+    let cur = self.fb.ins().load(types::I64, flags, vm, HEAP_NURSERY_CUR_OFFSET);
+    let end = self.fb.ins().load(types::I64, flags, vm, HEAP_NURSERY_END_OFFSET);
+    let fcur = self.fb.ins().load(types::I64, flags, vm, HEAP_FINALIZE_CUR_OFFSET);
+    let fend = self.fb.ins().load(types::I64, flags, vm, HEAP_FINALIZE_END_OFFSET);
+    let full = self.fb.ins().icmp(IntCC::Equal, cur, end);
+    let fin_full = self.fb.ins().icmp(IntCC::Equal, fcur, fend);
+    let no_room = self.fb.ins().bor(full, fin_full);
+    let fast = self.fb.create_block();
+    self.fb.ins().brif(no_room, slow, &[], fast, &[]);
+
+    self.fb.switch_to_block(fast);
+    let size = 48 + count as i64 * 8;
+    let next = self.fb.ins().iadd_imm_s(cur, 64);
+    self.fb.ins().store(flags, next, vm, HEAP_NURSERY_CUR_OFFSET);
+    self.fb.ins().store(flags, cur, fcur, 0);
+    let fnext = self.fb.ins().iadd_imm_s(fcur, 8);
+    self.fb.ins().store(flags, fnext, vm, HEAP_FINALIZE_CUR_OFFSET);
+    for (offset, delta) in [(HEAP_LIVE_COUNT_OFFSET, 1), (HEAP_BYTES_ALLOCATED_OFFSET, size)] {
+      let old = self.fb.ins().load(types::I64, flags, vm, offset);
+      let new = self.fb.ins().iadd_imm_s(old, delta);
+      self.fb.ins().store(flags, new, vm, offset);
+    }
+    let young = self.fb.ins().load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let young = self.fb.ins().iadd_imm_s(young, size);
+    self.fb.ins().store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    // Owe a collection once the young budget is spent; the next
+    // safepoint pays it.
+    let budget = self.u64c(self.ir.young_budget);
+    let owed = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, young, budget);
+    let flag = self.fb.ins().load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let flag = self.fb.ins().bor(flag, owed);
+    self.fb.ins().store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let header = self.fb.ins().load(types::I64, flags, vm, HEAP_YOUNG_HEADER_OFFSET);
+    self.fb.ins().store(flags, header, cur, 0);
+    let zero = self.u64c(0);
+    self.fb.ins().store(flags, zero, cur, 8);
+    // The `Obj::List` payload: tag, borrow flag, no heap buffer, the
+    // length with a capacity of zero, then the inline elements.
+    let tag = self.u64c(object::OBJ_TAG_LIST as u64);
+    self.fb.ins().store(flags, tag, cur, 16);
+    self.fb.ins().store(flags, zero, cur, 24);
+    self.fb.ins().store(flags, zero, cur, 32);
+    let len = self.u64c(count as u64);
+    self.fb.ins().store(flags, len, cur, 40);
+    let nil = self.u64c(value::NIL_VAL);
+    for k in 0..2usize {
+      let v = match inst.args.get(k) {
+        Some(&a) => self.tagged_of(a),
+        None => nil,
+      };
+      self.fb.ins().store(flags, v, cur, 48 + 8 * k as i32);
+    }
+    let obj = self.fb.ins().iadd_imm_s(cur, 16);
+    let mask = self.u64c(value::QNAN | value::SIGN_BIT);
+    let list = self.fb.ins().bor(obj, mask);
+    let mut kept = vec![list.into()];
+    for &r in reloads {
+      kept.push(self.v(self.ir.inst(r).args[0]).into());
+    }
+    self.fb.ins().jump(join, &kept);
+
+    self.fb.switch_to_block(slow);
+    self.fb.set_cold_block(slow);
+    self.publish_ip(state.ip, frame);
+    self.flush(state);
+    let base = self.frame_base(frame);
+    let (dst_c, start_c, count_c) = (self.u64c(dst as u64), self.u64c(start as u64), self.u64c(count as u64));
+    let status = self.call("zuri_jit_make_list", &[vm, base, dst_c, start_c, count_c]);
+    self.leave_on_error(status);
+    self.refresh_regs();
+    let offset = self.ir.frames[frame as usize].offset;
+    let made = self.load_reg(offset + dst);
+    let mut fresh = vec![made.into()];
+    for &r in reloads {
+      let Op::Reload { reg } = self.ir.inst(r).op else {
+        unreachable!()
+      };
+      fresh.push(self.load_reg(reg).into());
+    }
+    self.fb.ins().jump(join, &fresh);
+
+    self.fb.switch_to_block(join);
+    let params = self.fb.block_params(join).to_vec();
+    self.def(inst.result, params[0]);
+    for (&r, &p) in reloads.iter().zip(&params[1..]) {
+      let result = self.ir.inst(r).result;
+      self.def(result, p);
+    }
+    Ok(())
   }
 
   /// Whether `v` is a closure over the function whose `Value` bits are

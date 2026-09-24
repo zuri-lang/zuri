@@ -55,7 +55,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
   for &b in body {
     for &i in &f.block(b).insts {
       match f.inst(i).op {
-        Op::StoreElem => writes_elems = true,
+        Op::StoreElem | Op::BytesStore => writes_elems = true,
         Op::ListAppend => {
           writes_lists = true;
           writes_elems = true;
@@ -127,6 +127,8 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
       let movable = match &inst.op {
         Op::Guard(_) => every_iteration(b),
         Op::ListLen | Op::ListData => every_iteration(b) && !collects && !writes_lists,
+        Op::BytesLen => every_iteration(b) && !collects,
+        Op::BytesLoad => every_iteration(b) && !collects && !writes_elems,
         Op::LoadElem => every_iteration(b) && !collects && !writes_elems,
         Op::LoadField(_) => every_iteration(b) && !collects && !writes_fields,
         Op::LoadGlobal(_) => every_iteration(b) && !collects && !writes_globals,
@@ -235,5 +237,15 @@ pub(super) fn is_pure(op: &Op) -> bool {
       | Op::FMin
       | Op::FTest(_)
       | Op::FCall(_)
+      | Op::StrAscii
+      | Op::StrByteLen
+      | Op::StrLength
+      | Op::StrOrd
+      | Op::WrapIndex
+      | Op::GetIndex
+      | Op::IsBits(_)
+      | Op::NextKey
+      | Op::RangeCount
+      | Op::RangeAt
   )
 }

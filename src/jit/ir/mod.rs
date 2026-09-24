@@ -110,6 +110,11 @@ impl Cmp {
   }
 }
 
+/// Bits no Zuri value has: an object at a null address. An operation
+/// answers this where the method it stands for would raise or has no
+/// answer, and a guard after it sends that case to the interpreter.
+pub const NO_VALUE: u64 = crate::vm::value::QNAN | crate::vm::value::SIGN_BIT;
+
 /// Where compiled code resumes in the interpreter, and what every live
 /// register holds at that point.
 ///
@@ -219,6 +224,9 @@ pub enum GuardKind {
   /// The value is an instance of the class whose `Value` bits are given.
   /// Produces its object pointer.
   Instance(u64),
+  /// The value is a heap object with this `object::OBJ_TAG_*` tag: a
+  /// string, bytes, dict or range. Produces its object pointer.
+  Tag(u8),
   /// An `I64` index is inside `0..len`, where `len` is the second
   /// operand. Produces nothing.
   Bounds,
@@ -245,7 +253,7 @@ impl GuardKind {
       GuardKind::Number => Some(Ty::F64),
       GuardKind::Int => Some(Ty::I64),
       GuardKind::Bool => Some(Ty::Bool),
-      GuardKind::List | GuardKind::Instance(_) => Some(Ty::Ptr),
+      GuardKind::List | GuardKind::Instance(_) | GuardKind::Tag(_) => Some(Ty::Ptr),
       GuardKind::Bounds
       | GuardKind::True
       | GuardKind::Param { .. }
@@ -370,6 +378,76 @@ pub enum Op {
   /// pointer, value.
   StoreField(u16),
 
+  /// Whether a string holds only ASCII, so that its byte length is its
+  /// length and its byte at an index is its character there. Classifies
+  /// the string, flattening a rope, the first time anything asks. A
+  /// string never changes, so neither does the answer. Operand: string
+  /// pointer.
+  StrAscii,
+  /// A flat string's byte length. Operand: string pointer.
+  StrByteLen,
+  /// The byte at an index of a flat string. Operands: string pointer,
+  /// index.
+  StrByte,
+  /// The one-character string for an ASCII byte, from the VM's own
+  /// table. Operand: the byte.
+  AsciiChar,
+  /// `length()` on a string: its codepoint count, which a rope keeps
+  /// without being flattened. Operand: string pointer.
+  StrLength,
+  /// `ord()` on a string, as an `F64`: NaN where the method would raise,
+  /// for a guard to catch. Operand: string pointer.
+  StrOrd,
+  /// An index counted from the end when it is negative: `idx + len`
+  /// then, `idx` otherwise. Operands: index, length.
+  WrapIndex,
+  /// The index `get()` reads: the number with its fraction dropped, or
+  /// -1 for a negative number or NaN, which no length admits. Operand:
+  /// an `F64`.
+  GetIndex,
+  /// A byte stream's length. Operand: bytes pointer.
+  BytesLen,
+  /// The byte at an index. Operands: bytes pointer, index.
+  BytesLoad,
+  /// Stores a byte. Operands: bytes pointer, index, the byte as an
+  /// `I64` already checked to be in range.
+  BytesStore,
+  /// `get(idx, fallback)` on a list: the element, or the fallback when
+  /// the index is out of range. Operands: list pointer, index, fallback.
+  ListGetOr,
+  /// A dict's value for a key, or the fallback when it has none.
+  /// Operands: dict, key, fallback.
+  DictGet,
+  /// Sets a dict's value for a key, with the write barrier. Growing the
+  /// table takes memory outside the collected heap, so this never
+  /// collects. Operands: dict, key, value.
+  DictSet,
+  /// Whether a dict has a key. Operands: dict, key.
+  DictContains,
+  /// A dict's entry count. Operand: dict.
+  DictLen,
+  /// `length()` on a list, string, bytes or dict, whichever it is, or -1
+  /// for anything else. Operand: the value.
+  ObjLength,
+  /// Whether a `Tagged` is exactly the given bits.
+  IsBits(u64),
+  /// The iteration protocol's next key for a sequence of the given
+  /// length: 0 after nil (nil for an empty one), `k + 1` after `k` while
+  /// that is in range, nil at the end. `NO_VALUE` for a key that is
+  /// neither nil nor a number. Operands: previous key, length.
+  NextKey,
+  /// How many values a range yields. Operand: range pointer.
+  RangeCount,
+  /// The range's value at a position, or nil past the end. Operands:
+  /// range pointer, position as an `F64`.
+  RangeAt,
+  /// A list of up to two elements, allocated inline in the nursery. The
+  /// runtime makes it instead when the nursery is full, which may
+  /// collect, so the reloads after it read memory only then. `dst`,
+  /// `start` and `count` are the `MakeList` instruction's own, in
+  /// `frame`. Operands: the elements.
+  NewList { dst: u8, start: u8, count: u8, frame: u16 },
+
   /// Writes a register straight to the register file. A register some
   /// closure here captures is read there by the closure, so every value
   /// it takes goes to memory as it is made. Operand: the value.
@@ -407,7 +485,7 @@ impl Op {
   /// Every value derived from a heap pointer before one of these is
   /// stale after it.
   pub fn may_collect(&self) -> bool {
-    matches!(self, Op::Generic { .. } | Op::Safepoint)
+    matches!(self, Op::Generic { .. } | Op::Safepoint | Op::NewList { .. })
   }
 
   /// Whether this operation reads or writes memory another operation
@@ -421,6 +499,16 @@ impl Op {
         | Op::LoadElem
         | Op::ListEnd { .. }
         | Op::ListAppend
+        | Op::ListGetOr
+        | Op::BytesLen
+        | Op::BytesLoad
+        | Op::BytesStore
+        | Op::DictGet
+        | Op::DictSet
+        | Op::DictContains
+        | Op::DictLen
+        | Op::ObjLength
+        | Op::NewList { .. }
         | Op::StoreElem
         | Op::LoadField(_)
         | Op::StoreField(_)
@@ -447,6 +535,9 @@ impl Op {
       self,
       Op::Guard(_)
         | Op::ListAppend
+        | Op::BytesStore
+        | Op::DictSet
+        | Op::NewList { .. }
         | Op::StoreElem
         | Op::StoreField(_)
         | Op::StoreGlobal(_)
@@ -568,6 +659,9 @@ pub struct Func {
   /// built in. The register file has to reach this far, and a collection
   /// has to look this far, while the function runs.
   pub extent: usize,
+  /// How many young bytes may be allocated before a collection is owed,
+  /// as the heap had it when the function was compiled.
+  pub young_budget: u64,
   /// Loop header ip to its on-stack-replacement id, matching what the
   /// interpreter looks up to jump into compiled code mid-loop.
   pub osr_ids: FxHashMap<usize, i32>,
@@ -590,6 +684,7 @@ impl Func {
       entry: BlockId(0),
       num_registers,
       extent: num_registers,
+      young_budget: 0,
       osr_ids: FxHashMap::default(),
       osr_entries: Vec::new(),
       frames: vec![InlineFrame {

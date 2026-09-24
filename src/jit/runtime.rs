@@ -3008,6 +3008,46 @@ pub unsafe extern "C" fn zuri_jit_call_native(
 /// is what lets `codegen` reach it through `call_helper_raw` (no
 /// flush/stale bracketing) instead of the register-cache-invalidating
 /// `call_helper`. Always returns `OK`; it has no failure mode.
+/// Whether the string `str_ptr` points at is all ASCII, as 1 or 0,
+/// classifying it and flattening a rope the first time anything asks.
+/// Neither allocates on the collected heap, so this never collects.
+///
+/// # Safety
+///
+/// `str_ptr` is a live string object's pointer.
+pub unsafe extern "C" fn zuri_jit_str_ascii(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+  Value::obj(str_ptr as *const crate::vm::object::Obj).str_is_ascii() as u64
+}
+
+/// `length()` on a string: its codepoint count, which a rope keeps
+/// without being flattened. Reads only.
+///
+/// # Safety
+///
+/// `str_ptr` is a live string object's pointer.
+pub unsafe extern "C" fn zuri_jit_str_length(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+  match unsafe { &*(str_ptr as *const crate::vm::object::Obj) } {
+    crate::vm::object::Obj::Str(s) => s.char_len() as u64,
+    _ => 0,
+  }
+}
+
+/// `ord()` on a string, as `f64` bits: the codepoint of its one
+/// character, or NaN when it does not have exactly one, where the method
+/// raises.
+///
+/// # Safety
+///
+/// `str_ptr` is a live string object's pointer.
+pub unsafe extern "C" fn zuri_jit_str_ord(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+  let s = Value::obj(str_ptr as *const crate::vm::object::Obj);
+  let mut chars = s.as_str().chars();
+  match (chars.next(), chars.next()) {
+    (Some(c), None) => (c as u32 as f64).to_bits(),
+    _ => f64::NAN.to_bits(),
+  }
+}
+
 /// `append()` on a list with no room left: grows it and adds `item`,
 /// with the write barrier. Growing takes memory outside the collected
 /// heap, so this never collects.
@@ -3153,6 +3193,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec3!(zuri_jit_blame),
     spec2!(zuri_jit_ensure_registers),
     spec3!(zuri_jit_list_push),
+    spec2!(zuri_jit_str_ascii),
+    spec2!(zuri_jit_str_length),
+    spec2!(zuri_jit_str_ord),
     spec3!(zuri_jit_materialize_list),
     spec4!(zuri_jit_materialize_instance),
     spec2!(zuri_jit_is_falsey),

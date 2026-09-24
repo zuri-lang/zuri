@@ -29,9 +29,10 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
-  BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame, Op,
-  Terminator, Ty, ValueId,
+  BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame, NO_VALUE,
+  Op, Terminator, Ty, ValueId,
 };
+use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_DICT, OBJ_TAG_RANGE, OBJ_TAG_STR};
 use crate::jit::typeflow;
 use crate::vm::chunk::{Instr, ParamType, kind};
 use crate::vm::object::ObjFunction;
@@ -67,6 +68,8 @@ pub struct Feedback {
   /// For a method call site whose cache holds a class, the method that
   /// class resolves it to.
   pub invoke_callees: FxHashMap<usize, Box<Callee>>,
+  /// How many young bytes may be allocated before a collection is owed.
+  pub young_budget: u64,
 }
 
 /// A function a call can be built into its caller from.
@@ -99,6 +102,9 @@ enum Known {
   Bool,
   List,
   Instance(u64),
+  /// A heap object with this `object::OBJ_TAG_*` tag: a string, bytes,
+  /// dict or range.
+  Tag(u8),
 }
 
 impl Known {
@@ -162,6 +168,11 @@ struct Frame<'a> {
   feedback: &'a Feedback,
   code: &'a [Instr],
   live: typeflow::LivenessFacts,
+  /// What the baseline tier proves about strings, dicts and bytes here,
+  /// so this tier takes each of them at least wherever that one does.
+  strings: typeflow::StringFacts,
+  dicts: typeflow::DictFacts,
+  bytes: typeflow::BytesFacts,
   /// The IR block each bytecode leader starts. Empty for a callee built
   /// straight into its caller's block.
   leader_block: FxHashMap<usize, BlockId>,
@@ -216,6 +227,9 @@ impl<'a> Frame<'a> {
       feedback,
       code,
       live,
+      strings: typeflow::analyze_string(proto, &preds),
+      dicts: typeflow::analyze_dict(proto, &preds),
+      bytes: typeflow::analyze_bytes(proto, &preds),
       leader_block: FxHashMap::default(),
       id,
       offset,
@@ -431,6 +445,7 @@ impl<'a> Builder<'a> {
     self.build_blocks(&leaders)?;
     self.place_safepoints();
     self.func.extent = self.extent;
+    self.func.young_budget = self.func_feedback.young_budget;
     Ok(self.func)
   }
 
@@ -710,6 +725,18 @@ impl<'a> Builder<'a> {
   /// value's kind carries over. The frames around this one get the same
   /// treatment for the registers they still need.
   fn after_collect(&mut self, next_ip: usize, written: Option<u8>) {
+    self.reload_live(next_ip, written);
+    if let Some(dst) = written {
+      let at = self.at(dst);
+      let fresh = self.value(Op::Reload { reg: at }, vec![], Ty::Tagged);
+      self.regs[at as usize] = RegView::tagged(fresh);
+    }
+  }
+
+  /// `after_collect` for everything but `skip`, which the operation
+  /// itself defines.
+  fn reload_live(&mut self, next_ip: usize, skip: Option<u8>) {
+    let written = skip;
     let live: FxHashSet<u8> = if next_ip < self.cx.code.len() {
       self.cx.live.live_regs_at(next_ip).collect()
     } else {
@@ -729,10 +756,28 @@ impl<'a> Builder<'a> {
     for at in self.cx.outer.clone() {
       self.reload(at);
     }
-    if let Some(dst) = written {
-      let at = self.at(dst);
-      let fresh = self.value(Op::Reload { reg: at }, vec![], Ty::Tagged);
-      self.regs[at as usize] = RegView::tagged(fresh);
+  }
+
+  /// Makes sure every register `reload_live` would read back already has
+  /// its tagged form, so the reloads it emits follow the operation that
+  /// needs them with nothing in between.
+  fn tag_live(&mut self, next_ip: usize, skip: u8) {
+    let mut regs: Vec<u8> = if next_ip < self.cx.code.len() {
+      self
+        .cx
+        .live
+        .live_regs_at(next_ip)
+        .filter(|&r| r != skip)
+        .map(|r| self.cx.offset + r)
+        .collect()
+    } else {
+      Vec::new()
+    };
+    regs.extend(self.cx.outer.iter().copied());
+    for at in regs {
+      if self.captured[at as usize] || self.regs[at as usize].known.may_be_object() {
+        self.tagged_at(at);
+      }
     }
   }
 
@@ -827,8 +872,12 @@ impl<'a> Builder<'a> {
       },
       Instr::Call { .. } if seen != 0 => Some("a call"),
       Instr::Invoke { .. } if seen != 0 => Some("a method call"),
-      Instr::GetIndex { .. } | Instr::SetIndex { .. } if seen != 0 => Some("an index"),
-      Instr::MakeList { count, .. } if *count <= 2 => Some("a small list"),
+      // The baseline tier has inline paths for lists and strings, which
+      // it takes whenever a site has seen one; an index on anything else
+      // it has not proven goes through the same helper either way.
+      Instr::GetIndex { .. } | Instr::SetIndex { .. } if seen & (kind::LIST | kind::STRING) != 0 => {
+        Some("an index")
+      },
       Instr::CheckParamType { .. } => Some("a parameter check"),
       _ => None,
     }
@@ -875,10 +924,17 @@ impl<'a> Builder<'a> {
       "first" => ListMethod::First,
       "last" => ListMethod::Last,
       "append" => ListMethod::Append,
+      "get" => ListMethod::Get,
+      "@key" => ListMethod::Key,
+      "@value" => ListMethod::Value,
       _ => return None,
     };
-    let arity = if matches!(method, ListMethod::Append) { 1 } else { 0 };
-    (num_args == arity).then_some(method)
+    let fits = match method {
+      ListMethod::Append | ListMethod::Key | ListMethod::Value => num_args == 1,
+      ListMethod::Get => num_args == 1 || num_args == 2,
+      _ => num_args == 0,
+    };
+    fits.then_some(method)
   }
 
   fn list_invoke_site(&self, ip: usize) -> bool {
@@ -908,6 +964,9 @@ impl<'a> Builder<'a> {
         } else {
           let t = self.value(Op::ConstTagged(c.to_bits()), vec![], Ty::Tagged);
           self.set_tagged(dst, t);
+          if c.is_string() {
+            self.view_mut(dst).known = Known::Tag(OBJ_TAG_STR);
+          }
         }
       },
       Instr::LoadNil { dst } => {
@@ -1193,6 +1252,40 @@ impl<'a> Builder<'a> {
         self.push(Op::StoreField(slot), vec![p, v], None, None);
       },
 
+      Instr::MakeList { dst, start, count } if count <= 2 => self.new_list(ip, dst, start, count),
+      Instr::GetIndex { dst, obj, idx } if self.index_tag(ip, obj).is_some() => {
+        let tag = self.index_tag(ip, obj).unwrap();
+        self.tagged_get_index(ip, tag, dst, obj, idx);
+      },
+      Instr::SetIndex { obj, idx, src } if self.index_tag(ip, obj).is_some_and(|t| t != OBJ_TAG_STR) => {
+        let tag = self.index_tag(ip, obj).unwrap();
+        self.tagged_set_index(ip, tag, obj, idx, src);
+      },
+      Instr::Invoke {
+        dst,
+        obj,
+        method_const,
+        num_args,
+      } if self.builtin_method(ip, obj, method_const, num_args).is_some() => {
+        let (tag, method) = self.builtin_method(ip, obj, method_const, num_args).unwrap();
+        self.call_builtin(ip, tag, method, dst, obj, num_args);
+      },
+      Instr::Invoke {
+        dst,
+        obj,
+        method_const,
+        num_args: 0,
+      } if self.any_length(ip, method_const).is_some() => {
+        let method = self.any_length(ip, method_const).unwrap();
+        let v = self.tagged(obj);
+        let n = self.value(Op::ObjLength, vec![v], Ty::I64);
+        // Anything with no length takes the method's own path.
+        let zero = self.value(Op::ConstI64(0), vec![], Ty::I64);
+        let ok = self.value(Op::ICmp(Cmp::Ge), vec![n, zero], Ty::Bool);
+        let state = self.state(ip);
+        self.push(Op::Guard(GuardKind::True), vec![ok], None, Some(state));
+        self.length_result(dst, n, method);
+      },
       Instr::Invoke {
         dst,
         obj,
@@ -1226,6 +1319,33 @@ impl<'a> Builder<'a> {
             self.push(Op::ListAppend, vec![p, item], None, None);
             let nil = self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged);
             self.set_tagged(dst, nil);
+          },
+          ListMethod::Get => {
+            let i = self.get_index(obj + 2, ip);
+            if num_args == 2 {
+              let fallback = self.tagged(obj + 3);
+              let v = self.value(Op::ListGetOr, vec![p, i, fallback], Ty::Tagged);
+              self.set_tagged(dst, v);
+            } else {
+              // Past the end, `get` with no fallback raises.
+              let len = self.value(Op::ListLen, vec![p], Ty::I64);
+              let state = self.state(ip);
+              self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+              let data = self.value(Op::ListData, vec![p], Ty::Ptr);
+              let v = self.value(Op::LoadElem, vec![data, i], Ty::Tagged);
+              self.set_tagged(dst, v);
+            }
+          },
+          ListMethod::Key => {
+            let len = self.value(Op::ListLen, vec![p], Ty::I64);
+            self.next_key(ip, dst, obj, len);
+          },
+          ListMethod::Value => {
+            let f = self.num(obj + 2, ip);
+            let i = self.value(Op::GetIndex, vec![f], Ty::I64);
+            let nil = self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged);
+            let v = self.value(Op::ListGetOr, vec![p, i, nil], Ty::Tagged);
+            self.set_tagged(dst, v);
           },
         }
       },
@@ -1328,6 +1448,339 @@ impl<'a> Builder<'a> {
     let known = self.view(obj).known == Known::Number;
     (known || self.numeric_site(ip) && self.cx.feedback.kinds.get(ip).is_some_and(|&k| k != 0))
       .then_some(method)
+  }
+
+  // --- strings, bytes, dicts and ranges ----------------------------------
+
+  /// The kind of heap object register `r` holds at `ip`, when something
+  /// proves it: what the builder knows, or what the baseline tier proves.
+  fn proven_tag(&self, ip: usize, r: u8) -> Option<u8> {
+    if let Known::Tag(t) = self.view(r).known {
+      return Some(t);
+    }
+    if self.cx.strings.is_string(ip, r) {
+      return Some(OBJ_TAG_STR);
+    }
+    if self.cx.dicts.is_dict(ip, r) {
+      return Some(OBJ_TAG_DICT);
+    }
+    if self.cx.bytes.is_bytes(ip, r) {
+      return Some(OBJ_TAG_BYTES);
+    }
+    None
+  }
+
+  /// `r` as a pointer to an object with `tag`, checked unless proven.
+  fn tag_ptr(&mut self, r: u8, tag: u8, ip: usize) -> ValueId {
+    let view = self.view(r);
+    if let (Some(p), Known::Tag(t)) = (view.ptr, view.known)
+      && t == tag
+    {
+      return p;
+    }
+    let t = self.tagged(r);
+    let p = if self.proven_tag(ip, r) == Some(tag) {
+      self.value(Op::ObjPtr, vec![t], Ty::Ptr)
+    } else {
+      let state = self.state(ip);
+      self
+        .push(Op::Guard(GuardKind::Tag(tag)), vec![t], Some(Ty::Ptr), Some(state))
+        .unwrap()
+    };
+    let view = self.view_mut(r);
+    view.ptr = Some(p);
+    view.known = Known::Tag(tag);
+    p
+  }
+
+  /// The kind of object an index site reads or writes, when this tier
+  /// has a path for it: a proven string, dict or bytes, or a string the
+  /// site has only ever seen.
+  fn index_tag(&self, ip: usize, obj: u8) -> Option<u8> {
+    let feedback = self.cx.feedback;
+    if feedback.sites_off || !feedback.open(ip) {
+      return None;
+    }
+    let tag = self.proven_tag(ip, obj);
+    let tag = tag.or_else(|| (feedback.kinds.get(ip) == Some(&kind::STRING)).then_some(OBJ_TAG_STR));
+    tag.filter(|&t| matches!(t, OBJ_TAG_STR | OBJ_TAG_DICT | OBJ_TAG_BYTES))
+  }
+
+  /// A method call on a string, bytes, dict or range this tier answers
+  /// itself, with the receiver kind to check for.
+  fn builtin_method(&self, ip: usize, obj: u8, method_const: u16, num_args: u8) -> Option<(u8, Builtin)> {
+    let feedback = self.cx.feedback;
+    let name = self.cx.proto.chunk.constants[method_const as usize];
+    if !name.is_string() || feedback.fields_off || !feedback.open(ip) {
+      return None;
+    }
+    let name = name.as_str();
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
+    let tag = self
+      .proven_tag(ip, obj)
+      .or_else(|| feedback.invokes.get(&ip).and_then(|&k| crate::builtins::method_key_tag(k)))
+      .or_else(|| (seen == kind::STRING).then_some(OBJ_TAG_STR))
+      .or_else(|| (seen == kind::OTHER).then(|| Builtin::likely_tag(name)).flatten())?;
+    Builtin::of(tag, name, num_args).map(|m| (tag, m))
+  }
+
+  /// `length()` or `is_empty()` on a receiver no one kind of which is
+  /// proven, where the site has only seen lists, strings and other heap
+  /// objects: checked at run time, as the baseline tier does.
+  fn any_length(&self, ip: usize, method_const: u16) -> Option<Builtin> {
+    let feedback = self.cx.feedback;
+    let name = self.cx.proto.chunk.constants[method_const as usize];
+    if !name.is_string() || feedback.fields_off || !feedback.open(ip) {
+      return None;
+    }
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
+    let containers = kind::LIST | kind::STRING | kind::OTHER;
+    if seen == 0 || seen & !containers != 0 || seen == kind::LIST || seen == kind::STRING {
+      return None;
+    }
+    match name.as_str() {
+      "length" => Some(Builtin::Length),
+      "is_empty" => Some(Builtin::IsEmpty),
+      _ => None,
+    }
+  }
+
+  fn call_builtin(&mut self, ip: usize, tag: u8, method: Builtin, dst: u8, obj: u8, num_args: u8) {
+    let p = self.tag_ptr(obj, tag, ip);
+    match (tag, method) {
+      (OBJ_TAG_STR, Builtin::Length | Builtin::IsEmpty) => {
+        let n = self.value(Op::StrLength, vec![p], Ty::I64);
+        self.length_result(dst, n, method);
+      },
+      (OBJ_TAG_DICT, Builtin::Length | Builtin::IsEmpty) => {
+        let d = self.tagged(obj);
+        let n = self.value(Op::DictLen, vec![d], Ty::I64);
+        self.length_result(dst, n, method);
+      },
+      (_, Builtin::Ord) => {
+        let code = self.value(Op::StrOrd, vec![p], Ty::F64);
+        // NaN is where the method raises.
+        let nan = self.value(Op::FTest(FTest::IsNan), vec![code], Ty::Bool);
+        let ok = self.value(Op::BNot, vec![nan], Ty::Bool);
+        let state = self.state(ip);
+        self.push(Op::Guard(GuardKind::True), vec![ok], None, Some(state));
+        self.set_num(dst, code);
+      },
+      (OBJ_TAG_DICT, Builtin::Get) => {
+        let d = self.tagged(obj);
+        let key = self.tagged(obj + 2);
+        let fallback = if num_args == 2 {
+          self.tagged(obj + 3)
+        } else {
+          self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged)
+        };
+        let v = self.value(Op::DictGet, vec![d, key, fallback], Ty::Tagged);
+        self.set_tagged(dst, v);
+      },
+      (_, Builtin::Get) => {
+        // A byte stream's `get`, which raises past the end.
+        let i = self.get_index(obj + 2, ip);
+        let len = self.value(Op::BytesLen, vec![p], Ty::I64);
+        let state = self.state(ip);
+        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        let b = self.value(Op::BytesLoad, vec![p, i], Ty::I64);
+        self.set_int(dst, b);
+      },
+      (_, Builtin::Set) => {
+        let d = self.tagged(obj);
+        let key = self.tagged(obj + 2);
+        let v = self.tagged(obj + 3);
+        self.push(Op::DictSet, vec![d, key, v], None, None);
+        let nil = self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged);
+        self.set_tagged(dst, nil);
+      },
+      (_, Builtin::Contains) => {
+        let d = self.tagged(obj);
+        let key = self.tagged(obj + 2);
+        let c = self.value(Op::DictContains, vec![d, key], Ty::Bool);
+        self.set_cond(dst, c);
+      },
+      (_, Builtin::Key) => {
+        let len = match tag {
+          OBJ_TAG_STR => {
+            self.ascii_only(p, ip);
+            self.value(Op::StrByteLen, vec![p], Ty::I64)
+          },
+          OBJ_TAG_BYTES => self.value(Op::BytesLen, vec![p], Ty::I64),
+          _ => self.value(Op::RangeCount, vec![p], Ty::I64),
+        };
+        self.next_key(ip, dst, obj, len);
+      },
+      (_, Builtin::Value) => {
+        let f = self.num(obj + 2, ip);
+        match tag {
+          OBJ_TAG_RANGE => {
+            let v = self.value(Op::RangeAt, vec![p, f], Ty::Tagged);
+            self.set_tagged(dst, v);
+          },
+          OBJ_TAG_STR => {
+            self.ascii_only(p, ip);
+            let i = self.value(Op::GetIndex, vec![f], Ty::I64);
+            let len = self.value(Op::StrByteLen, vec![p], Ty::I64);
+            let state = self.state(ip);
+            self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+            let b = self.value(Op::StrByte, vec![p, i], Ty::I64);
+            let c = self.value(Op::AsciiChar, vec![b], Ty::Tagged);
+            self.set_tagged(dst, c);
+            self.view_mut(dst).known = Known::Tag(OBJ_TAG_STR);
+          },
+          _ => {
+            let i = self.value(Op::GetIndex, vec![f], Ty::I64);
+            let len = self.value(Op::BytesLen, vec![p], Ty::I64);
+            let state = self.state(ip);
+            self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+            let b = self.value(Op::BytesLoad, vec![p, i], Ty::I64);
+            self.set_int(dst, b);
+          },
+        }
+      },
+      _ => unreachable!("Builtin::of only pairs a method with a kind that has it"),
+    }
+  }
+
+  /// `length()` or `is_empty()` from a count.
+  fn length_result(&mut self, dst: u8, n: ValueId, method: Builtin) {
+    if method == Builtin::Length {
+      self.set_int(dst, n);
+    } else {
+      let zero = self.value(Op::ConstI64(0), vec![], Ty::I64);
+      let empty = self.value(Op::ICmp(Cmp::Eq), vec![n, zero], Ty::Bool);
+      self.set_cond(dst, empty);
+    }
+  }
+
+  fn set_int(&mut self, r: u8, i: ValueId) {
+    *self.view_mut(r) = RegView {
+      int: Some(i),
+      known: Known::Number,
+      ..RegView::EMPTY
+    };
+  }
+
+  /// Checks that a string is ASCII, deoptimizing if not: the paths that
+  /// index one by the byte need a byte to be a character.
+  fn ascii_only(&mut self, s: ValueId, ip: usize) {
+    let ascii = self.value(Op::StrAscii, vec![s], Ty::Bool);
+    let state = self.state(ip);
+    self.push(Op::Guard(GuardKind::True), vec![ascii], None, Some(state));
+  }
+
+  /// The index `get()` takes from register `r`: a number, with the
+  /// fraction dropped and anything negative out of range.
+  fn get_index(&mut self, r: u8, ip: usize) -> ValueId {
+    let f = self.num(r, ip);
+    self.value(Op::GetIndex, vec![f], Ty::I64)
+  }
+
+  /// `@key` over `len` positions, into `dst`.
+  fn next_key(&mut self, ip: usize, dst: u8, obj: u8, len: ValueId) {
+    let prev = self.tagged(obj + 2);
+    let k = self.value(Op::NextKey, vec![prev, len], Ty::Tagged);
+    let invalid = self.value(Op::IsBits(NO_VALUE), vec![k], Ty::Bool);
+    let ok = self.value(Op::BNot, vec![invalid], Ty::Bool);
+    let state = self.state(ip);
+    self.push(Op::Guard(GuardKind::True), vec![ok], None, Some(state));
+    self.set_tagged(dst, k);
+  }
+
+  fn tagged_get_index(&mut self, ip: usize, tag: u8, dst: u8, obj: u8, idx: u8) {
+    let p = self.tag_ptr(obj, tag, ip);
+    match tag {
+      OBJ_TAG_STR => {
+        let i = self.int(idx, ip);
+        self.ascii_only(p, ip);
+        let len = self.value(Op::StrByteLen, vec![p], Ty::I64);
+        let state = self.state(ip);
+        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        let b = self.value(Op::StrByte, vec![p, i], Ty::I64);
+        let c = self.value(Op::AsciiChar, vec![b], Ty::Tagged);
+        self.set_tagged(dst, c);
+        self.view_mut(dst).known = Known::Tag(OBJ_TAG_STR);
+      },
+      OBJ_TAG_DICT => {
+        let d = self.tagged(obj);
+        let key = self.tagged(idx);
+        let none = self.value(Op::ConstTagged(NO_VALUE), vec![], Ty::Tagged);
+        let v = self.value(Op::DictGet, vec![d, key, none], Ty::Tagged);
+        // A missing key raises.
+        let missing = self.value(Op::IsBits(NO_VALUE), vec![v], Ty::Bool);
+        let ok = self.value(Op::BNot, vec![missing], Ty::Bool);
+        let state = self.state(ip);
+        self.push(Op::Guard(GuardKind::True), vec![ok], None, Some(state));
+        self.set_tagged(dst, v);
+      },
+      _ => {
+        let at = self.bytes_index(p, idx, ip);
+        let b = self.value(Op::BytesLoad, vec![p, at], Ty::I64);
+        self.set_int(dst, b);
+      },
+    }
+  }
+
+  fn tagged_set_index(&mut self, ip: usize, tag: u8, obj: u8, idx: u8, src: u8) {
+    let p = self.tag_ptr(obj, tag, ip);
+    if tag == OBJ_TAG_DICT {
+      let d = self.tagged(obj);
+      let key = self.tagged(idx);
+      let v = self.tagged(src);
+      self.push(Op::DictSet, vec![d, key, v], None, None);
+      return;
+    }
+    let at = self.bytes_index(p, idx, ip);
+    // A byte is a whole number from 0 to 255; anything else raises.
+    let b = self.int(src, ip);
+    let zero = self.value(Op::ConstI64(0), vec![], Ty::I64);
+    let top = self.value(Op::ConstI64(255), vec![], Ty::I64);
+    let low = self.value(Op::ICmp(Cmp::Ge), vec![b, zero], Ty::Bool);
+    let high = self.value(Op::ICmp(Cmp::Le), vec![b, top], Ty::Bool);
+    for ok in [low, high] {
+      let state = self.state(ip);
+      self.push(Op::Guard(GuardKind::True), vec![ok], None, Some(state));
+    }
+    self.push(Op::BytesStore, vec![p, at, b], None, None);
+  }
+
+  /// A byte stream index, counted from the end when negative and checked
+  /// to be in range.
+  fn bytes_index(&mut self, p: ValueId, idx: u8, ip: usize) -> ValueId {
+    let i = self.int(idx, ip);
+    let len = self.value(Op::BytesLen, vec![p], Ty::I64);
+    let at = self.value(Op::WrapIndex, vec![i, len], Ty::I64);
+    let state = self.state(ip);
+    self.push(Op::Guard(GuardKind::Bounds), vec![at, len], None, Some(state));
+    at
+  }
+
+  /// A list literal of up to two elements, allocated inline.
+  fn new_list(&mut self, ip: usize, dst: u8, start: u8, count: u8) {
+    let items: Vec<ValueId> = (0..count).map(|k| self.tagged(start + k)).collect();
+    self.tag_live(ip + 1, dst);
+    let state = self.state(ip);
+    let frame = self.cx.id;
+    let list = self
+      .push(
+        Op::NewList {
+          dst,
+          start,
+          count,
+          frame,
+        },
+        items,
+        Some(Ty::Tagged),
+        Some(state),
+      )
+      .unwrap();
+    self.reload_live(ip + 1, Some(dst));
+    *self.view_mut(dst) = RegView {
+      tagged: Some(list),
+      known: Known::List,
+      ..RegView::EMPTY
+    };
   }
 
   // --- calls built in place ---------------------------------------------
@@ -1707,6 +2160,62 @@ enum ListMethod {
   First,
   Last,
   Append,
+  Get,
+  /// The iteration protocol's `@key` and `@value`.
+  Key,
+  Value,
+}
+
+/// A method of a string, bytes, dict or range compiled to operations of
+/// its own, the same set the baseline tier handles inline.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Builtin {
+  Length,
+  IsEmpty,
+  Ord,
+  Get,
+  Set,
+  Contains,
+  Key,
+  Value,
+}
+
+impl Builtin {
+  /// The method `name` is on receivers with `tag`, when it is one of
+  /// these and takes `num_args` arguments.
+  fn of(tag: u8, name: &str, num_args: u8) -> Option<Builtin> {
+    let method = match (tag, name) {
+      (OBJ_TAG_STR | OBJ_TAG_DICT, "length") => Builtin::Length,
+      (OBJ_TAG_STR | OBJ_TAG_DICT, "is_empty") => Builtin::IsEmpty,
+      (OBJ_TAG_STR, "ord") => Builtin::Ord,
+      (OBJ_TAG_DICT | OBJ_TAG_BYTES, "get") => Builtin::Get,
+      (OBJ_TAG_DICT, "set" | "add") => Builtin::Set,
+      (OBJ_TAG_DICT, "contains") => Builtin::Contains,
+      (OBJ_TAG_STR | OBJ_TAG_BYTES | OBJ_TAG_RANGE, "@key") => Builtin::Key,
+      (OBJ_TAG_STR | OBJ_TAG_BYTES | OBJ_TAG_RANGE, "@value") => Builtin::Value,
+      _ => return None,
+    };
+    let fits = match method {
+      Builtin::Length | Builtin::IsEmpty | Builtin::Ord => num_args == 0,
+      Builtin::Set => num_args == 2,
+      Builtin::Contains | Builtin::Key | Builtin::Value => num_args == 1,
+      // Bytes take no fallback.
+      Builtin::Get => num_args == 1 || (num_args == 2 && tag == OBJ_TAG_DICT),
+    };
+    fits.then_some(method)
+  }
+
+  /// The kind of receiver to bet on when all a site has seen is some
+  /// heap object that is not a string, list or instance: the one kind
+  /// that answers these methods, or for iteration, ranges, which is what
+  /// a `for` loop over numbers walks.
+  fn likely_tag(name: &str) -> Option<u8> {
+    match name {
+      "get" | "set" | "add" | "contains" => Some(OBJ_TAG_DICT),
+      "@key" | "@value" => Some(OBJ_TAG_RANGE),
+      _ => None,
+    }
+  }
 }
 
 /// A number method compiled to an operation of its own, the same set the

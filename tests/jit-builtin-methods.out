@@ -1,4 +1,5 @@
-warm: 24568853678725656
+warm again: 24568853683084660
+warm: 24568853683084660
 numbers at the edges:
 [NaN, NaN, NaN, NaN, NaN, NaN, -1, 0, 0, 0, true, false, false, false, NaN, NaN]
 [inf, inf, inf, inf, inf, inf, 1, 9223372036854776000, inf, 0, false, true, false, true, inf, 1.5707963267948966]
@@ -24,12 +25,33 @@ lists at the edges:
 item 0
 item 19
 34
+strings, bytes, dicts and ranges:
+1474
+903
+h.é.l.l.o.
+
+199
+(fe ff 00 07)
+0
+{apple: 3, kiwi: 2, : 1, fig: 1, plum: 1}
+22
+0
+15
+58
+12
 receivers of another kind:
 object of type string does not define method 'sqrt'
 object of type bool does not define method 'sqrt'
 'max' expects argument 1 to be a number, got string
 object of type string does not define method 'first'
 object of type string does not define method 'first'
+object of type number does not define method 'is_empty'
+438
+index -1 out of bounds (length 0)
+(2c 07)
+3
+9
+operator '>=' not defined for string and number
 still right afterwards:
 3730
 12284426834171
@@ -38,3 +60,8 @@ still right afterwards:
 57
 [0, 2, 4, 6, 8]
 [1, 2, 2, 3, 3, 4, 4, 5, 5]
+1474
+199
+22
+155
+145

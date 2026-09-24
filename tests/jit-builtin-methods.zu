@@ -97,6 +97,105 @@ def first_and_last(xs) {
   return [xs.first(), xs.last(), xs.is_empty(), xs.length()]
 }
 
+# Strings: length, emptiness, codes, characters by index, iteration.
+def text_stats(words) {
+  var out = 0
+  iter var i = 0; i < words.length(); i++ {
+    var w = words[i]
+    if !w.is_empty() {
+      out = out + w.length() + w[0].ord() + w[w.length() - 1].ord()
+    }
+  }
+  return out
+}
+
+def spell(word) {
+  var out = ''
+  for c in word {
+    out = out + c + '.'
+  }
+  return out
+}
+
+# Bytes: reading, writing, `get`, and counting from the end.
+def checksum(data) {
+  var sum = 0
+  iter var i = 0; i < data.length(); i++ {
+    sum = sum + data[i] * (i + 1) + data.get(i)
+  }
+  return sum + data[-1]
+}
+
+def fill(data, v) {
+  iter var i = 0; i < data.length(); i++ {
+    data[i] = (v + i) % 256
+  }
+  data[-1] = 7
+  return data
+}
+
+def byte_walk(data) {
+  var sum = 0
+  for b in data {
+    sum = sum + b
+  }
+  return sum
+}
+
+# Dicts: counting with `get` and `set`, indexing, membership, length.
+def count_words(words) {
+  var counts = {}
+  iter var i = 0; i < words.length(); i++ {
+    var w = words[i]
+    counts.set(w, counts.get(w, 0) + 1)
+  }
+  return counts
+}
+
+def tally(counts, words) {
+  var sum = 0
+  iter var i = 0; i < words.length(); i++ {
+    if counts.contains(words[i]) {
+      sum = sum + counts[words[i]]
+    }
+  }
+  counts['total'] = sum
+  return sum + counts.length()
+}
+
+# Ranges and lists walked by `for`.
+def range_sum(n) {
+  var sum = 0
+  for i in 0..n {
+    sum = sum + i
+  }
+  for i in n..0 {
+    sum = sum + i * 2
+  }
+  return sum
+}
+
+def list_walk(xs) {
+  var sum = 0
+  for x in xs {
+    sum = sum + x
+  }
+  return sum + xs.get(1) + xs.get(99, 5) + xs.get(-1, 3)
+}
+
+# Small list literals, made on every iteration.
+def pairs(n) {
+  var sum = 0
+  var last = []
+  iter var i = 0; i < n; i++ {
+    var p = [i, i + 1]
+    var one = [i]
+    last = []
+    sum = sum + p[0] + p[1] + one[0] + last.length()
+  }
+  return sum
+}
+
 def attempt(f) {
   var result = nil
   catch {
@@ -123,6 +222,16 @@ var kept = []
 iter var r = 0; r < 300; r++ {
   labels(kept, 20)
 }
+
+var words = ['apple', 'kiwi', '', 'fig', 'apple', 'plum', 'kiwi', 'apple']
+var data = bytes([3, 1, 4, 1, 5, 9, 2, 6])
+iter var r = 0; r < 2000; r++ {
+  sum = sum + text_stats(words) + spell('abc').length() + checksum(data)
+  sum = sum + fill(bytes(6), r)[0] + byte_walk(data)
+  sum = sum + tally(count_words(words), words) + range_sum(10) + list_walk([1, 2, 3])
+  sum = sum + pairs(10)
+}
+echo 'warm again: ${sum.round()}'
 echo 'warm: ${sum.round()}'
 
 echo 'numbers at the edges:'
@@ -154,12 +263,34 @@ echo kept[0]
 echo kept[5999]
 echo ends([[], [1], [2, 3]])
 
+echo 'strings, bytes, dicts and ranges:'
+echo text_stats(words)
+echo text_stats(['é', 'naïve', 'ok'])
+echo spell('héllo')
+echo spell('')
+echo checksum(data)
+echo fill(bytes(4), 254)
+echo byte_walk(bytes(0))
+echo count_words(words)
+echo tally(count_words(words), words)
+echo range_sum(0)
+echo range_sum(3)
+echo list_walk([10, 20])
+echo pairs(3)
+
 echo 'receivers of another kind:'
 echo attempt(@() => unary([4, 'nine']))
 echo attempt(@() => all_of(true))
 echo attempt(@() => bounds([1, 2], 'x'))
 echo attempt(@() => first_and_last('text'))
 echo attempt(@() => ends(['ab', [1]]))
+echo attempt(@() => text_stats(['ok', 5]))
+echo attempt(@() => text_stats(['ab', 'x']))
+echo attempt(@() => checksum(bytes(0)))
+echo attempt(@() => fill(bytes(2), 300))
+echo attempt(@() => tally({ apple: 1 }, ['apple', 'pear']))
+echo attempt(@() => byte_walk([4, 5]))
+echo attempt(@() => range_sum('x'))
 
 echo 'still right afterwards:'
 echo unary(numbers).round()
@@ -169,3 +300,8 @@ echo tests(numbers)
 echo ends([[1, 2, 3], [], [4]])
 echo build(5)
 echo double_up([1, 2], 9)
+echo text_stats(words)
+echo checksum(data)
+echo tally(count_words(words), words)
+echo range_sum(10)
+echo pairs(10)

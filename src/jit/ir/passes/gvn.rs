@@ -31,6 +31,7 @@ struct Versions {
   globals: u32,
   cells: u32,
   upvals: u32,
+  dicts: u32,
 }
 
 /// What makes two operations interchangeable, beyond their operands.
@@ -45,6 +46,9 @@ enum Key {
   Global(u32, u32),
   Cell(u8, u32),
   Upval(u32),
+  /// A read of some kind of memory, by what it reads and the version of
+  /// that memory it saw.
+  Read(&'static str, u32),
 }
 
 pub fn run(f: &mut Func) {
@@ -108,8 +112,9 @@ fn fresh(next: &mut u32) -> Versions {
     globals: *next + 3,
     cells: *next + 4,
     upvals: *next + 5,
+    dicts: *next + 6,
   };
-  *next += 6;
+  *next += 7;
   v
 }
 
@@ -140,6 +145,8 @@ fn visit(
         versions.header = bump(next);
         versions.elems = bump(next);
       },
+      Op::BytesStore => versions.elems = bump(next),
+      Op::DictSet => versions.dicts = bump(next),
       Op::StoreUpval => versions.upvals = bump(next),
       Op::StoreGlobal(_) => versions.globals = bump(next),
       Op::StoreField(slot) => {
@@ -218,6 +225,24 @@ fn key_of(op: &Op, v: &Versions) -> Option<Key> {
     Op::FMin => Key::Pure("fmin", 0),
     Op::FTest(t) => Key::Pure("ftest", *t as u64),
     Op::FCall(helper) => Key::Pure("fcall", helper.as_ptr() as u64),
+    Op::StrAscii => Key::Pure("str_ascii", 0),
+    Op::StrByteLen => Key::Pure("str_byte_len", 0),
+    Op::StrByte => Key::Pure("str_byte", 0),
+    Op::AsciiChar => Key::Pure("ascii_char", 0),
+    Op::StrLength => Key::Pure("str_length", 0),
+    Op::StrOrd => Key::Pure("str_ord", 0),
+    Op::WrapIndex => Key::Pure("wrap_index", 0),
+    Op::GetIndex => Key::Pure("get_index", 0),
+    Op::IsBits(bits) => Key::Pure("is_bits", *bits),
+    Op::NextKey => Key::Pure("next_key", 0),
+    Op::RangeCount => Key::Pure("range_count", 0),
+    Op::RangeAt => Key::Pure("range_at", 0),
+    Op::BytesLen => Key::Read("bytes_len", v.header),
+    Op::BytesLoad => Key::Read("bytes_load", v.elems),
+    Op::ListGetOr => Key::Read("list_get_or", v.elems),
+    Op::DictGet => Key::Read("dict_get", v.dicts),
+    Op::DictContains => Key::Read("dict_contains", v.dicts),
+    Op::DictLen => Key::Read("dict_len", v.dicts),
     Op::Guard(kind) => Key::Guard(*kind),
     Op::ListLen => Key::Header("len", v.header),
     Op::ListData => Key::Header("data", v.header),

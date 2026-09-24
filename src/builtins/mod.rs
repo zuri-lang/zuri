@@ -299,6 +299,21 @@ pub fn list_method_key() -> u64 {
   Kind::List as u64 + 1
 }
 
+/// The `object::OBJ_TAG_*` of the receivers a `method_table_key` stands
+/// for, among strings, bytes, dicts and ranges.
+pub fn method_key_tag(key: u64) -> Option<u8> {
+  use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_DICT, OBJ_TAG_RANGE, OBJ_TAG_STR};
+  [
+    (Kind::String, OBJ_TAG_STR),
+    (Kind::Bytes, OBJ_TAG_BYTES),
+    (Kind::Dict, OBJ_TAG_DICT),
+    (Kind::Range, OBJ_TAG_RANGE),
+  ]
+  .into_iter()
+  .find(|&(kind, _)| kind as u64 + 1 == key)
+  .map(|(_, tag)| tag)
+}
+
 pub fn lookup(receiver: Value, name: &str) -> Option<&'static NativeFunction> {
   if receiver.is_class() {
     return None;

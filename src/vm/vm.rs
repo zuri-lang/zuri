@@ -2753,6 +2753,7 @@ impl VM {
       fields_off: proto.jit.field_speculation_off.get(),
       global_callees,
       invoke_callees,
+      young_budget: self.heap.young_budget() as u64,
     }
   }
 
