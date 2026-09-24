@@ -986,6 +986,11 @@ pub struct JitInfo {
   /// cache hit. Sized once, at construction, to this function's own
   /// bytecode length, since every valid `ip` is already known then.
   pub global_slot_cache: Box<[Cell<i64>]>,
+  /// How many registers past its frame's base compiled code for this
+  /// function uses, when that is more than its own: the registers of
+  /// calls built into it. A collection scans this far for a compiled
+  /// frame. Only ever raised, since older code may still be running.
+  pub frame_registers: Cell<u16>,
 }
 
 impl JitInfo {
@@ -1011,6 +1016,7 @@ impl JitInfo {
       num_list_feedback: Cell::new(!0u64),
       feedback_samples: Cell::new(0),
       global_slot_cache: vec![Cell::new(-1i64); code_len].into_boxed_slice(),
+      frame_registers: Cell::new(0),
     }
   }
 }

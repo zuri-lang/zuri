@@ -102,6 +102,7 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
   let state = FrameState {
     ip: header_ip,
     regs: f.entry_regs(preheader, &f.block(preheader).params),
+    frame: f.block(preheader).frame,
   };
   let mut lists: Vec<ValueId> = guards.keys().copied().collect();
   lists.sort();

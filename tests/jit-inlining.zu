@@ -1,0 +1,192 @@
+# Compiled code can build small functions and methods straight into
+# their callers. Each caller here runs well past the JIT's warm-up with
+# the calls it was built around, then meets a call it was not: another
+# function behind the same name, another class, an argument of another
+# kind, an error. Every one of those has to behave exactly as the
+# interpreter does, stack traces included.
+
+def square(x) {
+  return x * x
+}
+
+def clamp(x, lo, hi) {
+  if x < lo {
+    return lo
+  }
+  if x > hi {
+    return hi
+  }
+  return x
+}
+
+def add(a, b) {
+  return a + b
+}
+
+def sub(a, b) {
+  return a - b
+}
+
+var op = add
+
+# Two calls deep: `norm` is built into `norms`, `square` into `norm`.
+def norm(x, y) {
+  return square(x) + square(y)
+}
+
+def norms(xs) {
+  var total = 0
+  iter var i = 0; i < xs.length(); i++ {
+    total = total + norm(xs[i], 1)
+  }
+  return total
+}
+
+def clamped(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + clamp(i - 50, 0, 20)
+  }
+  return total
+}
+
+def through_op(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + op(i, 1)
+  }
+  return total
+}
+
+# Reads the first element of whatever it is given.
+def first(xs) {
+  return xs[0]
+}
+
+def firsts(items) {
+  var out = ''
+  iter var i = 0; i < items.length(); i++ {
+    out = out + '${first(items[i])} '
+  }
+  return out
+}
+
+# Allocates on every call, so collections run while the caller's values
+# live only in the registers the callee shares with it.
+def triple(a, b) {
+  return [a, b, a + b]
+}
+
+def triples(n) {
+  var total = 0
+  var keep = [0, 0, 0]
+  iter var i = 0; i < n; i++ {
+    var t = triple(i, keep[0])
+    total = total + t[2]
+    keep = t
+  }
+  return total
+}
+
+def checked(x) {
+  if x < 0 {
+    raise Error('negative: ${x}')
+  }
+  return x
+}
+
+def sum_checked(xs) {
+  var total = 0
+  iter var i = 0; i < xs.length(); i++ {
+    total = total + checked(xs[i])
+  }
+  return total
+}
+
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  dot(other) {
+    return self.x * other.x + self.y * other.y
+  }
+}
+
+class Scaled < Point {
+  @new(x, y, k) {
+    parent(x, y)
+    self.k = k
+  }
+
+  dot(other) {
+    return self.k * (self.x * other.x + self.y * other.y)
+  }
+}
+
+def dots(points, other) {
+  var total = 0
+  iter var i = 0; i < points.length(); i++ {
+    total = total + points[i].dot(other)
+  }
+  return total
+}
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    echo e.message
+    echo e.stacktrace
+  }
+  return result
+}
+
+var lists = []
+iter var i = 0; i < 20; i++ {
+  lists.append([i, i + 1])
+}
+var points = []
+iter var i = 0; i < 20; i++ {
+  points.append(Point(i, 2))
+}
+var unit = Point(1, 1)
+var positives = []
+iter var i = 0; i < 20; i++ {
+  positives.append(i)
+}
+
+var sum = 0
+iter var r = 0; r < 2000; r++ {
+  sum = sum + norms(positives) + clamped(100) + through_op(20)
+  sum = sum + firsts(lists).length() + triples(20) + sum_checked(positives)
+  sum = sum + dots(points, unit)
+}
+echo 'warm: ${sum}'
+
+echo 'another function behind the same name:'
+op = sub
+echo through_op(20)
+
+echo 'arguments of another kind:'
+echo firsts([[1, 2], 'hey', [3]])
+echo attempt(@() => norms([1, 'a']))
+
+echo 'another class:'
+var mixed = points + [Scaled(1, 1, 10)]
+echo dots(mixed, unit)
+
+echo 'an error raised inside:'
+echo attempt(@() => sum_checked([1, 2, -3, 4]))
+
+echo 'still right afterwards:'
+op = add
+echo norms(positives)
+echo clamped(100)
+echo through_op(20)
+echo firsts(lists)
+echo triples(1000)
+echo sum_checked(positives)
+echo dots(points, unit)

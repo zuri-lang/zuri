@@ -131,6 +131,9 @@ pub struct CompileResult {
   pub speculative_ints: Option<u64>,
   /// Which tier produced `outcome`.
   pub tier: u8,
+  /// How many registers the code uses from its frame's base, counting
+  /// calls built into it; zero when that is just the function's own.
+  pub registers: usize,
   /// `Ok(entry_fn)` on success or a human-readable failure reason.
   pub outcome: Result<EntryFn, String>,
 }
@@ -309,15 +312,17 @@ fn compiler_loop(
     // compiles again. Report the function as ineligible instead and
     // carry on with the next job.
     let mut tier = 1;
+    let mut registers = 0;
     let tier2 = job.tier2;
     let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       // The optimizing tier declines functions it cannot build; those
       // still get the baseline tier's code.
       if let Some(feedback) = &tier2 {
         match engine.compile_tier2(proto, feedback, Some(&shutdown)) {
-          Ok(done) => {
+          Ok((entry, osr_ids, reach)) => {
             tier = 2;
-            return Ok(done);
+            registers = reach;
+            return Ok((entry, osr_ids));
           },
           Err(reason) => {
             if crate::jit::log_enabled() {
@@ -363,6 +368,7 @@ fn compiler_loop(
       speculative_lists,
       speculative_ints,
       tier,
+      registers,
       outcome,
     };
     if let Some((reply_tx, reply_pending)) = job.reply_to {

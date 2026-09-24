@@ -114,6 +114,52 @@ pub fn tier2_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v != "0"))
 }
 
+/// One interpreter frame that a deoptimization inside a call built into
+/// its caller has to push, as `runtime::zuri_jit_deopt_inlined` reads it.
+#[derive(Clone, Copy, Debug)]
+pub struct DeoptFrame {
+  /// The `ObjFunction` the frame runs.
+  pub proto: usize,
+  /// Where in the calling function the call is; the caller resumes just
+  /// past it once this frame returns.
+  pub call_ip: usize,
+  /// Where the frame's register 0 sits, from the compiled function's.
+  pub offset: u8,
+  /// The caller's register the result goes to.
+  pub dst: u8,
+  pub closure: ir::FrameClosure,
+}
+
+/// Set in `VM::jit_ip` and in a frame's `ip` for a position inside a
+/// call built into its caller; the rest of the word is an index for
+/// `inline_position`.
+pub const INLINE_POSITION: usize = 1 << (usize::BITS - 1);
+
+/// Positions inside calls built into their callers, each a list of
+/// `(function, ip)` from the innermost call out to the compiled function
+/// itself. Only ever appended to; a position stays valid as long as the
+/// code publishing it can run, which is forever.
+static INLINE_POSITIONS: std::sync::Mutex<Vec<Box<[(usize, usize)]>>> =
+  std::sync::Mutex::new(Vec::new());
+
+/// Registers a position inside a call built into its caller, returning
+/// the value compiled code publishes for it.
+pub fn register_inline_position(spots: Vec<(usize, usize)>) -> usize {
+  let mut positions = INLINE_POSITIONS.lock().unwrap_or_else(|e| e.into_inner());
+  positions.push(spots.into_boxed_slice());
+  INLINE_POSITION | (positions.len() - 1)
+}
+
+/// The functions and positions a published inline position stands for,
+/// innermost first.
+pub fn inline_position(position: usize) -> Option<Vec<(usize, usize)>> {
+  if position & INLINE_POSITION == 0 {
+    return None;
+  }
+  let positions = INLINE_POSITIONS.lock().unwrap_or_else(|e| e.into_inner());
+  positions.get(position & !INLINE_POSITION).map(|spots| spots.to_vec())
+}
+
 pub fn log_facts_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_FACTS").is_some())

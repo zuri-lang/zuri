@@ -409,6 +409,7 @@ impl Preheader {
     let state = FrameState {
       ip: header_ip,
       regs: f.entry_regs(c.preheader, &f.block(c.preheader).params),
+      frame: f.block(c.preheader).frame,
     };
     Self {
       block: c.preheader,

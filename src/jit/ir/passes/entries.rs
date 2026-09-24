@@ -34,7 +34,7 @@ pub fn run(f: &mut Func) {
   // leading nowhere for the moment, every loop has one way in.
   let saved: Vec<Terminator> = entries.iter().map(|&(_, b)| f.block(b).term.clone()).collect();
   for &(_, b) in &entries {
-    f.block_mut(b).term = Terminator::Deopt(FrameState { ip: 0, regs: Vec::new() });
+    f.block_mut(b).term = Terminator::Deopt(FrameState::root(0, Vec::new()));
   }
   let nest = loops::find(f);
   for (&(_, b), term) in entries.iter().zip(saved) {
@@ -141,7 +141,7 @@ impl<'f> Copier<'f> {
     if let Some(&c) = self.blocks.get(&(part, b)) {
       return c;
     }
-    let c = self.f.add_block(self.f.block(b).ip);
+    let c = self.f.add_block_like(b);
     for p in self.f.block(b).params.clone() {
       let np = self.f.add_block_param(c, self.f.ty(p));
       self.values.insert((part, p), np);
@@ -215,6 +215,7 @@ impl<'f> Copier<'f> {
       let map_state = |s: &FrameState| FrameState {
         ip: s.ip,
         regs: s.regs.iter().map(|&(r, v)| (r, map(v))).collect(),
+        frame: s.frame,
       };
       for i in self.f.block(c).insts.clone() {
         let inst = &mut self.f.insts[i.0 as usize];
@@ -295,6 +296,6 @@ pub fn prune_unreachable(f: &mut Func) {
     block.params.clear();
     block.param_regs.clear();
     block.fixed_regs.clear();
-    block.term = Terminator::Deopt(FrameState { ip: 0, regs: Vec::new() });
+    block.term = Terminator::Deopt(FrameState::root(0, Vec::new()));
   }
 }

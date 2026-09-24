@@ -182,6 +182,47 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   OK
 }
 
+/// Leaves compiled code from inside a call built into its caller: pushes
+/// the interpreter frame each call in `chain` would have had, outermost
+/// first, over the compiled function's own, then hands the innermost one
+/// to the interpreter at `ip` the way `zuri_jit_deopt` does. The caller's
+/// registers, every frame's, were written out before this runs.
+///
+/// # Safety
+///
+/// `chain` points at `len` `DeoptFrame`s that live as long as the code.
+pub unsafe extern "C" fn zuri_jit_deopt_inlined(
+  vm_ptr: *mut VM,
+  chain: u64,
+  len: u64,
+  ip: u64,
+) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let chain = unsafe { std::slice::from_raw_parts(chain as *const crate::jit::DeoptFrame, len as usize) };
+  vm.push_inlined_frames(chain);
+  if crate::jit::log_enabled() {
+    eprintln!(
+      "[jit] deopt in '{}' at ip {}, built into its caller",
+      vm.current_function_name(),
+      ip
+    );
+  }
+  vm.pending_deopt_ip.set(ip as i64);
+  OK
+}
+
+/// Grows the register file to `needed` registers, for compiled code whose
+/// frame reaches past its own function's registers.
+///
+/// # Safety
+///
+/// Called only from compiled code, with the VM it was entered with.
+pub unsafe extern "C" fn zuri_jit_ensure_registers(vm_ptr: *mut VM, needed: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.ensure_registers(needed as usize);
+  OK
+}
+
 /// GC safepoint; called at every loop back-edge and call site in
 /// compiled code (see `codegen::FuncCompiler::emit_safepoint`), mirrors
 /// the interpreter's own per-instruction `if needs_major_gc() { ... }
@@ -3078,6 +3119,8 @@ pub fn helper_table() -> Vec<HelperSpec> {
   vec![
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
+    spec4!(zuri_jit_deopt_inlined),
+    spec2!(zuri_jit_ensure_registers),
     spec3!(zuri_jit_materialize_list),
     spec4!(zuri_jit_materialize_instance),
     spec2!(zuri_jit_is_falsey),

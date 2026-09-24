@@ -110,6 +110,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
   let state = FrameState {
     ip: header_ip,
     regs: f.entry_regs(header, &pre_params),
+    frame: f.block(header).frame,
   };
 
   for &b in order.iter().filter(|b| body.contains(b)) {
@@ -164,7 +165,7 @@ fn make_preheader(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>) -> B
     .filter(|p| !body.contains(p))
     .collect();
 
-  let pre = f.add_block(f.block(header).ip);
+  let pre = f.add_block_like(header);
   let tys: Vec<Ty> = f.block(header).params.iter().map(|&p| f.ty(p)).collect();
   let mut pre_params = Vec::with_capacity(tys.len());
   for ty in tys {

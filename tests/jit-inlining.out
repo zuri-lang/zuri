@@ -1,0 +1,22 @@
+warm: 8642000
+another function behind the same name:
+170
+arguments of another kind:
+1 h 3 
+operator '*' not defined for call signature (string, string)
+[@@ROOT/tests/jit-inlining.zu:9 -> square(), @@ROOT/tests/jit-inlining.zu:34 -> norm(), @@ROOT/tests/jit-inlining.zu:40 -> norms(), @@ROOT/tests/jit-inlining.zu:175 -> @anon0(), @@ROOT/tests/jit-inlining.zu:139 -> attempt(), @@ROOT/tests/jit-inlining.zu:175 -> @.script()]
+nil
+another class:
+250
+an error raised inside:
+negative: -3
+[@@ROOT/tests/jit-inlining.zu:93 -> checked(), @@ROOT/tests/jit-inlining.zu:101 -> sum_checked(), @@ROOT/tests/jit-inlining.zu:182 -> @anon1(), @@ROOT/tests/jit-inlining.zu:139 -> attempt(), @@ROOT/tests/jit-inlining.zu:182 -> @.script()]
+nil
+still right afterwards:
+2490
+790
+210
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+998001
+190
+230

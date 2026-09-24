@@ -49,6 +49,47 @@ const MAX_DEOPT_REENTRANCY: u32 = 64;
 /// (`JitInfo::field_speculation_off`) and then keeps whatever that
 /// produced. Either way the recompiling stops.
 const MAX_JIT_INVALIDATIONS: u32 = 3;
+/// How many calls deep the optimizing tier's feedback follows callees.
+const TIER2_CALLEE_DEPTH: usize = crate::jit::ir::build::MAX_INLINE_DEPTH;
+/// How much callee bytecode one compile's feedback covers, twice what the
+/// IR builder will build in, since it builds in only some of what it is
+/// offered.
+const TIER2_CALLEE_BUDGET: usize = 2 * crate::jit::ir::build::MAX_INLINED_TOTAL;
+
+/// The walk `VM::tier2_feedback` makes through the functions a compile
+/// could build calls to.
+struct CalleeGathering<'v> {
+  /// Every callee met, for the VM to hold on to during the compile.
+  values: &'v mut Vec<Value>,
+  /// The functions from the one being compiled down to the one whose
+  /// calls are being looked at.
+  path: Vec<usize>,
+  /// Callee bytecode still to be covered.
+  budget: usize,
+}
+
+impl CalleeGathering<'_> {
+  /// Whether `callee` is worth gathering feedback for, to build it into
+  /// its caller: small, a plain function, not already on the way down
+  /// and within the budget. The IR builder has the final say.
+  fn admits(&self, callee: &ObjFunction) -> bool {
+    let len = callee.chunk.code.len();
+    !callee.variadic
+      && callee.upvalues.is_empty()
+      && len <= crate::jit::ir::build::MAX_INLINE_OPS
+      && len <= self.budget
+      && !self.path.contains(&(callee as *const ObjFunction as usize))
+  }
+
+  /// Runs `f` for `callee`'s own calls, one level further down.
+  fn within<T>(&mut self, callee: &ObjFunction, f: impl FnOnce(&mut Self) -> T) -> T {
+    self.budget -= callee.chunk.code.len();
+    self.path.push(callee as *const ObjFunction as usize);
+    let out = f(self);
+    self.path.pop();
+    out
+  }
+}
 
 static ZURI_LOG_GC: LazyLock<bool> = LazyLock::new(|| std::env::var_os("ZURI_GC_LOG").is_some());
 static ZURI_JIT_ENABLED: LazyLock<bool> = LazyLock::new(|| {
@@ -786,6 +827,16 @@ pub struct VM {
   /// `Option<usize>` has no spare niche to read that way from generated
   /// code (see `UpvalueState`'s own docs for the general reasoning).
   pub(crate) pending_deopt_ip: Cell<i64>,
+  /// Set alongside `pending_deopt_ip` when compiled code gave up inside a
+  /// call built into it: the index of the frame that was running the
+  /// compiled code, now with interpreter frames for the calls pushed
+  /// above it. `usize::MAX` otherwise.
+  pending_deopt_root: Cell<usize>,
+  /// Functions the compile jobs in flight build calls to, keyed by the
+  /// function being compiled. A reassigned global could otherwise leave
+  /// a callee unreachable, and collected, while a compiler thread still
+  /// reads its bytecode.
+  pending_jit_callees: Vec<(usize, Vec<Value>)>,
   /// Master JIT on/off switch, read once from `ZURI_JIT` at startup — a
   /// benchmarking/debugging escape hatch. Programs behave identically
   /// either way, just slower with it off.
@@ -936,6 +987,8 @@ impl VM {
       pending_jit_compiles: Vec::new(),
       jit_pending_error: Cell::new(Value::nil()),
       pending_deopt_ip: Cell::new(-1),
+      pending_deopt_root: Cell::new(usize::MAX),
+      pending_jit_callees: Vec::new(),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
       jit_call_depth: Cell::new(0),
@@ -1252,6 +1305,15 @@ impl VM {
   /// snippet.
   fn frame_locations(&self) -> Vec<(Rc<str>, u32, String)> {
     let mut out = Vec::with_capacity(self.frames.len());
+    let locate = |func: &ObjFunction, ip: usize| {
+      let line = func
+        .chunk
+        .lines
+        .get(ip.saturating_sub(1))
+        .copied()
+        .unwrap_or(0);
+      (func.source_path.clone(), line, func.name.clone())
+    };
 
     let innermost = self.frames.len().saturating_sub(1);
     for (idx, frame) in self.frames.iter().enumerate().rev() {
@@ -1264,13 +1326,15 @@ impl VM {
       } else {
         frame.ip
       };
-      let line = func
-        .chunk
-        .lines
-        .get(ip.saturating_sub(1))
-        .copied()
-        .unwrap_or(0);
-      out.push((func.source_path.clone(), line, func.name.clone()));
+      // Compiled code running a call built into it stands for that
+      // call's frames as well as its own.
+      if let Some(spots) = crate::jit::inline_position(ip) {
+        for (proto, spot) in spots {
+          out.push(locate(unsafe { &*(proto as *const ObjFunction) }, spot));
+        }
+        continue;
+      }
+      out.push(locate(func, ip));
     }
 
     out
@@ -2455,24 +2519,7 @@ impl VM {
         None => (None, None),
       }
     };
-    for (ip, instr) in proto.chunk.code.iter().enumerate() {
-      let name_const = match instr {
-        Instr::GetGlobal { name_const, .. }
-        | Instr::SetGlobal { name_const, .. }
-        | Instr::AssignGlobal { name_const, .. } => *name_const,
-        _ => continue,
-      };
-      if let Some(name_val) = proto.chunk.constants.get(name_const as usize)
-        && name_val.is_obj()
-      {
-        let name = name_val.as_str();
-        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) {
-          if is_root {
-            proto.jit.global_slot_cache[ip].set(slot as i64);
-          }
-        }
-      }
-    }
+    self.cache_global_slots(proto);
     let (mut all_numeric_fields, mut disproved_numeric_fields) =
       self.resolve_all_numeric_fields(proto);
     self.disprove_numeric_fields_statically(proto, &mut disproved_numeric_fields);
@@ -2502,10 +2549,21 @@ impl VM {
       site_classes: self.resolve_site_classes(proto),
     };
 
-    let tier2 = crate::jit::tier2_enabled().then(|| Box::new(Self::tier2_feedback(proto)));
+    let mut callees = Vec::new();
+    let tier2 = crate::jit::tier2_enabled().then(|| {
+      let mut gather = CalleeGathering {
+        values: &mut callees,
+        path: vec![proto as *const ObjFunction as usize],
+        budget: TIER2_CALLEE_BUDGET,
+      };
+      Box::new(self.tier2_feedback(proto, &mut gather))
+    });
 
     proto.jit.compiling.set(true);
     self.pending_jit_compiles.push(proto_value);
+    if !callees.is_empty() {
+      self.pending_jit_callees.push((proto as *const ObjFunction as usize, callees));
+    }
     let sent = if let Some((job_tx, _, reply_tx, pending)) = &self.shared_compiler {
       let job = background::CompileJob {
         proto: background::SendPtr(proto as *const ObjFunction),
@@ -2540,12 +2598,51 @@ impl VM {
       proto.jit.compiling.set(false);
       proto.jit.ineligible.set(true);
       self.pending_jit_compiles.pop();
+      self.release_jit_callees(proto);
+    }
+  }
+
+  /// Lets go of the callees a finished compile of `proto` was holding.
+  fn release_jit_callees(&mut self, proto: &ObjFunction) {
+    let key = proto as *const ObjFunction as usize;
+    self.pending_jit_callees.retain(|(p, _)| *p != key);
+  }
+
+  /// Resolves every global `proto` reads or writes to its root slot, for
+  /// compiled code to use directly.
+  fn cache_global_slots(&self, proto: &ObjFunction) {
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      let name_const = match instr {
+        Instr::GetGlobal { name_const, .. }
+        | Instr::SetGlobal { name_const, .. }
+        | Instr::AssignGlobal { name_const, .. } => *name_const,
+        _ => continue,
+      };
+      if let Some(name_val) = proto.chunk.constants.get(name_const as usize)
+        && name_val.is_obj()
+      {
+        let name = name_val.as_str();
+        if let Some((is_root, slot)) = self.resolve_global(proto.globals_module, name) {
+          if is_root {
+            proto.jit.global_slot_cache[ip].set(slot as i64);
+          }
+        }
+      }
     }
   }
 
   /// What the optimizing tier's IR builder speculates from, copied out
-  /// of the interpreter's caches here on the VM's own thread.
-  fn tier2_feedback(proto: &ObjFunction) -> crate::jit::ir::build::Feedback {
+  /// of the interpreter's caches here on the VM's own thread. Includes
+  /// the same for every function a call here could have built in, within
+  /// `gather`'s limits; each of those is kept in `gather.values` for the
+  /// VM to hold on to while the compile runs.
+  fn tier2_feedback(
+    &self,
+    proto: &ObjFunction,
+    gather: &mut CalleeGathering,
+  ) -> crate::jit::ir::build::Feedback {
+    use crate::jit::ir::build::Callee;
+
     let chunk = &proto.chunk;
     let mut fields = FxHashMap::default();
     let mut invokes = FxHashMap::default();
@@ -2576,6 +2673,70 @@ impl VM {
         _ => {},
       }
     }
+    let mut global_callees = FxHashMap::default();
+    let mut invoke_callees = FxHashMap::default();
+    if gather.path.len() <= TIER2_CALLEE_DEPTH {
+      for (ip, instr) in chunk.code.iter().enumerate() {
+        match *instr {
+          Instr::Call { func, .. } => {
+            let Some(slot) = Self::global_feeding(proto, ip, func) else {
+              continue;
+            };
+            let value = self.global_slots[slot as usize].get();
+            if global_callees.contains_key(&slot) || !value.is_closure() {
+              continue;
+            }
+            let function = value.as_closure().function;
+            let callee = function.as_func();
+            if !gather.admits(callee) {
+              continue;
+            }
+            self.cache_global_slots(callee);
+            gather.values.push(function);
+            let feedback = gather.within(callee, |gather| self.tier2_feedback(callee, gather));
+            global_callees.insert(
+              slot,
+              Box::new(Callee {
+                proto: callee as *const ObjFunction as usize,
+                proto_bits: function.to_bits(),
+                closure: 0,
+                feedback,
+              }),
+            );
+          },
+          Instr::Invoke { .. } => {
+            // A class key is a heap value's bits; a primitive receiver's
+            // key is a small integer, and its method a native.
+            let Some(cell) = chunk.invoke_cache_cell(ip) else {
+              continue;
+            };
+            let key = cell.key.get();
+            let method = Value::from_bits(cell.payload.get());
+            if key == 0 || !Value::from_bits(key).is_obj() || !method.is_closure() {
+              continue;
+            }
+            let function = method.as_closure().function;
+            let callee = function.as_func();
+            if !gather.admits(callee) {
+              continue;
+            }
+            self.cache_global_slots(callee);
+            gather.values.push(method);
+            let feedback = gather.within(callee, |gather| self.tier2_feedback(callee, gather));
+            invoke_callees.insert(
+              ip,
+              Box::new(Callee {
+                proto: callee as *const ObjFunction as usize,
+                proto_bits: function.to_bits(),
+                closure: method.to_bits(),
+                feedback,
+              }),
+            );
+          },
+          _ => {},
+        }
+      }
+    }
     crate::jit::ir::build::Feedback {
       kinds: chunk.feedback_snapshot(),
       fields,
@@ -2585,7 +2746,33 @@ impl VM {
       blocked: proto.jit.deopt_sites.borrow().iter().copied().collect(),
       sites_off: proto.jit.site_speculation_off.get(),
       fields_off: proto.jit.field_speculation_off.get(),
+      global_callees,
+      invoke_callees,
     }
+  }
+
+  /// The global slot a call's function register was last read from,
+  /// when the nearest write to it before the call is a global read the
+  /// function has resolved.
+  fn global_feeding(proto: &ObjFunction, ip: usize, func: u8) -> Option<u32> {
+    for at in (0..ip).rev() {
+      let instr = &proto.chunk.code[at];
+      if matches!(
+        instr,
+        Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } | Instr::Return { .. }
+      ) {
+        return None;
+      }
+      if crate::jit::typeflow::any_dst(instr) != Some(func) {
+        continue;
+      }
+      if !matches!(instr, Instr::GetGlobal { .. }) {
+        return None;
+      }
+      let slot = proto.jit.global_slot_cache[at].get();
+      return (slot >= 0).then_some(slot as u32);
+    }
+    None
   }
 
   /// Installs every background compile result that's ready right now
@@ -2640,6 +2827,12 @@ impl VM {
             );
           }
           *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
+          // Before the entry goes in, so a collection during the very
+          // first call already looks as far as the code's registers go.
+          // Never lowered: older code for this function may still be
+          // running further down the stack.
+          let reach = proto.jit.frame_registers.get().max(result.registers as u16);
+          proto.jit.frame_registers.set(reach);
           proto.jit.entry.set(Some(entry));
         },
         Err(reason) => {
@@ -2657,6 +2850,7 @@ impl VM {
       {
         self.pending_jit_compiles.swap_remove(pos);
       }
+      self.release_jit_callees(proto);
     }
   }
 
@@ -3376,12 +3570,20 @@ impl VM {
   /// failed bet (see `jit::codegen`'s eligibility scan), so a function
   /// that raises is left alone; recompiling it would produce the same
   /// code and give up in the same place.
-  fn note_deopt_site(&self, proto: &ObjFunction, deopt_ip: usize) {
+  ///
+  /// Returns whether it was a failed bet, rather than a `Raise`.
+  fn note_deopt_site(&self, proto: &ObjFunction, deopt_ip: usize) -> bool {
     if matches!(proto.chunk.code.get(deopt_ip), Some(Instr::Raise { .. })) {
-      return;
+      return false;
     }
     proto.jit.deopt_sites.borrow_mut().insert(deopt_ip);
+    self.invalidate_compiled(proto);
+    true
+  }
 
+  /// Throws `proto`'s compiled code away so it warms up and compiles
+  /// again, up to the invalidation cap.
+  fn invalidate_compiled(&self, proto: &ObjFunction) {
     let invalidations = proto.jit.invalidations.get();
     if invalidations > MAX_JIT_INVALIDATIONS {
       return;
@@ -3406,10 +3608,16 @@ impl VM {
   #[inline(never)]
   fn resolve_deopt_slow(&mut self, deopt_ip: usize) -> RunResult<Value> {
     let frame_idx = self.frames.len() - 1;
-    // SAFETY: this frame's function has been a valid, live ObjFunction for
-    // as long as the frame has existed, same pointer every other unsafe
-    // deref of frame.function in this file already trusts.
-    let deopting_fn = unsafe { &*self.frames[frame_idx].function };
+    // A deopt inside a call built into compiled code pushed frames for
+    // the calls; the compiled code is the root frame's, and the
+    // interpreter runs until that frame returns.
+    let root = self.pending_deopt_root.replace(usize::MAX);
+    let compiled_idx = if root == usize::MAX { frame_idx } else { root };
+    // SAFETY: these frames' functions have been valid, live ObjFunctions
+    // for as long as the frames have existed, same pointer every other
+    // unsafe deref of frame.function in this file already trusts.
+    let deopting_fn = unsafe { &*self.frames[compiled_idx].function };
+    let site_fn = unsafe { &*self.frames[frame_idx].function };
     let depth = self.deopt_reentrancy_depth.get() + 1;
     self.deopt_reentrancy_depth.set(depth);
     if depth > MAX_DEOPT_REENTRANCY {
@@ -3427,7 +3635,10 @@ impl VM {
         );
       }
     }
-    self.note_deopt_site(deopting_fn, deopt_ip);
+    if self.note_deopt_site(site_fn, deopt_ip) && compiled_idx != frame_idx {
+      // The code that bet wrong is the caller's, with the callee built in.
+      self.invalidate_compiled(deopting_fn);
+    }
     // The compiled code has returned, and the stack slots it registered
     // as roots went with its native frame. Anything the interpreter still
     // needs from them was materialized into real objects before it left
@@ -3435,12 +3646,12 @@ impl VM {
     // rather than when the frame finally pops.
     self
       .jit_scalar_roots_len
-      .set(self.frames[frame_idx].scalar_roots_mark);
+      .set(self.frames[compiled_idx].scalar_roots_mark);
     self.frames[frame_idx].ip = deopt_ip;
     // The interpreter takes this frame over and syncs ip on every
     // instruction from here, so jit_ip stops being the truthful source.
     self.frames[frame_idx].compiled = false;
-    let stop_depth = frame_idx;
+    let stop_depth = compiled_idx;
     let result = self.run_until(stop_depth);
     self
       .deopt_reentrancy_depth
@@ -3575,6 +3786,56 @@ impl VM {
   /// goes through `invoke_compiled`, so it's the one path into compiled
   /// execution that has to say so explicitly.
   #[inline]
+  /// Pushes the interpreter frame each call in `chain` would have had,
+  /// outermost first, over the compiled frame on top. Each caller
+  /// resumes just past its call, where the callee's `Return` finds it.
+  pub(crate) fn push_inlined_frames(&mut self, chain: &[crate::jit::DeoptFrame]) {
+    use crate::jit::ir::FrameClosure;
+
+    let root = self.frames.len() - 1;
+    let root_base = self.frames[root].base;
+    self.pending_deopt_root.set(root);
+    for f in chain {
+      let caller = self.frames.last_mut().expect("a compiled frame is running");
+      caller.ip = f.call_ip + 1;
+      caller.compiled = false;
+      let closure_val = match f.closure {
+        FrameClosure::Reg(r) => self.registers[root_base + r as usize],
+        FrameClosure::Const(bits) => Value::from_bits(bits),
+      };
+      self.frames.push(CallFrame {
+        function: f.proto as *const ObjFunction,
+        closure_val,
+        ip: 0,
+        base: root_base + f.offset as usize,
+        dst_in_caller: f.dst,
+        scalar_roots_mark: self.jit_scalar_roots_len.get(),
+        compiled: false,
+      });
+    }
+  }
+
+  /// Grows the register file to at least `needed` registers.
+  pub(crate) fn ensure_registers(&mut self, needed: usize) {
+    if self.registers.len() < needed {
+      self.registers.resize(needed, Value::nil());
+      self.sync_regs_ptr_cache();
+    }
+  }
+
+  /// How far up the register file `frame` reaches. Compiled code with
+  /// calls built into it keeps the callees' registers past its own.
+  fn frame_top(frame: &CallFrame) -> usize {
+    let proto = unsafe { &*frame.function };
+    let own = proto.num_registers as usize;
+    let reach = if frame.compiled {
+      own.max(proto.jit.frame_registers.get() as usize)
+    } else {
+      own
+    };
+    frame.base + reach
+  }
+
   pub(crate) fn mark_top_frame_compiled(&mut self) {
     if let Some(frame) = self.frames.last_mut() {
       frame.compiled = true;
@@ -6257,8 +6518,15 @@ impl VM {
     let mut worklist: Vec<*const Obj> = Vec::new();
 
     // Only the register range within reach of the active frame can hold
-    // live data; see `live_registers`.
-    for v in self.live_registers() {
+    // live data; see `live_registers`. Compiled code reaches further when
+    // it has calls built in, and those registers are as live as its own.
+    let regs_top = self
+      .frames
+      .last()
+      .map(Self::frame_top)
+      .unwrap_or(0)
+      .min(self.registers.len());
+    for v in &self.registers[..regs_top] {
       Self::mark_root(*v, &mut worklist);
     }
     for cell in &self.global_slots {
@@ -6297,6 +6565,11 @@ impl VM {
     }
     for v in &self.pending_jit_compiles {
       Self::mark_root(*v, &mut worklist);
+    }
+    for (_, callees) in &self.pending_jit_callees {
+      for v in callees {
+        Self::mark_root(*v, &mut worklist);
+      }
     }
     for v in self.modules.values() {
       Self::mark_root(*v, &mut worklist);
@@ -6369,7 +6642,7 @@ impl VM {
     let regs_top = self
       .frames
       .last()
-      .map(|f| f.base + unsafe { &*f.function }.num_registers as usize)
+      .map(Self::frame_top)
       .unwrap_or(0)
       .min(self.registers.len());
 
@@ -6426,6 +6699,11 @@ impl VM {
     }
     for v in &mut self.pending_jit_compiles {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
+    }
+    for (_, callees) in &mut self.pending_jit_callees {
+      for v in callees {
+        Self::forward_slot(&mut self.heap, v, &mut worklist);
+      }
     }
     for v in self.modules.values_mut() {
       Self::forward_slot(&mut self.heap, v, &mut worklist);

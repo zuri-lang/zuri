@@ -169,13 +169,15 @@ impl JitEngine {
   /// Compiles `proto` through the optimizing tier: bytecode to IR, the
   /// IR passes, then lowering to Cranelift. `Err` means the IR builder
   /// declined the function, or something after it failed; the caller
-  /// falls back to the baseline tier either way.
+  /// falls back to the baseline tier either way. Also returns how many
+  /// registers the code uses from its frame's base, calls built in
+  /// included.
   pub fn compile_tier2(
     &mut self,
     proto: &ObjFunction,
     feedback: &crate::jit::ir::build::Feedback,
     shutdown: Option<&std::sync::atomic::AtomicBool>,
-  ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
+  ) -> Result<(EntryFn, FxHashMap<usize, i32>, usize), String> {
     let mut ir = crate::jit::ir::build::build(proto, feedback)?;
     crate::jit::ir::passes::run(&mut ir, feedback)?;
     if crate::jit::log_ir_enabled() {
@@ -207,7 +209,7 @@ impl JitEngine {
     if crate::jit::log_asm_enabled() {
       self.asm_labels.insert(func_id, Self::asm_label(proto));
     }
-    self.finish(
+    let (entry, osr_ids) = self.finish(
       PendingCompile {
         ctx,
         func_id,
@@ -215,7 +217,8 @@ impl JitEngine {
       },
       proto,
       shutdown,
-    )
+    )?;
+    Ok((entry, osr_ids, ir.extent))
   }
 
   fn asm_label(proto: &ObjFunction) -> String {

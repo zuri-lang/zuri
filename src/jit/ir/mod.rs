@@ -45,6 +45,16 @@
 //! register that might hold a heap object. Uses after that point refer to
 //! the new values, so a pointer derived before a collection can never be
 //! used after it, and no pass has to reason about collection on its own.
+//!
+//! # Inlined calls
+//!
+//! A call to a function the feedback names is built into the caller's IR
+//! rather than made. The callee's registers sit where a real call would
+//! put them, just past the caller's call window, so every register
+//! number in the IR is relative to the compiled function's own frame.
+//! A frame state inside an inlined body belongs to that body's frame in
+//! `Func::frames`, which says how to rebuild the interpreter frames a
+//! real call would have pushed when compiled code gives up there.
 
 pub mod build;
 pub mod lower;
@@ -102,10 +112,51 @@ impl Cmp {
 
 /// Where compiled code resumes in the interpreter, and what every live
 /// register holds at that point.
+///
+/// `ip` is a position in the bytecode of `frame`, an index into
+/// `Func::frames`. The registers are those of every frame from the
+/// compiled function's own down to that one, numbered from the compiled
+/// function's frame.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrameState {
   pub ip: usize,
   pub regs: Vec<(u8, ValueId)>,
+  pub frame: u16,
+}
+
+impl FrameState {
+  /// A state for the compiled function's own frame.
+  pub fn root(ip: usize, regs: Vec<(u8, ValueId)>) -> FrameState {
+    FrameState { ip, regs, frame: 0 }
+  }
+}
+
+/// Where the closure an inlined frame runs comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameClosure {
+  /// The register the call took its callee from.
+  Reg(u8),
+  /// A method, which lives as long as its class and never moves.
+  Const(u64),
+}
+
+/// One function body in a compiled function: the function itself, at
+/// index 0, and every call built into it.
+#[derive(Clone, Debug)]
+pub struct InlineFrame {
+  /// The frame the call was made from. The compiled function's own
+  /// frame is its own parent.
+  pub parent: u16,
+  /// The `ObjFunction` running in this frame.
+  pub proto: usize,
+  /// Where in the parent the call is.
+  pub call_ip: usize,
+  /// Which register the call's result goes to, in the parent's own
+  /// numbering.
+  pub dst: u8,
+  /// Where this frame's register 0 sits.
+  pub offset: u8,
+  pub closure: FrameClosure,
 }
 
 /// What a guard checks. A failed guard deoptimizes through its frame
@@ -129,10 +180,14 @@ pub enum GuardKind {
   Bounds,
   /// A `Bool` is true. Produces nothing.
   True,
-  /// The value passes the function's parameter type check with this
-  /// index. Only made for checks whose every type can be tested inline.
-  /// Produces nothing; a failed check leaves the interpreter to raise.
+  /// The value passes the parameter type check with this index, in the
+  /// function the frame state belongs to. Only made for checks whose
+  /// every type can be tested inline. Produces nothing; a failed check
+  /// leaves the interpreter to raise.
   Param(u16),
+  /// The value is a closure whose prototype is the function whose `Value`
+  /// bits are given. Produces nothing.
+  Proto(u64),
   /// Every element of the list whose pointer is the operand is a number,
   /// or with `whole` set a whole number an `i64` holds. Produces nothing.
   Elems { whole: bool },
@@ -145,7 +200,11 @@ impl GuardKind {
       GuardKind::Int => Some(Ty::I64),
       GuardKind::Bool => Some(Ty::Bool),
       GuardKind::List | GuardKind::Instance(_) => Some(Ty::Ptr),
-      GuardKind::Bounds | GuardKind::True | GuardKind::Param(_) | GuardKind::Elems { .. } => None,
+      GuardKind::Bounds
+      | GuardKind::True
+      | GuardKind::Param(_)
+      | GuardKind::Proto(_)
+      | GuardKind::Elems { .. } => None,
     }
   }
 }
@@ -259,18 +318,20 @@ pub enum Op {
   /// Sets the value an upvalue cell holds, with the write barrier a
   /// closed cell needs. Operands: the cell, the value.
   StoreUpval,
-  /// Looks up a `using` subject in jump table `table`, giving the target
-  /// position or `USING_NO_MATCH`. The subject is written to register
-  /// `reg` first, where the runtime reads it. Operand: the subject.
-  UsingTarget { table: u16, reg: u8 },
+  /// Looks up a `using` subject in jump table `table` of `frame`'s
+  /// function, giving the target position or `USING_NO_MATCH`. The
+  /// subject is written to register `reg` first, where the runtime reads
+  /// it. Operand: the subject.
+  UsingTarget { table: u16, reg: u8, frame: u16 },
 
-  /// Runs one bytecode instruction through the runtime helper the
-  /// baseline tier uses for it. The frame state's registers are written
-  /// out first, which covers everything the instruction reads; the
-  /// result, if any, is its destination register read back afterwards.
-  /// `ip` is the instruction's own position, which some helpers need to
-  /// find their inline cache.
-  Generic { instr: Instr, ip: usize },
+  /// Runs one bytecode instruction of `frame`'s function through the
+  /// runtime helper the baseline tier uses for it. The frame state's
+  /// registers are written out first, which covers everything the
+  /// instruction reads; the result, if any, is its destination register
+  /// read back afterwards. `ip` is the instruction's own position, which
+  /// some helpers need to find their inline cache. The instruction's
+  /// registers are numbered from `frame`'s register 0.
+  Generic { instr: Instr, ip: usize, frame: u16 },
 
   /// A GC and signal safepoint.
   Safepoint,
@@ -410,6 +471,8 @@ pub struct Block {
   pub term: Terminator,
   /// The bytecode position this block starts at, when it starts one.
   pub ip: Option<usize>,
+  /// The frame whose bytecode `ip` is in.
+  pub frame: u16,
 }
 
 /// Where a value comes from.
@@ -433,6 +496,10 @@ pub struct Func {
   pub values: Vec<ValueData>,
   pub entry: BlockId,
   pub num_registers: usize,
+  /// One past the highest register any frame uses, counting the calls
+  /// built in. The register file has to reach this far, and a collection
+  /// has to look this far, while the function runs.
+  pub extent: usize,
   /// Loop header ip to its on-stack-replacement id, matching what the
   /// interpreter looks up to jump into compiled code mid-loop.
   pub osr_ids: FxHashMap<usize, i32>,
@@ -441,18 +508,30 @@ pub struct Func {
   /// from memory and jumps to the header, so nothing computed before the
   /// loop on the ordinary path is available through it.
   pub osr_entries: Vec<(i32, BlockId)>,
+  /// The compiled function's own frame, then one entry for each call
+  /// built into it.
+  pub frames: Vec<InlineFrame>,
 }
 
 impl Func {
-  pub fn new(num_registers: usize) -> Func {
+  pub fn new(num_registers: usize, proto: usize) -> Func {
     Func {
       blocks: Vec::new(),
       insts: Vec::new(),
       values: Vec::new(),
       entry: BlockId(0),
       num_registers,
+      extent: num_registers,
       osr_ids: FxHashMap::default(),
       osr_entries: Vec::new(),
+      frames: vec![InlineFrame {
+        parent: 0,
+        proto,
+        call_ip: 0,
+        dst: 0,
+        offset: 0,
+        closure: FrameClosure::Reg(0),
+      }],
     }
   }
 
@@ -465,7 +544,17 @@ impl Func {
       insts: Vec::new(),
       term: Terminator::Unset,
       ip,
+      frame: 0,
     });
+    id
+  }
+
+  /// A new, empty block at the same bytecode position as `b`, in the
+  /// same frame.
+  pub fn add_block_like(&mut self, b: BlockId) -> BlockId {
+    let (ip, frame) = (self.block(b).ip, self.block(b).frame);
+    let id = self.add_block(ip);
+    self.block_mut(id).frame = frame;
     id
   }
 
@@ -881,6 +970,9 @@ impl fmt::Display for Func {
         }
         if let Some(state) = &inst.state {
           write!(f, "  @{}", state.ip)?;
+          if state.frame != 0 {
+            write!(f, " in frame {}", state.frame)?;
+          }
         }
         writeln!(f)?;
       }

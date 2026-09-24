@@ -13,6 +13,10 @@
 //! registers back afterwards. Frame states may name unboxed values, which
 //! is what lets the passes keep a loop's numbers unboxed: the boxing only
 //! happens on those cold paths.
+//!
+//! Code built in from a callee runs its helpers against the callee's own
+//! register window and function, and leaves through a deopt that pushes
+//! the interpreter frames the calls would have had.
 
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
@@ -24,13 +28,16 @@ use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
-use super::{BlockId, Cmp, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueId};
+use super::{
+  BlockId, Cmp, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueId,
+};
 use crate::vm::chunk::Instr;
 use crate::vm::object::{self, ObjFunction};
 use crate::vm::value;
 use crate::vm::vm;
 
 const REGS_PTR_CACHE_OFFSET: i32 = vm::VM_REGS_PTR_CACHE_OFFSET as i32;
+const REGS_LEN_CACHE_OFFSET: i32 = vm::VM_REGS_LEN_CACHE_OFFSET as i32;
 const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
@@ -165,6 +172,8 @@ pub fn lower(
     closure_slot: None,
     entry_sig: None,
     osr_param: IrValue::from_u32(0),
+    deopt_chains: FxHashMap::default(),
+    positions: FxHashMap::default(),
   };
   l.run()?;
   Ok(ir.osr_ids.clone())
@@ -190,6 +199,13 @@ struct Lowering<'a, 'b> {
   entry_sig: Option<SigRef>,
   /// The entry's on-stack-replacement id argument.
   osr_param: IrValue,
+  /// For each frame built in, the interpreter frames a deopt inside it
+  /// pushes, outermost first, as the address and length of a table that
+  /// lives as long as the code.
+  deopt_chains: FxHashMap<u16, (u64, u64)>,
+  /// The encoded position published for an instruction of a frame built
+  /// in, by frame and position.
+  positions: FxHashMap<(u16, usize), usize>,
 }
 
 impl<'a, 'b> Lowering<'a, 'b> {
@@ -206,6 +222,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.regs_var = self.fb.declare_var(types::I64);
     self.refresh_regs();
     self.base_bytes = self.fb.ins().imul_imm_s(self.base, 8);
+    if self.ir.extent > self.proto.num_registers as usize {
+      self.ensure_registers();
+    }
 
     // One Cranelift block per IR block, parameters typed to match.
     for b in &self.ir.blocks {
@@ -393,19 +412,21 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.store_upval(inst.args[1], av[0], val);
         None
       },
-      Op::UsingTarget { table, reg } => {
+      Op::UsingTarget { table, reg, frame } => {
         let subject = self.tagged_of(inst.args[0]);
         self.store_reg(*reg, subject);
-        let func_ptr = self.u64c(self.proto as *const ObjFunction as u64);
-        let reg_c = self.u64c(*reg as u64);
+        let (proto, offset) = self.frame(*frame);
+        let func_ptr = self.u64c(proto as *const ObjFunction as u64);
+        let base = self.frame_base(*frame);
+        let reg_c = self.u64c((*reg - offset) as u64);
         let table_c = self.u64c(*table as u64);
         Some(self.call_pure(
           "zuri_jit_using_jump",
-          &[self.vm, self.base, reg_c, func_ptr, table_c],
+          &[self.vm, base, reg_c, func_ptr, table_c],
         ))
       },
-      Op::Generic { instr, ip } => {
-        self.lower_generic(*instr, *ip, inst.state.as_ref().unwrap())?;
+      Op::Generic { instr, ip, frame } => {
+        self.lower_generic(*instr, *ip, *frame, inst.state.as_ref().unwrap())?;
         None
       },
       Op::Safepoint => unreachable!("safepoints are lowered with their reloads"),
@@ -456,7 +477,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         (self.fb.ins().icmp(IntCC::UnsignedLessThan, x, len), None)
       },
       GuardKind::True => (x, None),
-      GuardKind::Param(check_idx) => (self.param_check(x, check_idx), None),
+      GuardKind::Param(check_idx) => {
+        let (proto, _) = self.frame(state.frame);
+        (self.param_check(x, proto, check_idx), None)
+      },
+      GuardKind::Proto(bits) => (self.closure_of(x, bits), None),
       GuardKind::Elems { whole } => {
         let w = self.u64c(whole as u64);
         let r = self.call_pure("zuri_jit_list_elems_are", &[self.vm, x, w]);
@@ -476,22 +501,37 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// Runs one instruction through its runtime helper: publish the
   /// position, write the live registers out, call, and leave through the
   /// error path if the helper raised.
-  fn lower_generic(&mut self, instr: Instr, ip: usize, state: &FrameState) -> Result<(), String> {
+  fn lower_generic(
+    &mut self,
+    instr: Instr,
+    ip: usize,
+    frame: u16,
+    state: &FrameState,
+  ) -> Result<(), String> {
     let name = generic_helper(&instr)
       .ok_or_else(|| format!("no runtime helper for {instr:?}"))?;
-    self.publish_ip(ip);
+    self.publish_ip(ip, frame);
     self.flush(state);
-    let args = self.generic_args(instr, ip);
+    let (proto, offset) = self.frame(frame);
+    let base = self.frame_base(frame);
+    let args = self.generic_args(instr, ip, proto, base);
     let status = match instr {
       Instr::Call { dst, func, num_args } => {
         let prepare = vec![
           self.vm,
-          self.base,
+          base,
           self.u64c(func as u64),
           self.u64c(num_args as u64),
           self.u64c(dst as u64),
         ];
-        self.fast_call("zuri_jit_call_prepare", prepare, func + 1, num_args, dst, name, &args)
+        let call = FastCall {
+          base,
+          offset,
+          first_arg: func + 1,
+          num_args,
+          dst,
+        };
+        self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args)
       },
       Instr::Invoke {
         dst,
@@ -499,11 +539,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         method_const,
         num_args,
       } => {
-        let name_bits = self.proto.chunk.constants[method_const as usize].to_bits();
-        let func_ptr = self.proto as *const ObjFunction as u64;
+        let name_bits = proto.chunk.constants[method_const as usize].to_bits();
+        let func_ptr = proto as *const ObjFunction as u64;
         let prepare = vec![
           self.vm,
-          self.base,
+          base,
           self.u64c(obj as u64),
           self.u64c(num_args as u64),
           self.u64c(dst as u64),
@@ -512,7 +552,14 @@ impl<'a, 'b> Lowering<'a, 'b> {
           self.u64c(ip as u64),
         ];
         // The receiver is the callee's first argument.
-        self.fast_call("zuri_jit_invoke_prepare", prepare, obj + 1, num_args + 1, dst, name, &args)
+        let call = FastCall {
+          base,
+          offset,
+          first_arg: obj + 1,
+          num_args: num_args + 1,
+          dst,
+        };
+        self.fast_call("zuri_jit_invoke_prepare", prepare, call, name, &args)
       },
       _ => self.call(name, &args),
     };
@@ -521,22 +568,67 @@ impl<'a, 'b> Lowering<'a, 'b> {
     Ok(())
   }
 
+  /// The function running in `frame` and where its register 0 sits.
+  fn frame(&self, frame: u16) -> (&'a ObjFunction, u8) {
+    let f = &self.ir.frames[frame as usize];
+    if frame == 0 {
+      return (self.proto, 0);
+    }
+    // SAFETY: the VM holds every function built in until the compile
+    // finishes, and the code keeps each one reachable while it runs:
+    // through the callee register a frame state holds, or through the
+    // class a method belongs to.
+    (unsafe { &*(f.proto as *const ObjFunction) }, f.offset)
+  }
+
+  /// `frame`'s register window, as a register index.
+  fn frame_base(&mut self, frame: u16) -> IrValue {
+    let offset = self.ir.frames[frame as usize].offset;
+    if offset == 0 {
+      self.base
+    } else {
+      self.fb.ins().iadd_imm_s(self.base, offset as i64)
+    }
+  }
+
+  /// Grows the register file, when it has to, to hold every frame built
+  /// into this function, which reach past the function's own registers.
+  fn ensure_registers(&mut self) {
+    let flags = MemFlagsData::trusted();
+    let len = self.fb.ins().load(types::I64, flags, self.vm, REGS_LEN_CACHE_OFFSET);
+    let needed = self.fb.ins().iadd_imm_s(self.base, self.ir.extent as i64);
+    let short = self.fb.ins().icmp(IntCC::UnsignedLessThan, len, needed);
+    let grow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.ins().brif(short, grow, &[], done, &[]);
+    self.fb.switch_to_block(grow);
+    self.fb.set_cold_block(grow);
+    self.call("zuri_jit_ensure_registers", &[self.vm, needed]);
+    self.refresh_regs();
+    self.fb.ins().jump(done, &[]);
+    self.fb.switch_to_block(done);
+  }
+
   /// A call that goes straight into the callee's compiled code when it
   /// has some. The prepare helper pushes the callee's frame and hands
   /// back its entry, or zero when the callee is not compiled or is not a
   /// plain closure, which leaves the call to the full resolver. Returns
   /// the call's status either way.
-  #[allow(clippy::too_many_arguments)]
   fn fast_call(
     &mut self,
     prepare: &'static str,
     mut prepare_args: Vec<IrValue>,
-    first_arg: u8,
-    num_args: u8,
-    dst: u8,
+    call: FastCall,
     slow: &'static str,
     slow_args: &[IrValue],
   ) -> IrValue {
+    let FastCall {
+      base,
+      offset,
+      first_arg,
+      num_args,
+      dst,
+    } = call;
     let slot = self.closure_slot();
     let out = self.fb.ins().stack_addr(types::I64, slot, 0);
     prepare_args.push(out);
@@ -551,13 +643,13 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     self.fb.switch_to_block(fast);
     let closure = self.fb.ins().stack_load(types::I64, types::I64, slot, 0);
-    let new_base = self.fb.ins().iadd_imm_s(self.base, first_arg as i64);
+    let new_base = self.fb.ins().iadd_imm_s(base, first_arg as i64);
     let nil = self.u64c(value::NIL_VAL);
     let mut call_args = vec![self.vm, new_base, closure];
     call_args.push(self.fb.ins().iconst(types::I32, -1));
     for k in 0..4u8 {
       let a = if k < num_args {
-        self.load_reg(first_arg + k)
+        self.load_reg(offset + first_arg + k)
       } else {
         nil
       };
@@ -568,10 +660,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let ret = self.fb.inst_results(call)[0];
     self.refresh_regs();
     let dst_c = self.u64c(dst as u64);
-    let status = self.call(
-      "zuri_jit_call_finish",
-      &[self.vm, self.base, dst_c, new_base, ret],
-    );
+    let status = self.call("zuri_jit_call_finish", &[self.vm, base, dst_c, new_base, ret]);
     self.fb.ins().jump(done, &[status.into()]);
 
     self.fb.switch_to_block(slow_block);
@@ -602,13 +691,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
     sig
   }
 
-  fn generic_args(&mut self, instr: Instr, ip: usize) -> Vec<IrValue> {
+  fn generic_args(
+    &mut self,
+    instr: Instr,
+    ip: usize,
+    proto: &ObjFunction,
+    base: IrValue,
+  ) -> Vec<IrValue> {
     let vm = self.vm;
-    let base = self.base;
     let r = |l: &mut Self, x: u64| l.u64c(x);
-    let func_ptr = self.proto as *const ObjFunction as u64;
-    let name_bits = |l: &Self, c: u16| l.proto.chunk.constants[c as usize].to_bits();
-    let imm_bits = |l: &Self, c: u16| l.proto.chunk.constants[c as usize].as_number().to_bits();
+    let func_ptr = proto as *const ObjFunction as u64;
+    let name_bits = |_: &Self, c: u16| proto.chunk.constants[c as usize].to_bits();
+    let imm_bits = |_: &Self, c: u16| proto.chunk.constants[c as usize].as_number().to_bits();
     match instr {
       Instr::Add { dst, a, b }
       | Instr::Sub { dst, a, b }
@@ -659,8 +753,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
         num_args,
       } => {
         let name = name_bits(self, method_const);
-        let cache = self
-          .proto
+        let cache = proto
           .chunk
           .invoke_cache_cell(ip)
           .map_or(0, |c| c as *const _ as u64);
@@ -915,7 +1008,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     self.fb.switch_to_block(slow);
     self.fb.set_cold_block(slow);
-    self.publish_ip(state.ip);
+    self.publish_ip(state.ip, state.frame);
     self.flush(state);
     let status = self.call("zuri_jit_safepoint", &[self.vm]);
     if self.armed {
@@ -979,14 +1072,45 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
   fn deopt(&mut self, state: &FrameState) {
     self.flush(state);
-    self.leave_to_interpreter(state.ip);
-  }
-
-  fn leave_to_interpreter(&mut self, ip: usize) {
-    let ip_c = self.u64c(ip as u64);
-    self.call("zuri_jit_deopt", &[self.vm, ip_c]);
+    let ip_c = self.u64c(state.ip as u64);
+    if state.frame == 0 {
+      self.call("zuri_jit_deopt", &[self.vm, ip_c]);
+    } else {
+      let (chain, len) = self.deopt_chain(state.frame);
+      let chain_c = self.u64c(chain);
+      let len_c = self.u64c(len);
+      self.call("zuri_jit_deopt_inlined", &[self.vm, chain_c, len_c, ip_c]);
+    }
     let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
+  }
+
+  /// The interpreter frames a deopt inside `frame` pushes, outermost
+  /// first. Made once per frame; the table is never freed, like the code
+  /// that points at it.
+  fn deopt_chain(&mut self, frame: u16) -> (u64, u64) {
+    if let Some(&chain) = self.deopt_chains.get(&frame) {
+      return chain;
+    }
+    let mut chain = Vec::new();
+    let mut at = frame;
+    while at != 0 {
+      let f = &self.ir.frames[at as usize];
+      chain.push(crate::jit::DeoptFrame {
+        proto: f.proto,
+        call_ip: f.call_ip,
+        offset: f.offset,
+        dst: f.dst,
+        closure: f.closure,
+      });
+      at = f.parent;
+    }
+    chain.reverse();
+    let len = chain.len() as u64;
+    let table: &'static [crate::jit::DeoptFrame] = Box::leak(chain.into_boxed_slice());
+    let entry = (table.as_ptr() as u64, len);
+    self.deopt_chains.insert(frame, entry);
+    entry
   }
 
   fn leave_on_error(&mut self, status: IrValue) {
@@ -1008,9 +1132,36 @@ impl<'a, 'b> Lowering<'a, 'b> {
     }
   }
 
-  fn publish_ip(&mut self, ip: usize) {
-    let v = self.u64c(ip as u64 + 1);
+  /// Tells the VM where compiled code is, for stack traces. Inside a
+  /// frame built in, that is a position in several functions at once,
+  /// registered for the VM to expand.
+  fn publish_ip(&mut self, ip: usize, frame: u16) {
+    let position = if frame == 0 {
+      ip + 1
+    } else {
+      self.position(frame, ip)
+    };
+    let v = self.u64c(position as u64);
     self.fb.ins().store(MemFlagsData::trusted(), v, self.vm, JIT_IP_OFFSET);
+  }
+
+  fn position(&mut self, frame: u16, ip: usize) -> usize {
+    if let Some(&p) = self.positions.get(&(frame, ip)) {
+      return p;
+    }
+    // Innermost first, each as the function and the position just past
+    // the instruction it is at, the way a frame's own `ip` reads.
+    let mut spots = vec![(self.ir.frames[frame as usize].proto, ip + 1)];
+    let mut at = frame;
+    while at != 0 {
+      let f = &self.ir.frames[at as usize];
+      let parent = &self.ir.frames[f.parent as usize];
+      spots.push((parent.proto, f.call_ip + 1));
+      at = f.parent;
+    }
+    let p = crate::jit::register_inline_position(spots);
+    self.positions.insert((frame, ip), p);
+    p
   }
 
   // --- the register file -------------------------------------------------
@@ -1134,6 +1285,30 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.block_params(done)[0]
   }
 
+  /// Whether `v` is a closure over the function whose `Value` bits are
+  /// `proto_bits`.
+  fn closure_of(&mut self, v: IrValue, proto_bits: u64) -> IrValue {
+    let is_closure = self.obj_tag_is(v, object::OBJ_TAG_CLOSURE);
+    let check = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I8);
+    let no = self.fb.ins().iconst(types::I8, 0);
+    self.fb.ins().brif(is_closure, check, &[], done, &[no.into()]);
+    self.fb.switch_to_block(check);
+    let p = self.obj_ptr(v);
+    let function = self.fb.ins().load(
+      types::I64,
+      MemFlagsData::trusted(),
+      p,
+      object::obj_closure_function_offset() as i32,
+    );
+    let want = self.u64c(proto_bits);
+    let same = self.fb.ins().icmp(IntCC::Equal, function, want);
+    self.fb.ins().jump(done, &[same.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
   /// Zuri truthiness: nil, false and numbers at or below zero are
   /// falsey; so are empty strings, byte strings and zero bigints, which
   /// take a runtime call to decide.
@@ -1222,9 +1397,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// Whether `v` passes parameter check `check_idx`, testing each type
   /// the way `VM::param_type_matches` does. The builder only makes this
   /// guard for checks with no instance or iterable type.
-  fn param_check(&mut self, v: IrValue, check_idx: u16) -> IrValue {
+  fn param_check(&mut self, v: IrValue, proto: &ObjFunction, check_idx: u16) -> IrValue {
     use crate::vm::chunk::ParamType;
-    let check = self.proto.chunk.param_checks[check_idx as usize].clone();
+    let check = proto.chunk.param_checks[check_idx as usize].clone();
     let mut ok = self.fb.ins().iconst(types::I8, 0);
     if check.nullable {
       let nil = self.u64c(value::NIL_VAL);
@@ -1473,6 +1648,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
   fn call_pure(&mut self, name: &str, args: &[IrValue]) -> IrValue {
     self.call(name, args)
   }
+}
+
+/// Where a call made through `Lowering::fast_call` puts its callee: the
+/// calling frame's window and where it sits, the callee's first argument
+/// register and count in that frame, and where the result goes.
+#[derive(Clone, Copy)]
+struct FastCall {
+  base: IrValue,
+  offset: u8,
+  first_arg: u8,
+  num_args: u8,
+  dst: u8,
 }
 
 /// The signature every compiled entry shares; built the same way the

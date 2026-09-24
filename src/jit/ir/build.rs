@@ -17,10 +17,20 @@
 //! Representations only ever widen here. Turning a loop's tagged block
 //! parameters into unboxed ones is `passes::repr`'s job, once the whole
 //! function is visible.
+//!
+//! A call whose callee the feedback knows is built in place. The callee's
+//! bytecode is translated into the caller's IR behind a guard that the
+//! callee is still the one it was, with its registers where a real call
+//! would put them, just past the caller's call window. A callee without
+//! branches goes straight into the calling block, so its arguments keep
+//! whatever representation they had; one with branches gets its own
+//! blocks and returns through a block that picks the caller up again.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::{BlockId, Cmp, FrameState, Func, GuardKind, Op, Terminator, Ty, ValueId};
+use super::{
+  BlockId, Cmp, FrameClosure, FrameState, Func, GuardKind, InlineFrame, Op, Terminator, Ty, ValueId,
+};
 use crate::jit::typeflow;
 use crate::vm::chunk::{Instr, ParamType, kind};
 use crate::vm::object::ObjFunction;
@@ -50,6 +60,27 @@ pub struct Feedback {
   pub sites_off: bool,
   /// No field or method speculation anywhere, for the same reason.
   pub fields_off: bool,
+  /// For a global slot holding a closure some call here reaches through,
+  /// that closure's function, with what to build it from.
+  pub global_callees: FxHashMap<u32, Box<Callee>>,
+  /// For a method call site whose cache holds a class, the method that
+  /// class resolves it to.
+  pub invoke_callees: FxHashMap<usize, Box<Callee>>,
+}
+
+/// A function a call can be built into its caller from.
+#[derive(Clone, Debug, Default)]
+pub struct Callee {
+  /// The `ObjFunction`, whose bytecode is read while building.
+  pub proto: usize,
+  /// The function's own `Value` bits, which a closure called through a
+  /// register is checked against.
+  pub proto_bits: u64,
+  /// A method's closure, as `Value` bits. Methods live as long as their
+  /// class and never move.
+  pub closure: u64,
+  /// The callee's own feedback.
+  pub feedback: Feedback,
 }
 
 impl Feedback {
@@ -112,36 +143,65 @@ pub fn build(proto: &ObjFunction, feedback: &Feedback) -> Result<Func, BuildErro
   Builder::new(proto, feedback)?.run()
 }
 
-struct Builder<'a> {
+/// How deep calls are built into one another.
+pub const MAX_INLINE_DEPTH: usize = 4;
+/// The longest callee built in, in bytecode instructions.
+pub const MAX_INLINE_OPS: usize = 64;
+/// How much callee bytecode one function takes in altogether.
+pub const MAX_INLINED_TOTAL: usize = 512;
+
+/// Registers are numbered from the compiled function's frame, and a
+/// register number is a byte.
+const REGISTER_LIMIT: usize = 256;
+
+/// One function being translated: the compiled function itself, or a
+/// callee being built into it.
+struct Frame<'a> {
   proto: &'a ObjFunction,
   feedback: &'a Feedback,
   code: &'a [Instr],
   live: typeflow::LivenessFacts,
-  func: Func,
-  /// The IR block each bytecode leader starts.
+  /// The IR block each bytecode leader starts. Empty for a callee built
+  /// straight into its caller's block.
   leader_block: FxHashMap<usize, BlockId>,
-  /// For each leader block, which register each parameter carries.
-  param_regs: FxHashMap<BlockId, Vec<u8>>,
-  regs: Vec<RegView>,
-  block: BlockId,
-  /// Back edges seen, as (block ending in the jump, loop header ip), for
-  /// placing safepoints once the loop bodies are known.
-  back_edges: Vec<(BlockId, usize)>,
-  /// Registers a closure made here captures. The closure reads and
-  /// writes them in the register file, so every value one takes is
-  /// written there as it is made, and each is read back after anything
-  /// that could have run the closure.
-  captured: Vec<bool>,
+  /// This frame's index in `Func::frames`.
+  id: u16,
+  /// Where this frame's register 0 sits.
+  offset: u8,
+  /// Registers of the frames around this one that have to survive the
+  /// call: whatever they read after it, and the register a callee
+  /// closure was taken from. Every frame state here carries them, and so
+  /// does every block of this frame's own.
+  outer: Vec<u8>,
+  /// Where this frame's `Return` goes.
+  exit: Exit,
   /// Whether the function makes closures at all, and so may leave open
   /// upvalues over its registers that returning has to close.
   makes_closures: bool,
-  /// Set when the instruction being translated went through its runtime
-  /// helper, which leaves its result in the register file already.
-  in_memory: bool,
 }
 
-impl<'a> Builder<'a> {
-  fn new(proto: &'a ObjFunction, feedback: &'a Feedback) -> Result<Self, BuildError> {
+/// What a `Return` does in the frame being translated.
+#[derive(Clone, Copy)]
+enum Exit {
+  /// Returns from the compiled function.
+  Root,
+  /// Ends a callee built straight into its caller's block; the builder
+  /// picks the caller up with the returned register's view.
+  Straight,
+  /// Jumps to the block that picks the caller up, passing the result
+  /// first and then the frame's `outer` registers.
+  Branch(BlockId),
+}
+
+impl<'a> Frame<'a> {
+  fn new(
+    proto: &'a ObjFunction,
+    feedback: &'a Feedback,
+    id: u16,
+    offset: u8,
+    outer: Vec<u8>,
+    exit: Exit,
+  ) -> Result<Self, BuildError> {
     let code = &proto.chunk.code[..];
     for (ip, instr) in code.iter().enumerate() {
       if let Some(reason) = unsupported(instr) {
@@ -150,21 +210,112 @@ impl<'a> Builder<'a> {
     }
     let preds = typeflow::build_predecessors(proto);
     let live = typeflow::liveness(proto, &preds);
-    Ok(Builder {
+    Ok(Frame {
       proto,
       feedback,
       code,
       live,
-      func: Func::new(proto.num_registers as usize),
       leader_block: FxHashMap::default(),
+      id,
+      offset,
+      outer,
+      exit,
+      makes_closures: code.iter().any(|i| matches!(i, Instr::Closure { .. })),
+    })
+  }
+}
+
+struct Builder<'a> {
+  cx: Frame<'a>,
+  /// The compiled function's own feedback.
+  func_feedback: &'a Feedback,
+  func: Func,
+  /// For each block that starts a bytecode block, which register each
+  /// parameter carries.
+  param_regs: FxHashMap<BlockId, Vec<u8>>,
+  regs: Vec<RegView>,
+  block: BlockId,
+  /// Back edges seen, as the block ending in the jump, the loop header
+  /// and its position, and the frame it is in, for placing safepoints
+  /// once the loop bodies are known.
+  back_edges: Vec<(BlockId, BlockId, usize, u16)>,
+  /// Registers a closure made in the compiled function captures. The
+  /// closure reads and writes them in the register file, so every value
+  /// one takes is written there as it is made, and each is read back
+  /// after anything that could have run the closure. A callee that makes
+  /// closures is never built in, so only the compiled function's own
+  /// registers can be captured.
+  captured: Vec<bool>,
+  /// Set when the instruction being translated went through its runtime
+  /// helper, which leaves its result in the register file already.
+  in_memory: bool,
+  /// The value a callee built straight into its caller returned.
+  returned: Option<RegView>,
+  /// The functions being built into one another, outermost first.
+  inlining: Vec<usize>,
+  /// Callee bytecode built in so far.
+  inlined_ops: usize,
+  /// One past the highest register any frame uses.
+  extent: usize,
+}
+
+impl<'a> Builder<'a> {
+  fn new(proto: &'a ObjFunction, feedback: &'a Feedback) -> Result<Self, BuildError> {
+    let cx = Frame::new(proto, feedback, 0, 0, Vec::new(), Exit::Root)?;
+    let mut captured = typeflow::captured_registers(proto);
+    captured.resize(REGISTER_LIMIT, false);
+    Ok(Builder {
+      cx,
+      func_feedback: feedback,
+      func: Func::new(proto.num_registers as usize, proto as *const ObjFunction as usize),
       param_regs: FxHashMap::default(),
-      regs: vec![RegView::EMPTY; proto.num_registers as usize],
+      regs: vec![RegView::EMPTY; REGISTER_LIMIT],
       block: BlockId(0),
       back_edges: Vec::new(),
-      captured: typeflow::captured_registers(proto),
-      makes_closures: code.iter().any(|i| matches!(i, Instr::Closure { .. })),
+      captured,
       in_memory: false,
+      returned: None,
+      inlining: vec![proto as *const ObjFunction as usize],
+      inlined_ops: 0,
+      extent: proto.num_registers as usize,
     })
+  }
+
+  /// A register of the frame being translated, numbered from the
+  /// compiled function's frame.
+  fn at(&self, r: u8) -> u8 {
+    self.cx.offset + r
+  }
+
+  fn view(&self, r: u8) -> RegView {
+    self.regs[self.at(r) as usize]
+  }
+
+  fn view_mut(&mut self, r: u8) -> &mut RegView {
+    let at = self.at(r) as usize;
+    &mut self.regs[at]
+  }
+
+  /// A new block in the frame being translated.
+  fn new_block(&mut self, ip: Option<usize>) -> BlockId {
+    let b = self.func.add_block(ip);
+    self.func.block_mut(b).frame = self.cx.id;
+    b
+  }
+
+  /// A block starting the bytecode block at `ip` of the frame being
+  /// translated, taking every register live there and the frame's outer
+  /// registers as parameters.
+  fn leader(&mut self, ip: usize) -> BlockId {
+    let b = self.new_block(Some(ip));
+    let mut regs: Vec<u8> = self.cx.live.live_regs_at(ip).map(|r| self.cx.offset + r).collect();
+    regs.extend(self.cx.outer.iter().copied());
+    for _ in &regs {
+      self.func.add_block_param(b, Ty::Tagged);
+    }
+    self.func.block_mut(b).param_regs = regs.clone();
+    self.param_regs.insert(b, regs);
+    b
   }
 
   fn run(mut self) -> Result<Func, BuildError> {
@@ -174,7 +325,7 @@ impl<'a> Builder<'a> {
     // the baseline tier numbers them: by first appearance of a backward
     // `Jmp`.
     let mut osr_ids: FxHashMap<usize, i32> = FxHashMap::default();
-    for (ip, instr) in self.code.iter().enumerate() {
+    for (ip, instr) in self.cx.code.iter().enumerate() {
       if let Instr::Jmp { offset } = *instr
         && offset < 0
       {
@@ -187,14 +338,8 @@ impl<'a> Builder<'a> {
     let prologue = self.func.add_block(None);
     self.func.entry = prologue;
     for &ip in &leaders {
-      let b = self.func.add_block(Some(ip));
-      let regs: Vec<u8> = self.live.live_regs_at(ip).collect();
-      for _ in &regs {
-        self.func.add_block_param(b, Ty::Tagged);
-      }
-      self.func.block_mut(b).param_regs = regs.clone();
-      self.leader_block.insert(ip, b);
-      self.param_regs.insert(b, regs);
+      let b = self.leader(ip);
+      self.cx.leader_block.insert(ip, b);
     }
     self.func.osr_ids = osr_ids;
     let mut osr: Vec<(usize, i32)> = self.func.osr_ids.iter().map(|(&ip, &id)| (ip, id)).collect();
@@ -214,7 +359,7 @@ impl<'a> Builder<'a> {
 
     // The ordinary entry reads whatever is live at the first instruction,
     // which in practice is the parameters.
-    let first = self.leader_block[&0];
+    let first = self.cx.leader_block[&0];
     let ordinary_entry = match dispatch {
       Some(_) => self.func.add_block(None),
       None => prologue,
@@ -239,7 +384,7 @@ impl<'a> Builder<'a> {
     if let Some((which, ordinary)) = dispatch {
       let mut entries = Vec::new();
       for &(ip, id) in &osr {
-        let header = self.leader_block[&ip];
+        let header = self.cx.leader_block[&ip];
         let block = self.func.add_block(None);
         self.block = block;
         let mut args = Vec::new();
@@ -279,47 +424,54 @@ impl<'a> Builder<'a> {
         );
         check = next;
       }
-      self.func.set_term(check, Terminator::Deopt(FrameState { ip: 0, regs: Vec::new() }));
+      self.func.set_term(check, Terminator::Deopt(FrameState::root(0, Vec::new())));
     }
 
+    self.build_blocks(&leaders)?;
+    self.place_safepoints();
+    self.func.extent = self.extent;
+    Ok(self.func)
+  }
+
+  /// Builds every bytecode block of the frame being translated.
+  fn build_blocks(&mut self, leaders: &[usize]) -> Result<(), BuildError> {
     for (i, &start) in leaders.iter().enumerate() {
-      let end = leaders.get(i + 1).copied().unwrap_or(self.code.len());
+      let end = leaders.get(i + 1).copied().unwrap_or(self.cx.code.len());
       self.build_block(start, end)?;
     }
-
-    self.place_safepoints();
-    Ok(self.func)
+    Ok(())
   }
 
   /// Every bytecode position that starts a basic block.
   fn leaders(&self) -> Vec<usize> {
     let mut set: FxHashSet<usize> = FxHashSet::default();
     set.insert(0);
-    for (ip, instr) in self.code.iter().enumerate() {
+    let code = self.cx.code;
+    for (ip, instr) in code.iter().enumerate() {
       match *instr {
         Instr::Jmp { offset }
         | Instr::JmpIfFalse { offset, .. }
         | Instr::JmpIfTrue { offset, .. } => {
           set.insert(jump_target(ip, offset));
-          if ip + 1 < self.code.len() {
+          if ip + 1 < code.len() {
             set.insert(ip + 1);
           }
         },
         Instr::UsingJump { table_idx, .. } => {
-          set.extend(self.proto.chunk.jump_tables[table_idx as usize].values().copied());
-          if ip + 1 < self.code.len() {
+          set.extend(self.cx.proto.chunk.jump_tables[table_idx as usize].values().copied());
+          if ip + 1 < code.len() {
             set.insert(ip + 1);
           }
         },
         Instr::Return { .. } | Instr::Raise { .. } => {
-          if ip + 1 < self.code.len() {
+          if ip + 1 < code.len() {
             set.insert(ip + 1);
           }
         },
         _ => {},
       }
     }
-    let mut v: Vec<usize> = set.into_iter().filter(|&ip| ip < self.code.len()).collect();
+    let mut v: Vec<usize> = set.into_iter().filter(|&ip| ip < code.len()).collect();
     v.sort_unstable();
     v
   }
@@ -339,39 +491,57 @@ impl<'a> Builder<'a> {
   }
 
   fn build_block(&mut self, start: usize, end: usize) -> Result<(), BuildError> {
-    let b = self.leader_block[&start];
+    let b = self.cx.leader_block[&start];
     self.block = b;
-    self.regs = vec![RegView::EMPTY; self.func.num_registers];
+    self.regs = vec![RegView::EMPTY; REGISTER_LIMIT];
     let params = self.func.block(b).params.clone();
     for (&r, &p) in self.param_regs[&b].clone().iter().zip(&params) {
       self.regs[r as usize] = RegView::tagged(p);
     }
 
-    for ip in start..end {
-      let instr = self.code[ip];
-      self.in_memory = false;
-      if self.translate(ip, instr)? {
-        return Ok(());
-      }
-      if let Some(dst) = typeflow::any_dst(&instr)
-        && self.captured[dst as usize]
-        && !self.in_memory
-      {
-        let v = self.tagged(dst);
-        self.push(Op::StoreReg(dst), vec![v], None, None);
-      }
+    if self.translate_run(start, end)? {
+      return Ok(());
     }
     // Fell off the end of the block into the next leader.
-    let next = self.leader_block[&end];
+    let next = self.cx.leader_block[&end];
     let args = self.edge_args(next);
     self.func.set_term(self.block, Terminator::Jump { target: next, args });
     Ok(())
   }
 
+  /// Translates `start..end` into the current block. Returns whether an
+  /// instruction ended the block.
+  fn translate_run(&mut self, start: usize, end: usize) -> Result<bool, BuildError> {
+    for ip in start..end {
+      let instr = self.cx.code[ip];
+      self.in_memory = false;
+      if self.translate(ip, instr)? {
+        return Ok(true);
+      }
+      if let Some(dst) = typeflow::any_dst(&instr)
+        && self.captured[self.at(dst) as usize]
+        && !self.in_memory
+      {
+        let v = self.tagged(dst);
+        let at = self.at(dst);
+        self.push(Op::StoreReg(at), vec![v], None, None);
+      }
+    }
+    Ok(false)
+  }
+
   // --- representations -------------------------------------------------
+  //
+  // These take a register of the frame being translated; the `_at` forms
+  // take one numbered from the compiled function's frame.
 
   fn tagged(&mut self, r: u8) -> ValueId {
-    let view = self.regs[r as usize];
+    let at = self.at(r);
+    self.tagged_at(at)
+  }
+
+  fn tagged_at(&mut self, at: u8) -> ValueId {
+    let view = self.regs[at as usize];
     if let Some(v) = view.tagged {
       return v;
     }
@@ -379,7 +549,7 @@ impl<'a> Builder<'a> {
       self.value(Op::BoxF64, vec![n], Ty::Tagged)
     } else if let Some(i) = view.int {
       let n = self.value(Op::IntToF64, vec![i], Ty::F64);
-      self.regs[r as usize].num = Some(n);
+      self.regs[at as usize].num = Some(n);
       self.value(Op::BoxF64, vec![n], Ty::Tagged)
     } else if let Some(c) = view.cond {
       self.value(Op::BoxBool, vec![c], Ty::Tagged)
@@ -387,18 +557,18 @@ impl<'a> Builder<'a> {
       // Never written on this path; the interpreter would read nil.
       self.value(Op::ConstTagged(Value::nil().to_bits()), vec![], Ty::Tagged)
     };
-    self.regs[r as usize].tagged = Some(v);
+    self.regs[at as usize].tagged = Some(v);
     v
   }
 
   fn num(&mut self, r: u8, ip: usize) -> ValueId {
-    let view = self.regs[r as usize];
+    let view = self.view(r);
     if let Some(n) = view.num {
       return n;
     }
     if let Some(i) = view.int {
       let n = self.value(Op::IntToF64, vec![i], Ty::F64);
-      self.regs[r as usize].num = Some(n);
+      self.view_mut(r).num = Some(n);
       return n;
     }
     let t = self.tagged(r);
@@ -410,17 +580,17 @@ impl<'a> Builder<'a> {
         .push(Op::Guard(GuardKind::Number), vec![t], Some(Ty::F64), Some(state))
         .unwrap()
     };
-    let view = &mut self.regs[r as usize];
+    let view = self.view_mut(r);
     view.num = Some(n);
     view.known = Known::Number;
     n
   }
 
   fn int(&mut self, r: u8, ip: usize) -> ValueId {
-    if let Some(i) = self.regs[r as usize].int {
+    if let Some(i) = self.view(r).int {
       return i;
     }
-    let source = match self.regs[r as usize].num {
+    let source = match self.view(r).num {
       Some(n) => n,
       None => self.tagged(r),
     };
@@ -428,7 +598,7 @@ impl<'a> Builder<'a> {
     let i = self
       .push(Op::Guard(GuardKind::Int), vec![source], Some(Ty::I64), Some(state))
       .unwrap();
-    let view = &mut self.regs[r as usize];
+    let view = self.view_mut(r);
     view.int = Some(i);
     view.known = Known::Number;
     i
@@ -436,7 +606,7 @@ impl<'a> Builder<'a> {
 
   /// `r` as a condition: true when the value is truthy.
   fn truthy(&mut self, r: u8) -> ValueId {
-    if let Some(c) = self.regs[r as usize].cond {
+    if let Some(c) = self.view(r).cond {
       return c;
     }
     let t = self.tagged(r);
@@ -445,7 +615,7 @@ impl<'a> Builder<'a> {
   }
 
   fn list_ptr(&mut self, r: u8, ip: usize) -> ValueId {
-    let view = self.regs[r as usize];
+    let view = self.view(r);
     if let (Some(p), Known::List) = (view.ptr, view.known) {
       return p;
     }
@@ -458,14 +628,14 @@ impl<'a> Builder<'a> {
         .push(Op::Guard(GuardKind::List), vec![t], Some(Ty::Ptr), Some(state))
         .unwrap()
     };
-    let view = &mut self.regs[r as usize];
+    let view = self.view_mut(r);
     view.ptr = Some(p);
     view.known = Known::List;
     p
   }
 
   fn instance_ptr(&mut self, r: u8, class: u64, ip: usize) -> ValueId {
-    let view = self.regs[r as usize];
+    let view = self.view(r);
     if let (Some(p), Known::Instance(c)) = (view.ptr, view.known)
       && c == class
     {
@@ -485,14 +655,14 @@ impl<'a> Builder<'a> {
         )
         .unwrap()
     };
-    let view = &mut self.regs[r as usize];
+    let view = self.view_mut(r);
     view.ptr = Some(p);
     view.known = Known::Instance(class);
     p
   }
 
   fn set_num(&mut self, r: u8, n: ValueId) {
-    self.regs[r as usize] = RegView {
+    *self.view_mut(r) = RegView {
       num: Some(n),
       known: Known::Number,
       ..RegView::EMPTY
@@ -500,7 +670,7 @@ impl<'a> Builder<'a> {
   }
 
   fn set_cond(&mut self, r: u8, c: ValueId) {
-    self.regs[r as usize] = RegView {
+    *self.view_mut(r) = RegView {
       cond: Some(c),
       known: Known::Bool,
       ..RegView::EMPTY
@@ -508,68 +678,86 @@ impl<'a> Builder<'a> {
   }
 
   fn set_tagged(&mut self, r: u8, t: ValueId) {
-    self.regs[r as usize] = RegView::tagged(t);
+    *self.view_mut(r) = RegView::tagged(t);
   }
 
   /// What the interpreter needs to resume at `ip`: every register live
-  /// there, tagged.
+  /// there, tagged, and the registers the frames around it still need.
   fn state(&mut self, ip: usize) -> FrameState {
-    let live: Vec<u8> = self.live.live_regs_at(ip).collect();
-    let regs = live.into_iter().map(|r| (r, self.tagged(r))).collect();
-    FrameState { ip, regs }
+    let mut regs: Vec<u8> = self.cx.live.live_regs_at(ip).map(|r| self.cx.offset + r).collect();
+    regs.extend(self.cx.outer.iter().copied());
+    regs.sort_unstable();
+    let regs = regs.into_iter().map(|r| (r, self.tagged_at(r))).collect();
+    FrameState {
+      ip,
+      regs,
+      frame: self.cx.id,
+    }
   }
 
   /// The values to pass along an edge into `target`.
   fn edge_args(&mut self, target: BlockId) -> Vec<ValueId> {
     let regs = self.param_regs[&target].clone();
-    regs.into_iter().map(|r| self.tagged(r)).collect()
+    regs.into_iter().map(|r| self.tagged_at(r)).collect()
   }
 
   /// Everything that happens after an operation that may have collected:
   /// the register file is the only place values survived, so each live
   /// register that could hold an object is read back, pointers derived
   /// from the old values are dropped, and whatever was known about each
-  /// value's kind carries over.
+  /// value's kind carries over. The frames around this one get the same
+  /// treatment for the registers they still need.
   fn after_collect(&mut self, next_ip: usize, written: Option<u8>) {
-    let live: FxHashSet<u8> = if next_ip < self.code.len() {
-      self.live.live_regs_at(next_ip).collect()
+    let live: FxHashSet<u8> = if next_ip < self.cx.code.len() {
+      self.cx.live.live_regs_at(next_ip).collect()
     } else {
       FxHashSet::default()
     };
-    for r in 0..self.func.num_registers as u8 {
+    for r in 0..self.cx.proto.num_registers {
       if Some(r) == written {
         continue;
       }
       if !live.contains(&r) {
-        self.regs[r as usize] = RegView::EMPTY;
+        *self.view_mut(r) = RegView::EMPTY;
         continue;
       }
-      let view = self.regs[r as usize];
-      if self.captured[r as usize] {
-        // A closure may have set it to anything at all.
-        let old = self.tagged(r);
-        let fresh = self.value(Op::Reload { reg: r }, vec![old], Ty::Tagged);
-        self.set_tagged(r, fresh);
-        continue;
-      }
-      if !view.known.may_be_object() {
-        // A number or a boolean is its own bits; nothing moved.
-        continue;
-      }
-      let Some(old) = view.tagged else {
-        continue;
-      };
-      let fresh = self.value(Op::Reload { reg: r }, vec![old], Ty::Tagged);
-      self.regs[r as usize] = RegView {
-        tagged: Some(fresh),
-        known: view.known,
-        ..RegView::EMPTY
-      };
+      let at = self.at(r);
+      self.reload(at);
+    }
+    for at in self.cx.outer.clone() {
+      self.reload(at);
     }
     if let Some(dst) = written {
-      let fresh = self.value(Op::Reload { reg: dst }, vec![], Ty::Tagged);
-      self.set_tagged(dst, fresh);
+      let at = self.at(dst);
+      let fresh = self.value(Op::Reload { reg: at }, vec![], Ty::Tagged);
+      self.regs[at as usize] = RegView::tagged(fresh);
     }
+  }
+
+  /// Reads register `at` back from the register file after a possible
+  /// collection, when its value could be an object.
+  fn reload(&mut self, at: u8) {
+    let view = self.regs[at as usize];
+    if self.captured[at as usize] {
+      // A closure may have set it to anything at all.
+      let old = self.tagged_at(at);
+      let fresh = self.value(Op::Reload { reg: at }, vec![old], Ty::Tagged);
+      self.regs[at as usize] = RegView::tagged(fresh);
+      return;
+    }
+    if !view.known.may_be_object() {
+      // A number or a boolean is its own bits; nothing moved.
+      return;
+    }
+    let Some(old) = view.tagged else {
+      return;
+    };
+    let fresh = self.value(Op::Reload { reg: at }, vec![old], Ty::Tagged);
+    self.regs[at as usize] = RegView {
+      tagged: Some(fresh),
+      known: view.known,
+      ..RegView::EMPTY
+    };
   }
 
   /// Runs `instr` through its runtime helper.
@@ -578,11 +766,17 @@ impl<'a> Builder<'a> {
       return Err(format!("no runtime helper for {instr:?} at ip {ip}"));
     }
     if let Some(what) = self.baseline_faster(ip, &instr) {
-      return Err(format!("{what} at ip {ip} runs faster in the baseline tier"));
+      let place = if self.cx.id == 0 {
+        String::new()
+      } else {
+        format!(" of '{}', built in,", self.cx.proto.display_name())
+      };
+      return Err(format!("{what} at ip {ip}{place} runs faster in the baseline tier"));
     }
     let state = self.state(ip);
     let args = state.regs.iter().map(|&(_, v)| v).collect();
-    self.push(Op::Generic { instr, ip }, args, None, Some(state));
+    let frame = self.cx.id;
+    self.push(Op::Generic { instr, ip, frame }, args, None, Some(state));
     self.after_collect(ip + 1, typeflow::any_dst(&instr));
     self.in_memory = true;
     Ok(())
@@ -594,7 +788,7 @@ impl<'a> Builder<'a> {
   /// actually takes is left to that tier. A site the interpreter never
   /// ran costs nothing either way.
   fn baseline_faster(&self, ip: usize, instr: &Instr) -> Option<&'static str> {
-    let seen = self.feedback.kinds.get(ip).copied().unwrap_or(0);
+    let seen = self.cx.feedback.kinds.get(ip).copied().unwrap_or(0);
     match instr {
       Instr::Add { .. }
       | Instr::Sub { .. }
@@ -645,36 +839,38 @@ impl<'a> Builder<'a> {
   /// deoptimization if the guess is wrong, after which the site is
   /// blocked and runs through its helper.
   fn numeric_site(&self, ip: usize) -> bool {
-    let seen = self.feedback.kinds.get(ip).copied().unwrap_or(0);
-    !self.feedback.sites_off && self.feedback.open(ip) && seen & !kind::NUMBER == 0
+    let feedback = self.cx.feedback;
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
+    !feedback.sites_off && feedback.open(ip) && seen & !kind::NUMBER == 0
   }
 
   fn list_site(&self, ip: usize) -> bool {
-    !self.feedback.sites_off
-      && self.feedback.open(ip)
-      && self.feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
+    let feedback = self.cx.feedback;
+    !feedback.sites_off && feedback.open(ip) && feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
   }
 
   fn field_site(&self, ip: usize) -> Option<(u64, u16)> {
-    if self.feedback.fields_off || !self.feedback.open(ip) {
+    let feedback = self.cx.feedback;
+    if feedback.fields_off || !feedback.open(ip) {
       return None;
     }
-    self.feedback.fields.get(&ip).copied()
+    feedback.fields.get(&ip).copied()
   }
 
   /// A method call whose receiver has only ever been a list: the
   /// interpreter's receiver feedback, or the key compiled code left in
   /// the site's cache.
   fn list_invoke_site(&self, ip: usize) -> bool {
-    if self.feedback.fields_off || !self.feedback.open(ip) {
+    let feedback = self.cx.feedback;
+    if feedback.fields_off || !feedback.open(ip) {
       return false;
     }
-    self.feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
-      || self.feedback.invokes.get(&ip) == Some(&self.feedback.list_key)
+    feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
+      || feedback.invokes.get(&ip) == Some(&feedback.list_key)
   }
 
   fn imm(&self, idx: u16) -> Option<f64> {
-    let c = self.proto.chunk.constants[idx as usize];
+    let c = self.cx.proto.chunk.constants[idx as usize];
     c.is_number().then(|| c.as_number())
   }
 
@@ -684,7 +880,7 @@ impl<'a> Builder<'a> {
   fn translate(&mut self, ip: usize, instr: Instr) -> Result<bool, BuildError> {
     match instr {
       Instr::LoadConst { dst, const_idx } => {
-        let c = self.proto.chunk.constants[const_idx as usize];
+        let c = self.cx.proto.chunk.constants[const_idx as usize];
         if c.is_number() {
           let n = self.value(Op::ConstF64(c.as_number()), vec![], Ty::F64);
           self.set_num(dst, n);
@@ -702,7 +898,7 @@ impl<'a> Builder<'a> {
         self.set_cond(dst, c);
       },
       Instr::Move { dst, src } => {
-        self.regs[dst as usize] = self.regs[src as usize];
+        *self.view_mut(dst) = self.view(src);
       },
 
       Instr::Add { dst, a, b }
@@ -772,7 +968,7 @@ impl<'a> Builder<'a> {
         self.set_cond(dst, r);
       },
       Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b }
-        if self.regs[a as usize].num.is_some() && self.regs[b as usize].num.is_some() =>
+        if self.view(a).num.is_some() && self.view(b).num.is_some() =>
       {
         let x = self.num(a, ip);
         let y = self.num(b, ip);
@@ -805,7 +1001,7 @@ impl<'a> Builder<'a> {
         if self.imm(imm_const).is_some() =>
       {
         let k = self.imm(imm_const).unwrap();
-        let eq = if let Some(x) = self.regs[a as usize].num {
+        let eq = if let Some(x) = self.view(a).num {
           let y = self.value(Op::ConstF64(k), vec![], Ty::F64);
           self.value(Op::FCmp(Cmp::Eq), vec![x, y], Ty::Bool)
         } else {
@@ -820,7 +1016,7 @@ impl<'a> Builder<'a> {
         self.set_cond(dst, r);
       },
       Instr::Not { dst, src } => {
-        let r = if let Some(c) = self.regs[src as usize].cond {
+        let r = if let Some(c) = self.view(src).cond {
           self.value(Op::BNot, vec![c], Ty::Bool)
         } else {
           let t = self.tagged(src);
@@ -831,17 +1027,17 @@ impl<'a> Builder<'a> {
 
       Instr::Jmp { offset } => {
         let target_ip = jump_target(ip, offset);
-        let target = self.leader_block[&target_ip];
+        let target = self.cx.leader_block[&target_ip];
         if offset < 0 {
-          self.back_edges.push((self.block, target_ip));
+          self.back_edges.push((self.block, target, target_ip, self.cx.id));
         }
         let args = self.edge_args(target);
         self.func.set_term(self.block, Terminator::Jump { target, args });
         return Ok(true);
       },
       Instr::JmpIfFalse { cond, offset } | Instr::JmpIfTrue { cond, offset } => {
-        let target = self.leader_block[&jump_target(ip, offset)];
-        let next = self.leader_block[&(ip + 1)];
+        let target = self.cx.leader_block[&jump_target(ip, offset)];
+        let next = self.cx.leader_block[&(ip + 1)];
         let truthy = self.truthy(cond);
         let target_args = self.edge_args(target);
         let next_args = self.edge_args(next);
@@ -862,11 +1058,26 @@ impl<'a> Builder<'a> {
         return Ok(true);
       },
       Instr::Return { src } => {
-        if self.makes_closures {
-          self.close_upvalues(ip, src);
+        match self.cx.exit {
+          Exit::Root => {
+            if self.cx.makes_closures {
+              self.close_upvalues(ip, src);
+            }
+            let v = self.tagged(src);
+            self.func.set_term(self.block, Terminator::Return(v));
+          },
+          Exit::Straight => {
+            let view = self.view(src);
+            self.returned = Some(view);
+          },
+          Exit::Branch(cont) => {
+            let mut args = vec![self.tagged(src)];
+            for at in self.cx.outer.clone() {
+              args.push(self.tagged_at(at));
+            }
+            self.func.set_term(self.block, Terminator::Jump { target: cont, args });
+          },
         }
-        let v = self.tagged(src);
-        self.func.set_term(self.block, Terminator::Return(v));
         return Ok(true);
       },
       Instr::Raise { .. } => {
@@ -892,19 +1103,19 @@ impl<'a> Builder<'a> {
         self.push(Op::StoreUpval, vec![cell, v], None, None);
       },
 
-      Instr::GetGlobal { dst, .. } if self.feedback.globals.contains_key(&ip) => {
-        let slot = self.feedback.globals[&ip];
+      Instr::GetGlobal { dst, .. } if self.cx.feedback.globals.contains_key(&ip) => {
+        let slot = self.cx.feedback.globals[&ip];
         let t = self.value(Op::LoadGlobal(slot), vec![], Ty::Tagged);
         self.set_tagged(dst, t);
       },
       Instr::SetGlobal { src, .. } | Instr::AssignGlobal { src, .. }
-        if self.feedback.globals.contains_key(&ip) =>
+        if self.cx.feedback.globals.contains_key(&ip) =>
       {
-        let slot = self.feedback.globals[&ip];
+        let slot = self.cx.feedback.globals[&ip];
         let v = self.tagged(src);
         self.push(Op::StoreGlobal(slot), vec![v], None, None);
       },
-      Instr::CheckParamType { reg, check_idx } if inline_param_check(self.proto, check_idx) => {
+      Instr::CheckParamType { reg, check_idx } if inline_param_check(self.cx.proto, check_idx) => {
         let v = self.tagged(reg);
         let state = self.state(ip);
         self.push(
@@ -913,14 +1124,14 @@ impl<'a> Builder<'a> {
           None,
           Some(state),
         );
-        let check = &self.proto.chunk.param_checks[check_idx as usize];
+        let check = &self.cx.proto.chunk.param_checks[check_idx as usize];
         let numeric = !check.nullable
           && check
             .types
             .iter()
             .all(|t| matches!(t, ParamType::Number | ParamType::Int));
         if numeric {
-          self.regs[reg as usize].known = Known::Number;
+          self.view_mut(reg).known = Known::Number;
         }
       },
 
@@ -964,20 +1175,266 @@ impl<'a> Builder<'a> {
         method_const,
         num_args: 0,
       } if self.list_invoke_site(ip)
-        && self.proto.chunk.constants[method_const as usize].as_str() == "length" =>
+        && self.cx.proto.chunk.constants[method_const as usize].as_str() == "length" =>
       {
         let p = self.list_ptr(obj, ip);
         let len = self.value(Op::ListLen, vec![p], Ty::I64);
-        self.regs[dst as usize] = RegView {
+        *self.view_mut(dst) = RegView {
           int: Some(len),
           known: Known::Number,
           ..RegView::EMPTY
         };
       },
 
+      Instr::Call { dst, func, num_args } if self.call_callee(ip, func).is_some() => {
+        let callee = self.call_callee(ip, func).unwrap();
+        let closure = FrameClosure::Reg(self.at(func));
+        match self.inline_plan(ip, callee, dst, func + 1, num_args, closure) {
+          Some((proto, outer)) => {
+            let f = self.tagged(func);
+            let state = self.state(ip);
+            self.push(
+              Op::Guard(GuardKind::Proto(callee.proto_bits)),
+              vec![f],
+              None,
+              Some(state),
+            );
+            self.build_inline(ip, callee, proto, outer, dst, func + 1, closure)?;
+          },
+          None => self.generic(ip, instr)?,
+        }
+      },
+      Instr::Invoke {
+        dst,
+        obj,
+        num_args,
+        ..
+      } if self.invoke_callee(ip).is_some() => {
+        let (class, callee) = self.invoke_callee(ip).unwrap();
+        let closure = FrameClosure::Const(callee.closure);
+        match self.inline_plan(ip, callee, dst, obj + 1, num_args + 1, closure) {
+          Some((proto, outer)) => {
+            self.instance_ptr(obj, class, ip);
+            // The receiver's copy in the callee's first register is the
+            // same value, and just as checked.
+            if self.view(obj + 1).tagged == self.view(obj).tagged {
+              *self.view_mut(obj + 1) = self.view(obj);
+            }
+            self.build_inline(ip, callee, proto, outer, dst, obj + 1, closure)?;
+          },
+          None => self.generic(ip, instr)?,
+        }
+      },
+
       _ => self.generic(ip, instr)?,
     }
     Ok(false)
+  }
+
+  // --- calls built in place ---------------------------------------------
+
+  /// The callee a call through register `func` reaches, when the register
+  /// was just read from a global whose closure the feedback knows.
+  fn call_callee(&self, ip: usize, func: u8) -> Option<&'a Callee> {
+    let feedback: &'a Feedback = self.cx.feedback;
+    if !feedback.open(ip) {
+      return None;
+    }
+    let t = self.view(func).tagged?;
+    let Op::LoadGlobal(slot) = &self.func.def_inst(t)?.op else {
+      return None;
+    };
+    feedback.global_callees.get(slot).map(|c| &**c)
+  }
+
+  /// The class a method call's receiver has had, and the method it
+  /// resolves to there.
+  fn invoke_callee(&self, ip: usize) -> Option<(u64, &'a Callee)> {
+    let feedback: &'a Feedback = self.cx.feedback;
+    if feedback.fields_off || !feedback.open(ip) {
+      return None;
+    }
+    let class = *feedback.invokes.get(&ip)?;
+    let callee = feedback.invoke_callees.get(&ip)?;
+    Some((class, &**callee))
+  }
+
+  /// Whether a call at `ip` can be built in, and if so the callee's
+  /// function and the registers of the frames around it that must
+  /// survive the call. `window` is the caller register holding the
+  /// callee's register 0, with `count` arguments from there.
+  fn inline_plan(
+    &self,
+    ip: usize,
+    callee: &'a Callee,
+    dst: u8,
+    window: u8,
+    count: u8,
+    closure: FrameClosure,
+  ) -> Option<(&'a ObjFunction, Vec<u8>)> {
+    // SAFETY: the VM holds every function the feedback names until the
+    // compile it was gathered for has finished.
+    let proto: &'a ObjFunction = unsafe { &*(callee.proto as *const ObjFunction) };
+    let code = &proto.chunk.code;
+    // Once the compiled function has deoptimized often enough to lose
+    // its speculation, nothing is built in either: a callee's guards
+    // failing would keep it deoptimizing with no recompile left to fix it.
+    let root = &self.func_feedback;
+    let fits = !root.sites_off
+      && !root.fields_off
+      && self.inlining.len() <= MAX_INLINE_DEPTH
+      && !self.inlining.contains(&callee.proto)
+      && code.len() <= MAX_INLINE_OPS
+      && self.inlined_ops + code.len() <= MAX_INLINED_TOTAL
+      && !proto.variadic
+      && proto.arity == count
+      && proto.upvalues.is_empty()
+      && !code
+        .iter()
+        .any(|i| matches!(i, Instr::Closure { .. }) || unsupported(i).is_some());
+    if !fits {
+      return None;
+    }
+    let offset = self.at(window) as usize;
+    if offset + proto.num_registers as usize > REGISTER_LIMIT {
+      return None;
+    }
+    let mut outer: Vec<u8> = if ip + 1 < self.cx.code.len() {
+      self
+        .cx
+        .live
+        .live_regs_at(ip + 1)
+        .filter(|&r| r != dst)
+        .map(|r| self.at(r))
+        .collect()
+    } else {
+      Vec::new()
+    };
+    outer.extend(self.cx.outer.iter().copied());
+    if let FrameClosure::Reg(r) = closure {
+      outer.push(r);
+    }
+    outer.sort_unstable();
+    outer.dedup();
+    // The callee's registers start where the call's do, so anything the
+    // caller still needs has to sit below them.
+    if outer.iter().any(|&r| r as usize >= offset) {
+      return None;
+    }
+    Some((proto, outer))
+  }
+
+  /// Builds `callee`'s body in place of the call at `ip`, whose guard has
+  /// already been placed, and leaves the builder in the caller after the
+  /// call with the result in `dst`.
+  #[allow(clippy::too_many_arguments)]
+  fn build_inline(
+    &mut self,
+    ip: usize,
+    callee: &'a Callee,
+    proto: &'a ObjFunction,
+    outer: Vec<u8>,
+    dst: u8,
+    window: u8,
+    closure: FrameClosure,
+  ) -> Result<(), BuildError> {
+    let offset = self.at(window);
+    let parent = self.cx.id;
+    let id = self.func.frames.len() as u16;
+    if crate::jit::log_enabled() {
+      eprintln!(
+        "[jit] building '{}' into '{}' at ip {}",
+        proto.display_name(),
+        self.cx.proto.display_name(),
+        ip
+      );
+    }
+    self.func.frames.push(InlineFrame {
+      parent,
+      proto: callee.proto,
+      call_ip: ip,
+      dst,
+      offset,
+      closure,
+    });
+    self.extent = self.extent.max(offset as usize + proto.num_registers as usize);
+    self.inlined_ops += proto.chunk.code.len();
+    self.inlining.push(callee.proto);
+
+    // Everything past the arguments starts out unwritten.
+    for r in proto.arity..proto.num_registers {
+      self.regs[(offset + r) as usize] = RegView::EMPTY;
+    }
+    let known: Vec<Known> = outer.iter().map(|&r| self.regs[r as usize].known).collect();
+    let straight = !proto.chunk.code.iter().any(|i| {
+      matches!(
+        i,
+        Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } | Instr::UsingJump { .. }
+      )
+    });
+
+    let cont = if straight {
+      None
+    } else {
+      let cont = self.new_block(None);
+      self.func.add_block_param(cont, Ty::Tagged);
+      for _ in &outer {
+        self.func.add_block_param(cont, Ty::Tagged);
+      }
+      Some(cont)
+    };
+    let exit = match cont {
+      Some(cont) => Exit::Branch(cont),
+      None => Exit::Straight,
+    };
+    let frame = Frame::new(proto, &callee.feedback, id, offset, outer.clone(), exit)?;
+    let caller = std::mem::replace(&mut self.cx, frame);
+    self.returned = None;
+    let built = if straight {
+      self.translate_run(0, proto.chunk.code.len()).map(|_| ())
+    } else {
+      let leaders = self.leaders();
+      for &l in &leaders {
+        let b = self.leader(l);
+        self.cx.leader_block.insert(l, b);
+      }
+      let entry = self.cx.leader_block[&0];
+      let args = self.edge_args(entry);
+      self.func.set_term(self.block, Terminator::Jump { target: entry, args });
+      self.build_blocks(&leaders)
+    };
+    self.cx = caller;
+    self.inlining.pop();
+    built?;
+
+    // The callee's registers mean nothing to the caller once it returns.
+    for r in 0..proto.num_registers {
+      self.regs[(offset + r) as usize] = RegView::EMPTY;
+    }
+    match cont {
+      None => match self.returned.take() {
+        Some(view) => *self.view_mut(dst) = view,
+        None => {
+          // Every way through the callee raised, so nothing comes after
+          // the call; what follows is built into a block nothing reaches.
+          self.block = self.new_block(None);
+          *self.view_mut(dst) = RegView::EMPTY;
+        },
+      },
+      Some(cont) => {
+        self.block = cont;
+        let params = self.func.block(cont).params.clone();
+        for ((&r, &p), &k) in outer.iter().zip(&params[1..]).zip(&known) {
+          self.regs[r as usize] = RegView {
+            tagged: Some(p),
+            known: if self.captured[r as usize] { Known::Unknown } else { k },
+            ..RegView::EMPTY
+          };
+        }
+        *self.view_mut(dst) = RegView::tagged(params[0]);
+      },
+    }
+    Ok(())
   }
 
   fn upval_cell(&mut self, idx: u8, ip: usize) -> ValueId {
@@ -993,7 +1450,7 @@ impl<'a> Builder<'a> {
     let instr = Instr::CloseUpvalues { from: 0 };
     let state = self.state(ip);
     let args = state.regs.iter().map(|&(_, v)| v).collect();
-    self.push(Op::Generic { instr, ip }, args, None, Some(state));
+    self.push(Op::Generic { instr, ip, frame: 0 }, args, None, Some(state));
     if self.regs[src as usize].known.may_be_object() || self.captured[src as usize] {
       let old = self.tagged(src);
       let fresh = self.value(Op::Reload { reg: src }, vec![old], Ty::Tagged);
@@ -1018,13 +1475,14 @@ impl<'a> Builder<'a> {
     let found = self.value(
       Op::UsingTarget {
         table: table_idx,
-        reg: subject,
+        reg: self.at(subject),
+        frame: self.cx.id,
       },
       vec![t],
       Ty::I64,
     );
 
-    let mut targets: Vec<usize> = self.proto.chunk.jump_tables[table_idx as usize]
+    let mut targets: Vec<usize> = self.cx.proto.chunk.jump_tables[table_idx as usize]
       .values()
       .copied()
       .collect();
@@ -1035,17 +1493,17 @@ impl<'a> Builder<'a> {
     let edges: Vec<(BlockId, Vec<ValueId>)> = targets
       .iter()
       .map(|t| {
-        let b = self.leader_block[t];
+        let b = self.cx.leader_block[t];
         (b, self.edge_args(b))
       })
       .collect();
-    let miss = self.leader_block[&(ip + 1)];
+    let miss = self.cx.leader_block[&(ip + 1)];
     let miss_args = self.edge_args(miss);
 
     for ((block, args), &target_ip) in edges.into_iter().zip(&targets) {
       let want = self.value(Op::ConstI64(target_ip as i64), vec![], Ty::I64);
       let hit = self.value(Op::ICmp(Cmp::Eq), vec![found, want], Ty::Bool);
-      let next = self.func.add_block(None);
+      let next = self.new_block(None);
       self.func.set_term(
         self.block,
         Terminator::Branch {
@@ -1073,8 +1531,7 @@ impl<'a> Builder<'a> {
   fn place_safepoints(&mut self) {
     let armed = crate::modules::os_util::signal::armed();
     let edges = std::mem::take(&mut self.back_edges);
-    for (latch, header_ip) in edges {
-      let header = self.leader_block[&header_ip];
+    for (latch, header, header_ip, frame) in edges {
       if !armed && !self.loop_may_collect(header, latch) {
         continue;
       }
@@ -1085,6 +1542,7 @@ impl<'a> Builder<'a> {
       let state = FrameState {
         ip: header_ip,
         regs: regs.iter().copied().zip(args.iter().copied()).collect(),
+        frame,
       };
       self.func.push(latch, Op::Safepoint, args.clone(), None, Some(state));
       // Anything the loop carries that could be an object has to be read
