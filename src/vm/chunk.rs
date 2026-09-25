@@ -586,6 +586,124 @@ pub mod kind {
       _ => OTHER,
     }
   }
+
+  /// The registers whose kinds the interpreter records for `instr`, or
+  /// none for an instruction it records nothing for. Compiled code that
+  /// profiles records these same registers.
+  pub fn recorded(instr: &super::Instr) -> &'static [Operand] {
+    use super::Instr;
+    match instr {
+      Instr::Add { .. }
+      | Instr::Sub { .. }
+      | Instr::Mul { .. }
+      | Instr::Div { .. }
+      | Instr::Pow { .. }
+      | Instr::Floor { .. }
+      | Instr::Mod { .. }
+      | Instr::BitAnd { .. }
+      | Instr::BitOr { .. }
+      | Instr::BitXor { .. }
+      | Instr::BitShl { .. }
+      | Instr::BitShr { .. }
+      | Instr::BitUshr { .. }
+      | Instr::Lt { .. }
+      | Instr::Le { .. }
+      | Instr::Gt { .. }
+      | Instr::Ge { .. } => &[Operand::A, Operand::B],
+      Instr::AddImm { .. }
+      | Instr::SubImm { .. }
+      | Instr::MulImm { .. }
+      | Instr::LtImm { .. }
+      | Instr::LeImm { .. }
+      | Instr::GtImm { .. }
+      | Instr::GeImm { .. } => &[Operand::A],
+      Instr::Neg { .. } | Instr::BitNot { .. } => &[Operand::Src],
+      Instr::GetIndex { .. }
+      | Instr::SetIndex { .. }
+      | Instr::GetField { .. }
+      | Instr::SetField { .. }
+      | Instr::Invoke { .. } => &[Operand::Obj],
+      Instr::Call { .. } => &[Operand::Func],
+      _ => &[],
+    }
+  }
+
+  /// One of the registers `recorded` names, by the field that holds it.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+  pub enum Operand {
+    A,
+    B,
+    Src,
+    Obj,
+    Func,
+  }
+
+  impl Operand {
+    /// The register this names in `instr`.
+    pub fn of(self, instr: &super::Instr) -> u8 {
+      use super::Instr;
+      match (self, *instr) {
+        (
+          Operand::A,
+          Instr::Add { a, .. }
+          | Instr::Sub { a, .. }
+          | Instr::Mul { a, .. }
+          | Instr::Div { a, .. }
+          | Instr::Pow { a, .. }
+          | Instr::Floor { a, .. }
+          | Instr::Mod { a, .. }
+          | Instr::BitAnd { a, .. }
+          | Instr::BitOr { a, .. }
+          | Instr::BitXor { a, .. }
+          | Instr::BitShl { a, .. }
+          | Instr::BitShr { a, .. }
+          | Instr::BitUshr { a, .. }
+          | Instr::Lt { a, .. }
+          | Instr::Le { a, .. }
+          | Instr::Gt { a, .. }
+          | Instr::Ge { a, .. }
+          | Instr::AddImm { a, .. }
+          | Instr::SubImm { a, .. }
+          | Instr::MulImm { a, .. }
+          | Instr::LtImm { a, .. }
+          | Instr::LeImm { a, .. }
+          | Instr::GtImm { a, .. }
+          | Instr::GeImm { a, .. },
+        ) => a,
+        (
+          Operand::B,
+          Instr::Add { b, .. }
+          | Instr::Sub { b, .. }
+          | Instr::Mul { b, .. }
+          | Instr::Div { b, .. }
+          | Instr::Pow { b, .. }
+          | Instr::Floor { b, .. }
+          | Instr::Mod { b, .. }
+          | Instr::BitAnd { b, .. }
+          | Instr::BitOr { b, .. }
+          | Instr::BitXor { b, .. }
+          | Instr::BitShl { b, .. }
+          | Instr::BitShr { b, .. }
+          | Instr::BitUshr { b, .. }
+          | Instr::Lt { b, .. }
+          | Instr::Le { b, .. }
+          | Instr::Gt { b, .. }
+          | Instr::Ge { b, .. },
+        ) => b,
+        (Operand::Src, Instr::Neg { src, .. } | Instr::BitNot { src, .. }) => src,
+        (
+          Operand::Obj,
+          Instr::GetIndex { obj, .. }
+          | Instr::SetIndex { obj, .. }
+          | Instr::GetField { obj, .. }
+          | Instr::SetField { obj, .. }
+          | Instr::Invoke { obj, .. },
+        ) => obj,
+        (Operand::Func, Instr::Call { func, .. }) => func,
+        _ => unreachable!("{self:?} is not a recorded operand of {instr:?}"),
+      }
+    }
+  }
 }
 
 /// One `Instr::GetField`/`Instr::SetField` site's monomorphic inline
@@ -819,19 +937,22 @@ pub struct Chunk {
   /// relocation; flagging clearly rather than leaving silent. The
   /// primitive half has no such hazard: a `NativeFunction` is `'static`.
   invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
-  /// What the interpreter has seen at each instruction, as a union of
-  /// `kind` bits, one byte per instruction position. Arithmetic, bitwise
-  /// and ordering instructions record their operands, since those are
-  /// what a compiled guard has to check; nothing else records anything.
+  /// What has reached each instruction, as a union of `kind` bits, one
+  /// byte per instruction position. The instructions `kind::recorded`
+  /// names record the operands a compiled guard would check; nothing
+  /// else records anything.
   ///
-  /// Only the interpreter writes here. Compiled code reads a snapshot
-  /// taken when the function is compiled, and a guard that fails in
-  /// compiled code returns control to the interpreter, which goes on
-  /// recording; so a site whose values change shape after compilation
-  /// is seen again before the next compile.
+  /// The interpreter writes here, and so does profiling tier-1 code,
+  /// including the code of callees it builds in, so tier 2 compiles from
+  /// everything that ran in either. Compiled code otherwise reads a
+  /// snapshot taken when the function is compiled, and a guard that
+  /// fails in compiled code returns control to the interpreter, which
+  /// goes on recording; so a site whose values change shape after
+  /// compilation is seen again before the next compile.
   ///
-  /// A byte of zero means the site never ran interpreted.
-  feedback: OnceCell<Box<[Cell<u8>]>>,
+  /// A byte of zero means the site never ran interpreted or in profiling
+  /// code.
+  feedback: std::sync::OnceLock<Box<[Cell<u8>]>>,
   /// One entry per `Instr::CheckParamType` this chunk emits, in the
   /// order they're emitted (parameter order); `check_idx` indexes
   /// straight into this, same relationship `const_idx` has to
@@ -894,6 +1015,17 @@ impl Chunk {
     }
   }
 
+  /// Makes sure every site has its feedback cell, and returns the first.
+  /// The cells never move once made, so compiled code that profiles
+  /// writes them in place. Safe to call from a compiler thread, which
+  /// does so for callees it builds into profiling code.
+  pub fn ensure_feedback(&self) -> *const Cell<u8> {
+    self
+      .feedback
+      .get_or_init(|| (0..self.code.len()).map(|_| Cell::new(0)).collect())
+      .as_ptr()
+  }
+
   /// Adds `bits` to what the site at `ip` has seen. Writes only when
   /// something new turns up, so a site that settled long ago costs a
   /// load and a compare.
@@ -952,7 +1084,7 @@ impl Chunk {
       global_cache: OnceCell::new(),
       field_cache: OnceCell::new(),
       invoke_cache: OnceCell::new(),
-      feedback: OnceCell::new(),
+      feedback: std::sync::OnceLock::new(),
       param_checks: Vec::new(),
     }
   }

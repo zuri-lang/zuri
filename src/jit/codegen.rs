@@ -1038,6 +1038,10 @@ struct FuncCompiler<'a, 'b> {
   captured: Vec<bool>,
   /// See `jit::CompileFacts::site_classes`.
   site_classes: FxHashMap<usize, (u64, u16)>,
+  /// This is profiling tier-1 code: see `jit::CompileFacts::profile`.
+  profile: bool,
+  /// See `jit::CompileFacts::feedback_cells`.
+  feedback_cells: usize,
 }
 
 impl<'a, 'b> FuncCompiler<'a, 'b> {
@@ -1603,6 +1607,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       site_spec,
       captured: typeflow::captured_registers(proto),
       site_classes: facts.site_classes,
+      profile: facts.profile,
+      feedback_cells: facts.feedback_cells,
     }
   }
 
@@ -2576,6 +2582,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     osr_param: IrValue,
     specialized: Option<(&[Block], &typeflow::TypeFacts, &typeflow::ListFacts)>,
   ) {
+    if self.profile {
+      self.emit_tierup_tick(None);
+    }
     let neg1 = self.fb.ins().iconst(types::I32, -1);
     let is_normal = self.fb.ins().icmp(IntCC::Equal, osr_param, neg1);
 
@@ -2945,6 +2954,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn emit_deopt(&mut self, ip: usize) {
+    self.emit_leave(ip, "zuri_jit_deopt");
+  }
+
+  /// Hands the frame to the interpreter at `ip` through `helper`, which
+  /// tells the VM why: a deopt, or profiling code moving to tier 2.
+  fn emit_leave(&mut self, ip: usize, helper: &str) {
     // This path never comes back into compiled code, so what it does to
     // the guarded-instance cache must not reach the code emitted after
     // it, which only runs when the deopt was not taken.
@@ -2956,9 +2971,180 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.materialize_scalars(ip);
     let vm = self.vm_param;
     let ip_c = self.u64c(ip as u64);
-    self.call_helper_raw("zuri_jit_deopt", &[vm, ip_c]);
+    self.call_helper_raw(helper, &[vm, ip_c]);
     let junk = self.u64c(PENDING_RETURN);
     self.fb.ins().return_(&[junk]);
+  }
+
+  /// Profiling code's tier-up count: one more entry or loop turn, and
+  /// once the budget is spent, a word with the VM. At the backward jump
+  /// at `jump_ip` into loop header `header`, the VM may answer that tier
+  /// 2's code is ready for the loop, and the code leaves for it there.
+  fn emit_tierup_tick(&mut self, jump: Option<(usize, usize)>) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let addr = self.u64c(self.proto.jit.tierup_count.as_ptr() as u64);
+    let count = self.fb.ins().load(types::I32, flags, addr, 0);
+    let next = self.fb.ins().iadd_imm_s(count, 1);
+    self.fb.ins().store(flags, next, addr, 0);
+    let spent = self.fb.ins().icmp_imm_u(
+      IntCC::UnsignedGreaterThanOrEqual,
+      next,
+      self.proto.jit.tierup_threshold as i64,
+    );
+    let ask = self.fb.create_block();
+    let cont = self.fb.create_block();
+    self.fb.ins().brif(spent, ask, &[], cont, &[]);
+
+    self.fb.switch_to_block(ask);
+    self.fb.set_cold_block(ask);
+    let vm = self.vm_param;
+    let proto = self.u64c(self.proto as *const ObjFunction as u64);
+    let header = self.u64c(jump.map_or(u64::MAX, |(_, h)| h as u64));
+    let answer = self.call_helper_raw("zuri_jit_tier_up", &[vm, proto, header]);
+    match jump {
+      Some((jump_ip, _)) => {
+        let leave = self.fb.create_block();
+        self.fb.set_cold_block(leave);
+        self.fb.ins().brif(answer, leave, &[], cont, &[]);
+        self.fb.switch_to_block(leave);
+        self.emit_leave(jump_ip, "zuri_jit_tier_exit");
+      },
+      None => {
+        self.fb.ins().jump(cont, &[]);
+      },
+    }
+    self.fb.switch_to_block(cont);
+  }
+
+  /// Profiling code's record of what reached the site at `ip`: the same
+  /// kinds, of the same registers, the interpreter records there.
+  fn emit_record_kinds(&mut self, ip: usize, instr: &Instr) {
+    let operands = crate::vm::chunk::kind::recorded(instr);
+    if operands.is_empty() {
+      return;
+    }
+    let mut bits = None;
+    for op in operands {
+      let v = self.load_reg(op.of(instr));
+      let k = self.emit_kind_of(v);
+      bits = Some(match bits {
+        Some(b) => self.fb.ins().bor(b, k),
+        None => k,
+      });
+    }
+    self.emit_store_kinds(self.feedback_cells + ip, bits.unwrap());
+  }
+
+  /// Adds `bits` to the feedback cell at `cell`.
+  fn emit_store_kinds(&mut self, cell: usize, bits: IrValue) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let cell = self.u64c(cell as u64);
+    let seen = self.fb.ins().load(types::I8, flags, cell, 0);
+    let seen = self.fb.ins().bor(seen, bits);
+    self.fb.ins().store(flags, seen, cell, 0);
+  }
+
+  /// The same record for a callee built into this code, whose registers
+  /// are held as `regs`, its own feedback taking what reached the site
+  /// at its `ip`. `numbers` says the registers hold `F64`s, as the
+  /// straight-line inliner's do, rather than tagged values.
+  fn emit_record_callee_kinds(
+    &mut self,
+    callee: &ObjFunction,
+    ip: usize,
+    instr: &Instr,
+    regs: &[IrValue],
+    numbers: bool,
+  ) {
+    let operands = crate::vm::chunk::kind::recorded(instr);
+    if operands.is_empty() {
+      return;
+    }
+    let mut bits = None;
+    for op in operands {
+      let v = regs[op.of(instr) as usize];
+      let k = if numbers {
+        self.emit_number_kind(v)
+      } else {
+        self.emit_kind_of(v)
+      };
+      bits = Some(match bits {
+        Some(b) => self.fb.ins().bor(b, k),
+        None => k,
+      });
+    }
+    let cells = callee.chunk.ensure_feedback() as usize;
+    self.emit_store_kinds(cells + ip, bits.unwrap());
+  }
+
+  /// `chunk::kind::of` for an `F64`: a whole number, finite and not -0, is
+  /// INT, and any other number FLOAT.
+  fn emit_number_kind(&mut self, f: IrValue) -> IrValue {
+    use crate::vm::chunk::kind;
+    let t = self.fb.ins().trunc(f);
+    let whole = self.fb.ins().fcmp(FloatCC::Equal, f, t);
+    let mag = self.fb.ins().fabs(f);
+    let inf = self.fb.ins().f64const(f64::INFINITY);
+    let finite = self.fb.ins().fcmp(FloatCC::LessThan, mag, inf);
+    let bits = self.from_f64(f);
+    let minus_zero = self.fb.ins().icmp_imm_u(IntCC::Equal, bits, (-0.0f64).to_bits() as i64);
+    let int = self.fb.ins().band(whole, finite);
+    let int = self.fb.ins().band_not(int, minus_zero);
+    let int_k = self.fb.ins().iconst(types::I8, kind::INT as i64);
+    let float_k = self.fb.ins().iconst(types::I8, kind::FLOAT as i64);
+    self.fb.ins().select(int, int_k, float_k)
+  }
+
+  /// `chunk::kind::of`, as an `I8`.
+  fn emit_kind_of(&mut self, v: IrValue) -> IrValue {
+    use crate::vm::chunk::kind;
+    use crate::vm::object::{OBJ_TAG_INSTANCE, OBJ_TAG_LIST, OBJ_TAG_STR};
+    let qnan = self.u64c(value::QNAN);
+    let masked = self.fb.ins().band(v, qnan);
+    let is_num = self.fb.ins().icmp(IntCC::NotEqual, masked, qnan);
+    let num_block = self.fb.create_block();
+    let other_block = self.fb.create_block();
+    let obj_block = self.fb.create_block();
+    let plain_block = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I8);
+    self.fb.ins().brif(is_num, num_block, &[], other_block, &[]);
+
+    self.fb.switch_to_block(num_block);
+    let f = self.to_f64(v);
+    let k = self.emit_number_kind(f);
+    self.fb.ins().jump(done, &[k.into()]);
+
+    self.fb.switch_to_block(other_block);
+    let is_obj = self.is_obj(v);
+    self.fb.ins().brif(is_obj, obj_block, &[], plain_block, &[]);
+
+    // Nil, or else a boolean.
+    self.fb.switch_to_block(plain_block);
+    let nil = self.u64c(value::NIL_VAL);
+    let is_nil = self.fb.ins().icmp(IntCC::Equal, v, nil);
+    let nil_k = self.fb.ins().iconst(types::I8, kind::NIL as i64);
+    let bool_k = self.fb.ins().iconst(types::I8, kind::BOOL as i64);
+    let k = self.fb.ins().select(is_nil, nil_k, bool_k);
+    self.fb.ins().jump(done, &[k.into()]);
+
+    self.fb.switch_to_block(obj_block);
+    let ptr = self.obj_ptr(v);
+    let tag = self.obj_tag(ptr);
+    let mut k = self.fb.ins().iconst(types::I8, kind::OTHER as i64);
+    for (t, bit) in [
+      (OBJ_TAG_STR, kind::STRING),
+      (OBJ_TAG_LIST, kind::LIST),
+      (OBJ_TAG_INSTANCE, kind::INSTANCE),
+    ] {
+      let is = self.fb.ins().icmp_imm_u(IntCC::Equal, tag, t as i64);
+      let bit = self.fb.ins().iconst(types::I8, bit as i64);
+      k = self.fb.ins().select(is, bit, k);
+    }
+    self.fb.ins().jump(done, &[k.into()]);
+
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
   }
 
   /// Gives every scalar-replaced list or instance still live at `ip` a real
@@ -5455,6 +5641,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     };
 
     for &(orig_ip, instr) in plan {
+      if self.profile {
+        self.emit_record_callee_kinds(callee, orig_ip, &instr, &regs, true);
+      }
       match instr {
         Instr::Return { src } => {
           let f = regs[src as usize];
@@ -8431,6 +8620,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let flags = cranelift_codegen::ir::MemFlagsData::trusted();
 
     loop {
+      if self.profile {
+        let instr = callee.chunk.code[pc];
+        self.emit_record_callee_kinds(callee, pc, &instr, &regs, false);
+      }
       match callee.chunk.code[pc] {
         Instr::Return { src } => {
           let v = regs[src as usize];
@@ -12685,6 +12878,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // already correct; all that's needed is invalidating this
     // compiler's OWN bookkeeping so later code in/after this block
     // re-reads it instead of trusting a stale `Variable`.
+    if self.profile {
+      self.emit_record_kinds(ip, &instr);
+    }
     if self.site_spec.operands.contains(&ip) {
       self.emit_operand_guard(ip, &instr);
     }
@@ -13368,6 +13564,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
       Instr::Jmp { offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
+        if offset < 0 && self.profile {
+          self.emit_tierup_tick(Some((ip, target_ip)));
+        }
         if offset < 0 {
           if self.loop_has_allocations(target_ip, ip) {
             self.emit_safepoint();
@@ -13382,6 +13581,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::JmpIfFalse { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
         let target_block = self.jump_target_block(ip, target_ip);
+        if offset < 0 && self.profile {
+          self.emit_tierup_tick(None);
+        }
         if offset < 0 {
           if self.loop_has_allocations(target_ip, ip) {
             self.emit_safepoint();
@@ -13411,6 +13613,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::JmpIfTrue { cond, offset } => {
         let target_ip = (ip as isize + 1 + offset as isize) as usize;
         let target_block = self.jump_target_block(ip, target_ip);
+        if offset < 0 && self.profile {
+          self.emit_tierup_tick(None);
+        }
         if offset < 0 {
           if self.loop_has_allocations(target_ip, ip) {
             self.emit_safepoint();

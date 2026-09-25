@@ -1,0 +1,88 @@
+# A function the JIT compiles gets fast code first, which also watches what
+# reaches each of its operations. Once that code has done enough work, the
+# optimizing tier compiles the function again from what it saw, and a loop
+# already running moves over at its next turn. Each function here crosses
+# from one tier to the other while it runs, and has to answer exactly as
+# the interpreter does throughout.
+
+# Called often enough to move up while its callers keep calling it.
+def mix(a, b) {
+  return (a * 31 + b) % 1000003
+}
+
+def many_calls(n) {
+  var h = 7
+  iter var i = 0; i < n; i++ {
+    h = mix(h, i)
+  }
+  return h
+}
+
+# One long call: the loop starts in the first tier and finishes in the
+# second, carrying its variables across.
+def long_loop(n) {
+  var total = 0
+  var odd = 0
+  iter var i = 0; i < n; i++ {
+    total = total + i % 7
+    if i % 2 == 1 {
+      odd = odd + 1
+    }
+  }
+  return [total, odd]
+}
+
+# Nested loops, where the inner one moves up first.
+def grid(rows, cols) {
+  var sum = 0
+  iter var r = 0; r < rows; r++ {
+    iter var c = 0; c < cols; c++ {
+      sum = sum + r * c % 11
+    }
+  }
+  return sum
+}
+
+# Moves up on numbers, then gets strings, which its second-tier code was
+# not built for; it goes back to the first tier's code, and moves up again
+# once it has seen both.
+def join(a, b) {
+  return a + b
+}
+
+def joins(n, text) {
+  var out = 0
+  iter var i = 0; i < n; i++ {
+    if text {
+      out = out + join('a', 'b').length()
+    } else {
+      out = out + join(i, 1)
+    }
+  }
+  return out
+}
+
+# A loop whose second half only starts once the first has run a long time,
+# so the optimizing tier compiles it before that half has run in either.
+def phases(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + i
+  }
+  var names = ['ab', 'cde', 'f']
+  iter var i = 0; i < n; i++ {
+    total = total + names[i % 3].length() + (i >> 2)
+  }
+  return total
+}
+
+echo many_calls(60000)
+echo many_calls(60000)
+echo long_loop(300000)
+echo grid(300, 300)
+echo joins(60000, false)
+echo joins(2000, true)
+echo joins(60000, false)
+echo joins(60000, true)
+echo phases(200000)
+echo phases(10)

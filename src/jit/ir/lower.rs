@@ -1237,7 +1237,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     }
     let ip_c = self.u64c(state.ip as u64);
     if state.frame == 0 {
-      self.call("zuri_jit_deopt", &[self.vm, ip_c]);
+      self.call("zuri_jit_deopt_tier2", &[self.vm, ip_c]);
     } else {
       let (chain, len) = self.deopt_chain(state.frame);
       let chain_c = self.u64c(chain);

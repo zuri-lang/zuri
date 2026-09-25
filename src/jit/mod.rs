@@ -105,13 +105,22 @@ pub fn log_asm_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_ASM").is_some())
 }
 
-/// Compile through the optimizing tier's IR instead of the baseline
-/// translator, for every function the IR builder accepts;
-/// `ZURI_JIT_TIER2=1`. A function it declines is compiled by the baseline
-/// tier as before.
+/// Run both tiers; `ZURI_JIT_TIER2=1`. A warm function gets profiling
+/// tier-1 code first, and once that code has done enough work, tier 2
+/// compiles it from the feedback gathered. A function tier 2 declines
+/// stays in tier 1.
 pub fn tier2_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
   *ENABLED.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v != "0"))
+}
+
+/// Skip tier 1 and compile every warm function straight through tier 2;
+/// `ZURI_JIT_TIER2=direct`. Tier 2 then works from the interpreter's
+/// feedback alone. For exercising tier 2's compiler on everything that
+/// warms up, not for running programs.
+pub fn tier2_direct() -> bool {
+  static DIRECT: OnceLock<bool> = OnceLock::new();
+  *DIRECT.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v == "direct"))
 }
 
 /// One interpreter frame that a deoptimization inside a call built into
@@ -478,6 +487,13 @@ pub struct CompileFacts {
   /// field's slot on it; see `VM::resolve_site_classes`. Copied for the
   /// same reason as `site_kinds`.
   pub site_classes: FxHashMap<usize, (u64, u16)>,
+  /// Build the profiling kind of tier-1 code: it records the same site
+  /// feedback the interpreter does and counts its entries and loop turns
+  /// toward tier-up. See `JitInfo::profiling`.
+  pub profile: bool,
+  /// Where the function's site feedback cells live, one byte per
+  /// instruction, when `profile` is set. See `Chunk::ensure_feedback`.
+  pub feedback_cells: usize,
 }
 
 /// One construction site's compile-time view of the class it builds.

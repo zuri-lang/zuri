@@ -996,7 +996,38 @@ pub struct JitInfo {
   /// calls built into it. A collection scans this far for a compiled
   /// frame. Only ever raised, since older code may still be running.
   pub frame_registers: Cell<u16>,
+  /// Which tier the code in `entry` is from: 0 with no code, then 1 or 2.
+  pub tier: Cell<u8>,
+  /// The tier-1 code, with its on-stack-replacement ids, kept while tier
+  /// 2's code is installed. When tier 2's code is thrown away the
+  /// function goes back to this rather than to the interpreter.
+  pub baseline: Cell<Option<crate::jit::EntryFn>>,
+  pub baseline_osr_ids: RefCell<Option<FxHashMap<usize, i32>>>,
+  /// Whether the tier-1 code records feedback and counts toward tier-up.
+  /// Only the first tier-1 build of a function does; once tier 2 has
+  /// declined it, tier 1 builds it again without either.
+  pub profiling: Cell<bool>,
+  /// Entries and loop turns profiling tier-1 code has made since it was
+  /// installed. Compiled code bumps it in place, which is why it is a
+  /// plain `Cell` at a fixed address.
+  pub tierup_count: Cell<u32>,
+  /// Where `tierup_count` asks for tier 2: see
+  /// `crate::jit::warmup::tierup_threshold`.
+  pub tierup_threshold: u32,
+  /// Where tier 2 stands for this function; one of the `TIER2_*`
+  /// constants.
+  pub tier2: Cell<u8>,
 }
+
+/// Tier 2 has not been asked for, or its code was thrown away and the
+/// function is profiling again.
+pub const TIER2_NONE: u8 = 0;
+/// A tier-2 compile is in flight.
+pub const TIER2_COMPILING: u8 = 1;
+/// Tier 2's code is installed.
+pub const TIER2_INSTALLED: u8 = 2;
+/// Tier 2 declined the function; it stays in tier 1.
+pub const TIER2_DECLINED: u8 = 3;
 
 impl JitInfo {
   pub fn new(code_len: usize) -> JitInfo {
@@ -1004,6 +1035,13 @@ impl JitInfo {
       call_count: Cell::new(0),
       call_threshold: crate::jit::warmup::call_threshold(code_len),
       osr_threshold: crate::jit::warmup::osr_threshold(code_len),
+      tier: Cell::new(0),
+      baseline: Cell::new(None),
+      baseline_osr_ids: RefCell::new(None),
+      profiling: Cell::new(false),
+      tierup_count: Cell::new(0),
+      tierup_threshold: crate::jit::warmup::tierup_threshold(code_len),
+      tier2: Cell::new(TIER2_NONE),
       entry: Cell::new(None),
       osr_ids: RefCell::new(None),
       ineligible: Cell::new(false),

@@ -48,6 +48,10 @@ const MAX_DEOPT_REENTRANCY: u32 = 64;
 /// so it gets one final compilation with every field bet in it dropped
 /// (`JitInfo::field_speculation_off`) and then keeps whatever that
 /// produced. Either way the recompiling stops.
+/// How often profiling tier-1 code asks again, in entries and loop turns,
+/// once it has reached its tier-up budget.
+const TIERUP_RECHECK: u32 = 1024;
+
 const MAX_JIT_INVALIDATIONS: u32 = 3;
 /// How many calls deep the optimizing tier's feedback follows callees.
 const TIER2_CALLEE_DEPTH: usize = crate::jit::ir::build::MAX_INLINE_DEPTH;
@@ -842,6 +846,14 @@ pub struct VM {
   /// Set alongside `pending_deopt_ip` when an integer bet at an
   /// arithmetic site is what failed.
   pub(crate) pending_deopt_int_miss: Cell<bool>,
+  /// Set alongside `pending_deopt_ip` when the code leaving is tier 2's,
+  /// which falls back to its function's tier-1 code rather than dropping
+  /// compiled code altogether.
+  pub(crate) pending_deopt_tier2: Cell<bool>,
+  /// Set alongside `pending_deopt_ip` when profiling tier-1 code leaves
+  /// a loop for the interpreter to carry it into tier 2's code. Nothing
+  /// went wrong, so nothing is noted and nothing is thrown away.
+  pub(crate) pending_tier_exit: Cell<bool>,
   /// Functions the compile jobs in flight build calls to, keyed by the
   /// function being compiled. A reassigned global could otherwise leave
   /// a callee unreachable, and collected, while a compiler thread still
@@ -1001,6 +1013,8 @@ impl VM {
       pending_deopt_blame: Cell::new((0, 0)),
       pending_deopt_unreached: Cell::new(false),
       pending_deopt_int_miss: Cell::new(false),
+      pending_deopt_tier2: Cell::new(false),
+      pending_tier_exit: Cell::new(false),
       pending_jit_callees: Vec::new(),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
@@ -1685,7 +1699,7 @@ impl VM {
     {
       return None;
     }
-    self.enqueue_compile(proto, proto_value);
+    self.enqueue_compile(proto, proto_value, false);
     None
   }
 
@@ -2512,7 +2526,12 @@ impl VM {
   /// Builds a snapshot of facts resolved about `proto` in $O(1)$ without
   /// performing any whole-function dataflow analyses on the main VM thread,
   /// then hands the job to the background compiler thread.
-  fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value) {
+  /// Queues a compile of `proto`. From warm-up that is tier 1: the
+  /// profiling kind when two tiers are on, so tier 2 later builds from
+  /// feedback covering whatever ran in it. `optimize` asks for tier 2,
+  /// which builds a plain tier 1 instead when it declines the function.
+  fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value, optimize: bool) {
+    let optimize = optimize || crate::jit::tier2_direct();
     let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
       if self.no_jit_specialization {
         (None, None, None, None)
@@ -2560,10 +2579,20 @@ impl VM {
       site_kinds: proto.chunk.feedback_snapshot(),
       site_speculation_off: proto.jit.site_speculation_off.get(),
       site_classes: self.resolve_site_classes(proto),
+      profile: crate::jit::tier2_enabled()
+        && !optimize
+        && proto.jit.tier2.get() != crate::vm::object::TIER2_DECLINED,
+      feedback_cells: 0,
     };
+    let mut facts = facts;
+    if facts.profile {
+      // Compiled code writes the feedback cells in place, so they have to
+      // exist before it does.
+      facts.feedback_cells = proto.chunk.ensure_feedback() as usize;
+    }
 
     let mut callees = Vec::new();
-    let tier2 = crate::jit::tier2_enabled().then(|| {
+    let tier2 = optimize.then(|| {
       let mut gather = CalleeGathering {
         values: &mut callees,
         path: vec![proto as *const ObjFunction as usize],
@@ -2573,6 +2602,9 @@ impl VM {
     });
 
     proto.jit.compiling.set(true);
+    if optimize {
+      proto.jit.tier2.set(crate::vm::object::TIER2_COMPILING);
+    }
     self.pending_jit_compiles.push(proto_value);
     if !callees.is_empty() {
       self.pending_jit_callees.push((proto as *const ObjFunction as usize, callees));
@@ -2821,8 +2853,9 @@ impl VM {
         Ok(entry) => {
           if crate::jit::log_enabled() && result.tier == 1 {
             eprintln!(
-              "[jit] compiled '{}' at tier 1 ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
+              "[jit] compiled '{}' at tier 1{} ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
               proto.display_name(),
+              if result.profiling { ", profiling" } else { "" },
               proto.chunk.code.len(),
               result.osr_ids.len(),
               result.speculative_params.unwrap_or(0),
@@ -2841,13 +2874,29 @@ impl VM {
               result.osr_ids.len(),
             );
           }
-          *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
           // Before the entry goes in, so a collection during the very
           // first call already looks as far as the code's registers go.
           // Never lowered: older code for this function may still be
           // running further down the stack.
           let reach = proto.jit.frame_registers.get().max(result.registers as u16);
           proto.jit.frame_registers.set(reach);
+          if result.tier == 2 {
+            // The tier-1 code stays, for the function to fall back to.
+            proto.jit.baseline.set(proto.jit.entry.get());
+            let osr_ids = proto.jit.osr_ids.borrow_mut().take();
+            *proto.jit.baseline_osr_ids.borrow_mut() = osr_ids;
+            proto.jit.tier2.set(crate::vm::object::TIER2_INSTALLED);
+          } else {
+            proto.jit.baseline.set(None);
+            *proto.jit.baseline_osr_ids.borrow_mut() = None;
+            proto.jit.profiling.set(result.profiling);
+            proto.jit.tierup_count.set(0);
+            if result.wanted_tier2 {
+              proto.jit.tier2.set(crate::vm::object::TIER2_DECLINED);
+            }
+          }
+          proto.jit.tier.set(result.tier);
+          *proto.jit.osr_ids.borrow_mut() = Some(result.osr_ids);
           proto.jit.entry.set(Some(entry));
         },
         Err(reason) => {
@@ -2855,6 +2904,9 @@ impl VM {
             eprintln!("[jit] '{}' ineligible: {}", proto.display_name(), reason);
           }
           proto.jit.ineligible.set(true);
+          if result.wanted_tier2 {
+            proto.jit.tier2.set(crate::vm::object::TIER2_DECLINED);
+          }
         },
       }
       proto.jit.compiling.set(false);
@@ -2905,7 +2957,7 @@ impl VM {
       return;
     }
     proto.jit.invalidations.set(invalidations + 1);
-    proto.jit.entry.set(None);
+    drop_compiled(proto);
     proto.jit.call_count.set(0);
     if crate::jit::log_enabled() {
       eprintln!(
@@ -3587,18 +3639,20 @@ impl VM {
   /// code and give up in the same place.
   ///
   /// Returns whether it was a failed bet, rather than a `Raise`.
-  fn note_deopt_site(&self, proto: &ObjFunction, deopt_ip: usize) -> bool {
+  fn note_deopt_site(&self, proto: &ObjFunction, deopt_ip: usize, from_tier2: bool) -> bool {
     if matches!(proto.chunk.code.get(deopt_ip), Some(Instr::Raise { .. })) {
       return false;
     }
     proto.jit.deopt_sites.borrow_mut().insert(deopt_ip);
-    self.invalidate_compiled(proto);
+    self.invalidate_compiled(proto, from_tier2);
     true
   }
 
-  /// Throws `proto`'s compiled code away so it warms up and compiles
-  /// again, up to the invalidation cap.
-  fn invalidate_compiled(&self, proto: &ObjFunction) {
+  /// Throws `proto`'s compiled code away, up to the invalidation cap.
+  /// Tier 2's code gives way to the tier-1 code it replaced, which
+  /// profiles again and asks for tier 2 once more when the feedback has
+  /// settled; anything else goes back to the interpreter to warm up.
+  fn invalidate_compiled(&self, proto: &ObjFunction, from_tier2: bool) {
     let invalidations = proto.jit.invalidations.get();
     if invalidations > MAX_JIT_INVALIDATIONS {
       return;
@@ -3615,7 +3669,19 @@ impl VM {
       }
     }
     proto.jit.invalidations.set(invalidations + 1);
-    proto.jit.entry.set(None);
+    if from_tier2
+      && proto.jit.tier.get() == 2
+      && let Some(baseline) = proto.jit.baseline.take()
+    {
+      let osr_ids = proto.jit.baseline_osr_ids.borrow_mut().take();
+      *proto.jit.osr_ids.borrow_mut() = osr_ids;
+      proto.jit.entry.set(Some(baseline));
+      proto.jit.tier.set(1);
+      proto.jit.tier2.set(crate::vm::object::TIER2_NONE);
+      proto.jit.tierup_count.set(0);
+      return;
+    }
+    drop_compiled(proto);
     proto.jit.call_count.set(0);
   }
 
@@ -3641,7 +3707,7 @@ impl VM {
       // code for the function at this deepest level for good. Clearing
       // entry (not just ineligible) matters: tiered_entry checks entry
       // first.
-      deopting_fn.jit.entry.set(None);
+      drop_compiled(deopting_fn);
       deopting_fn.jit.ineligible.set(true);
       if crate::jit::log_enabled() {
         eprintln!(
@@ -3656,6 +3722,8 @@ impl VM {
     };
     let int_miss = self.pending_deopt_int_miss.replace(false);
     let unreached = self.pending_deopt_unreached.replace(false);
+    let from_tier2 = self.pending_deopt_tier2.replace(false);
+    let tier_exit = self.pending_tier_exit.replace(false);
     let arithmetic = matches!(
       site_fn.chunk.code.get(site_ip),
       Some(
@@ -3667,19 +3735,23 @@ impl VM {
           | Instr::MulImm { .. }
       )
     );
-    if int_miss && arithmetic {
+    if tier_exit {
+      // Leaving for tier 2's code, not giving up on anything.
+    } else if int_miss && arithmetic {
       // The site is fine on doubles; only the integer bet goes.
       site_fn.jit.int_misses.borrow_mut().insert(site_ip);
-      self.invalidate_compiled(deopting_fn);
+      self.invalidate_compiled(deopting_fn, from_tier2);
     } else if unreached {
       // Nothing was wrong at the site; there was nothing to build it from.
       // The interpreter records what it sees there now, and the next
       // compile uses that.
-      self.invalidate_compiled(deopting_fn);
-    } else if self.note_deopt_site(site_fn, site_ip) && !std::ptr::eq(site_fn, deopting_fn) {
+      self.invalidate_compiled(deopting_fn, from_tier2);
+    } else if self.note_deopt_site(site_fn, site_ip, from_tier2)
+      && !std::ptr::eq(site_fn, deopting_fn)
+    {
       // The code that bet wrong is the compiled function's, whatever the
       // check belonged to.
-      self.invalidate_compiled(deopting_fn);
+      self.invalidate_compiled(deopting_fn, from_tier2);
     }
     // The compiled code has returned, and the stack slots it registered
     // as roots went with its native frame. Anything the interpreter still
@@ -3699,6 +3771,38 @@ impl VM {
       .deopt_reentrancy_depth
       .set(self.deopt_reentrancy_depth.get() - 1);
     result
+  }
+
+  /// Profiling tier-1 code of `proto` reaching its tier-up budget. Asks
+  /// for tier 2 when nothing has yet, and says whether a loop about to
+  /// go round again at `header` should leave for tier 2's code now. The
+  /// budget is topped up so the code asks again only every so often.
+  pub(crate) fn tier_up(&mut self, proto: &ObjFunction, header: Option<usize>) -> bool {
+    use crate::vm::object::{TIER2_INSTALLED, TIER2_NONE};
+    self.drain_jit_results();
+    let jit = &proto.jit;
+    let recheck = TIERUP_RECHECK.min(jit.tierup_threshold / 2);
+    jit.tierup_count.set(jit.tierup_threshold - recheck);
+    match jit.tier2.get() {
+      TIER2_NONE if !jit.compiling.get() && !jit.ineligible.get() => {
+        let Some(frame) = self.frames.last() else {
+          return false;
+        };
+        let proto_value = frame.closure_val.as_closure().function;
+        if !std::ptr::eq(proto_value.as_func(), proto) {
+          return false;
+        }
+        if crate::jit::log_enabled() {
+          eprintln!("[jit] '{}' asks for tier 2", proto.display_name());
+        }
+        self.enqueue_compile(proto, proto_value, true);
+        false
+      },
+      TIER2_INSTALLED => header.is_some_and(|h| {
+        jit.osr_ids.borrow().as_ref().is_some_and(|ids| ids.contains_key(&h))
+      }),
+      _ => false,
+    }
   }
 
   /// Checked by `run_until`'s `Instr::Jmp` handler on every backward jump
@@ -3743,7 +3847,7 @@ impl VM {
     // this is only ever reached from a backward jump inside it.
     let closure_val = self.frames.last().unwrap().closure_val;
     let proto_value = closure_val.as_closure().function;
-    self.enqueue_compile(func, proto_value);
+    self.enqueue_compile(func, proto_value, false);
     None
   }
 
@@ -7391,6 +7495,20 @@ fn value_to_jump_key(v: Value) -> Option<JumpKey> {
     Some(JumpKey::Str(v.as_str().to_string()))
   } else {
     None
+  }
+}
+
+/// Leaves `proto` with no compiled code of either tier. A function tier
+/// 2 declined stays declined, so it does not profile its way back to the
+/// same answer.
+fn drop_compiled(proto: &ObjFunction) {
+  proto.jit.entry.set(None);
+  proto.jit.tier.set(0);
+  proto.jit.baseline.set(None);
+  *proto.jit.baseline_osr_ids.borrow_mut() = None;
+  proto.jit.profiling.set(false);
+  if proto.jit.tier2.get() != crate::vm::object::TIER2_DECLINED {
+    proto.jit.tier2.set(crate::vm::object::TIER2_NONE);
   }
 }
 

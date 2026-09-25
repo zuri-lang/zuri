@@ -131,6 +131,11 @@ pub struct CompileResult {
   pub speculative_ints: Option<u64>,
   /// Which tier produced `outcome`.
   pub tier: u8,
+  /// Whether tier-1 code in `outcome` profiles.
+  pub profiling: bool,
+  /// Whether the job asked for tier 2, so a tier-1 outcome means tier 2
+  /// declined the function.
+  pub wanted_tier2: bool,
   /// How many registers the code uses from its frame's base, counting
   /// calls built into it; zero when that is just the function's own.
   pub registers: usize,
@@ -313,7 +318,9 @@ fn compiler_loop(
     // carry on with the next job.
     let mut tier = 1;
     let mut registers = 0;
+    let profile = job.facts.profile;
     let tier2 = job.tier2;
+    let wanted_tier2 = tier2.is_some();
     let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       // The optimizing tier declines functions it cannot build; those
       // still get the baseline tier's code.
@@ -368,6 +375,8 @@ fn compiler_loop(
       speculative_lists,
       speculative_ints,
       tier,
+      profiling: tier == 1 && profile,
+      wanted_tier2,
       registers,
       outcome,
     };

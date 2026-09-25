@@ -198,6 +198,7 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
   ip: u64,
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_tier2.set(true);
   let chain = unsafe { std::slice::from_raw_parts(chain as *const crate::jit::DeoptFrame, len as usize) };
   vm.push_inlined_frames(chain);
   if crate::jit::log_enabled() {
@@ -220,6 +221,56 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
 /// Reads nothing through its pointer.
 pub unsafe extern "C" fn zuri_jit_wrap_i64(_vm_ptr: *mut VM, bits: u64) -> u64 {
   crate::vm::value::num_to_wrapped_i64(f64::from_bits(bits)) as u64
+}
+
+/// `zuri_jit_deopt` for tier 2's code, whose function falls back to its
+/// tier-1 code when this throws the code away.
+///
+/// # Safety
+///
+/// `vm_ptr` is the running VM.
+pub unsafe extern "C" fn zuri_jit_deopt_tier2(vm_ptr: *mut VM, ip: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_tier2.set(true);
+  unsafe { zuri_jit_deopt(vm_ptr, ip) }
+}
+
+/// Profiling tier-1 code of `proto` has done its share of work: asks for
+/// tier 2 if nothing has yet. `header` is the loop header a backward jump
+/// is about to take, or `u64::MAX` from anywhere else; for a loop whose
+/// header tier 2's installed code can enter, returns 1 and the caller
+/// leaves through `zuri_jit_tier_exit` so the interpreter carries the
+/// loop into it. Returns 0 to carry on.
+///
+/// # Safety
+///
+/// `vm_ptr` is the running VM, and `proto` the function running.
+pub unsafe extern "C" fn zuri_jit_tier_up(vm_ptr: *mut VM, proto: u64, header: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let proto = unsafe { &*(proto as *const crate::vm::object::ObjFunction) };
+  let header = (header != u64::MAX).then_some(header as usize);
+  vm.tier_up(proto, header) as u64
+}
+
+/// Leaves profiling tier-1 code at the backward jump at `ip`, for the
+/// interpreter to take the jump and enter tier 2's code at the loop
+/// header. Nothing is noted against the function.
+///
+/// # Safety
+///
+/// `vm_ptr` is the running VM.
+pub unsafe extern "C" fn zuri_jit_tier_exit(vm_ptr: *mut VM, ip: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  if crate::jit::log_enabled() {
+    eprintln!(
+      "[jit] '{}' moves to tier 2 at ip {}",
+      vm.current_function_name(),
+      ip
+    );
+  }
+  vm.pending_tier_exit.set(true);
+  vm.pending_deopt_ip.set(ip as i64);
+  OK
 }
 
 /// Marks the deoptimization about to happen as an integer bet failing, so
@@ -3228,6 +3279,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec4!(zuri_jit_deopt_inlined),
     spec3!(zuri_jit_blame),
     spec1!(zuri_jit_unreached),
+    spec2!(zuri_jit_deopt_tier2),
+    spec3!(zuri_jit_tier_up),
+    spec2!(zuri_jit_tier_exit),
     spec1!(zuri_jit_int_miss),
     spec2!(zuri_jit_wrap_i64),
     spec2!(zuri_jit_ensure_registers),

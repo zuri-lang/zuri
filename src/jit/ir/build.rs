@@ -853,41 +853,7 @@ impl<'a> Builder<'a> {
     if feedback.sites_off || !feedback.open(ip) {
       return false;
     }
-    let recorded = matches!(
-      instr,
-      Instr::Add { .. }
-        | Instr::Sub { .. }
-        | Instr::Mul { .. }
-        | Instr::Div { .. }
-        | Instr::Pow { .. }
-        | Instr::Floor { .. }
-        | Instr::Mod { .. }
-        | Instr::Neg { .. }
-        | Instr::BitAnd { .. }
-        | Instr::BitOr { .. }
-        | Instr::BitXor { .. }
-        | Instr::BitShl { .. }
-        | Instr::BitShr { .. }
-        | Instr::BitUshr { .. }
-        | Instr::BitNot { .. }
-        | Instr::Lt { .. }
-        | Instr::Le { .. }
-        | Instr::Gt { .. }
-        | Instr::Ge { .. }
-        | Instr::AddImm { .. }
-        | Instr::SubImm { .. }
-        | Instr::MulImm { .. }
-        | Instr::LtImm { .. }
-        | Instr::LeImm { .. }
-        | Instr::GtImm { .. }
-        | Instr::GeImm { .. }
-        | Instr::GetIndex { .. }
-        | Instr::SetIndex { .. }
-        | Instr::GetField { .. }
-        | Instr::SetField { .. }
-        | Instr::Call { .. }
-        | Instr::Invoke { .. }
-    );
+    let recorded = !kind::recorded(instr).is_empty();
     recorded && feedback.kinds.get(ip).copied().unwrap_or(0) == 0
   }
 

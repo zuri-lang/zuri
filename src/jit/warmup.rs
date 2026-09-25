@@ -109,3 +109,28 @@ pub fn call_threshold(instruction_count: usize) -> u32 {
 pub fn osr_threshold(instruction_count: usize) -> u32 {
   curve(osr_k(), instruction_count, OSR_WARMUP_MIN, OSR_WARMUP_MAX)
 }
+
+/// Numerator for the tier-up curve: how much work a function's profiling
+/// tier-1 code does, counted in entries plus loop turns, before tier 2
+/// compiles it from the feedback that code has gathered. Larger than the
+/// warm-up curves by design: tier 2's bets are only as good as the
+/// feedback behind them, and every path a stable function takes should
+/// have had its turn by then.
+fn tierup_k() -> f64 {
+  static K: OnceLock<f64> = OnceLock::new();
+  *K.get_or_init(|| {
+    std::env::var("ZURI_JIT_TIERUP_K")
+      .ok()
+      .and_then(|s| s.parse().ok())
+      .unwrap_or(20000.0)
+  })
+}
+
+const TIERUP_MIN: u32 = 64;
+const TIERUP_MAX: u32 = 200_000;
+
+/// Entries plus loop turns a function's profiling tier-1 code makes
+/// before it asks for tier 2.
+pub fn tierup_threshold(instruction_count: usize) -> u32 {
+  curve(tierup_k(), instruction_count, TIERUP_MIN, TIERUP_MAX)
+}
