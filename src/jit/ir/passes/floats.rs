@@ -7,8 +7,9 @@
 //! goes straight back to a double, as in `1.0 / ((i + j) * (i + j + 1))`,
 //! the run pays for its overflow checks and its conversions and gains
 //! nothing. Double arithmetic gives the interpreter's answer exactly, so
-//! such a run is done on doubles instead, and a whole-number check on a
-//! double whose only purpose was feeding it goes with it.
+//! such a run is done on doubles instead. A whole-number check whose only
+//! purpose was feeding it goes with it, down to the number check it
+//! contains when its value is not already known to be one.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -29,8 +30,7 @@ pub fn run(f: &mut Func) -> bool {
   true
 }
 
-/// Every integer arithmetic guard, and every whole-number guard on a
-/// double.
+/// Every integer arithmetic guard and every whole-number guard.
 fn find_candidates(f: &Func) -> FxHashSet<ValueId> {
   let mut out = FxHashSet::default();
   for b in &f.blocks {
@@ -43,7 +43,7 @@ fn find_candidates(f: &Func) -> FxHashSet<ValueId> {
         Op::Guard(GuardKind::Arith(_)) => {
           out.insert(v);
         },
-        Op::Guard(GuardKind::Whole) if f.ty(inst.args[0]) == Ty::F64 => {
+        Op::Guard(GuardKind::Whole) => {
           out.insert(v);
         },
         _ => {},
@@ -163,7 +163,33 @@ fn rewrite(f: &mut Func, candidates: &FxHashSet<ValueId>) {
           double.insert(v, d);
         },
         _ => {
-          double.insert(v, inst.args[0]);
+          // A whole-number check on a double, or on a double boxed, was
+          // only ever for the integers; one on anything else still has
+          // to check it is a number.
+          let checked = inst.args[0];
+          let boxed = f
+            .def_inst(checked)
+            .filter(|d| matches!(d.op, Op::BoxF64))
+            .map(|d| d.args[0]);
+          let d = if f.ty(checked) == Ty::F64 {
+            checked
+          } else if let Some(unboxed) = boxed {
+            unboxed
+          } else {
+            let d = f
+              .insert(
+                b,
+                pos,
+                Op::Guard(GuardKind::Number),
+                vec![checked],
+                Some(Ty::F64),
+                inst.state.clone(),
+              )
+              .unwrap();
+            pos += 1;
+            d
+          };
+          double.insert(v, d);
         },
       }
       gone.insert(i);

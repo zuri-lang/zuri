@@ -45,8 +45,6 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   check(f, "phi")?;
   induction::run(f, feedback);
   check(f, "induction")?;
-  elems::run(f, feedback);
-  check(f, "elems")?;
   // After induction has taken the loop counters it can make integers;
   // what integer arithmetic is left only reaching doubles goes to doubles,
   // and anything it made invariant leaves the loop.
@@ -55,6 +53,8 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
     licm::run(f);
     check(f, "licm")?;
   }
+  elems::run(f, feedback);
+  check(f, "elems")?;
   // Nothing after this point builds a frame state, so the values kept for
   // folded-away parameters need not stay alive any longer.
   for b in &mut f.blocks {
