@@ -150,36 +150,27 @@ impl JitEngine {
     self.isa.clone()
   }
 
-  /// Fully compiles `proto` from bytecode to native machine code and
-  /// finalizes it into executable memory in `module`, returning the
-  /// callable entry point and any loop OSR entry points. Runs
-  /// entirely on the dedicated background compiler worker thread.
-  pub fn compile_function(
-    &mut self,
-    proto: &ObjFunction,
-    speculative_params: Option<u64>,
-    speculative_regs: Option<typeflow::SpeculativeRegs>,
-    facts: CompileFacts,
-    shutdown: Option<&std::sync::atomic::AtomicBool>,
-  ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
-    let pending = self.build_ir(proto, speculative_params, speculative_regs, facts, shutdown)?;
-    self.finish(pending, proto, shutdown)
-  }
-
-  /// Compiles `proto` through the optimizing tier: bytecode to IR, the
-  /// IR passes, then lowering to Cranelift. `Err` means the IR builder
-  /// declined the function, or something after it failed; the caller
-  /// falls back to the baseline tier either way. Also returns how many
-  /// registers the code uses from its frame's base, calls built in
-  /// included.
-  pub fn compile_tier2(
+  /// Translates `proto` through the optimizing tier: bytecode to IR,
+  /// the IR passes, then lowering to Cranelift. `Err` means the IR
+  /// builder declined the function, or something after it failed; the
+  /// caller falls back to the baseline tier either way. Also returns how
+  /// many registers the code uses from its frame's base, calls built in
+  /// included. `finish` turns the result into machine code.
+  pub fn build_tier2(
     &mut self,
     proto: &ObjFunction,
     feedback: &crate::jit::ir::build::Feedback,
     shutdown: Option<&std::sync::atomic::AtomicBool>,
-  ) -> Result<(EntryFn, FxHashMap<usize, i32>, usize), String> {
+  ) -> Result<(PendingCompile, usize), String> {
+    let aborted = || shutdown.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed));
     let mut ir = crate::jit::ir::build::build(proto, feedback)?;
+    if aborted() {
+      return Err("compilation aborted: VM shutdown".to_string());
+    }
     crate::jit::ir::passes::run(&mut ir, feedback)?;
+    if aborted() {
+      return Err("compilation aborted: VM shutdown".to_string());
+    }
     if crate::jit::log_ir_enabled() {
       eprintln!("[jit] tier 2 IR for '{}':\n{ir}", proto.display_name());
     }
@@ -209,16 +200,14 @@ impl JitEngine {
     if crate::jit::log_asm_enabled() {
       self.asm_labels.insert(func_id, Self::asm_label(proto));
     }
-    let (entry, osr_ids) = self.finish(
+    Ok((
       PendingCompile {
         ctx,
         func_id,
         osr_ids,
       },
-      proto,
-      shutdown,
-    )?;
-    Ok((entry, osr_ids, ir.extent))
+      ir.extent,
+    ))
   }
 
   fn asm_label(proto: &ObjFunction) -> String {
@@ -237,11 +226,15 @@ impl JitEngine {
 
   /// Everything after a function's Cranelift IR exists: register
   /// allocation and encoding, then installing the machine code.
-  fn finish(
+  /// Compiles a translated function to machine code and installs it,
+  /// returning the entry point and its loop OSR entries. Reads nothing
+  /// but `pending`, so it runs without the function's heap; `name` is
+  /// only for reporting.
+  pub fn finish(
     &mut self,
     mut pending: PendingCompile,
     // Only named in the debug build's verifier report below.
-    #[cfg_attr(not(debug_assertions), allow(unused_variables))] proto: &ObjFunction,
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))] name: &str,
     shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
     if let Some(shutdown) = shutdown {
@@ -275,10 +268,7 @@ impl JitEngine {
         // builds skip the verifier and never get here for this reason.
         #[cfg(debug_assertions)]
         if let cranelift_codegen::CodegenError::Verifier(errors) = &e.inner {
-          eprintln!(
-            "zuri: JIT emitted invalid IR for '{}': {errors}",
-            proto.display_name()
-          );
+          eprintln!("zuri: JIT emitted invalid IR for '{name}': {errors}");
         }
         return Err(format!("backend compile failed: {:?}", e.inner));
       },
@@ -289,12 +279,10 @@ impl JitEngine {
 
   /// Stage 1 of compiling `proto`: translate its bytecode to Cranelift
   /// IR (`jit::codegen`'s job) and declare a slot for it in `module`.
-  /// This is the only stage that touches `proto`, so it must run
-  /// synchronously on the VM's own thread: see `jit::background`'s
-  /// module docs for why everything after this point (the actual
-  /// register-allocation/encoding work, `Context::compile`) is safe to
-  /// hand off to a background thread with no further `proto`/`module`
-  /// access needed. `Err(reason)` means `proto` is permanently
+  /// This is the only stage that reads `proto`, so the worker holds its
+  /// VM's heap lease for this and nothing after it: `finish` does the
+  /// register allocation and encoding from the Cranelift IR alone.
+  /// `Err(reason)` means `proto` is permanently
   /// ineligible (see `codegen::compile`'s own eligibility scan); the
   /// caller marks it as such and never asks again. `speculative_params`
   /// is passed straight through to `codegen::compile`: see its own
