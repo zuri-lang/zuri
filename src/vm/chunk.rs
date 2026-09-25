@@ -1081,6 +1081,16 @@ impl Chunk {
 
   /// Everything the site at `ip` has seen so far, or `0` when it has
   /// never run interpreted.
+  /// Whether every site that records feedback has recorded something,
+  /// which is to say each of them has run at least once.
+  pub fn feedback_complete(&self) -> bool {
+    self
+      .code
+      .iter()
+      .enumerate()
+      .all(|(ip, instr)| kind::recorded(instr).is_empty() || self.feedback_at(ip) != 0)
+  }
+
   pub fn feedback_at(&self, ip: usize) -> u8 {
     self
       .feedback

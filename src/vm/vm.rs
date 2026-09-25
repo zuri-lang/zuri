@@ -1703,8 +1703,30 @@ impl VM {
     {
       return None;
     }
-    self.enqueue_compile(proto, proto_value, None);
+    self.enqueue_first_compile(proto, proto_value, None);
     None
+  }
+
+  /// The first compile of a warm `proto`. With two tiers, a function
+  /// every one of whose sites has run goes straight to tier 2: profiling
+  /// code would only record again what the interpreter already has. One
+  /// with sites that have not run yet gets profiling tier 1, which sees
+  /// them run before tier 2 builds on them. A frame entering at the loop
+  /// header `entry` gets a way into tier 2's code there.
+  fn enqueue_first_compile(
+    &mut self,
+    proto: &ObjFunction,
+    proto_value: Value,
+    entry: Option<usize>,
+  ) {
+    let straight = crate::jit::tier2_enabled()
+      && proto.jit.tier2.get() == crate::vm::object::TIER2_NONE
+      && proto.chunk.feedback_complete();
+    if straight && crate::jit::log_enabled() {
+      eprintln!("[jit] '{}' goes straight to tier 2", proto.display_name());
+    }
+    let optimize = straight.then(|| entry.into_iter().collect());
+    self.enqueue_compile(proto, proto_value, optimize);
   }
 
   pub fn set_shared_jit_compiler(
@@ -4025,7 +4047,7 @@ impl VM {
     // this is only ever reached from a backward jump inside it.
     let closure_val = self.frames.last().unwrap().closure_val;
     let proto_value = closure_val.as_closure().function;
-    self.enqueue_compile(func, proto_value, None);
+    self.enqueue_first_compile(func, proto_value, Some(target_ip));
     None
   }
 
