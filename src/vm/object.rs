@@ -492,6 +492,8 @@ pub fn obj_class_display_offsets() -> (usize, usize) {
       statics: Vec::new(),
       globals_module: None,
       display: Default::default(),
+      subclassed: Default::default(),
+      finalized: Default::default(),
     })));
     let obj_addr = &probe as *const Obj as usize;
     let Obj::Class(boxed) = &probe else {
@@ -942,6 +944,11 @@ pub struct JitInfo {
   /// compile once more without any of the type bets taken from
   /// `Chunk::feedback`.
   pub site_speculation_off: Cell<bool>,
+  /// Set once this function, as some class's method, has been replaced
+  /// on a class that had it: by a subclass's own method of that name, or
+  /// by an extension. Until then it is the method every class inheriting
+  /// it resolves the name to.
+  pub overridden: Cell<bool>,
   /// Set once an entry's element scan has actually failed, so the next
   /// compilation stops betting on what the parameters' lists hold.
   ///
@@ -1079,6 +1086,7 @@ impl JitInfo {
       invalidations: Cell::new(0),
       field_speculation_off: Cell::new(false),
       site_speculation_off: Cell::new(false),
+      overridden: Cell::new(false),
       elem_speculation_off: Cell::new(false),
       osr_counts: RefCell::new(FxHashMap::default()),
       compiling: Cell::new(false),
@@ -1327,6 +1335,12 @@ pub struct ObjClass {
   /// the class at depth `d` by comparing entry `d` alone. Filled by
   /// `fill_display` once the class has its superclass.
   pub display: [Cell<u64>; CLASS_DISPLAY_DEPTH],
+  /// Whether some class has been declared with this one as its
+  /// superclass.
+  pub subclassed: Cell<bool>,
+  /// Set once the declaration is complete, at `Instr::FinalizeClass`. A
+  /// method installed after that is an extension's.
+  pub finalized: Cell<bool>,
 }
 
 /// How many levels of descent `ObjClass::display` records.
@@ -1342,6 +1356,7 @@ impl ObjClass {
     }
     if let Some(superclass) = self.superclass {
       let parent = superclass.as_class();
+      parent.subclassed.set(true);
       for (mine, theirs) in self.display.iter().zip(&parent.display) {
         mine.set(theirs.get());
         if theirs.get() != 0 {
@@ -3075,11 +3090,9 @@ impl Heap {
 
   #[inline]
   /// Calls `visit` once for every live function prototype on the heap,
-  /// in both generations.
-  ///
-  /// Only ever used by the JIT coverage dump (`ZURI_JIT_COVERAGE`),
-  /// which runs once at exit; nothing on any hot path walks the heap
-  /// like this.
+  /// in both generations. Used where something happens once, never on a
+  /// hot path: the JIT coverage dump at exit, and an extension replacing
+  /// a method.
   pub fn for_each_function(&self, mut visit: impl FnMut(&ObjFunction)) {
     for chunk in self.chunks.iter().flatten() {
       for gcbox in chunk.slots.iter() {

@@ -1,0 +1,62 @@
+# An extension that replaces a method takes effect at every call site,
+# including the ones that have already run the old method many times and
+# may have kept it: a call site's cache, compiled code that calls the
+# method directly, or compiled code that built its body in.
+
+class Counter {
+  @new(n) {
+    self.n = n
+  }
+
+  count() {
+    return self.n
+  }
+
+  scaled(k) {
+    return self.n * k
+  }
+}
+
+def count_of(c) {
+  return c.count()
+}
+
+def scaled_sum(c, times) {
+  var total = 0
+  iter var i = 0; i < times; i++ {
+    total = total + c.scaled(2)
+  }
+  return total
+}
+
+var c = Counter(3)
+var total = 0
+iter var i = 0; i < 20000; i++ {
+  total = total + count_of(c)
+}
+echo total
+echo scaled_sum(c, 20000)
+
+class CounterExt > Counter {
+  static count(counter) {
+    return 999
+  }
+
+  static scaled(counter, k) {
+    return -k
+  }
+}
+
+# The same call sites, the same class, now the new methods.
+echo count_of(c)
+echo scaled_sum(c, 5)
+echo Counter(7).count()
+
+# Replacing it again replaces it again.
+class CounterAgain > Counter {
+  static count(counter) {
+    return counter.n + 1000
+  }
+}
+
+echo count_of(c)

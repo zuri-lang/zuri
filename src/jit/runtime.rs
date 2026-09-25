@@ -2460,6 +2460,8 @@ pub unsafe extern "C" fn zuri_jit_make_class(
     statics: Vec::new(),
     globals_module: func.globals_module,
     display: Default::default(),
+    subclassed: Default::default(),
+    finalized: Default::default(),
   });
   write_barrier(class_val.as_obj());
   vm.set_reg(base, dst as u8, class_val);
@@ -2511,9 +2513,7 @@ pub unsafe extern "C" fn zuri_jit_set_method(
   let class_val = vm.get_reg(base, class as u8);
   let name = Value::from_bits(name_bits).as_str().to_string();
   let method = vm.get_reg(base, src as u8);
-  class_val.as_class_mut().methods.insert(name, method);
-  write_barrier(class_val.as_obj());
-  vm.bump_method_table_generation();
+  vm.install_method(class_val, name, method);
   OK
 }
 
@@ -2564,6 +2564,7 @@ pub unsafe extern "C" fn zuri_jit_finalize_class(
     let e = vm.raise("Error", msg);
     return fail(vm, e);
   }
+  c.finalized.set(true);
   if let Some(ctor) = c.methods.get(&name).copied() {
     c.constructor = Some(ctor);
     drop(c);

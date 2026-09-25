@@ -55,8 +55,23 @@ const HEAP_YOUNG_HEADER_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
+const METHOD_TABLE_GENERATION_OFFSET: i32 = vm::VM_METHOD_TABLE_GENERATION_OFFSET as i32;
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_JIT_GC_NEEDED_OFFSET) as i32;
+const FRAMES_PTR_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_PTR_OFFSET) as i32;
+const FRAMES_LEN_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_LEN_OFFSET) as i32;
+const FRAMES_CAP_OFFSET: i32 = (vm::VM_FRAMES_OFFSET + vm::FRAMESTACK_CAP_OFFSET) as i32;
+const JIT_CALL_DEPTH_OFFSET: i32 = vm::VM_JIT_CALL_DEPTH_OFFSET as i32;
+const JIT_SCALAR_ROOTS_LEN_OFFSET: i32 = vm::VM_JIT_SCALAR_ROOTS_LEN_OFFSET as i32;
+const PENDING_DEOPT_IP_OFFSET: i32 = vm::VM_PENDING_DEOPT_IP_OFFSET as i32;
+const CALL_FRAME_FUNCTION_OFFSET: i32 = vm::CALL_FRAME_FUNCTION_OFFSET as i32;
+const CALL_FRAME_CLOSURE_VAL_OFFSET: i32 = vm::CALL_FRAME_CLOSURE_VAL_OFFSET as i32;
+const CALL_FRAME_IP_OFFSET: i32 = vm::CALL_FRAME_IP_OFFSET as i32;
+const CALL_FRAME_BASE_OFFSET: i32 = vm::CALL_FRAME_BASE_OFFSET as i32;
+const CALL_FRAME_DST_IN_CALLER_OFFSET: i32 = vm::CALL_FRAME_DST_IN_CALLER_OFFSET as i32;
+const CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET: i32 = vm::CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET as i32;
+const CALL_FRAME_COMPILED_OFFSET: i32 = vm::CALL_FRAME_COMPILED_OFFSET as i32;
+const CALL_FRAME_SIZE: i64 = vm::CALL_FRAME_SIZE as i64;
 
 /// What compiled code returns when it is leaving through an error or a
 /// deoptimization, matching the baseline tier; the caller looks at the
@@ -337,6 +352,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       Op::Reload { reg } | Op::OsrParam(reg) => Some(self.load_reg(*reg)),
       Op::OsrIndex => Some(self.fb.ins().sextend(types::I64, self.osr_param)),
+      Op::MethodGeneration => Some(self.fb.ins().load(
+        types::I64,
+        flags,
+        self.vm,
+        METHOD_TABLE_GENERATION_OFFSET,
+      )),
       Op::LoadGlobal(slot) => {
         let slots = self
           .fb
@@ -760,7 +781,16 @@ impl<'a, 'b> Lowering<'a, 'b> {
           num_args,
           dst,
         };
-        self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args)
+        if num_args > 4 {
+          self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args)
+        } else {
+          let (miss, done) = self.direct_call(DirectCallee::Register, call, ip, frame);
+          self.fb.switch_to_block(miss);
+          let status = self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args);
+          self.fb.ins().jump(done, &[status.into()]);
+          self.fb.switch_to_block(done);
+          self.fb.block_params(done)[0]
+        }
       },
       Instr::Invoke {
         dst,
@@ -788,7 +818,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
           num_args: num_args + 1,
           dst,
         };
-        self.fast_call("zuri_jit_invoke_prepare", prepare, call, name, &args)
+        match proto.chunk.invoke_cache_cell(ip) {
+          Some(cell) if num_args < 4 => {
+            let cell = cell as *const _ as u64;
+            let (miss, done) = self.direct_call(DirectCallee::Cached(cell), call, ip, frame);
+            self.fb.switch_to_block(miss);
+            let status = self.fast_call("zuri_jit_invoke_prepare", prepare, call, name, &args);
+            self.fb.ins().jump(done, &[status.into()]);
+            self.fb.switch_to_block(done);
+            self.fb.block_params(done)[0]
+          },
+          _ => self.fast_call("zuri_jit_invoke_prepare", prepare, call, name, &args),
+        }
       },
       _ => self.call(name, &args),
     };
@@ -904,6 +945,342 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     self.fb.switch_to_block(done);
     self.fb.block_params(done)[0]
+  }
+
+  /// A call into the callee's compiled code with its frame pushed and
+  /// popped right here, the way the baseline tier makes one, so a call
+  /// between compiled functions crosses no helper. Returns two blocks:
+  /// the first is where every case this does not cover goes (a callee
+  /// that is not a plain compiled closure of the right arity, a method
+  /// the site's cache does not hold for this receiver's class, a full
+  /// frame stack), for the caller to fill with the helper path; the
+  /// second joins both, with the call's status as its parameter.
+  fn direct_call(
+    &mut self,
+    callee: DirectCallee,
+    call: FastCall,
+    ip: usize,
+    frame: u16,
+  ) -> (Block, Block) {
+    let FastCall {
+      base,
+      offset,
+      first_arg,
+      num_args,
+      dst,
+    } = call;
+    let flags = MemFlagsData::trusted();
+    let miss = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+
+    let (closure, proto) = match callee {
+      DirectCallee::Register => {
+        let closure = self.load_reg(offset + first_arg - 1);
+        let is_obj = self.is_obj(closure);
+        self.continue_if(is_obj, miss);
+        let p = self.obj_ptr(closure);
+        let tag = self.fb.ins().load(types::I8, flags, p, 0);
+        let is_closure = self
+          .fb
+          .ins()
+          .icmp_imm_s(IntCC::Equal, tag, object::OBJ_TAG_CLOSURE as i64);
+        let other = self.fb.create_block();
+        let next = self.fb.create_block();
+        self.fb.ins().brif(is_closure, next, &[], other, &[]);
+
+        // A native is called with its arguments where they are.
+        self.fb.switch_to_block(other);
+        let is_native = self
+          .fb
+          .ins()
+          .icmp_imm_s(IntCC::Equal, tag, object::OBJ_TAG_NATIVE as i64);
+        self.continue_if(is_native, miss);
+        let func_c = self.u64c((first_arg - 1) as u64);
+        let count_c = self.u64c(num_args as u64);
+        let dst_c = self.u64c(dst as u64);
+        let status = self.call(
+          "zuri_jit_call_native",
+          &[self.vm, base, func_c, count_c, dst_c],
+        );
+        self.fb.ins().jump(done, &[status.into()]);
+
+        self.fb.switch_to_block(next);
+        let function = self
+          .fb
+          .ins()
+          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        let is_function = self.obj_tag_is(function, object::OBJ_TAG_FUNC);
+        self.continue_if(is_function, miss);
+        (closure, self.function_proto(function))
+      },
+      DirectCallee::Cached(cell) => {
+        // The receiver's class has to be the one the cache was filled
+        // for, and then its method is the closure the cache holds.
+        let receiver = self.load_reg(offset + first_arg - 1);
+        let is_instance = self.obj_tag_is(receiver, object::OBJ_TAG_INSTANCE);
+        self.continue_if(is_instance, miss);
+        let p = self.obj_ptr(receiver);
+        let class = self
+          .fb
+          .ins()
+          .load(types::I64, flags, p, object::obj_instance_class_offset() as i32);
+        let cell = self.u64c(cell);
+        let key = self.fb.ins().load(types::I64, flags, cell, 0);
+        let hit = self.fb.ins().icmp(IntCC::Equal, class, key);
+        self.continue_if(hit, miss);
+        let method = self.fb.ins().load(types::I64, flags, cell, 8);
+        let p = self.obj_ptr(method);
+        let function = self
+          .fb
+          .ins()
+          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        (method, self.function_proto(function))
+      },
+    };
+
+    // The shape a frame is pushed for without a helper, and code to run.
+    let arity = self
+      .fb
+      .ins()
+      .load(types::I8, flags, proto, object::obj_function_arity_offset() as i32);
+    let mut ready = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, arity, num_args as i64);
+    let variadic = self
+      .fb
+      .ins()
+      .load(types::I8, flags, proto, object::obj_function_variadic_offset() as i32);
+    let fixed = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
+    ready = self.fb.ins().band(ready, fixed);
+    if matches!(callee, DirectCallee::Register) {
+      // A method called as a plain function has no receiver to take.
+      let method = self
+        .fb
+        .ins()
+        .load(types::I8, flags, proto, object::obj_function_is_method_offset() as i32);
+      let plain = self.fb.ins().icmp_imm_s(IntCC::Equal, method, 0);
+      ready = self.fb.ins().band(ready, plain);
+    }
+    let entry = self.fb.ins().load(
+      types::I64,
+      flags,
+      proto,
+      object::obj_function_jit_entry_offset() as i32,
+    );
+    let compiled = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
+    ready = self.fb.ins().band(ready, compiled);
+    self.continue_if(ready, miss);
+
+    // Room for one more compiled frame, its registers and its entry on
+    // the frame stack.
+    let new_base = self.fb.ins().iadd_imm_s(base, first_arg as i64);
+    let depth = self
+      .fb
+      .ins()
+      .load(types::I32, flags, self.vm, JIT_CALL_DEPTH_OFFSET);
+    let depth_ok = self.fb.ins().icmp_imm_u(
+      IntCC::UnsignedLessThan,
+      depth,
+      vm::JIT_MAX_CALL_DEPTH as i64,
+    );
+    self.continue_if(depth_ok, miss);
+    let registers = self.fb.ins().load(
+      types::I8,
+      flags,
+      proto,
+      object::obj_function_num_registers_offset() as i32,
+    );
+    let registers = self.fb.ins().uextend(types::I64, registers);
+    let needed = self.fb.ins().iadd(new_base, registers);
+    let regs_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, REGS_LEN_CACHE_OFFSET);
+    let regs_ok = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThanOrEqual, regs_len, needed);
+    self.continue_if(regs_ok, miss);
+    let frames_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, FRAMES_LEN_OFFSET);
+    let frames_cap = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, FRAMES_CAP_OFFSET);
+    let frames_ok = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedLessThan, frames_len, frames_cap);
+    self.continue_if(frames_ok, miss);
+
+    // The callee's frame. This frame stops being the innermost one, so
+    // its position goes into its own entry for stack traces to find.
+    let frames = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, FRAMES_PTR_OFFSET);
+    let at = self.fb.ins().imul_imm_s(frames_len, CALL_FRAME_SIZE);
+    let at = self.fb.ins().iadd(frames, at);
+    let position = if frame == 0 {
+      ip + 1
+    } else {
+      self.position(frame, ip)
+    };
+    let position = self.u64c(position as u64);
+    self.fb.ins().store(
+      flags,
+      position,
+      at,
+      CALL_FRAME_IP_OFFSET - CALL_FRAME_SIZE as i32,
+    );
+    self
+      .fb
+      .ins()
+      .store(flags, proto, at, CALL_FRAME_FUNCTION_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, closure, at, CALL_FRAME_CLOSURE_VAL_OFFSET);
+    let zero = self.u64c(0);
+    self.fb.ins().store(flags, zero, at, CALL_FRAME_IP_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, new_base, at, CALL_FRAME_BASE_OFFSET);
+    let dst_c = self.fb.ins().iconst(types::I8, dst as i64);
+    self
+      .fb
+      .ins()
+      .store(flags, dst_c, at, CALL_FRAME_DST_IN_CALLER_OFFSET);
+    let roots = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, roots, at, CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET);
+    let yes = self.fb.ins().iconst(types::I8, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, yes, at, CALL_FRAME_COMPILED_OFFSET);
+    let pushed = self.fb.ins().iadd_imm_s(frames_len, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, pushed, self.vm, FRAMES_LEN_OFFSET);
+    let deeper = self.fb.ins().iadd_imm_s(depth, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, deeper, self.vm, JIT_CALL_DEPTH_OFFSET);
+
+    let nil = self.u64c(value::NIL_VAL);
+    let mut call_args = vec![self.vm, new_base, closure];
+    call_args.push(self.fb.ins().iconst(types::I32, -1));
+    for k in 0..4u8 {
+      let a = if k < num_args {
+        self.load_reg(offset + first_arg + k)
+      } else {
+        nil
+      };
+      call_args.push(a);
+    }
+    let sig = self.entry_sig();
+    let call = self.fb.ins().call_indirect(sig, entry, &call_args);
+    let ret = self.fb.inst_results(call)[0];
+    self.refresh_regs();
+    let depth = self
+      .fb
+      .ins()
+      .load(types::I32, flags, self.vm, JIT_CALL_DEPTH_OFFSET);
+    let shallower = self.fb.ins().iadd_imm_s(depth, -1);
+    self
+      .fb
+      .ins()
+      .store(flags, shallower, self.vm, JIT_CALL_DEPTH_OFFSET);
+
+    // The callee returned, deoptimized, or is unwinding an error.
+    let pending = self.u64c(PENDING_RETURN);
+    let is_pending = self.fb.ins().icmp(IntCC::Equal, ret, pending);
+    let returned = self.fb.create_block();
+    let left = self.fb.create_block();
+    self.fb.ins().brif(is_pending, left, &[], returned, &[]);
+
+    self.fb.switch_to_block(left);
+    self.fb.set_cold_block(left);
+    let deopt_ip = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, PENDING_DEOPT_IP_OFFSET);
+    let raised = self.fb.ins().icmp_imm_s(IntCC::Equal, deopt_ip, -1);
+    let deopted = self.fb.create_block();
+    let failed = self.fb.create_block();
+    self.fb.ins().brif(raised, failed, &[], deopted, &[]);
+
+    self.fb.switch_to_block(deopted);
+    self.fb.set_cold_block(deopted);
+    let dst_c = self.u64c(dst as u64);
+    let status = self.call("zuri_jit_finish_deopt", &[self.vm, base, dst_c]);
+    self.fb.ins().jump(done, &[status.into()]);
+
+    self.fb.switch_to_block(failed);
+    self.fb.set_cold_block(failed);
+    let one = self.u64c(1);
+    self.fb.ins().jump(done, &[one.into()]);
+
+    // Popped as the frame's own return would pop it, retiring any scalar
+    // roots it registered.
+    self.fb.switch_to_block(returned);
+    let frames_len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, FRAMES_LEN_OFFSET);
+    let top = self.fb.ins().iadd_imm_s(frames_len, -1);
+    let frames = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, FRAMES_PTR_OFFSET);
+    let at = self.fb.ins().imul_imm_s(top, CALL_FRAME_SIZE);
+    let at = self.fb.ins().iadd(frames, at);
+    let mark = self
+      .fb
+      .ins()
+      .load(types::I64, flags, at, CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, mark, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self.fb.ins().store(flags, top, self.vm, FRAMES_LEN_OFFSET);
+    self.store_reg(offset + dst, ret);
+    let ok = self.u64c(0);
+    self.fb.ins().jump(done, &[ok.into()]);
+
+    (miss, done)
+  }
+
+  /// Carries on in a fresh block when `cond` holds, and goes to `miss`
+  /// otherwise.
+  fn continue_if(&mut self, cond: IrValue, miss: Block) {
+    let next = self.fb.create_block();
+    self.fb.ins().brif(cond, next, &[], miss, &[]);
+    self.fb.switch_to_block(next);
+  }
+
+  /// The prototype an `Obj::Func` wrapper holds.
+  fn function_proto(&mut self, function: IrValue) -> IrValue {
+    let p = self.obj_ptr(function);
+    self.fb.ins().load(
+      types::I64,
+      MemFlagsData::trusted(),
+      p,
+      object::obj_func_proto_offset() as i32,
+    )
   }
 
   fn closure_slot(&mut self) -> StackSlot {
@@ -2692,6 +3069,15 @@ struct FastCall {
   first_arg: u8,
   num_args: u8,
   dst: u8,
+}
+
+/// Where a direct call finds its callee: in the register before its
+/// arguments, or, for a method call, in the site's cache, keyed by the
+/// receiver's class. The cache's address is baked in.
+#[derive(Clone, Copy)]
+enum DirectCallee {
+  Register,
+  Cached(u64),
 }
 
 /// The signature every compiled entry shares; built the same way the

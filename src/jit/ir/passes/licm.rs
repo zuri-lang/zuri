@@ -134,6 +134,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
         Op::LoadElem => every_iteration(b) && !collects && !writes_elems,
         Op::LoadField(_) => every_iteration(b) && !collects && !writes_fields,
         Op::LoadGlobal(_) => every_iteration(b) && !collects && !writes_globals,
+        Op::MethodGeneration => every_iteration(b) && !collects,
         Op::UpvalCell(_) => every_iteration(b) && !collects,
         Op::LoadUpval => every_iteration(b) && !collects && !writes_upvals,
         op => is_pure(op),

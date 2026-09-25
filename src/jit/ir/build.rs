@@ -47,13 +47,23 @@ pub struct Feedback {
   pub kinds: Vec<u8>,
   /// A field site's cached class, as `Value` bits, and the field's slot.
   pub fields: FxHashMap<usize, (u64, u16)>,
-  /// For a field site that has seen instances of more than one class,
-  /// the class declaring the field, as `Value` bits, and its depth in
-  /// `ObjClass::display`: every class the site can take shares the slot.
+  /// For a field site that has seen instances of more than one class, or
+  /// of one class whose field other classes share, the class declaring
+  /// the field, as `Value` bits, and its depth in `ObjClass::display`:
+  /// every class the site can take shares the slot.
   pub families: FxHashMap<usize, (u64, u8)>,
   /// An invoke site's cached key: a class's bits for an instance
   /// receiver, `builtins::method_table_key`'s kind id for a primitive.
   pub invokes: FxHashMap<usize, u64>,
+  /// For an invoke site whose method no class has replaced, the class
+  /// highest up that has it, as `Value` bits, and its depth in
+  /// `ObjClass::display`, when classes other than the cached one inherit
+  /// it too: every class descending from that one resolves the call to
+  /// the same method.
+  pub invoke_families: FxHashMap<usize, (u64, u8)>,
+  /// `VM::method_table_generation` when this was gathered. Code that
+  /// builds a method into its caller checks it has not moved.
+  pub method_generation: u64,
   /// A global site's resolved root slot.
   pub globals: FxHashMap<usize, u32>,
   /// The invoke-cache key a list receiver gets.
@@ -71,6 +81,8 @@ pub struct Feedback {
   /// For a global slot holding a closure some call here reaches through,
   /// that closure's function, with what to build it from.
   pub global_callees: FxHashMap<u32, Box<Callee>>,
+  /// Global slots holding a class that a call here reaches through.
+  pub global_classes: FxHashSet<u32>,
   /// For a method call site whose cache holds a class, the method that
   /// class resolves it to.
   pub invoke_callees: FxHashMap<usize, Box<Callee>>,
@@ -756,6 +768,28 @@ impl<'a> Builder<'a> {
     let Some(&(family, depth)) = self.cx.feedback.families.get(&ip) else {
       return self.instance_ptr(r, class, ip);
     };
+    self.family_ptr(r, family, depth, ip)
+  }
+
+  /// Checks no method has been installed on any class since the feedback
+  /// was gathered, so a method built in is still the one the call would
+  /// resolve to: an extension can replace it on a class that already has
+  /// instances.
+  fn methods_unchanged(&mut self, ip: usize) {
+    let now = self.value(Op::MethodGeneration, vec![], Ty::I64);
+    let then = self.value(
+      Op::ConstI64(self.cx.feedback.method_generation as i64),
+      vec![],
+      Ty::I64,
+    );
+    let same = self.value(Op::ICmp(Cmp::Eq), vec![now, then], Ty::Bool);
+    let state = self.state(ip);
+    self.push(Op::Guard(GuardKind::True), vec![same], None, Some(state));
+  }
+
+  /// The pointer to the instance in `r`, guarded as one of `family` or a
+  /// class descending from it, which sits at `depth` in their displays.
+  fn family_ptr(&mut self, r: u8, family: u64, depth: u8, ip: usize) -> ValueId {
     let view = self.view(r);
     if let Some(p) = view.ptr
       && matches!(view.known, Known::Family(f) if f == family)
@@ -1003,8 +1037,28 @@ impl<'a> Builder<'a> {
         // check fails as often as not and it calls this same helper.
         Some("an operation on numbers")
       },
-      Instr::Call { .. } if seen != 0 => Some("a call"),
-      Instr::Invoke { .. } if seen != 0 => Some("a method call"),
+      // Closures and natives are called here just as there. A class
+      // reached through a global the baseline tier constructs inline.
+      Instr::Call { func, .. }
+        if seen != 0
+          && self
+            .callee_global(*func)
+            .is_some_and(|slot| self.cx.feedback.global_classes.contains(&slot)) =>
+      {
+        Some("a call")
+      },
+      // A method on an instance goes through the same cache in both
+      // tiers. On anything else the baseline tier has inline paths for
+      // strings and for the built-in methods it knows by name.
+      Instr::Invoke {
+        method_const,
+        num_args,
+        ..
+      } if seen & !kind::INSTANCE != 0
+        && (seen & kind::STRING != 0 || self.baseline_method(*method_const, *num_args)) =>
+      {
+        Some("a method call")
+      },
       // The baseline tier has inline paths for lists and strings, which
       // it takes whenever a site has seen one; an index on anything else
       // it has not proven goes through the same helper either way.
@@ -1016,6 +1070,20 @@ impl<'a> Builder<'a> {
       Instr::CheckParamType { .. } => Some("a parameter check"),
       _ => None,
     }
+  }
+
+  /// The global slot a call's callee register was just loaded from.
+  fn callee_global(&self, func: u8) -> Option<u32> {
+    let t = self.view(func).tagged?;
+    match self.func.def_inst(t)?.op {
+      Op::LoadGlobal(slot) => Some(slot),
+      _ => None,
+    }
+  }
+
+  fn baseline_method(&self, method_const: u16, num_args: u8) -> bool {
+    let name = self.cx.proto.chunk.constants[method_const as usize];
+    name.is_string() && crate::jit::codegen::inline_builtin_method(name.as_str(), num_args)
   }
 
   /// Whether to treat an arithmetic or comparison site as working on
@@ -1761,7 +1829,11 @@ impl<'a> Builder<'a> {
         let closure = FrameClosure::Const(callee.closure);
         match self.inline_plan(ip, callee, dst, obj + 1, num_args + 1, closure) {
           Some((proto, outer)) => {
-            self.instance_ptr(obj, class, ip);
+            match self.cx.feedback.invoke_families.get(&ip).copied() {
+              Some((family, depth)) => self.family_ptr(obj, family, depth, ip),
+              None => self.instance_ptr(obj, class, ip),
+            };
+            self.methods_unchanged(ip);
             // The receiver's copy in the callee's first register is the
             // same value, and just as checked.
             if self.view(obj + 1).tagged == self.view(obj).tagged {

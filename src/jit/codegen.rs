@@ -678,6 +678,16 @@ impl IterableIntrinsic {
   }
 }
 
+/// Whether this tier has an inline path for a method called `name` with
+/// `num_args` arguments on a built-in receiver.
+pub(crate) fn inline_builtin_method(name: &str, num_args: u8) -> bool {
+  (num_args == 1 && IterableIntrinsic::of(name).is_some())
+    || NumberIntrinsic::of(name).is_some_and(|op| op.arity() == num_args)
+    || ListIntrinsic::of(name).is_some_and(|op| op.arity() == num_args)
+    || StringIntrinsic::of(name).is_some_and(|op| op.arity() == num_args)
+    || DictIntrinsic::of(name).is_some_and(|op| op.accepts_arity(num_args))
+}
+
 /// One list register's resolved `ListStorage`, as the IR values that
 /// computed it: see `FuncCompiler::list_headers`.
 #[derive(Clone, Copy)]

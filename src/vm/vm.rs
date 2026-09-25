@@ -1652,12 +1652,36 @@ impl VM {
     self.global_slots_ptr_cache.set(self.global_slots.as_ptr());
   }
 
-  /// Called by every `SetMethod` execution, interpreted or compiled
-  /// (`jit::runtime::zuri_jit_set_method`).
+  /// Bumped by every method installed, through `install_method`.
   pub(crate) fn bump_method_table_generation(&self) {
     self
       .method_table_generation
       .set(self.method_table_generation.get() + 1);
+  }
+
+  /// Puts `method` on `class_val` under `name`, which is every
+  /// `SetMethod`, interpreted or compiled. A method it replaces is marked
+  /// overridden. On a class whose declaration is complete that is an
+  /// extension replacing it, and every call site that cached the old one
+  /// has to find the new one.
+  pub(crate) fn install_method(&self, class_val: Value, name: String, method: Value) {
+    let old = class_val.as_class_mut().methods.insert(name, method);
+    write_barrier(class_val.as_obj());
+    self.bump_method_table_generation();
+    let Some(old) = old else {
+      return;
+    };
+    if old.to_bits() == method.to_bits() {
+      return;
+    }
+    if old.is_closure() {
+      old.as_closure().function.as_func().jit.overridden.set(true);
+    }
+    if class_val.as_class().finalized.get() {
+      self
+        .heap
+        .for_each_function(|proto| proto.chunk.clear_invoke_cache());
+    }
   }
 
   /// Does `proto` have a compiled entry point ready right now? Never
@@ -2049,9 +2073,10 @@ impl VM {
   }
 
   /// The field sites of `proto` that have seen instances of more than one
-  /// class, each with the family its instances share: see
-  /// `CompileFacts::site_families`. Only sites whose last class is still
-  /// reachable, which keeps the declaring class alive with it.
+  /// class, or of one class whose field other classes share, each with
+  /// the family its instances share: see `CompileFacts::site_families`.
+  /// Only sites whose last class is still reachable, which keeps the
+  /// declaring class alive with it.
   fn resolve_site_families(&self, proto: &ObjFunction) -> FxHashMap<usize, Option<(u64, u8, u16)>> {
     let mut out = FxHashMap::default();
     let mut reachable = None;
@@ -2062,12 +2087,15 @@ impl VM {
       let Some(cell) = proto.chunk.field_cache_cell(ip) else {
         continue;
       };
-      if !cell.polymorphic.get() || cell.class_bits.get() == 0 {
+      if cell.class_bits.get() == 0 {
         continue;
       }
       let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
-      if !reachable.contains(&cell.class_bits.get()) {
-        out.insert(ip, None);
+      let live = reachable.contains(&cell.class_bits.get());
+      if !live {
+        if cell.polymorphic.get() {
+          out.insert(ip, None);
+        }
         continue;
       }
       let name = proto.chunk.constants[*name_const as usize];
@@ -2084,7 +2112,15 @@ impl VM {
       } else {
         None
       };
-      out.insert(ip, family);
+      if cell.polymorphic.get() {
+        out.insert(ip, family);
+      } else if let Some(family) = family
+        && Self::family_wider(class, family.0)
+      {
+        // One class so far, but others sharing the field's slot can
+        // arrive later.
+        out.insert(ip, Some(family));
+      }
     }
     out
   }
@@ -2790,35 +2826,61 @@ impl VM {
     let mut reachable = None;
     let mut invokes = FxHashMap::default();
     let mut globals = FxHashMap::default();
+    let mut global_classes = FxHashSet::default();
+    let mut invoke_families = FxHashMap::default();
     for (ip, instr) in chunk.code.iter().enumerate() {
       match instr {
+        Instr::Call { func, .. } => {
+          if let Some(slot) = Self::global_feeding(proto, ip, *func)
+            && self.global_slots[slot as usize].get().is_class()
+          {
+            global_classes.insert(slot);
+          }
+        },
         Instr::GetField { name_const, .. } | Instr::SetField { name_const, .. } => {
           if let Some(cell) = chunk.field_cache_cell(ip)
             && cell.class_bits.get() != 0
           {
             let slot = (cell.byte_offset.get() / 8) as u16;
             // A site that has seen several classes is built only when they
-            // share the field as one family; otherwise it stays generic.
-            if cell.polymorphic.get() {
-              let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
-              let name = chunk.constants[*name_const as usize];
-              let class = Value::from_bits(cell.class_bits.get());
-              if reachable.contains(&class.to_bits())
-                && let Some(family) = Self::field_family(class, name.as_str(), slot)
-              {
+            // share the field as one family; otherwise it stays generic. A
+            // site that has seen one class whose subclasses share the slot
+            // takes the family too, so they do not leave the code later.
+            let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
+            let class = Value::from_bits(cell.class_bits.get());
+            let name = chunk.constants[*name_const as usize];
+            let family = reachable
+              .contains(&class.to_bits())
+              .then(|| Self::field_family(class, name.as_str(), slot))
+              .flatten();
+            match family {
+              Some(family) if cell.polymorphic.get() || Self::family_wider(class, family.0) => {
                 families.insert(ip, family);
-              } else {
-                continue;
-              }
+              },
+              _ if cell.polymorphic.get() => continue,
+              _ => {},
             }
             fields.insert(ip, (cell.class_bits.get(), slot));
           }
         },
-        Instr::Invoke { .. } => {
+        Instr::Invoke { method_const, .. } => {
           if let Some(cell) = chunk.invoke_cache_cell(ip)
             && cell.key.get() != 0
           {
             invokes.insert(ip, cell.key.get());
+            // Other classes may reach the same method: through the class
+            // that has it highest up, as long as none has replaced it.
+            let class = Value::from_bits(cell.key.get());
+            let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
+            if reachable.contains(&class.to_bits()) {
+              let method = Value::from_bits(cell.payload.get());
+              let name = chunk.constants[*method_const as usize];
+              if let Some(family) = Self::method_family(class, name.as_str(), method)
+                && Self::family_wider(class, family.0)
+              {
+                invoke_families.insert(ip, family);
+              }
+            }
           }
         },
         Instr::GetGlobal { .. } | Instr::SetGlobal { .. } | Instr::AssignGlobal { .. } => {
@@ -2899,6 +2961,8 @@ impl VM {
       fields,
       families,
       invokes,
+      invoke_families,
+      method_generation: self.method_table_generation.get(),
       globals,
       list_key: crate::builtins::list_method_key(),
       blocked: proto.jit.deopt_sites.borrow().iter().copied().collect(),
@@ -2906,6 +2970,7 @@ impl VM {
       sites_off: proto.jit.site_speculation_off.get(),
       fields_off: proto.jit.field_speculation_off.get(),
       global_callees,
+      global_classes,
       invoke_callees,
       young_budget: self.heap.young_budget() as u64,
       entries: None,
@@ -2928,6 +2993,36 @@ impl VM {
     let bits = declaring.to_bits();
     let depth = declaring.as_class().display_depth(bits)?;
     Some((bits, depth as u8))
+  }
+
+  /// The class highest up in `class`'s line that has `method` under
+  /// `name`, and its depth in `ObjClass::display`, when no class has
+  /// replaced that method: then every class descending from it resolves
+  /// `name` to `method`.
+  fn method_family(class: Value, name: &str, method: Value) -> Option<(u64, u8)> {
+    if !method.is_closure() || method.as_closure().function.as_func().jit.overridden.get() {
+      return None;
+    }
+    let mut declaring = class;
+    loop {
+      let parent = declaring.as_class().superclass;
+      match parent {
+        Some(p) if p.as_class().methods.get(name).map(|m| m.to_bits()) == Some(method.to_bits()) => {
+          declaring = p
+        },
+        _ => break,
+      }
+    }
+    let bits = declaring.to_bits();
+    let depth = declaring.as_class().display_depth(bits)?;
+    Some((bits, depth as u8))
+  }
+
+  /// Whether the family declaring a field takes in classes besides
+  /// `class`: the field comes from an ancestor, or `class` has
+  /// subclasses of its own.
+  fn family_wider(class: Value, declaring: u64) -> bool {
+    declaring != class.to_bits() || class.as_class().subclassed.get()
   }
 
   /// The global slot a call's function register was last read from,
@@ -5722,6 +5817,8 @@ impl VM {
               statics: Vec::new(),
               globals_module: func.globals_module,
               display: Default::default(),
+              subclassed: Default::default(),
+              finalized: Default::default(),
             });
             write_barrier(class_val.as_obj());
             self.set_reg(base, dst, class_val);
@@ -5754,9 +5851,7 @@ impl VM {
             let class_val = self.get_reg(base, class);
             let name = tri!(self.const_as_str(func, name_const), 'step);
             let method = self.get_reg(base, src);
-            class_val.as_class_mut().methods.insert(name, method);
-            write_barrier(class_val.as_obj());
-            self.bump_method_table_generation();
+            self.install_method(class_val, name, method);
           },
 
           Instr::DeclareStatic {
@@ -5787,6 +5882,7 @@ impl VM {
               ));
             }
 
+            c.finalized.set(true);
             if let Some(ctor) = c.methods.get(&name).copied() {
               c.constructor = Some(ctor);
               drop(c);

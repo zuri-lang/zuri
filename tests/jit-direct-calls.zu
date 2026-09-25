@@ -1,0 +1,162 @@
+# Calls between compiled functions go straight from one into the other,
+# with the callee's frame pushed and popped by the caller. Each call here
+# is made from a hot loop to something the caller cannot build into itself,
+# and meets a case the direct path does not take or has to hand back: a
+# native, a method whose receiver changes class, a callee that has to leave
+# its compiled code, one that raises, one that takes any number of
+# arguments, one called with fewer than it takes, and calls nested deeper
+# than compiled code goes.
+
+def weigh(x) {
+  return x * 3 + 1
+}
+
+def halve(x) {
+  return x / 2
+}
+
+# The callee arrives as a parameter, so it is only known when called.
+def apply_all(f, n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + f(i)
+  }
+  return total
+}
+
+echo apply_all(weigh, 20000)
+echo apply_all(halve, 20000)
+
+# A native, and a closure, through the same call site.
+def check_all(f, values) {
+  var hits = 0
+  for v in values {
+    if f(v) {
+      hits = hits + 1
+    }
+  }
+  return hits
+}
+
+var values = [1, 'a', 2.5, nil, [3], 4]
+var numbers = 0
+iter var r = 0; r < 3000; r++ {
+  numbers = numbers + check_all(is_number, values)
+}
+echo numbers
+echo check_all(@(v) { return v == nil }, values)
+
+# A method call whose receiver keeps changing class.
+class Ones {
+  value(x) {
+    return 1
+  }
+}
+
+class Doubles {
+  value(x) {
+    return x * 2
+  }
+}
+
+def sum_values(items, x) {
+  var total = 0
+  for item in items {
+    total = total + item.value(x)
+  }
+  return total
+}
+
+var items = [Ones(), Doubles(), Ones(), Doubles()]
+var mixed = 0
+iter var r = 0; r < 3000; r++ {
+  mixed = mixed + sum_values(items, r % 5)
+}
+echo mixed
+
+# A callee that meets a value its compiled code did not plan for and
+# finishes in the interpreter, handing its result back to the caller.
+def bump(x) {
+  return x + 1
+}
+
+def bump_all(f, xs) {
+  var out = []
+  for x in xs {
+    out.append(f(x))
+  }
+  return out
+}
+
+var ints = []
+iter var i = 0; i < 50; i++ {
+  ints.append(i)
+}
+var bumped = 0
+iter var r = 0; r < 500; r++ {
+  bumped = bumped + bump_all(bump, ints)[49]
+}
+echo bumped
+echo bump_all(bump, [1, 'x', 2.5])
+
+# A callee that raises, caught two calls out.
+def strict(x) {
+  if x > 25000 {
+    raise Error('too big: ${x}')
+  }
+  return x
+}
+
+def run_strict(n) {
+  return apply_all(strict, n)
+}
+
+catch {
+  echo run_strict(20000)
+  echo run_strict(30000)
+} as e {
+  echo e.message
+}
+
+# Any number of arguments, and fewer than the callee takes, which leaves
+# the rest nil.
+def gather(...items) {
+  return items.length()
+}
+
+def pair(a, b) {
+  return a
+}
+
+def call_one(f, n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + f(i)
+  }
+  return total
+}
+
+echo call_one(gather, 20000)
+echo call_one(pair, 20000)
+
+# Mutual recursion deeper than compiled calls nest.
+def down_a(n, f) {
+  if n == 0 {
+    return 0
+  }
+  return 1 + f(n - 1, down_a)
+}
+
+def down_b(n, f) {
+  if n == 0 {
+    return 0
+  }
+  return 1 + f(n - 1, down_b)
+}
+
+var depth = 0
+iter var r = 0; r < 200; r++ {
+  depth = depth + down_a(50, down_b)
+}
+echo depth
+echo down_a(3000, down_b)

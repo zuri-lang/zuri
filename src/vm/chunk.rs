@@ -995,6 +995,17 @@ impl Chunk {
   /// This instruction position's own `Instr::Invoke` cache cell; the
   /// `field_cache_cell` of `invoke_cache`, with the same lazy allocation
   /// and the same `None` for an `ip` past the array.
+  /// Empties every method call site's cache, for when a method they may
+  /// hold has been replaced.
+  pub fn clear_invoke_cache(&self) {
+    if let Some(cells) = self.invoke_cache.get() {
+      for cell in cells.iter() {
+        cell.key.set(0);
+        cell.payload.set(0);
+      }
+    }
+  }
+
   pub fn invoke_cache_cell(&self, ip: usize) -> Option<&InvokeCacheCell> {
     self
       .invoke_cache

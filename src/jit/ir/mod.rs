@@ -333,6 +333,9 @@ pub enum Op {
   /// A global from `VM::global_slots`, by the slot the interpreter
   /// resolved it to.
   LoadGlobal(u32),
+  /// `VM::method_table_generation`, which moves whenever a method is
+  /// installed on a class. A `I64`.
+  MethodGeneration,
   /// Stores into a resolved global slot. The slots are roots, so no
   /// barrier. Operand: the value.
   StoreGlobal(u32),
@@ -591,6 +594,7 @@ impl Op {
         | Op::Param(_)
         | Op::OsrParam(_)
         | Op::LoadGlobal(_)
+        | Op::MethodGeneration
         | Op::StoreGlobal(_)
         | Op::StoreReg(_)
         | Op::TaggedEq

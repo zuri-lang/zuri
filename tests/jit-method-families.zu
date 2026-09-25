@@ -1,0 +1,86 @@
+# A method one class declares and its subclasses inherit is the same
+# method whichever of them the receiver is, so compiled code that calls it,
+# or builds its body in, serves them all without leaving. That stops being
+# true for a subclass that declares its own, including one declared after
+# the code was compiled, and calls on its instances have to reach its own.
+
+class Shape {
+  @new(size) {
+    self.size = size
+  }
+
+  area() {
+    return self.size * self.size
+  }
+
+  describe() {
+    return 'shape'
+  }
+}
+
+class Square < Shape {
+  @new(size) {
+    parent(size)
+  }
+}
+
+class Tile < Shape {
+  @new(size) {
+    parent(size)
+  }
+
+  describe() {
+    return 'tile'
+  }
+}
+
+def total_area(shapes, rounds) {
+  var total = 0
+  iter var r = 0; r < rounds; r++ {
+    for s in shapes {
+      total = total + s.area()
+    }
+  }
+  return total
+}
+
+def names(shapes) {
+  var out = []
+  for s in shapes {
+    out.append(s.describe())
+  }
+  return out
+}
+
+# Warmed on one class, then the other inheriting classes arrive.
+var first = [Square(2), Square(3)]
+echo total_area(first, 5000)
+
+var mixed = [Square(2), Tile(3), Shape(4)]
+echo total_area(mixed, 5000)
+echo names(mixed)
+
+# A subclass declared now overrides the inherited method, and its
+# instances go through the same compiled calls.
+class Circle < Shape {
+  @new(size) {
+    parent(size)
+  }
+
+  area() {
+    return 3 * self.size * self.size
+  }
+}
+
+var later = [Square(1), Circle(2), Tile(1)]
+echo total_area(later, 3000)
+echo names(later)
+
+# One declared now that inherits everything shares the method again.
+class Plain < Square {
+  @new(size) {
+    parent(size)
+  }
+}
+
+echo total_area([Plain(5), Square(5)], 3000)
