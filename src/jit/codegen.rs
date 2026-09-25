@@ -15652,7 +15652,7 @@ fn runtime_using_no_match() -> u64 {
 
 /// Whether a bitwise operator's integer result is exactly the number the
 /// interpreter holds for it, given whatever operands are constants: true
-/// when the result cannot pass 2^53, where rounding to a double starts.
+/// when the result is sure to be an integer a double holds exactly.
 fn bitwise_result_exact(instr: &Instr, a: Option<f64>, b: Option<f64>) -> bool {
   let wrapped = |c: Option<f64>| c.map(value::num_to_wrapped_i64);
   match instr {
@@ -15663,8 +15663,10 @@ fn bitwise_result_exact(instr: &Instr, a: Option<f64>, b: Option<f64>) -> bool {
       .into_iter()
       .flatten()
       .any(|m| (0..=1i64 << 53).contains(&m)),
-    // At least 11 bits shifted out.
-    Instr::BitShr { .. } => wrapped(b).is_some_and(|s| s as u32 >= 11),
+    // The operand is an integer a double holds, so its significant bits
+    // fit in 53; shifting right only drops bits off the low end, and what
+    // is left still fits.
+    Instr::BitShr { .. } => true,
     _ => false,
   }
 }
