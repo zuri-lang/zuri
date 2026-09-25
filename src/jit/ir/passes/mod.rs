@@ -7,6 +7,7 @@
 
 pub mod elems;
 pub mod entries;
+pub mod floats;
 pub mod gvn;
 pub mod induction;
 pub mod licm;
@@ -46,6 +47,14 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   check(f, "induction")?;
   elems::run(f, feedback);
   check(f, "elems")?;
+  // After induction has taken the loop counters it can make integers;
+  // what integer arithmetic is left only reaching doubles goes to doubles,
+  // and anything it made invariant leaves the loop.
+  if floats::run(f) {
+    check(f, "floats")?;
+    licm::run(f);
+    check(f, "licm")?;
+  }
   // Nothing after this point builds a frame state, so the values kept for
   // folded-away parameters need not stay alive any longer.
   for b in &mut f.blocks {
