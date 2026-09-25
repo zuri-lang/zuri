@@ -45,6 +45,8 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   check(f, "phi")?;
   induction::run(f, feedback);
   check(f, "induction")?;
+  repr::integers(f);
+  check(f, "integers")?;
   // After induction has taken the loop counters it can make integers;
   // what integer arithmetic is left only reaching doubles goes to doubles,
   // and anything it made invariant leaves the loop.

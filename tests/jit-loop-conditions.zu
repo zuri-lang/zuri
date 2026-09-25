@@ -1,0 +1,91 @@
+# Loop conditions built with `and` and `or`, and counters stepped inside
+# them, the way escape-time loops are written. Compiled code keeps the
+# condition as a plain boolean and such a counter as an integer, so each
+# loop here also meets the values that must not be kept that way, and has
+# to answer exactly as the interpreter does.
+
+# The escape-time shape: a counter decremented inside the condition, next
+# to a comparison on doubles.
+def escape(cr, ci, limit) {
+  var zr = 0.0
+  var zi = 0.0
+  var i = limit
+  do {
+    var t = zr * zr - zi * zi + cr
+    zi = 2.0 * zr * zi + ci
+    zr = t
+  } while (!(zr * zr + zi * zi > 4.0) and i-- > 0)
+  return i
+}
+
+def escapes(n) {
+  var total = 0
+  iter var y = 0; y < n; y++ {
+    iter var x = 0; x < n; x++ {
+      total = total + escape(x / n * 3 - 2, y / n * 2 - 1, 30)
+    }
+  }
+  return total
+}
+
+# `or`, with the counter counting up.
+def first_over(xs, bound) {
+  var i = 0
+  while i < xs.length() and !(xs[i] > bound or xs[i] < -bound) {
+    i++
+  }
+  return i
+}
+
+# A counter whose step becomes fractional after warming up, so it can no
+# longer be carried as an integer.
+def stepped(n, step) {
+  var i = n
+  var turns = 0
+  while i-- > 0 and turns < 1000000 {
+    turns++
+    i = i - step
+  }
+  return [turns, i]
+}
+
+# A loop value that only ever held numbers while warming up, then holds
+# something else.
+def carried(xs) {
+  var last = 0
+  var count = 0
+  for x in xs {
+    if count < 3 or last != x {
+      count++
+    }
+    last = x
+  }
+  return count
+}
+
+echo escapes(60)
+
+var xs = []
+iter var k = 0; k < 400; k++ {
+  xs.append((k * 7) % 23 - 11)
+}
+var found = 0
+iter var r = 0; r < 3000; r++ {
+  found = found + first_over(xs, 9 + r % 3)
+}
+echo found
+
+var steps = 0
+iter var r = 0; r < 3000; r++ {
+  steps = steps + stepped(40, 0)[0]
+}
+echo steps
+echo stepped(40, 0.5)
+echo stepped(7, 0.25)
+
+var runs = 0
+iter var r = 0; r < 3000; r++ {
+  runs = runs + carried([1, 1, 2, 2, 3, r % 4])
+}
+echo runs
+echo carried([1, 'a', 'a', nil, nil, 2.5, 2.5])
