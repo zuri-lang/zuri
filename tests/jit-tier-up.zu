@@ -76,6 +76,28 @@ def phases(n) {
   return total
 }
 
+# Built into its caller's second-tier code, then fails its bet in its
+# second loop. The interpreter picks it up inside that loop, where its own
+# second-tier code has no way in, and carries on in the first tier's.
+def settle(xs, n) {
+  var t = 0
+  iter var i = 0; i < n; i++ {
+    t = t + i % 3
+  }
+  iter var j = 0; j < xs.length(); j++ {
+    t = t + xs[j]
+  }
+  return t
+}
+
+def settles(xs, rounds) {
+  var t = 0
+  iter var r = 0; r < rounds; r++ {
+    t = t + settle(xs, 100) % 1000
+  }
+  return t
+}
+
 echo many_calls(60000)
 echo many_calls(60000)
 echo long_loop(300000)
@@ -86,3 +108,9 @@ echo joins(60000, false)
 echo joins(60000, true)
 echo phases(200000)
 echo phases(10)
+
+var nums = [1, 2, 3, 4, 5, 6, 7, 8]
+echo settles(nums, 3000)
+echo settles(nums, 3000)
+nums[6] = 0.5
+echo settles(nums, 3000)

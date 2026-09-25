@@ -72,6 +72,10 @@ pub struct Feedback {
   pub invoke_callees: FxHashMap<usize, Box<Callee>>,
   /// How many young bytes may be allocated before a collection is owed.
   pub young_budget: u64,
+  /// The loop headers that get a way in from a frame already running;
+  /// `None` gives every loop one. Each entry costs a copy of the loops
+  /// around it, so the baseline tier asks only for the loop it is in.
+  pub entries: Option<Vec<usize>>,
 }
 
 /// A function a call can be built into its caller from.
@@ -342,15 +346,18 @@ impl<'a> Builder<'a> {
   fn run(mut self) -> Result<Func, BuildError> {
     let leaders = self.leaders();
 
-    // Loop headers an interpreted frame can jump into, numbered the way
-    // the baseline tier numbers them: by first appearance of a backward
-    // `Jmp`.
+    // Loop headers a running frame can jump into, numbered by first
+    // appearance of a backward `Jmp`.
+    let entries = self.func_feedback.entries.as_deref();
     let mut osr_ids: FxHashMap<usize, i32> = FxHashMap::default();
     for (ip, instr) in self.cx.code.iter().enumerate() {
       if let Instr::Jmp { offset } = *instr
         && offset < 0
       {
         let target = jump_target(ip, offset);
+        if entries.is_some_and(|e| !e.contains(&target)) {
+          continue;
+        }
         let next = osr_ids.len() as i32;
         osr_ids.entry(target).or_insert(next);
       }

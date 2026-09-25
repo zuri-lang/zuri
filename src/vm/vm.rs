@@ -1703,7 +1703,7 @@ impl VM {
     {
       return None;
     }
-    self.enqueue_compile(proto, proto_value, false);
+    self.enqueue_compile(proto, proto_value, None);
     None
   }
 
@@ -2527,15 +2527,25 @@ impl VM {
     out
   }
 
-  /// Builds a snapshot of facts resolved about `proto` in $O(1)$ without
-  /// performing any whole-function dataflow analyses on the main VM thread,
-  /// then hands the job to the background compiler thread.
-  /// Queues a compile of `proto`. From warm-up that is tier 1: the
-  /// profiling kind when two tiers are on, so tier 2 later builds from
+  /// Queues a compile of `proto`, with a snapshot of the facts resolved
+  /// about it taken here on the VM's thread. From warm-up that is tier 1:
+  /// the profiling kind when two tiers are on, so tier 2 later builds from
   /// feedback covering whatever ran in it. `optimize` asks for tier 2,
-  /// which builds a plain tier 1 instead when it declines the function.
-  fn enqueue_compile(&mut self, proto: &ObjFunction, proto_value: Value, optimize: bool) {
-    let optimize = optimize || crate::jit::tier2_direct();
+  /// which builds a plain tier 1 instead when it declines the function,
+  /// and names the loop header the request came from when a frame is
+  /// running one.
+  fn enqueue_compile(
+    &mut self,
+    proto: &ObjFunction,
+    proto_value: Value,
+    optimize: Option<Option<usize>>,
+  ) {
+    let direct = crate::jit::tier2_direct();
+    let entries = match optimize {
+      Some(header) if !direct => Some(header.into_iter().collect()),
+      _ => None,
+    };
+    let optimize = optimize.is_some() || direct;
     let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
       if self.no_jit_specialization {
         (None, None, None, None)
@@ -2602,7 +2612,9 @@ impl VM {
         path: vec![proto as *const ObjFunction as usize],
         budget: TIER2_CALLEE_BUDGET,
       };
-      Box::new(self.tier2_feedback(proto, &mut gather))
+      let mut feedback = self.tier2_feedback(proto, &mut gather);
+      feedback.entries = entries;
+      Box::new(feedback)
     });
 
     proto.jit.compiling.set(true);
@@ -2801,6 +2813,7 @@ impl VM {
       global_callees,
       invoke_callees,
       young_budget: self.heap.young_budget() as u64,
+      entries: None,
     }
   }
 
@@ -3801,7 +3814,7 @@ impl VM {
         if crate::jit::log_enabled() {
           eprintln!("[jit] '{}' asks for tier 2", proto.display_name());
         }
-        self.enqueue_compile(proto, proto_value, true);
+        self.enqueue_compile(proto, proto_value, Some(header));
         false
       },
       TIER2_INSTALLED => header.is_some_and(|h| {
@@ -3831,9 +3844,21 @@ impl VM {
     self.drain_jit_results();
 
     if let Some(entry) = func.jit.entry.get() {
-      let osr_id = *func.jit.osr_ids.borrow().as_ref()?.get(&target_ip)?;
       let closure_val = self.frames.last().unwrap().closure_val;
-      return Some(self.invoke_compiled(entry, closure_val, osr_id));
+      let osr_id = func
+        .jit
+        .osr_ids
+        .borrow()
+        .as_ref()
+        .and_then(|ids| ids.get(&target_ip).copied());
+      if let Some(osr_id) = osr_id {
+        return Some(self.invoke_compiled(entry, closure_val, osr_id));
+      }
+      // Tier 2 has a way in only at the loop that asked for it; any other
+      // loop carries on in the baseline code.
+      let baseline = func.jit.baseline.get()?;
+      let osr_id = *func.jit.baseline_osr_ids.borrow().as_ref()?.get(&target_ip)?;
+      return Some(self.invoke_compiled(baseline, closure_val, osr_id));
     }
     if func.jit.compiling.get() {
       return None;
@@ -3853,7 +3878,7 @@ impl VM {
     // this is only ever reached from a backward jump inside it.
     let closure_val = self.frames.last().unwrap().closure_val;
     let proto_value = closure_val.as_closure().function;
-    self.enqueue_compile(func, proto_value, false);
+    self.enqueue_compile(func, proto_value, None);
     None
   }
 
