@@ -228,6 +228,9 @@ pub(super) fn is_pure(op: &Op) -> bool {
       | Op::IAdd
       | Op::ISub
       | Op::IMul
+      | Op::IBit(_)
+      | Op::WrapI64
+      | Op::Unsaturate
       | Op::ICmp(_)
       | Op::BNot
       | Op::EqConst(_)

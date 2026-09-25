@@ -181,6 +181,29 @@ pub struct InlineFrame {
   pub closure: FrameClosure,
 }
 
+/// An integer operation checked against the interpreter's doubles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IntOp {
+  Add,
+  Sub,
+  Mul,
+}
+
+/// A bitwise operator on two `I64`s, with Zuri's rules for the shifts:
+/// the amount is its low 32 bits, and an amount of the operand's width or
+/// more gives 0 rather than wrapping around.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BitOp {
+  And,
+  Or,
+  Xor,
+  Shl,
+  /// `>>`, keeping the sign.
+  Shr,
+  /// `>>>`, on the low 32 bits of the left operand taken as unsigned.
+  Ushr,
+}
+
 /// A number method that works on its receiver alone, as an `F64` to
 /// `F64` operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -224,6 +247,15 @@ pub enum GuardKind {
   /// The value is an instance of the class whose `Value` bits are given.
   /// Produces its object pointer.
   Instance(u64),
+  /// The value is a whole number an `I64` holds exactly, and not -0.
+  /// Integer arithmetic has one zero, so an operand it takes must not be
+  /// the zero it would lose the sign of. Produces the `I64`.
+  Whole,
+  /// `op` on two `I64`s from `Whole` guards or earlier arithmetic, whose
+  /// result is the interpreter's double exactly: no overflow, within
+  /// `-2^53..2^53`, and not a zero the doubles would make -0, as a
+  /// product with a negative operand does. Produces the `I64`.
+  Arith(IntOp),
   /// The value is a heap object with this `object::OBJ_TAG_*` tag: a
   /// string, bytes, dict or range. Produces its object pointer.
   Tag(u8),
@@ -251,7 +283,7 @@ impl GuardKind {
   pub fn result_ty(self) -> Option<Ty> {
     match self {
       GuardKind::Number => Some(Ty::F64),
-      GuardKind::Int => Some(Ty::I64),
+      GuardKind::Int | GuardKind::Whole | GuardKind::Arith(_) => Some(Ty::I64),
       GuardKind::Bool => Some(Ty::Bool),
       GuardKind::List | GuardKind::Instance(_) | GuardKind::Tag(_) => Some(Ty::Ptr),
       GuardKind::Bounds
@@ -330,6 +362,14 @@ pub enum Op {
   ISub,
   IMul,
   ICmp(Cmp),
+  IBit(BitOp),
+  /// An `F64` as the `I64` Zuri's bitwise operators work on: truncated,
+  /// wrapped modulo 2^64, and 0 for an infinity or NaN.
+  WrapI64,
+  /// An integer view as the bitwise operators want it. A view holds
+  /// `i64::MAX` only when its number is 2^63, which saturates there on
+  /// conversion and wraps to `i64::MIN`; this gives `i64::MIN` for it.
+  Unsaturate,
   /// Zuri truthiness of a `Tagged`, as a `Bool` that is true when the
   /// value is falsey.
   IsFalsey,
@@ -478,6 +518,12 @@ pub enum Op {
 
   /// A GC and signal safepoint.
   Safepoint,
+  /// Marks the deoptimization ending this block as one for code that had
+  /// not run when the function was compiled, so there was nothing to
+  /// build it from. The interpreter runs it and records what it sees, the
+  /// compiled code is thrown away, and the next compile builds the site
+  /// from that feedback instead of giving up on it.
+  Unreached,
 }
 
 impl Op {
@@ -547,6 +593,7 @@ impl Op {
         | Op::UsingTarget { .. }
         | Op::Generic { .. }
         | Op::Safepoint
+        | Op::Unreached
     )
   }
 }

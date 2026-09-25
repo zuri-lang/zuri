@@ -29,7 +29,8 @@ use cranelift_module::{FuncId, Module};
 use rustc_hash::FxHashMap;
 
 use super::{
-  BlockId, Cmp, FTest, FUnary, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueId,
+  BitOp, BlockId, Cmp, FTest, FUnary, FrameState, Func, GuardKind, InstId, IntOp, Op, Terminator,
+  Ty, ValueId,
 };
 use crate::vm::chunk::Instr;
 use crate::vm::object::{self, ObjFunction};
@@ -371,12 +372,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       Op::FMul => Some(self.fb.ins().fmul(av[0], av[1])),
       Op::FDiv => Some(self.fb.ins().fdiv(av[0], av[1])),
       Op::FNeg => Some(self.fb.ins().fneg(av[0])),
-      Op::FMod => {
-        let x = self.from_f64(av[0]);
-        let y = self.from_f64(av[1]);
-        let bits = self.call_pure("zuri_jit_num_fmod", &[self.vm, x, y]);
-        Some(self.to_f64(bits))
-      },
+      Op::FMod => Some(self.fmod(av[0], av[1])),
       Op::FFloorDiv => {
         let q = self.fb.ins().fdiv(av[0], av[1]);
         Some(self.fb.ins().floor(q))
@@ -385,6 +381,13 @@ impl<'a, 'b> Lowering<'a, 'b> {
       Op::IAdd => Some(self.fb.ins().iadd(av[0], av[1])),
       Op::ISub => Some(self.fb.ins().isub(av[0], av[1])),
       Op::IMul => Some(self.fb.ins().imul(av[0], av[1])),
+      Op::IBit(bit) => Some(self.ibit(*bit, av[0], av[1])),
+      Op::WrapI64 => Some(self.wrap_i64(av[0])),
+      Op::Unsaturate => {
+        let saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, av[0], i64::MAX);
+        let min = self.fb.ins().iconst(types::I64, i64::MIN);
+        Some(self.fb.ins().select(saturated, min, av[0]))
+      },
       Op::ICmp(c) => Some(self.fb.ins().icmp(int_cc(*c), av[0], av[1])),
       Op::IsFalsey => Some(self.is_falsey(av[0])),
       Op::BNot => Some(self.fb.ins().bxor_imm_u(av[0], 1)),
@@ -456,6 +459,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
           "zuri_jit_using_jump",
           &[self.vm, base, reg_c, func_ptr, table_c],
         ))
+      },
+      Op::Unreached => {
+        self.call("zuri_jit_unreached", &[self.vm]);
+        None
       },
       Op::Generic { instr, ip, frame } => {
         self.lower_generic(*instr, *ip, *frame, inst.state.as_ref().unwrap())?;
@@ -565,6 +572,41 @@ impl<'a, 'b> Lowering<'a, 'b> {
         };
         (ok, Some(i))
       },
+      GuardKind::Whole => {
+        let (f, is_num) = if self.ir.ty(args[0]) == Ty::F64 {
+          (x, None)
+        } else {
+          (self.to_f64(x), Some(self.is_number(x)))
+        };
+        let (i, exact) = self.f64_to_int(f);
+        let bits = self.from_f64(f);
+        let minus_zero = self.fb.ins().icmp_imm_s(IntCC::Equal, bits, i64::MIN);
+        let ok = self.fb.ins().band_not(exact, minus_zero);
+        let ok = match is_num {
+          Some(n) => self.fb.ins().band(n, ok),
+          None => ok,
+        };
+        (ok, Some(i))
+      },
+      GuardKind::Arith(op) => {
+        let y = self.v(args[1]);
+        let (r, overflow) = match op {
+          IntOp::Add => self.fb.ins().sadd_overflow(x, y),
+          IntOp::Sub => self.fb.ins().ssub_overflow(x, y),
+          IntOp::Mul => self.fb.ins().smul_overflow(x, y),
+        };
+        let biased = self.fb.ins().iadd_imm_s(r, 1 << 53);
+        let in_range = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, biased, 1 << 54);
+        let mut ok = self.fb.ins().band_not(in_range, overflow);
+        if op == IntOp::Mul {
+          let signs = self.fb.ins().bor(x, y);
+          let negative = self.fb.ins().icmp_imm_s(IntCC::SignedLessThan, signs, 0);
+          let zero = self.fb.ins().icmp_imm_s(IntCC::Equal, r, 0);
+          let minus_zero = self.fb.ins().band(negative, zero);
+          ok = self.fb.ins().band_not(ok, minus_zero);
+        }
+        (ok, Some(r))
+      },
       GuardKind::Bool => {
         let t = self.u64c(value::TRUE_VAL);
         let f = self.u64c(value::FALSE_VAL);
@@ -605,6 +647,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(ok, cont, &[], fail, &[]);
     self.fb.switch_to_block(fail);
     self.fb.set_cold_block(fail);
+    if matches!(kind, GuardKind::Whole | GuardKind::Arith(_)) {
+      self.call("zuri_jit_int_miss", &[self.vm]);
+    }
     self.deopt(state);
     self.fb.switch_to_block(cont);
     result
@@ -1330,6 +1375,103 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
   fn to_f64(&mut self, v: IrValue) -> IrValue {
     self.fb.ins().bitcast(types::F64, MemFlagsData::new(), v)
+  }
+
+  /// Zuri's `%`, as `value::num_rem` has it: two whole numbers in `i64`
+  /// with a positive divisor take an integer remainder, given the
+  /// dividend's sign so a zero result keeps it, and everything else goes
+  /// to the runtime.
+  fn fmod(&mut self, x: IrValue, y: IrValue) -> IrValue {
+    let (ix, x_whole) = self.f64_to_int(x);
+    let (iy, y_whole) = self.f64_to_int(y);
+    // 2^63 saturates to i64::MAX, which converts back to 2^63 and so looks
+    // exact; a remainder with it on either side is fmod's.
+    let x_saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, ix, i64::MAX);
+    let y_saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, iy, i64::MAX);
+    let saturated = self.fb.ins().bor(x_saturated, y_saturated);
+    let positive = self.fb.ins().icmp_imm_s(IntCC::SignedGreaterThan, iy, 0);
+    let whole = self.fb.ins().band(x_whole, y_whole);
+    let whole = self.fb.ins().band_not(whole, saturated);
+    let fast_ok = self.fb.ins().band(whole, positive);
+    let fast = self.fb.create_block();
+    let slow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::F64);
+    self.fb.ins().brif(fast_ok, fast, &[], slow, &[]);
+
+    self.fb.switch_to_block(fast);
+    let r = self.fb.ins().srem(ix, iy);
+    let rf = self.fb.ins().fcvt_from_sint(types::F64, r);
+    let signed = self.fb.ins().fcopysign(rf, x);
+    self.fb.ins().jump(done, &[signed.into()]);
+
+    self.fb.switch_to_block(slow);
+    self.fb.set_cold_block(slow);
+    let xb = self.from_f64(x);
+    let yb = self.from_f64(y);
+    let bits = self.call_pure("zuri_jit_num_fmod", &[self.vm, xb, yb]);
+    let slow_r = self.to_f64(bits);
+    self.fb.ins().jump(done, &[slow_r.into()]);
+
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  fn ibit(&mut self, bit: BitOp, x: IrValue, y: IrValue) -> IrValue {
+    let width = match bit {
+      BitOp::And => return self.fb.ins().band(x, y),
+      BitOp::Or => return self.fb.ins().bor(x, y),
+      BitOp::Xor => return self.fb.ins().bxor(x, y),
+      BitOp::Ushr => 32,
+      BitOp::Shl | BitOp::Shr => 64,
+    };
+    // The interpreter takes the amount as a u32 and gives 0 once it
+    // reaches the width, where Cranelift would take it modulo the width.
+    let amount = self.fb.ins().band_imm_u(y, 0xffff_ffff);
+    let too_far = self
+      .fb
+      .ins()
+      .icmp_imm_u(IntCC::UnsignedGreaterThanOrEqual, amount, width);
+    let shifted = match bit {
+      BitOp::Shl => self.fb.ins().ishl(x, amount),
+      BitOp::Shr => self.fb.ins().sshr(x, amount),
+      _ => {
+        let low = self.fb.ins().band_imm_u(x, 0xffff_ffff);
+        self.fb.ins().ushr(low, amount)
+      },
+    };
+    let zero = self.fb.ins().iconst(types::I64, 0);
+    self.fb.ins().select(too_far, zero, shifted)
+  }
+
+  /// `value::num_to_wrapped_i64`: anything inside the `i64` range
+  /// converts directly, the conversion itself dropping the fraction, and
+  /// the rest goes to the runtime. Doubles that large are whole, so a
+  /// value inside the range is inside it once truncated too.
+  fn wrap_i64(&mut self, f: IrValue) -> IrValue {
+    let lo = self.fb.ins().f64const(-9223372036854775808.0);
+    let hi = self.fb.ins().f64const(9223372036854775808.0);
+    let above = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, lo);
+    let below = self.fb.ins().fcmp(FloatCC::LessThan, f, hi);
+    let inside = self.fb.ins().band(above, below);
+    let fast = self.fb.create_block();
+    let slow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I64);
+    self.fb.ins().brif(inside, fast, &[], slow, &[]);
+
+    self.fb.switch_to_block(fast);
+    let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    self.fb.ins().jump(done, &[i.into()]);
+
+    self.fb.switch_to_block(slow);
+    self.fb.set_cold_block(slow);
+    let bits = self.from_f64(f);
+    let r = self.call_pure("zuri_jit_wrap_i64", &[self.vm, bits]);
+    self.fb.ins().jump(done, &[r.into()]);
+
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
   }
 
   fn box_bool(&mut self, c: IrValue) -> IrValue {
@@ -2153,6 +2295,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// is known not to be an object.
   fn barrier_for_store(&mut self, stored: ValueId, val: IrValue, container: IrValue) {
     if matches!(self.ir.ty(stored), Ty::F64 | Ty::I64 | Ty::Bool) {
+      return;
+    }
+    // A boxed number or boolean, or a constant that is not an object, is
+    // never a pointer the collector has to hear about. Skipping the check
+    // also keeps its call out of the loop, where it would make every
+    // double live across the store spill.
+    let never_object = match self.ir.def_inst(stored).map(|i| &i.op) {
+      Some(Op::BoxF64 | Op::BoxBool) => true,
+      Some(Op::ConstTagged(bits)) => !value::Value::from_bits(*bits).is_obj(),
+      _ => false,
+    };
+    if never_object {
       return;
     }
     let is_obj = self.is_obj(val);

@@ -547,7 +547,8 @@ const GLOBAL_CACHED: u64 = 1 << 63;
 /// kinds holds their union and a site that has seen exactly one holds a
 /// single bit.
 pub mod kind {
-  /// A number with no fractional part.
+  /// A number with no fractional part, other than -0, which integer
+  /// arithmetic cannot hold.
   pub const INT: u8 = 1 << 0;
   /// Any other number: a fraction, an infinity or NaN.
   pub const FLOAT: u8 = 1 << 1;
@@ -567,7 +568,7 @@ pub mod kind {
   pub fn of(v: super::Value) -> u8 {
     if v.is_number() {
       let n = v.as_number();
-      if n.is_finite() && n.trunc() == n {
+      if n.is_finite() && n.trunc() == n && n.to_bits() != (-0.0f64).to_bits() {
         return INT;
       }
       return FLOAT;

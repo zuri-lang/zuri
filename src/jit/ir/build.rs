@@ -29,14 +29,14 @@
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::{
-  BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame, NO_VALUE,
-  Op, Terminator, Ty, ValueId,
+  BitOp, BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame,
+  IntOp, NO_VALUE, Op, Terminator, Ty, ValueId,
 };
 use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_DICT, OBJ_TAG_RANGE, OBJ_TAG_STR};
 use crate::jit::typeflow;
 use crate::vm::chunk::{Instr, ParamType, kind};
 use crate::vm::object::ObjFunction;
-use crate::vm::value::Value;
+use crate::vm::value::{self, Value};
 
 /// Everything the builder reads from the interpreter's caches, copied
 /// out on the VM's own thread so the build itself can run anywhere.
@@ -57,6 +57,8 @@ pub struct Feedback {
   /// Sites where compiled code has already deoptimized. Nothing is
   /// speculated at them again.
   pub blocked: FxHashSet<usize>,
+  /// Arithmetic sites whose integer bet failed; they work on doubles.
+  pub int_misses: FxHashSet<usize>,
   /// No arithmetic, comparison or index speculation anywhere, after the
   /// function has deoptimized too often.
   pub sites_off: bool,
@@ -272,6 +274,9 @@ struct Builder<'a> {
   inlined_ops: usize,
   /// One past the highest register any frame uses.
   extent: usize,
+  /// Integers known to lie in `-2^53..2^53`, where a double holds every
+  /// one exactly, none is -0, and the bitwise operators keep them there.
+  small_ints: FxHashSet<ValueId>,
 }
 
 impl<'a> Builder<'a> {
@@ -293,6 +298,7 @@ impl<'a> Builder<'a> {
       inlining: vec![proto as *const ObjFunction as usize],
       inlined_ops: 0,
       extent: proto.num_registers as usize,
+      small_ints: FxHashSet::default(),
     })
   }
 
@@ -807,8 +813,16 @@ impl<'a> Builder<'a> {
     };
   }
 
-  /// Runs `instr` through its runtime helper.
-  fn generic(&mut self, ip: usize, instr: Instr) -> Result<(), BuildError> {
+  /// Runs `instr` through its runtime helper, or, when the interpreter
+  /// has never run it, leaves compiled code there instead. Returns whether
+  /// that ended the block.
+  fn generic(&mut self, ip: usize, instr: Instr) -> Result<bool, BuildError> {
+    if self.unreached(ip, &instr) {
+      let state = self.state(ip);
+      self.push(Op::Unreached, vec![], None, None);
+      self.func.set_term(self.block, Terminator::Deopt(state));
+      return Ok(true);
+    }
     if super::lower::generic_helper(&instr).is_none() {
       return Err(format!("no runtime helper for {instr:?} at ip {ip}"));
     }
@@ -826,7 +840,55 @@ impl<'a> Builder<'a> {
     self.push(Op::Generic { instr, ip, frame }, args, None, Some(state));
     self.after_collect(ip + 1, typeflow::any_dst(&instr));
     self.in_memory = true;
-    Ok(())
+    Ok(false)
+  }
+
+  /// Whether `instr` is a site the interpreter records feedback for and
+  /// has never run. Such a site is usually code a loop reaches later than
+  /// the point it was compiled at, and building it without feedback would
+  /// leave it on its helper for good. Once site speculation is off this
+  /// always says no, so the last compile a function gets never traps.
+  fn unreached(&self, ip: usize, instr: &Instr) -> bool {
+    let feedback = self.cx.feedback;
+    if feedback.sites_off || !feedback.open(ip) {
+      return false;
+    }
+    let recorded = matches!(
+      instr,
+      Instr::Add { .. }
+        | Instr::Sub { .. }
+        | Instr::Mul { .. }
+        | Instr::Div { .. }
+        | Instr::Pow { .. }
+        | Instr::Floor { .. }
+        | Instr::Mod { .. }
+        | Instr::Neg { .. }
+        | Instr::BitAnd { .. }
+        | Instr::BitOr { .. }
+        | Instr::BitXor { .. }
+        | Instr::BitShl { .. }
+        | Instr::BitShr { .. }
+        | Instr::BitUshr { .. }
+        | Instr::BitNot { .. }
+        | Instr::Lt { .. }
+        | Instr::Le { .. }
+        | Instr::Gt { .. }
+        | Instr::Ge { .. }
+        | Instr::AddImm { .. }
+        | Instr::SubImm { .. }
+        | Instr::MulImm { .. }
+        | Instr::LtImm { .. }
+        | Instr::LeImm { .. }
+        | Instr::GtImm { .. }
+        | Instr::GeImm { .. }
+        | Instr::GetIndex { .. }
+        | Instr::SetIndex { .. }
+        | Instr::GetField { .. }
+        | Instr::SetField { .. }
+        | Instr::Call { .. }
+        | Instr::Invoke { .. }
+    );
+    recorded && feedback.kinds.get(ip).copied().unwrap_or(0) == 0
   }
 
   /// Why the baseline tier would run `instr` faster than a call to its
@@ -895,6 +957,63 @@ impl<'a> Builder<'a> {
     !feedback.sites_off && feedback.open(ip) && seen & !kind::NUMBER == 0
   }
 
+  /// Whether to do an arithmetic site's work on integers: it has only
+  /// ever seen whole numbers. The operation is checked to give exactly
+  /// the interpreter's double, and a site that stops doing so is blocked
+  /// and goes back to doubles.
+  fn int_site(&self, ip: usize) -> bool {
+    let feedback = self.cx.feedback;
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
+    !feedback.sites_off && feedback.open(ip) && seen == kind::INT && !feedback.int_misses.contains(&ip)
+  }
+
+  /// `r` as an operand of checked integer arithmetic: whole, held exactly,
+  /// and not -0.
+  fn whole(&mut self, r: u8, ip: usize) -> ValueId {
+    if let Some(i) = self.view(r).int
+      && self.no_minus_zero(i)
+    {
+      return i;
+    }
+    let source = match self.view(r).num {
+      Some(n) => n,
+      None => self.tagged(r),
+    };
+    let state = self.state(ip);
+    let i = self
+      .push(Op::Guard(GuardKind::Whole), vec![source], Some(Ty::I64), Some(state))
+      .unwrap();
+    let view = self.view_mut(r);
+    view.int = Some(i);
+    view.known = Known::Number;
+    i
+  }
+
+  fn no_minus_zero(&self, i: ValueId) -> bool {
+    self.small_ints.contains(&i)
+      || self
+        .func
+        .def_inst(i)
+        .is_some_and(|d| matches!(d.op, Op::Guard(GuardKind::Whole)))
+  }
+
+  /// A constant operand integer arithmetic can take as it is.
+  fn whole_imm(&self, idx: u16) -> Option<i64> {
+    let c = self.imm(idx)?;
+    let usable = c.fract() == 0.0 && c.abs() < 9007199254740992.0 && !(c == 0.0 && c.is_sign_negative());
+    usable.then_some(c as i64)
+  }
+
+  /// Checked integer arithmetic into `dst`, leaving compiled code at `ip`
+  /// when the result is not the interpreter's double.
+  fn checked(&mut self, ip: usize, dst: u8, op: IntOp, x: ValueId, y: ValueId) {
+    let state = self.state(ip);
+    let r = self
+      .push(Op::Guard(GuardKind::Arith(op)), vec![x, y], Some(Ty::I64), Some(state))
+      .unwrap();
+    self.set_int(dst, r);
+  }
+
   fn list_site(&self, ip: usize) -> bool {
     let feedback = self.cx.feedback;
     !feedback.sites_off && feedback.open(ip) && feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
@@ -908,9 +1027,6 @@ impl<'a> Builder<'a> {
     feedback.fields.get(&ip).copied()
   }
 
-  /// A method call whose receiver has only ever been a list: the
-  /// interpreter's receiver feedback, or the key compiled code left in
-  /// the site's cache.
   /// The list method a method call is, when its receiver has only ever
   /// been a list and it is called with the arguments the method takes.
   fn list_method(&self, ip: usize, method_const: u16, num_args: u8) -> Option<ListMethod> {
@@ -937,6 +1053,9 @@ impl<'a> Builder<'a> {
     fits.then_some(method)
   }
 
+  /// A method call whose receiver has only ever been a list: the
+  /// interpreter's receiver feedback, or the key compiled code left in
+  /// the site's cache.
   fn list_invoke_site(&self, ip: usize) -> bool {
     let feedback = self.cx.feedback;
     if feedback.fields_off || !feedback.open(ip) {
@@ -979,6 +1098,74 @@ impl<'a> Builder<'a> {
       },
       Instr::Move { dst, src } => {
         *self.view_mut(dst) = self.view(src);
+      },
+
+      Instr::Add { dst, a, b } | Instr::Sub { dst, a, b } | Instr::Mul { dst, a, b }
+        if self.int_site(ip) =>
+      {
+        let x = self.whole(a, ip);
+        let y = self.whole(b, ip);
+        self.checked(ip, dst, int_op(&instr), x, y);
+      },
+      Instr::AddImm { dst, a, imm_const }
+      | Instr::SubImm { dst, a, imm_const }
+      | Instr::MulImm { dst, a, imm_const }
+        if self.int_site(ip) && self.whole_imm(imm_const).is_some() =>
+      {
+        let k = self.whole_imm(imm_const).unwrap();
+        let x = self.whole(a, ip);
+        let y = self.value(Op::ConstI64(k), vec![], Ty::I64);
+        self.checked(ip, dst, int_op(&instr), x, y);
+      },
+      Instr::Lt { dst, a, b }
+      | Instr::Le { dst, a, b }
+      | Instr::Gt { dst, a, b }
+      | Instr::Ge { dst, a, b }
+        if self.view(a).int.is_some() && self.view(b).int.is_some() =>
+      {
+        let x = self.view(a).int.unwrap();
+        let y = self.view(b).int.unwrap();
+        let r = self.value(Op::ICmp(cmp_of(&instr)), vec![x, y], Ty::Bool);
+        self.set_cond(dst, r);
+      },
+      Instr::LtImm { dst, a, imm_const }
+      | Instr::LeImm { dst, a, imm_const }
+      | Instr::GtImm { dst, a, imm_const }
+      | Instr::GeImm { dst, a, imm_const }
+        if self.view(a).int.is_some() && self.whole_imm(imm_const).is_some() =>
+      {
+        let x = self.view(a).int.unwrap();
+        let k = self.whole_imm(imm_const).unwrap();
+        let y = self.value(Op::ConstI64(k), vec![], Ty::I64);
+        let r = self.value(Op::ICmp(cmp_of(&instr)), vec![x, y], Ty::Bool);
+        self.set_cond(dst, r);
+      },
+      Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b }
+        if self.view(a).int.is_some() && self.view(b).int.is_some() =>
+      {
+        let x = self.view(a).int.unwrap();
+        let y = self.view(b).int.unwrap();
+        let cmp = if matches!(instr, Instr::Eq { .. }) {
+          Cmp::Eq
+        } else {
+          Cmp::Ne
+        };
+        let r = self.value(Op::ICmp(cmp), vec![x, y], Ty::Bool);
+        self.set_cond(dst, r);
+      },
+      Instr::EqImm { dst, a, imm_const } | Instr::NeqImm { dst, a, imm_const }
+        if self.view(a).int.is_some() && self.whole_imm(imm_const).is_some() =>
+      {
+        let x = self.view(a).int.unwrap();
+        let k = self.whole_imm(imm_const).unwrap();
+        let y = self.value(Op::ConstI64(k), vec![], Ty::I64);
+        let cmp = if matches!(instr, Instr::EqImm { .. }) {
+          Cmp::Eq
+        } else {
+          Cmp::Ne
+        };
+        let r = self.value(Op::ICmp(cmp), vec![x, y], Ty::Bool);
+        self.set_cond(dst, r);
       },
 
       Instr::Add { dst, a, b }
@@ -1070,6 +1257,45 @@ impl<'a> Builder<'a> {
           self.value(Op::BNot, vec![eq], Ty::Bool)
         };
         self.set_cond(dst, r);
+      },
+      Instr::BitAnd { dst, a, b }
+      | Instr::BitOr { dst, a, b }
+      | Instr::BitXor { dst, a, b }
+      | Instr::BitShl { dst, a, b }
+      | Instr::BitShr { dst, a, b }
+      | Instr::BitUshr { dst, a, b }
+        if self.numeric_site(ip) =>
+      {
+        let x = self.bits(a, ip);
+        let y = self.bits(b, ip);
+        let bit = match instr {
+          Instr::BitAnd { .. } => BitOp::And,
+          Instr::BitOr { .. } => BitOp::Or,
+          Instr::BitXor { .. } => BitOp::Xor,
+          Instr::BitShl { .. } => BitOp::Shl,
+          Instr::BitShr { .. } => BitOp::Shr,
+          _ => BitOp::Ushr,
+        };
+        // Two's complement keeps `-2^53..2^53` closed under and, or and
+        // xor; a right shift only moves towards zero or -1; an unsigned
+        // shift works on 32 bits.
+        let small_x = self.small_ints.contains(&x);
+        let small_y = self.small_ints.contains(&y);
+        let small = match bit {
+          BitOp::And | BitOp::Or | BitOp::Xor => small_x && small_y,
+          BitOp::Shr => small_x,
+          BitOp::Ushr => true,
+          BitOp::Shl => false,
+        };
+        let r = self.value(Op::IBit(bit), vec![x, y], Ty::I64);
+        self.set_bits(dst, r, small);
+      },
+      Instr::BitNot { dst, src } if self.numeric_site(ip) => {
+        let x = self.bits(src, ip);
+        let small = self.small_ints.contains(&x);
+        let ones = self.value(Op::ConstI64(-1), vec![], Ty::I64);
+        let r = self.value(Op::IBit(BitOp::Xor), vec![x, ones], Ty::I64);
+        self.set_bits(dst, r, small);
       },
       Instr::Pow { dst, a, b } if self.numeric_site(ip) => {
         let x = self.num(a, ip);
@@ -1220,8 +1446,8 @@ impl<'a> Builder<'a> {
 
       Instr::GetIndex { dst, obj, idx } if self.list_site(ip) => {
         let p = self.list_ptr(obj, ip);
-        let i = self.int(idx, ip);
         let len = self.value(Op::ListLen, vec![p], Ty::I64);
+        let i = self.list_index(idx, len, ip);
         let state = self.state(ip);
         self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
         let data = self.value(Op::ListData, vec![p], Ty::Ptr);
@@ -1230,8 +1456,8 @@ impl<'a> Builder<'a> {
       },
       Instr::SetIndex { obj, idx, src } if self.list_site(ip) => {
         let p = self.list_ptr(obj, ip);
-        let i = self.int(idx, ip);
         let len = self.value(Op::ListLen, vec![p], Ty::I64);
+        let i = self.list_index(idx, len, ip);
         let state = self.state(ip);
         self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
         let data = self.value(Op::ListData, vec![p], Ty::Ptr);
@@ -1401,7 +1627,7 @@ impl<'a> Builder<'a> {
             );
             self.build_inline(ip, callee, proto, outer, dst, func + 1, closure)?;
           },
-          None => self.generic(ip, instr)?,
+          None => return self.generic(ip, instr),
         }
       },
       Instr::Invoke {
@@ -1422,11 +1648,11 @@ impl<'a> Builder<'a> {
             }
             self.build_inline(ip, callee, proto, outer, dst, obj + 1, closure)?;
           },
-          None => self.generic(ip, instr)?,
+          None => return self.generic(ip, instr),
         }
       },
 
-      _ => self.generic(ip, instr)?,
+      _ => return self.generic(ip, instr),
     }
     Ok(false)
   }
@@ -1654,7 +1880,44 @@ impl<'a> Builder<'a> {
     }
   }
 
+  /// `r` as the integer a bitwise operator works on. An integer view is
+  /// that integer already, bar the saturated 2^63; a constant converts
+  /// here.
+  fn bits(&mut self, r: u8, ip: usize) -> ValueId {
+    if let Some(i) = self.view(r).int {
+      if self.small_ints.contains(&i) || self.func.def_inst(i).is_some_and(|d| matches!(d.op, Op::ConstI64(_))) {
+        return i;
+      }
+      return self.value(Op::Unsaturate, vec![i], Ty::I64);
+    }
+    let n = self.num(r, ip);
+    if let Some(Op::ConstF64(c)) = self.func.def_inst(n).map(|i| &i.op) {
+      let c = value::num_to_wrapped_i64(*c);
+      let k = self.value(Op::ConstI64(c), vec![], Ty::I64);
+      if (-(1i64 << 53)..1i64 << 53).contains(&c) {
+        self.small_ints.insert(k);
+      }
+      return k;
+    }
+    self.value(Op::WrapI64, vec![n], Ty::I64)
+  }
+
+  /// A bitwise operator's result, which the interpreter turns into a
+  /// number with the rounding `as f64` does. The integer is kept as a view
+  /// only when it is small, so rounding leaves it alone: an integer view
+  /// past 2^53 would not be the value the interpreter holds.
+  fn set_bits(&mut self, r: u8, i: ValueId, small: bool) {
+    if small {
+      self.set_int(r, i);
+    } else {
+      let n = self.value(Op::IntToF64, vec![i], Ty::F64);
+      self.set_num(r, n);
+    }
+  }
+
+  /// Sets `r` to a small integer: see `small_ints`.
   fn set_int(&mut self, r: u8, i: ValueId) {
+    self.small_ints.insert(i);
     *self.view_mut(r) = RegView {
       int: Some(i),
       known: Known::Number,
@@ -1747,6 +2010,21 @@ impl<'a> Builder<'a> {
 
   /// A byte stream index, counted from the end when negative and checked
   /// to be in range.
+  /// A list index from register `idx`, a negative one counting from the
+  /// end as the interpreter's does. What comes back still needs its
+  /// bounds check against `len`.
+  fn list_index(&mut self, idx: u8, len: ValueId, ip: usize) -> ValueId {
+    let i = self.int(idx, ip);
+    let constant = self.func.def_inst(i).and_then(|d| match d.op {
+      Op::ConstI64(c) => Some(c),
+      _ => None,
+    });
+    if constant.is_some_and(|c| c >= 0) {
+      return i;
+    }
+    self.value(Op::WrapIndex, vec![i, len], Ty::I64)
+  }
+
   fn bytes_index(&mut self, p: ValueId, idx: u8, ip: usize) -> ValueId {
     let i = self.int(idx, ip);
     let len = self.value(Op::BytesLen, vec![p], Ty::I64);
@@ -2311,5 +2589,13 @@ fn unsupported(instr: &Instr) -> Option<&'static str> {
   match instr {
     Instr::PushCatch { .. } | Instr::PopCatch => Some("catch"),
     _ => None,
+  }
+}
+
+fn int_op(instr: &Instr) -> IntOp {
+  match instr {
+    Instr::Add { .. } | Instr::AddImm { .. } => IntOp::Add,
+    Instr::Sub { .. } | Instr::SubImm { .. } => IntOp::Sub,
+    _ => IntOp::Mul,
   }
 }

@@ -28,3 +28,21 @@ remainder, floor division and powers stay numbers:
 globals read and written in a hot loop:
 90000
 x
+code a loop reaches only after the function is compiled:
+200231106
+999000
+130.5
+whole-number arithmetic that stops being exact:
+906630000
+-0
+-0
+1152921504606847000
+9007199254740992
+9007199254740992
+-0
+-1.5
+9007199254740992
+1
+906630000
+-0
+operator '&' not defined for call signature (string, number)

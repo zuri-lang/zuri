@@ -138,3 +138,45 @@ echo up_to(xs, 10)
 echo backward(xs, 9)
 echo paired(xs, ys)
 echo halves(xs)
+
+echo 'indexes counted from the end:'
+
+# The counter indexes from the back of the list, as a negative index.
+def from_back(list) {
+  var total = 0
+  iter var i = 1; i <= list.length(); i++ {
+    total = total * 3 % 1000003 + list[-i]
+  }
+  return total
+}
+
+# A counter that runs below zero partway through, so its indexes move from
+# the front of the list to the back.
+def across_zero(list, low) {
+  var total = 0
+  iter var i = 5; i > low; i-- {
+    total = total * 7 % 1000003 + list[i]
+  }
+  return total
+}
+
+# Writes to the last few elements through negative indexes.
+def mark_tail(list, n) {
+  iter var i = 1; i <= n; i++ {
+    list[-i] = i
+  }
+  return list[-1] + list[-n]
+}
+
+var back = 0
+iter var r = 0; r < 3000; r++ {
+  back = back + from_back(xs) + across_zero(xs, 0) + mark_tail(scratch, 8)
+}
+echo 'warm: ${back}'
+echo across_zero(xs, -4)
+echo across_zero(xs, -64)
+echo attempt(@() => across_zero(xs, -66))
+echo attempt(@() => mark_tail(scratch, 65))
+echo from_back([])
+echo from_back(ys)
+echo mark_tail([1, 2, 3], 3)

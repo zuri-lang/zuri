@@ -889,6 +889,11 @@ pub struct JitInfo {
   /// compile from being enqueued. `RefCell` costs nothing here; deopting
   /// is a cold path and the set is empty for almost every function.
   pub deopt_sites: RefCell<rustc_hash::FxHashSet<usize>>,
+  /// Arithmetic sites where tier 2 bet on integers and lost: the result
+  /// overflowed, left the range a double holds exactly, or was a zero
+  /// the doubles would have signed. They are built on doubles from then
+  /// on, and stay open to every other speculation.
+  pub int_misses: RefCell<rustc_hash::FxHashSet<usize>>,
   /// How many times compiled code for this prototype has been thrown
   /// away after a deopt. Capped, so a function whose deopts come from
   /// something the next compilation can't avoid settles down instead of
@@ -1003,6 +1008,7 @@ impl JitInfo {
       osr_ids: RefCell::new(None),
       ineligible: Cell::new(false),
       deopt_sites: RefCell::new(rustc_hash::FxHashSet::default()),
+      int_misses: RefCell::new(rustc_hash::FxHashSet::default()),
       invalidations: Cell::new(0),
       field_speculation_off: Cell::new(false),
       site_speculation_off: Cell::new(false),

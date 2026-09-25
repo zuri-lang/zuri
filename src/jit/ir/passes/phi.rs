@@ -6,11 +6,16 @@
 //! every edge passes the same value, or the parameter itself around a
 //! loop, the parameter is that value.
 
-use super::replace_uses;
+use rustc_hash::FxHashMap;
+
+use super::{replace_all, resolve};
 use crate::jit::ir::{BlockId, Func, ValueId};
 
 pub fn run(f: &mut Func) {
   let roots = f.roots();
+  // What each removed parameter stands for. The uses are rewritten once
+  // at the end; until then an edge's arguments are read through this.
+  let mut replaced: FxHashMap<ValueId, ValueId> = FxHashMap::default();
   loop {
     let preds = f.predecessors();
     let mut changed = false;
@@ -23,27 +28,35 @@ pub fn run(f: &mut Func) {
       while k > 0 {
         k -= 1;
         let p = f.blocks[bi].params[k];
-        let Some(only) = sole_incoming(f, &preds[bi], b, k, p) else {
+        let Some(only) = sole_incoming(f, &replaced, &preds[bi], b, k, p) else {
           continue;
         };
         remove_param(f, &preds[bi], b, k, only);
-        replace_uses(f, p, only);
+        replaced.insert(p, only);
         changed = true;
       }
     }
     if !changed {
-      return;
+      break;
     }
   }
+  replace_all(f, &replaced);
 }
 
 /// The one value parameter `k` of `b` receives, not counting the
 /// parameter passed back to itself, if there is exactly one.
-fn sole_incoming(f: &Func, preds: &[BlockId], b: BlockId, k: usize, p: ValueId) -> Option<ValueId> {
+fn sole_incoming(
+  f: &Func,
+  replaced: &FxHashMap<ValueId, ValueId>,
+  preds: &[BlockId],
+  b: BlockId,
+  k: usize,
+  p: ValueId,
+) -> Option<ValueId> {
   let mut only: Option<ValueId> = None;
   for &pred in preds {
     for args in edge_args(f, pred, b) {
-      let v = args[k];
+      let v = resolve(replaced, args[k]);
       if v == p {
         continue;
       }

@@ -836,6 +836,12 @@ pub struct VM {
   /// at the position compiled code resumes at: the function and position
   /// it belongs to. `(0, 0)` otherwise.
   pub(crate) pending_deopt_blame: Cell<(usize, usize)>,
+  /// Set alongside `pending_deopt_ip` when compiled code left at a site
+  /// the interpreter had never run when it was compiled.
+  pub(crate) pending_deopt_unreached: Cell<bool>,
+  /// Set alongside `pending_deopt_ip` when an integer bet at an
+  /// arithmetic site is what failed.
+  pub(crate) pending_deopt_int_miss: Cell<bool>,
   /// Functions the compile jobs in flight build calls to, keyed by the
   /// function being compiled. A reassigned global could otherwise leave
   /// a callee unreachable, and collected, while a compiler thread still
@@ -993,6 +999,8 @@ impl VM {
       pending_deopt_ip: Cell::new(-1),
       pending_deopt_root: Cell::new(usize::MAX),
       pending_deopt_blame: Cell::new((0, 0)),
+      pending_deopt_unreached: Cell::new(false),
+      pending_deopt_int_miss: Cell::new(false),
       pending_jit_callees: Vec::new(),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
@@ -2749,6 +2757,7 @@ impl VM {
       globals,
       list_key: crate::builtins::list_method_key(),
       blocked: proto.jit.deopt_sites.borrow().iter().copied().collect(),
+      int_misses: proto.jit.int_misses.borrow().iter().copied().collect(),
       sites_off: proto.jit.site_speculation_off.get(),
       fields_off: proto.jit.field_speculation_off.get(),
       global_callees,
@@ -3645,7 +3654,29 @@ impl VM {
       (0, _) => (site_fn, deopt_ip),
       (proto, ip) => (unsafe { &*(proto as *const ObjFunction) }, ip),
     };
-    if self.note_deopt_site(site_fn, site_ip) && !std::ptr::eq(site_fn, deopting_fn) {
+    let int_miss = self.pending_deopt_int_miss.replace(false);
+    let unreached = self.pending_deopt_unreached.replace(false);
+    let arithmetic = matches!(
+      site_fn.chunk.code.get(site_ip),
+      Some(
+        Instr::Add { .. }
+          | Instr::Sub { .. }
+          | Instr::Mul { .. }
+          | Instr::AddImm { .. }
+          | Instr::SubImm { .. }
+          | Instr::MulImm { .. }
+      )
+    );
+    if int_miss && arithmetic {
+      // The site is fine on doubles; only the integer bet goes.
+      site_fn.jit.int_misses.borrow_mut().insert(site_ip);
+      self.invalidate_compiled(deopting_fn);
+    } else if unreached {
+      // Nothing was wrong at the site; there was nothing to build it from.
+      // The interpreter records what it sees there now, and the next
+      // compile uses that.
+      self.invalidate_compiled(deopting_fn);
+    } else if self.note_deopt_site(site_fn, site_ip) && !std::ptr::eq(site_fn, deopting_fn) {
       // The code that bet wrong is the compiled function's, whatever the
       // check belonged to.
       self.invalidate_compiled(deopting_fn);
@@ -5463,6 +5494,7 @@ impl VM {
             obj,
             name_const,
           } => {
+            seen!(func, ip, base, obj);
             let receiver = self.get_reg(base, obj);
             let name_val = func.chunk.constants[name_const as usize];
             if !name_val.is_string() {
@@ -5563,6 +5595,7 @@ impl VM {
             name_const,
             src,
           } => {
+            seen!(func, ip, base, obj);
             let receiver = self.get_reg(base, obj);
             let value = self.get_reg(base, src);
             let name_val = func.chunk.constants[name_const as usize];

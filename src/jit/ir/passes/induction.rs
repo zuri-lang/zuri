@@ -26,7 +26,7 @@ use super::loops::{self, Loop};
 use super::replace_uses;
 use crate::jit::ir::build::Feedback;
 use crate::jit::ir::{
-  BlockId, Cmp, FrameState, Func, GuardKind, InstId, Op, Terminator, Ty, ValueDef, ValueId,
+  BlockId, Cmp, FrameState, Func, GuardKind, InstId, IntOp, Op, Terminator, Ty, ValueDef, ValueId,
 };
 
 /// The largest step a counter may take. Anything whole up to this keeps
@@ -176,7 +176,8 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
     }
     for &i in &f.block(b).insts {
       let inst = f.inst(i);
-      if matches!(inst.op, Op::Guard(GuardKind::Int)) && strip_box(f, inst.args[0]) == c.param {
+      let counter_guard = matches!(inst.op, Op::Guard(GuardKind::Int | GuardKind::Whole));
+      if counter_guard && strip_box(f, inst.args[0]) == c.param {
         guards.push(i);
       }
     }
@@ -185,12 +186,16 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
     return;
   }
 
-  // The step each back edge takes, read before anything changes.
-  let mut steps: Vec<(BlockId, Vec<i64>)> = Vec::new();
+  // The step each back edge takes, read before anything changes, with
+  // the checked integer add that makes it when integer arithmetic does.
+  let mut steps: Vec<(BlockId, Vec<(i64, Option<InstId>)>)> = Vec::new();
   for &latch in &lp.latches {
     let edge_steps = edge_values(f, latch, lp.header, c.index)
       .into_iter()
-      .map(|v| step_of(f, v, c.param).expect("counter_of checked every step") as i64)
+      .map(|v| {
+        let step = step_of(f, v, c.param).expect("counter_of checked every step") as i64;
+        (step, checked_step(f, v))
+      })
       .collect();
     steps.push((latch, edge_steps));
   }
@@ -198,9 +203,14 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
   let mut pre = Preheader::new(f, c, header_ip);
 
   // The start is a whole number, and it and the bound keep every value
-  // exact.
+  // exact. When integer arithmetic takes the counter, the start is not
+  // -0 either, which the twin could not keep.
+  let whole = guards
+    .iter()
+    .any(|&g| matches!(f.inst(g).op, Op::Guard(GuardKind::Whole)));
+  let start_kind = if whole { GuardKind::Whole } else { GuardKind::Int };
   let start = pre.start;
-  let start_int = pre.guard_value(f, GuardKind::Int, vec![start], Ty::I64);
+  let start_int = pre.guard_value(f, start_kind, vec![start], Ty::I64);
   let low = pre.push(f, Op::ConstI64(-(EXACT_LIMIT as i64)), vec![], Ty::I64);
   let high = pre.push(f, Op::ConstI64(EXACT_LIMIT as i64), vec![], Ty::I64);
   let above = pre.push(f, Op::ICmp(Cmp::Ge), vec![start_int, low], Ty::Bool);
@@ -226,12 +236,28 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
     args.push(start_int);
   }
   for (latch, edge_steps) in steps {
-    for (e, step) in edge_steps.into_iter().enumerate() {
-      let pos = f.block(latch).insts.len();
-      let k = f.insert(latch, pos, Op::ConstI64(step), vec![], Some(Ty::I64), None).unwrap();
-      let next = f
-        .insert(latch, pos + 1, Op::IAdd, vec![twin, k], Some(Ty::I64), None)
-        .unwrap();
+    for (e, (step, checked)) in edge_steps.into_iter().enumerate() {
+      let next = match checked {
+        // Integer arithmetic already steps the counter. On the twin, which
+        // the checks above keep far inside 2^53, it can neither overflow
+        // nor round, so it is a plain add; the counter guard it takes is
+        // replaced by the twin below.
+        Some(a) => {
+          let inst = &mut f.insts[a.0 as usize];
+          inst.op = match inst.op {
+            Op::Guard(GuardKind::Arith(IntOp::Sub)) => Op::ISub,
+            _ => Op::IAdd,
+          };
+          inst.state = None;
+          inst.result.expect("a checked add has a result")
+        },
+        None => {
+          let pos = f.block(latch).insts.len();
+          let k = f.insert(latch, pos, Op::ConstI64(step), vec![], Some(Ty::I64), None).unwrap();
+          f.insert(latch, pos + 1, Op::IAdd, vec![twin, k], Some(Ty::I64), None)
+            .unwrap()
+        },
+      };
       f.edge_args_mut(latch, header)[e].push(next);
     }
   }
@@ -274,8 +300,10 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
 }
 
 /// Turns the header's test into an integer comparison when the bound is
-/// a list length: the counter and the length are both whole and far
-/// below 2^53, so comparing them as integers is the same test.
+/// an integer made a double, a list length or integer arithmetic's
+/// result. The counter stays far below 2^53, and a double only rounds an
+/// integer beyond that, so comparing against the integer itself is the
+/// same test.
 fn integer_test(f: &mut Func, header: BlockId, as_float: ValueId, twin: ValueId) {
   let Terminator::Branch { cond, .. } = f.block(header).term else {
     return;
@@ -287,18 +315,14 @@ fn integer_test(f: &mut Func, header: BlockId, as_float: ValueId, twin: ValueId)
     return;
   };
   let args = f.inst(test).args.clone();
-  let length_of = |f: &Func, v: ValueId| {
+  let integer_behind = |f: &Func, v: ValueId| {
     let d = f.def_inst(v)?;
-    if !matches!(d.op, Op::IntToF64) {
-      return None;
-    }
-    let len = d.args[0];
-    f.def_inst(len).is_some_and(|l| matches!(l.op, Op::ListLen)).then_some(len)
+    matches!(d.op, Op::IntToF64).then(|| d.args[0])
   };
   let new_args = if args[0] == as_float {
-    length_of(f, args[1]).map(|len| vec![twin, len])
+    integer_behind(f, args[1]).map(|x| vec![twin, x])
   } else if args[1] == as_float {
-    length_of(f, args[0]).map(|len| vec![len, twin])
+    integer_behind(f, args[0]).map(|x| vec![x, twin])
   } else {
     None
   };
@@ -321,17 +345,32 @@ fn remove_bounds_checks(
 ) {
   let mut non_negative = false;
   let mut covered: Vec<ValueId> = Vec::new();
+  // Negative indexes count from the end of a list, so a list index is
+  // often the counter wrapped against the length. A counter this proves
+  // never negative wraps to itself.
+  let mut unwrapped: Vec<(ValueId, ValueId)> = Vec::new();
   let blocks: Vec<BlockId> = lp.body.iter().copied().filter(|&b| b != lp.header).collect();
   for b in blocks {
     let mut keep = Vec::with_capacity(f.block(b).insts.len());
     for i in f.block(b).insts.clone() {
       let inst = f.inst(i);
-      let is_check = matches!(inst.op, Op::Guard(GuardKind::Bounds)) && indices.contains(&inst.args[0]);
+      let len = inst.args.get(1).copied();
+      let index = inst.args.first().copied().and_then(|at| {
+        if indices.contains(&at) {
+          return Some(at);
+        }
+        let wrap = f.def_inst(at)?;
+        let wraps_counter = matches!(wrap.op, Op::WrapIndex)
+          && indices.contains(&wrap.args[0])
+          && Some(wrap.args[1]) == len;
+        wraps_counter.then(|| wrap.args[0])
+      });
+      let is_check = matches!(inst.op, Op::Guard(GuardKind::Bounds)) && index.is_some();
       if !is_check {
         keep.push(i);
         continue;
       }
-      let len = inst.args[1];
+      let (at, index, len) = (inst.args[0], index.unwrap(), inst.args[1]);
       if !covered.contains(&len) {
         if !defined_outside(f, lp, len) {
           keep.push(i);
@@ -344,8 +383,14 @@ fn remove_bounds_checks(
         ensure_below(f, c, pre, start_int, len);
         covered.push(len);
       }
+      if at != index {
+        unwrapped.push((at, index));
+      }
     }
     f.block_mut(b).insts = keep;
+  }
+  for (at, index) in unwrapped {
+    replace_uses(f, at, index);
   }
 }
 
@@ -454,6 +499,15 @@ fn bound_in_range(f: &Func, c: &Counter) -> bool {
 /// The step `v` takes from `param`, when `v` is `param` plus or minus a
 /// whole constant within `MAX_STEP`.
 fn step_of(f: &Func, v: ValueId, param: ValueId) -> Option<f64> {
+  if let Some(a) = checked_step(f, v) {
+    let arith = f.inst(a);
+    let step = match arith.op {
+      Op::Guard(GuardKind::Arith(IntOp::Sub)) => -int_constant(f, arith.args[1])?,
+      _ => int_constant(f, arith.args[1])?,
+    };
+    let whole = step != 0.0 && step.abs() <= MAX_STEP;
+    return (whole && int_counter(f, arith.args[0]) == param).then_some(step);
+  }
   let def = f.def_inst(v)?;
   let (base, step) = match def.op {
     Op::FAdd => match (constant(f, def.args[0]), constant(f, def.args[1])) {
@@ -468,6 +522,36 @@ fn step_of(f: &Func, v: ValueId, param: ValueId) -> Option<f64> {
   (whole && as_counter(f, base) == param).then_some(step)
 }
 
+/// The checked integer add or subtract behind a back edge's value, when
+/// integer arithmetic made the step: `IntToF64(Guard(Arith)(x, k))`.
+fn checked_step(f: &Func, v: ValueId) -> Option<InstId> {
+  let def = f.def_inst(v)?;
+  if !matches!(def.op, Op::IntToF64) {
+    return None;
+  }
+  let a = f.def_inst_id(def.args[0])?;
+  let arith = matches!(
+    f.inst(a).op,
+    Op::Guard(GuardKind::Arith(IntOp::Add | IntOp::Sub))
+  );
+  arith.then_some(a)
+}
+
+/// What an integer guard converted, when `v` is one's result.
+fn int_counter(f: &Func, v: ValueId) -> ValueId {
+  match f.def_inst(v) {
+    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => strip_box(f, g.args[0]),
+    _ => v,
+  }
+}
+
+fn int_constant(f: &Func, v: ValueId) -> Option<f64> {
+  match f.def_inst(v)?.op {
+    Op::ConstI64(x) => Some(x as f64),
+    _ => None,
+  }
+}
+
 /// `v` with the integer round trip the builder puts on an index taken
 /// off: `IntToF64(Guard(Int)(x))` is `x` for the counter.
 fn as_counter(f: &Func, v: ValueId) -> ValueId {
@@ -478,7 +562,7 @@ fn as_counter(f: &Func, v: ValueId) -> ValueId {
     return v;
   }
   match f.def_inst(def.args[0]) {
-    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int)) => strip_box(f, g.args[0]),
+    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => strip_box(f, g.args[0]),
     _ => v,
   }
 }

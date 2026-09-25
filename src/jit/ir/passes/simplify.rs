@@ -39,9 +39,17 @@ pub fn run(f: &mut Func) {
 }
 
 fn unbox_states(f: &mut Func) {
-  let unboxed = |f: &Func, v: ValueId| match f.def_inst(v) {
-    Some(d) if matches!(d.op, Op::BoxF64 | Op::BoxBool) => d.args[0],
-    _ => v,
+  // An integer converted for the box goes too: leaving compiled code
+  // converts an `I64` state value the same way.
+  let unboxed = |f: &Func, v: ValueId| {
+    let v = match f.def_inst(v) {
+      Some(d) if matches!(d.op, Op::BoxF64 | Op::BoxBool) => d.args[0],
+      _ => v,
+    };
+    match f.def_inst(v) {
+      Some(d) if matches!(d.op, Op::IntToF64) => d.args[0],
+      _ => v,
+    }
   };
   for i in 0..f.insts.len() {
     let Some(state) = &f.insts[i].state else {

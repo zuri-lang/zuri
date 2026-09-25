@@ -16,6 +16,8 @@ pub mod repr;
 pub mod simplify;
 pub mod sink;
 
+use rustc_hash::FxHashMap;
+
 use super::build::Feedback;
 use super::{Func, Terminator, ValueId};
 
@@ -72,11 +74,32 @@ pub fn replace_uses(f: &mut Func, from: ValueId, to: ValueId) {
   if from == to {
     return;
   }
-  let swap = |v: &mut ValueId| {
+  rewrite_uses(f, |v| {
     if *v == from {
       *v = to;
     }
-  };
+  });
+}
+
+/// Applies a whole set of replacements in one walk. A replacement may
+/// itself be replaced; each use ends up at the last value in its chain.
+pub fn replace_all(f: &mut Func, map: &FxHashMap<ValueId, ValueId>) {
+  if map.is_empty() {
+    return;
+  }
+  rewrite_uses(f, |v| *v = resolve(map, *v));
+}
+
+/// Where `v` ends up after following `map`.
+pub fn resolve(map: &FxHashMap<ValueId, ValueId>, mut v: ValueId) -> ValueId {
+  while let Some(&next) = map.get(&v) {
+    v = next;
+  }
+  v
+}
+
+fn rewrite_uses(f: &mut Func, swap: impl Fn(&mut ValueId)) {
+  let swap = &swap;
   for inst in &mut f.insts {
     inst.args.iter_mut().for_each(swap);
     if let Some(state) = &mut inst.state {

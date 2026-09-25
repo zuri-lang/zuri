@@ -194,3 +194,105 @@ step = 'x'
 counter = ''
 bump()
 echo counter
+
+echo 'code a loop reaches only after the function is compiled:'
+
+class Tally {
+  @new(v) {
+    self.v = v
+  }
+
+  twice() {
+    return self.v * 2
+  }
+}
+
+def half(n) {
+  return n >> 1
+}
+
+# The first loop gets the function compiled while it runs, before any of
+# the second loop has run once, so nothing is known yet about the second
+# loop's index, field, call, method and bitwise sites.
+def late_sites(n, list, cells) {
+  var warm = 0
+  iter var i = 0; i < n; i++ {
+    warm = warm + i
+  }
+  var total = 0
+  iter var i = 0; i < list.length(); i++ {
+    var c = cells[i % cells.length()]
+    c.v = c.v + (list[i] & 7)
+    total = total + list[-1 - i] + c.v + c.twice() + half(list[i]) + (i ^ 5)
+  }
+  return warm + total
+}
+
+var cells = [Tally(1), Tally(2), Tally(3)]
+var late_list = []
+iter var i = 0; i < 200; i++ {
+  late_list.append(i * 5)
+}
+echo late_sites(20000, late_list, cells)
+var again = 0
+iter var r = 0; r < 2000; r++ {
+  again = again + late_sites(10, late_list, cells) % 1000
+}
+echo again
+echo late_sites(10, [9, 8, 7], [Tally(0.5)])
+
+echo 'whole-number arithmetic that stops being exact:'
+
+# Warmed on small whole numbers, so compiled code does these on integers,
+# then handed values whose doubles an integer cannot stand for: a zero
+# that keeps a sign, results past 2^53 that round, and fractions.
+def plus(a, b) {
+  return a + b
+}
+
+def minus(a, b) {
+  return a - b
+}
+
+def scale(a, b) {
+  return a * b
+}
+
+def triple_plus_one(a) {
+  return a * 3 + 1
+}
+
+var exact = 0
+iter var i = 0; i < 30000; i++ {
+  exact = exact + plus(i, 1) + minus(i, 2) + scale(i % 100, 3) + triple_plus_one(i % 50)
+}
+echo exact
+echo scale(0, -3)
+echo scale(-4, 0)
+echo scale(2 ** 40, 2 ** 20)
+echo plus(2 ** 53, 1)
+echo plus(9007199254740991, 2)
+echo minus(-0.0, 0)
+echo minus(0.5, 2)
+echo triple_plus_one(3002399751580331)
+echo triple_plus_one(-0.0)
+
+# And still right, on whatever the functions were rebuilt with.
+var after = 0
+iter var i = 0; i < 30000; i++ {
+  after = after + plus(i, 1) + minus(i, 2) + scale(i % 100, 3) + triple_plus_one(i % 50)
+}
+echo after
+echo scale(0, -3)
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+echo attempt(@() => late_sites(10, 'text', cells))

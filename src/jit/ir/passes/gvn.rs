@@ -19,7 +19,7 @@
 
 use rustc_hash::FxHashMap;
 
-use super::replace_uses;
+use super::{replace_all, resolve};
 use crate::jit::ir::{BlockId, Func, GuardKind, InstId, Op, ValueId, dominators};
 
 /// The alias classes memory reads are versioned by.
@@ -71,6 +71,9 @@ pub fn run(f: &mut Func) {
     stack.push((root, fresh(&mut next_version)));
   }
   let mut undo: Vec<Vec<(Key, Vec<ValueId>)>> = Vec::new();
+  // What each removed operation's result became. Uses are rewritten once
+  // at the end; until then operands are read through this.
+  let mut replaced: FxHashMap<ValueId, ValueId> = FxHashMap::default();
 
   // An explicit walk: visit a block, then its children, then drop what it
   // added to the table.
@@ -87,7 +90,7 @@ pub fn run(f: &mut Func) {
         }
       },
       Step::Enter(b, mut versions) => {
-        let added = visit(f, b, &mut versions, &mut table, &mut next_version);
+        let added = visit(f, b, &mut versions, &mut table, &mut replaced, &mut next_version);
         undo.push(added);
         work.push(Step::Leave);
         for &c in children[b.0 as usize].iter().rev() {
@@ -102,6 +105,7 @@ pub fn run(f: &mut Func) {
       },
     }
   }
+  replace_all(f, &replaced);
 }
 
 fn fresh(next: &mut u32) -> Versions {
@@ -130,13 +134,17 @@ fn visit(
   b: BlockId,
   versions: &mut Versions,
   table: &mut FxHashMap<(Key, Vec<ValueId>), ValueId>,
+  replaced: &mut FxHashMap<ValueId, ValueId>,
   next: &mut u32,
 ) -> Vec<(Key, Vec<ValueId>)> {
   let mut added = Vec::new();
   let mut keep: Vec<InstId> = Vec::with_capacity(f.block(b).insts.len());
   let insts = f.block(b).insts.clone();
   for id in insts {
-    let inst = f.inst(id).clone();
+    let mut inst = f.inst(id).clone();
+    for a in &mut inst.args {
+      *a = resolve(replaced, *a);
+    }
 
     // Writes and anything that may run code invalidate what they touch.
     match &inst.op {
@@ -170,7 +178,7 @@ fn visit(
         // A guard with no result simply goes; one with a result hands
         // its uses to the earlier one.
         if let Some(r) = inst.result {
-          replace_uses(f, r, earlier);
+          replaced.insert(r, earlier);
         }
       },
       None => {
@@ -215,6 +223,9 @@ fn key_of(op: &Op, v: &Versions) -> Option<Key> {
     Op::IAdd => Key::Pure("iadd", 0),
     Op::ISub => Key::Pure("isub", 0),
     Op::IMul => Key::Pure("imul", 0),
+    Op::IBit(bit) => Key::Pure("ibit", *bit as u64),
+    Op::WrapI64 => Key::Pure("wrap_i64", 0),
+    Op::Unsaturate => Key::Pure("unsaturate", 0),
     Op::ICmp(c) => Key::Pure("icmp", *c as u64),
     Op::IsFalsey => Key::Pure("is_falsey", 0),
     Op::BNot => Key::Pure("bnot", 0),

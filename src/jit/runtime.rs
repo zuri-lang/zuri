@@ -211,6 +211,42 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
   OK
 }
 
+/// `value::num_to_wrapped_i64` on the number whose bits are given, for
+/// the values compiled code does not convert inline: those outside the
+/// `i64` range, the infinities and NaN.
+///
+/// # Safety
+///
+/// Reads nothing through its pointer.
+pub unsafe extern "C" fn zuri_jit_wrap_i64(_vm_ptr: *mut VM, bits: u64) -> u64 {
+  crate::vm::value::num_to_wrapped_i64(f64::from_bits(bits)) as u64
+}
+
+/// Marks the deoptimization about to happen as an integer bet failing, so
+/// the VM builds that site on doubles next time rather than blocking it.
+///
+/// # Safety
+///
+/// `vm_ptr` is the running VM.
+pub unsafe extern "C" fn zuri_jit_int_miss(vm_ptr: *mut VM) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_int_miss.set(true);
+  OK
+}
+
+/// Marks the deoptimization about to happen as one for code that had not
+/// run when it was compiled, so the VM throws the compiled code away
+/// without blocking the site.
+///
+/// # Safety
+///
+/// `vm_ptr` is the running VM.
+pub unsafe extern "C" fn zuri_jit_unreached(vm_ptr: *mut VM) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  vm.pending_deopt_unreached.set(true);
+  OK
+}
+
 /// Names the check a deoptimization about to happen is for, when that is
 /// not the position compiled code resumes at: a guard moved out of a
 /// loop resumes at the loop's start but belongs to its own instruction,
@@ -3191,6 +3227,9 @@ pub fn helper_table() -> Vec<HelperSpec> {
     spec2!(zuri_jit_deopt),
     spec4!(zuri_jit_deopt_inlined),
     spec3!(zuri_jit_blame),
+    spec1!(zuri_jit_unreached),
+    spec1!(zuri_jit_int_miss),
+    spec2!(zuri_jit_wrap_i64),
     spec2!(zuri_jit_ensure_registers),
     spec3!(zuri_jit_list_push),
     spec2!(zuri_jit_str_ascii),
