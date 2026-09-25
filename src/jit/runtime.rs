@@ -200,7 +200,8 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.pending_deopt_tier2.set(true);
-  let chain = unsafe { std::slice::from_raw_parts(chain as *const crate::jit::DeoptFrame, len as usize) };
+  let chain =
+    unsafe { std::slice::from_raw_parts(chain as *const crate::jit::DeoptFrame, len as usize) };
   vm.push_inlined_frames(chain);
   if crate::jit::log_enabled() {
     eprintln!(
@@ -764,7 +765,11 @@ pub unsafe extern "C" fn zuri_jit_dict_contains(
 /// optimizing tier checks this once before a loop that reads the list,
 /// instead of checking each element it reads. Reads only; cannot
 /// allocate or collect.
-pub unsafe extern "C" fn zuri_jit_list_elems_are(_vm_ptr: *mut VM, list_ptr: u64, whole: u64) -> u64 {
+pub unsafe extern "C" fn zuri_jit_list_elems_are(
+  _vm_ptr: *mut VM,
+  list_ptr: u64,
+  whole: u64,
+) -> u64 {
   let obj = unsafe { &*(list_ptr as *const crate::vm::object::Obj) };
   let crate::vm::object::Obj::List(items) = obj else {
     return 0;

@@ -42,14 +42,17 @@ const REGS_LEN_CACHE_OFFSET: i32 = vm::VM_REGS_LEN_CACHE_OFFSET as i32;
 const INTERNED_ASCII_OFFSET: i32 = vm::VM_INTERNED_ASCII_OFFSET as i32;
 const HEAP_NURSERY_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_CUR_OFFSET) as i32;
 const HEAP_NURSERY_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_NURSERY_END_OFFSET) as i32;
-const HEAP_FINALIZE_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
-const HEAP_FINALIZE_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
+const HEAP_FINALIZE_CUR_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
+const HEAP_FINALIZE_END_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
 const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
 const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_YOUNG_HEADER_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
+const HEAP_YOUNG_HEADER_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const JIT_IP_OFFSET: i32 = vm::VM_JIT_IP_OFFSET as i32;
 const GLOBAL_SLOTS_PTR_CACHE_OFFSET: i32 = vm::VM_GLOBAL_SLOTS_PTR_CACHE_OFFSET as i32;
 const HEAP_JIT_GC_NEEDED_OFFSET: i32 =
@@ -255,7 +258,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     // The IR's prologue does the dispatching.
     self.osr_param = osr_param;
-    self.fb.ins().jump(self.blocks[self.ir.entry.0 as usize], &[]);
+    self
+      .fb
+      .ins()
+      .jump(self.blocks[self.ir.entry.0 as usize], &[]);
 
     for b in self.ir.reverse_postorder() {
       self.lower_block(b)?;
@@ -328,12 +334,23 @@ impl<'a, 'b> Lowering<'a, 'b> {
       Op::Reload { reg } | Op::OsrParam(reg) => Some(self.load_reg(*reg)),
       Op::OsrIndex => Some(self.fb.ins().sextend(types::I64, self.osr_param)),
       Op::LoadGlobal(slot) => {
-        let slots = self.fb.ins().load(types::I64, flags, self.vm, GLOBAL_SLOTS_PTR_CACHE_OFFSET);
-        Some(self.fb.ins().load(types::I64, flags, slots, (*slot as i32) * 8))
+        let slots = self
+          .fb
+          .ins()
+          .load(types::I64, flags, self.vm, GLOBAL_SLOTS_PTR_CACHE_OFFSET);
+        Some(
+          self
+            .fb
+            .ins()
+            .load(types::I64, flags, slots, (*slot as i32) * 8),
+        )
       },
       Op::StoreGlobal(slot) => {
         let v = self.tagged_of(inst.args[0]);
-        let slots = self.fb.ins().load(types::I64, flags, self.vm, GLOBAL_SLOTS_PTR_CACHE_OFFSET);
+        let slots = self
+          .fb
+          .ins()
+          .load(types::I64, flags, self.vm, GLOBAL_SLOTS_PTR_CACHE_OFFSET);
         self.fb.ins().store(flags, v, slots, (*slot as i32) * 8);
         None
       },
@@ -400,7 +417,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
         Some(self.fb.ins().band(is_num, eq))
       },
       Op::ListLen => {
-        let len32 = self.fb.ins().load(types::I32, flags, av[0], object::obj_list_len_offset());
+        let len32 = self
+          .fb
+          .ins()
+          .load(types::I32, flags, av[0], object::obj_list_len_offset());
         Some(self.fb.ins().uextend(types::I64, len32))
       },
       Op::ListData => Some(self.list_data(av[0])),
@@ -425,7 +445,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       Op::LoadField(slot) => {
         let fields = self.fields_ptr(av[0]);
-        Some(self.fb.ins().load(types::I64, flags, fields, (*slot as i32) * 8))
+        Some(
+          self
+            .fb
+            .ins()
+            .load(types::I64, flags, fields, (*slot as i32) * 8),
+        )
       },
       Op::StoreField(slot) => {
         let obj = av[0];
@@ -472,16 +497,27 @@ impl<'a, 'b> Lowering<'a, 'b> {
         unreachable!("safepoints and allocations are lowered with their reloads")
       },
       Op::StrAscii => Some(self.str_ascii(av[0])),
-      Op::StrByteLen => Some(self.fb.ins().load(types::I64, flags, av[0], object::obj_str_len_offset())),
+      Op::StrByteLen => Some(self.fb.ins().load(
+        types::I64,
+        flags,
+        av[0],
+        object::obj_str_len_offset(),
+      )),
       Op::StrByte => {
-        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_str_ptr_offset());
+        let data = self
+          .fb
+          .ins()
+          .load(types::I64, flags, av[0], object::obj_str_ptr_offset());
         let addr = self.fb.ins().iadd(data, av[1]);
         let b = self.fb.ins().load(types::I8, flags, addr, 0);
         Some(self.fb.ins().uextend(types::I64, b))
       },
       Op::AsciiChar => {
         let off = self.fb.ins().imul_imm_s(av[0], 8);
-        let table = self.fb.ins().iadd_imm_s(self.vm, INTERNED_ASCII_OFFSET as i64);
+        let table = self
+          .fb
+          .ins()
+          .iadd_imm_s(self.vm, INTERNED_ASCII_OFFSET as i64);
         let addr = self.fb.ins().iadd(table, off);
         Some(self.fb.ins().load(types::I64, flags, addr, 0))
       },
@@ -500,15 +536,26 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let none = self.fb.ins().iconst(types::I64, -1);
         Some(self.fb.ins().select(usable, whole, none))
       },
-      Op::BytesLen => Some(self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_len_offset())),
+      Op::BytesLen => Some(self.fb.ins().load(
+        types::I64,
+        flags,
+        av[0],
+        object::obj_bytes_len_offset(),
+      )),
       Op::BytesLoad => {
-        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
+        let data = self
+          .fb
+          .ins()
+          .load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
         let addr = self.fb.ins().iadd(data, av[1]);
         let b = self.fb.ins().load(types::I8, flags, addr, 0);
         Some(self.fb.ins().uextend(types::I64, b))
       },
       Op::BytesStore => {
-        let data = self.fb.ins().load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
+        let data = self
+          .fb
+          .ins()
+          .load(types::I64, flags, av[0], object::obj_bytes_ptr_offset());
         let addr = self.fb.ins().iadd(data, av[1]);
         let b = self.fb.ins().ireduce(types::I8, av[2]);
         self.fb.ins().store(flags, b, addr, 0);
@@ -516,11 +563,19 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       Op::ListGetOr => Some(self.list_get_or(av[0], av[1], av[2])),
       Op::DictGet => {
-        let (d, k, fallback) = (self.tagged_of(inst.args[0]), self.tagged_of(inst.args[1]), self.tagged_of(inst.args[2]));
+        let (d, k, fallback) = (
+          self.tagged_of(inst.args[0]),
+          self.tagged_of(inst.args[1]),
+          self.tagged_of(inst.args[2]),
+        );
         Some(self.call_pure("zuri_jit_dict_get", &[self.vm, d, k, fallback]))
       },
       Op::DictSet => {
-        let (d, k, v) = (self.tagged_of(inst.args[0]), self.tagged_of(inst.args[1]), self.tagged_of(inst.args[2]));
+        let (d, k, v) = (
+          self.tagged_of(inst.args[0]),
+          self.tagged_of(inst.args[1]),
+          self.tagged_of(inst.args[2]),
+        );
         self.call_pure("zuri_jit_dict_set", &[self.vm, d, k, v]);
         None
       },
@@ -552,7 +607,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
     Ok(())
   }
 
-  fn lower_guard(&mut self, kind: GuardKind, args: &[ValueId], state: &FrameState) -> Option<IrValue> {
+  fn lower_guard(
+    &mut self,
+    kind: GuardKind,
+    args: &[ValueId],
+    state: &FrameState,
+  ) -> Option<IrValue> {
     let x = self.v(args[0]);
     let (ok, result) = match kind {
       GuardKind::Number => {
@@ -596,7 +656,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
           IntOp::Mul => self.fb.ins().smul_overflow(x, y),
         };
         let biased = self.fb.ins().iadd_imm_s(r, 1 << 53);
-        let in_range = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, biased, 1 << 54);
+        let in_range = self
+          .fb
+          .ins()
+          .icmp_imm_u(IntCC::UnsignedLessThan, biased, 1 << 54);
         let mut ok = self.fb.ins().band_not(in_range, overflow);
         if op == IntOp::Mul {
           let signs = self.fb.ins().bor(x, y);
@@ -669,15 +732,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
     frame: u16,
     state: &FrameState,
   ) -> Result<(), String> {
-    let name = generic_helper(&instr)
-      .ok_or_else(|| format!("no runtime helper for {instr:?}"))?;
+    let name = generic_helper(&instr).ok_or_else(|| format!("no runtime helper for {instr:?}"))?;
     self.publish_ip(ip, frame);
     self.flush(state);
     let (proto, offset) = self.frame(frame);
     let base = self.frame_base(frame);
     let args = self.generic_args(instr, ip, proto, base);
     let status = match instr {
-      Instr::Call { dst, func, num_args } => {
+      Instr::Call {
+        dst,
+        func,
+        num_args,
+      } => {
         let prepare = vec![
           self.vm,
           base,
@@ -756,7 +822,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// into this function, which reach past the function's own registers.
   fn ensure_registers(&mut self) {
     let flags = MemFlagsData::trusted();
-    let len = self.fb.ins().load(types::I64, flags, self.vm, REGS_LEN_CACHE_OFFSET);
+    let len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, self.vm, REGS_LEN_CACHE_OFFSET);
     let needed = self.fb.ins().iadd_imm_s(self.base, self.ir.extent as i64);
     let short = self.fb.ins().icmp(IntCC::UnsignedLessThan, len, needed);
     let grow = self.fb.create_block();
@@ -821,7 +890,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let ret = self.fb.inst_results(call)[0];
     self.refresh_regs();
     let dst_c = self.u64c(dst as u64);
-    let status = self.call("zuri_jit_call_finish", &[self.vm, base, dst_c, new_base, ret]);
+    let status = self.call(
+      "zuri_jit_call_finish",
+      &[self.vm, base, dst_c, new_base, ret],
+    );
     self.fb.ins().jump(done, &[status.into()]);
 
     self.fb.switch_to_block(slow_block);
@@ -836,9 +908,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     if let Some(slot) = self.closure_slot {
       return slot;
     }
-    let slot = self
-      .fb
-      .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+    let slot =
+      self
+        .fb
+        .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
     self.closure_slot = Some(slot);
     slot
   }
@@ -885,7 +958,13 @@ impl<'a, 'b> Lowering<'a, 'b> {
       | Instr::Le { dst, a, b }
       | Instr::Gt { dst, a, b }
       | Instr::Ge { dst, a, b } => {
-        vec![vm, base, r(self, dst as u64), r(self, a as u64), r(self, b as u64)]
+        vec![
+          vm,
+          base,
+          r(self, dst as u64),
+          r(self, a as u64),
+          r(self, b as u64),
+        ]
       },
       Instr::Neg { dst, src } | Instr::BitNot { dst, src } => {
         vec![vm, base, r(self, dst as u64), r(self, src as u64)]
@@ -900,7 +979,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let k = imm_bits(self, imm_const);
         vec![vm, base, r(self, dst as u64), r(self, a as u64), r(self, k)]
       },
-      Instr::Call { dst, func, num_args } => vec![
+      Instr::Call {
+        dst,
+        func,
+        num_args,
+      } => vec![
         vm,
         base,
         r(self, func as u64),
@@ -958,7 +1041,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         r(self, start as u64),
         r(self, count as u64),
       ],
-      Instr::GetField { dst, obj, name_const } => {
+      Instr::GetField {
+        dst,
+        obj,
+        name_const,
+      } => {
         let name = name_bits(self, name_const);
         vec![
           vm,
@@ -970,7 +1057,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
           r(self, ip as u64),
         ]
       },
-      Instr::SetField { obj, name_const, src } => {
+      Instr::SetField {
+        obj,
+        name_const,
+        src,
+      } => {
         let name = name_bits(self, name_const);
         vec![
           vm,
@@ -1146,7 +1237,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let state = inst.state.as_ref().unwrap();
     let flags = MemFlagsData::trusted();
 
-    let gc = self.fb.ins().load(types::I8, flags, self.vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let gc = self
+      .fb
+      .ins()
+      .load(types::I8, flags, self.vm, HEAP_JIT_GC_NEEDED_OFFSET);
     let owed = if self.armed {
       let hint = self.u64c(crate::modules::os_util::signal::pending_hint_addr() as u64);
       let sig = self.fb.ins().load(types::I8, flags, hint, 0);
@@ -1159,7 +1253,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let join = self.fb.create_block();
     for &r in reloads {
       let result = self.ir.inst(r).result.unwrap();
-      self.fb.append_block_param(join, cl_type(self.ir.ty(result)));
+      self
+        .fb
+        .append_block_param(join, cl_type(self.ir.ty(result)));
     }
     let kept: Vec<_> = reloads
       .iter()
@@ -1309,7 +1405,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
       self.position(frame, ip)
     };
     let v = self.u64c(position as u64);
-    self.fb.ins().store(MemFlagsData::trusted(), v, self.vm, JIT_IP_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(MemFlagsData::trusted(), v, self.vm, JIT_IP_OFFSET);
   }
 
   fn position(&mut self, frame: u16, ip: usize) -> usize {
@@ -1334,10 +1433,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
   // --- the register file -------------------------------------------------
 
   fn refresh_regs(&mut self) {
-    let p = self
-      .fb
-      .ins()
-      .load(types::I64, MemFlagsData::trusted(), self.vm, REGS_PTR_CACHE_OFFSET);
+    let p = self.fb.ins().load(
+      types::I64,
+      MemFlagsData::trusted(),
+      self.vm,
+      REGS_PTR_CACHE_OFFSET,
+    );
     self.fb.def_var(self.regs_var, p);
   }
 
@@ -1349,7 +1450,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
   fn load_reg(&mut self, r: u8) -> IrValue {
     let addr = self.reg_addr(r);
-    self.fb.ins().load(types::I64, MemFlagsData::trusted(), addr, 0)
+    self
+      .fb
+      .ins()
+      .load(types::I64, MemFlagsData::trusted(), addr, 0)
   }
 
   fn store_reg(&mut self, r: u8, v: IrValue) {
@@ -1561,10 +1665,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.switch_to_block(check);
     let flags = MemFlagsData::trusted();
     let p = self.obj_ptr(v);
-    let bits = self
-      .fb
-      .ins()
-      .load(types::I64, flags, p, object::obj_instance_class_offset() as i32);
+    let bits = self.fb.ins().load(
+      types::I64,
+      flags,
+      p,
+      object::obj_instance_class_offset() as i32,
+    );
     let class_obj = self.obj_ptr(bits);
     let (box_offset, display) = object::obj_class_display_offsets();
     let boxed = self
@@ -1651,9 +1757,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// classification when it does not yet.
   fn str_ascii(&mut self, s: IrValue) -> IrValue {
     let flags = MemFlagsData::trusted();
-    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
-    let yes = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
-    let no = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_NO as i64);
+    let form = self
+      .fb
+      .ins()
+      .load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let yes = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
+    let no = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, form, object::ASCII_NO as i64);
     let known = self.fb.ins().bor(yes, no);
     let ask = self.fb.create_block();
     let done = self.fb.create_block();
@@ -1672,15 +1787,24 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// runtime's count for anything else.
   fn str_length(&mut self, s: IrValue) -> IrValue {
     let flags = MemFlagsData::trusted();
-    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
-    let ascii = self.fb.ins().icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
+    let form = self
+      .fb
+      .ins()
+      .load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let ascii = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, form, object::ASCII_YES as i64);
     let fast = self.fb.create_block();
     let count = self.fb.create_block();
     let done = self.fb.create_block();
     self.fb.append_block_param(done, types::I64);
     self.fb.ins().brif(ascii, fast, &[], count, &[]);
     self.fb.switch_to_block(fast);
-    let len = self.fb.ins().load(types::I64, flags, s, object::obj_str_len_offset());
+    let len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, s, object::obj_str_len_offset());
     self.fb.ins().jump(done, &[len.into()]);
     self.fb.switch_to_block(count);
     let n = self.call_pure("zuri_jit_str_length", &[self.vm, s]);
@@ -1694,8 +1818,14 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// with NaN where the method raises.
   fn str_ord(&mut self, s: IrValue) -> IrValue {
     let flags = MemFlagsData::trusted();
-    let form = self.fb.ins().load(types::I8, flags, s, object::obj_str_ascii_offset());
-    let flat = self.fb.ins().icmp_imm_s(IntCC::NotEqual, form, object::STR_ROPE as i64);
+    let form = self
+      .fb
+      .ins()
+      .load(types::I8, flags, s, object::obj_str_ascii_offset());
+    let flat = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::NotEqual, form, object::STR_ROPE as i64);
     let fast = self.fb.create_block();
     let check = self.fb.create_block();
     let slow = self.fb.create_block();
@@ -1703,11 +1833,17 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.append_block_param(done, types::F64);
     self.fb.ins().brif(flat, check, &[], slow, &[]);
     self.fb.switch_to_block(check);
-    let len = self.fb.ins().load(types::I64, flags, s, object::obj_str_len_offset());
+    let len = self
+      .fb
+      .ins()
+      .load(types::I64, flags, s, object::obj_str_len_offset());
     let single = self.fb.ins().icmp_imm_s(IntCC::Equal, len, 1);
     self.fb.ins().brif(single, fast, &[], slow, &[]);
     self.fb.switch_to_block(fast);
-    let data = self.fb.ins().load(types::I64, flags, s, object::obj_str_ptr_offset());
+    let data = self
+      .fb
+      .ins()
+      .load(types::I64, flags, s, object::obj_str_ptr_offset());
     let b = self.fb.ins().load(types::I8, flags, data, 0);
     let code = self.fb.ins().uextend(types::I64, b);
     let f = self.fb.ins().fcvt_from_sint(types::F64, code);
@@ -1729,20 +1865,35 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let none = self.fb.ins().iconst(types::I64, -1);
     let is_obj = self.is_obj(v);
     let tagged = self.fb.create_block();
-    self.fb.ins().brif(is_obj, tagged, &[], done, &[none.into()]);
+    self
+      .fb
+      .ins()
+      .brif(is_obj, tagged, &[], done, &[none.into()]);
     self.fb.switch_to_block(tagged);
     let p = self.obj_ptr(v);
     let tag = self.fb.ins().load(types::I8, flags, p, 0);
     let cases: [(u8, fn(&mut Self, IrValue, IrValue) -> IrValue); 4] = [
       (object::OBJ_TAG_LIST, |l, p, _| {
-        let len32 = l.fb.ins().load(types::I32, MemFlagsData::trusted(), p, object::obj_list_len_offset());
+        let len32 = l.fb.ins().load(
+          types::I32,
+          MemFlagsData::trusted(),
+          p,
+          object::obj_list_len_offset(),
+        );
         l.fb.ins().uextend(types::I64, len32)
       }),
       (object::OBJ_TAG_STR, |l, p, _| l.str_length(p)),
       (object::OBJ_TAG_BYTES, |l, p, _| {
-        l.fb.ins().load(types::I64, MemFlagsData::trusted(), p, object::obj_bytes_len_offset())
+        l.fb.ins().load(
+          types::I64,
+          MemFlagsData::trusted(),
+          p,
+          object::obj_bytes_len_offset(),
+        )
       }),
-      (object::OBJ_TAG_DICT, |l, _, v| l.call_pure("zuri_jit_dict_len", &[l.vm, v])),
+      (object::OBJ_TAG_DICT, |l, _, v| {
+        l.call_pure("zuri_jit_dict_len", &[l.vm, v])
+      }),
     ];
     for (want, count) in cases {
       let hit = self.fb.ins().icmp_imm_s(IntCC::Equal, tag, want as i64);
@@ -1763,13 +1914,19 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// past the end there may be no buffer to read.
   fn list_get_or(&mut self, list: IrValue, idx: IrValue, fallback: IrValue) -> IrValue {
     let flags = MemFlagsData::trusted();
-    let len32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_len_offset());
+    let len32 = self
+      .fb
+      .ins()
+      .load(types::I32, flags, list, object::obj_list_len_offset());
     let len = self.fb.ins().uextend(types::I64, len32);
     let inside = self.fb.ins().icmp(IntCC::UnsignedLessThan, idx, len);
     let load = self.fb.create_block();
     let done = self.fb.create_block();
     self.fb.append_block_param(done, types::I64);
-    self.fb.ins().brif(inside, load, &[], done, &[fallback.into()]);
+    self
+      .fb
+      .ins()
+      .brif(inside, load, &[], done, &[fallback.into()]);
     self.fb.switch_to_block(load);
     let data = self.list_data(list);
     let off = self.fb.ins().imul_imm_s(idx, 8);
@@ -1812,9 +1969,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// any other), whether it counts up, and how many values it yields.
   fn range_shape(&mut self, r: IrValue) -> (IrValue, IrValue, IrValue, IrValue) {
     let flags = MemFlagsData::trusted();
-    let lower = self.fb.ins().load(types::F64, flags, r, object::obj_range_lower_offset());
-    let upper = self.fb.ins().load(types::F64, flags, r, object::obj_range_upper_offset());
-    let step = self.fb.ins().load(types::F64, flags, r, object::obj_range_step_offset());
+    let lower = self
+      .fb
+      .ins()
+      .load(types::F64, flags, r, object::obj_range_lower_offset());
+    let upper = self
+      .fb
+      .ins()
+      .load(types::F64, flags, r, object::obj_range_upper_offset());
+    let step = self
+      .fb
+      .ins()
+      .load(types::F64, flags, r, object::obj_range_step_offset());
     let zero = self.fb.ins().f64const(0.0);
     let one = self.fb.ins().f64const(1.0);
     let positive = self.fb.ins().fcmp(FloatCC::GreaterThan, step, zero);
@@ -1823,7 +1989,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let width = self.fb.ins().fabs(diff);
     let steps = self.fb.ins().fdiv(width, step);
     let count = self.fb.ins().ceil(steps);
-    let forward = self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, upper, lower);
+    let forward = self
+      .fb
+      .ins()
+      .fcmp(FloatCC::GreaterThanOrEqual, upper, lower);
     (lower, step, forward, count)
   }
 
@@ -1848,7 +2017,13 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// made the list instead and may have collected.
   fn lower_new_list(&mut self, id: InstId, reloads: &[InstId]) -> Result<(), String> {
     let inst = self.ir.inst(id).clone();
-    let Op::NewList { dst, start, count, frame } = inst.op else {
+    let Op::NewList {
+      dst,
+      start,
+      count,
+      frame,
+    } = inst.op
+    else {
       unreachable!()
     };
     let state = inst.state.as_ref().unwrap();
@@ -1860,15 +2035,29 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.append_block_param(join, types::I64);
     for &r in reloads {
       let result = self.ir.inst(r).result.unwrap();
-      self.fb.append_block_param(join, cl_type(self.ir.ty(result)));
+      self
+        .fb
+        .append_block_param(join, cl_type(self.ir.ty(result)));
     }
 
     // Room in the nursery, and on the finalization list every list joins
     // since it may spill to a buffer of its own later.
-    let cur = self.fb.ins().load(types::I64, flags, vm, HEAP_NURSERY_CUR_OFFSET);
-    let end = self.fb.ins().load(types::I64, flags, vm, HEAP_NURSERY_END_OFFSET);
-    let fcur = self.fb.ins().load(types::I64, flags, vm, HEAP_FINALIZE_CUR_OFFSET);
-    let fend = self.fb.ins().load(types::I64, flags, vm, HEAP_FINALIZE_END_OFFSET);
+    let cur = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_NURSERY_CUR_OFFSET);
+    let end = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_NURSERY_END_OFFSET);
+    let fcur = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_FINALIZE_CUR_OFFSET);
+    let fend = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_FINALIZE_END_OFFSET);
     let full = self.fb.ins().icmp(IntCC::Equal, cur, end);
     let fin_full = self.fb.ins().icmp(IntCC::Equal, fcur, fend);
     let no_room = self.fb.ins().bor(full, fin_full);
@@ -1878,26 +2067,53 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.switch_to_block(fast);
     let size = 48 + count as i64 * 8;
     let next = self.fb.ins().iadd_imm_s(cur, 64);
-    self.fb.ins().store(flags, next, vm, HEAP_NURSERY_CUR_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, next, vm, HEAP_NURSERY_CUR_OFFSET);
     self.fb.ins().store(flags, cur, fcur, 0);
     let fnext = self.fb.ins().iadd_imm_s(fcur, 8);
-    self.fb.ins().store(flags, fnext, vm, HEAP_FINALIZE_CUR_OFFSET);
-    for (offset, delta) in [(HEAP_LIVE_COUNT_OFFSET, 1), (HEAP_BYTES_ALLOCATED_OFFSET, size)] {
+    self
+      .fb
+      .ins()
+      .store(flags, fnext, vm, HEAP_FINALIZE_CUR_OFFSET);
+    for (offset, delta) in [
+      (HEAP_LIVE_COUNT_OFFSET, 1),
+      (HEAP_BYTES_ALLOCATED_OFFSET, size),
+    ] {
       let old = self.fb.ins().load(types::I64, flags, vm, offset);
       let new = self.fb.ins().iadd_imm_s(old, delta);
       self.fb.ins().store(flags, new, vm, offset);
     }
-    let young = self.fb.ins().load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let young = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
     let young = self.fb.ins().iadd_imm_s(young, size);
-    self.fb.ins().store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
     // Owe a collection once the young budget is spent; the next
     // safepoint pays it.
     let budget = self.u64c(self.ir.young_budget);
-    let owed = self.fb.ins().icmp(IntCC::UnsignedGreaterThan, young, budget);
-    let flag = self.fb.ins().load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let owed = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThan, young, budget);
+    let flag = self
+      .fb
+      .ins()
+      .load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
     let flag = self.fb.ins().bor(flag, owed);
-    self.fb.ins().store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-    let header = self.fb.ins().load(types::I64, flags, vm, HEAP_YOUNG_HEADER_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    let header = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_HEADER_OFFSET);
     self.fb.ins().store(flags, header, cur, 0);
     let zero = self.u64c(0);
     self.fb.ins().store(flags, zero, cur, 8);
@@ -1931,7 +2147,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.publish_ip(state.ip, frame);
     self.flush(state);
     let base = self.frame_base(frame);
-    let (dst_c, start_c, count_c) = (self.u64c(dst as u64), self.u64c(start as u64), self.u64c(count as u64));
+    let (dst_c, start_c, count_c) = (
+      self.u64c(dst as u64),
+      self.u64c(start as u64),
+      self.u64c(count as u64),
+    );
     let status = self.call("zuri_jit_make_list", &[vm, base, dst_c, start_c, count_c]);
     self.leave_on_error(status);
     self.refresh_regs();
@@ -1964,7 +2184,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let done = self.fb.create_block();
     self.fb.append_block_param(done, types::I8);
     let no = self.fb.ins().iconst(types::I8, 0);
-    self.fb.ins().brif(is_closure, check, &[], done, &[no.into()]);
+    self
+      .fb
+      .ins()
+      .brif(is_closure, check, &[], done, &[no.into()]);
     self.fb.switch_to_block(check);
     let p = self.obj_ptr(v);
     let function = self.fb.ins().load(
@@ -1994,9 +2217,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.switch_to_block(obj_block);
     let p = self.obj_ptr(v);
     let tag8 = self.fb.ins().load(types::I8, MemFlagsData::trusted(), p, 0);
-    let is_str = self.fb.ins().icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_STR as i64);
-    let is_bytes = self.fb.ins().icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_BYTES as i64);
-    let is_big = self.fb.ins().icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_BIGINT as i64);
+    let is_str = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_STR as i64);
+    let is_bytes = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_BYTES as i64);
+    let is_big = self
+      .fb
+      .ins()
+      .icmp_imm_s(IntCC::Equal, tag8, object::OBJ_TAG_BIGINT as i64);
     let a = self.fb.ins().bor(is_str, is_bytes);
     let maybe = self.fb.ins().bor(a, is_big);
     let ask = self.fb.create_block();
@@ -2050,7 +2282,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let oa = self.is_obj(a);
     let ob = self.is_obj(b);
     let both_obj = self.fb.ins().band(oa, ob);
-    self.fb.ins().brif(both_obj, obj_block, &[], bits_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(both_obj, obj_block, &[], bits_block, &[]);
 
     self.fb.switch_to_block(obj_block);
     let r = self.call_pure("zuri_jit_values_equal", &[self.vm, a, b]);
@@ -2160,14 +2395,17 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// itself when closed, the absolute register index when open.
   fn upval_state(&mut self, cell: IrValue) -> (IrValue, IrValue) {
     let flags = MemFlagsData::trusted();
-    let tag = self
-      .fb
-      .ins()
-      .load(types::I8, flags, cell, object::obj_upvalue_state_tag_offset() as i32);
-    let closed = self
-      .fb
-      .ins()
-      .icmp_imm_s(IntCC::Equal, tag, object::UPVALUE_STATE_TAG_CLOSED as i64);
+    let tag = self.fb.ins().load(
+      types::I8,
+      flags,
+      cell,
+      object::obj_upvalue_state_tag_offset() as i32,
+    );
+    let closed =
+      self
+        .fb
+        .ins()
+        .icmp_imm_s(IntCC::Equal, tag, object::UPVALUE_STATE_TAG_CLOSED as i64);
     let payload = self.fb.ins().load(
       types::I64,
       flags,
@@ -2189,10 +2427,16 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let open = self.fb.create_block();
     let done = self.fb.create_block();
     self.fb.append_block_param(done, types::I64);
-    self.fb.ins().brif(closed, done, &[payload.into()], open, &[]);
+    self
+      .fb
+      .ins()
+      .brif(closed, done, &[payload.into()], open, &[]);
     self.fb.switch_to_block(open);
     let addr = self.open_upval_addr(payload);
-    let v = self.fb.ins().load(types::I64, MemFlagsData::trusted(), addr, 0);
+    let v = self
+      .fb
+      .ins()
+      .load(types::I64, MemFlagsData::trusted(), addr, 0);
     self.fb.ins().jump(done, &[v.into()]);
     self.fb.switch_to_block(done);
     self.fb.block_params(done)[0]
@@ -2227,10 +2471,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// A list's first or last element, or nil when it is empty. The load
   /// sits behind a real branch: an empty list's buffer may not exist.
   fn list_end(&mut self, list: IrValue, last: bool) -> IrValue {
-    let len32 = self
-      .fb
-      .ins()
-      .load(types::I32, MemFlagsData::trusted(), list, object::obj_list_len_offset());
+    let len32 = self.fb.ins().load(
+      types::I32,
+      MemFlagsData::trusted(),
+      list,
+      object::obj_list_len_offset(),
+    );
     let len = self.fb.ins().uextend(types::I64, len32);
     let elem = self.fb.create_block();
     let done = self.fb.create_block();
@@ -2246,7 +2492,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
     } else {
       data
     };
-    let v = self.fb.ins().load(types::I64, MemFlagsData::trusted(), addr, 0);
+    let v = self
+      .fb
+      .ins()
+      .load(types::I64, MemFlagsData::trusted(), addr, 0);
     self.fb.ins().jump(done, &[v.into()]);
     self.fb.switch_to_block(done);
     self.fb.block_params(done)[0]
@@ -2257,10 +2506,19 @@ impl<'a, 'b> Lowering<'a, 'b> {
   fn list_append(&mut self, list: IrValue, item: ValueId) {
     let flags = MemFlagsData::trusted();
     let val = self.tagged_of(item);
-    let len32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_len_offset());
+    let len32 = self
+      .fb
+      .ins()
+      .load(types::I32, flags, list, object::obj_list_len_offset());
     let len = self.fb.ins().uextend(types::I64, len32);
-    let heap = self.fb.ins().load(types::I64, flags, list, object::obj_list_ptr_offset());
-    let cap32 = self.fb.ins().load(types::I32, flags, list, object::obj_list_cap_offset());
+    let heap = self
+      .fb
+      .ins()
+      .load(types::I64, flags, list, object::obj_list_ptr_offset());
+    let cap32 = self
+      .fb
+      .ins()
+      .load(types::I32, flags, list, object::obj_list_cap_offset());
     let cap = self.fb.ins().uextend(types::I64, cap32);
     let inline_cap = self.u64c(crate::vm::list::INLINE_CAP as u64);
     let zero = self.fb.ins().iconst(types::I64, 0);
@@ -2274,14 +2532,20 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(fits, store, &[], grow, &[]);
 
     self.fb.switch_to_block(store);
-    let inline = self.fb.ins().iadd_imm_s(list, object::obj_list_inline_offset() as i64);
+    let inline = self
+      .fb
+      .ins()
+      .iadd_imm_s(list, object::obj_list_inline_offset() as i64);
     let data = self.fb.ins().select(is_inline, inline, heap);
     let off = self.fb.ins().imul_imm_s(len, 8);
     let addr = self.fb.ins().iadd(data, off);
     self.fb.ins().store(flags, val, addr, 0);
     let new_len = self.fb.ins().iadd_imm_s(len, 1);
     let new_len32 = self.fb.ins().ireduce(types::I32, new_len);
-    self.fb.ins().store(flags, new_len32, list, object::obj_list_len_offset());
+    self
+      .fb
+      .ins()
+      .store(flags, new_len32, list, object::obj_list_len_offset());
     self.barrier_for_store(item, val, list);
     self.fb.ins().jump(done, &[]);
 
@@ -2301,7 +2565,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
       list,
       object::obj_list_ptr_offset(),
     );
-    let inline = self.fb.ins().iadd_imm_s(list, object::obj_list_inline_offset() as i64);
+    let inline = self
+      .fb
+      .ins()
+      .iadd_imm_s(list, object::obj_list_inline_offset() as i64);
     let zero = self.fb.ins().iconst(types::I64, 0);
     let is_inline = self.fb.ins().icmp(IntCC::Equal, heap, zero);
     self.fb.ins().select(is_inline, inline, heap)
@@ -2364,10 +2631,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
       container,
       object::obj_to_gcbox_remembered_offset(),
     );
-    let is_old = self
-      .fb
-      .ins()
-      .icmp_imm_s(IntCC::Equal, generation, object::GENERATION_OLD_BYTE as i64);
+    let is_old =
+      self
+        .fb
+        .ins()
+        .icmp_imm_s(IntCC::Equal, generation, object::GENERATION_OLD_BYTE as i64);
     let fresh = self.fb.ins().icmp_imm_s(IntCC::Equal, remembered, 0);
     let owed = self.fb.ins().band(is_old, fresh);
     self.fb.ins().brif(owed, barrier, &[], done, &[]);

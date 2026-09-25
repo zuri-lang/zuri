@@ -90,7 +90,14 @@ pub fn run(f: &mut Func) {
         }
       },
       Step::Enter(b, mut versions) => {
-        let added = visit(f, b, &mut versions, &mut table, &mut replaced, &mut next_version);
+        let added = visit(
+          f,
+          b,
+          &mut versions,
+          &mut table,
+          &mut replaced,
+          &mut next_version,
+        );
         undo.push(added);
         work.push(Step::Leave);
         for &c in children[b.0 as usize].iter().rev() {

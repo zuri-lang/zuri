@@ -64,7 +64,8 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
 
 fn check(f: &Func, after: &str) -> Result<(), String> {
   if cfg!(debug_assertions) {
-    f.verify().map_err(|e| format!("invalid IR after {after}: {e}"))?;
+    f.verify()
+      .map_err(|e| format!("invalid IR after {after}: {e}"))?;
   }
   Ok(())
 }
@@ -207,7 +208,10 @@ pub fn dce(f: &mut Func) {
 
   for bi in 0..f.blocks.len() {
     let insts = std::mem::take(&mut f.blocks[bi].insts);
-    f.blocks[bi].insts = insts.into_iter().filter(|&i| live_inst[i.0 as usize]).collect();
+    f.blocks[bi].insts = insts
+      .into_iter()
+      .filter(|&i| live_inst[i.0 as usize])
+      .collect();
   }
 
   // Dead parameters go from each block and from every edge into it.

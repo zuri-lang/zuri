@@ -2677,7 +2677,9 @@ impl VM {
     }
     self.pending_jit_compiles.push(proto_value);
     if !callees.is_empty() {
-      self.pending_jit_callees.push((proto as *const ObjFunction as usize, callees));
+      self
+        .pending_jit_callees
+        .push((proto as *const ObjFunction as usize, callees));
     }
     let sent = if let Some((job_tx, _, reply_tx, pending)) = &self.shared_compiler {
       let job = background::CompileJob {
@@ -2914,7 +2916,10 @@ impl VM {
       let instr = &proto.chunk.code[at];
       if matches!(
         instr,
-        Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } | Instr::Return { .. }
+        Instr::Jmp { .. }
+          | Instr::JmpIfFalse { .. }
+          | Instr::JmpIfTrue { .. }
+          | Instr::Return { .. }
       ) {
         return None;
       }

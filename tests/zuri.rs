@@ -597,10 +597,7 @@ mod launch {
   #[test]
   fn a_shipped_command_wins_over_a_project_one() {
     let dir = case("command_precedence");
-    write(
-      &dir.join(".zuri/cmds/fmt.zu"),
-      "echo 'the project copy'\n",
-    );
+    write(&dir.join(".zuri/cmds/fmt.zu"), "echo 'the project copy'\n");
 
     let output = zuri(&dir, &["fmt", "--help"]);
     let text = combined(&output);
@@ -1007,7 +1004,9 @@ mod init_command {
 
     let output = zuri(
       &dir,
-      &["init", "--yes", "--vcs", "none", "--force", "--name", "second"],
+      &[
+        "init", "--yes", "--vcs", "none", "--force", "--name", "second",
+      ],
     );
 
     let text = combined(&output);

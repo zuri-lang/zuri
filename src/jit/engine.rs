@@ -195,7 +195,11 @@ impl JitEngine {
       osr_ids
     };
     if crate::jit::log_ir_enabled() {
-      eprintln!("[jit] tier 2 Cranelift IR for '{}':\n{}", proto.name, ctx.func.display());
+      eprintln!(
+        "[jit] tier 2 Cranelift IR for '{}':\n{}",
+        proto.name,
+        ctx.func.display()
+      );
     }
     if crate::jit::log_asm_enabled() {
       self.asm_labels.insert(func_id, Self::asm_label(proto));

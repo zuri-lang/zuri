@@ -32,7 +32,9 @@ pub fn run(f: &mut Func, feedback: &Feedback) {
   }
   let loops = loops::find(f);
   for (i, lp) in loops.iter().enumerate() {
-    let nested = loops[i + 1..].iter().any(|outer| outer.body.contains(&lp.header));
+    let nested = loops[i + 1..]
+      .iter()
+      .any(|outer| outer.body.contains(&lp.header));
     if nested {
       continue;
     }
@@ -59,7 +61,13 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
     return;
   };
   let leaves_early = lp.body.iter().any(|&b| {
-    b != lp.header && f.block(b).term.successors().iter().any(|s| !lp.body.contains(s))
+    b != lp.header
+      && f
+        .block(b)
+        .term
+        .successors()
+        .iter()
+        .any(|s| !lp.body.contains(s))
   });
   if leaves_early {
     return;
@@ -151,7 +159,14 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
     pos += 1;
     for other in distinct {
       let differ = f
-        .insert(preheader, pos, Op::ICmp(Cmp::Ne), vec![list, other], Some(Ty::Bool), None)
+        .insert(
+          preheader,
+          pos,
+          Op::ICmp(Cmp::Ne),
+          vec![list, other],
+          Some(Ty::Bool),
+          None,
+        )
         .unwrap();
       f.insert(
         preheader,
@@ -174,7 +189,9 @@ fn claim(f: &mut Func, lp: &Loop, header_ip: usize) {
       } else {
         let block = block_of(f, g);
         let at = f.block(block).insts.iter().position(|&i| i == g).unwrap();
-        let num = f.insert(block, at, Op::UnboxF64, vec![elem], Some(Ty::F64), None).unwrap();
+        let num = f
+          .insert(block, at, Op::UnboxF64, vec![elem], Some(Ty::F64), None)
+          .unwrap();
         let inst = &mut f.insts[g.0 as usize];
         inst.op = Op::F64ToI64;
         inst.args = vec![num];

@@ -18,7 +18,7 @@
 use rustc_hash::FxHashSet;
 
 use super::replace_uses;
-use crate::jit::ir::{BlockId, FrameState, Func, GuardKind, Op, Ty, ValueId, ValueDef};
+use crate::jit::ir::{BlockId, FrameState, Func, GuardKind, Op, Ty, ValueDef, ValueId};
 
 pub fn run(f: &mut Func) {
   let preds = f.predecessors();
@@ -84,7 +84,9 @@ pub fn run(f: &mut Func) {
   for &p in &chosen {
     f.values[p.0 as usize].ty = Ty::F64;
     let (b, _) = param_position(f, p);
-    let boxed = f.insert(b, 0, Op::BoxF64, vec![p], Some(Ty::Tagged), None).unwrap();
+    let boxed = f
+      .insert(b, 0, Op::BoxF64, vec![p], Some(Ty::Tagged), None)
+      .unwrap();
     replace_uses(f, p, boxed);
     // `replace_uses` also rewrote the box's own operand.
     let box_inst = f.def_inst_id(boxed).unwrap();
@@ -109,7 +111,8 @@ pub fn run(f: &mut Func) {
           Source::Boxed => f.def_inst(v).unwrap().args[0],
           Source::Const(x) => {
             let pos = f.block(pred).insts.len();
-            f.insert(pred, pos, Op::ConstF64(x), vec![], Some(Ty::F64), None).unwrap()
+            f.insert(pred, pos, Op::ConstF64(x), vec![], Some(Ty::F64), None)
+              .unwrap()
           },
           Source::Param if f.ty(v) == Ty::F64 => v,
           _ => {
@@ -200,7 +203,12 @@ fn param_position(f: &Func, p: ValueId) -> (BlockId, usize) {
     ValueDef::Param(b, k) => {
       // Parameters can have been removed ahead of this one since it was
       // made, so find it by value rather than trusting the index.
-      let k = f.block(b).params.iter().position(|&x| x == p).unwrap_or(k as usize);
+      let k = f
+        .block(b)
+        .params
+        .iter()
+        .position(|&x| x == p)
+        .unwrap_or(k as usize);
       (b, k)
     },
     ValueDef::Inst(_) => unreachable!("not a block parameter"),

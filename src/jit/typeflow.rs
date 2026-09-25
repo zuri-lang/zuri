@@ -4535,8 +4535,7 @@ mod ref_classify_tests {
     // r0 comes from an unprovable GetGlobal; Add could hit the
     // bigint/string/list/operator-override path, so its result must
     // NOT be proven non-ref.
-    let name_val: &'static Obj =
-      Box::leak(Box::new(Obj::string("g".to_string())));
+    let name_val: &'static Obj = Box::leak(Box::new(Obj::string("g".to_string())));
     let name_val = Value::obj(name_val as *const Obj);
     let code = vec![
       Instr::GetGlobal {
@@ -4561,8 +4560,7 @@ mod ref_classify_tests {
 
   #[test]
   fn global_numeric_flow_proves_add_nonref() {
-    let name_val: &'static Obj =
-      Box::leak(Box::new(Obj::string("g".to_string())));
+    let name_val: &'static Obj = Box::leak(Box::new(Obj::string("g".to_string())));
     let name_val = Value::obj(name_val as *const Obj);
     let code = vec![
       Instr::LoadConst {

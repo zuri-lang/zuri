@@ -326,7 +326,9 @@ pub enum Op {
   /// that may have collected. Its one operand is the value it replaces,
   /// so whatever was known about that value's kind carries over; a
   /// collection moves objects but never changes what kind they are.
-  Reload { reg: u8 },
+  Reload {
+    reg: u8,
+  },
 
   /// A global from `VM::global_slots`, by the slot the interpreter
   /// resolved it to.
@@ -410,7 +412,9 @@ pub enum Op {
   LoadElem,
   /// A list's first element, or its last with `last` set, or nil when it
   /// has none. Operand: list pointer.
-  ListEnd { last: bool },
+  ListEnd {
+    last: bool,
+  },
   /// `append()`: adds a value to the end of a list, growing it when it
   /// is full, and runs the write barrier. Growing takes memory outside
   /// the collected heap, so it never collects. Operands: list pointer,
@@ -493,7 +497,12 @@ pub enum Op {
   /// collect, so the reloads after it read memory only then. `dst`,
   /// `start` and `count` are the `MakeList` instruction's own, in
   /// `frame`. Operands: the elements.
-  NewList { dst: u8, start: u8, count: u8, frame: u16 },
+  NewList {
+    dst: u8,
+    start: u8,
+    count: u8,
+    frame: u16,
+  },
 
   /// Writes a register straight to the register file. A register some
   /// closure here captures is read there by the closure, so every value
@@ -512,7 +521,11 @@ pub enum Op {
   /// function, giving the target position or `USING_NO_MATCH`. The
   /// subject is written to register `reg` first, where the runtime reads
   /// it. Operand: the subject.
-  UsingTarget { table: u16, reg: u8, frame: u16 },
+  UsingTarget {
+    table: u16,
+    reg: u8,
+    frame: u16,
+  },
 
   /// Runs one bytecode instruction of `frame`'s function through the
   /// runtime helper the baseline tier uses for it. The frame state's
@@ -521,7 +534,11 @@ pub enum Op {
   /// read back afterwards. `ip` is the instruction's own position, which
   /// some helpers need to find their inline cache. The instruction's
   /// registers are numbered from `frame`'s register 0.
-  Generic { instr: Instr, ip: usize, frame: u16 },
+  Generic {
+    instr: Instr,
+    ip: usize,
+    frame: u16,
+  },
 
   /// A GC and signal safepoint.
   Safepoint,
@@ -538,7 +555,10 @@ impl Op {
   /// Every value derived from a heap pointer before one of these is
   /// stale after it.
   pub fn may_collect(&self) -> bool {
-    matches!(self, Op::Generic { .. } | Op::Safepoint | Op::NewList { .. })
+    matches!(
+      self,
+      Op::Generic { .. } | Op::Safepoint | Op::NewList { .. }
+    )
   }
 
   /// Whether this operation reads or writes memory another operation
@@ -617,7 +637,10 @@ pub struct Inst {
 
 #[derive(Clone, Debug)]
 pub enum Terminator {
-  Jump { target: BlockId, args: Vec<ValueId> },
+  Jump {
+    target: BlockId,
+    args: Vec<ValueId>,
+  },
   Branch {
     cond: ValueId,
     then_block: BlockId,
@@ -781,8 +804,12 @@ impl Func {
   /// and the registers whose parameters were folded away.
   pub fn entry_regs(&self, b: BlockId, values: &[ValueId]) -> Vec<(u8, ValueId)> {
     let block = self.block(b);
-    let mut regs: Vec<(u8, ValueId)> =
-      block.param_regs.iter().copied().zip(values.iter().copied()).collect();
+    let mut regs: Vec<(u8, ValueId)> = block
+      .param_regs
+      .iter()
+      .copied()
+      .zip(values.iter().copied())
+      .collect();
     regs.extend(block.fixed_regs.iter().copied());
     regs.sort_unstable_by_key(|&(r, _)| r);
     regs
@@ -1012,7 +1039,10 @@ impl Func {
       };
       if db == user {
         if def_pos[v.0 as usize] > pos {
-          return Err(format!("v{} used in b{} before its definition", v.0, user.0));
+          return Err(format!(
+            "v{} used in b{} before its definition",
+            v.0, user.0
+          ));
         }
         return Ok(());
       }

@@ -32,7 +32,10 @@ pub fn run(f: &mut Func) {
 
   // The loop nest as the ordinary entry sees it. With the entry blocks
   // leading nowhere for the moment, every loop has one way in.
-  let saved: Vec<Terminator> = entries.iter().map(|&(_, b)| f.block(b).term.clone()).collect();
+  let saved: Vec<Terminator> = entries
+    .iter()
+    .map(|&(_, b)| f.block(b).term.clone())
+    .collect();
   for &(_, b) in &entries {
     f.block_mut(b).term = Terminator::Deopt(FrameState::root(0, Vec::new()));
   }
@@ -121,7 +124,11 @@ impl<'f> Copier<'f> {
       Part::Whole(j) if within(j) => (Part::Whole(j), target),
       Part::Rest(j) if target == self.headers[j] => (Part::Whole(j), target),
       Part::Rest(j) if within(j) => (Part::Rest(j), target),
-      Part::After if self.levels.iter().all(|l| !l.contains(&from)) && within(0) && target == self.headers[0] => {
+      Part::After
+        if self.levels.iter().all(|l| !l.contains(&from))
+          && within(0)
+          && target == self.headers[0] =>
+      {
         (Part::Whole(0), target)
       },
       Part::After => (Part::After, target),
@@ -202,7 +209,8 @@ impl<'f> Copier<'f> {
   /// on the way in: a whole loop's copy for the rest of its iteration,
   /// the enclosing levels after that, then the blocks outside every loop.
   fn remap_values(&mut self) {
-    let copies: Vec<((Part, BlockId), BlockId)> = self.blocks.iter().map(|(&k, &v)| (k, v)).collect();
+    let copies: Vec<((Part, BlockId), BlockId)> =
+      self.blocks.iter().map(|(&k, &v)| (k, v)).collect();
     for ((part, _), c) in copies {
       let order = self.lookup_order(part);
       let values = &self.values;
@@ -225,7 +233,13 @@ impl<'f> Copier<'f> {
           inst.state = Some(map_state(s));
         }
       }
-      let fixed = self.f.block(c).fixed_regs.iter().map(|&(r, v)| (r, map(v))).collect();
+      let fixed = self
+        .f
+        .block(c)
+        .fixed_regs
+        .iter()
+        .map(|&(r, v)| (r, map(v)))
+        .collect();
       self.f.block_mut(c).fixed_regs = fixed;
       let term = match self.f.block(c).term.clone() {
         Terminator::Jump { target, args } => Terminator::Jump {

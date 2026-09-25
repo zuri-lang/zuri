@@ -166,7 +166,9 @@ pub fn inline_position(position: usize) -> Option<Vec<(usize, usize)>> {
     return None;
   }
   let positions = INLINE_POSITIONS.lock().unwrap_or_else(|e| e.into_inner());
-  positions.get(position & !INLINE_POSITION).map(|spots| spots.to_vec())
+  positions
+    .get(position & !INLINE_POSITION)
+    .map(|spots| spots.to_vec())
 }
 
 pub fn log_facts_enabled() -> bool {

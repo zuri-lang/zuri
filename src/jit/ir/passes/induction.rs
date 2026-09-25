@@ -208,7 +208,11 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
   let whole = guards
     .iter()
     .any(|&g| matches!(f.inst(g).op, Op::Guard(GuardKind::Whole)));
-  let start_kind = if whole { GuardKind::Whole } else { GuardKind::Int };
+  let start_kind = if whole {
+    GuardKind::Whole
+  } else {
+    GuardKind::Int
+  };
   let start = pre.start;
   let start_int = pre.guard_value(f, start_kind, vec![start], Ty::I64);
   let low = pre.push(f, Op::ConstI64(-(EXACT_LIMIT as i64)), vec![], Ty::I64);
@@ -253,7 +257,9 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
         },
         None => {
           let pos = f.block(latch).insts.len();
-          let k = f.insert(latch, pos, Op::ConstI64(step), vec![], Some(Ty::I64), None).unwrap();
+          let k = f
+            .insert(latch, pos, Op::ConstI64(step), vec![], Some(Ty::I64), None)
+            .unwrap();
           f.insert(latch, pos + 1, Op::IAdd, vec![twin, k], Some(Ty::I64), None)
             .unwrap()
         },
@@ -272,7 +278,9 @@ fn rewrite(f: &mut Func, lp: &Loop, c: &Counter, header_ip: usize) {
       f.blocks[b].insts.retain(|&i| i != g);
     }
   }
-  let as_float = f.insert(header, 0, Op::IntToF64, vec![twin], Some(Ty::F64), None).unwrap();
+  let as_float = f
+    .insert(header, 0, Op::IntToF64, vec![twin], Some(Ty::F64), None)
+    .unwrap();
   replace_uses(f, c.param, as_float);
   // A frame state holds the integer itself: leaving compiled code boxes
   // it as a number anyway, so the conversion only runs where something
@@ -349,7 +357,12 @@ fn remove_bounds_checks(
   // often the counter wrapped against the length. A counter this proves
   // never negative wraps to itself.
   let mut unwrapped: Vec<(ValueId, ValueId)> = Vec::new();
-  let blocks: Vec<BlockId> = lp.body.iter().copied().filter(|&b| b != lp.header).collect();
+  let blocks: Vec<BlockId> = lp
+    .body
+    .iter()
+    .copied()
+    .filter(|&b| b != lp.header)
+    .collect();
   for b in blocks {
     let mut keep = Vec::with_capacity(f.block(b).insts.len());
     for i in f.block(b).insts.clone() {
@@ -472,13 +485,27 @@ impl Preheader {
 
   fn guard(&mut self, f: &mut Func, kind: GuardKind, args: Vec<ValueId>) {
     let pos = f.block(self.block).insts.len();
-    f.insert(self.block, pos, Op::Guard(kind), args, None, Some(self.state.clone()));
+    f.insert(
+      self.block,
+      pos,
+      Op::Guard(kind),
+      args,
+      None,
+      Some(self.state.clone()),
+    );
   }
 
   fn guard_value(&mut self, f: &mut Func, kind: GuardKind, args: Vec<ValueId>, ty: Ty) -> ValueId {
     let pos = f.block(self.block).insts.len();
-    f.insert(self.block, pos, Op::Guard(kind), args, Some(ty), Some(self.state.clone()))
-      .unwrap()
+    f.insert(
+      self.block,
+      pos,
+      Op::Guard(kind),
+      args,
+      Some(ty),
+      Some(self.state.clone()),
+    )
+    .unwrap()
   }
 }
 
@@ -491,7 +518,9 @@ fn bound_in_range(f: &Func, c: &Counter) -> bool {
   match def.op {
     Op::ConstF64(x) => x.abs() <= EXACT_LIMIT,
     // A list's length.
-    Op::IntToF64 => f.def_inst(def.args[0]).is_some_and(|d| matches!(d.op, Op::ListLen)),
+    Op::IntToF64 => f
+      .def_inst(def.args[0])
+      .is_some_and(|d| matches!(d.op, Op::ListLen)),
     _ => false,
   }
 }
@@ -540,7 +569,9 @@ fn checked_step(f: &Func, v: ValueId) -> Option<InstId> {
 /// What an integer guard converted, when `v` is one's result.
 fn int_counter(f: &Func, v: ValueId) -> ValueId {
   match f.def_inst(v) {
-    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => strip_box(f, g.args[0]),
+    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => {
+      strip_box(f, g.args[0])
+    },
     _ => v,
   }
 }
@@ -562,7 +593,9 @@ fn as_counter(f: &Func, v: ValueId) -> ValueId {
     return v;
   }
   match f.def_inst(def.args[0]) {
-    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => strip_box(f, g.args[0]),
+    Some(g) if matches!(g.op, Op::Guard(GuardKind::Int | GuardKind::Whole)) => {
+      strip_box(f, g.args[0])
+    },
     _ => v,
   }
 }

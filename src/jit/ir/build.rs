@@ -32,10 +32,10 @@ use super::{
   BitOp, BlockId, Cmp, FTest, FUnary, FrameClosure, FrameState, Func, GuardKind, InlineFrame,
   IntOp, NO_VALUE, Op, Terminator, Ty, ValueId,
 };
-use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_DICT, OBJ_TAG_RANGE, OBJ_TAG_STR};
 use crate::jit::typeflow;
 use crate::vm::chunk::{Instr, ParamType, kind};
 use crate::vm::object::ObjFunction;
+use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_DICT, OBJ_TAG_RANGE, OBJ_TAG_STR};
 use crate::vm::value::{self, Value};
 
 /// Everything the builder reads from the interpreter's caches, copied
@@ -297,7 +297,10 @@ impl<'a> Builder<'a> {
     Ok(Builder {
       cx,
       func_feedback: feedback,
-      func: Func::new(proto.num_registers as usize, proto as *const ObjFunction as usize),
+      func: Func::new(
+        proto.num_registers as usize,
+        proto as *const ObjFunction as usize,
+      ),
       param_regs: FxHashMap::default(),
       regs: vec![RegView::EMPTY; REGISTER_LIMIT],
       block: BlockId(0),
@@ -339,7 +342,12 @@ impl<'a> Builder<'a> {
   /// registers as parameters.
   fn leader(&mut self, ip: usize) -> BlockId {
     let b = self.new_block(Some(ip));
-    let mut regs: Vec<u8> = self.cx.live.live_regs_at(ip).map(|r| self.cx.offset + r).collect();
+    let mut regs: Vec<u8> = self
+      .cx
+      .live
+      .live_regs_at(ip)
+      .map(|r| self.cx.offset + r)
+      .collect();
     regs.extend(self.cx.outer.iter().copied());
     for _ in &regs {
       self.func.add_block_param(b, Ty::Tagged);
@@ -376,7 +384,12 @@ impl<'a> Builder<'a> {
       self.cx.leader_block.insert(ip, b);
     }
     self.func.osr_ids = osr_ids;
-    let mut osr: Vec<(usize, i32)> = self.func.osr_ids.iter().map(|(&ip, &id)| (ip, id)).collect();
+    let mut osr: Vec<(usize, i32)> = self
+      .func
+      .osr_ids
+      .iter()
+      .map(|(&ip, &id)| (ip, id))
+      .collect();
     osr.sort_unstable_by_key(|&(_, id)| id);
 
     // The prologue sends an ordinary call to the first instruction and an
@@ -401,7 +414,9 @@ impl<'a> Builder<'a> {
     self.block = ordinary_entry;
     let mut args = Vec::new();
     for &r in &self.param_regs[&first].clone() {
-      let v = self.push(Op::Param(r), vec![], Some(Ty::Tagged), None).unwrap();
+      let v = self
+        .push(Op::Param(r), vec![], Some(Ty::Tagged), None)
+        .unwrap();
       // An argument can arrive in a machine register rather than the
       // register file, where a closure capturing it would look.
       if self.captured[r as usize] {
@@ -409,7 +424,13 @@ impl<'a> Builder<'a> {
       }
       args.push(v);
     }
-    self.func.set_term(ordinary_entry, Terminator::Jump { target: first, args });
+    self.func.set_term(
+      ordinary_entry,
+      Terminator::Jump {
+        target: first,
+        args,
+      },
+    );
 
     // An interpreted frame entering a loop leaves every live register in
     // the register file; its entry block reads them from there. A chain
@@ -423,10 +444,18 @@ impl<'a> Builder<'a> {
         self.block = block;
         let mut args = Vec::new();
         for &r in &self.param_regs[&header].clone() {
-          let v = self.push(Op::OsrParam(r), vec![], Some(Ty::Tagged), None).unwrap();
+          let v = self
+            .push(Op::OsrParam(r), vec![], Some(Ty::Tagged), None)
+            .unwrap();
           args.push(v);
         }
-        self.func.set_term(block, Terminator::Jump { target: header, args });
+        self.func.set_term(
+          block,
+          Terminator::Jump {
+            target: header,
+            args,
+          },
+        );
         self.func.osr_entries.push((id, block));
         entries.push((id, block));
       }
@@ -458,7 +487,9 @@ impl<'a> Builder<'a> {
         );
         check = next;
       }
-      self.func.set_term(check, Terminator::Deopt(FrameState::root(0, Vec::new())));
+      self
+        .func
+        .set_term(check, Terminator::Deopt(FrameState::root(0, Vec::new())));
     }
 
     self.build_blocks(&leaders)?;
@@ -493,7 +524,11 @@ impl<'a> Builder<'a> {
           }
         },
         Instr::UsingJump { table_idx, .. } => {
-          set.extend(self.cx.proto.chunk.jump_tables[table_idx as usize].values().copied());
+          set.extend(
+            self.cx.proto.chunk.jump_tables[table_idx as usize]
+              .values()
+              .copied(),
+          );
           if ip + 1 < code.len() {
             set.insert(ip + 1);
           }
@@ -540,7 +575,9 @@ impl<'a> Builder<'a> {
     // Fell off the end of the block into the next leader.
     let next = self.cx.leader_block[&end];
     let args = self.edge_args(next);
-    self.func.set_term(self.block, Terminator::Jump { target: next, args });
+    self
+      .func
+      .set_term(self.block, Terminator::Jump { target: next, args });
     Ok(())
   }
 
@@ -612,7 +649,12 @@ impl<'a> Builder<'a> {
     } else {
       let state = self.state(ip);
       self
-        .push(Op::Guard(GuardKind::Number), vec![t], Some(Ty::F64), Some(state))
+        .push(
+          Op::Guard(GuardKind::Number),
+          vec![t],
+          Some(Ty::F64),
+          Some(state),
+        )
         .unwrap()
     };
     let view = self.view_mut(r);
@@ -631,7 +673,12 @@ impl<'a> Builder<'a> {
     };
     let state = self.state(ip);
     let i = self
-      .push(Op::Guard(GuardKind::Int), vec![source], Some(Ty::I64), Some(state))
+      .push(
+        Op::Guard(GuardKind::Int),
+        vec![source],
+        Some(Ty::I64),
+        Some(state),
+      )
       .unwrap();
     let view = self.view_mut(r);
     view.int = Some(i);
@@ -660,7 +707,12 @@ impl<'a> Builder<'a> {
     } else {
       let state = self.state(ip);
       self
-        .push(Op::Guard(GuardKind::List), vec![t], Some(Ty::Ptr), Some(state))
+        .push(
+          Op::Guard(GuardKind::List),
+          vec![t],
+          Some(Ty::Ptr),
+          Some(state),
+        )
         .unwrap()
     };
     let view = self.view_mut(r);
@@ -752,7 +804,12 @@ impl<'a> Builder<'a> {
   /// What the interpreter needs to resume at `ip`: every register live
   /// there, tagged, and the registers the frames around it still need.
   fn state(&mut self, ip: usize) -> FrameState {
-    let mut regs: Vec<u8> = self.cx.live.live_regs_at(ip).map(|r| self.cx.offset + r).collect();
+    let mut regs: Vec<u8> = self
+      .cx
+      .live
+      .live_regs_at(ip)
+      .map(|r| self.cx.offset + r)
+      .collect();
     regs.extend(self.cx.outer.iter().copied());
     regs.sort_unstable();
     let regs = regs.into_iter().map(|r| (r, self.tagged_at(r))).collect();
@@ -878,7 +935,9 @@ impl<'a> Builder<'a> {
       } else {
         format!(" of '{}', built in,", self.cx.proto.display_name())
       };
-      return Err(format!("{what} at ip {ip}{place} runs faster in the baseline tier"));
+      return Err(format!(
+        "{what} at ip {ip}{place} runs faster in the baseline tier"
+      ));
     }
     let state = self.state(ip);
     let args = state.regs.iter().map(|&(_, v)| v).collect();
@@ -949,7 +1008,9 @@ impl<'a> Builder<'a> {
       // The baseline tier has inline paths for lists and strings, which
       // it takes whenever a site has seen one; an index on anything else
       // it has not proven goes through the same helper either way.
-      Instr::GetIndex { .. } | Instr::SetIndex { .. } if seen & (kind::LIST | kind::STRING) != 0 => {
+      Instr::GetIndex { .. } | Instr::SetIndex { .. }
+        if seen & (kind::LIST | kind::STRING) != 0 =>
+      {
         Some("an index")
       },
       Instr::CheckParamType { .. } => Some("a parameter check"),
@@ -976,7 +1037,10 @@ impl<'a> Builder<'a> {
   fn int_site(&self, ip: usize) -> bool {
     let feedback = self.cx.feedback;
     let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
-    !feedback.sites_off && feedback.open(ip) && seen == kind::INT && !feedback.int_misses.contains(&ip)
+    !feedback.sites_off
+      && feedback.open(ip)
+      && seen == kind::INT
+      && !feedback.int_misses.contains(&ip)
   }
 
   /// `r` as an operand of checked integer arithmetic: whole, held exactly,
@@ -993,7 +1057,12 @@ impl<'a> Builder<'a> {
     };
     let state = self.state(ip);
     let i = self
-      .push(Op::Guard(GuardKind::Whole), vec![source], Some(Ty::I64), Some(state))
+      .push(
+        Op::Guard(GuardKind::Whole),
+        vec![source],
+        Some(Ty::I64),
+        Some(state),
+      )
       .unwrap();
     let view = self.view_mut(r);
     view.int = Some(i);
@@ -1012,7 +1081,8 @@ impl<'a> Builder<'a> {
   /// A constant operand integer arithmetic can take as it is.
   fn whole_imm(&self, idx: u16) -> Option<i64> {
     let c = self.imm(idx)?;
-    let usable = c.fract() == 0.0 && c.abs() < 9007199254740992.0 && !(c == 0.0 && c.is_sign_negative());
+    let usable =
+      c.fract() == 0.0 && c.abs() < 9007199254740992.0 && !(c == 0.0 && c.is_sign_negative());
     usable.then_some(c as i64)
   }
 
@@ -1021,14 +1091,21 @@ impl<'a> Builder<'a> {
   fn checked(&mut self, ip: usize, dst: u8, op: IntOp, x: ValueId, y: ValueId) {
     let state = self.state(ip);
     let r = self
-      .push(Op::Guard(GuardKind::Arith(op)), vec![x, y], Some(Ty::I64), Some(state))
+      .push(
+        Op::Guard(GuardKind::Arith(op)),
+        vec![x, y],
+        Some(Ty::I64),
+        Some(state),
+      )
       .unwrap();
     self.set_int(dst, r);
   }
 
   fn list_site(&self, ip: usize) -> bool {
     let feedback = self.cx.feedback;
-    !feedback.sites_off && feedback.open(ip) && feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
+    !feedback.sites_off
+      && feedback.open(ip)
+      && feedback.kinds.get(ip).copied().unwrap_or(0) == kind::LIST
   }
 
   fn field_site(&self, ip: usize) -> Option<(u64, u16)> {
@@ -1347,10 +1424,14 @@ impl<'a> Builder<'a> {
         let target_ip = jump_target(ip, offset);
         let target = self.cx.leader_block[&target_ip];
         if offset < 0 {
-          self.back_edges.push((self.block, target, target_ip, self.cx.id));
+          self
+            .back_edges
+            .push((self.block, target, target_ip, self.cx.id));
         }
         let args = self.edge_args(target);
-        self.func.set_term(self.block, Terminator::Jump { target, args });
+        self
+          .func
+          .set_term(self.block, Terminator::Jump { target, args });
         return Ok(true);
       },
       Instr::JmpIfFalse { cond, offset } | Instr::JmpIfTrue { cond, offset } => {
@@ -1393,7 +1474,9 @@ impl<'a> Builder<'a> {
             for at in self.cx.outer.clone() {
               args.push(self.tagged_at(at));
             }
-            self.func.set_term(self.block, Terminator::Jump { target: cont, args });
+            self
+              .func
+              .set_term(self.block, Terminator::Jump { target: cont, args });
           },
         }
         return Ok(true);
@@ -1461,7 +1544,12 @@ impl<'a> Builder<'a> {
         let len = self.value(Op::ListLen, vec![p], Ty::I64);
         let i = self.list_index(idx, len, ip);
         let state = self.state(ip);
-        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        self.push(
+          Op::Guard(GuardKind::Bounds),
+          vec![i, len],
+          None,
+          Some(state),
+        );
         let data = self.value(Op::ListData, vec![p], Ty::Ptr);
         let e = self.value(Op::LoadElem, vec![data, i], Ty::Tagged);
         self.set_tagged(dst, e);
@@ -1471,7 +1559,12 @@ impl<'a> Builder<'a> {
         let len = self.value(Op::ListLen, vec![p], Ty::I64);
         let i = self.list_index(idx, len, ip);
         let state = self.state(ip);
-        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        self.push(
+          Op::Guard(GuardKind::Bounds),
+          vec![i, len],
+          None,
+          Some(state),
+        );
         let data = self.value(Op::ListData, vec![p], Ty::Ptr);
         let v = self.tagged(src);
         self.push(Op::StoreElem, vec![p, data, i, v], None, None);
@@ -1495,7 +1588,9 @@ impl<'a> Builder<'a> {
         let tag = self.index_tag(ip, obj).unwrap();
         self.tagged_get_index(ip, tag, dst, obj, idx);
       },
-      Instr::SetIndex { obj, idx, src } if self.index_tag(ip, obj).is_some_and(|t| t != OBJ_TAG_STR) => {
+      Instr::SetIndex { obj, idx, src }
+        if self.index_tag(ip, obj).is_some_and(|t| t != OBJ_TAG_STR) =>
+      {
         let tag = self.index_tag(ip, obj).unwrap();
         self.tagged_set_index(ip, tag, obj, idx, src);
       },
@@ -1504,8 +1599,13 @@ impl<'a> Builder<'a> {
         obj,
         method_const,
         num_args,
-      } if self.builtin_method(ip, obj, method_const, num_args).is_some() => {
-        let (tag, method) = self.builtin_method(ip, obj, method_const, num_args).unwrap();
+      } if self
+        .builtin_method(ip, obj, method_const, num_args)
+        .is_some() =>
+      {
+        let (tag, method) = self
+          .builtin_method(ip, obj, method_const, num_args)
+          .unwrap();
         self.call_builtin(ip, tag, method, dst, obj, num_args);
       },
       Instr::Invoke {
@@ -1568,7 +1668,12 @@ impl<'a> Builder<'a> {
               // Past the end, `get` with no fallback raises.
               let len = self.value(Op::ListLen, vec![p], Ty::I64);
               let state = self.state(ip);
-              self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+              self.push(
+                Op::Guard(GuardKind::Bounds),
+                vec![i, len],
+                None,
+                Some(state),
+              );
               let data = self.value(Op::ListData, vec![p], Ty::Ptr);
               let v = self.value(Op::LoadElem, vec![data, i], Ty::Tagged);
               self.set_tagged(dst, v);
@@ -1593,7 +1698,10 @@ impl<'a> Builder<'a> {
         obj,
         method_const,
         num_args,
-      } if self.number_method(ip, obj, method_const, num_args).is_some() => {
+      } if self
+        .number_method(ip, obj, method_const, num_args)
+        .is_some() =>
+      {
         let method = self.number_method(ip, obj, method_const, num_args).unwrap();
         let x = self.num(obj, ip);
         let mut args = vec![x];
@@ -1624,7 +1732,11 @@ impl<'a> Builder<'a> {
           },
         }
       },
-      Instr::Call { dst, func, num_args } if self.call_callee(ip, func).is_some() => {
+      Instr::Call {
+        dst,
+        func,
+        num_args,
+      } if self.call_callee(ip, func).is_some() => {
         let callee = self.call_callee(ip, func).unwrap();
         let closure = FrameClosure::Reg(self.at(func));
         match self.inline_plan(ip, callee, dst, func + 1, num_args, closure) {
@@ -1643,10 +1755,7 @@ impl<'a> Builder<'a> {
         }
       },
       Instr::Invoke {
-        dst,
-        obj,
-        num_args,
-        ..
+        dst, obj, num_args, ..
       } if self.invoke_callee(ip).is_some() => {
         let (class, callee) = self.invoke_callee(ip).unwrap();
         let closure = FrameClosure::Const(callee.closure);
@@ -1674,7 +1783,13 @@ impl<'a> Builder<'a> {
   /// arguments the method takes. Its argument, if it has one, is checked
   /// to be a number as well; anything else takes the method's own path,
   /// which raises.
-  fn number_method(&self, ip: usize, obj: u8, method_const: u16, num_args: u8) -> Option<NumberMethod> {
+  fn number_method(
+    &self,
+    ip: usize,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+  ) -> Option<NumberMethod> {
     let name = self.cx.proto.chunk.constants[method_const as usize];
     if !name.is_string() {
       return None;
@@ -1722,7 +1837,12 @@ impl<'a> Builder<'a> {
     } else {
       let state = self.state(ip);
       self
-        .push(Op::Guard(GuardKind::Tag(tag)), vec![t], Some(Ty::Ptr), Some(state))
+        .push(
+          Op::Guard(GuardKind::Tag(tag)),
+          vec![t],
+          Some(Ty::Ptr),
+          Some(state),
+        )
         .unwrap()
     };
     let view = self.view_mut(r);
@@ -1740,13 +1860,20 @@ impl<'a> Builder<'a> {
       return None;
     }
     let tag = self.proven_tag(ip, obj);
-    let tag = tag.or_else(|| (feedback.kinds.get(ip) == Some(&kind::STRING)).then_some(OBJ_TAG_STR));
+    let tag =
+      tag.or_else(|| (feedback.kinds.get(ip) == Some(&kind::STRING)).then_some(OBJ_TAG_STR));
     tag.filter(|&t| matches!(t, OBJ_TAG_STR | OBJ_TAG_DICT | OBJ_TAG_BYTES))
   }
 
   /// A method call on a string, bytes, dict or range this tier answers
   /// itself, with the receiver kind to check for.
-  fn builtin_method(&self, ip: usize, obj: u8, method_const: u16, num_args: u8) -> Option<(u8, Builtin)> {
+  fn builtin_method(
+    &self,
+    ip: usize,
+    obj: u8,
+    method_const: u16,
+    num_args: u8,
+  ) -> Option<(u8, Builtin)> {
     let feedback = self.cx.feedback;
     let name = self.cx.proto.chunk.constants[method_const as usize];
     if !name.is_string() || feedback.fields_off || !feedback.open(ip) {
@@ -1756,9 +1883,18 @@ impl<'a> Builder<'a> {
     let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
     let tag = self
       .proven_tag(ip, obj)
-      .or_else(|| feedback.invokes.get(&ip).and_then(|&k| crate::builtins::method_key_tag(k)))
+      .or_else(|| {
+        feedback
+          .invokes
+          .get(&ip)
+          .and_then(|&k| crate::builtins::method_key_tag(k))
+      })
       .or_else(|| (seen == kind::STRING).then_some(OBJ_TAG_STR))
-      .or_else(|| (seen == kind::OTHER).then(|| Builtin::likely_tag(name)).flatten())?;
+      .or_else(|| {
+        (seen == kind::OTHER)
+          .then(|| Builtin::likely_tag(name))
+          .flatten()
+      })?;
     Builtin::of(tag, name, num_args).map(|m| (tag, m))
   }
 
@@ -1820,7 +1956,12 @@ impl<'a> Builder<'a> {
         let i = self.get_index(obj + 2, ip);
         let len = self.value(Op::BytesLen, vec![p], Ty::I64);
         let state = self.state(ip);
-        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        self.push(
+          Op::Guard(GuardKind::Bounds),
+          vec![i, len],
+          None,
+          Some(state),
+        );
         let b = self.value(Op::BytesLoad, vec![p, i], Ty::I64);
         self.set_int(dst, b);
       },
@@ -1861,7 +2002,12 @@ impl<'a> Builder<'a> {
             let i = self.value(Op::GetIndex, vec![f], Ty::I64);
             let len = self.value(Op::StrByteLen, vec![p], Ty::I64);
             let state = self.state(ip);
-            self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+            self.push(
+              Op::Guard(GuardKind::Bounds),
+              vec![i, len],
+              None,
+              Some(state),
+            );
             let b = self.value(Op::StrByte, vec![p, i], Ty::I64);
             let c = self.value(Op::AsciiChar, vec![b], Ty::Tagged);
             self.set_tagged(dst, c);
@@ -1871,7 +2017,12 @@ impl<'a> Builder<'a> {
             let i = self.value(Op::GetIndex, vec![f], Ty::I64);
             let len = self.value(Op::BytesLen, vec![p], Ty::I64);
             let state = self.state(ip);
-            self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+            self.push(
+              Op::Guard(GuardKind::Bounds),
+              vec![i, len],
+              None,
+              Some(state),
+            );
             let b = self.value(Op::BytesLoad, vec![p, i], Ty::I64);
             self.set_int(dst, b);
           },
@@ -1897,7 +2048,12 @@ impl<'a> Builder<'a> {
   /// here.
   fn bits(&mut self, r: u8, ip: usize) -> ValueId {
     if let Some(i) = self.view(r).int {
-      if self.small_ints.contains(&i) || self.func.def_inst(i).is_some_and(|d| matches!(d.op, Op::ConstI64(_))) {
+      if self.small_ints.contains(&i)
+        || self
+          .func
+          .def_inst(i)
+          .is_some_and(|d| matches!(d.op, Op::ConstI64(_)))
+      {
         return i;
       }
       return self.value(Op::Unsaturate, vec![i], Ty::I64);
@@ -1971,7 +2127,12 @@ impl<'a> Builder<'a> {
         self.ascii_only(p, ip);
         let len = self.value(Op::StrByteLen, vec![p], Ty::I64);
         let state = self.state(ip);
-        self.push(Op::Guard(GuardKind::Bounds), vec![i, len], None, Some(state));
+        self.push(
+          Op::Guard(GuardKind::Bounds),
+          vec![i, len],
+          None,
+          Some(state),
+        );
         let b = self.value(Op::StrByte, vec![p, i], Ty::I64);
         let c = self.value(Op::AsciiChar, vec![b], Ty::Tagged);
         self.set_tagged(dst, c);
@@ -2042,7 +2203,12 @@ impl<'a> Builder<'a> {
     let len = self.value(Op::BytesLen, vec![p], Ty::I64);
     let at = self.value(Op::WrapIndex, vec![i, len], Ty::I64);
     let state = self.state(ip);
-    self.push(Op::Guard(GuardKind::Bounds), vec![at, len], None, Some(state));
+    self.push(
+      Op::Guard(GuardKind::Bounds),
+      vec![at, len],
+      None,
+      Some(state),
+    );
     at
   }
 
@@ -2199,7 +2365,9 @@ impl<'a> Builder<'a> {
       offset,
       closure,
     });
-    self.extent = self.extent.max(offset as usize + proto.num_registers as usize);
+    self.extent = self
+      .extent
+      .max(offset as usize + proto.num_registers as usize);
     self.inlined_ops += proto.chunk.code.len();
     self.inlining.push(callee.proto);
 
@@ -2211,7 +2379,10 @@ impl<'a> Builder<'a> {
     let straight = !proto.chunk.code.iter().any(|i| {
       matches!(
         i,
-        Instr::Jmp { .. } | Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } | Instr::UsingJump { .. }
+        Instr::Jmp { .. }
+          | Instr::JmpIfFalse { .. }
+          | Instr::JmpIfTrue { .. }
+          | Instr::UsingJump { .. }
       )
     });
 
@@ -2242,7 +2413,13 @@ impl<'a> Builder<'a> {
       }
       let entry = self.cx.leader_block[&0];
       let args = self.edge_args(entry);
-      self.func.set_term(self.block, Terminator::Jump { target: entry, args });
+      self.func.set_term(
+        self.block,
+        Terminator::Jump {
+          target: entry,
+          args,
+        },
+      );
       self.build_blocks(&leaders)
     };
     self.cx = caller;
@@ -2269,7 +2446,11 @@ impl<'a> Builder<'a> {
         for ((&r, &p), &k) in outer.iter().zip(&params[1..]).zip(&known) {
           self.regs[r as usize] = RegView {
             tagged: Some(p),
-            known: if self.captured[r as usize] { Known::Unknown } else { k },
+            known: if self.captured[r as usize] {
+              Known::Unknown
+            } else {
+              k
+            },
             ..RegView::EMPTY
           };
         }
@@ -2292,7 +2473,16 @@ impl<'a> Builder<'a> {
     let instr = Instr::CloseUpvalues { from: 0 };
     let state = self.state(ip);
     let args = state.regs.iter().map(|&(_, v)| v).collect();
-    self.push(Op::Generic { instr, ip, frame: 0 }, args, None, Some(state));
+    self.push(
+      Op::Generic {
+        instr,
+        ip,
+        frame: 0,
+      },
+      args,
+      None,
+      Some(state),
+    );
     if self.regs[src as usize].known.may_be_object() || self.captured[src as usize] {
       let old = self.tagged(src);
       let fresh = self.value(Op::Reload { reg: src }, vec![old], Ty::Tagged);
@@ -2387,7 +2577,9 @@ impl<'a> Builder<'a> {
         frame,
         blame: None,
       };
-      self.func.push(latch, Op::Safepoint, args.clone(), None, Some(state));
+      self
+        .func
+        .push(latch, Op::Safepoint, args.clone(), None, Some(state));
       // Anything the loop carries that could be an object has to be read
       // back after the safepoint, the same as after any other operation
       // that may collect.
@@ -2406,14 +2598,24 @@ impl<'a> Builder<'a> {
         } else {
           let v = self
             .func
-            .push(latch, Op::Reload { reg: r }, vec![a], Some(Ty::Tagged), None)
+            .push(
+              latch,
+              Op::Reload { reg: r },
+              vec![a],
+              Some(Ty::Tagged),
+              None,
+            )
             .unwrap();
           fresh.push(v);
         }
       }
-      self
-        .func
-        .set_term(latch, Terminator::Jump { target, args: fresh });
+      self.func.set_term(
+        latch,
+        Terminator::Jump {
+          target,
+          args: fresh,
+        },
+      );
     }
   }
 

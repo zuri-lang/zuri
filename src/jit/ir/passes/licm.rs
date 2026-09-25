@@ -31,7 +31,10 @@ pub fn run(f: &mut Func) {
   // everything moved into it.
   let mut done: FxHashSet<BlockId> = FxHashSet::default();
   loop {
-    let Some(lp) = super::loops::find(f).into_iter().find(|lp| !done.contains(&lp.header)) else {
+    let Some(lp) = super::loops::find(f)
+      .into_iter()
+      .find(|lp| !done.contains(&lp.header))
+    else {
       return;
     };
     done.insert(lp.header);
@@ -93,8 +96,7 @@ fn hoist_loop(f: &mut Func, header: BlockId, body: &FxHashSet<BlockId>, latches:
 
   let order = f.reverse_postorder();
   let idom = dominators(f, &order);
-  let every_iteration =
-    |b: BlockId| latches.iter().all(|&latch| dominates(&idom, b, latch));
+  let every_iteration = |b: BlockId| latches.iter().all(|&latch| dominates(&idom, b, latch));
 
   let mut home: FxHashMap<InstId, BlockId> = FxHashMap::default();
   for (bi, blk) in f.blocks.iter().enumerate() {

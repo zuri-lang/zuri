@@ -114,9 +114,12 @@ const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
 const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
-const HEAP_YOUNG_HEADER_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
-const HEAP_FINALIZE_CUR_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
-const HEAP_FINALIZE_END_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
+const HEAP_YOUNG_HEADER_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
+const HEAP_FINALIZE_CUR_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
+const HEAP_FINALIZE_END_OFFSET: i32 =
+  (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
 const HEAP_FIELD_ARENA_CUR_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_FIELD_ARENA_CUR_OFFSET) as i32;
 const HEAP_FIELD_ARENA_END_OFFSET: i32 =
@@ -3131,7 +3134,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let inf = self.fb.ins().f64const(f64::INFINITY);
     let finite = self.fb.ins().fcmp(FloatCC::LessThan, mag, inf);
     let bits = self.from_f64(f);
-    let minus_zero = self.fb.ins().icmp_imm_u(IntCC::Equal, bits, (-0.0f64).to_bits() as i64);
+    let minus_zero = self
+      .fb
+      .ins()
+      .icmp_imm_u(IntCC::Equal, bits, (-0.0f64).to_bits() as i64);
     let int = self.fb.ins().band(whole, finite);
     let int = self.fb.ins().band_not(int, minus_zero);
     let int_k = self.fb.ins().iconst(types::I8, kind::INT as i64);
@@ -8250,19 +8256,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     );
     let not_variadic = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
     let sig_ok = self.fb.ins().band(arity_ok, not_variadic);
-    let entry = self.fb.ins().load(
-      types::I64,
-      flags,
-      proto_ptr,
-      PROTO_JIT_ENTRY_OFFSET,
-    );
+    let entry = self
+      .fb
+      .ins()
+      .load(types::I64, flags, proto_ptr, PROTO_JIT_ENTRY_OFFSET);
     let has_entry = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
     let ready = self.fb.ins().band(sig_ok, has_entry);
     let frame_block = self.fb.create_block();
-    self
-      .fb
-      .ins()
-      .brif(ready, frame_block, &[], miss_block, &[]);
+    self.fb.ins().brif(ready, frame_block, &[], miss_block, &[]);
 
     self.fb.switch_to_block(frame_block);
     let callee_num_regs8 = self.fb.ins().load(
@@ -9703,7 +9704,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .load(types::I8, flags, ptr, object::obj_str_ascii_offset());
     let rope = self.fb.ins().iconst(types::I8, object::STR_ROPE as i64);
     let is_rope = self.fb.ins().icmp(IntCC::Equal, form, rope);
-    self.fb.ins().brif(is_rope, slow_block, &[], fast_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(is_rope, slow_block, &[], fast_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let v = self.emit_string_intrinsic_value(op, recv);
@@ -9779,7 +9783,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let one = self.i64c(1);
     let single = self.fb.ins().icmp(IntCC::Equal, byte_len, one);
     let flat_single = self.fb.ins().band(is_flat, single);
-    self.fb.ins().brif(flat_single, fast_block, &[], slow_block, &[]);
+    self
+      .fb
+      .ins()
+      .brif(flat_single, fast_block, &[], slow_block, &[]);
 
     self.fb.switch_to_block(fast_block);
     let data_ptr = self
@@ -12179,7 +12186,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     if count <= MAX_INLINE_INSTANCE_FIELDS {
       let accounted = (std::mem::size_of::<object::Obj>() + count * 8) as i64;
-      let arena_cells = if count > object::INLINE_FIELDS { count } else { 0 };
+      let arena_cells = if count > object::INLINE_FIELDS {
+        count
+      } else {
+        0
+      };
       let (cur, arena) = self.emit_young_alloc(accounted, false, arena_cells, slow_block);
 
       let obj = self.fb.ins().iadd_imm_s(cur, 16);
@@ -13339,9 +13350,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(ip, dst, a, b, exact, |fb, ia, ib| fb.ins().band(ia, ib));
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitand_slow", |fb, ia, ib| {
-            fb.ins().band(ia, ib)
-          });
+          self.emit_bitwise_guarded(
+            ip,
+            dst,
+            a,
+            b,
+            exact,
+            "zuri_jit_bitand_slow",
+            |fb, ia, ib| fb.ins().band(ia, ib),
+          );
         }
         false
       },
@@ -13361,9 +13378,15 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if self.both_proven_numeric(ip, a, b) {
           self.emit_bitwise_proven(ip, dst, a, b, exact, |fb, ia, ib| fb.ins().bxor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitxor_slow", |fb, ia, ib| {
-            fb.ins().bxor(ia, ib)
-          });
+          self.emit_bitwise_guarded(
+            ip,
+            dst,
+            a,
+            b,
+            exact,
+            "zuri_jit_bitxor_slow",
+            |fb, ia, ib| fb.ins().bxor(ia, ib),
+          );
         }
         false
       },
@@ -14612,7 +14635,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       // the field helper that does it cannot collect, so the loop has
       // to. A specialized read of a known class's field never gets
       // there.
-      Instr::GetField { obj, name_const, .. } => {
+      Instr::GetField {
+        obj, name_const, ..
+      } => {
         let name = self.proto.chunk.constants[*name_const as usize].as_str();
         !(self.is_specialized_pass && self.target_class_for_field(ip, *obj, name).is_some())
       },

@@ -55,14 +55,22 @@ fn unbox_states(f: &mut Func) {
     let Some(state) = &f.insts[i].state else {
       continue;
     };
-    let regs: Vec<(u8, ValueId)> = state.regs.iter().map(|&(r, v)| (r, unboxed(f, v))).collect();
+    let regs: Vec<(u8, ValueId)> = state
+      .regs
+      .iter()
+      .map(|&(r, v)| (r, unboxed(f, v)))
+      .collect();
     f.insts[i].state.as_mut().unwrap().regs = regs;
   }
   for b in 0..f.blocks.len() {
     let Terminator::Deopt(state) = &f.blocks[b].term else {
       continue;
     };
-    let regs: Vec<(u8, ValueId)> = state.regs.iter().map(|&(r, v)| (r, unboxed(f, v))).collect();
+    let regs: Vec<(u8, ValueId)> = state
+      .regs
+      .iter()
+      .map(|&(r, v)| (r, unboxed(f, v)))
+      .collect();
     if let Terminator::Deopt(state) = &mut f.blocks[b].term {
       state.regs = regs;
     }

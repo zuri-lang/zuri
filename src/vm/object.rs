@@ -583,10 +583,7 @@ mod obj_repr_tests {
   /// edits `= N` on a variant without updating the matching constant.
   #[test]
   fn tags_match_discriminants() {
-    assert_eq!(
-      Obj::string(String::new()).tag(),
-      OBJ_TAG_STR
-    );
+    assert_eq!(Obj::string(String::new()).tag(), OBJ_TAG_STR);
     assert_eq!(Obj::Bytes(RefCell::new(Vec::new())).tag(), OBJ_TAG_BYTES);
     assert_eq!(Obj::BigInt(BigInt::from(0)).tag(), OBJ_TAG_BIGINT);
     assert_eq!(
@@ -2164,7 +2161,6 @@ pub fn obj_str_len_offset() -> i32 {
   obj_str_data_offsets().1
 }
 
-
 fn obj_bytes_data_offsets() -> (i32, i32) {
   static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
   *OFFSETS.get_or_init(|| {
@@ -3096,7 +3092,11 @@ impl Heap {
       }
     }
 
-    for chunk in self.nursery_chunks.iter().chain(self.survivor_chunks.iter()) {
+    for chunk in self
+      .nursery_chunks
+      .iter()
+      .chain(self.survivor_chunks.iter())
+    {
       for gcbox in chunk.slots.iter() {
         if gcbox.chunk_idx != self.young_epoch {
           continue;
@@ -3950,9 +3950,8 @@ impl Heap {
 
     self.advance_epoch();
 
-    self.bytes_allocated = self.bytes_allocated - self.young_bytes_allocated
-      + self.promoted_bytes
-      + self.survivor_bytes;
+    self.bytes_allocated =
+      self.bytes_allocated - self.young_bytes_allocated + self.promoted_bytes + self.survivor_bytes;
     self.old_live_count += self.promoted_count;
     self.live_count = self.old_live_count + self.survivor_count;
     self.young_bytes_allocated = self.survivor_bytes;
@@ -4107,7 +4106,6 @@ impl Heap {
     self.young_bytes_allocated += added;
     self.alloc(Obj::Str(ObjStr::rope(rope)))
   }
-
 
   /// Deliberately `alloc_old`, not `alloc`; for `Compiler`'s own
   /// use building a chunk's CONSTANT POOL (method/field/class names,

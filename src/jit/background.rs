@@ -445,7 +445,10 @@ fn compiler_loop(
           .map(|s| s.to_string())
           .or_else(|| payload.downcast_ref::<String>().cloned())
           .unwrap_or_else(|| "unknown panic".to_string());
-        (Err(format!("compiler panicked: {reason}")), FxHashMap::default())
+        (
+          Err(format!("compiler panicked: {reason}")),
+          FxHashMap::default(),
+        )
       },
     };
 
