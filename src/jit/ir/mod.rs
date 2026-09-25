@@ -754,6 +754,11 @@ pub struct Func {
   /// The compiled function's own frame, then one entry for each call
   /// built into it.
   pub frames: Vec<InlineFrame>,
+  /// Calls left to their helper whose callee the feedback names, by frame
+  /// and position: the callee's `ObjFunction` address and its `Value`
+  /// bits. A closure holding that function is called without looking
+  /// into it for its shape.
+  pub known_calls: FxHashMap<(u16, usize), (usize, u64)>,
 }
 
 impl Func {
@@ -776,6 +781,7 @@ impl Func {
         offset: 0,
         closure: FrameClosure::Reg(0),
       }],
+      known_calls: FxHashMap::default(),
     }
   }
 

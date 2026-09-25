@@ -784,7 +784,22 @@ impl<'a, 'b> Lowering<'a, 'b> {
         if num_args > 4 {
           self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args)
         } else {
-          let (miss, done) = self.direct_call(DirectCallee::Register, call, ip, frame);
+          // A callee named by the feedback whose shape takes this call
+          // needs only to be recognised.
+          let callee = match self.ir.known_calls.get(&(frame, ip)) {
+            Some(&(function, bits)) => {
+              // SAFETY: prototypes live in the old generation and never
+              // move, and this one is live while the compile runs.
+              let f = unsafe { &*(function as *const ObjFunction) };
+              if f.arity == num_args && !f.variadic && !f.is_method {
+                DirectCallee::Known { function, bits }
+              } else {
+                DirectCallee::Register
+              }
+            },
+            None => DirectCallee::Register,
+          };
+          let (miss, done) = self.direct_call(callee, call, ip, frame);
           self.fb.switch_to_block(miss);
           let status = self.fast_call("zuri_jit_call_prepare", prepare, call, name, &args);
           self.fb.ins().jump(done, &[status.into()]);
@@ -1014,6 +1029,20 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.continue_if(is_function, miss);
         (closure, self.function_proto(function))
       },
+      DirectCallee::Known { function, bits } => {
+        let closure = self.load_reg(offset + first_arg - 1);
+        let is_closure = self.obj_tag_is(closure, object::OBJ_TAG_CLOSURE);
+        self.continue_if(is_closure, miss);
+        let p = self.obj_ptr(closure);
+        let held = self
+          .fb
+          .ins()
+          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        let want = self.u64c(bits);
+        let same = self.fb.ins().icmp(IntCC::Equal, held, want);
+        self.continue_if(same, miss);
+        (closure, self.u64c(function as u64))
+      },
       DirectCallee::Cached(cell) => {
         // The receiver's class has to be the one the cache was filled
         // for, and then its method is the closure the cache holds.
@@ -1040,20 +1069,31 @@ impl<'a, 'b> Lowering<'a, 'b> {
     };
 
     // The shape a frame is pushed for without a helper, and code to run.
-    let arity = self
-      .fb
-      .ins()
-      .load(types::I8, flags, proto, object::obj_function_arity_offset() as i32);
-    let mut ready = self
-      .fb
-      .ins()
-      .icmp_imm_s(IntCC::Equal, arity, num_args as i64);
-    let variadic = self
-      .fb
-      .ins()
-      .load(types::I8, flags, proto, object::obj_function_variadic_offset() as i32);
-    let fixed = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
-    ready = self.fb.ins().band(ready, fixed);
+    // A known callee's shape was checked while compiling.
+    let entry = self.fb.ins().load(
+      types::I64,
+      flags,
+      proto,
+      object::obj_function_jit_entry_offset() as i32,
+    );
+    let mut ready = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
+    if !matches!(callee, DirectCallee::Known { .. }) {
+      let arity = self
+        .fb
+        .ins()
+        .load(types::I8, flags, proto, object::obj_function_arity_offset() as i32);
+      let fits = self
+        .fb
+        .ins()
+        .icmp_imm_s(IntCC::Equal, arity, num_args as i64);
+      ready = self.fb.ins().band(ready, fits);
+      let variadic = self
+        .fb
+        .ins()
+        .load(types::I8, flags, proto, object::obj_function_variadic_offset() as i32);
+      let fixed = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
+      ready = self.fb.ins().band(ready, fixed);
+    }
     if matches!(callee, DirectCallee::Register) {
       // A method called as a plain function has no receiver to take.
       let method = self
@@ -1063,14 +1103,6 @@ impl<'a, 'b> Lowering<'a, 'b> {
       let plain = self.fb.ins().icmp_imm_s(IntCC::Equal, method, 0);
       ready = self.fb.ins().band(ready, plain);
     }
-    let entry = self.fb.ins().load(
-      types::I64,
-      flags,
-      proto,
-      object::obj_function_jit_entry_offset() as i32,
-    );
-    let compiled = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
-    ready = self.fb.ins().band(ready, compiled);
     self.continue_if(ready, miss);
 
     // Room for one more compiled frame, its registers and its entry on
@@ -3072,11 +3104,14 @@ struct FastCall {
 }
 
 /// Where a direct call finds its callee: in the register before its
-/// arguments, or, for a method call, in the site's cache, keyed by the
-/// receiver's class. The cache's address is baked in.
+/// arguments; there too but expected to hold the function the feedback
+/// named, whose `ObjFunction` address and `Value` bits are given; or, for
+/// a method call, in the site's cache, keyed by the receiver's class, at
+/// the address given.
 #[derive(Clone, Copy)]
 enum DirectCallee {
   Register,
+  Known { function: usize, bits: u64 },
   Cached(u64),
 }
 

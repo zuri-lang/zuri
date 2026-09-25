@@ -139,24 +139,18 @@ def call_one(f, n) {
 echo call_one(gather, 20000)
 echo call_one(pair, 20000)
 
-# Mutual recursion deeper than compiled calls nest.
-def down_a(n, f) {
+# Recursion deeper than compiled calls nest, through a function that
+# only knows itself as its parameter.
+def down(n, f) {
   if n == 0 {
     return 0
   }
-  return 1 + f(n - 1, down_a)
-}
-
-def down_b(n, f) {
-  if n == 0 {
-    return 0
-  }
-  return 1 + f(n - 1, down_b)
+  return 1 + f(n - 1, f)
 }
 
 var depth = 0
 iter var r = 0; r < 200; r++ {
-  depth = depth + down_a(50, down_b)
+  depth = depth + down(50, down)
 }
 echo depth
-echo down_a(3000, down_b)
+echo down(3000, down)

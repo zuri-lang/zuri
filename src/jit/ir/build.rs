@@ -1819,7 +1819,14 @@ impl<'a> Builder<'a> {
             );
             self.build_inline(ip, callee, proto, outer, dst, func + 1, closure)?;
           },
-          None => return self.generic(ip, instr),
+          None => {
+            let frame = self.cx.id;
+            self
+              .func
+              .known_calls
+              .insert((frame, ip), (callee.proto, callee.proto_bits));
+            return self.generic(ip, instr);
+          },
         }
       },
       Instr::Invoke {
