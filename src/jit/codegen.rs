@@ -15067,17 +15067,33 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
   /// Stores a bitwise operator's result. The number is the integer as a
   /// double, rounded past 2^53 the way the interpreter's `as f64` rounds
-  /// it. The integer cache has to be that same number: it takes the
-  /// integer as it is only when `exact` says rounding cannot change it,
-  /// and otherwise converts the double back, which only happens when
-  /// something reads the cache.
+  /// it. The integer cache has to be that same number. It is the integer
+  /// as it is when `exact` says rounding cannot change it, or when the
+  /// result turns out to lie within 2^53 of zero, as bit twiddling on
+  /// ordinary numbers always does; only a result past that takes the
+  /// double converted back, on a branch of its own, so the common case
+  /// carries no conversion on its way to the next operator.
   fn store_bitwise(&mut self, dst: u8, ir: IrValue, exact: bool) {
     let f = self.fb.ins().fcvt_from_sint(types::F64, ir);
     if self.int_tracked[dst as usize] {
       let iv = if exact {
         ir
       } else {
-        self.fb.ins().fcvt_to_sint_sat(types::I64, f)
+        let biased = self.fb.ins().iadd_imm_s(ir, 1 << 53);
+        let fits = self
+          .fb
+          .ins()
+          .icmp_imm_u(IntCC::UnsignedLessThanOrEqual, biased, 1 << 54);
+        let wide = self.fb.create_block();
+        let done = self.fb.create_block();
+        self.fb.append_block_param(done, types::I64);
+        self.fb.ins().brif(fits, done, &[ir.into()], wide, &[]);
+        self.fb.switch_to_block(wide);
+        self.fb.set_cold_block(wide);
+        let rounded = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+        self.fb.ins().jump(done, &[rounded.into()]);
+        self.fb.switch_to_block(done);
+        self.fb.block_params(done)[0]
       };
       self.fb.def_var(self.reg_vars_int[dst as usize], iv);
     }
