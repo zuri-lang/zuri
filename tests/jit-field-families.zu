@@ -1,0 +1,152 @@
+# A field site that sees instances of several classes, where every one of
+# them descends from the class declaring the field, finds that field at the
+# same slot in all of them. Compiled code can read it directly for any of
+# them, and has to fall back correctly for an instance that is not one of
+# the family, or whose family sits deeper than the JIT can check in one step.
+
+class Task {
+  @new(id, priority) {
+    self.id = id
+    self.priority = priority
+    self.link = nil
+    self.holding = false
+  }
+
+  # Called on every kind of task below, so its field sites see them all.
+  hold() {
+    self.holding = true
+    return self.link
+  }
+
+  release() {
+    self.holding = false
+    return self.priority
+  }
+}
+
+class DeviceTask < Task {
+  @new(id, priority) {
+    parent(id, priority)
+    self.pending = 0
+  }
+}
+
+class HandlerTask < Task {
+  @new(id, priority) {
+    parent(id, priority)
+    self.work = nil
+    self.device = nil
+  }
+}
+
+class IdleTask < Task {
+  @new(id, priority) {
+    parent(id, priority)
+    self.count = 10
+  }
+}
+
+class WorkTask < Task {
+  @new(id, priority) {
+    parent(id, priority)
+  }
+}
+
+# Links one task of each kind into a ring.
+def ring() {
+  var tasks = [DeviceTask(1, 4), HandlerTask(2, 3), IdleTask(3, 2), WorkTask(4, 1)]
+  iter var i = 0; i < tasks.length(); i++ {
+    tasks[i].link = tasks[(i + 1) % tasks.length()]
+  }
+  return tasks[0]
+}
+
+# Walks the ring through every kind of task, reading and writing the
+# fields they all inherit.
+def walk(start, steps) {
+  var t = start
+  var total = 0
+  iter var i = 0; i < steps; i++ {
+    total = total + t.release() + t.id
+    t = t.hold()
+  }
+  return total
+}
+
+# A free function reading a field off whatever it is handed.
+def priority_of(t) {
+  return t.priority
+}
+
+def priorities(start, steps) {
+  var t = start
+  var total = 0
+  iter var i = 0; i < steps; i++ {
+    total = total + priority_of(t)
+    t = t.link
+  }
+  return total
+}
+
+var start = ring()
+echo walk(start, 40000)
+echo priorities(start, 40000)
+
+# Not a task, but it has a `priority` too, at a different slot. The site
+# has only ever seen tasks when this arrives.
+class Job {
+  @new(priority) {
+    self.label = 'job'
+    self.spare = 0
+    self.priority = priority
+  }
+}
+
+echo priority_of(Job(99))
+echo priorities(start, 8)
+
+# A line of classes deeper than the JIT's one-step check reaches. `v` is
+# declared at the root and `deep` at the ninth level down.
+class L0 {
+  @new(v) {
+    self.v = v
+  }
+}
+
+class L1 < L0 {}
+class L2 < L1 {}
+class L3 < L2 {}
+class L4 < L3 {}
+class L5 < L4 {}
+class L6 < L5 {}
+class L7 < L6 {}
+
+class L8 < L7 {
+  var deep = 8
+}
+
+class L9 < L8 {}
+
+def sum_v(items, rounds) {
+  var total = 0
+  iter var r = 0; r < rounds; r++ {
+    iter var i = 0; i < items.length(); i++ {
+      total = total + items[i].v
+    }
+  }
+  return total
+}
+
+def sum_deep(items, rounds) {
+  var total = 0
+  iter var r = 0; r < rounds; r++ {
+    iter var i = 0; i < items.length(); i++ {
+      total = total + items[i].deep
+    }
+  }
+  return total
+}
+
+var line = [L0(1), L3(2), L7(3), L8(4), L9(5)]
+echo sum_v(line, 8000)
+echo sum_deep([L8(0), L9(0), L8(0)], 8000)

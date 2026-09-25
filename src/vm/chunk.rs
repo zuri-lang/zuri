@@ -725,6 +725,20 @@ pub struct FieldCacheCell {
   /// `slot * size_of::<Value>()`, pre-multiplied so generated code adds
   /// it straight to the instance's fields base pointer with no shift.
   pub byte_offset: Cell<u64>,
+  /// Set once the site has seen instances of more than one class.
+  pub polymorphic: Cell<bool>,
+}
+
+impl FieldCacheCell {
+  /// Caches `class_bits` and the field's byte offset in it after a miss.
+  pub fn fill(&self, class_bits: u64, byte_offset: u64) {
+    let previous = self.class_bits.get();
+    if previous != 0 && previous != class_bits {
+      self.polymorphic.set(true);
+    }
+    self.byte_offset.set(byte_offset);
+    self.class_bits.set(class_bits);
+  }
 }
 
 /// One `Instr::Invoke` site's monomorphic cache, covering both shapes

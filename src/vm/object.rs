@@ -472,6 +472,38 @@ pub fn obj_payload_offset() -> usize {
   })
 }
 
+/// The two byte offsets compiled code follows from a `*const Obj` known
+/// to be `Obj::Class` to its `ObjClass::display`: first to the boxed
+/// class's address, then from that address to entry 0 of the display.
+/// `RefCell` promises nothing about where it keeps its value, so like
+/// `obj_payload_offset` this is observed on a probe rather than assumed.
+pub fn obj_class_display_offsets() -> (usize, usize) {
+  static OFFSETS: std::sync::OnceLock<(usize, usize)> = std::sync::OnceLock::new();
+  *OFFSETS.get_or_init(|| {
+    let probe = Obj::Class(Box::new(RefCell::new(ObjClass {
+      name: String::new(),
+      superclass: None,
+      methods: FxHashMap::default(),
+      field_slots: FxHashMap::default(),
+      field_count: 0,
+      own_field_initializer: None,
+      constructor: None,
+      static_slots: FxHashMap::default(),
+      statics: Vec::new(),
+      globals_module: None,
+      display: Default::default(),
+    })));
+    let obj_addr = &probe as *const Obj as usize;
+    let Obj::Class(boxed) = &probe else {
+      unreachable!()
+    };
+    let box_offset = boxed as *const Box<RefCell<ObjClass>> as usize - obj_addr;
+    let cell_addr = &**boxed as *const RefCell<ObjClass> as usize;
+    let display = unsafe { &(*boxed.as_ptr()).display } as *const _ as usize - cell_addr;
+    (box_offset, display)
+  })
+}
+
 /// Byte offset from a `*const Obj` known (via `obj_tag`) to be
 /// `Obj::Instance` to that instance's `fields` slice base pointer;
 /// `obj_payload_offset()` (tag -> `ObjInstance` start) plus
@@ -1291,6 +1323,45 @@ pub struct ObjClass {
   /// needs it: re-finding a class by name in a freshly-loaded copy of
   /// its own home module when a value crosses an isolate boundary.
   pub globals_module: Option<Value>,
+  /// The class's line of descent, as `Value` bits by depth: the root
+  /// class at 0, each subclass after it down to this class, and 0 past
+  /// that. A class deeper than the display records its first ancestors
+  /// only. Compiled code tells whether an instance's class descends from
+  /// the class at depth `d` by comparing entry `d` alone. Filled by
+  /// `fill_display` once the class has its superclass.
+  pub display: [Cell<u64>; CLASS_DISPLAY_DEPTH],
+}
+
+/// How many levels of descent `ObjClass::display` records.
+pub const CLASS_DISPLAY_DEPTH: usize = 8;
+
+impl ObjClass {
+  /// Fills `display` from the superclass's, with `own`, this class's
+  /// bits, at the first depth the superclass leaves free.
+  pub fn fill_display(&self, own: u64) {
+    let mut depth = 0;
+    for cell in &self.display {
+      cell.set(0);
+    }
+    if let Some(superclass) = self.superclass {
+      let parent = superclass.as_class();
+      for (mine, theirs) in self.display.iter().zip(&parent.display) {
+        mine.set(theirs.get());
+        if theirs.get() != 0 {
+          depth += 1;
+        }
+      }
+    }
+    if depth < CLASS_DISPLAY_DEPTH {
+      self.display[depth].set(own);
+    }
+  }
+
+  /// This class's depth in `display`, or `None` when it sits deeper
+  /// than the display records.
+  pub fn display_depth(&self, own: u64) -> Option<usize> {
+    self.display.iter().position(|d| d.get() == own)
+  }
 }
 
 /// A `#[repr(C)]`-guaranteed-layout owning slice of `Cell<Value>`;
@@ -4223,7 +4294,9 @@ impl Heap {
   /// (`DeclareField` needs none: it stores only a name and a `u16`
   /// slot index, never a `Value`.)
   pub fn alloc_class(&mut self, class: ObjClass) -> Value {
-    self.alloc_old(Obj::Class(Box::new(RefCell::new(class))))
+    let value = self.alloc_old(Obj::Class(Box::new(RefCell::new(class))));
+    value.as_class().fill_display(value.to_bits());
+    value
   }
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {

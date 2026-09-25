@@ -173,9 +173,10 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
     eprintln!(
-      "[jit] deopt in '{}' at ip {}",
+      "[jit] deopt in '{}' at ip {} ({})",
       vm.current_function_name(),
-      ip
+      ip,
+      vm.current_instr_name(ip as usize)
     );
   }
   vm.pending_deopt_ip.set(ip as i64);
@@ -203,9 +204,10 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
   vm.push_inlined_frames(chain);
   if crate::jit::log_enabled() {
     eprintln!(
-      "[jit] deopt in '{}' at ip {}, built into its caller",
+      "[jit] deopt in '{}' at ip {} ({}), built into its caller",
       vm.current_function_name(),
-      ip
+      ip,
+      vm.current_instr_name(ip as usize)
     );
   }
   vm.pending_deopt_ip.set(ip as i64);
@@ -253,8 +255,9 @@ pub unsafe extern "C" fn zuri_jit_tier_up(vm_ptr: *mut VM, proto: u64, header: u
 }
 
 /// Leaves profiling tier-1 code at the backward jump at `ip`, for the
-/// interpreter to take the jump and enter tier 2's code at the loop
-/// header. Nothing is noted against the function.
+/// interpreter to take the jump and enter the function's current code at
+/// the loop header: tier 2's, or tier 1's rebuilt without profiling once
+/// tier 2 has declined. Nothing is noted against the function.
 ///
 /// # Safety
 ///
@@ -263,7 +266,7 @@ pub unsafe extern "C" fn zuri_jit_tier_exit(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
     eprintln!(
-      "[jit] '{}' moves to tier 2 at ip {}",
+      "[jit] '{}' leaves its profiling code at ip {}",
       vm.current_function_name(),
       ip
     );
@@ -2451,6 +2454,7 @@ pub unsafe extern "C" fn zuri_jit_make_class(
     static_slots: Default::default(),
     statics: Vec::new(),
     globals_module: func.globals_module,
+    display: Default::default(),
   });
   write_barrier(class_val.as_obj());
   vm.set_reg(base, dst as u8, class_val);
@@ -2597,8 +2601,7 @@ pub unsafe extern "C" fn zuri_jit_get_field(
       let class = inst.class.as_class();
       if let Some(&idx) = class.field_slots.get(name_val.as_str()) {
         if let Some(c) = cell {
-          c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
-          c.class_bits.set(class_bits);
+          c.fill(class_bits, idx as u64 * size_of::<Value>() as u64);
         }
         Ok(inst.fields[idx as usize].get())
       } else if let Some(method) = class.methods.get(name_val.as_str()).copied() {
@@ -2713,8 +2716,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
       match class.field_slots.get(name_val.as_str()).copied() {
         Some(idx) => {
           if let Some(c) = cell {
-            c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
-            c.class_bits.set(class_bits);
+            c.fill(class_bits, idx as u64 * size_of::<Value>() as u64);
           }
           inst.fields[idx as usize].set(value);
           write_barrier(receiver.as_obj());

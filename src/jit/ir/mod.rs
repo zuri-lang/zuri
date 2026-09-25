@@ -247,6 +247,11 @@ pub enum GuardKind {
   /// The value is an instance of the class whose `Value` bits are given.
   /// Produces its object pointer.
   Instance(u64),
+  /// The value is an instance of the class whose `Value` bits are given,
+  /// or of a class descending from it, which sits at `depth` in every
+  /// such class's `ObjClass::display`. Its subclasses keep the fields it
+  /// declares at the same slots. Produces its object pointer.
+  Family { class: u64, depth: u8 },
   /// The value is a whole number an `I64` holds exactly, and not -0.
   /// Integer arithmetic has one zero, so an operand it takes must not be
   /// the zero it would lose the sign of. Produces the `I64`.
@@ -285,7 +290,9 @@ impl GuardKind {
       GuardKind::Number => Some(Ty::F64),
       GuardKind::Int | GuardKind::Whole | GuardKind::Arith(_) => Some(Ty::I64),
       GuardKind::Bool => Some(Ty::Bool),
-      GuardKind::List | GuardKind::Instance(_) | GuardKind::Tag(_) => Some(Ty::Ptr),
+      GuardKind::List | GuardKind::Instance(_) | GuardKind::Family { .. } | GuardKind::Tag(_) => {
+        Some(Ty::Ptr)
+      },
       GuardKind::Bounds
       | GuardKind::True
       | GuardKind::Param { .. }

@@ -1957,7 +1957,49 @@ impl VM {
     if seen.is_empty() {
       return FxHashMap::default();
     }
+    let reachable = self.reachable_classes(proto);
 
+    let mut out = FxHashMap::default();
+    for (ip, bits) in seen {
+      if !reachable.contains(&bits) {
+        continue;
+      }
+      let name_const = match proto.chunk.code.get(ip) {
+        Some(Instr::GetField { name_const, .. }) | Some(Instr::SetField { name_const, .. }) => {
+          *name_const
+        },
+        _ => continue,
+      };
+      let Some(name) = proto.chunk.constants.get(name_const as usize) else {
+        continue;
+      };
+      if !name.is_string() {
+        continue;
+      }
+      if proto
+        .chunk
+        .field_cache_cell(ip)
+        .is_some_and(|c| c.polymorphic.get())
+      {
+        continue;
+      }
+      let class_val = Value::from_bits(bits);
+      let class = class_val.as_class();
+      if class.methods.contains_key(name.as_str()) {
+        continue;
+      }
+      if let Some(&slot) = class.field_slots.get(name.as_str()) {
+        out.insert(ip, (bits, slot));
+      }
+    }
+    out
+  }
+
+  /// Every class a global of the program, or of `proto`'s module, holds,
+  /// as `Value` bits. A field cache keeps a class's bits without keeping
+  /// the class alive, so a cached class is only looked into once it is
+  /// found here.
+  fn reachable_classes(&self, proto: &ObjFunction) -> FxHashSet<u64> {
     let mut reachable: FxHashSet<u64> = FxHashSet::default();
     let mut add = |v: Value| {
       if v.is_class() {
@@ -1981,32 +2023,46 @@ impl VM {
         add(cell.get());
       }
     }
+    reachable
+  }
 
+  /// The field sites of `proto` that have seen instances of more than one
+  /// class, each with the family its instances share: see
+  /// `CompileFacts::site_families`. Only sites whose last class is still
+  /// reachable, which keeps the declaring class alive with it.
+  fn resolve_site_families(&self, proto: &ObjFunction) -> FxHashMap<usize, Option<(u64, u8, u16)>> {
     let mut out = FxHashMap::default();
-    for (ip, bits) in seen {
-      if !reachable.contains(&bits) {
-        continue;
-      }
-      let name_const = match proto.chunk.code.get(ip) {
-        Some(Instr::GetField { name_const, .. }) | Some(Instr::SetField { name_const, .. }) => {
-          *name_const
-        },
-        _ => continue,
-      };
-      let Some(name) = proto.chunk.constants.get(name_const as usize) else {
+    let mut reachable = None;
+    for (ip, instr) in proto.chunk.code.iter().enumerate() {
+      let (Instr::GetField { name_const, .. } | Instr::SetField { name_const, .. }) = instr else {
         continue;
       };
-      if !name.is_string() {
+      let Some(cell) = proto.chunk.field_cache_cell(ip) else {
+        continue;
+      };
+      if !cell.polymorphic.get() || cell.class_bits.get() == 0 {
         continue;
       }
-      let class_val = Value::from_bits(bits);
-      let class = class_val.as_class();
-      if class.methods.contains_key(name.as_str()) {
+      let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
+      if !reachable.contains(&cell.class_bits.get()) {
+        out.insert(ip, None);
         continue;
       }
-      if let Some(&slot) = class.field_slots.get(name.as_str()) {
-        out.insert(ip, (bits, slot));
-      }
+      let name = proto.chunk.constants[*name_const as usize];
+      let class = Value::from_bits(cell.class_bits.get());
+      let family = if name.is_string() && !class.as_class().methods.contains_key(name.as_str()) {
+        class
+          .as_class()
+          .field_slots
+          .get(name.as_str())
+          .copied()
+          .and_then(|slot| {
+            Self::field_family(class, name.as_str(), slot).map(|(bits, depth)| (bits, depth, slot))
+          })
+      } else {
+        None
+      };
+      out.insert(ip, family);
     }
     out
   }
@@ -2532,20 +2588,17 @@ impl VM {
   /// the profiling kind when two tiers are on, so tier 2 later builds from
   /// feedback covering whatever ran in it. `optimize` asks for tier 2,
   /// which builds a plain tier 1 instead when it declines the function,
-  /// and names the loop header the request came from when a frame is
-  /// running one.
+  /// and names the loop headers running frames need a way in at.
   fn enqueue_compile(
     &mut self,
     proto: &ObjFunction,
     proto_value: Value,
-    optimize: Option<Option<usize>>,
+    optimize: Option<Vec<usize>>,
   ) {
     let direct = crate::jit::tier2_direct();
-    let entries = match optimize {
-      Some(header) if !direct => Some(header.into_iter().collect()),
-      _ => None,
-    };
-    let optimize = optimize.is_some() || direct;
+    let asked = optimize.is_some();
+    let entries = optimize.filter(|_| !direct);
+    let optimize = asked || direct;
     let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
       if self.no_jit_specialization {
         (None, None, None, None)
@@ -2593,6 +2646,7 @@ impl VM {
       site_kinds: proto.chunk.feedback_snapshot(),
       site_speculation_off: proto.jit.site_speculation_off.get(),
       site_classes: self.resolve_site_classes(proto),
+      site_families: self.resolve_site_families(proto),
       profile: crate::jit::tier2_enabled()
         && !optimize
         && proto.jit.tier2.get() != crate::vm::object::TIER2_DECLINED,
@@ -2708,15 +2762,31 @@ impl VM {
 
     let chunk = &proto.chunk;
     let mut fields = FxHashMap::default();
+    let mut families = FxHashMap::default();
+    let mut reachable = None;
     let mut invokes = FxHashMap::default();
     let mut globals = FxHashMap::default();
     for (ip, instr) in chunk.code.iter().enumerate() {
       match instr {
-        Instr::GetField { .. } | Instr::SetField { .. } => {
+        Instr::GetField { name_const, .. } | Instr::SetField { name_const, .. } => {
           if let Some(cell) = chunk.field_cache_cell(ip)
             && cell.class_bits.get() != 0
           {
             let slot = (cell.byte_offset.get() / 8) as u16;
+            // A site that has seen several classes is built only when they
+            // share the field as one family; otherwise it stays generic.
+            if cell.polymorphic.get() {
+              let reachable = reachable.get_or_insert_with(|| self.reachable_classes(proto));
+              let name = chunk.constants[*name_const as usize];
+              let class = Value::from_bits(cell.class_bits.get());
+              if reachable.contains(&class.to_bits())
+                && let Some(family) = Self::field_family(class, name.as_str(), slot)
+              {
+                families.insert(ip, family);
+              } else {
+                continue;
+              }
+            }
             fields.insert(ip, (cell.class_bits.get(), slot));
           }
         },
@@ -2803,6 +2873,7 @@ impl VM {
     crate::jit::ir::build::Feedback {
       kinds: chunk.feedback_snapshot(),
       fields,
+      families,
       invokes,
       globals,
       list_key: crate::builtins::list_method_key(),
@@ -2815,6 +2886,24 @@ impl VM {
       young_budget: self.heap.young_budget() as u64,
       entries: None,
     }
+  }
+
+  /// The class that declares field `name` at `slot` for `class`, as
+  /// `Value` bits, with its depth in `ObjClass::display`: the furthest
+  /// ancestor that still has the field there. `None` when that class sits
+  /// deeper than the display records.
+  fn field_family(class: Value, name: &str, slot: u16) -> Option<(u64, u8)> {
+    let mut declaring = class;
+    loop {
+      let parent = declaring.as_class().superclass;
+      match parent {
+        Some(p) if p.as_class().field_slots.get(name) == Some(&slot) => declaring = p,
+        _ => break,
+      }
+    }
+    let bits = declaring.to_bits();
+    let depth = declaring.as_class().display_depth(bits)?;
+    Some((bits, depth as u8))
   }
 
   /// The global slot a call's function register was last read from,
@@ -2900,10 +2989,14 @@ impl VM {
           let reach = proto.jit.frame_registers.get().max(result.registers as u16);
           proto.jit.frame_registers.set(reach);
           if result.tier == 2 {
-            // The tier-1 code stays, for the function to fall back to.
-            proto.jit.baseline.set(proto.jit.entry.get());
-            let osr_ids = proto.jit.osr_ids.borrow_mut().take();
-            *proto.jit.baseline_osr_ids.borrow_mut() = osr_ids;
+            // The tier-1 code stays, for the function to fall back to. Tier
+            // 2 compiled again for another loop entry replaces its own
+            // earlier code instead.
+            if proto.jit.tier.get() != 2 {
+              proto.jit.baseline.set(proto.jit.entry.get());
+              let osr_ids = proto.jit.osr_ids.borrow_mut().take();
+              *proto.jit.baseline_osr_ids.borrow_mut() = osr_ids;
+            }
             proto.jit.tier2.set(crate::vm::object::TIER2_INSTALLED);
           } else {
             proto.jit.baseline.set(None);
@@ -2948,6 +3041,16 @@ impl VM {
       Some(frame) => unsafe { &*frame.function }.display_name(),
       None => std::borrow::Cow::Borrowed("<none>"),
     }
+  }
+
+  /// Name of the instruction at `ip` in the function whose frame is on
+  /// top, for the JIT's deopt logging.
+  pub(crate) fn current_instr_name(&self, ip: usize) -> &'static str {
+    self
+      .frames
+      .last()
+      .and_then(|frame| unsafe { &*frame.function }.chunk.code.get(ip))
+      .map_or("?", crate::vm::chunk::instr_name)
   }
 
   /// Called when an entry's element scan has just failed: stop betting
@@ -3793,35 +3896,69 @@ impl VM {
   }
 
   /// Profiling tier-1 code of `proto` reaching its tier-up budget. Asks
-  /// for tier 2 when nothing has yet, and says whether a loop about to
-  /// go round again at `header` should leave for tier 2's code now. The
-  /// budget is topped up so the code asks again only every so often.
+  /// for tier 2 when nothing has yet, and says whether a loop about to go
+  /// round again at `header` should leave the profiling code now: for
+  /// tier 2's code once it is in, or for the tier-1 code rebuilt without
+  /// profiling once tier 2 has declined. A loop tier 2 has no way into
+  /// gets one by asking tier 2 again. The budget is topped up so the code
+  /// asks again only every so often.
   pub(crate) fn tier_up(&mut self, proto: &ObjFunction, header: Option<usize>) -> bool {
     use crate::vm::object::{TIER2_INSTALLED, TIER2_NONE};
     self.drain_jit_results();
     let jit = &proto.jit;
     let recheck = TIERUP_RECHECK.min(jit.tierup_threshold / 2);
     jit.tierup_count.set(jit.tierup_threshold - recheck);
-    match jit.tier2.get() {
-      TIER2_NONE if !jit.compiling.get() && !jit.ineligible.get() => {
-        let Some(frame) = self.frames.last() else {
-          return false;
-        };
-        let proto_value = frame.closure_val.as_closure().function;
-        if !std::ptr::eq(proto_value.as_func(), proto) {
-          return false;
-        }
-        if crate::jit::log_enabled() {
-          eprintln!("[jit] '{}' asks for tier 2", proto.display_name());
-        }
-        self.enqueue_compile(proto, proto_value, Some(header));
-        false
-      },
-      TIER2_INSTALLED => header.is_some_and(|h| {
-        jit.osr_ids.borrow().as_ref().is_some_and(|ids| ids.contains_key(&h))
-      }),
-      _ => false,
+
+    let settled = jit.tier.get() == 2 || !jit.profiling.get();
+    let entered = |h: &usize| {
+      jit
+        .osr_ids
+        .borrow()
+        .as_ref()
+        .is_some_and(|ids| ids.contains_key(h))
+    };
+    if settled && jit.entry.get().is_some() && header.as_ref().is_some_and(entered) {
+      return true;
     }
+
+    let asks = match jit.tier2.get() {
+      TIER2_NONE => true,
+      TIER2_INSTALLED => header.is_some(),
+      _ => false,
+    };
+    if !asks || jit.compiling.get() || jit.ineligible.get() {
+      return false;
+    }
+    let Some(frame) = self.frames.last() else {
+      return false;
+    };
+    let proto_value = frame.closure_val.as_closure().function;
+    if !std::ptr::eq(proto_value.as_func(), proto) {
+      return false;
+    }
+    let mut entries: Vec<usize> = header.into_iter().collect();
+    if jit.tier.get() == 2 {
+      entries.extend(
+        jit
+          .osr_ids
+          .borrow()
+          .iter()
+          .flat_map(|ids| ids.keys().copied()),
+      );
+    }
+    if crate::jit::log_enabled() {
+      match header {
+        Some(h) if jit.tier.get() == 2 => {
+          eprintln!(
+            "[jit] '{}' asks tier 2 for a way into the loop at ip {h}",
+            proto.display_name()
+          )
+        },
+        _ => eprintln!("[jit] '{}' asks for tier 2", proto.display_name()),
+      }
+    }
+    self.enqueue_compile(proto, proto_value, Some(entries));
+    false
   }
 
   /// Checked by `run_until`'s `Instr::Jmp` handler on every backward jump
@@ -3854,10 +3991,15 @@ impl VM {
       if let Some(osr_id) = osr_id {
         return Some(self.invoke_compiled(entry, closure_val, osr_id));
       }
-      // Tier 2 has a way in only at the loop that asked for it; any other
-      // loop carries on in the baseline code.
+      // Tier 2 has ways in only at the loops profiling code asked for; any
+      // other loop carries on in the baseline code.
       let baseline = func.jit.baseline.get()?;
-      let osr_id = *func.jit.baseline_osr_ids.borrow().as_ref()?.get(&target_ip)?;
+      let osr_id = *func
+        .jit
+        .baseline_osr_ids
+        .borrow()
+        .as_ref()?
+        .get(&target_ip)?;
       return Some(self.invoke_compiled(baseline, closure_val, osr_id));
     }
     if func.jit.compiling.get() {
@@ -5552,6 +5694,7 @@ impl VM {
               static_slots: FxHashMap::default(),
               statics: Vec::new(),
               globals_module: func.globals_module,
+              display: Default::default(),
             });
             write_barrier(class_val.as_obj());
             self.set_reg(base, dst, class_val);
@@ -5649,8 +5792,7 @@ impl VM {
                 inst.fields[c.byte_offset.get() as usize / size_of::<Value>()].get()
               } else if let Some(&idx) = inst.class.as_class().field_slots.get(name_val.as_str()) {
                 if let Some(c) = cell {
-                  c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
-                  c.class_bits.set(class_bits);
+                  c.fill(class_bits, idx as u64 * size_of::<Value>() as u64);
                 }
                 inst.fields[idx as usize].get()
               } else if let Some(method) = inst
@@ -5761,8 +5903,7 @@ impl VM {
                   'step
                 );
                 if let Some(c) = cell {
-                  c.byte_offset.set(idx as u64 * size_of::<Value>() as u64);
-                  c.class_bits.set(class_bits);
+                  c.fill(class_bits, idx as u64 * size_of::<Value>() as u64);
                 }
                 idx as usize
               };

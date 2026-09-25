@@ -240,6 +240,39 @@ pub fn compile(
 /// `Clean` and `Dirty` are collapsed into ONE "trust the `Variable`"
 /// branch in `load_reg`; they only differ in whether `flush_live`
 /// still owes a write, never in whether a READ can trust the cache.
+/// What a field site's specialized path checks its receiver against: one
+/// class, or a family of classes that keep the field at the same slot.
+#[derive(Clone, Copy, Debug)]
+enum FieldTarget {
+  Class {
+    class: u64,
+    slot: u16,
+  },
+  /// Any class descending from `class`, which sits at `depth` in their
+  /// `ObjClass::display`. Only the fields `class` itself has are known
+  /// to sit at the same slots across them.
+  Family {
+    class: u64,
+    depth: u8,
+    slot: u16,
+  },
+}
+
+impl FieldTarget {
+  /// The class whose field slots the receiver is known to share.
+  fn class(self) -> u64 {
+    match self {
+      FieldTarget::Class { class, .. } | FieldTarget::Family { class, .. } => class,
+    }
+  }
+
+  fn slot(self) -> u16 {
+    match self {
+      FieldTarget::Class { slot, .. } | FieldTarget::Family { slot, .. } => slot,
+    }
+  }
+}
+
 /// A builtin native emitted inline: see
 /// `FuncCompiler::native_intrinsic`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1038,6 +1071,8 @@ struct FuncCompiler<'a, 'b> {
   captured: Vec<bool>,
   /// See `jit::CompileFacts::site_classes`.
   site_classes: FxHashMap<usize, (u64, u16)>,
+  /// See `jit::CompileFacts::site_families`.
+  site_families: FxHashMap<usize, Option<(u64, u8, u16)>>,
   /// This is profiling tier-1 code: see `jit::CompileFacts::profile`.
   profile: bool,
   /// See `jit::CompileFacts::feedback_cells`.
@@ -1607,6 +1642,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       site_spec,
       captured: typeflow::captured_registers(proto),
       site_classes: facts.site_classes,
+      site_families: facts.site_families,
       profile: facts.profile,
       feedback_cells: facts.feedback_cells,
     }
@@ -3025,8 +3061,16 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
     let mut bits = None;
     for op in operands {
-      let v = self.load_reg(op.of(instr));
-      let k = self.emit_kind_of(v);
+      let r = op.of(instr);
+      // A register proven to hold a number only needs telling apart
+      // whole from fractional, straight off its float.
+      let k = if self.type_facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r) {
+        let f = self.load_reg_f64(r);
+        self.emit_number_kind(f)
+      } else {
+        let v = self.load_reg(r);
+        self.emit_kind_of(v)
+      };
       bits = Some(match bits {
         Some(b) => self.fb.ins().bor(b, k),
         None => k,
@@ -7309,17 +7353,92 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// leaves compiled code entirely, so the site is worth far less than
   /// nothing. `deopt_sites` is what a previous compilation learned
   /// about exactly that.
-  fn target_class_for_field(&self, ip: usize, obj: u8, name: &str) -> Option<(u64, u16)> {
+  ///
+  /// A site that has seen instances of several classes guards the family
+  /// they share the field in, or when there is none, is left alone.
+  fn target_class_for_field(&self, ip: usize, obj: u8, name: &str) -> Option<FieldTarget> {
     if self.field_speculation_off
       || self.deopt_sites.contains(&ip)
       || self.deopt_receivers.contains(&obj)
     {
       return None;
     }
-    if let Some(&site) = self.site_classes.get(&ip) {
-      return Some(site);
+    if let Some(&family) = self.site_families.get(&ip) {
+      let (class, depth, slot) = family?;
+      return Some(FieldTarget::Family { class, depth, slot });
     }
-    self.find_unique_known_class_for_field(name)
+    if let Some(&(class, slot)) = self.site_classes.get(&ip) {
+      return Some(FieldTarget::Class { class, slot });
+    }
+    let (class, slot) = self.find_unique_known_class_for_field(name)?;
+    Some(FieldTarget::Class { class, slot })
+  }
+
+  /// Checks the instance in `obj` is what `target` expects, leaving
+  /// compiled code at `ip` when it is not, and returns its pointer and its
+  /// class's bits.
+  fn emit_field_target_guard(
+    &mut self,
+    ip: usize,
+    obj: u8,
+    target: FieldTarget,
+  ) -> (IrValue, IrValue) {
+    let flags = cranelift_codegen::ir::MemFlagsData::trusted();
+    let recv = self.load_reg(obj);
+
+    let deopt_block = self.fb.create_block();
+    let hit_block = self.fb.create_block();
+
+    let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
+    let ptr = if proven_instance {
+      self.obj_ptr(recv)
+    } else {
+      let obj_block = self.fb.create_block();
+      let inst_block = self.fb.create_block();
+      let is_obj = self.is_obj(recv);
+      self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
+
+      self.fb.switch_to_block(obj_block);
+      let ptr = self.obj_ptr(recv);
+      let tag = self.obj_tag(ptr);
+      let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
+      let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
+      self
+        .fb
+        .ins()
+        .brif(is_instance, inst_block, &[], deopt_block, &[]);
+
+      self.fb.switch_to_block(inst_block);
+      ptr
+    };
+
+    let class_off = object::obj_instance_class_offset() as i32;
+    let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
+    let hit = match target {
+      FieldTarget::Class { class, .. } => {
+        let expected = self.u64c(class);
+        self.fb.ins().icmp(IntCC::Equal, class_bits, expected)
+      },
+      FieldTarget::Family { class, depth, .. } => {
+        let class_obj = self.obj_ptr(class_bits);
+        let (box_offset, display) = object::obj_class_display_offsets();
+        let boxed = self
+          .fb
+          .ins()
+          .load(types::I64, flags, class_obj, box_offset as i32);
+        let entry = display + depth as usize * std::mem::size_of::<u64>();
+        let seen = self.fb.ins().load(types::I64, flags, boxed, entry as i32);
+        let expected = self.u64c(class);
+        self.fb.ins().icmp(IntCC::Equal, seen, expected)
+      },
+    };
+    self.fb.ins().brif(hit, hit_block, &[], deopt_block, &[]);
+
+    self.fb.switch_to_block(deopt_block);
+    self.emit_deopt(ip);
+
+    self.fb.switch_to_block(hit_block);
+    (ptr, class_bits)
   }
 
   /// `self.field` read fast path for a field PROVEN (see
@@ -7651,49 +7770,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           }
           return;
         }
-      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, obj, name) {
+      } else if let Some(target) = self.target_class_for_field(ip, obj, name) {
         let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
-        let recv = self.load_reg(obj);
-
-        let deopt_block = self.fb.create_block();
-        let hit_block = self.fb.create_block();
-
-        let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
-        let ptr = if proven_instance {
-          self.obj_ptr(recv)
-        } else {
-          let obj_block = self.fb.create_block();
-          let inst_block = self.fb.create_block();
-          let is_obj = self.is_obj(recv);
-          self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
-
-          self.fb.switch_to_block(obj_block);
-          let ptr = self.obj_ptr(recv);
-          let tag = self.obj_tag(ptr);
-          let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
-          let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
-          self
-            .fb
-            .ins()
-            .brif(is_instance, inst_block, &[], deopt_block, &[]);
-
-          self.fb.switch_to_block(inst_block);
-          ptr
-        };
-
-        let class_off = object::obj_instance_class_offset() as i32;
-        let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
-        let expected_class = self.u64c(target_class_bits);
-        let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, expected_class);
-        self
-          .fb
-          .ins()
-          .brif(same_class, hit_block, &[], deopt_block, &[]);
-
-        self.fb.switch_to_block(deopt_block);
-        self.emit_deopt(ip);
-
-        self.fb.switch_to_block(hit_block);
+        let (ptr, class_bits) = self.emit_field_target_guard(ip, obj, target);
+        let (target_class_bits, slot) = (target.class(), target.slot());
         let fields_ptr = self.load_instance_fields_ptr(ptr);
         self.fb.def_var(ptr_var, ptr);
         self.fb.def_var(fields_ptr_var, fields_ptr);
@@ -7875,49 +7955,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_write_barrier_for_store(ip, src, src_val, ptr);
           return;
         }
-      } else if let Some((target_class_bits, slot)) = self.target_class_for_field(ip, obj, name) {
+      } else if let Some(target) = self.target_class_for_field(ip, obj, name) {
         let (ptr_var, fields_ptr_var, class_var) = self.guarded_instance_vars[&obj];
-        let recv = self.load_reg(obj);
-
-        let deopt_block = self.fb.create_block();
-        let hit_block = self.fb.create_block();
-
-        let proven_instance = self.proven_param_shapes.get(&obj) == Some(&ParamShape::Instance);
-        let ptr = if proven_instance {
-          self.obj_ptr(recv)
-        } else {
-          let obj_block = self.fb.create_block();
-          let inst_block = self.fb.create_block();
-          let is_obj = self.is_obj(recv);
-          self.fb.ins().brif(is_obj, obj_block, &[], deopt_block, &[]);
-
-          self.fb.switch_to_block(obj_block);
-          let ptr = self.obj_ptr(recv);
-          let tag = self.obj_tag(ptr);
-          let tag_instance = self.i64c(object::OBJ_TAG_INSTANCE as i64);
-          let is_instance = self.fb.ins().icmp(IntCC::Equal, tag, tag_instance);
-          self
-            .fb
-            .ins()
-            .brif(is_instance, inst_block, &[], deopt_block, &[]);
-
-          self.fb.switch_to_block(inst_block);
-          ptr
-        };
-
-        let class_off = object::obj_instance_class_offset() as i32;
-        let class_bits = self.fb.ins().load(types::I64, flags, ptr, class_off);
-        let expected_class = self.u64c(target_class_bits);
-        let same_class = self.fb.ins().icmp(IntCC::Equal, class_bits, expected_class);
-        self
-          .fb
-          .ins()
-          .brif(same_class, hit_block, &[], deopt_block, &[]);
-
-        self.fb.switch_to_block(deopt_block);
-        self.emit_deopt(ip);
-
-        self.fb.switch_to_block(hit_block);
+        let (ptr, class_bits) = self.emit_field_target_guard(ip, obj, target);
+        let (target_class_bits, slot) = (target.class(), target.slot());
         let fields_ptr = self.load_instance_fields_ptr(ptr);
         self.fb.def_var(ptr_var, ptr);
         self.fb.def_var(fields_ptr_var, fields_ptr);

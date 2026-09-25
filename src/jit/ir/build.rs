@@ -47,6 +47,10 @@ pub struct Feedback {
   pub kinds: Vec<u8>,
   /// A field site's cached class, as `Value` bits, and the field's slot.
   pub fields: FxHashMap<usize, (u64, u16)>,
+  /// For a field site that has seen instances of more than one class,
+  /// the class declaring the field, as `Value` bits, and its depth in
+  /// `ObjClass::display`: every class the site can take shares the slot.
+  pub families: FxHashMap<usize, (u64, u8)>,
   /// An invoke site's cached key: a class's bits for an instance
   /// receiver, `builtins::method_table_key`'s kind id for a primitive.
   pub invokes: FxHashMap<usize, u64>,
@@ -108,6 +112,8 @@ enum Known {
   Bool,
   List,
   Instance(u64),
+  /// An instance of this class or a class descending from it.
+  Family(u64),
   /// A heap object with this `object::OBJ_TAG_*` tag: a string, bytes,
   /// dict or range.
   Tag(u8),
@@ -687,6 +693,39 @@ impl<'a> Builder<'a> {
     let view = self.view_mut(r);
     view.ptr = Some(p);
     view.known = Known::Instance(class);
+    p
+  }
+
+  /// The pointer to the instance in `r` a field site at `ip` reads or
+  /// writes: guarded as the one class the site has seen, or at a site
+  /// that has seen several, as any class descending from the one that
+  /// declares the field.
+  fn field_receiver(&mut self, r: u8, class: u64, ip: usize) -> ValueId {
+    let Some(&(family, depth)) = self.cx.feedback.families.get(&ip) else {
+      return self.instance_ptr(r, class, ip);
+    };
+    let view = self.view(r);
+    if let Some(p) = view.ptr
+      && matches!(view.known, Known::Family(f) if f == family)
+    {
+      return p;
+    }
+    let t = self.tagged(r);
+    let state = self.state(ip);
+    let p = self
+      .push(
+        Op::Guard(GuardKind::Family {
+          class: family,
+          depth,
+        }),
+        vec![t],
+        Some(Ty::Ptr),
+        Some(state),
+      )
+      .unwrap();
+    let view = self.view_mut(r);
+    view.ptr = Some(p);
+    view.known = Known::Family(family);
     p
   }
 
@@ -1440,13 +1479,13 @@ impl<'a> Builder<'a> {
 
       Instr::GetField { dst, obj, .. } if self.field_site(ip).is_some() => {
         let (class, slot) = self.field_site(ip).unwrap();
-        let p = self.instance_ptr(obj, class, ip);
+        let p = self.field_receiver(obj, class, ip);
         let v = self.value(Op::LoadField(slot), vec![p], Ty::Tagged);
         self.set_tagged(dst, v);
       },
       Instr::SetField { obj, src, .. } if self.field_site(ip).is_some() => {
         let (class, slot) = self.field_site(ip).unwrap();
-        let p = self.instance_ptr(obj, class, ip);
+        let p = self.field_receiver(obj, class, ip);
         let v = self.tagged(src);
         self.push(Op::StoreField(slot), vec![p, v], None, None);
       },

@@ -487,6 +487,11 @@ pub struct CompileFacts {
   /// field's slot on it; see `VM::resolve_site_classes`. Copied for the
   /// same reason as `site_kinds`.
   pub site_classes: FxHashMap<usize, (u64, u16)>,
+  /// Each `GetField`/`SetField` site that has seen instances of more than
+  /// one class, with the class declaring the field there, its depth in
+  /// `ObjClass::display` and the field's slot. `None` when that class sits
+  /// deeper than the display records; the site is then left to its cache.
+  pub site_families: FxHashMap<usize, Option<(u64, u8, u16)>>,
   /// Build the profiling kind of tier-1 code: it records the same site
   /// feedback the interpreter does and counts its entries and loop turns
   /// toward tier-up. See `JitInfo::profiling`.

@@ -1285,6 +1285,7 @@ fn materialize_class(
     // a module-scoped one always takes the cheap `Named` path instead
     // (see `capture_class`); so there's no home module to point at.
     globals_module: None,
+    display: Default::default(),
   });
   let p = vm.pin_values([placeholder]);
   node_pin[idx as usize] = Some(p);
@@ -1327,6 +1328,7 @@ fn materialize_class(
     c.static_slots = cc.static_slots.iter().cloned().collect();
     c.statics = statics;
   }
+  class_val.as_class().fill_display(class_val.to_bits());
   write_barrier(class_val.as_obj());
   vm.define_global(cc.name.clone(), class_val);
   Ok(class_val)

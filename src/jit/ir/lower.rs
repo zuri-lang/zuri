@@ -622,6 +622,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let ok = self.instance_of(x, class);
         (ok, Some(self.obj_ptr(x)))
       },
+      GuardKind::Family { class, depth } => {
+        let ok = self.instance_in_family(x, class, depth);
+        (ok, Some(self.obj_ptr(x)))
+      },
       GuardKind::Tag(tag) => {
         let ok = self.obj_tag_is(x, tag);
         (ok, Some(self.obj_ptr(x)))
@@ -1540,6 +1544,37 @@ impl<'a, 'b> Lowering<'a, 'b> {
     );
     let want = self.u64c(class);
     let same = self.fb.ins().icmp(IntCC::Equal, bits, want);
+    self.fb.ins().jump(done, &[same.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// Whether `v` is an instance of `class` or a class descending from
+  /// it: the entry at `depth` of its class's display is `class`.
+  fn instance_in_family(&mut self, v: IrValue, class: u64, depth: u8) -> IrValue {
+    let is_inst = self.obj_tag_is(v, object::OBJ_TAG_INSTANCE);
+    let check = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::I8);
+    let no = self.fb.ins().iconst(types::I8, 0);
+    self.fb.ins().brif(is_inst, check, &[], done, &[no.into()]);
+    self.fb.switch_to_block(check);
+    let flags = MemFlagsData::trusted();
+    let p = self.obj_ptr(v);
+    let bits = self
+      .fb
+      .ins()
+      .load(types::I64, flags, p, object::obj_instance_class_offset() as i32);
+    let class_obj = self.obj_ptr(bits);
+    let (box_offset, display) = object::obj_class_display_offsets();
+    let boxed = self
+      .fb
+      .ins()
+      .load(types::I64, flags, class_obj, box_offset as i32);
+    let entry = display + depth as usize * std::mem::size_of::<u64>();
+    let seen = self.fb.ins().load(types::I64, flags, boxed, entry as i32);
+    let want = self.u64c(class);
+    let same = self.fb.ins().icmp(IntCC::Equal, seen, want);
     self.fb.ins().jump(done, &[same.into()]);
     self.fb.switch_to_block(done);
     self.fb.block_params(done)[0]
