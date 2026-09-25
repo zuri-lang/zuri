@@ -5511,11 +5511,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         | Instr::BitShr { dst, a, b }
         | Instr::BitUshr { dst, a, b } => {
           let ia = match int_view[a as usize] {
-            Some(v) => v,
+            Some(v) => self.unsaturate(v),
             None => self.emit_narrow_to_i64(regs[a as usize]),
           };
           let ib = match int_view[b as usize] {
-            Some(v) => v,
+            Some(v) => self.unsaturate(v),
             None => self.emit_narrow_to_i64(regs[b as usize]),
           };
           let ir = match instr {
@@ -5526,20 +5526,27 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             Instr::BitShr { .. } => Self::shift_right(self.fb, ia, ib),
             _ => Self::shift_right_unsigned(self.fb, ia, ib),
           };
-          integral[dst as usize] = true;
+          // Past 2^53 the number is the integer rounded, so the integer
+          // is only a view of it when rounding cannot change it.
+          let exact = bitwise_result_exact(
+            &instr,
+            self.bitcast_source_f64_const(regs[a as usize]),
+            self.bitcast_source_f64_const(regs[b as usize]),
+          );
+          integral[dst as usize] = exact;
           pos_const[dst as usize] = false;
-          int_view[dst as usize] = Some(ir);
+          int_view[dst as usize] = exact.then_some(ir);
           regs[dst as usize] = self.fb.ins().fcvt_from_sint(types::F64, ir);
         },
         Instr::BitNot { dst, src } => {
           let is = match int_view[src as usize] {
-            Some(v) => v,
+            Some(v) => self.unsaturate(v),
             None => self.emit_narrow_to_i64(regs[src as usize]),
           };
           let inv = self.fb.ins().bnot(is);
-          integral[dst as usize] = true;
+          integral[dst as usize] = false;
           pos_const[dst as usize] = false;
-          int_view[dst as usize] = Some(inv);
+          int_view[dst as usize] = None;
           regs[dst as usize] = self.fb.ins().fcvt_from_sint(types::F64, inv);
         },
         Instr::Neg { dst, src } => {
@@ -5569,43 +5576,60 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             None => self.fb.ins().fcvt_to_sint_sat(types::I64, fb_),
           };
 
-          // Nothing left to test: an integral dividend and a positive
-          // constant divisor satisfy the guard outright, so this drops
-          // to the bare divide with no branch and no merge at all.
+          // An integral dividend and a positive constant divisor satisfy
+          // the guard outright, bar one value: 2^63 arrives saturated to
+          // `i64::MAX`, and its remainder is `fmod`'s. That result is
+          // whole too, so both ways out still carry an integer view.
           if integral[a as usize] && pos_const[b as usize] {
+            let exact = self.fb.ins().icmp_imm_s(IntCC::NotEqual, ia, i64::MAX);
+            let rem_block = self.fb.create_block();
+            let fmod_block = self.fb.create_block();
+            let join_block = self.fb.create_block();
+            self.fb.append_block_param(join_block, types::F64);
+            self.fb.append_block_param(join_block, types::I64);
+            self.fb.ins().brif(exact, rem_block, &[], fmod_block, &[]);
+
+            self.fb.switch_to_block(rem_block);
             let rem = self.fb.ins().srem(ia, ib);
             let rem_f = self.fb.ins().fcvt_from_sint(types::F64, rem);
+            let signed = self.fb.ins().fcopysign(rem_f, fa);
+            self.fb.ins().jump(join_block, &[signed.into(), rem.into()]);
+
+            self.fb.switch_to_block(fmod_block);
+            self.fb.set_cold_block(fmod_block);
+            let fallback = self.call_f64_intrinsic("zuri_jit_num_fmod", fa, fb_);
+            let fallback_int = self.fb.ins().fcvt_to_sint_sat(types::I64, fallback);
+            self
+              .fb
+              .ins()
+              .jump(join_block, &[fallback.into(), fallback_int.into()]);
+
+            self.fb.switch_to_block(join_block);
             integral[dst as usize] = true;
-            int_view[dst as usize] = Some(rem);
-            regs[dst as usize] = self.fb.ins().fcopysign(rem_f, fa);
+            int_view[dst as usize] = Some(self.fb.block_params(join_block)[1]);
+            regs[dst as usize] = self.fb.block_params(join_block)[0];
             continue;
           }
 
           let zero = self.i64c(0);
           let is_pos_denom = self.fb.ins().icmp(IntCC::SignedGreaterThan, ib, zero);
-          // The round-trip test proves BOTH integrality and `i64` range
-          // (the conversion saturates), so it is only skippable for an
-          // operand the caller already proved an int. A literal divisor
-          // then folds `is_pos_denom` away too, leaving the bare `srem`.
+          // The exactness test proves both integrality and `i64` range
+          // (the conversion saturates). An operand the caller already
+          // proved an int only needs telling apart from 2^63 saturated to
+          // `i64::MAX`.
           let mut can_fast = is_pos_denom;
-          if !integral[a as usize] {
-            let fa_rt = self.fb.ins().fcvt_from_sint(types::F64, ia);
-            let is_int_a =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fa, fa_rt);
-            can_fast = self.fb.ins().band(can_fast, is_int_a);
-          }
-          if !integral[b as usize] {
-            let fb_rt = self.fb.ins().fcvt_from_sint(types::F64, ib);
-            let is_int_b =
-              self
-                .fb
-                .ins()
-                .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fb_, fb_rt);
-            can_fast = self.fb.ins().band(can_fast, is_int_b);
-          }
+          let is_int_a = if integral[a as usize] {
+            self.fb.ins().icmp_imm_s(IntCC::NotEqual, ia, i64::MAX)
+          } else {
+            self.emit_exact_i64(fa, ia)
+          };
+          can_fast = self.fb.ins().band(can_fast, is_int_a);
+          let is_int_b = if integral[b as usize] {
+            self.fb.ins().icmp_imm_s(IntCC::NotEqual, ib, i64::MAX)
+          } else {
+            self.emit_exact_i64(fb_, ib)
+          };
+          can_fast = self.fb.ins().band(can_fast, is_int_b);
 
           let rem_block = self.fb.create_block();
           let fmod_block = self.fb.create_block();
@@ -12921,7 +12945,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             let mut can_fast = is_pos_denom;
             for (reg, ival, fval) in [(a, ia, fa), (b, ib, fb_)] {
               if self.const_facts.const_value(ip, reg).is_some_and(|n| {
-                n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
+                n.fract() == 0.0 && n >= (i64::MIN as f64) && n < 9223372036854775808.0
               }) {
                 continue;
               }
@@ -12938,11 +12962,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
                   limit,
                 )
               } else {
-                let rt = self.fb.ins().fcvt_from_sint(types::F64, ival);
-                self
-                  .fb
-                  .ins()
-                  .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fval, rt)
+                self.emit_exact_i64(fval, ival)
               };
               can_fast = self.fb.ins().band(can_fast, ok);
             }
@@ -13005,7 +13025,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             let mut can_fast = is_pos_denom;
             for (reg, ival, fval) in [(a, ia, fa), (b, ib, fb_)] {
               if self.const_facts.const_value(ip, reg).is_some_and(|n| {
-                n.fract() == 0.0 && n >= (i64::MIN as f64) && n <= (i64::MAX as f64)
+                n.fract() == 0.0 && n >= (i64::MIN as f64) && n < 9223372036854775808.0
               }) {
                 continue;
               }
@@ -13022,11 +13042,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
                   limit,
                 )
               } else {
-                let rt = self.fb.ins().fcvt_from_sint(types::F64, ival);
-                self
-                  .fb
-                  .ins()
-                  .fcmp(cranelift_codegen::ir::condcodes::FloatCC::Equal, fval, rt)
+                self.emit_exact_i64(fval, ival)
               };
               can_fast = self.fb.ins().band(can_fast, ok);
             }
@@ -13082,60 +13098,66 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
 
       Instr::BitAnd { dst, a, b } => {
+        let exact = self.bitwise_exact_at(ip, &instr, a, b);
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, |fb, ia, ib| fb.ins().band(ia, ib));
+          self.emit_bitwise_proven(ip, dst, a, b, exact, |fb, ia, ib| fb.ins().band(ia, ib));
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitand_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitand_slow", |fb, ia, ib| {
             fb.ins().band(ia, ib)
           });
         }
         false
       },
       Instr::BitOr { dst, a, b } => {
+        let exact = self.bitwise_exact_at(ip, &instr, a, b);
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, |fb, ia, ib| fb.ins().bor(ia, ib));
+          self.emit_bitwise_proven(ip, dst, a, b, exact, |fb, ia, ib| fb.ins().bor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitor_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitor_slow", |fb, ia, ib| {
             fb.ins().bor(ia, ib)
           });
         }
         false
       },
       Instr::BitXor { dst, a, b } => {
+        let exact = self.bitwise_exact_at(ip, &instr, a, b);
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, |fb, ia, ib| fb.ins().bxor(ia, ib));
+          self.emit_bitwise_proven(ip, dst, a, b, exact, |fb, ia, ib| fb.ins().bxor(ia, ib));
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitxor_slow", |fb, ia, ib| {
+          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitxor_slow", |fb, ia, ib| {
             fb.ins().bxor(ia, ib)
           });
         }
         false
       },
       Instr::BitShl { dst, a, b } => {
+        let exact = self.bitwise_exact_at(ip, &instr, a, b);
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, Self::shift_left);
+          self.emit_bitwise_proven(ip, dst, a, b, exact, Self::shift_left);
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitshl", Self::shift_left);
+          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitshl", Self::shift_left);
         }
         false
       },
       Instr::BitShr { dst, a, b } => {
+        let exact = self.bitwise_exact_at(ip, &instr, a, b);
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, Self::shift_right);
+          self.emit_bitwise_proven(ip, dst, a, b, exact, Self::shift_right);
         } else {
-          self.emit_bitwise_guarded(ip, dst, a, b, "zuri_jit_bitshr", Self::shift_right);
+          self.emit_bitwise_guarded(ip, dst, a, b, exact, "zuri_jit_bitshr", Self::shift_right);
         }
         false
       },
       Instr::BitUshr { dst, a, b } => {
         if self.both_proven_numeric(ip, a, b) {
-          self.emit_bitwise_proven(ip, dst, a, b, Self::shift_right_unsigned);
+          self.emit_bitwise_proven(ip, dst, a, b, true, Self::shift_right_unsigned);
         } else {
           self.emit_bitwise_guarded(
             ip,
             dst,
             a,
             b,
+            true,
             "zuri_jit_bitushr",
             Self::shift_right_unsigned,
           );
@@ -13145,15 +13167,14 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       Instr::BitNot { dst, src } => {
         if self.proven_int(ip, src) {
           let i = self.fb.use_var(self.reg_vars_int[src as usize]);
+          let i = self.unsaturate(i);
           let inv = self.fb.ins().bnot(i);
-          self.store_reg_int(dst, inv);
+          self.store_bitwise(dst, inv, false);
         } else if self.proven_numeric(ip, src) {
           let f = self.load_reg_f64(src);
           let i = self.emit_narrow_to_i64(f);
           let inv = self.fb.ins().bnot(i);
-          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          self.store_reg_f64(dst, r);
-          self.store_reg_int(dst, inv);
+          self.store_bitwise(dst, inv, false);
         } else {
           let v = self.load_reg(src);
           let is_num = self.is_number(v);
@@ -13164,11 +13185,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
           self.fb.switch_to_block(fast_block);
           let f = self.f64_view(src, v);
-          let i = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+          let i = self.emit_narrow_to_i64(f);
           let inv = self.fb.ins().bnot(i);
-          let r = self.fb.ins().fcvt_from_sint(types::F64, inv);
-          self.store_reg_f64(dst, r);
-          self.store_reg_int(dst, inv);
+          self.store_bitwise(dst, inv, false);
           self.fb.ins().jump(done_block, &[]);
 
           self.fb.switch_to_block(slow_block);
@@ -14679,6 +14698,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     dst: u8,
     a: u8,
     b: u8,
+    exact: bool,
     fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue,
   ) {
     // A proven int is read straight out of the integer cache: the cache
@@ -14686,21 +14706,23 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // narrowing these operators want. Anything else is narrowed from the
     // float. The result always fits `i64`, so it can seed the cache.
     let ia = if self.proven_int(_ip, a) {
-      self.fb.use_var(self.reg_vars_int[a as usize])
+      let i = self.fb.use_var(self.reg_vars_int[a as usize]);
+      self.unsaturate(i)
     } else {
       let va = self.load_reg(a);
       let fa = self.f64_view(a, va);
       self.emit_narrow_to_i64(fa)
     };
     let ib = if self.proven_int(_ip, b) {
-      self.fb.use_var(self.reg_vars_int[b as usize])
+      let i = self.fb.use_var(self.reg_vars_int[b as usize]);
+      self.unsaturate(i)
     } else {
       let vb = self.load_reg(b);
       let fb_ = self.f64_view(b, vb);
       self.emit_narrow_to_i64(fb_)
     };
     let ir = fast(self.fb, ia, ib);
-    self.store_reg_int(dst, ir);
+    self.store_bitwise(dst, ir, exact);
   }
 
   fn emit_bitwise_guarded(
@@ -14709,6 +14731,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     dst: u8,
     a: u8,
     b: u8,
+    exact: bool,
     slow_helper: &'static str,
     fast: impl FnOnce(&mut FunctionBuilder, IrValue, IrValue) -> IrValue,
   ) {
@@ -14723,10 +14746,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.switch_to_block(fast_block);
     let fa = self.f64_view(a, va);
     let fb_ = self.f64_view(b, vb);
-    let ia = self.fb.ins().fcvt_to_sint_sat(types::I64, fa);
-    let ib = self.fb.ins().fcvt_to_sint_sat(types::I64, fb_);
+    let ia = self.emit_narrow_to_i64(fa);
+    let ib = self.emit_narrow_to_i64(fb_);
     let ir = fast(self.fb, ia, ib);
-    self.store_reg_int(dst, ir);
+    self.store_bitwise(dst, ir, exact);
     self.fb.ins().jump(done_block, &[]);
 
     self.fb.switch_to_block(slow_block);
@@ -14769,6 +14792,54 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       _ => None,
     }
+  }
+
+  /// Stores a bitwise operator's result. The number is the integer as a
+  /// double, rounded past 2^53 the way the interpreter's `as f64` rounds
+  /// it. The integer cache has to be that same number: it takes the
+  /// integer as it is only when `exact` says rounding cannot change it,
+  /// and otherwise converts the double back, which only happens when
+  /// something reads the cache.
+  fn store_bitwise(&mut self, dst: u8, ir: IrValue, exact: bool) {
+    let f = self.fb.ins().fcvt_from_sint(types::F64, ir);
+    if self.int_tracked[dst as usize] {
+      let iv = if exact {
+        ir
+      } else {
+        self.fb.ins().fcvt_to_sint_sat(types::I64, f)
+      };
+      self.fb.def_var(self.reg_vars_int[dst as usize], iv);
+    }
+    self.store_reg_f64(dst, f);
+  }
+
+  fn bitwise_exact_at(&self, ip: usize, instr: &Instr, a: u8, b: u8) -> bool {
+    bitwise_result_exact(instr, self.proven_const(ip, a), self.proven_const(ip, b))
+  }
+
+  /// An integer view as the bitwise operators want it. The only way a
+  /// view holds `i64::MAX` is from 2^63 saturating, or from a result that
+  /// the number it stands for rounds up to 2^63; either way the number is
+  /// 2^63, which wraps to `i64::MIN`.
+  fn unsaturate(&mut self, i: IrValue) -> IrValue {
+    let saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, i, i64::MAX);
+    let min = self.i64c(i64::MIN);
+    self.fb.ins().select(saturated, min, i)
+  }
+
+  /// Whether `as_int`, `f` through `fcvt_to_sint_sat`, is exactly `f`.
+  /// Converting back and comparing is not enough on its own: 2^63
+  /// saturates to `i64::MAX`, which converts back to 2^63. No double is
+  /// `i64::MAX`, so that result is never exact.
+  fn emit_exact_i64(&mut self, f: IrValue, as_int: IrValue) -> IrValue {
+    let roundtrip = self.fb.ins().fcvt_from_sint(types::F64, as_int);
+    let same = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::Equal,
+      f,
+      roundtrip,
+    );
+    let saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, as_int, i64::MAX);
+    self.fb.ins().band_not(same, saturated)
   }
 
   /// Narrows a number to `i64` the way the bitwise operators need it:
@@ -15290,4 +15361,23 @@ fn to_float_cc(cc: IntCC) -> cranelift_codegen::ir::condcodes::FloatCC {
 
 fn runtime_using_no_match() -> u64 {
   crate::jit::runtime::USING_NO_MATCH
+}
+
+/// Whether a bitwise operator's integer result is exactly the number the
+/// interpreter holds for it, given whatever operands are constants: true
+/// when the result cannot pass 2^53, where rounding to a double starts.
+fn bitwise_result_exact(instr: &Instr, a: Option<f64>, b: Option<f64>) -> bool {
+  let wrapped = |c: Option<f64>| c.map(value::num_to_wrapped_i64);
+  match instr {
+    // The result is below 2^32.
+    Instr::BitUshr { .. } => true,
+    // No larger than a non-negative mask.
+    Instr::BitAnd { .. } => [wrapped(a), wrapped(b)]
+      .into_iter()
+      .flatten()
+      .any(|m| (0..=1i64 << 53).contains(&m)),
+    // At least 11 bits shifted out.
+    Instr::BitShr { .. } => wrapped(b).is_some_and(|s| s as u32 >= 11),
+    _ => false,
+  }
 }

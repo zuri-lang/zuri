@@ -1,0 +1,103 @@
+# Bitwise operators and `%` in compiled code. Both work on numbers as
+# whole 64-bit integers where they can: a bitwise operand is truncated and
+# wrapped into range, and `%` takes an integer remainder when both sides
+# are whole and the divisor positive. Each function here warms up on small
+# whole numbers, then gets values at the edges of those rules, and has to
+# answer exactly as the interpreter does.
+
+def bits(x, y) {
+  return [x & y, x | y, x ^ y, x << y, x >> y, x >>> y, ~x]
+}
+
+# A result past 2^53 becomes the nearest number, so the next operator
+# sees that number rather than the exact integer.
+def chained(x) {
+  var wide = (x << 60) | 1
+  return [wide & 1, (wide + 0) & 1, wide >> 59]
+}
+
+def rem(a, b) {
+  return a % b
+}
+
+def rem_const(a) {
+  return [a % 2, a % 7, a % -3]
+}
+
+def shift_loop(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + ((i * 7) >> 1) + (i & 3) + (i % 5)
+  }
+  return total
+}
+
+var sum = 0
+iter var r = 0; r < 3000; r++ {
+  var b = bits(r, r % 70)
+  sum = sum + b[0] + b[2] + b[5] + b[6] + chained(r % 3)[2]
+  sum = sum + rem(r, r % 9 + 1) + rem_const(r)[1] + shift_loop(20)
+}
+echo 'warm: ${sum}'
+
+echo 'bitwise operators at the edges:'
+var edges = [0, 1, -1, 2.9, -2.9, 1e20, -1e20, 9007199254740993, 2 ** 63, -(2 ** 63), 2 ** 64 + 5, 0 / 0, 1 / 0, -1 / 0]
+var amounts = [0, 1, 31, 32, 33, 63, 64, 65, -1, 2 ** 32 + 1]
+for x in edges {
+  echo 'x = ${x}'
+  for y in amounts {
+    echo bits(x, y)
+  }
+}
+echo chained(1)
+echo chained(-1)
+
+echo 'remainders at the edges:'
+for a in [2 ** 63, -(2 ** 63), -4, 4, 5.5, -7, 7, 1e20, 0 / 0, 1 / 0, 9007199254740993, -0.0] {
+  echo [rem(a, 10), rem(a, 7), rem(a, -3), rem(a, 0), rem(a, 2.5), rem(a, 2 ** 63), rem_const(a)]
+}
+
+echo 'operands that are not numbers:'
+
+def attempt(f) {
+  var result = nil
+  catch {
+    result = f()
+  } as e {
+    result = e.message
+  }
+  return result
+}
+
+echo attempt(@() => bits('a', 1))
+echo attempt(@() => bits(1, nil))
+echo attempt(@() => rem('a', 2))
+
+echo 'operands that were not always numbers:'
+
+# Warmed on numbers and strings alike, so the compiled code checks its
+# operands every time rather than knowing them to be numbers.
+def loose(x, y) {
+  return [x & y, x | y, x >> y, ~x]
+}
+
+var kinds = [1, 'a', 2]
+var loose_sum = 0
+iter var r = 0; r < 5000; r++ {
+  var v = kinds[r % 3]
+  if is_number(v) {
+    loose_sum = loose_sum + loose(v, 1)[0]
+  } else {
+    loose_sum = loose_sum + attempt(@() => loose(v, 1)).length()
+  }
+}
+echo loose_sum
+echo loose(1e20, 1)
+echo loose(2 ** 64 + 5, 3)
+echo loose(1 / 0, 1)
+echo loose(2 ** 63, 0)
+
+echo 'still right afterwards:'
+echo bits(12, 3)
+echo rem(-9, 4)
+echo shift_loop(100)
