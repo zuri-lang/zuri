@@ -246,6 +246,7 @@ impl JitEngine {
         return Err("compilation aborted: VM shutdown".to_string());
       }
     }
+    constants_right(&mut pending.ctx.func);
     let mut ctrl_plane = cranelift_codegen::control::ControlPlane::default();
     let compile_result = pending.ctx.compile(&*self.isa, &mut ctrl_plane);
     let (bytes, alignment, relocs) = match compile_result {
@@ -406,5 +407,43 @@ impl JitEngine {
     // targets.
     let entry: EntryFn = unsafe { std::mem::transmute::<*const u8, EntryFn>(code_ptr) };
     Ok(entry)
+  }
+}
+
+/// Puts a constant operand of a floating add or multiply on the right,
+/// where x64 lowering reads it from the constant pool as part of the
+/// instruction instead of building it in a register first, every time
+/// round a loop. Either order gives the same result: order only shows
+/// when both operands are NaN, and a NaN constant stays where it is.
+fn constants_right(func: &mut cranelift_codegen::ir::Function) {
+  use cranelift_codegen::ir::{InstructionData, Opcode, ValueDef};
+
+  let dfg = &func.dfg;
+  let constant = |v| match dfg.value_def(v) {
+    ValueDef::Result(inst, _) => match dfg.insts[inst] {
+      InstructionData::UnaryIeee64 {
+        opcode: Opcode::F64const,
+        imm,
+      } => !f64::from_bits(imm.bits()).is_nan(),
+      _ => false,
+    },
+    _ => false,
+  };
+  let mut swaps = Vec::new();
+  for block in func.layout.blocks() {
+    for inst in func.layout.block_insts(block) {
+      if let InstructionData::Binary {
+        opcode: Opcode::Fadd | Opcode::Fmul,
+        args,
+      } = dfg.insts[inst]
+        && constant(args[0])
+        && !constant(args[1])
+      {
+        swaps.push(inst);
+      }
+    }
+  }
+  for inst in swaps {
+    func.dfg.inst_args_mut(inst).swap(0, 1);
   }
 }
