@@ -1576,7 +1576,13 @@ pub struct ObjInstance {
 pub struct DictKey(pub Value);
 
 impl PartialEq for DictKey {
+  #[inline]
   fn eq(&self, other: &Self) -> bool {
+    // Every probe of the index compares keys, and number keys are the
+    // common case; `equals` compares them the same way, out of line.
+    if self.0.is_number() && other.0.is_number() {
+      return self.0.as_number() == other.0.as_number();
+    }
     self.0.equals(&other.0)
   }
 }
@@ -1599,9 +1605,12 @@ impl Hash for DictKey {
       // Equal numbers are the same f64 and so always take the same
       // branch, which is what keeps this consistent with `DictKey`'s
       // `PartialEq`. Non-integral values, NaN and the infinities all
-      // fall through to the bits, where they were already fine.
-      if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
-        (n as i64).hash(state);
+      // fall through to the bits, where they were already fine. The
+      // round trip through `i64` is the integer test: it saturates out
+      // of range and sends NaN to zero, and neither comes back equal.
+      let whole = n as i64;
+      if whole as f64 == n {
+        whole.hash(state);
       } else {
         n.to_bits().hash(state);
       }
