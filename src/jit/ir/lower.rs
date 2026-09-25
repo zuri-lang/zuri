@@ -188,6 +188,7 @@ pub fn lower(
     entry_sig: None,
     osr_param: IrValue::from_u32(0),
     deopt_chains: FxHashMap::default(),
+    leave_marker: None,
     positions: FxHashMap::default(),
   };
   l.run()?;
@@ -218,6 +219,9 @@ struct Lowering<'a, 'b> {
   /// pushes, outermost first, as the address and length of a table that
   /// lives as long as the code.
   deopt_chains: FxHashMap<u16, (u64, u64)>,
+  /// The helper that says why the block's deopt is leaving, set by the
+  /// `Unreached` it starts with and called once the registers are out.
+  leave_marker: Option<&'static str>,
   /// The encoded position published for an instruction of a frame built
   /// in, by frame and position.
   positions: FxHashMap<(u16, usize), usize>,
@@ -486,7 +490,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
         ))
       },
       Op::Unreached => {
-        self.call("zuri_jit_unreached", &[self.vm]);
+        self.leave_marker = Some("zuri_jit_unreached");
         None
       },
       Op::Generic { instr, ip, frame } => {
@@ -714,10 +718,8 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(ok, cont, &[], fail, &[]);
     self.fb.switch_to_block(fail);
     self.fb.set_cold_block(fail);
-    if matches!(kind, GuardKind::Whole | GuardKind::Arith(_)) {
-      self.call("zuri_jit_int_miss", &[self.vm]);
-    }
-    self.deopt(state);
+    let marker = matches!(kind, GuardKind::Whole | GuardKind::Arith(_)).then_some("zuri_jit_int_miss");
+    self.deopt(state, marker);
     self.fb.switch_to_block(cont);
     result
   }
@@ -1320,15 +1322,26 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let x = self.tagged_of(v);
         self.fb.ins().return_(&[x]);
       },
-      Terminator::Deopt(state) => self.deopt(&state),
+      Terminator::Deopt(state) => {
+        let marker = self.leave_marker.take();
+        self.deopt(&state, marker);
+      },
       Terminator::Unset => unreachable!("an unfinished block reached lowering"),
     }
   }
 
   // --- leaving compiled code ---------------------------------------------
 
-  fn deopt(&mut self, state: &FrameState) {
+  /// Leaves compiled code for the interpreter at `state`. `marker`, when
+  /// given, is the helper that tells the VM why, called only once every
+  /// register is written out: the values a call would clobber are then
+  /// dead, so the path out holds none of them across one, and nothing on
+  /// the fast path has to live in memory for its sake.
+  fn deopt(&mut self, state: &FrameState, marker: Option<&'static str>) {
     self.flush(state);
+    if let Some(marker) = marker {
+      self.call(marker, &[self.vm]);
+    }
     if let Some((frame, ip)) = state.blame {
       let (proto, _) = self.frame(frame);
       let proto_c = self.u64c(proto as *const ObjFunction as u64);
@@ -2386,7 +2399,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(ok, cont, &[], fail, &[]);
     self.fb.switch_to_block(fail);
     self.fb.set_cold_block(fail);
-    self.deopt(state);
+    self.deopt(state, None);
     self.fb.switch_to_block(cont);
     self.obj_ptr(slot)
   }
