@@ -1,0 +1,69 @@
+# Integer arithmetic at the edges of what a double counts exactly. Each
+# loop warms up on small whole numbers, and its running value also feeds
+# a bitwise operator, so compiled code keeps it an integer. It then has to
+# give the interpreter's double for sums and differences that leave 2^53,
+# that would wrap an integer, and that land exactly on the boundary.
+
+# `a` stepped by `b`, `n` times, with the parity of every step.
+def walk(a, b, n) {
+  var s = a
+  var bits = 0
+  iter var i = 0; i < n; i++ {
+    s = s + b
+    bits = bits ^ (s & 1)
+  }
+  return [s, bits]
+}
+
+# `a` stepped down by `b`, `n` times, with the parity of every step.
+def walk_back(a, b, n) {
+  var s = a
+  var bits = 0
+  iter var i = 0; i < n; i++ {
+    s = s - b
+    bits = bits ^ (s & 1)
+  }
+  return [s, bits]
+}
+
+# `a` counted up and down by one, `n` times each way.
+def bounce(a, n) {
+  var s = a
+  var t = a
+  var bits = 0
+  iter var i = 0; i < n; i++ {
+    s++
+    t--
+    bits = bits ^ (s & 1) ^ (t & 2)
+  }
+  return [s, t, bits]
+}
+
+var total = 0
+iter var i = 0; i < 3000; i++ {
+  total = total + walk(i, 3, 20)[0] + walk_back(i, 3, 20)[1] + bounce(i, 20)[2]
+}
+echo total
+
+var edges = [
+  [2 ** 53 - 1, 1],
+  [2 ** 53, 1],
+  [-(2 ** 53), -1],
+  [-(2 ** 53) + 1, -1],
+  [2 ** 62, 2 ** 62],
+  [2 ** 62 + 2 ** 61, 2 ** 62],
+  [-(2 ** 62), -(2 ** 62)],
+  [-(2 ** 63), -(2 ** 62)],
+  [2 ** 63 - 1024, 2 ** 62],
+  [9007199254740993, 0],
+  [4503599627370496, 4503599627370496]
+]
+
+for pair in edges {
+  var a = pair[0]
+  var b = pair[1]
+  var up = bounce(a, 2)
+  var down = bounce(-a, 2)
+  echo [walk(a, b, 1)[0], walk(a, b, 2)[0], walk_back(a, b, 1)[0], walk_back(b, a, 2)[0]]
+  echo [up[0], up[1], down[0], down[1]]
+}

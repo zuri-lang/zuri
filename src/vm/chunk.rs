@@ -555,10 +555,11 @@ pub mod kind {
   pub const STRING: u8 = 1 << 2;
   pub const LIST: u8 = 1 << 3;
   pub const INSTANCE: u8 = 1 << 4;
-  pub const BOOL: u8 = 1 << 5;
-  pub const NIL: u8 = 1 << 6;
-  /// Every other heap value: dicts, bytes, bigints, callables, classes,
-  /// ranges and so on.
+  /// Nil or a boolean.
+  pub const PLAIN: u8 = 1 << 5;
+  pub const BYTES: u8 = 1 << 6;
+  /// Every other heap value: dicts, bigints, callables, classes, ranges
+  /// and so on.
   pub const OTHER: u8 = 1 << 7;
 
   pub const NUMBER: u8 = INT | FLOAT;
@@ -573,16 +574,14 @@ pub mod kind {
       }
       return FLOAT;
     }
-    if v.is_nil() {
-      return NIL;
-    }
     if !v.is_obj() {
-      return BOOL;
+      return PLAIN;
     }
     match unsafe { &*v.as_obj() }.tag() {
       crate::vm::object::OBJ_TAG_STR => STRING,
       crate::vm::object::OBJ_TAG_LIST => LIST,
       crate::vm::object::OBJ_TAG_INSTANCE => INSTANCE,
+      crate::vm::object::OBJ_TAG_BYTES => BYTES,
       _ => OTHER,
     }
   }

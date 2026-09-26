@@ -417,7 +417,7 @@ fn compiler_loop(
           },
           Err(reason) => {
             if crate::jit::log_enabled() {
-              eprintln!("[jit] '{name}' stays in the baseline tier: {reason}");
+              eprintln!("[jit] '{name}' stays in Kebbi: {reason}");
             }
           },
         }

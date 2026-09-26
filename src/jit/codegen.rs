@@ -3216,7 +3216,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// `chunk::kind::of`, as an `I8`.
   fn emit_kind_of(&mut self, v: IrValue) -> IrValue {
     use crate::vm::chunk::kind;
-    use crate::vm::object::{OBJ_TAG_INSTANCE, OBJ_TAG_LIST, OBJ_TAG_STR};
+    use crate::vm::object::{OBJ_TAG_BYTES, OBJ_TAG_INSTANCE, OBJ_TAG_LIST, OBJ_TAG_STR};
     let qnan = self.u64c(value::QNAN);
     let masked = self.fb.ins().band(v, qnan);
     let is_num = self.fb.ins().icmp(IntCC::NotEqual, masked, qnan);
@@ -3239,11 +3239,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     // Nil, or else a boolean.
     self.fb.switch_to_block(plain_block);
-    let nil = self.u64c(value::NIL_VAL);
-    let is_nil = self.fb.ins().icmp(IntCC::Equal, v, nil);
-    let nil_k = self.fb.ins().iconst(types::I8, kind::NIL as i64);
-    let bool_k = self.fb.ins().iconst(types::I8, kind::BOOL as i64);
-    let k = self.fb.ins().select(is_nil, nil_k, bool_k);
+    let k = self.fb.ins().iconst(types::I8, kind::PLAIN as i64);
     self.fb.ins().jump(done, &[k.into()]);
 
     self.fb.switch_to_block(obj_block);
@@ -3254,6 +3250,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       (OBJ_TAG_STR, kind::STRING),
       (OBJ_TAG_LIST, kind::LIST),
       (OBJ_TAG_INSTANCE, kind::INSTANCE),
+      (OBJ_TAG_BYTES, kind::BYTES),
     ] {
       let is = self.fb.ins().icmp_imm_u(IntCC::Equal, tag, t as i64);
       let bit = self.fb.ins().iconst(types::I8, bit as i64);

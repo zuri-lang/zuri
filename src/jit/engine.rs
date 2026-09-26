@@ -184,7 +184,7 @@ impl JitEngine {
       return Err("compilation aborted: VM shutdown".to_string());
     }
     if crate::jit::log_ir_enabled() {
-      eprintln!("[jit] tier 2 IR for '{}':\n{ir}", proto.display_name());
+      eprintln!("[jit] Bayelsa IR for '{}':\n{ir}", proto.display_name());
     }
 
     self.next_id += 1;
@@ -208,7 +208,7 @@ impl JitEngine {
     };
     if crate::jit::log_ir_enabled() {
       eprintln!(
-        "[jit] tier 2 Cranelift IR for '{}':\n{}",
+        "[jit] Bayelsa Cranelift IR for '{}':\n{}",
         proto.name,
         ctx.func.display()
       );

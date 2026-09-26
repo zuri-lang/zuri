@@ -61,6 +61,17 @@ jobs:
           set -o pipefail
           cargo test --locked --test zuri 2>&1 | tee test-output.txt
 
+      # The same suite with Kebbi alone, the mode `ZURI_JIT_BAYELSA=0`
+      # selects. The default run above covers both compilers together.
+      - name: Test with Kebbi alone
+        shell: bash
+        env:
+          RUST_BACKTRACE: full
+          ZURI_JIT_BAYELSA: "0"
+        run: |
+          set -o pipefail
+          cargo test --locked --test zuri 2>&1 | tee -a test-output.txt
+
       # The whole log, kept as a file. A run with several failing
       # fixtures produces more output than the web view will show, and
       # the part that gets dropped is the middle, where each failure

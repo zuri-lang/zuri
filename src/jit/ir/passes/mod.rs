@@ -11,6 +11,7 @@ pub mod entries;
 pub mod floats;
 pub mod gvn;
 pub mod induction;
+pub mod ints;
 pub mod licm;
 pub mod loops;
 pub mod phi;
@@ -47,7 +48,7 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   check(f, "phi")?;
   induction::run(f, feedback);
   check(f, "induction")?;
-  repr::integers(f);
+  repr::integers(f, feedback);
   check(f, "integers")?;
   // After induction has taken the loop counters it can make integers;
   // what integer arithmetic is left only reaching doubles goes to doubles,

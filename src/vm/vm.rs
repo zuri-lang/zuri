@@ -1751,7 +1751,7 @@ impl VM {
       && proto.jit.tier2.get() == crate::vm::object::TIER2_NONE
       && proto.chunk.feedback_complete();
     if straight && crate::jit::log_enabled() {
-      eprintln!("[jit] '{}' goes straight to tier 2", proto.display_name());
+      eprintln!("[jit] '{}' goes straight to Bayelsa", proto.display_name());
     }
     let optimize = straight.then(|| entry.into_iter().collect());
     self.enqueue_compile(proto, proto_value, optimize);
@@ -2896,6 +2896,31 @@ impl VM {
         _ => {},
       }
     }
+    // Module-level numbers this function only reads, as they stand now.
+    // A `const` is an ordinary global once compiled, so the builder bets
+    // on what it holds and checks the bet where it reads it.
+    let written: FxHashSet<u32> = chunk
+      .code
+      .iter()
+      .enumerate()
+      .filter(|(_, i)| matches!(i, Instr::SetGlobal { .. } | Instr::AssignGlobal { .. }))
+      .filter_map(|(ip, _)| globals.get(&ip).copied())
+      .collect();
+    let mut global_numbers = FxHashMap::default();
+    for (ip, instr) in chunk.code.iter().enumerate() {
+      if let Instr::GetGlobal { .. } = instr
+        && let Some(&slot) = globals.get(&ip)
+        && !written.contains(&slot)
+      {
+        let value = self.global_slots[slot as usize].get();
+        if value.is_number() {
+          let n = value.as_number();
+          let whole =
+            n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 && n.to_bits() != (-0.0f64).to_bits();
+          global_numbers.insert(slot, whole);
+        }
+      }
+    }
     let mut global_callees = FxHashMap::default();
     let mut invoke_callees = FxHashMap::default();
     if gather.path.len() <= TIER2_CALLEE_DEPTH {
@@ -2975,6 +3000,7 @@ impl VM {
       fields_off: proto.jit.field_speculation_off.get(),
       global_callees,
       global_classes,
+      global_numbers,
       invoke_callees,
       young_budget: self.heap.young_budget() as u64,
       entries: None,
@@ -3087,7 +3113,7 @@ impl VM {
         Ok(entry) => {
           if crate::jit::log_enabled() && result.tier == 1 {
             eprintln!(
-              "[jit] compiled '{}' at tier 1{} ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
+              "[jit] compiled '{}' in Kebbi{} ({} bytecode ops, {} osr point(s), speculative_params={:#x}, speculative_regs={:#x}, speculative_lists={:#x}, speculative_ints={:#x})",
               proto.display_name(),
               if result.profiling { ", profiling" } else { "" },
               proto.chunk.code.len(),
@@ -3098,12 +3124,12 @@ impl VM {
               result.speculative_ints.unwrap_or(0),
             );
           } else if crate::jit::log_enabled() {
-            // The masks above describe the baseline tier's speculation;
-            // the optimizing tier's lives in its IR.
+            // The masks above describe Kebbi's speculation; Bayelsa's
+            // lives in its IR.
             eprintln!(
-              "[jit] compiled '{}' at tier {} ({} bytecode ops, {} osr point(s))",
+              "[jit] compiled '{}' in {} ({} bytecode ops, {} osr point(s))",
               proto.display_name(),
-              result.tier,
+              if result.tier == 2 { "Bayelsa" } else { "Kebbi" },
               proto.chunk.code.len(),
               result.osr_ids.len(),
             );
@@ -4078,11 +4104,11 @@ impl VM {
       match header {
         Some(h) if jit.tier.get() == 2 => {
           eprintln!(
-            "[jit] '{}' asks tier 2 for a way into the loop at ip {h}",
+            "[jit] '{}' asks Bayelsa for a way into the loop at ip {h}",
             proto.display_name()
           )
         },
-        _ => eprintln!("[jit] '{}' asks for tier 2", proto.display_name()),
+        _ => eprintln!("[jit] '{}' asks for Bayelsa", proto.display_name()),
       }
     }
     self.enqueue_compile(proto, proto_value, Some(entries));

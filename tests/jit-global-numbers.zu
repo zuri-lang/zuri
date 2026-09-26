@@ -1,0 +1,76 @@
+# Module-level numbers read inside hot functions. Compiled code bets on
+# what such a global holds when the function compiles, and has to give
+# the interpreter's answer once the global holds something else: a
+# fraction, a whole number too big for integer arithmetic, a string.
+
+const NEWLINE = '\n'.ord()
+
+def lines(data: bytes) {
+  var n = 0
+  iter var i = 0; i < data.length(); i++ {
+    if data[i] == NEWLINE {
+      n++
+    }
+  }
+  return n
+}
+
+var text = bytes(0)
+iter var i = 0; i < 2000; i++ {
+  text.extend('line ${i}\n'.to_bytes())
+}
+
+var counted = 0
+iter var r = 0; r < 200; r++ {
+  counted = lines(text)
+}
+echo counted
+
+var step = 2
+
+def walk(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + i * step
+  }
+  return total
+}
+
+var walked = 0
+iter var r = 0; r < 300; r++ {
+  walked = walk(1000)
+}
+echo walked
+
+step = 0.5
+echo walk(1000)
+step = 2 ** 60
+echo walk(1000)
+step = 2
+echo walk(1000)
+
+var mark = 7
+
+def marks(xs) {
+  var n = 0
+  for x in xs {
+    if x == mark {
+      n++
+    }
+  }
+  return n
+}
+
+var xs = [7, 'x', 7.0, nil, 8, 7]
+var found = 0
+iter var r = 0; r < 20000; r++ {
+  found = marks(xs)
+}
+echo found
+
+mark = 'x'
+echo marks(xs)
+mark = 0 / 0
+echo marks([mark, 1])
+mark = 7
+echo marks(xs)

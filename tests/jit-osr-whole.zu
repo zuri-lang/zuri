@@ -1,0 +1,85 @@
+# Loops entered part way through, from a frame the interpreter was
+# already running. The way in takes the frame's numbers as whole ones
+# where the loop counts in them, so a frame that holds a fraction, a
+# negative zero or something that is not a number at all when the loop
+# is entered has to come out as the interpreter gives it.
+
+# Two cursors walking towards each other, the only call to this function
+# still running when its loop gets hot.
+def meet(n, start) {
+  var lo = start
+  var hi = n
+  var steps = 0
+  while lo < hi {
+    if lo % 3 == 0 {
+      lo++
+      continue
+    }
+    hi--
+    steps++
+  }
+  return [lo, hi, steps]
+}
+
+echo meet(2000000, 0)
+echo meet(2000000, 0.5)
+echo meet(2000000, -0)
+echo meet(2000000, 1)
+
+# The outer call makes an inner one that warms the loop up on whole
+# numbers, then reaches the same loop itself holding a fraction, still
+# running in the interpreter, and goes into the compiled loop from there.
+def nested(n, start, inner) {
+  var warm = []
+  if inner {
+    warm = nested(n, 0, false)
+  }
+  var lo = start
+  var hi = n
+  var steps = 0
+  while lo < hi {
+    if lo % 3 == 0 {
+      lo++
+      continue
+    }
+    hi--
+    steps++
+  }
+  return [lo, hi, steps, warm]
+}
+
+echo nested(3000000, 0.5, true)
+echo nested(3000000, -0, true)
+
+# A counter handed over as a whole number that the loop then steps into
+# fractions.
+def drift(n) {
+  var x = 0
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    if i == n / 2 {
+      x = x + 0.25
+    }
+    total = total + x
+    x = x + 1
+  }
+  return total
+}
+
+echo drift(1000000)
+
+# A loop entered with a string where a number usually is, compared and
+# never counted.
+def scan(n, from) {
+  var at = from
+  var seen = 0
+  iter var i = 0; i < n; i++ {
+    if at == 'a' {
+      seen++
+    }
+  }
+  return seen
+}
+
+echo scan(1000000, 'a')
+echo scan(1000000, 3)

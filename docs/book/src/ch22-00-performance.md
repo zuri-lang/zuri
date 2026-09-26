@@ -1,9 +1,10 @@
 # Performance and the JIT
 
 Zuri runs your bytecode in an interpreter until a piece of it gets hot,
-then compiles that piece to machine code with Cranelift and runs it there
-instead. The tiering happens on its own, on a background thread, with no
-annotations and no flags.
+then compiles that piece to machine code and runs it there instead. Two
+compilers share the work, one quick and one thorough, and a hot function
+passes through both. The tiering happens on its own, on background
+threads, with no annotations and no flags.
 
 Here is what that is worth on a plain recursive Fibonacci, measured on one
 idle machine:
@@ -32,8 +33,71 @@ took 47ms
 ```
 
 Over three times, for a function that does nothing but add and compare, and
-you write nothing to get it. The rest of this chapter is about the handful
-of cases where what you write decides whether you get it.
+you write nothing to get it. The rest of this chapter explains how the
+compilers work and covers the handful of cases where what you write decides
+whether you get it.
+
+## The Two Compilers
+
+**Kebbi** compiles first. It turns a function's bytecode into machine code
+one instruction at a time, keeps values in machine registers, and proves
+what it can about types before it compiles: a parameter annotated `list` is
+a list, and a counter that starts at 0 and steps by 1 is a whole number.
+Kebbi compiles quickly, and its code runs several times faster than the
+interpreter.
+
+**Bayelsa** compiles second. It builds the whole function as a graph of
+typed values, then optimizes that graph before it generates any machine
+code. It carries a fact proven once to every later use, moves checks that
+cannot change out of loops, keeps loop counters as plain integers, builds
+small functions into the functions that call them, and bets on what a
+function has done so far wherever nothing proves it. Bayelsa takes longer
+to compile, and its code is the fastest Zuri produces.
+
+Both compile with Cranelift, and both run on background threads. A program
+never waits for a compile: it carries on in the interpreter, or in the code
+it already has, until the new code is ready.
+
+### How a Function Moves Between Them
+
+1. **The interpreter.** Every function starts here. It counts its calls and
+   its loop turns, and records the kind of value each operation meets.
+2. **Kebbi, profiling.** Once a function is warm, Kebbi compiles it with
+   the counting and recording built in. The function is fast from here on,
+   and still watching itself.
+3. **Bayelsa.** Once the profiling code has done enough work, Bayelsa
+   compiles the function from what it recorded. A loop running at that
+   moment moves into the new code at its next turn.
+
+A function every operation of which has already run in the interpreter
+skips the profiling step and goes straight to Bayelsa, since profiling
+would only record what the interpreter already knows.
+
+### When a Bet Fails
+
+Bayelsa compiles what it has seen. A loop that only ever added whole
+numbers does integer arithmetic; a module constant that held `10` is
+compared as the integer 10; an index that only ever met `bytes` reads a
+byte. Each bet is checked where it is made, and a failed check hands the
+frame back to the interpreter at that exact instruction, with every
+variable as the compiled code left it. This is a **deoptimisation**.
+
+The place that failed is remembered. The next compile of the function makes
+no bet there, so a function deoptimises at a given place once, not every
+time round.
+
+### What Stays in Kebbi
+
+Bayelsa leaves a function to Kebbi in two cases:
+
+- The function contains a `catch`. Kebbi compiles it, handlers included.
+- The function's hot operations are ones Kebbi handles inline and Bayelsa
+  would hand to the runtime: arithmetic on values that were not always
+  numbers, method calls on strings, and indexing lists and strings whose
+  kind nothing settles. Kebbi's code is the faster of the two there.
+
+A function left in Kebbi is rebuilt without its profiling and runs at
+Kebbi's full speed.
 
 ## How Tiering Works
 
@@ -63,8 +127,25 @@ You can watch it happen:
 
 ```console
 $ ZURI_JIT_LOG=1 zuri run fib.zu
-[jit] compiled 'fib' (11 bytecode ops, 0 osr point(s), speculative_params=0x1, speculative_regs=0x0)
+[jit] 'fib' goes straight to Bayelsa
+[jit] compiled 'fib' in Bayelsa (13 bytecode ops, 0 osr point(s))
 196418
+```
+
+`fib` goes straight to Bayelsa because every one of its operations ran in
+the interpreter before it warmed up. With Bayelsa off, Kebbi compiles it
+instead, and the line lists what Kebbi proved:
+
+```console
+$ ZURI_JIT_BAYELSA=0 ZURI_JIT_LOG=1 zuri run fib.zu
+[jit] compiled 'fib' in Kebbi (13 bytecode ops, 0 osr point(s), speculative_params=0x1, speculative_regs=0x0, speculative_lists=0x0, speculative_ints=0x1)
+196418
+```
+
+A function Bayelsa leaves to Kebbi gets a line saying why:
+
+```text
+[jit] 'report' stays in Kebbi: catch at ip 5
 ```
 
 And you can see what did and did not make it:
@@ -340,6 +421,34 @@ The elapsed line will differ every run; the length will not. Print both, so
 a change in the second tells you the harness broke rather than the code
 getting faster.
 
+## Choosing a Mode
+
+Both compilers run by default. `ZURI_JIT_BAYELSA=0` turns Bayelsa off, and
+every hot function then stays in Kebbi.
+
+Keep the default for anything that runs long enough for its speed to
+matter: servers, batch jobs, numeric work, anything whose hot loops run for
+more than a moment. That is where Bayelsa's code repays its compile many
+times over.
+
+Turn Bayelsa off when:
+
+- **The program is short.** A script that finishes in a fraction of a
+  second spends a real share of its life compiling a second time, and the
+  faster code arrives too late to pay for itself.
+- **Cores are scarce.** Bayelsa's compiles take more processor time than
+  Kebbi's. On a machine or container held to one core, or with every core
+  busy with isolates, that time comes out of the program's own.
+- **Start-up is the workload.** A command-line tool run over and over, a
+  few milliseconds each time, gains nothing from code that is faster on
+  its thousandth iteration.
+- **Timings have to hold from the first run.** Kebbi reaches its speed
+  sooner and stays there. Under Bayelsa a function speeds up once more,
+  part way through a run.
+
+Measure both. The switch is one variable, and running the real workload
+each way settles the question for that workload.
+
 ## The Environment Variables
 
 These exist for measurement and debugging. Ordinary programs need none of
@@ -348,12 +457,14 @@ them.
 | Variable | Effect |
 | --- | --- |
 | `ZURI_JIT=0` | disable the JIT entirely |
+| `ZURI_JIT_BAYELSA=0` | compile with Kebbi alone |
 | `ZURI_JIT_LOG=1` | one line per compilation attempt |
-| `ZURI_JIT_LOG_IR=1` | dump the Cranelift IR |
+| `ZURI_JIT_LOG_IR=1` | dump the Cranelift IR, and Bayelsa's own before it |
 | `ZURI_JIT_COVERAGE=1` | a table of what compiled, at exit |
 | `ZURI_JIT_NO_SPECIALIZATION=1` | compile, but do not speculate on types |
 | `ZURI_JIT_THREADS=n` | background compiler threads |
 | `ZURI_JIT_CALL_K`, `ZURI_JIT_OSR_K` | the warm-up curve constants |
+| `ZURI_JIT_TIERUP_K` | how much profiling work comes before Bayelsa |
 | `ZURI_GC_LOG=1` | garbage collector activity |
 | `ZURI_OPCODE_PROFILE=1` | interpreter opcode histogram |
 
@@ -365,8 +476,9 @@ is the first question to ask when something is slower than it should be.
 
 The interpreter is fast and the JIT is automatic. Most Zuri code needs no
 performance work at all, and the code that does usually needs exactly one
-of the three things in this chapter: move a `catch` out of a hot function,
-annotate a parameter, or stop putting two types in one variable.
+of the three things in this chapter: return a value instead of raising for
+an expected outcome, annotate a parameter, or stop putting two types in one
+variable.
 
 Reach for anything more exotic only after `ZURI_JIT_COVERAGE` has told you
 which function is actually the problem.

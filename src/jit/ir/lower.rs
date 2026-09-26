@@ -205,6 +205,7 @@ pub fn lower(
     deopt_chains: FxHashMap::default(),
     leave_marker: None,
     positions: FxHashMap::default(),
+    small: super::passes::ints::small_integers(ir),
   };
   l.run()?;
   Ok(ir.osr_ids.clone())
@@ -240,6 +241,8 @@ struct Lowering<'a, 'b> {
   /// The encoded position published for an instruction of a frame built
   /// in, by frame and position.
   positions: FxHashMap<(u16, usize), usize>,
+  /// `I64` values known to lie within 2^53 of zero.
+  small: rustc_hash::FxHashSet<ValueId>,
 }
 
 impl<'a, 'b> Lowering<'a, 'b> {
@@ -678,17 +681,35 @@ impl<'a, 'b> Lowering<'a, 'b> {
       },
       GuardKind::Arith(op) => {
         let y = self.v(args[1]);
+        // A sum or difference with an operand within 2^53 of zero that
+        // wraps lands further than that from zero, so the range check
+        // catches the overflow on its own.
+        let one_small = self.small.contains(&args[0]) || self.small.contains(&args[1]);
         let (r, overflow) = match op {
-          IntOp::Add => self.fb.ins().sadd_overflow(x, y),
-          IntOp::Sub => self.fb.ins().ssub_overflow(x, y),
-          IntOp::Mul => self.fb.ins().smul_overflow(x, y),
+          IntOp::Add if one_small => (self.fb.ins().iadd(x, y), None),
+          IntOp::Sub if one_small => (self.fb.ins().isub(x, y), None),
+          IntOp::Add => {
+            let (r, o) = self.fb.ins().sadd_overflow(x, y);
+            (r, Some(o))
+          },
+          IntOp::Sub => {
+            let (r, o) = self.fb.ins().ssub_overflow(x, y);
+            (r, Some(o))
+          },
+          IntOp::Mul => {
+            let (r, o) = self.fb.ins().smul_overflow(x, y);
+            (r, Some(o))
+          },
         };
-        let biased = self.fb.ins().iadd_imm_s(r, 1 << 53);
-        let in_range = self
-          .fb
-          .ins()
-          .icmp_imm_u(IntCC::UnsignedLessThan, biased, 1 << 54);
-        let mut ok = self.fb.ins().band_not(in_range, overflow);
+        // Within `-2^53..2^53` exactly when the bits above the 53rd are
+        // all zeros or all ones: shifted down, -1 or 0.
+        let high = self.fb.ins().sshr_imm_u(r, 53);
+        let high = self.fb.ins().iadd_imm_s(high, 1);
+        let in_range = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, high, 2);
+        let mut ok = match overflow {
+          Some(o) => self.fb.ins().band_not(in_range, o),
+          None => in_range,
+        };
         if op == IntOp::Mul {
           let signs = self.fb.ins().bor(x, y);
           let negative = self.fb.ins().icmp_imm_s(IntCC::SignedLessThan, signs, 0);

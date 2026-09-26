@@ -83,6 +83,9 @@ pub struct Feedback {
   pub global_callees: FxHashMap<u32, Box<Callee>>,
   /// Global slots holding a class that a call here reaches through.
   pub global_classes: FxHashSet<u32>,
+  /// Global slots holding a number this function reads and never writes,
+  /// with whether it is a whole one integer arithmetic can take.
+  pub global_numbers: FxHashMap<u32, bool>,
   /// For a method call site whose cache holds a class, the method that
   /// class resolves it to.
   pub invoke_callees: FxHashMap<usize, Box<Callee>>,
@@ -969,9 +972,7 @@ impl<'a> Builder<'a> {
       } else {
         format!(" of '{}', built in,", self.cx.proto.display_name())
       };
-      return Err(format!(
-        "{what} at ip {ip}{place} runs faster in the baseline tier"
-      ));
+      return Err(format!("{what} at ip {ip}{place} runs faster in Kebbi"));
     }
     let state = self.state(ip);
     let args = state.regs.iter().map(|&(_, v)| v).collect();
@@ -1576,6 +1577,19 @@ impl<'a> Builder<'a> {
         let slot = self.cx.feedback.globals[&ip];
         let t = self.value(Op::LoadGlobal(slot), vec![], Ty::Tagged);
         self.set_tagged(dst, t);
+        let feedback = self.cx.feedback;
+        if let Some(&whole) = feedback.global_numbers.get(&slot)
+          && !feedback.sites_off
+          && feedback.open(ip)
+        {
+          // Checked here, where it is read, so the check leaves a loop
+          // along with the read.
+          if whole {
+            self.whole(dst, ip);
+          } else {
+            self.num(dst, ip);
+          }
+        }
       },
       Instr::SetGlobal { src, .. } | Instr::AssignGlobal { src, .. }
         if self.cx.feedback.globals.contains_key(&ip) =>
@@ -1931,16 +1945,20 @@ impl<'a> Builder<'a> {
   }
 
   /// The kind of object an index site reads or writes, when this tier
-  /// has a path for it: a proven string, dict or bytes, or a string the
-  /// site has only ever seen.
+  /// has a path for it: a proven string, dict or bytes, or a string or
+  /// bytes the site has only ever seen.
   fn index_tag(&self, ip: usize, obj: u8) -> Option<u8> {
     let feedback = self.cx.feedback;
     if feedback.sites_off || !feedback.open(ip) {
       return None;
     }
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
     let tag = self.proven_tag(ip, obj);
-    let tag =
-      tag.or_else(|| (feedback.kinds.get(ip) == Some(&kind::STRING)).then_some(OBJ_TAG_STR));
+    let tag = tag.or(match seen {
+      kind::STRING => Some(OBJ_TAG_STR),
+      kind::BYTES => Some(OBJ_TAG_BYTES),
+      _ => None,
+    });
     tag.filter(|&t| matches!(t, OBJ_TAG_STR | OBJ_TAG_DICT | OBJ_TAG_BYTES))
   }
 
@@ -1969,6 +1987,7 @@ impl<'a> Builder<'a> {
           .and_then(|&k| crate::builtins::method_key_tag(k))
       })
       .or_else(|| (seen == kind::STRING).then_some(OBJ_TAG_STR))
+      .or_else(|| (seen == kind::BYTES).then_some(OBJ_TAG_BYTES))
       .or_else(|| {
         (seen == kind::OTHER)
           .then(|| Builtin::likely_tag(name))
@@ -1987,7 +2006,7 @@ impl<'a> Builder<'a> {
       return None;
     }
     let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
-    let containers = kind::LIST | kind::STRING | kind::OTHER;
+    let containers = kind::LIST | kind::STRING | kind::BYTES | kind::OTHER;
     if seen == 0 || seen & !containers != 0 || seen == kind::LIST || seen == kind::STRING {
       return None;
     }

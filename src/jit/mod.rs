@@ -1,4 +1,15 @@
-//! A Cranelift-backed baseline JIT tier for the Zuri VM.
+//! The Zuri VM's JIT: two compilers over Cranelift.
+//!
+//! **Kebbi** is the baseline tier (`codegen`). It translates bytecode
+//! straight into Cranelift one instruction at a time, and compiles fast.
+//! **Bayelsa** is the optimizing tier (`ir`). It builds a function as SSA
+//! over typed values from the feedback Kebbi's profiling code gathers,
+//! optimizes it as a whole, and lowers that to Cranelift. Both run by
+//! default; `ZURI_JIT_BAYELSA=0` leaves Kebbi alone. Inside this module
+//! the two are also called tier 1 and tier 2.
+//!
+//! The rest of this page describes what both tiers share with the
+//! interpreter, as Kebbi does it.
 //!
 //! # Architecture in one page
 //!
@@ -105,22 +116,23 @@ pub fn log_asm_enabled() -> bool {
   *ENABLED.get_or_init(|| std::env::var_os("ZURI_JIT_LOG_ASM").is_some())
 }
 
-/// Run both tiers; `ZURI_JIT_TIER2=1`. A warm function gets profiling
-/// tier-1 code first, and once that code has done enough work, tier 2
-/// compiles it from the feedback gathered. A function tier 2 declines
-/// stays in tier 1.
+/// Whether Bayelsa runs, which it does unless `ZURI_JIT_BAYELSA=0`. A warm
+/// function gets profiling Kebbi code first, and once that code has done
+/// enough work, Bayelsa compiles it from the feedback gathered. A function
+/// Bayelsa declines stays in Kebbi. With Bayelsa off, Kebbi compiles every
+/// warm function without profiling and that is where it stays.
 pub fn tier2_enabled() -> bool {
   static ENABLED: OnceLock<bool> = OnceLock::new();
-  *ENABLED.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v != "0"))
+  *ENABLED.get_or_init(|| std::env::var("ZURI_JIT_BAYELSA").map_or(true, |v| v != "0"))
 }
 
-/// Skip tier 1 and compile every warm function straight through tier 2;
-/// `ZURI_JIT_TIER2=direct`. Tier 2 then works from the interpreter's
-/// feedback alone. For exercising tier 2's compiler on everything that
+/// Skip Kebbi and compile every warm function straight through Bayelsa;
+/// `ZURI_JIT_BAYELSA=direct`. Bayelsa then works from the interpreter's
+/// feedback alone. For exercising Bayelsa's compiler on everything that
 /// warms up, not for running programs.
 pub fn tier2_direct() -> bool {
   static DIRECT: OnceLock<bool> = OnceLock::new();
-  *DIRECT.get_or_init(|| std::env::var("ZURI_JIT_TIER2").is_ok_and(|v| v == "direct"))
+  *DIRECT.get_or_init(|| std::env::var("ZURI_JIT_BAYELSA").is_ok_and(|v| v == "direct"))
 }
 
 /// One interpreter frame that a deoptimization inside a call built into

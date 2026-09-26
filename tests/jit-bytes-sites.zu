@@ -1,0 +1,63 @@
+# Index sites whose object nothing proves to be bytes, but that have only
+# ever seen bytes. Compiled code reads and writes them as bytes, and has
+# to answer as the interpreter does when a string, a list or a dict turns
+# up at the same site, and when a byte written is out of range.
+
+def ends(items) {
+  var total = 0
+  for b in items {
+    total = total + b[0] + b[b.length() - 1]
+  }
+  return total
+}
+
+def fill(items, v) {
+  for b in items {
+    iter var i = 0; i < b.length(); i++ {
+      b[i] = v
+    }
+  }
+  return items
+}
+
+var buffers = []
+iter var i = 1; i < 40; i++ {
+  var b = bytes(i)
+  b[0] = i
+  b[i - 1] = 255 - i
+  buffers.append(b)
+}
+
+var total = 0
+iter var r = 0; r < 3000; r++ {
+  total = ends(buffers)
+}
+echo total
+
+echo ends([bytes(2), [3, 4], {0: 5, 1: 6}])
+
+catch {
+  echo ends([bytes(1), 'ab'])
+} as e {
+  echo e.type
+}
+
+var filled = []
+iter var r = 0; r < 300; r++ {
+  filled = fill(buffers, r % 256)
+}
+echo filled[5]
+
+catch {
+  fill([bytes(3)], 256)
+} as e {
+  echo e.type
+}
+
+catch {
+  fill([bytes(3)], -1)
+} as e {
+  echo e.type
+}
+
+echo fill([[0, 0], {0: 1}], 9)
