@@ -328,12 +328,15 @@ class Process {
   }
 
   /**
-   * Reads from the child's stdout. Blocks until at least one byte
-   * has been produced or the child has exited and its stdout has
-   * hit EOF, whichever comes first.
+   * Reads from the child's stdout. While the child runs, this blocks
+   * until at least one byte has been produced or its stdout has hit
+   * EOF, and returns what has arrived so far. Once `wait()` or
+   * `try_wait()` has seen the child exit, it returns everything the
+   * child wrote that has not been read yet, waiting for its stdout to
+   * hit EOF first.
    *
    * @param ?int length: The maximum number of bytes to return; all
-   *    currently buffered output if not given.
+   *    available output if not given.
    * @returns bytes
    * @raises Error if this process's stdout wasn't opened with
    *    `stdout: 'pipe'`.

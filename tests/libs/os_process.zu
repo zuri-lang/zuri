@@ -112,6 +112,34 @@ assert err3 == 'to-stderr', 'read_stderr() must not include anything written to 
 ok('spawn() keeps stdout and stderr as independent streams')
 
 # ---------------------------------------------------------------------------
+# spawn(): reading once the child has exited
+# ---------------------------------------------------------------------------
+# More output than a pipe holds, written line by line, so the last of it
+# is still on its way when the child exits. A read after wait() has to
+# return all of it rather than what happened to have arrived.
+var p8 = os.spawn(interpreter, child(
+  'many_lines',
+  'import io\niter var i = 0; i < 20000; i++ {\n  echo i\n  io.stderr.write(\'e\')\n}\n'
+))
+assert p8.wait() == 0
+var many = p8.read_stdout().to_string()
+var expected = ''
+iter var i = 0; i < 20000; i++ {
+  expected += '${i}\n'
+}
+assert many == expected, 'read_stdout() after wait() must return everything the child wrote'
+assert p8.read_stderr().to_string().length() == 20000,
+  'read_stderr() after wait() must return everything the child wrote'
+ok('read_stdout() and read_stderr() after wait() return the whole output')
+
+var p9 = os.spawn(interpreter, child('letters', 'echo \'abcdefghijklmnop\'\n'))
+assert p9.wait() == 0
+assert p9.read_stdout(10).to_string() == 'abcdefghij',
+  'read_stdout(length) after wait() must return that many bytes when the child wrote them'
+assert p9.read_stdout().to_string() == 'klmnop\n', 'the rest must follow on the next read'
+ok('read_stdout(length) after wait() returns exactly that many bytes')
+
+# ---------------------------------------------------------------------------
 # spawn(): options: cwd and env
 # ---------------------------------------------------------------------------
 var elsewhere = os.create_temp_dir('zuri-os-process-cwd-')

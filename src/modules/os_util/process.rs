@@ -121,10 +121,20 @@ impl Drain {
   /// hit EOF, then drains up to `length` bytes (everything currently
   /// buffered, if `length` is `None`). Returns an empty `Vec` only
   /// once EOF has genuinely been reached with nothing left buffered.
-  fn read(&self, length: Option<usize>) -> Vec<u8> {
+  ///
+  /// Once the child has exited, everything it wrote is already in the
+  /// pipe, but the reader thread may not have copied all of it out yet.
+  /// With `exited` set this waits for the stream to end, or for `length`
+  /// bytes, so a read after `wait()` sees the child's whole output.
+  fn read(&self, length: Option<usize>, exited: bool) -> Vec<u8> {
     let (lock, cvar) = &*self.state;
     let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-    while guard.data.is_empty() && !guard.finished {
+    let enough = |g: &DrainState| match (exited, length) {
+      (false, _) => !g.data.is_empty(),
+      (true, Some(n)) => g.data.len() >= n,
+      (true, None) => false,
+    };
+    while !guard.finished && !enough(&guard) {
       guard = cvar.wait(guard).unwrap_or_else(|e| e.into_inner());
     }
     let take = length.unwrap_or(guard.data.len()).min(guard.data.len());
@@ -137,6 +147,8 @@ pub struct Process {
   stdin: Option<ChildStdin>,
   stdout: Option<Drain>,
   stderr: Option<Drain>,
+  /// Set once `wait()` or `try_wait()` has seen the child exit.
+  exited: bool,
 }
 
 /// The number to report for a finished child.
@@ -325,6 +337,7 @@ impl Process {
       stdin,
       stdout,
       stderr,
+      exited: false,
     })
   }
 
@@ -352,7 +365,7 @@ impl Process {
     self
       .stdout
       .as_ref()
-      .map(|d| d.read(length))
+      .map(|d| d.read(length, self.exited))
       .ok_or_else(|| "this process's stdout was not piped".to_string())
   }
 
@@ -360,13 +373,16 @@ impl Process {
     self
       .stderr
       .as_ref()
-      .map(|d| d.read(length))
+      .map(|d| d.read(length, self.exited))
       .ok_or_else(|| "this process's stderr was not piped".to_string())
   }
 
   pub fn try_wait(&mut self) -> Result<Option<i32>, String> {
     match self.child.try_wait() {
-      Ok(Some(status)) => Ok(Some(exit_code_of(status))),
+      Ok(Some(status)) => {
+        self.exited = true;
+        Ok(Some(exit_code_of(status)))
+      },
       Ok(None) => Ok(None),
       Err(e) => Err(e.to_string()),
     }
@@ -380,6 +396,7 @@ impl Process {
   pub fn wait(&mut self, timeout_ms: Option<u64>) -> Result<Option<i32>, String> {
     let Some(ms) = timeout_ms else {
       let status = self.child.wait().map_err(|e| e.to_string())?;
+      self.exited = true;
       return Ok(Some(exit_code_of(status)));
     };
 
