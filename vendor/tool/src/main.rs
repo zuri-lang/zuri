@@ -146,8 +146,8 @@ fn save(vendor: &Path, name: &str) -> Result<()> {
     .output()
     .map_err(|e| format!("could not run git: {e}"))?;
 
-  // `git diff --no-index` exits 1 when the two sides differ, which is the
-  // case being asked for.
+  // Comparing two directories, git exits 1 when they differ, which is
+  // the case being asked for.
   match output.status.code() {
     Some(0) => {
       return Err(format!(
@@ -467,7 +467,7 @@ fn json_strings_after(json: &str, key: &str) -> Vec<String> {
   out
 }
 
-/// `git diff --no-index` names each file by the path it was given, so
+/// Comparing two directories, git names each file by the path it was given, so
 /// the pristine side reads `a/.pristine/<crate>-<version>/src/lib.rs`.
 /// This rewrites the file headers to `a/src/lib.rs`, the form that
 /// applies from inside the crate.
@@ -494,7 +494,8 @@ fn relative_headers(diff: &str, roots: &[&str]) -> String {
   out
 }
 
-/// The `.rej` files `git apply --reject` left in a copy, relative to it.
+/// The `.rej` files git left in a copy for hunks it could not apply,
+/// relative to the copy.
 fn find_rejects(copy: &Path) -> Result<Vec<String>> {
   let mut found = Vec::new();
   let mut pending = vec![copy.to_path_buf()];
