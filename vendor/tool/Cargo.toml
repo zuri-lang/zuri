@@ -1,0 +1,12 @@
+[package]
+name = "patch-crates"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+# A workspace of its own. The main workspace's `[patch.crates-io]` points
+# at the copies this tool makes, and Cargo will not load that workspace
+# while one is missing, so the tool has to run without it.
+[workspace]

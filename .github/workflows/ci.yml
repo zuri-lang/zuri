@@ -33,6 +33,11 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
+      # The patched crates are built from vendor/patches rather than
+      # committed, and the workspace does not load without them.
+      - name: Patch crates
+        run: cargo patch-crates
+
       - name: Build
         run: cargo build --locked
 
@@ -117,6 +122,11 @@ jobs:
       # The reference's pages are generated rather than committed, so
       # they have to exist before anything can be checked against them.
       # This needs no mdBook: it writes markdown and stops.
+      # The patched crates are built from vendor/patches rather than
+      # committed, and the workspace does not load without them.
+      - name: Patch crates
+        run: cargo patch-crates
+
       - name: Build and generate the reference
         run: |
           cargo build --locked
@@ -146,6 +156,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: docs
+
+      # The patched crates are built from vendor/patches rather than
+      # committed, and the workspace does not load without them.
+      - name: Patch crates
+        run: cargo patch-crates
 
       - name: Build and generate the reference
         run: |

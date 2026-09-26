@@ -1,0 +1,244 @@
+diff --git a/src/isa/x64/inst/emit.rs b/src/isa/x64/inst/emit.rs
+index 7f6f1ae..52d8762 100644
+--- a/src/isa/x64/inst/emit.rs
++++ b/src/isa/x64/inst/emit.rs
+@@ -164,6 +164,79 @@ pub(crate) fn emit(
+     sink: &mut MachBuffer<Inst>,
+     info: &EmitInfo,
+     state: &mut EmitState,
++) {
++    let start = sink.cur_offset();
++    emit_inst(inst, sink, info, state);
++    state.prev_start = start;
++    state.prev_end = sink.cur_offset();
++}
++
++/// Intel cores from Skylake to Cascade Lake, with the microcode that fixes
++/// their jump erratum, keep any 32-byte block of code holding a jump that
++/// crosses or ends on a 32-byte boundary out of the decoded-uop cache. A
++/// loop whose jumps land that way decodes from scratch on every turn, so
++/// its speed swings with wherever the code before it happens to end. When
++/// `set_place_jumps` has turned it on, each jump is placed clear of those
++/// boundaries, a conditional one together with the instruction before it,
++/// which it fuses with, padding with nops before them when they would
++/// straddle one.
++const JUMP_WINDOW: CodeOffset = 32;
++
++fn clear_of_boundary(start: CodeOffset, end: CodeOffset) -> bool {
++    start / JUMP_WINDOW == (end - 1) / JUMP_WINDOW && end % JUMP_WINDOW != 0
++}
++
++fn nop_bytes(mut len: CodeOffset) -> SmallVec<[u8; 32]> {
++    const NOPS: [&[u8]; 9] = [
++        &[0x90],
++        &[0x66, 0x90],
++        &[0x0f, 0x1f, 0x00],
++        &[0x0f, 0x1f, 0x40, 0x00],
++        &[0x0f, 0x1f, 0x44, 0x00, 0x00],
++        &[0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00],
++        &[0x0f, 0x1f, 0x80, 0x00, 0x00, 0x00, 0x00],
++        &[0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
++        &[0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
++    ];
++    let mut out = SmallVec::new();
++    while len > 0 {
++        let n = len.min(9);
++        out.extend_from_slice(NOPS[n as usize - 1]);
++        len -= n;
++    }
++    out
++}
++
++/// Places the `len` bytes of jumps about to be emitted clear of a 32-byte
++/// boundary, along with the instruction just emitted when `fuses`.
++fn place_jumps(sink: &mut MachBuffer<Inst>, state: &EmitState, len: CodeOffset, fuses: bool) {
++    if !crate::isa::x64::place_jumps() {
++        return;
++    }
++    let cur = sink.cur_offset();
++    let end = cur + len;
++    if fuses && state.prev_end == cur && state.prev_start < cur {
++        let start = state.prev_start;
++        if clear_of_boundary(start, end) {
++            return;
++        }
++        if end - start < JUMP_WINDOW {
++            let pad = nop_bytes(JUMP_WINDOW - start % JUMP_WINDOW);
++            if sink.insert_padding(start, &pad) {
++                return;
++            }
++        }
++    }
++    if !clear_of_boundary(cur, end) && len < JUMP_WINDOW {
++        sink.put_data(&nop_bytes(JUMP_WINDOW - cur % JUMP_WINDOW));
++    }
++}
++
++fn emit_inst(
++    inst: &Inst,
++    sink: &mut MachBuffer<Inst>,
++    info: &EmitInfo,
++    state: &mut EmitState,
+ ) {
+     if !inst.is_available(&info) {
+         let features = if let Inst::External { inst } = inst {
+@@ -645,15 +718,22 @@ pub(crate) fn emit(
+             sink.bind_label(resume, state.ctrl_plane_mut());
+         }
+ 
+-        Inst::JmpKnown { dst } => uncond_jmp(sink, *dst),
++        Inst::JmpKnown { dst } => {
++            place_jumps(sink, state, 5, false);
++            uncond_jmp(sink, *dst)
++        }
+ 
+-        Inst::WinchJmpIf { cc, taken } => one_way_jmp(sink, *cc, *taken),
++        Inst::WinchJmpIf { cc, taken } => {
++            place_jumps(sink, state, 6, true);
++            one_way_jmp(sink, *cc, *taken)
++        }
+ 
+         Inst::JmpCond {
+             cc,
+             taken,
+             not_taken,
+         } => {
++            place_jumps(sink, state, 6, true);
+             cond_jmp(sink, *cc, *taken);
+             uncond_jmp(sink, *not_taken);
+         }
+@@ -676,6 +756,7 @@ pub(crate) fn emit(
+             // not_taken and that one block is the fallthrough block,
+             // all three branches can disappear.
+ 
++            place_jumps(sink, state, 12, true);
+             cond_jmp(sink, *cc1, *taken);
+             cond_jmp(sink, *cc2, *taken);
+             uncond_jmp(sink, *not_taken);
+diff --git a/src/isa/x64/inst/emit_state.rs b/src/isa/x64/inst/emit_state.rs
+index 426a17a..68d3fbd 100644
+--- a/src/isa/x64/inst/emit_state.rs
++++ b/src/isa/x64/inst/emit_state.rs
+@@ -16,6 +16,12 @@ pub struct EmitState {
+     /// A copy of the frame layout, used during the emission of `Inst::ReturnCallKnown` and
+     /// `Inst::ReturnCallUnknown` instructions and exception callsites.
+     pub frame_layout: FrameLayout,
++
++    /// Where the most recently emitted instruction starts and ends. A
++    /// conditional jump fuses with the instruction right before it, so
++    /// the two are placed as one.
++    pub(crate) prev_start: CodeOffset,
++    pub(crate) prev_end: CodeOffset,
+ }
+ 
+ impl MachInstEmitState<Inst> for EmitState {
+@@ -24,6 +30,8 @@ impl MachInstEmitState<Inst> for EmitState {
+             user_stack_map: None,
+             ctrl_plane,
+             frame_layout: abi.frame_layout().clone(),
++            prev_start: 0,
++            prev_end: CodeOffset::MAX,
+         }
+     }
+ 
+diff --git a/src/isa/x64/mod.rs b/src/isa/x64/mod.rs
+index 15eb736..d6ffa09 100644
+--- a/src/isa/x64/mod.rs
++++ b/src/isa/x64/mod.rs
+@@ -27,6 +27,23 @@ mod inst;
+ mod lower;
+ pub mod settings;
+ 
++static PLACE_JUMPS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++
++/// Whether code emitted from now on places its jumps clear of 32-byte
++/// boundaries, for Intel cores with the jump conditional code erratum
++/// (Skylake through Cascade Lake, with the microcode that fixes it),
++/// which otherwise keep such code out of their decoded-uop cache. Off by
++/// default. It pays off only together with functions aligned to 32
++/// bytes (the shared `log2_min_function_alignment` setting at 5), since
++/// the placement is worked out from the start of the function.
++pub fn set_place_jumps(on: bool) {
++    PLACE_JUMPS.store(on, core::sync::atomic::Ordering::Relaxed);
++}
++
++pub(crate) fn place_jumps() -> bool {
++    PLACE_JUMPS.load(core::sync::atomic::Ordering::Relaxed)
++}
++
+ #[cfg(feature = "unwind")]
+ pub use inst::unwind::systemv::create_cie;
+ 
+diff --git a/src/machinst/buffer.rs b/src/machinst/buffer.rs
+index fba4ee3..ab2795e 100644
+--- a/src/machinst/buffer.rs
++++ b/src/machinst/buffer.rs
+@@ -538,6 +538,68 @@ impl<I: VCodeInst> MachBuffer<I> {
+         self.data.len() as CodeOffset
+     }
+ 
++    /// Inserts `bytes` at offset `at`, moving the code after it along,
++    /// provided nothing refers to that code by offset except label fixups
++    /// and source locations, which move with it. Declines otherwise:
++    /// when a label is bound past `at`, a branch or any other record
++    /// (relocation, trap, call site, stack map, unwind entry, constant use)
++    /// lies at or past it. Returns whether the bytes went in.
++    pub fn insert_padding(&mut self, at: CodeOffset, bytes: &[u8]) -> bool {
++        let cur = self.cur_offset();
++        if at > cur {
++            return false;
++        }
++        let n = bytes.len() as CodeOffset;
++        if n == 0 {
++            return true;
++        }
++        if self.open_patchable
++            || self.latest_branches.iter().any(|b| b.end > at)
++            || self
++                .label_offsets
++                .iter()
++                .any(|&o| o != UNKNOWN_LABEL_OFFSET && o > at)
++            || self.relocs.iter().any(|r| r.offset >= at)
++            || self.traps.iter().any(|t| t.offset >= at)
++            || self.call_sites.iter().any(|c| c.ret_addr >= at)
++            || self.patchable_call_sites.iter().any(|c| c.ret_addr >= at)
++            || self.user_stack_maps.iter().any(|m| m.0 >= at)
++            || self.unwind_info.iter().any(|u| u.0 >= at)
++            || self.used_constants.iter().any(|u| u.1 >= at)
++            || self.debug_tags.iter().any(|t| t.offset >= at)
++            || self.fixup_records.iter().any(|f| f.offset >= at)
++        {
++            return false;
++        }
++        let at_usize = at as usize;
++        let tail: SmallVec<[u8; 32]> = self.data[at_usize..].iter().copied().collect();
++        self.data.truncate(at_usize);
++        self.data.extend_from_slice(bytes);
++        self.data.extend_from_slice(&tail);
++        for f in self.pending_fixup_records.iter_mut() {
++            if f.offset >= at {
++                f.offset += n;
++            }
++        }
++        for loc in self.srclocs.iter_mut() {
++            if loc.start >= at {
++                loc.start += n;
++            }
++            if loc.end > at {
++                loc.end += n;
++            }
++        }
++        if let Some((start, _)) = self.cur_srcloc.as_mut()
++            && *start >= at
++        {
++            *start += n;
++        }
++        if self.labels_at_tail_off > at {
++            self.labels_at_tail_off += n;
++        }
++        true
++    }
++
+     /// Add a byte.
+     pub fn put1(&mut self, value: u8) {
+         self.data.push(value);

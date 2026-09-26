@@ -39,6 +39,11 @@ jobs:
         with:
           mdbook-version: 'latest'
 
+      # The patched crates are built from vendor/patches rather than
+      # committed, and the workspace does not load without them.
+      - name: Patch crates
+        run: cargo patch-crates
+
       # The `zuri` binary has to exist before the docs tool runs: the
       # reference's pages are written by a Zuri program, and the tool
       # invokes the interpreter sitting beside it.

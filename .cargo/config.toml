@@ -19,3 +19,11 @@ docs = ["run", "--quiet", "--features", "docs-tool", "--bin", "docs", "--"]
 # `.zu` file takes effect without a rebuild. See `cargo sync help`.
 sync = ["run", "--quiet", "--package", "xtask", "--", "sync"]
 xtask = ["run", "--quiet", "--package", "xtask", "--"]
+
+# Builds vendor/crates from vendor/patches, which the workspace needs
+# before its first build. The tool is its own workspace, since this one
+# cannot load until the copies exist. See vendor/README.md.
+patch-crates = [
+  "run", "--quiet", "--manifest-path", "vendor/tool/Cargo.toml",
+  "--target-dir", "target/patch-crates", "--",
+]

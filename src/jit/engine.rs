@@ -91,6 +91,18 @@ impl JitEngine {
     flag_builder
       .set("regalloc_algorithm", "backtracking")
       .unwrap();
+    // On a core with the jump erratum, a loop runs from the decoded-uop
+    // cache only while its jumps stay clear of 32-byte boundaries, and
+    // where they fall is otherwise down to whatever code precedes them.
+    // Jumps are placed from the start of the function, so functions start
+    // on a boundary too.
+    if jump_erratum() {
+      flag_builder
+        .set("log2_min_function_alignment", "5")
+        .unwrap();
+      #[cfg(target_arch = "x86_64")]
+      cranelift_codegen::isa::x64::set_place_jumps(true);
+    }
 
     let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
@@ -407,6 +419,32 @@ impl JitEngine {
     // targets.
     let entry: EntryFn = unsafe { std::mem::transmute::<*const u8, EntryFn>(code_ptr) };
     Ok(entry)
+  }
+}
+
+/// Whether this is an Intel core with the jump conditional code erratum:
+/// family 6, from Skylake to Cascade Lake, Comet Lake included. The
+/// microcode that fixes it keeps code with a jump crossing or ending on a
+/// 32-byte boundary out of the decoded-uop cache.
+fn jump_erratum() -> bool {
+  #[cfg(target_arch = "x86_64")]
+  {
+    use std::arch::x86_64::__cpuid;
+    let vendor = __cpuid(0);
+    let intel = vendor.ebx == u32::from_le_bytes(*b"Genu")
+      && vendor.edx == u32::from_le_bytes(*b"ineI")
+      && vendor.ecx == u32::from_le_bytes(*b"ntel");
+    if !intel {
+      return false;
+    }
+    let eax = __cpuid(1).eax;
+    let family = (eax >> 8) & 0xf;
+    let model = ((eax >> 4) & 0xf) | ((eax >> 12) & 0xf0);
+    family == 6 && matches!(model, 0x4e | 0x5e | 0x55 | 0x8e | 0x9e | 0xa5 | 0xa6)
+  }
+  #[cfg(not(target_arch = "x86_64"))]
+  {
+    false
   }
 }
 

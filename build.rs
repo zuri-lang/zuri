@@ -61,6 +61,7 @@ fn main() {
 
   println!("cargo:rerun-if-changed=xtask/src/sync.rs");
 
+  check_patched_crates(root);
   generate_zu_conformance_tests(&manifest_dir);
   build_docs(&manifest_dir);
 }
@@ -413,3 +414,49 @@ fn escape_ident(s: &str) -> String {
 }
 
 include!("xtask/src/sync.rs");
+
+/// Refuses to build against a copy in `vendor/crates` that was not built
+/// from the patch now in `vendor/patches`. Cargo compiles a stale copy
+/// without complaint, so a pull that changes a patch would otherwise
+/// build the old code.
+fn check_patched_crates(root: &Path) {
+  let vendor = root.join("vendor");
+  let patches = vendor.join("patches");
+
+  println!("cargo:rerun-if-changed={}", patches.display());
+
+  let Ok(entries) = fs::read_dir(&patches) else {
+    return;
+  };
+
+  for entry in entries.flatten() {
+    let patch = entry.path();
+    let Some(stem) = patch
+      .file_name()
+      .and_then(|n| n.to_str())
+      .and_then(|n| n.strip_suffix(".patch"))
+    else {
+      continue;
+    };
+
+    let Some((name, _)) = split_patch_name(stem) else {
+      continue;
+    };
+
+    let stamp = stamp_path(&vendor, name);
+    println!("cargo:rerun-if-changed={}", stamp.display());
+
+    let want =
+      stamp_text(&patch).unwrap_or_else(|e| panic!("could not read {}: {e}", patch.display()));
+    let have = fs::read_to_string(&stamp).unwrap_or_default();
+
+    if have != want {
+      panic!(
+        "vendor/crates/{name} was not built from vendor/patches/{}; run `cargo patch-crates`",
+        patch.file_name().unwrap_or_default().to_string_lossy()
+      );
+    }
+  }
+}
+
+include!("vendor/tool/src/stamp.rs");

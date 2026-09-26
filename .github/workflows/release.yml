@@ -49,6 +49,11 @@ jobs:
         with:
           key: release-${{ matrix.target }}
 
+      # The patched crates are built from vendor/patches rather than
+      # committed, and the workspace does not load without them.
+      - name: Patch crates
+        run: cargo patch-crates
+
       - name: Build
         run: cargo build --locked --profile release --target ${{ matrix.target }}
 

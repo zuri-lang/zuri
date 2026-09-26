@@ -9,8 +9,13 @@ minute and installs `cargo` for you.
 ```console
 $ git clone https://github.com/zuri-lang/zuri-rs
 $ cd zuri-rs
+$ cargo patch-crates
 $ cargo build --release
 ```
+
+`cargo patch-crates` prepares the few dependencies Zuri builds with
+changes of its own. It runs once per clone, and again only when one of
+those changes is updated; the build says when that is.
 
 The first build compiles a large set of native dependencies, so it takes
 a few minutes. Builds after that are incremental and quick.

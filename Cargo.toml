@@ -268,3 +268,9 @@ doctest = false
 name = "docs"
 path = "src/bin/docs.rs"
 required-features = ["docs-tool"]
+
+# Cranelift's x64 backend with jumps placed clear of 32-byte boundaries on
+# cores with Intel's jump erratum. The copy is built from
+# vendor/patches by `cargo patch-crates`; see vendor/README.md.
+[patch.crates-io]
+cranelift-codegen = { path = "vendor/crates/cranelift-codegen" }
