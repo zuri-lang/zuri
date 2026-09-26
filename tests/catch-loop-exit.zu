@@ -1,0 +1,73 @@
+# Leaving a `catch` body with `break` or `continue` leaves its handler
+# behind too: an error raised after that is the next handler's to catch,
+# never the one whose body the loop already left.
+
+def after_break() {
+  iter var i = 0; i < 3; i++ {
+    catch {
+      if i == 1 {
+        break
+      }
+    } as e {
+      echo 'loop handler: ${e.message}'
+    }
+  }
+  raise Error('after the loop')
+}
+
+def after_continue() {
+  var seen = 0
+  iter var i = 0; i < 4; i++ {
+    catch {
+      catch {
+        if i % 2 == 0 {
+          continue
+        }
+        seen++
+      } as e {
+        echo 'inner handler: ${e.message}'
+      }
+    } as e {
+      echo 'middle handler: ${e.message}'
+    }
+  }
+  raise Error('after ${seen} odd turns')
+}
+
+def nested_loops() {
+  var out = []
+  iter var i = 0; i < 3; i++ {
+    catch {
+      iter var j = 0; j < 3; j++ {
+        catch {
+          if j == 1 {
+            break
+          }
+          out.append('${i}${j}')
+        } as e {
+          out.append('inner ${e.message}')
+        }
+      }
+      if i == 2 {
+        raise Error('raised at ${i}')
+      }
+    } as e {
+      out.append('outer ${e.message}')
+    }
+  }
+  return out
+}
+
+catch {
+  after_break()
+} as e {
+  echo 'caller: ${e.message}'
+}
+
+catch {
+  after_continue()
+} as e {
+  echo 'caller: ${e.message}'
+}
+
+echo nested_loops()

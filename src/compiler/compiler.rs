@@ -56,6 +56,9 @@ struct FunctionScope {
   /// declared inside a loop starts with an empty stack, so `break` inside
   /// it (if it were otherwise valid) can't reach the enclosing loop.
   loops: Vec<LoopContext>,
+  /// How many `catch` bodies the code being compiled sits inside, in this
+  /// function.
+  open_catches: usize,
   /// Every `def` name declared so far in this function, with the scope
   /// depth it was declared at. A second `def` of the same name in the
   /// same scope is an error, mirroring both the duplicate-method check
@@ -81,6 +84,7 @@ impl FunctionScope {
       locals: Vec::new(),
       upvalues: Vec::new(),
       loops: Vec::new(),
+      open_catches: 0,
       declared_functions: Vec::new(),
       scope_depth: 0,
       next_reg: 0,
@@ -105,6 +109,11 @@ struct LoopContext {
   body_mark: u8,
   /// The bytecode index of the continue instruction
   continue_locales: Vec<usize>,
+  /// How many `catch` bodies were open where the loop starts. `break` and
+  /// `continue` leave every body opened since, and pop its handler on the
+  /// way, as finishing the body normally would; a handler left behind
+  /// would catch errors raised after the loop was gone.
+  open_catches: usize,
 }
 
 enum VarLoc {
@@ -424,6 +433,15 @@ impl<'a> Compiler<'a> {
         "patch_jump: instruction at {} is not a jump, got {:?}",
         jump_at, other
       ),
+    }
+  }
+
+  /// Pops the handlers of the `catch` bodies a `break` or `continue` is
+  /// about to leave: those opened inside the innermost loop.
+  fn leave_loop_catches(&mut self) {
+    let since = self.cur().loops.last().map_or(0, |l| l.open_catches);
+    for _ in since..self.cur().open_catches {
+      self.emit(Instr::PopCatch);
     }
   }
 
@@ -2361,7 +2379,9 @@ impl<'a> Compiler<'a> {
       offset: 0,
     });
 
+    self.cur_mut().open_catches += 1;
     self.compile_statement(body);
+    self.cur_mut().open_catches -= 1;
     self.emit(Instr::PopCatch);
 
     // Both the normal-completion fallthrough (right here) and an
@@ -2644,11 +2664,13 @@ impl<'a> Compiler<'a> {
         let exit_jump = self.emit_jump_if_false(cond_reg);
         self.free_regs_to(mark);
 
+        let open_catches = self.cur().open_catches;
         self.cur_mut().loops.push(LoopContext {
           continue_target: loop_start,
           break_jumps: Vec::new(),
           body_mark: mark,
           continue_locales: Vec::new(),
+          open_catches,
         });
 
         self.compile_statement(body);
@@ -2675,6 +2697,7 @@ impl<'a> Compiler<'a> {
           if self.locals_captured_from(body_mark) {
             self.emit(Instr::CloseUpvalues { from: body_mark });
           }
+          self.leave_loop_catches();
           let jump_at = self.emit_jump();
           self
             .cur_mut()
@@ -2696,6 +2719,7 @@ impl<'a> Compiler<'a> {
           if self.locals_captured_from(body_mark) {
             self.emit(Instr::CloseUpvalues { from: body_mark });
           }
+          self.leave_loop_catches();
           let continue_location = self.emit_loop(continue_target);
           self
             .cur_mut()
