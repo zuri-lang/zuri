@@ -241,12 +241,11 @@ fn copy_output_dir(profile: &str) -> std::path::PathBuf {
   Path::new("target").join(profile)
 }
 
-/// Generates one `#[test]` function per `tests/*.zu` fixture that has
-/// a matching `tests/*.out` file, so `cargo test` reports each fixture
-/// independently (which one failed, not just an aggregate count)
-/// (see `tests/zu_conformance.rs`), which `include!`s the generated file
-/// and provides the actual `run_fixture` implementation each generated
-/// test calls.
+/// Generates one `#[test]` function per Zuri fixture under `tests/` that
+/// has a matching `.out` file, so `cargo test` names each fixture that
+/// fails rather than reporting one aggregate count. The conformance
+/// test target includes the generated file and provides the
+/// `run_fixture` each generated test calls.
 fn generate_zu_conformance_tests(manifest_dir: &str) {
   let tests_dir = Path::new(manifest_dir).join("tests");
   // Written into a SUBDIRECTORY of `tests/`, not `tests/` itself and
@@ -271,8 +270,8 @@ fn generate_zu_conformance_tests(manifest_dir: &str) {
   let mut seen_names = std::collections::HashSet::new();
   let mut code = String::new();
   for zu_path in &zu_files {
-    // Subdirectory fixtures (e.g. `tests/libs/isolate.zu`) get their
-    // parent folder folded into the test name, so `cargo test`'s
+    // Fixtures in a subdirectory, such as the library suites under
+    // `tests/libs`, get their parent folder folded into the test name, so `cargo test`'s
     // output tells you which suite a failure came from at a glance
     // instead of every subdirectory's fixtures being indistinguishable
     // underscore-suffixed siblings of the top-level ones.

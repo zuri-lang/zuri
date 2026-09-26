@@ -1,8 +1,10 @@
 # Integer arithmetic at the edges of what a double counts exactly. Each
 # loop warms up on small whole numbers, and its running value also feeds
 # a bitwise operator, so compiled code keeps it an integer. It then has to
-# give the interpreter's double for sums and differences that leave 2^53,
-# that would wrap an integer, and that land exactly on the boundary.
+# give the interpreter's answer for sums, differences, products and
+# negations that leave 2^53, that would wrap an integer, and that land
+# exactly on the boundary, whether the result is then compared, divided
+# or taken apart bit by bit.
 
 # `a` stepped by `b`, `n` times, with the parity of every step.
 def walk(a, b, n) {
@@ -39,9 +41,29 @@ def bounce(a, n) {
   return [s, t, bits]
 }
 
+# `a` multiplied by `k`, `n` times, with the parity of every step and of
+# three times every step.
+def scale(a, k, n) {
+  var s = a
+  var bits = 0
+  iter var i = 0; i < n; i++ {
+    s = s * k
+    bits = bits ^ (s & 1) ^ ((s * 3) & 2)
+  }
+  return [s, bits]
+}
+
+# One past `a` against `mark`, and the low bits of its negation.
+def reaches(a, mark) {
+  var s = a + 1
+  var t = -s
+  return [s == mark, s > mark, s % 4, t & 3]
+}
+
 var total = 0
 iter var i = 0; i < 3000; i++ {
   total = total + walk(i, 3, 20)[0] + walk_back(i, 3, 20)[1] + bounce(i, 20)[2]
+  total = total + scale(i, 3, 5)[1] + reaches(i, i + 1)[3]
 }
 echo total
 
@@ -64,6 +86,7 @@ for pair in edges {
   var b = pair[1]
   var up = bounce(a, 2)
   var down = bounce(-a, 2)
-  echo [walk(a, b, 1)[0], walk(a, b, 2)[0], walk_back(a, b, 1)[0], walk_back(b, a, 2)[0]]
-  echo [up[0], up[1], down[0], down[1]]
+  echo [walk(a, b, 1), walk(a, b, 2), walk_back(a, b, 1), walk_back(b, a, 2)]
+  echo [up, down]
+  echo [scale(a, 3, 1), scale(b, 2, 2), reaches(a, 2 ** 53), reaches(-a, 2 ** 53)]
 }

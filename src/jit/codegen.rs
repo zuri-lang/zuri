@@ -37,6 +37,42 @@ use crate::vm::object::{self, ObjFunction};
 use crate::vm::value::{self};
 use crate::vm::vm;
 
+/// A set of registers, for the backward exactness analysis.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+struct RegBits([u64; 4]);
+
+impl RegBits {
+  fn get(&self, r: u8) -> bool {
+    self.0[r as usize / 64] >> (r % 64) & 1 != 0
+  }
+
+  fn set(&mut self, r: u8, on: bool) {
+    let bit = 1u64 << (r % 64);
+    match on {
+      true => self.0[r as usize / 64] |= bit,
+      false => self.0[r as usize / 64] &= !bit,
+    }
+  }
+
+  fn union(&mut self, other: &RegBits) {
+    for (w, o) in self.0.iter_mut().zip(other.0) {
+      *w |= o;
+    }
+  }
+}
+
+/// The integer operation that fills an arithmetic result's integer view,
+/// on the operands' own views.
+#[derive(Clone, Copy)]
+enum IntOp {
+  Add(IrValue, IrValue),
+  Sub(IrValue, IrValue),
+  Mul(IrValue, IrValue),
+  AddImm(IrValue, i64),
+  MulImm(IrValue, i64),
+  Neg(IrValue),
+}
+
 /// Byte offset (from a `*mut VM`) of the cached registers pointer
 /// (see `vm::VM::regs_ptr_cache`'s docs). Read directly by compiled code
 /// (entry-block init and `refresh_regs`) instead of calling into Rust,
@@ -860,6 +896,8 @@ struct FuncCompiler<'a, 'b> {
   reg_vars_f64: Vec<Variable>,
   reg_vars_int: Vec<Variable>,
   int_tracked: Vec<bool>,
+  /// See `compute_int_exact_defs`.
+  int_exact_defs: Vec<bool>,
   /// Registers that some float-path instruction reads or writes, found
   /// by a plain syntactic scan of the bytecode. Purely a budget on how
   /// many `reg_vars_f64` entries are worth materializing: a register
@@ -1654,6 +1692,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       reg_vars_f64: Vec::new(),
       reg_vars_int: Vec::new(),
       int_tracked: Vec::new(),
+      int_exact_defs: Vec::new(),
       f64_tracked: Vec::new(),
       f64_canonical: CanonicalWebs::default(),
       canonical_written: SmallVec::new(),
@@ -1925,7 +1964,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Being an integer somewhere is not reason enough. The integer view
   /// costs a second value to compute and keep live at every write, so it
   /// is only worth maintaining where an instruction genuinely READS an
-  /// `i64` operand: the remainder, the bitwise operators, and an index.
+  /// `i64` operand: the remainder, the bitwise operators, an equality
+  /// test, and an index.
   /// An accumulator that is only ever added to and returned wants none
   /// of it, and paying for one there means running the loop's arithmetic
   /// twice, once per domain.
@@ -1967,7 +2007,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       false
     };
 
-    for instr in &self.proto.chunk.code {
+    for (ip, instr) in self.proto.chunk.code.iter().enumerate() {
       match *instr {
         Instr::Mod { a, b, .. }
         | Instr::BitAnd { a, b, .. }
@@ -1975,34 +2015,17 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         | Instr::BitXor { a, b, .. }
         | Instr::BitShl { a, b, .. }
         | Instr::BitShr { a, b, .. }
-        | Instr::BitUshr { a, b, .. } => {
+        | Instr::BitUshr { a, b, .. }
+        | Instr::Eq { a, b, .. }
+        | Instr::Neq { a, b, .. } => {
           mark(&mut needed, a);
           mark(&mut needed, b);
         },
-        Instr::BitNot { src, .. } => {
+        Instr::BitNot { src, .. } | Instr::EqImm { a: src, .. } | Instr::NeqImm { a: src, .. } => {
           mark(&mut needed, src);
         },
         Instr::GetIndex { idx, .. } | Instr::SetIndex { idx, .. } => {
           mark(&mut needed, idx);
-        },
-        // Comparisons take the integer route when both sides have a
-        // view, which is what a loop condition rides on.
-        Instr::Eq { a, b, .. }
-        | Instr::Neq { a, b, .. }
-        | Instr::Lt { a, b, .. }
-        | Instr::Le { a, b, .. }
-        | Instr::Gt { a, b, .. }
-        | Instr::Ge { a, b, .. } => {
-          mark(&mut needed, a);
-          mark(&mut needed, b);
-        },
-        Instr::EqImm { a, .. }
-        | Instr::NeqImm { a, .. }
-        | Instr::LtImm { a, .. }
-        | Instr::LeImm { a, .. }
-        | Instr::GtImm { a, .. }
-        | Instr::GeImm { a, .. } => {
-          mark(&mut needed, a);
         },
         Instr::GetSlice { lo, hi, .. } => {
           mark(&mut needed, lo);
@@ -2013,7 +2036,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         // callee where this scan cannot see it. Arguments therefore
         // count as read. `Invoke` additionally hands its receiver and
         // argument to the integer form of `min`/`max`.
-        Instr::Call { func, num_args, .. } => {
+        Instr::Call { func, num_args, .. } if self.inlines_call(ip, func, num_args) => {
           for i in 0..num_args {
             mark(&mut needed, func + 1 + i);
           }
@@ -2062,6 +2085,133 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       needed[r] = needed[r] && ever_int[r];
     }
     needed
+  }
+
+  /// Per instruction, whether the integer view it writes has to equal
+  /// the number exactly: whether that value, before its register is
+  /// written again, reaches a remainder, a bitwise operator, an equality
+  /// test, or a callee built in here that takes it apart. An index reads
+  /// the view without needing it exact: past 2^53 it is out of range as
+  /// an integer and as a double alike. Ordered comparisons read the
+  /// double. Worked backwards like liveness, value by
+  /// value, so a register that holds a counter at one point and
+  /// something compared at another leaves the counter unchecked.
+  fn compute_int_exact_defs(&self) -> Vec<bool> {
+    let code = &self.proto.chunk.code;
+    let n = code.len();
+    let succs: Vec<Vec<usize>> = (0..n)
+      .map(|ip| typeflow::successors(ip, &code[ip], self.proto))
+      .collect();
+    let mut live_in = vec![RegBits::default(); n];
+    let mut live_out = vec![RegBits::default(); n];
+    loop {
+      let mut changed = false;
+      for ip in (0..n).rev() {
+        let mut out = RegBits::default();
+        for &s in &succs[ip] {
+          if s < n {
+            out.union(&live_in[s]);
+          }
+        }
+        live_out[ip] = out;
+        let inn = self.exact_transfer(ip, &code[ip], &out);
+        if inn != live_in[ip] {
+          live_in[ip] = inn;
+          changed = true;
+        }
+      }
+      if !changed {
+        break;
+      }
+    }
+    (0..n)
+      .map(|ip| typeflow::any_dst(&code[ip]).is_some_and(|d| live_out[ip].get(d)))
+      .collect()
+  }
+
+  /// One instruction of `compute_int_exact_defs`, backwards: what has to
+  /// be exact before it, given what has to be exact after it.
+  fn exact_transfer(&self, ip: usize, instr: &Instr, out: &RegBits) -> RegBits {
+    let mut uses: SmallVec<[u8; 8]> = SmallVec::new();
+    match *instr {
+      Instr::Add { dst, a, b } | Instr::Sub { dst, a, b } | Instr::Mul { dst, a, b } => {
+        if out.get(dst) {
+          uses.extend([a, b]);
+        }
+      },
+      Instr::AddImm { dst, a, .. }
+      | Instr::SubImm { dst, a, .. }
+      | Instr::MulImm { dst, a, .. } => {
+        if out.get(dst) {
+          uses.push(a);
+        }
+      },
+      Instr::Neg { dst, src } | Instr::Move { dst, src } => {
+        if out.get(dst) {
+          uses.push(src);
+        }
+      },
+      Instr::Mod { a, b, .. }
+      | Instr::BitAnd { a, b, .. }
+      | Instr::BitOr { a, b, .. }
+      | Instr::BitXor { a, b, .. }
+      | Instr::BitShl { a, b, .. }
+      | Instr::BitShr { a, b, .. }
+      | Instr::BitUshr { a, b, .. }
+      | Instr::Eq { a, b, .. }
+      | Instr::Neq { a, b, .. } => uses.extend([a, b]),
+      Instr::BitNot { src, .. } => uses.push(src),
+      Instr::EqImm { a, .. } | Instr::NeqImm { a, .. } => uses.push(a),
+      Instr::Call { func, num_args, .. } if self.inlined_reads_ints(ip, func, num_args) => {
+        uses.extend((0..num_args).map(|i| func + 1 + i));
+      },
+      _ => {},
+    }
+    let mut inn = *out;
+    if let Some(d) = typeflow::any_dst(instr) {
+      inn.set(d, false);
+    }
+    for u in uses {
+      inn.set(u, true);
+    }
+    inn
+  }
+
+  /// Whether the call at `ip` has its callee built in here, and that
+  /// callee reads the integer view of what it is passed: only its
+  /// remainders and bitwise operators do.
+  fn inlined_reads_ints(&self, ip: usize, func: u8, num_args: u8) -> bool {
+    let Some(CallTarget::Known { proto_ptr, .. }) = self.call_targets.get(&ip).copied() else {
+      return false;
+    };
+    // SAFETY: as in `try_emit_inlined_call`, a live old-generation
+    // function read only during compilation.
+    let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
+    let takes_apart = callee.chunk.code.iter().any(|i| {
+      matches!(
+        i,
+        Instr::Mod { .. }
+          | Instr::BitAnd { .. }
+          | Instr::BitOr { .. }
+          | Instr::BitXor { .. }
+          | Instr::BitShl { .. }
+          | Instr::BitShr { .. }
+          | Instr::BitUshr { .. }
+          | Instr::BitNot { .. }
+      )
+    });
+    takes_apart && self.inline_plan(ip, callee, func, num_args).is_some()
+  }
+
+  /// Whether the call at `ip` has its callee built in here.
+  fn inlines_call(&self, ip: usize, func: u8, num_args: u8) -> bool {
+    let Some(CallTarget::Known { proto_ptr, .. }) = self.call_targets.get(&ip).copied() else {
+      return false;
+    };
+    // SAFETY: as in `try_emit_inlined_call`, a live old-generation
+    // function read only during compilation.
+    let callee = unsafe { &*(proto_ptr as *const ObjFunction) };
+    self.inline_plan(ip, callee, func, num_args).is_some()
   }
 
   /// `Instr::Div { dst, a, b }`'s strength-reduction check: is `b`'s
@@ -2153,6 +2303,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       .collect();
     self.f64_tracked = Self::compute_f64_tracked(self.proto);
     self.int_tracked = self.compute_int_tracked();
+    self.int_exact_defs = self.compute_int_exact_defs();
     // Declared for every register, but only ever defined or used for
     // the tracked ones; an untracked entry is inert.
     self.reg_vars_f64 = (0..num_regs)
@@ -13106,8 +13257,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
             let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-            let ir = self.fb.ins().iadd(ia, ib);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let f = self.load_reg_f64(dst);
+            let iv = self.arith_int_view(ip, IntOp::Add(ia, ib), f);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fadd(fa, fb));
@@ -13152,8 +13304,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
             let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-            let ir = self.fb.ins().isub(ia, ib);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let f = self.load_reg_f64(dst);
+            let iv = self.arith_int_view(ip, IntOp::Sub(ia, ib), f);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fsub(fa, fb));
@@ -13178,13 +13331,13 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let fa = self.load_reg_f64(a);
           let fb_ = self.load_reg_f64(b);
           let prod = self.fb.ins().fmul(fa, fb_);
+          self.store_reg_f64(dst, prod);
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
             let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
-            let ir = self.fb.ins().imul(ia, ib);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let iv = self.arith_int_view(ip, IntOp::Mul(ia, ib), prod);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
-          self.store_reg_f64(dst, prod);
         } else if self.both_proven_numeric(ip, a, b) {
           self.emit_binary_numeric_proven(dst, a, b, |fc, fa, fb| fc.fb.ins().fmul(fa, fb));
         } else {
@@ -13580,12 +13733,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           // `i64::MIN`; it only fills the integer cache.
           let fs = self.load_reg_f64(src);
           let neg = self.fb.ins().fneg(fs);
+          self.store_reg_f64(dst, neg);
           if self.int_tracked[dst as usize] {
             let is = self.fb.use_var(self.reg_vars_int[src as usize]);
-            let ir = self.fb.ins().ineg(is);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let iv = self.arith_int_view(ip, IntOp::Neg(is), neg);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
-          self.store_reg_f64(dst, neg);
         } else if self.proven_numeric(ip, src) {
           let f = self.load_reg_f64(src);
           let neg = self.fb.ins().fneg(f);
@@ -14546,8 +14699,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           self.emit_addimm_proven(dst, a, imm_const);
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-            let ir = self.fb.ins().iadd_imm_s(ia, imm_val as i64);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let f = self.load_reg_f64(dst);
+            let iv = self.arith_int_view(ip, IntOp::AddImm(ia, imm_val as i64), f);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
         } else if self.proven_numeric(ip, a) {
           self.emit_addimm_proven(dst, a, imm_const);
@@ -14571,8 +14725,10 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fsub(fa, fimm));
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-            let ir = self.fb.ins().iadd_imm_s(ia, -(imm_val as i64));
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let f = self.load_reg_f64(dst);
+            let step = (imm_val as i64).wrapping_neg();
+            let iv = self.arith_int_view(ip, IntOp::AddImm(ia, step), f);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
         } else if self.proven_numeric(ip, a) {
           self
@@ -14600,12 +14756,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
           let fa = self.load_reg_f64(a);
           let fimm = self.bake_f64(a, imm_const);
           let prod = self.fb.ins().fmul(fa, fimm);
+          self.store_reg_f64(dst, prod);
           if self.int_tracked[dst as usize] {
             let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
-            let ir = self.fb.ins().imul_imm_s(ia, imm_val as i64);
-            self.fb.def_var(self.reg_vars_int[dst as usize], ir);
+            let iv = self.arith_int_view(ip, IntOp::MulImm(ia, imm_val as i64), prod);
+            self.fb.def_var(self.reg_vars_int[dst as usize], iv);
           }
-          self.store_reg_f64(dst, prod);
         } else if self.proven_numeric(ip, a) {
           self
             .emit_imm_numeric_proven(dst, a, imm_const, |fc, fa, fimm| fc.fb.ins().fmul(fa, fimm));
@@ -15214,6 +15370,69 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.store_reg_f64(dst, f);
   }
 
+  /// The integer view for an arithmetic result whose double, `f`, is
+  /// already stored. `op` on the operands' views gives the same integer
+  /// while it stays within 2^53 of zero and fits `i64`. Past that the
+  /// double has rounded, and the view takes the double converted back,
+  /// on a cold branch, wherever `compute_int_exact_defs` says a reader
+  /// depends on it. Everywhere else the plain wrapping op is enough.
+  fn arith_int_view(&mut self, ip: usize, op: IntOp, f: IrValue) -> IrValue {
+    let exact = self.int_exact_defs.get(ip).copied().unwrap_or(true);
+    let (ir, overflow) = match op {
+      IntOp::Add(a, b) if exact => {
+        let (r, o) = self.fb.ins().sadd_overflow(a, b);
+        (r, Some(o))
+      },
+      IntOp::Sub(a, b) if exact => {
+        let (r, o) = self.fb.ins().ssub_overflow(a, b);
+        (r, Some(o))
+      },
+      IntOp::Mul(a, b) if exact => {
+        let (r, o) = self.fb.ins().smul_overflow(a, b);
+        (r, Some(o))
+      },
+      // A step no larger than 2^53 cannot wrap into range: a wrapped sum
+      // lands near the far end of `i64`, which the range test catches.
+      IntOp::AddImm(a, k) if exact && k.unsigned_abs() > 1 << 53 => {
+        let kv = self.i64c(k);
+        let (r, o) = self.fb.ins().sadd_overflow(a, kv);
+        (r, Some(o))
+      },
+      IntOp::MulImm(a, k) if exact => {
+        let kv = self.i64c(k);
+        let (r, o) = self.fb.ins().smul_overflow(a, kv);
+        (r, Some(o))
+      },
+      IntOp::Add(a, b) => (self.fb.ins().iadd(a, b), None),
+      IntOp::Sub(a, b) => (self.fb.ins().isub(a, b), None),
+      IntOp::Mul(a, b) => (self.fb.ins().imul(a, b), None),
+      IntOp::AddImm(a, k) => (self.fb.ins().iadd_imm_s(a, k), None),
+      IntOp::MulImm(a, k) => (self.fb.ins().imul_imm_s(a, k), None),
+      IntOp::Neg(a) => (self.fb.ins().ineg(a), None),
+    };
+    if !exact {
+      return ir;
+    }
+    // Within [-2^53, 2^53) exactly when the bits above 53 are all zero or
+    // all one.
+    let high = self.fb.ins().sshr_imm_u(ir, 53);
+    let high = self.fb.ins().iadd_imm_s(high, 1);
+    let mut fits = self.fb.ins().icmp_imm_u(IntCC::UnsignedLessThan, high, 2);
+    if let Some(o) = overflow {
+      fits = self.fb.ins().band_not(fits, o);
+    }
+    let wide = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.set_cold_block(wide);
+    self.fb.append_block_param(done, types::I64);
+    self.fb.ins().brif(fits, done, &[ir.into()], wide, &[]);
+    self.fb.switch_to_block(wide);
+    let rounded = self.fb.ins().fcvt_to_sint_sat(types::I64, f);
+    self.fb.ins().jump(done, &[rounded.into()]);
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
   fn bitwise_exact_at(&self, ip: usize, instr: &Instr, a: u8, b: u8) -> bool {
     bitwise_result_exact(instr, self.proven_const(ip, a), self.proven_const(ip, b))
   }
@@ -15414,7 +15633,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// when `a`/`b` are PROVEN numeric, so the object/raw-bits cases can
   /// never apply.
   fn emit_compare_proven_numeric(&mut self, ip: usize, dst: u8, a: u8, b: u8, cc: IntCC) {
-    let cmp = if self.both_proven_int(ip, a, b) {
+    // Equality takes the integer views, which `compute_int_exact_defs`
+    // keeps exact for it. An ordered comparison reads the doubles, which
+    // are the values themselves and cost it nothing, so the arithmetic
+    // feeding a loop condition needs no exactness check of its own.
+    let ordered = !matches!(cc, IntCC::Equal | IntCC::NotEqual);
+    let cmp = if self.both_proven_int(ip, a, b) && !ordered {
       let ia = self.fb.use_var(self.reg_vars_int[a as usize]);
       let ib = self.fb.use_var(self.reg_vars_int[b as usize]);
       self.fb.ins().icmp(cc, ia, ib)
