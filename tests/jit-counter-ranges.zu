@@ -1,0 +1,85 @@
+# Loop conditions built with `and` and `or`, and counters stepped inside
+# them. Compiled code branches straight to where a condition that is
+# already decided leads, and drops the checks on a counter step once the
+# loop's own bounds keep the counter small. Each loop here has to answer
+# exactly as the interpreter does, including the ones whose counters are
+# not small, or whose way back round skips the bound.
+
+# Counting down inside an `and`, the escape-time shape.
+def escape(cr, ci) {
+  var zr = 0.0
+  var zi = 0.0
+  var i = 50
+  do {
+    var t = zr * zr - zi * zi + cr
+    zi = 2.0 * zr * zi + ci
+    zr = t
+  } while (!(zr * zr + zi * zi > 4.0) and i-- > 0)
+  return i
+}
+
+# Counting up, with the bound first and the other test in an `or`.
+def climb(limit, stop) {
+  var i = 0
+  var hits = 0
+  while i++ < limit and !(hits > stop or hits < 0) {
+    hits = hits + i % 3
+  }
+  return [i, hits]
+}
+
+# A counter that starts past where doubles count exactly: the steps have
+# to keep checking, and land where the interpreter's doubles do.
+def far(start, turns) {
+  var i = start
+  var n = 0
+  while n < turns and i++ > 0 {
+    n++
+  }
+  return i
+}
+
+# The way back round does not always pass the counter's bound: when
+# `flag` holds, the loop continues without testing it.
+def skipped(flag, from) {
+  var i = from
+  var n = 0
+  while (flag and n < 5) or i-- > 0 {
+    n++
+    if n > 40 {
+      break
+    }
+  }
+  return [i, n]
+}
+
+var total = 0
+iter var y = 0; y < 60; y++ {
+  iter var x = 0; x < 60; x++ {
+    total = total + escape(x / 30 - 1.5, y / 30 - 1)
+  }
+}
+echo total
+
+var climbed = 0
+iter var r = 0; r < 3000; r++ {
+  climbed = climbed + climb(40 + r % 7, 30)[1]
+}
+echo climbed
+echo climb(10, 1000)
+
+var big = 2 ** 53 - 3
+var last = 0
+iter var r = 0; r < 3000; r++ {
+  last = far(big, 6)
+}
+echo last == 2 ** 53 + 3
+echo far(10, 4)
+
+var skips = 0
+iter var r = 0; r < 3000; r++ {
+  skips = skips + skipped(r % 2 == 0, 20)[1]
+}
+echo skips
+echo skipped(true, 3)
+echo skipped(false, 3)

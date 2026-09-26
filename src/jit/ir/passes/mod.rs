@@ -5,6 +5,7 @@
 //! edge's arity is caught at the pass that did it rather than somewhere in
 //! lowering.
 
+pub mod counters;
 pub mod elems;
 pub mod entries;
 pub mod floats;
@@ -16,6 +17,7 @@ pub mod phi;
 pub mod repr;
 pub mod simplify;
 pub mod sink;
+pub mod thread;
 
 use rustc_hash::FxHashMap;
 
@@ -70,6 +72,18 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   check(f, "dce")?;
   sink::run(f);
   check(f, "sink")?;
+  // With what nothing uses gone, and a value needed only past a loop
+  // moved out to where it is needed, a block that merges a condition
+  // holds just its branch.
+  if thread::run(f) {
+    check(f, "thread")?;
+    dce(f);
+    check(f, "dce")?;
+  }
+  // A counter's bound now sits on the branch that leads back round.
+  if counters::run(f) {
+    check(f, "counters")?;
+  }
   Ok(())
 }
 
