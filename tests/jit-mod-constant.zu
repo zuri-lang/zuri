@@ -1,0 +1,36 @@
+# `%` by a constant, in a loop hot enough to compile: whole dividends of
+# either sign, a remainder of zero that keeps the dividend's sign, and
+# dividends the integer path cannot take (fractions, values past what an
+# integer holds), all as the interpreter gives them.
+
+def remainders(xs, d) {
+  var out = []
+  for x in xs {
+    out.append(x % d)
+  }
+  return out
+}
+
+def sum_mod8(n) {
+  var total = 0
+  iter var i = -n; i < n; i++ {
+    total = total + i % 8
+  }
+  return total
+}
+
+var xs = [17, -17, 16, -16, 0, 7.5, -7.5, 2 ** 60, -(2 ** 60), 2 ** 63, 1e300]
+var last = []
+iter var r = 0; r < 3000; r++ {
+  last = remainders(xs, 8)
+}
+echo last
+echo remainders(xs, 3)
+echo remainders(xs, 1)
+echo 1 / remainders([-16], 8)[0]
+
+var total = 0
+iter var r = 0; r < 200; r++ {
+  total = total + sum_mod8(500)
+}
+echo total

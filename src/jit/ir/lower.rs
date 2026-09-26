@@ -414,7 +414,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
       Op::FMul => Some(self.fb.ins().fmul(av[0], av[1])),
       Op::FDiv => Some(self.fb.ins().fdiv(av[0], av[1])),
       Op::FNeg => Some(self.fb.ins().fneg(av[0])),
-      Op::FMod => Some(self.fmod(av[0], av[1])),
+      Op::FMod => Some(match self.whole_constant(inst.args[1]) {
+        Some(d) => self.fmod_by(av[0], av[1], d),
+        None => self.fmod(av[0], av[1]),
+      }),
       Op::FFloorDiv => {
         let q = self.fb.ins().fdiv(av[0], av[1]);
         Some(self.fb.ins().floor(q))
@@ -1931,6 +1934,46 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     self.fb.switch_to_block(fast);
     let r = self.fb.ins().srem(ix, iy);
+    let rf = self.fb.ins().fcvt_from_sint(types::F64, r);
+    let signed = self.fb.ins().fcopysign(rf, x);
+    self.fb.ins().jump(done, &[signed.into()]);
+
+    self.fb.switch_to_block(slow);
+    self.fb.set_cold_block(slow);
+    let xb = self.from_f64(x);
+    let yb = self.from_f64(y);
+    let bits = self.call_pure("zuri_jit_num_fmod", &[self.vm, xb, yb]);
+    let slow_r = self.to_f64(bits);
+    self.fb.ins().jump(done, &[slow_r.into()]);
+
+    self.fb.switch_to_block(done);
+    self.fb.block_params(done)[0]
+  }
+
+  /// `v` when it is a constant positive whole number a double holds
+  /// exactly.
+  fn whole_constant(&self, v: ValueId) -> Option<i64> {
+    let Op::ConstF64(c) = self.ir.def_inst(v)?.op else {
+      return None;
+    };
+    (c >= 1.0 && c < (1u64 << 53) as f64 && c.fract() == 0.0).then_some(c as i64)
+  }
+
+  /// `fmod` by a divisor known to be the positive whole number `d`, which
+  /// reaches Cranelift as a constant it can divide by without dividing.
+  fn fmod_by(&mut self, x: IrValue, y: IrValue, d: i64) -> IrValue {
+    let (ix, x_whole) = self.f64_to_int(x);
+    let x_saturated = self.fb.ins().icmp_imm_s(IntCC::Equal, ix, i64::MAX);
+    let fast_ok = self.fb.ins().band_not(x_whole, x_saturated);
+    let fast = self.fb.create_block();
+    let slow = self.fb.create_block();
+    let done = self.fb.create_block();
+    self.fb.append_block_param(done, types::F64);
+    self.fb.ins().brif(fast_ok, fast, &[], slow, &[]);
+
+    self.fb.switch_to_block(fast);
+    let dc = self.fb.ins().iconst(types::I64, d);
+    let r = self.fb.ins().srem(ix, dc);
     let rf = self.fb.ins().fcvt_from_sint(types::F64, r);
     let signed = self.fb.ins().fcopysign(rf, x);
     self.fb.ins().jump(done, &[signed.into()]);
