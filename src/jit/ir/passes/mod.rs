@@ -15,6 +15,7 @@ pub mod ints;
 pub mod licm;
 pub mod loops;
 pub mod phi;
+pub mod ranges;
 pub mod repr;
 pub mod simplify;
 pub mod sink;
@@ -60,6 +61,12 @@ pub fn run(f: &mut Func, feedback: &Feedback) -> Result<(), String> {
   }
   elems::run(f, feedback);
   check(f, "elems")?;
+  // Integers that went through a double and back come out as they went
+  // in, where their ranges, or bounds checked before a loop, keep them
+  // exact.
+  if ranges::run(f, feedback) {
+    check(f, "ranges")?;
+  }
   // Nothing after this point builds a frame state, so the values kept for
   // folded-away parameters need not stay alive any longer.
   for b in &mut f.blocks {

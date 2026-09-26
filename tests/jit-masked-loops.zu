@@ -1,0 +1,84 @@
+# Loops that roll an integer forward through shifts, ors and a mask, the
+# way packed codes are built. Compiled code keeps such a value an integer
+# while the mask and its starting value are small enough to keep it
+# exact, checking that once before the loop. Each loop here also runs
+# with masks too wide for that, a start outside it, a negative mask, and
+# values that leave what a double holds exactly, and has to answer as
+# the interpreter does every time.
+
+# Two bit codes to roll in, as a byte stream.
+def codes(n) {
+  var seq = bytes(n)
+  iter var i = 0; i < n; i++ {
+    seq[i] = (i * 7 + i // 3) % 4
+  }
+  return seq
+}
+
+# Rolls `n` codes from `seq` into a code `bits` wide, starting from
+# `start`, and sums every code it passes through.
+def roll(seq, n, bits, start) {
+  var mask = (1 << bits) - 1
+  var code = start
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    code = ((code << 2) | seq[i % 64]) & mask
+    total = total + code
+  }
+  return [code, total]
+}
+
+# The same rolling code under whatever mask it is given, negative ones
+# included.
+def masked(seq, n, mask) {
+  var code = 0
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    code = ((code << 2) | seq[i % 64]) & mask
+    total = total + code
+  }
+  return [code, total]
+}
+
+# A code mixed with a key that the mask does not cover: the xor is exact
+# only while the key is small.
+def mix(seq, n, key, bits) {
+  var mask = (1 << bits) - 1
+  var code = 1
+  var seen = 0
+  iter var i = 0; i < n; i++ {
+    var mixed = (code << 1) ^ key
+    code = (mixed | seq[i % 64]) & mask
+    seen = seen ^ (mixed & 255)
+  }
+  return [code, seen]
+}
+
+var seq = codes(64)
+
+var total = 0
+iter var i = 0; i < 400; i++ {
+  total = total + roll(seq, 40, 8, 0)[1] + masked(seq, 40, 1023)[1]
+  total = total + mix(seq, 40, i, 12)[1]
+}
+echo total
+
+# Masks up to and past where the codes stay exact.
+for bits in [1, 8, 36, 48, 50, 51, 52, 53, 60, 62, 63] {
+  echo [bits, roll(seq, 90, bits, 0), roll(seq, 3, bits, 5)]
+}
+
+# Starting values outside the mask, negative and past 2^53.
+for start in [-1, -(2 ** 40), 2 ** 40, 2 ** 53 + 2, 2 ** 62] {
+  echo [start, roll(seq, 1, 8, start), roll(seq, 30, 50, start)]
+}
+
+# Masks that are not all ones, and negative ones.
+for mask in [0, 1, 1020, ~3, -1, -(2 ** 40), 2 ** 52, 2 ** 53 - 1, 2 ** 60] {
+  echo [mask, masked(seq, 70, mask)]
+}
+
+# Keys the xor cannot keep exact.
+for key in [0, 5, 2 ** 20, 2 ** 51, 2 ** 53, -(2 ** 60)] {
+  echo [key, mix(seq, 60, key, 40), mix(seq, 60, key, 62)]
+}
