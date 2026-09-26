@@ -95,7 +95,9 @@ pub fn log_ir_enabled() -> bool {
 }
 
 /// Write each compiled function's finished machine code to
-/// `tmp/jitasm/<symbol>.bin`; `ZURI_JIT_LOG_ASM=1`. Cranelift is built
+/// `tmp/jitasm/<function>.<symbol>.bin`, where the symbol is the one
+/// perf's map names it by, so every compile of a function gets its own
+/// file; `ZURI_JIT_LOG_ASM=1`. Cranelift is built
 /// here without its own disassembler, so the bytes go out raw for
 /// `objdump -b binary -m i386:x86-64` to decode. Reading the real
 /// instruction stream is the only way to settle whether a fast path
