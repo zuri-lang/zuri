@@ -1,0 +1,8 @@
+[1348, 6, bad 38]
+[2, a1, TypeError/TypeError, 3.5, TypeError/TypeError]
+[2, a1, TypeError/TypeError]
+[[inner body, inner done, outer body], [inner body, inner handler, outer handler: again 24], [inner body, inner handler, outer body]]
+400000
+260000
+179999700000
+top level: bad 10

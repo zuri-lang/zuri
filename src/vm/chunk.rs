@@ -951,6 +951,10 @@ pub struct Chunk {
   /// relocation; flagging clearly rather than leaving silent. The
   /// primitive half has no such hazard: a `NativeFunction` is `'static`.
   invoke_cache: OnceCell<Box<[InvokeCacheCell]>>,
+  /// For each instruction inside a `catch` body, where an error there
+  /// resumes, or `u32::MAX`; see `catch_resume`. Read by the compiler
+  /// threads, so a lock rather than a cell.
+  catch_regions: std::sync::OnceLock<Box<[u32]>>,
   /// What has reached each instruction, as a union of `kind` bits, one
   /// byte per instruction position. The instructions `kind::recorded`
   /// names record the operands a compiled guard would check; nothing
@@ -1004,6 +1008,32 @@ impl Chunk {
         cell.payload.set(0);
       }
     }
+  }
+
+  /// Where an error raised by the instruction at `ip` resumes, when `ip`
+  /// is inside a `catch` body: the innermost body's resume point, right
+  /// after its `PopCatch`. A body runs from its `PushCatch` to that
+  /// `PopCatch`; the ones a `break` or `continue` emits on its way out do
+  /// not end it.
+  pub fn catch_resume(&self, ip: usize) -> Option<usize> {
+    let regions = self.catch_regions.get_or_init(|| {
+      let mut out = vec![u32::MAX; self.code.len()];
+      for (at, instr) in self.code.iter().enumerate() {
+        if let Instr::PushCatch { offset, .. } = instr {
+          let resume = (at as isize + 1 + *offset as isize) as usize;
+          // Outer bodies come first, so an inner one overwrites them.
+          for slot in out.iter_mut().take(resume.saturating_sub(1)).skip(at + 1) {
+            *slot = resume as u32;
+          }
+        }
+      }
+      out.into_boxed_slice()
+    });
+    regions
+      .get(ip)
+      .copied()
+      .filter(|&r| r != u32::MAX)
+      .map(|r| r as usize)
   }
 
   pub fn invoke_cache_cell(&self, ip: usize) -> Option<&InvokeCacheCell> {
@@ -1119,6 +1149,7 @@ impl Chunk {
       global_cache: OnceCell::new(),
       field_cache: OnceCell::new(),
       invoke_cache: OnceCell::new(),
+      catch_regions: std::sync::OnceLock::new(),
       feedback: std::sync::OnceLock::new(),
       param_checks: Vec::new(),
     }

@@ -1,0 +1,167 @@
+# Functions with `catch` handlers compile like any other. An error inside
+# a `catch` body leaves the compiled code for the handler, which then sees
+# every variable as the body left it; everything else runs compiled. Each
+# function here is called often enough to compile, and has to answer as
+# the interpreter does whichever way its body ends.
+
+class Box {
+  @new(v) {
+    self.v = v
+  }
+}
+
+def strict(x) {
+  if x % 7 == 3 {
+    raise Error('bad ${x}')
+  }
+  return x * 2
+}
+
+# A callee's error, caught, with what the body changed before it.
+def summed(n) {
+  var total = 0
+  var caught = 0
+  var last = ''
+  iter var i = 0; i < n; i++ {
+    var before = total
+    catch {
+      total = total + 1
+      total = total + strict(i)
+    } as e {
+      caught++
+      last = e.message
+      total = before
+    }
+  }
+  return [total, caught, last]
+}
+
+# An error the body raises itself, from an operator, from a missing
+# method and from a field.
+def kinds(values) {
+  var out = []
+  for v in values {
+    catch {
+      out.append(v + 1)
+    } as e {
+      catch {
+        out.append(v.missing())
+      } as f {
+        out.append('${e.type}/${f.type}')
+      }
+    }
+  }
+  return out
+}
+
+# Nested bodies: the innermost handler takes an error, and an error in a
+# handler goes to the one around it.
+def nested(x) {
+  var trail = []
+  catch {
+    catch {
+      trail.append('inner body')
+      strict(x)
+      trail.append('inner done')
+    } as e {
+      trail.append('inner handler')
+      if x > 20 {
+        raise Error('again ${x}')
+      }
+    }
+    trail.append('outer body')
+  } as e {
+    trail.append('outer handler: ${e.message}')
+  }
+  return trail
+}
+
+# Returning from inside a body leaves no handler behind for the caller.
+def early(x) {
+  catch {
+    if x > 0 {
+      return x
+    }
+    strict(3)
+  } as e {
+    return -1
+  }
+  return 0
+}
+
+def calls_early(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = total + early(i % 3)
+  }
+  return total
+}
+
+# Leaving bodies with `break` and `continue` in a compiled loop.
+def exits(n) {
+  var seen = []
+  iter var i = 0; i < n; i++ {
+    catch {
+      if i % 4 == 1 {
+        continue
+      }
+      if i == n - 2 {
+        break
+      }
+      seen.append(i)
+    } as e {
+      seen.append('never')
+    }
+  }
+  return seen.length()
+}
+
+# A handler that is never entered, around code that does real work.
+def boxes(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    catch {
+      var b = Box(i)
+      total = total + b.v
+    } as e {
+      total = -1
+    }
+  }
+  return total
+}
+
+var r = []
+iter var k = 0; k < 4000; k++ {
+  r = summed(40)
+}
+echo r
+echo kinds([1, 'a', nil, 2.5, [1]])
+iter var k = 0; k < 20000; k++ {
+  kinds([1, 'a', nil])
+}
+echo kinds([1, 'a', nil])
+
+var trails = []
+iter var k = 0; k < 20000; k++ {
+  trails = [nested(k % 30), nested(24), nested(3)]
+}
+echo trails
+
+echo calls_early(600000)
+
+var e_total = 0
+iter var k = 0; k < 20000; k++ {
+  e_total = e_total + exits(20)
+}
+echo e_total
+
+echo boxes(600000)
+
+catch {
+  iter var k = 0; k < 400; k++ {
+    early(k % 2)
+  }
+  strict(10)
+} as e {
+  echo 'top level: ${e.message}'
+}

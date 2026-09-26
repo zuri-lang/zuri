@@ -902,11 +902,9 @@ pub struct JitInfo {
   /// the way it does for `entry`.
   pub osr_ids: RefCell<Option<FxHashMap<usize, i32>>>,
   /// Set once a compilation attempt has run and FAILED, or the
-  /// function was found ineligible up front (contains `Raise`/
-  /// `PushCatch`/`PopCatch`: see the `crate::jit` module docs for why
-  /// error-handling bytecode is never compiled). Sticky: later warm
-  /// call sites see this and stop trying, rather than re-attempting a
-  /// doomed compilation on every single call.
+  /// function was found ineligible up front. Sticky: later warm call
+  /// sites see this and stop trying, rather than re-attempting a doomed
+  /// compilation on every single call.
   pub ineligible: Cell<bool>,
   /// Bytecode positions where this function's compiled code gave up and
   /// handed control back to the interpreter. A speculation that misses

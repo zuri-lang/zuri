@@ -655,9 +655,7 @@ pub(crate) fn escaping_reads(instr: &Instr) -> Vec<u8> {
     // never stores the value anywhere, never hands it to user code.
     Instr::CheckParamType { .. } => vec![],
 
-    Instr::PushCatch { .. } | Instr::PopCatch => {
-      unreachable!("excluded from compilation before this analysis ever runs")
-    },
+    Instr::PushCatch { .. } | Instr::PopCatch => vec![],
   }
 }
 

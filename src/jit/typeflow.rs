@@ -3329,9 +3329,9 @@ fn ref_transfer(
     // block becomes unreachable.
     Instr::Raise { .. } => {},
 
-    Instr::PushCatch { .. } | Instr::PopCatch => {
-      unreachable!("excluded from compilation before this analysis ever runs")
-    },
+    // Registering and dropping a handler reads and writes no register.
+    // What reaches the handler is an edge in `successors`.
+    Instr::PushCatch { .. } | Instr::PopCatch => {},
   }
   out
 }
@@ -3601,9 +3601,9 @@ fn transfer(
     // block becomes unreachable.
     Instr::Raise { .. } => {},
 
-    Instr::PushCatch { .. } | Instr::PopCatch => {
-      unreachable!("excluded from compilation before this analysis ever runs")
-    },
+    // Registering and dropping a handler reads and writes no register.
+    // What reaches the handler is an edge in `successors`.
+    Instr::PushCatch { .. } | Instr::PopCatch => {},
   }
   out
 }
@@ -3829,6 +3829,19 @@ fn ambiguous_speculative_regs(code: &[Instr]) -> u64 {
 /// instead of each re-deriving their own copy that could drift out of
 /// sync with real jump/branch/dispatch semantics.
 pub(crate) fn successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
+  let mut out = direct_successors(ip, instr, proto);
+  // Inside a `catch` body, any instruction can end in the handler's
+  // resume point instead: what that point needs has to be in place at
+  // every one of them.
+  if let Some(resume) = proto.chunk.catch_resume(ip)
+    && !out.contains(&resume)
+  {
+    out.push(resume);
+  }
+  out
+}
+
+fn direct_successors(ip: usize, instr: &Instr, proto: &ObjFunction) -> Vec<usize> {
   match *instr {
     Instr::Jmp { offset } => vec![(ip as isize + 1 + offset as isize) as usize],
     Instr::JmpIfFalse { offset, .. } | Instr::JmpIfTrue { offset, .. } => {
@@ -4264,9 +4277,9 @@ fn mark_uses(instr: &Instr, proto: &ObjFunction, set: &mut RegSet) {
 
     Instr::CheckParamType { reg, .. } => set.set(reg, true),
 
-    Instr::PushCatch { .. } | Instr::PopCatch => {
-      unreachable!("excluded from compilation before this analysis ever runs")
-    },
+    // Registering and dropping a handler reads and writes no register.
+    // What reaches the handler is an edge in `successors`.
+    Instr::PushCatch { .. } | Instr::PopCatch => {},
   }
 }
 

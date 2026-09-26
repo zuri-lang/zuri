@@ -80,45 +80,55 @@ cold	0	56	100	0	@.script
 
 `calls` against `threshold` tells you how close something came.
 
-## The One Rule That Matters
+## Keep Errors for Errors
 
-**A function containing a `catch` block is never compiled.**
+A function with a `catch` compiles like any other. While no error comes
+through, a `catch` costs next to nothing: the handler is registered and
+dropped around the body, and the body runs as compiled code.
 
-`catch` maintains unwind state the interpreter owns, and the JIT generates
-no unwind logic, so a function with `PushCatch` in its bytecode stays
-interpreted forever. Not the `catch` block. The whole function.
-
-Measure it:
+What costs is an error that is actually raised. A `raise` hands the frame
+back to the interpreter at that instruction, and a caught error resumes at
+its handler in the interpreter too. The function returns to compiled code
+the next time its loop comes round, or the next time it is called. For a
+genuine failure that is the right trade. For an outcome a loop meets every
+few iterations, it is not:
 
 ```zuri
-def with_catch(n) {
-  var total = 0
-
-  catch {
-    iter var i = 0; i < n; i++ {
-      total += i
-    }
-  } as e
-
-  return total
+def parse_or_raise(i) {
+  if i % 10 == 0 {
+    raise ValueError('not a digit')
+  }
+  return i % 10
 }
 
-def without_catch(n) {
-  var total = 0
+def parse_or_nil(i) {
+  if i % 10 == 0 {
+    return nil
+  }
+  return i % 10
+}
 
+def with_raise(n) {
+  var total = 0
   iter var i = 0; i < n; i++ {
-    total += i
+    catch {
+      total += parse_or_raise(i)
+    } as e {
+      total += 0
+    }
   }
-
   return total
 }
 
-def guarded(n) {
-  catch {
-    return without_catch(n)
-  } as e {
-    return 0
+def with_nil(n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    var digit = parse_or_nil(i)
+    if digit != nil {
+      total += digit
+    }
   }
+  return total
 }
 
 def timed(label, work) {
@@ -127,42 +137,31 @@ def timed(label, work) {
   echo '${label}: ${((time() - start) * 1000).round()}ms'
 }
 
-timed('catch inside ', @() {
-  iter var r = 0; r < 2000; r++ {
-    with_catch(1000)
+timed('raise and catch', @() {
+  iter var r = 0; r < 200; r++ {
+    with_raise(1000)
   }
 })
 
-timed('catch outside', @() {
-  iter var r = 0; r < 2000; r++ {
-    guarded(1000)
-  }
-})
-
-timed('no catch     ', @() {
-  iter var r = 0; r < 2000; r++ {
-    without_catch(1000)
+timed('return nil     ', @() {
+  iter var r = 0; r < 200; r++ {
+    with_nil(1000)
   }
 })
 ```
 
-Two thousand rounds of a thousand iterations each:
+Two hundred rounds of a thousand iterations, one in ten of them failing:
 
 | Variant | Time |
 | --- | --- |
-| `catch` inside the hot function | 103ms |
-| `catch` around the call | 4ms |
-| no `catch` at all | 2ms |
+| `raise`, caught in the loop | 73ms |
+| `nil` returned and checked | 11ms |
 
-Twenty-five times, for moving one `catch` up a level. Note the second and
-third rows: wrapping the *call* costs essentially nothing, because the
-function doing the work is compiled either way. The fix is always the same:
-**put the loop in its own function and wrap the call, not the loop.**
-
-`raise` on its own is fine. A `raise` compiles to a bail-out back to the
-interpreter at that exact instruction, so a guard clause that never fires
-costs the compiled path nothing. It is `catch` that disqualifies a
-function.
+When failing is an expected outcome, input that might not parse or a key
+that might be missing, return a value that says so and test it. Keep
+`raise` for what the caller cannot reasonably carry on from. A `raise` that
+never fires, a guard clause at the top of a function, costs the compiled
+path nothing.
 
 ## Type Annotations Are a Performance Feature
 

@@ -172,29 +172,17 @@ pub fn compile(
   facts: CompileFacts,
   shutdown: Option<&AtomicBool>,
 ) -> Result<FxHashMap<usize, i32>, String> {
-  // A function that establishes a CATCH handler is still never compiled:
-  // `PushCatch`/`PopCatch` maintain unwind state the interpreter owns,
-  // and this compiler generates no unwind logic (see the `jit` module
-  // docs).
+  // A function with a `catch` compiles too. Its handlers go on the VM's
+  // own handler stack as the interpreter's would, and an error inside a
+  // body leaves compiled code for the handler the way a deopt does: see
+  // `emit_error_return`.
   //
-  // `Instr::Raise` on its own is different, and treating it the same way
-  // was costing real time. A raise is almost always an error path --
-  // `raise Error("bad task id")` guarding a lookup that never fails in
-  // practice; but its mere presence disqualified the ENTIRE function,
-  // including the hot path around it. Richards spent ~30% of its runtime
-  // in the interpreter for exactly this reason: one unreachable `raise`
-  // inside `findtcb`, which its hottest method calls per packet.
-  //
-  // So a raise now compiles to a deopt (see `emit_deopt`): bail to the
+  // `Instr::Raise` compiles to a deopt (see `emit_deopt`): bail to the
   // interpreter at that bytecode position and let it do the raising and
-  // unwinding it already knows how to do. The cost lands on the path
-  // that actually raises, where it belongs, instead of on every call.
-  for instr in &proto.chunk.code {
-    if matches!(instr, Instr::PushCatch { .. } | Instr::PopCatch) {
-      return Err("contains a catch handler (PushCatch/PopCatch)".to_string());
-    }
-  }
-
+  // unwinding it already knows how to do. A raise is almost always an
+  // error path, `raise Error("bad task id")` guarding a lookup that never
+  // fails in practice, so the cost lands on the path that actually
+  // raises, where it belongs, instead of on every call.
   let code_len = proto.chunk.code.len();
   if code_len == 0 {
     return Err("empty function body".to_string());
@@ -1050,6 +1038,10 @@ struct FuncCompiler<'a, 'b> {
   /// overwhelming majority of functions; every one that never builds
   /// a closure; pay that on every single call for nothing.
   frame_can_open_upvalues: bool,
+  /// Whether the function registers `catch` handlers. Its error exits
+  /// then give a handler of this frame the error first, and its returns
+  /// drop the frame's handlers.
+  has_catch: bool,
   /// Registers whose shape is proven for the whole function: see
   /// `ParamShape`'s own docs and `compute_proven_shapes`. Computed
   /// once, in `new`, from the bytecode's own shape alone (not
@@ -1694,6 +1686,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         .code
         .iter()
         .any(|i| matches!(i, Instr::Closure { .. })),
+      has_catch: proto
+        .chunk
+        .code
+        .iter()
+        .any(|i| matches!(i, Instr::PushCatch { .. })),
       proven_param_shapes: Self::compute_proven_shapes(proto),
       guarded_instance_vars: FxHashMap::default(),
       active_guarded: FxHashSet::default(),
@@ -3769,6 +3766,22 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// Always refreshes the registers pointer afterward: see this
   /// module's docs on why every helper call is conservatively treated
   /// as potentially frame-pushing.
+  /// Leaves compiled code with the error a helper or a callee left in
+  /// `VM::jit_pending_error`. In a function with `catch` handlers, one of
+  /// this frame's takes the error first: the frame then carries on in the
+  /// interpreter at the handler, the way a deopt would hand it over.
+  /// Either way what is returned is `PENDING_RETURN`, and the VM's
+  /// pending state says which it was.
+  fn emit_error_return(&mut self) {
+    if self.has_catch {
+      let vm = self.vm_param;
+      let base = self.base_param;
+      self.call_helper_raw("zuri_jit_catch", &[vm, base]);
+    }
+    let junk = self.u64c(PENDING_RETURN);
+    self.fb.ins().return_(&[junk]);
+  }
+
   fn call_checked(&mut self, name: &str, args: &[IrValue]) {
     let status = self.call_helper(name, args);
     let zero = self.i64c(0);
@@ -3778,8 +3791,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.u64c(PENDING_RETURN);
-    self.fb.ins().return_(&[junk]);
+    self.emit_error_return();
 
     self.fb.switch_to_block(ok_block);
     self.refresh_regs();
@@ -4219,8 +4231,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.set_cold_block(exc_block);
     self.fb.switch_to_block(exc_block);
-    let junk = self.u64c(PENDING_RETURN);
-    self.fb.ins().return_(&[junk]);
+    self.emit_error_return();
 
     self.fb.switch_to_block(ok_block);
     // Nothing is left open in the callee's window: a compiled function
@@ -4348,8 +4359,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.set_cold_block(exc_block);
     self.fb.switch_to_block(exc_block);
     self.call_helper("zuri_jit_take_constructed_instance", &[vm]);
-    let junk = self.u64c(PENDING_RETURN);
-    self.fb.ins().return_(&[junk]);
+    self.emit_error_return();
 
     // Nothing has run any Zuri code since the constructor returned, so
     // the pin can go now.
@@ -4759,6 +4769,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   }
 
   fn scalar_construct_eligible(&self, ip: usize, dst: u8) -> bool {
+    // A handler resumes in the interpreter without the stack slots such
+    // an instance lives in, so none is made where one can.
+    if self.has_catch {
+      return false;
+    }
     let Some(info) = self.construct_info.get(&ip) else {
       return false;
     };
@@ -7289,8 +7304,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.u64c(PENDING_RETURN);
-    self.fb.ins().return_(&[junk]);
+    self.emit_error_return();
 
     self.fb.switch_to_block(ok_block);
     self.reload_live(ip);
@@ -12034,7 +12048,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   ///   disallowed" direction. `tests/scalar-list-speculative-guard-scope.zu`
   ///   locks in the repro that found this.
   fn scalar_replace_eligible(&self, alloc_ip: usize, dst: u8, count: u8) -> bool {
-    if count == 0 || count > Self::MAX_SCALAR_LIST_LEN {
+    if self.has_catch || count == 0 || count > Self::MAX_SCALAR_LIST_LEN {
       return false;
     }
     if self.speculative_regs.is_some()
@@ -12710,8 +12724,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
     self.fb.switch_to_block(err_block);
-    let junk = self.u64c(PENDING_RETURN);
-    self.fb.ins().return_(&[junk]);
+    self.emit_error_return();
 
     self.fb.switch_to_block(ok_block);
     self.refresh_regs();
@@ -13861,6 +13874,11 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         false
       },
       Instr::Return { src } => {
+        if self.has_catch {
+          let vm = self.vm_param;
+          let base = self.base_param;
+          self.call_helper_raw("zuri_jit_drop_catches", &[vm, base]);
+        }
         if self.frame_can_open_upvalues {
           let base = self.base_param;
           let zero = self.i64c(0);
@@ -14503,8 +14521,18 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         true
       },
 
-      Instr::PushCatch { .. } | Instr::PopCatch => {
-        unreachable!("excluded by the eligibility scan in `compile`")
+      Instr::PushCatch { var_reg, offset } => {
+        let resume = (ip as isize + 1 + offset as isize) as u64;
+        let vm = self.vm_param;
+        let reg = self.u64c(var_reg.map_or(u64::MAX, u64::from));
+        let resume_c = self.u64c(resume);
+        self.call_helper_raw("zuri_jit_push_catch", &[vm, reg, resume_c]);
+        false
+      },
+      Instr::PopCatch => {
+        let vm = self.vm_param;
+        self.call_helper_raw("zuri_jit_pop_catch", &[vm]);
+        false
       },
 
       Instr::AddImm { dst, a, imm_const } => {
@@ -14960,8 +14988,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.fb.ins().brif(is_err, err_block, &[], ok_block, &[]);
 
       self.fb.switch_to_block(err_block);
-      let junk = self.u64c(PENDING_RETURN);
-      self.fb.ins().return_(&[junk]);
+      self.emit_error_return();
 
       self.fb.switch_to_block(ok_block);
     }

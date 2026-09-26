@@ -169,6 +169,35 @@ pub unsafe extern "C" fn zuri_jit_materialize_instance(
   instance.to_bits()
 }
 
+/// `Instr::PushCatch`; `var_reg` is `u64::MAX` when the `catch` names no
+/// variable.
+pub unsafe extern "C" fn zuri_jit_push_catch(vm_ptr: *mut VM, var_reg: u64, resume_ip: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let var_reg = (var_reg != u64::MAX).then_some(var_reg as u8);
+  vm.push_catch(var_reg, resume_ip as usize);
+  OK
+}
+
+/// `Instr::PopCatch`.
+pub unsafe extern "C" fn zuri_jit_pop_catch(vm_ptr: *mut VM) -> u64 {
+  unsafe { vm(vm_ptr) }.pop_catch();
+  OK
+}
+
+/// Gives the pending error to a `catch` handler of the compiled frame at
+/// `base`, when it has one: see `VM::catch_in_compiled_frame`.
+pub unsafe extern "C" fn zuri_jit_catch(vm_ptr: *mut VM, base: u64) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  u64::from(vm.catch_in_compiled_frame(base as usize))
+}
+
+/// Drops the `catch` handlers of the compiled frame at `base` as it
+/// returns.
+pub unsafe extern "C" fn zuri_jit_drop_catches(vm_ptr: *mut VM, base: u64) -> u64 {
+  unsafe { vm(vm_ptr) }.drop_catches(base as usize);
+  OK
+}
+
 pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
@@ -3284,6 +3313,10 @@ pub fn helper_table() -> Vec<HelperSpec> {
   vec![
     spec1!(zuri_jit_safepoint),
     spec2!(zuri_jit_deopt),
+    spec3!(zuri_jit_push_catch),
+    spec1!(zuri_jit_pop_catch),
+    spec2!(zuri_jit_catch),
+    spec2!(zuri_jit_drop_catches),
     spec4!(zuri_jit_deopt_inlined),
     spec3!(zuri_jit_blame),
     spec1!(zuri_jit_unreached),

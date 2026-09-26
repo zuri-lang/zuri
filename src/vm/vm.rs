@@ -857,6 +857,9 @@ pub struct VM {
   /// a loop for the interpreter to carry it into tier 2's code. Nothing
   /// went wrong, so nothing is noted and nothing is thrown away.
   pub(crate) pending_tier_exit: Cell<bool>,
+  /// Set alongside `pending_deopt_ip` when compiled code leaves for one
+  /// of its own `catch` handlers. No bet failed, so nothing is noted.
+  pub(crate) pending_deopt_caught: Cell<bool>,
   /// Functions the compile jobs in flight build calls to, keyed by the
   /// function being compiled. A reassigned global could otherwise leave
   /// a callee unreachable, and collected, while a compiler thread still
@@ -1019,6 +1022,7 @@ impl VM {
       pending_deopt_int_miss: Cell::new(false),
       pending_deopt_tier2: Cell::new(false),
       pending_tier_exit: Cell::new(false),
+      pending_deopt_caught: Cell::new(false),
       pending_jit_callees: Vec::new(),
       jit_enabled: *ZURI_JIT_ENABLED,
       no_jit_specialization: *ZURI_JIT_NO_SPECIALIZATION,
@@ -3968,6 +3972,7 @@ impl VM {
     let unreached = self.pending_deopt_unreached.replace(false);
     let from_tier2 = self.pending_deopt_tier2.replace(false);
     let tier_exit = self.pending_tier_exit.replace(false);
+    let caught = self.pending_deopt_caught.replace(false);
     let arithmetic = matches!(
       site_fn.chunk.code.get(site_ip),
       Some(
@@ -3979,8 +3984,9 @@ impl VM {
           | Instr::MulImm { .. }
       )
     );
-    if tier_exit {
-      // Leaving for tier 2's code, not giving up on anything.
+    if tier_exit || caught {
+      // Leaving for tier 2's code, or for a handler of the frame's own;
+      // not giving up on anything.
     } else if int_miss && arithmetic {
       // The site is fine on doubles; only the integer bet goes.
       site_fn.jit.int_misses.borrow_mut().insert(site_ip);
@@ -4169,11 +4175,9 @@ impl VM {
   /// look like a register holding the wrong value, a function being
   /// called twice, or a `TypeError` calling something that was never
   /// callable.
-  /// A function containing `Instr::PushCatch` is never JIT-compiled
-  /// (`codegen::is_eligible`), so the frame that could leave a stale
-  /// handler here is always interpreted, and its `Instr::Return` always
-  /// calls this function directly; there's no separate JIT-inlined
-  /// frame-pop path that also needs this same cleanup.
+  /// A compiled frame that returns has already dropped its own handlers
+  /// (`drop_catches`), since its callers pop it inline without coming
+  /// here.
   fn pop_frame_inner(&mut self) -> CallFrame {
     let frame = self.frames.pop().expect("pop_frame_inner: no frame to pop");
     self.jit_scalar_roots_len.set(frame.scalar_roots_mark);
@@ -7582,6 +7586,67 @@ impl VM {
   /// not a slow check.
   #[cold]
   #[inline(never)]
+  /// `Instr::PushCatch` run by compiled code: the frame running it is the
+  /// top one, as for the interpreter.
+  pub(crate) fn push_catch(&mut self, var_reg: Option<u8>, resume_ip: usize) {
+    self.catch_stack.push(CatchHandler {
+      frame_depth: self.frames.len(),
+      resume_ip,
+      var_reg,
+    });
+  }
+
+  /// `Instr::PopCatch` run by compiled code.
+  pub(crate) fn pop_catch(&mut self) {
+    self.catch_stack.pop();
+  }
+
+  /// The depth of the frame whose registers start at `base`, as
+  /// `CatchHandler::frame_depth` counts it. Every frame's window starts
+  /// above its caller's, so the base names one frame.
+  fn frame_depth_of(&self, base: usize) -> Option<usize> {
+    self.frames.iter().rposition(|f| f.base == base).map(|i| i + 1)
+  }
+
+  /// Hands the error compiled code is leaving with to a `catch` handler of
+  /// its own frame, the one at `base`, when the innermost handler is one.
+  /// The frames above it go, as `handle_error` would unwind them, the
+  /// error goes into the handler's register, and the frame is left for
+  /// the interpreter to resume at the handler, the way a deopt leaves it.
+  /// Returns whether a handler took it; otherwise the error stays pending
+  /// and propagates.
+  pub(crate) fn catch_in_compiled_frame(&mut self, base: usize) -> bool {
+    let Some(depth) = self.frame_depth_of(base) else {
+      return false;
+    };
+    if !matches!(self.catch_stack.last(), Some(h) if h.frame_depth == depth) {
+      return false;
+    }
+    let exc = self.jit_pending_error.replace(Value::nil());
+    match self.handle_error(exc, depth - 1) {
+      ErrorOutcome::Handled { ip, .. } => {
+        self.pending_deopt_ip.set(ip as i64);
+        self.pending_deopt_caught.set(true);
+        true
+      },
+      ErrorOutcome::Propagate(exc) => {
+        self.jit_pending_error.set(exc);
+        false
+      },
+    }
+  }
+
+  /// Drops the `catch` handlers of the frame at `base`, which is returning;
+  /// the interpreter's frame pop does the same.
+  pub(crate) fn drop_catches(&mut self, base: usize) {
+    let Some(depth) = self.frame_depth_of(base) else {
+      return;
+    };
+    while matches!(self.catch_stack.last(), Some(h) if h.frame_depth >= depth) {
+      self.catch_stack.pop();
+    }
+  }
+
   fn handle_error(&mut self, exc: Value, stop_depth: usize) -> ErrorOutcome {
     let claims_it = matches!(self.catch_stack.last(), Some(h) if h.frame_depth > stop_depth);
     if !claims_it {
@@ -7640,11 +7705,8 @@ impl VM {
   /// The `status` column is the interesting one:
   ///
   /// - `compiled`; has machine code and is running it.
-  /// - `catch`; contains a catch handler, so it can never be compiled
-  ///   (`jit::codegen::compile` rejects it up front). This is the only
-  ///   permanent, source-level reason a real function is refused.
-  /// - `ineligible`; refused for some other reason, which in practice
-  ///   means a backend failure or a repeated-deopt retirement.
+  /// - `ineligible`; refused, which in practice means a backend failure
+  ///   or a repeated-deopt retirement.
   /// - `cold`; eligible and simply never called enough to reach its own
   ///   warm-up threshold. Not a problem by itself: most functions in
   ///   any program are cold, and compiling them would cost more than it
@@ -7667,16 +7729,8 @@ impl VM {
         .max()
         .unwrap_or(0);
 
-      let has_catch = proto
-        .chunk
-        .code
-        .iter()
-        .any(|i| matches!(i, Instr::PushCatch { .. } | Instr::PopCatch));
-
       let status = if proto.jit.entry.get().is_some() {
         "compiled"
-      } else if has_catch {
-        "catch"
       } else if proto.jit.ineligible.get() {
         "ineligible"
       } else if calls >= proto.jit.call_threshold || osr_hits >= proto.jit.osr_threshold {

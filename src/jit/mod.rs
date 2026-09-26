@@ -31,19 +31,17 @@
 //!   are none; everything lives in `VM::registers` already) and jumps
 //!   straight there. See `codegen::FuncCompiler::compile` and
 //!   `warmup::osr_threshold`.
-//! - **Errors bail to the interpreter**: rather than reimplementing
-//!   `catch`/`raise` unwinding as generated machine code, a function
-//!   containing `Instr::PushCatch`/`Instr::Raise` is simply never
-//!   selected for compilation (see `codegen::is_eligible`); it always
-//!   runs interpreted, where the existing `catch_stack` unwinder
-//!   handles it. A compiled function can still raise indirectly (an
-//!   arithmetic type error, a callee that itself raises, ...); when
-//!   that happens control leaves compiled code entirely and propagates
-//!   the error up to whatever Rust frame invoked it (interpreter's
-//!   `dispatch_call`, `call_value`, or an enclosing compiled caller's
-//!   own call-site helper), mirroring how an interpreted `Err(Value)`
-//!   already propagates. See `runtime`'s module docs for the exact
-//!   error-channel protocol.
+//! - **Errors unwind through the interpreter's machinery**: an
+//!   `Instr::Raise` compiles to a deopt, so the interpreter raises it.
+//!   Any other error, an arithmetic type error or a callee that raises,
+//!   leaves compiled code and propagates to whatever invoked it (the
+//!   interpreter's `dispatch_call`, `call_value`, or an enclosing
+//!   compiled caller's own call-site helper), as an interpreted
+//!   `Err(Value)` does. A function with `catch` handlers registers them
+//!   on the VM's own handler stack, and an error its frame has a handler
+//!   for leaves compiled code for that handler the way a deopt does
+//!   (`codegen::FuncCompiler::emit_error_return`). See `runtime`'s module
+//!   docs for the exact error-channel protocol.
 //! - **Operator overloading**: a binary op's fast path (both operands
 //!   plain numbers) is inlined directly as machine code; anything else
 //!  ; strings, lists, bigints, a class's `@add` override, ... --
