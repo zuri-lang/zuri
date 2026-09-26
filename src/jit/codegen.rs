@@ -894,8 +894,8 @@ struct FuncCompiler<'a, 'b> {
   /// The entry signature's register-passed arguments, for
   /// `seed_registers` to take parameters from on an ordinary entry.
   fast_args: [IrValue; 4],
-  /// The subset of `f64_tracked` whose float Variable is the register's
-  /// ONLY definition, with the integer view rebuilt on demand at the
+  /// Where `f64_tracked` registers hold a value whose float Variable is
+  /// its ONLY definition, with the integer view rebuilt on demand at the
   /// few places that still want one.
   ///
   /// Dual-defining is already never worse than the old integer-only
@@ -910,11 +910,26 @@ struct FuncCompiler<'a, 'b> {
   /// there costs one `bitcast` on a path that was already leaving the
   /// vector registers anyway.
   ///
+  /// Decided per value rather than per register. A register holds many
+  /// unrelated values over a function, a loop counter here and a list
+  /// element there, and one of them not being a number says nothing
+  /// about the others. So the positions a register is live at are
+  /// grouped into webs, joined wherever control passes from one to the
+  /// next without the register being written, and a web qualifies when
+  /// it is numeric throughout. A definition drops the integer view only
+  /// when its value's web qualifies, and a read uses the float view only
+  /// there, so a read never reaches a definition that skipped the view
+  /// it takes. The float view is defined everywhere a register is
+  /// tracked, so a read the webs do not account for takes that.
+  ///
   /// Recomputed for the specialized body, which proves strictly more
   /// than the general one does; sound because the two bodies are
   /// disjoint subgraphs that share no edge, and both are dominated by
   /// the entry block, where every register gets both views seeded.
-  f64_canonical: Vec<bool>,
+  f64_canonical: CanonicalWebs,
+  /// Registers the current instruction has already defined with only
+  /// their float view.
+  canonical_written: SmallVec<[u8; 4]>,
   global_vars: FxHashMap<i64, Variable>,
   /// The bytecode position emit_instruction is currently translating.
   current_ip: usize,
@@ -1280,25 +1295,70 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     tracked
   }
 
-  /// Narrows `f64_tracked` to the registers whose float view can stand
-  /// alone: see `f64_canonical`. A register qualifies when `facts`
-  /// proves it numeric at every position it is live at, which is what
-  /// rules out the ones that only look float-ish, most obviously a
-  /// comparison result that `compute_f64_tracked` picked up from a
-  /// numeric `JmpIfFalse`.
-  fn compute_f64_canonical(&self, facts: &typeflow::TypeFacts) -> Vec<bool> {
-    let code_len = self.proto.chunk.code.len();
-    let mut canonical = self.f64_tracked.clone();
-    for (r, slot) in canonical.iter_mut().enumerate() {
-      if !*slot {
+  /// Narrows `f64_tracked` to the values whose float view can stand
+  /// alone: see `f64_canonical`. A web qualifies when `facts` proves its
+  /// register numeric at every position of it, which is what rules out
+  /// the values that only look float-ish, most obviously a comparison
+  /// result that `compute_f64_tracked` picked up from a numeric
+  /// `JmpIfFalse`.
+  fn compute_f64_canonical(&self, facts: &typeflow::TypeFacts) -> CanonicalWebs {
+    let code = &self.proto.chunk.code;
+    let code_len = code.len();
+    let mut webs = CanonicalWebs::new(code_len, self.f64_tracked.len());
+    let successors: Vec<Vec<usize>> = code
+      .iter()
+      .enumerate()
+      .map(|(ip, instr)| typeflow::successors(ip, instr, self.proto))
+      .collect();
+    let defs: Vec<Option<u8>> = code.iter().map(typeflow::any_dst).collect();
+    // Node `ip` is the value live on entry to `ip`, node `code_len + ip`
+    // the value `ip` defines.
+    let mut parent: Vec<usize> = Vec::new();
+    for (r, &tracked) in self.f64_tracked.iter().enumerate() {
+      if !tracked {
         continue;
       }
       let r = r as u8;
-      *slot = (0..code_len).all(|ip| {
-        !self.liveness.is_live(ip, r) || facts.is_numeric(ip, r) || self.int_facts.is_int(ip, r)
-      });
+      parent.clear();
+      parent.extend(0..2 * code_len);
+      for ip in 0..code_len {
+        let from = if defs[ip] == Some(r) {
+          code_len + ip
+        } else {
+          ip
+        };
+        for &s in &successors[ip] {
+          if s < code_len && self.liveness.is_live(s, r) {
+            let (a, b) = (find(&mut parent, from), find(&mut parent, s));
+            parent[a] = b;
+          }
+        }
+      }
+      let mut numeric = vec![true; 2 * code_len];
+      for ip in 0..code_len {
+        if self.liveness.is_live(ip, r) && !facts.is_numeric(ip, r) && !self.int_facts.is_int(ip, r)
+        {
+          let root = find(&mut parent, ip);
+          numeric[root] = false;
+        }
+        // A value read out of a list, a field or a call arrives as its
+        // bits, and is usually passed on the same way; keeping it only as
+        // a float would send it through a vector register and back.
+        if defs[ip] == Some(r) && !makes_float(&code[ip]) {
+          let root = find(&mut parent, code_len + ip);
+          numeric[root] = false;
+        }
+      }
+      for ip in 0..code_len {
+        if self.liveness.is_live(ip, r) && numeric[find(&mut parent, ip)] {
+          webs.set_live(ip, r);
+        }
+        if defs[ip] == Some(r) && numeric[find(&mut parent, code_len + ip)] {
+          webs.set_def(ip, r);
+        }
+      }
     }
-    canonical
+    webs
   }
 
   fn resolve_call_targets_from_snapshot(
@@ -1603,7 +1663,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       reg_vars_int: Vec::new(),
       int_tracked: Vec::new(),
       f64_tracked: Vec::new(),
-      f64_canonical: Vec::new(),
+      f64_canonical: CanonicalWebs::default(),
+      canonical_written: SmallVec::new(),
       entry_reg_values: Vec::new(),
       fast_args: [IrValue::from_u32(0); 4],
       global_vars: FxHashMap::default(),
@@ -3325,16 +3386,34 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.f64_tracked.get(r as usize).copied().unwrap_or(false)
   }
 
-  /// Whether the float Variable is the ONLY definition `r` gets, with
-  /// the integer one materialized on demand instead of maintained in
-  /// parallel: see `f64_canonical`.
+  /// Whether a read of `r` takes its float Variable, with the integer
+  /// view materialized on demand: see `f64_canonical`. The float
+  /// Variable is defined on every path of a tracked register, so a read
+  /// takes it unless every definition that can reach here kept the
+  /// integer view too: the value `r` held as the current instruction
+  /// started is in a web that keeps both, and nothing this instruction
+  /// wrote to `r` dropped it.
   #[inline]
-  fn is_f64_canonical(&self, r: u8) -> bool {
-    self.f64_canonical.get(r as usize).copied().unwrap_or(false)
+  fn reads_f64_canonical(&self, r: u8) -> bool {
+    self.is_f64_tracked(r)
+      && (self.f64_canonical.live(self.current_ip, r)
+        || !self.liveness.is_live(self.current_ip, r)
+        || self.canonical_written.contains(&r))
+  }
+
+  /// Whether the value the current instruction defines in `r` keeps only
+  /// its float Variable: see `f64_canonical`.
+  #[inline]
+  fn writes_f64_canonical(&mut self, r: u8) -> bool {
+    let canonical = self.is_f64_tracked(r) && self.f64_canonical.def(self.current_ip, r);
+    if canonical && !self.canonical_written.contains(&r) {
+      self.canonical_written.push(r);
+    }
+    canonical
   }
 
   fn load_reg(&mut self, r: u8) -> IrValue {
-    if self.is_f64_canonical(r) {
+    if self.reads_f64_canonical(r) {
       let f = self.fb.use_var(self.reg_vars_f64[r as usize]);
       return self.from_f64(f);
     }
@@ -3388,7 +3467,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if self.is_f64_tracked(r) {
       let f = self.to_f64(v);
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
-      if self.is_f64_canonical(r) {
+      if self.writes_f64_canonical(r) {
         return;
       }
     }
@@ -3416,7 +3495,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if self.is_f64_tracked(r) {
       self.fb.def_var(self.reg_vars_f64[r as usize], f);
     }
-    if !self.is_f64_canonical(r) {
+    if !self.writes_f64_canonical(r) {
       let v = self.from_f64(f);
       self.fb.def_var(self.reg_vars[r as usize], v);
     }
@@ -12921,6 +13000,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     // one, e.g. `emit_fast_call`'s prepare call plus its fast-path
     // `call_indirect`) consults this SAME value.
     self.current_ip = ip;
+    self.canonical_written.clear();
     // See `merge_points`'s own docs: a genuine CFG join point can't
     // trust whichever single predecessor's `reg_cache` state happened
     // to be active when THIS compile-time walk last touched it --
@@ -15679,4 +15759,80 @@ fn bitwise_result_exact(instr: &Instr, a: Option<f64>, b: Option<f64>) -> bool {
     Instr::BitShr { .. } => true,
     _ => false,
   }
+}
+
+/// Per position, which tracked registers' values keep only their float
+/// view: see `FuncCompiler::f64_canonical`. One bitset over the
+/// registers for the value live on entry to each position, and one for
+/// the value each position defines.
+#[derive(Default)]
+struct CanonicalWebs {
+  words: usize,
+  live: Vec<u64>,
+  def: Vec<u64>,
+}
+
+impl CanonicalWebs {
+  fn new(code_len: usize, num_registers: usize) -> Self {
+    let words = num_registers.div_ceil(64).max(1);
+    CanonicalWebs {
+      words,
+      live: vec![0; code_len * words],
+      def: vec![0; code_len * words],
+    }
+  }
+
+  fn at(&self, ip: usize, r: u8) -> (usize, u64) {
+    (ip * self.words + r as usize / 64, 1u64 << (r % 64))
+  }
+
+  fn set_live(&mut self, ip: usize, r: u8) {
+    let (i, bit) = self.at(ip, r);
+    self.live[i] |= bit;
+  }
+
+  fn set_def(&mut self, ip: usize, r: u8) {
+    let (i, bit) = self.at(ip, r);
+    self.def[i] |= bit;
+  }
+
+  fn live(&self, ip: usize, r: u8) -> bool {
+    let (i, bit) = self.at(ip, r);
+    self.live.get(i).is_some_and(|w| w & bit != 0)
+  }
+
+  fn def(&self, ip: usize, r: u8) -> bool {
+    let (i, bit) = self.at(ip, r);
+    self.def.get(i).is_some_and(|w| w & bit != 0)
+  }
+}
+
+/// Whether `instr` computes its result as a float, rather than reading
+/// it from somewhere as a value's bits.
+fn makes_float(instr: &Instr) -> bool {
+  matches!(
+    instr,
+    Instr::LoadConst { .. }
+      | Instr::Move { .. }
+      | Instr::Add { .. }
+      | Instr::Sub { .. }
+      | Instr::Mul { .. }
+      | Instr::Div { .. }
+      | Instr::Pow { .. }
+      | Instr::Floor { .. }
+      | Instr::Mod { .. }
+      | Instr::Neg { .. }
+      | Instr::AddImm { .. }
+      | Instr::SubImm { .. }
+      | Instr::MulImm { .. }
+  )
+}
+
+/// The representative of `x`'s set, halving the path on the way.
+fn find(parent: &mut [usize], mut x: usize) -> usize {
+  while parent[x] != x {
+    parent[x] = parent[parent[x]];
+    x = parent[x];
+  }
+  x
 }
