@@ -76,4 +76,7 @@ The JIT turns it on only when CPUID reports an affected core
 alignment. Everywhere else the backend emits exactly what upstream does.
 
 The patch changes `src/isa/x64/mod.rs`, `src/isa/x64/inst/emit.rs`,
-`src/isa/x64/inst/emit_state.rs` and `src/machinst/buffer.rs`.
+`src/isa/x64/inst/emit_state.rs` and `src/machinst/buffer.rs`. It also
+allows `unused_imports` in the manifest: as a path dependency the crate's
+own warnings are no longer capped, and upstream builds with two such
+imports.

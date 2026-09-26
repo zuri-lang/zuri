@@ -1215,7 +1215,11 @@ fn materialize_ref(
       let proto_val = vm.pinned(proto_pin);
       let shells: smallvec::SmallVec<[Value; 2]> =
         shell_pins.iter().map(|&p| vm.pinned(p)).collect();
-      let closure_val = vm.heap_mut().alloc_closure(ObjClosure {
+      // Old from the start. A closure crossing into an isolate is nearly
+      // always the function it was spawned to run, called at once, and
+      // compiled code only runs a closure that cannot move; promoting a
+      // young one takes a whole minor collection, once per task.
+      let closure_val = vm.heap_mut().alloc_closure_old(ObjClosure {
         function: proto_val,
         upvalues: shells,
       });

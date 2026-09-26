@@ -3697,16 +3697,28 @@ impl Heap {
   ///   promote it into old-gen storage, mark the OLD slot forwarded,
   ///   and queue the new copy for `collect_minor`'s own worklist to
   ///   walk its children next.
+  ///
+  /// Called for every pointer a minor collection scans, most of which
+  /// name old objects, so the test for that is inlined into the scan and
+  /// only a young object pays for the call.
+  #[inline(always)]
   pub(crate) fn forward_or_promote(
     &mut self,
     ptr: *const Obj,
     worklist: &mut Vec<*const Obj>,
   ) -> *const Obj {
-    let gcbox_ptr = Self::gcbox_of(ptr) as *mut GcBox;
-    let gcbox = unsafe { &*gcbox_ptr };
+    let gcbox = unsafe { &*Self::gcbox_of(ptr) };
     if gcbox.generation.get() != Generation::Young {
       return ptr;
     }
+    self.forward_young(ptr, worklist)
+  }
+
+  /// `forward_or_promote` for a pointer to a young object.
+  #[inline(never)]
+  fn forward_young(&mut self, ptr: *const Obj, worklist: &mut Vec<*const Obj>) -> *const Obj {
+    let gcbox_ptr = Self::gcbox_of(ptr) as *mut GcBox;
+    let gcbox = unsafe { &*gcbox_ptr };
     // A box from an earlier nursery cycle. Its payload was either
     // reclaimed or moved out by a forwarding promotion (leaving a stub
     // whose `list_next` may since have been swept and recycled), and
@@ -4240,6 +4252,12 @@ impl Heap {
       return self.alloc_old(Obj::Closure(c));
     }
     self.alloc(Obj::Closure(c))
+  }
+
+  /// A closure in the old generation whatever it is, for one known to be
+  /// called from compiled code before it could die young.
+  pub fn alloc_closure_old(&mut self, c: ObjClosure) -> Value {
+    self.alloc_old(Obj::Closure(c))
   }
 
   pub fn alloc_upvalue(&mut self, state: UpvalueState) -> Value {
