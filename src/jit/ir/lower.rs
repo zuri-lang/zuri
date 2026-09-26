@@ -763,7 +763,8 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(ok, cont, &[], fail, &[]);
     self.fb.switch_to_block(fail);
     self.fb.set_cold_block(fail);
-    let marker = matches!(kind, GuardKind::Whole | GuardKind::Arith(_)).then_some("zuri_jit_int_miss");
+    let marker =
+      matches!(kind, GuardKind::Whole | GuardKind::Arith(_)).then_some("zuri_jit_int_miss");
     self.deopt(state, marker);
     self.fb.switch_to_block(cont);
     result
@@ -1020,10 +1021,11 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.continue_if(is_obj, miss);
         let p = self.obj_ptr(closure);
         let tag = self.fb.ins().load(types::I8, flags, p, 0);
-        let is_closure = self
-          .fb
-          .ins()
-          .icmp_imm_s(IntCC::Equal, tag, object::OBJ_TAG_CLOSURE as i64);
+        let is_closure =
+          self
+            .fb
+            .ins()
+            .icmp_imm_s(IntCC::Equal, tag, object::OBJ_TAG_CLOSURE as i64);
         let other = self.fb.create_block();
         let next = self.fb.create_block();
         self.fb.ins().brif(is_closure, next, &[], other, &[]);
@@ -1045,10 +1047,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.fb.ins().jump(done, &[status.into()]);
 
         self.fb.switch_to_block(next);
-        let function = self
-          .fb
-          .ins()
-          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        let function = self.fb.ins().load(
+          types::I64,
+          flags,
+          p,
+          object::obj_closure_function_offset() as i32,
+        );
         let is_function = self.obj_tag_is(function, object::OBJ_TAG_FUNC);
         self.continue_if(is_function, miss);
         (closure, self.function_proto(function))
@@ -1058,10 +1062,12 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let is_closure = self.obj_tag_is(closure, object::OBJ_TAG_CLOSURE);
         self.continue_if(is_closure, miss);
         let p = self.obj_ptr(closure);
-        let held = self
-          .fb
-          .ins()
-          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        let held = self.fb.ins().load(
+          types::I64,
+          flags,
+          p,
+          object::obj_closure_function_offset() as i32,
+        );
         let want = self.u64c(bits);
         let same = self.fb.ins().icmp(IntCC::Equal, held, want);
         self.continue_if(same, miss);
@@ -1074,20 +1080,24 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let is_instance = self.obj_tag_is(receiver, object::OBJ_TAG_INSTANCE);
         self.continue_if(is_instance, miss);
         let p = self.obj_ptr(receiver);
-        let class = self
-          .fb
-          .ins()
-          .load(types::I64, flags, p, object::obj_instance_class_offset() as i32);
+        let class = self.fb.ins().load(
+          types::I64,
+          flags,
+          p,
+          object::obj_instance_class_offset() as i32,
+        );
         let cell = self.u64c(cell);
         let key = self.fb.ins().load(types::I64, flags, cell, 0);
         let hit = self.fb.ins().icmp(IntCC::Equal, class, key);
         self.continue_if(hit, miss);
         let method = self.fb.ins().load(types::I64, flags, cell, 8);
         let p = self.obj_ptr(method);
-        let function = self
-          .fb
-          .ins()
-          .load(types::I64, flags, p, object::obj_closure_function_offset() as i32);
+        let function = self.fb.ins().load(
+          types::I64,
+          flags,
+          p,
+          object::obj_closure_function_offset() as i32,
+        );
         (method, self.function_proto(function))
       },
     };
@@ -1102,28 +1112,34 @@ impl<'a, 'b> Lowering<'a, 'b> {
     );
     let mut ready = self.fb.ins().icmp_imm_s(IntCC::NotEqual, entry, 0);
     if !matches!(callee, DirectCallee::Known { .. }) {
-      let arity = self
-        .fb
-        .ins()
-        .load(types::I8, flags, proto, object::obj_function_arity_offset() as i32);
+      let arity = self.fb.ins().load(
+        types::I8,
+        flags,
+        proto,
+        object::obj_function_arity_offset() as i32,
+      );
       let fits = self
         .fb
         .ins()
         .icmp_imm_s(IntCC::Equal, arity, num_args as i64);
       ready = self.fb.ins().band(ready, fits);
-      let variadic = self
-        .fb
-        .ins()
-        .load(types::I8, flags, proto, object::obj_function_variadic_offset() as i32);
+      let variadic = self.fb.ins().load(
+        types::I8,
+        flags,
+        proto,
+        object::obj_function_variadic_offset() as i32,
+      );
       let fixed = self.fb.ins().icmp_imm_s(IntCC::Equal, variadic, 0);
       ready = self.fb.ins().band(ready, fixed);
     }
     if matches!(callee, DirectCallee::Register) {
       // A method called as a plain function has no receiver to take.
-      let method = self
-        .fb
-        .ins()
-        .load(types::I8, flags, proto, object::obj_function_is_method_offset() as i32);
+      let method = self.fb.ins().load(
+        types::I8,
+        flags,
+        proto,
+        object::obj_function_is_method_offset() as i32,
+      );
       let plain = self.fb.ins().icmp_imm_s(IntCC::Equal, method, 0);
       ready = self.fb.ins().band(ready, plain);
     }

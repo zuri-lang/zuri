@@ -156,7 +156,9 @@ fn thread_edge(f: &mut Func, p: BlockId, side: bool) -> bool {
     let fresh = f.add_block_param(s, ty);
     let dest = f.block_mut(s);
     if dest.param_regs.len() + 1 == dest.params.len() {
-      dest.param_regs.push(param_regs.get(j).copied().unwrap_or(0));
+      dest
+        .param_regs
+        .push(param_regs.get(j).copied().unwrap_or(0));
     }
     for pred in f.predecessors()[s.0 as usize].clone() {
       for edge in f.edge_args_mut(pred, s) {

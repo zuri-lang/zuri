@@ -554,7 +554,9 @@ fn integer_uses(f: &Func) -> FxHashSet<ValueId> {
       }
       let boxed = users.get(&p).into_iter().flatten().filter_map(|&u| {
         let inst = f.inst(u);
-        matches!(inst.op, Op::BoxF64).then_some(inst.result).flatten()
+        matches!(inst.op, Op::BoxF64)
+          .then_some(inst.result)
+          .flatten()
       });
       if as_integer(p) || boxed.collect::<Vec<_>>().into_iter().any(as_integer) {
         out.insert(p);

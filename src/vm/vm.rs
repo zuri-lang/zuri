@@ -2915,8 +2915,9 @@ impl VM {
         let value = self.global_slots[slot as usize].get();
         if value.is_number() {
           let n = value.as_number();
-          let whole =
-            n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 && n.to_bits() != (-0.0f64).to_bits();
+          let whole = n.fract() == 0.0
+            && n.abs() < 9_007_199_254_740_992.0
+            && n.to_bits() != (-0.0f64).to_bits();
           global_numbers.insert(slot, whole);
         }
       }
@@ -3037,7 +3038,9 @@ impl VM {
     loop {
       let parent = declaring.as_class().superclass;
       match parent {
-        Some(p) if p.as_class().methods.get(name).map(|m| m.to_bits()) == Some(method.to_bits()) => {
+        Some(p)
+          if p.as_class().methods.get(name).map(|m| m.to_bits()) == Some(method.to_bits()) =>
+        {
           declaring = p
         },
         _ => break,
@@ -7631,7 +7634,11 @@ impl VM {
   /// `CatchHandler::frame_depth` counts it. Every frame's window starts
   /// above its caller's, so the base names one frame.
   fn frame_depth_of(&self, base: usize) -> Option<usize> {
-    self.frames.iter().rposition(|f| f.base == base).map(|i| i + 1)
+    self
+      .frames
+      .iter()
+      .rposition(|f| f.base == base)
+      .map(|i| i + 1)
   }
 
   /// Hands the error compiled code is leaving with to a `catch` handler of
