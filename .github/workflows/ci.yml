@@ -22,7 +22,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-15-intel
+          - macos-latest
+          - windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +53,7 @@ jobs:
       # `VAR=value` prefix on the command: Windows runners use
       # PowerShell, which reads that prefix as the name of a command to
       # run and fails before cargo is ever reached. `env:` is applied
-      # by the runner itself, so it works the same on all three.
+      # by the runner itself, so it works the same on every runner.
       # Run through bash on every runner, Windows included, so the
       # pipeline below behaves the same way everywhere: PowerShell's
       # own pipeline would report tee's exit status rather than
