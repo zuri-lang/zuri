@@ -1193,7 +1193,9 @@ written into `tmp`, where nothing reads from, and only moved into place
 once it is whole, so a reader never sees half of one. `new` is where a
 delivery agent leaves mail nobody has looked at yet, and `cur` is where a
 message lives once a client has seen the mailbox, with its flags recorded
-in the filename after `:2,`. So an account on disk looks like this:
+in the filename after `:2,`. Windows does not allow a colon in a filename,
+so there the flags follow `;2,` instead, as they do for mbsync. So an
+account on disk looks like this:
 
 ```text
 ada/

@@ -40,8 +40,13 @@ import ..errors { MailboxError }
 # is where it lives once a reader has seen it.
 var MAILDIR_PARTS = ['tmp', 'new', 'cur']
 
+# What separates a message's name from the flags that follow it.
+# Maildir says a colon, which a Windows filename cannot hold, so there
+# it is a semicolon, the same one mbsync uses there.
+var INFO_SEPARATOR = os.platform == 'windows' ? ';' : ':'
+
 # How a Maildir records a flag, as the letter that goes in a message's
-# filename after `:2,`.
+# filename after `:2,` (`;2,` on Windows).
 var MAILDIR_FLAGS = {
   '\\Draft': 'D',
   '\\Flagged': 'F',
@@ -556,6 +561,13 @@ var INDEX_FILE = 'zuri-uidlist'
  * written here can be read by anything else, and mail delivered by
  * anything else turns up here.
  *
+ * Flags are kept the Maildir way, as letters at the end of a message's
+ * filename after `:2,`. A colon cannot appear in a Windows filename, so
+ * on Windows the flags follow `;2,` instead, which is what mbsync
+ * writes there too. A Maildir moved between Windows and any other
+ * system keeps its messages but has to have their flags renamed to
+ * match.
+ *
  * Mail is on disk; accounts are not. The store asks the program who
  * its users are, either as a password given to `add_account()` or
  * through `set_authenticator()`, because where an application keeps
@@ -815,7 +827,9 @@ class MaildirStore < MailStore {
         continue
       }
 
-      var moved = name.index_of(':') > -1 ? name : '${name}:2,'
+      var moved = name.index_of(INFO_SEPARATOR) > -1 ?
+        name :
+        '${name}${INFO_SEPARATOR}2,'
 
       os.rename(os.join_paths(staging, name), os.join_paths(current, moved))
     }
@@ -901,7 +915,7 @@ class MaildirStore < MailStore {
 
     # The message is written somewhere nothing reads from and only then
     # moved into place, so a reader never sees half a message.
-    var final_name = '${name}:2,${letters}'
+    var final_name = '${name}${INFO_SEPARATOR}2,${letters}'
 
     os.rename(staged, os.join_paths(state.current, final_name))
 
@@ -930,7 +944,7 @@ class MaildirStore < MailStore {
         continue
       }
 
-      var renamed = '${key}:2,${_flag_letters(flags)}'
+      var renamed = '${key}${INFO_SEPARATOR}2,${_flag_letters(flags)}'
 
       if renamed == name {
         return
@@ -1053,13 +1067,13 @@ class MaildirStore < MailStore {
 # The part of a message's filename that identifies it, without the
 # flags a rename keeps changing.
 def _base_name(name: string) {
-  var marker = name.index_of(':')
+  var marker = name.index_of(INFO_SEPARATOR)
 
   return marker < 0 ? name : name[0, marker]
 }
 
 def _flag_part(name: string) {
-  var marker = name.index_of(':2,')
+  var marker = name.index_of('${INFO_SEPARATOR}2,')
 
   return marker < 0 ? '' : name[marker + 3, name.length()]
 }

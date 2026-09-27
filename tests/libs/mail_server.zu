@@ -468,7 +468,9 @@ var current = os.join_paths(maildir_root, 'ann', 'cur')
 var files = os.read_dir(current).filter(@(name) => name != '.' and name != '..')
 
 check('two files on disk', files.length(), 2)
-ok('one of them records the seen flag', files.some(@(name) => name.contains(':2,')
+var info = os.platform == 'windows' ? ';2,' : ':2,'
+
+ok('one of them records the seen flag', files.some(@(name) => name.contains(info)
   and name.ends_with('S')))
 ok('a delivery directory exists', os.dir_exists(os.join_paths(maildir_root, 'ann', 'new')))
 
