@@ -80,9 +80,11 @@ jobs:
       # The whole log, kept as a file. A run with several failing
       # fixtures produces more output than the web view will show, and
       # the part that gets dropped is the middle, where each failure
-      # explains itself. The artifact has all of it.
+      # explains itself. The artifact has all of it. A cancelled run
+      # keeps it too, since a run is usually cancelled because
+      # something in it stopped moving.
       - name: Upload the test log
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: test-log-${{ matrix.os }}

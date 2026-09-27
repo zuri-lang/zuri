@@ -14,7 +14,8 @@
 use std::fs;
 use std::io::Read;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 
 fn run_fixture(zu_path_str: &str) {
   let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -87,13 +88,25 @@ const MEMORY_CAP_BYTES: u64 = 2 << 30;
 /// How often a running fixture's memory is checked against the cap.
 const MEMORY_POLL: Duration = Duration::from_millis(5);
 
+/// The longest a fixture may run before it is stopped. No fixture
+/// has any business running this long, so one that reaches it is
+/// hung, and stopping it gets its output into the failure instead of
+/// holding the whole suite until the job is killed.
+const FIXTURE_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// How long a stopped fixture's output is waited for. A process the
+/// fixture started can still hold the pipe open after the fixture
+/// itself is gone, and then whatever has arrived by now is all there is.
+const OUTPUT_GRACE: Duration = Duration::from_secs(5);
+
 /// Runs the executable on one fixture, returning how it exited and
 /// everything it printed.
 ///
 /// Stdout and stderr share a single pipe, so echoed output and an
 /// uncaught-error message arrive in the order they were written. The
 /// executable is spawned directly, with no shell in between, so the
-/// process held to `MEMORY_CAP_BYTES` is the fixture itself.
+/// process held to `MEMORY_CAP_BYTES` and `FIXTURE_TIMEOUT` is the
+/// fixture itself.
 fn run_zuri(zu_path_str: &str) -> (ExitStatus, String) {
   let (mut output, writer) = std::io::pipe().expect("failed to create the output pipe");
   let mut child = Command::new(env!("CARGO_BIN_EXE_zuri"))
@@ -107,33 +120,57 @@ fn run_zuri(zu_path_str: &str) -> (ExitStatus, String) {
 
   // Drained on its own thread, since a fixture that fills the pipe
   // would otherwise block on its next write while this one waits for
-  // it to exit.
-  let collector = std::thread::spawn(move || {
-    let mut bytes = Vec::new();
-    let _ = output.read_to_end(&mut bytes);
-    bytes
+  // it to exit. What it reads is kept where this thread can see it
+  // before the pipe closes, so a stopped fixture still reports what
+  // it printed.
+  let collected = Arc::new(Mutex::new(Vec::new()));
+  let (drained, all_drained) = mpsc::channel();
+  let sink = Arc::clone(&collected);
+  std::thread::spawn(move || {
+    let mut chunk = [0u8; 8192];
+    while let Ok(n @ 1..) = output.read(&mut chunk) {
+      sink.lock().unwrap().extend_from_slice(&chunk[..n]);
+    }
+    let _ = drained.send(());
   });
 
-  let mut over_cap = false;
+  let started = Instant::now();
+  let mut stopped = None;
   let status = loop {
     if let Some(status) = child.try_wait().expect("failed to poll a fixture") {
       break status;
     }
     if resident_bytes(&child).is_some_and(|bytes| bytes > MEMORY_CAP_BYTES) {
-      over_cap = true;
+      stopped = Some(format!(
+        "stopped after passing {} MB resident",
+        MEMORY_CAP_BYTES >> 20
+      ));
+    } else if started.elapsed() > FIXTURE_TIMEOUT {
+      stopped = Some(format!(
+        "stopped after running for {} seconds",
+        FIXTURE_TIMEOUT.as_secs()
+      ));
+    }
+    if stopped.is_some() {
       let _ = child.kill();
       break child.wait().expect("failed to reap a fixture");
     }
     std::thread::sleep(MEMORY_POLL);
   };
 
-  let bytes = collector.join().expect("the output collector panicked");
+  // A fixture that exited on its own closed its end of the pipe, so
+  // the rest of its output is on the way and worth waiting for.
+  match stopped {
+    None => all_drained.recv().expect("the output collector panicked"),
+    Some(_) => {
+      let _ = all_drained.recv_timeout(OUTPUT_GRACE);
+    },
+  }
+
+  let bytes = collected.lock().unwrap();
   let mut text = String::from_utf8_lossy(&bytes).into_owned();
-  if over_cap {
-    text.push_str(&format!(
-      "\n--- stopped after passing {} MB resident ---\n",
-      MEMORY_CAP_BYTES >> 20
-    ));
+  if let Some(reason) = stopped {
+    text.push_str(&format!("\n--- {reason} ---\n"));
   }
 
   (status, text)
