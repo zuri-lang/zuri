@@ -24,7 +24,7 @@ zuri test mytest            # tests/mytest.zu
 zuri test mytest.zu         # the same file
 zuri test tests/api.zu      # the same file, by its path
 zuri test deep              # tests/deep, whole
-zuri test cmds/format/tests # a directory anywhere in the project
+zuri test cmds/fmt/tests    # a directory anywhere in the project
 ```
 
 A name is looked for under `tests` first, so a test keeps its own name

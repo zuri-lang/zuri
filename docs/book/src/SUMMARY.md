@@ -96,3 +96,4 @@
 - [F - The Standard Library Index](appendix-06-stdlib-index.md)
 - [G - The Error Hierarchy](appendix-07-errors.md)
 - [H - Coming From Another Language](appendix-08-coming-from.md)
+- [I - Custom Commands](appendix-09-commands.md)

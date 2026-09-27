@@ -1,4 +1,4 @@
-# format
+# fmt
 
 Formats all Zuri files in the given path, or the current directory in the 
 project's own style: two spaces to a level, one statement to a line, the 
@@ -8,7 +8,7 @@ brackets and operators that carry them.
 ## Running it
 
 ```sh
-zuri format [path]
+zuri fmt [path]
 ```
 
 `path` is either a single `.zu` file, which is formatted in place, or a
@@ -18,16 +18,16 @@ formatted.
 
 ```sh
 # format one file
-zuri format libs/date.zu
+zuri fmt libs/date.zu
 
 # format a whole tree
-zuri format libs
+zuri fmt libs
 
 # format the current directory
-zuri format
+zuri fmt
 
 # report what would change without writing anything (exit 1 if any would)
-zuri format --dry-run libs
+zuri fmt --dry-run libs
 ```
 
 `--dry-run` (or `-n`) is what a commit hook or CI wants: it names the
@@ -95,7 +95,7 @@ tokens can see that.
 - `layout.zu` — the lines: the breaks the source had, blocks, closures,
   comments, and the wrapping of what is left too long.
 - `engine.zu` — `format(source)` and the safety check.
-- `index.zu` — the command itself, the entry point `zuri format` runs.
+- `index.zu` — the command itself, the entry point `zuri fmt` runs.
 
 The parser is Zuri's own (`zuri.tokenize`), not a second one to keep in
 step with the language.
@@ -106,7 +106,7 @@ A test file sits beside each source file under `tests/`, written with
 the `test` module. Run the lot with:
 
 ```sh
-zuri test cmds/format/tests
+zuri test cmds/fmt/tests
 ```
 
 or, from this directory, just `zuri test`.

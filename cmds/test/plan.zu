@@ -115,7 +115,7 @@ def _search(root: string, target: string) {
  * from `root` itself. `tests` comes first so that a name shared with
  * something else in the project still means the test: `zuri test
  * mytest` and `zuri test mytest.zu` both land on `tests/mytest.zu`,
- * while `zuri test cmds/format/tests`, which is under no `tests`
+ * while `zuri test cmds/fmt/tests`, which is under no `tests`
  * directory of its own, runs that directory. An absolute target names
  * itself and is never looked for under `tests`.
  *

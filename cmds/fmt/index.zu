@@ -1,12 +1,12 @@
 /**
- * @command format
+ * @command fmt
  * @description Formats all Zuri files in the given path, or the 
  *    current directory.
  * 
- * The `format` command formats all Zuri files in the given path, or 
+ * The `fmt` command formats all Zuri files in the given path, or 
  * the current directory.
  *
- *   zuri format [path]
+ *   zuri fmt [path]
  *
  * `path` is either a single `.zu` file, which is formatted in place, or
  * a directory, in which case every `.zu` file inside it is formatted,
@@ -145,7 +145,7 @@ def main() {
   var dry_run = parsed.options.get('dry-run', false)
 
   if !os.is_dir(path) and !file(path).exists() {
-    echo 'format: there is no file or directory at ${path}'
+    echo 'fmt: there is no file or directory at ${path}'
 
     exit(1)
   }

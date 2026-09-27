@@ -1545,9 +1545,9 @@ class Expect {
    * ```
    *
    * @param function predicate
-   * @param ?string description: completes the sentence "Expected
-   *    <value> ...". Without one the message says only that a
-   *    predicate was not satisfied, which is rarely enough.
+   * @param ?string description: completes the sentence
+   *    `Expected <value> ...`. Without one the message says only that
+   *    a predicate was not satisfied, which is rarely enough.
    * @returns Expect
    */
   to_satisfy(predicate: function, description: ?string) {

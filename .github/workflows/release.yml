@@ -59,8 +59,9 @@ jobs:
 
       # The binary alone is not a working install: at startup it looks
       # for `libs` beside itself (or at $ZURI_ROOT), and without it no
-      # `import` resolves. `build.rs` has already put a copy next to the
-      # binary, and that copy is what ships.
+      # `import` resolves; `cmds` holds the commands it ships, such as
+      # `zuri test`. `build.rs` has already put copies of both next to
+      # the binary, and those copies are what ship.
       - name: Package
         shell: bash
         run: |
@@ -85,6 +86,7 @@ jobs:
           fi
 
           cp -r "${out}/libs" "${staged}/libs"
+          cp -r "${out}/cmds" "${staged}/cmds"
           cp LICENSE README.md "${staged}/"
 
           cd dist
@@ -162,8 +164,9 @@ jobs:
             echo "## Installing"
             echo
             echo "Unpack the archive for your platform and put \`zuri\` on your"
-            echo "\`PATH\`. Keep the \`libs\` directory beside it: that is the"
-            echo "standard library, and the runtime looks for it there."
+            echo "\`PATH\`. Keep the \`libs\` and \`cmds\` directories beside it:"
+            echo "they are the standard library and the commands the runtime"
+            echo "ships, and it looks for both there."
             echo
             echo "Verify a download against its \`.sha256\` before running it."
           } > NOTES.release.md

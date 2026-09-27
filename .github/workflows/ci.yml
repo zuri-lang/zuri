@@ -146,12 +146,12 @@ jobs:
       # A defect in a doc block in `libs/` becomes a defect in both
       # books, so the blocks are checked at their source.
       - name: Audit the library's doc blocks
-        run: ./target/debug/zuri docs/tools/audit.zu
+        run: ./target/debug/zuri run docs/tools/audit.zu
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
       - name: Check every link and anchor
-        run: ./target/debug/zuri docs/tools/links.zu
+        run: ./target/debug/zuri run docs/tools/links.zu
         env:
           ZURI_ROOT: ${{ github.workspace }}
 
@@ -182,6 +182,6 @@ jobs:
       # compared against what the page claims it prints. This is the
       # slow one, which is why it is its own job.
       - name: Run every example
-        run: ./target/debug/zuri docs/tools/verify.zu
+        run: ./target/debug/zuri run docs/tools/verify.zu
         env:
           ZURI_ROOT: ${{ github.workspace }}

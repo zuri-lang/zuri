@@ -141,7 +141,7 @@ fn save(vendor: &Path, name: &str) -> Result<()> {
       "--src-prefix=a/",
       "--dst-prefix=b/",
     ])
-    .arg(from)
+    .arg(git_path(from))
     .arg(name)
     .output()
     .map_err(|e| format!("could not run git: {e}"))?;
@@ -258,7 +258,7 @@ fn apply(vendor: &Path, patch: &Patch, partial: bool) -> Result<bool> {
 
   copy_tree(&pristine, &copy).map_err(|e| format!("could not copy {}: {e}", display(&pristine)))?;
 
-  let file = fs::canonicalize(&patch.file)
+  let file = std::path::absolute(&patch.file)
     .map_err(|e| format!("could not read {}: {e}", display(&patch.file)))?;
   let mut git = Command::new("git");
 
@@ -268,7 +268,7 @@ fn apply(vendor: &Path, patch: &Patch, partial: bool) -> Result<bool> {
   // at `vendor/crates` makes it apply to the copy as plain `patch` would.
   git
     .current_dir(&copy)
-    .env("GIT_CEILING_DIRECTORIES", vendor.join("crates"))
+    .env("GIT_CEILING_DIRECTORIES", git_path(&vendor.join("crates")))
     .args(["apply", "-p1", "--whitespace=nowarn"]);
 
   if partial {
@@ -276,7 +276,7 @@ fn apply(vendor: &Path, patch: &Patch, partial: bool) -> Result<bool> {
   }
 
   let output = git
-    .arg(&file)
+    .arg(git_path(&file))
     .output()
     .map_err(|e| format!("could not run git: {e}"))?;
 
@@ -562,6 +562,18 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
 
 fn copy_dir(vendor: &Path, name: &str) -> PathBuf {
   vendor.join("crates").join(name)
+}
+
+/// A path the way git takes it. Git for Windows reads forward slashes
+/// everywhere, and cannot open a verbatim `\\?\` path at all, so on
+/// Windows a path reaches it in plain forward-slash form.
+fn git_path(path: &Path) -> String {
+  let text = path.to_string_lossy();
+  if cfg!(windows) {
+    text.replace('\\', "/")
+  } else {
+    text.into_owned()
+  }
 }
 
 fn vendor_dir() -> PathBuf {
