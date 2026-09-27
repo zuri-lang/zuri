@@ -663,6 +663,24 @@ enum ErrorOutcome {
   Propagate(Value),
 }
 
+/// How a call into compiled code came back: finished one way or the
+/// other, or deopted at the given instruction with the frame still
+/// waiting to be resumed.
+enum Entered {
+  Finished(RunResult<Value>),
+  Deopted(usize),
+}
+
+/// What an on-stack replacement at a loop back edge did with the frame.
+pub(crate) enum Osr {
+  /// Compiled code ran the frame to completion, or failed out of it.
+  Finished(RunResult<Value>),
+  /// Compiled code gave the frame back part way through. It is settled
+  /// and pointed at the instruction to carry on from, and the loop that
+  /// asked for the replacement goes on interpreting it.
+  Resumed,
+}
+
 pub struct VM {
   pub(crate) is_repl: bool,
   /// One flat register stack shared by every call frame; each frame claims
@@ -3801,6 +3819,16 @@ impl VM {
     closure_val: Value,
     osr_id: i32,
   ) -> RunResult<Value> {
+    match self.enter_compiled(entry, closure_val, osr_id) {
+      Entered::Finished(result) => result,
+      Entered::Deopted(deopt_ip) => self.resolve_deopt_slow(deopt_ip),
+    }
+  }
+
+  /// `invoke_compiled` up to the point where compiled code has returned,
+  /// with a deopt reported rather than resolved, so a caller that is
+  /// itself interpreting the frame can take it back without nesting.
+  fn enter_compiled(&mut self, entry: EntryFn, closure_val: Value, osr_id: i32) -> Entered {
     let base = self
       .frames
       .last()
@@ -3864,19 +3892,20 @@ impl VM {
     // never goes through this function, so a deopt there would otherwise go
     // unnoticed. Both call sites must resolve a pending deopt before doing
     // anything else with compiled code's return value.
-    if let Some(result) = self.resolve_possible_deopt() {
-      return result;
+    let deopt_ip = self.pending_deopt_ip.replace(-1);
+    if deopt_ip >= 0 {
+      return Entered::Deopted(deopt_ip as usize);
     }
 
     let pending = self.jit_pending_error.get();
     if !pending.is_nil() {
       self.jit_pending_error.set(Value::nil());
-      return Err(pending);
+      return Entered::Finished(Err(pending));
     }
 
     self.close_upvalues_from(base);
     self.pop_frame_inner();
-    Ok(Value::from_bits(result_bits))
+    Entered::Finished(Ok(Value::from_bits(result_bits)))
   }
 
   /// Checks (and clears) `pending_deopt_ip`. If compiled code just bailed
@@ -3965,6 +3994,26 @@ impl VM {
   #[cold]
   #[inline(never)]
   fn resolve_deopt_slow(&mut self, deopt_ip: usize) -> RunResult<Value> {
+    let stop_depth = self.settle_deopt(deopt_ip, true);
+    let result = self.run_until(stop_depth);
+    self
+      .deopt_reentrancy_depth
+      .set(self.deopt_reentrancy_depth.get() - 1);
+    result
+  }
+
+  /// Everything a deopt needs short of running the frame again: the
+  /// bookkeeping on the code that gave up, and the frame pointed at the
+  /// instruction to carry on from. Returns the depth the interpreter
+  /// runs down to, which is the frame compiled code was entered for.
+  ///
+  /// `nested` says a fresh `run_until` is about to be stacked on top of
+  /// the current one, which is what `MAX_DEOPT_REENTRANCY` bounds. A
+  /// caller that goes on interpreting the frame in its own loop passes
+  /// false.
+  #[cold]
+  #[inline(never)]
+  fn settle_deopt(&mut self, deopt_ip: usize, nested: bool) -> usize {
     let frame_idx = self.frames.len() - 1;
     // A deopt inside a call built into compiled code pushed frames for
     // the calls; the compiled code is the root frame's, and the
@@ -3976,7 +4025,7 @@ impl VM {
     // unsafe deref of frame.function in this file already trusts.
     let deopting_fn = unsafe { &*self.frames[compiled_idx].function };
     let site_fn = unsafe { &*self.frames[frame_idx].function };
-    let depth = self.deopt_reentrancy_depth.get() + 1;
+    let depth = self.deopt_reentrancy_depth.get() + nested as u32;
     self.deopt_reentrancy_depth.set(depth);
     if depth > MAX_DEOPT_REENTRANCY {
       // This nested deopt chain is deep enough that letting it grow
@@ -4044,12 +4093,7 @@ impl VM {
     // The interpreter takes this frame over and syncs ip on every
     // instruction from here, so jit_ip stops being the truthful source.
     self.frames[frame_idx].compiled = false;
-    let stop_depth = compiled_idx;
-    let result = self.run_until(stop_depth);
-    self
-      .deopt_reentrancy_depth
-      .set(self.deopt_reentrancy_depth.get() - 1);
-    result
+    compiled_idx
   }
 
   /// Profiling tier-1 code of `proto` reaching its tier-up budget. Asks
@@ -4120,15 +4164,12 @@ impl VM {
 
   /// Checked by `run_until`'s `Instr::Jmp` handler on every backward jump
   /// (loop back-edge); `target_ip` is the loop header it lands on. `None`
-  /// means keep interpreting normally; `Some(outcome)` means OSR just ran
-  /// the current frame to completion and the caller must treat it like
-  /// `Instr::Return`/an unhandled error firing, not resume
-  /// interpreting.
-  pub(crate) fn maybe_osr(
-    &mut self,
-    func: &ObjFunction,
-    target_ip: usize,
-  ) -> Option<RunResult<Value>> {
+  /// means keep interpreting normally. `Osr::Finished` means OSR ran the
+  /// current frame to completion and the caller must treat it like
+  /// `Instr::Return`/an unhandled error firing, not resume interpreting.
+  /// `Osr::Resumed` means compiled code handed the frames back, and the
+  /// caller reloads its frame state from the top frame and carries on.
+  pub(crate) fn maybe_osr(&mut self, func: &ObjFunction, target_ip: usize) -> Option<Osr> {
     if !self.jit_enabled
       || func.jit.ineligible.get()
       || self.jit_call_depth.get() >= MAX_JIT_CALL_DEPTH
@@ -4146,7 +4187,7 @@ impl VM {
         .as_ref()
         .and_then(|ids| ids.get(&target_ip).copied());
       if let Some(osr_id) = osr_id {
-        return Some(self.invoke_compiled(entry, closure_val, osr_id));
+        return Some(self.osr_enter(entry, closure_val, osr_id));
       }
       // Tier 2 has ways in only at the loops profiling code asked for; any
       // other loop carries on in the baseline code.
@@ -4157,7 +4198,7 @@ impl VM {
         .borrow()
         .as_ref()?
         .get(&target_ip)?;
-      return Some(self.invoke_compiled(baseline, closure_val, osr_id));
+      return Some(self.osr_enter(baseline, closure_val, osr_id));
     }
     if func.jit.compiling.get() {
       return None;
@@ -4179,6 +4220,23 @@ impl VM {
     let proto_value = closure_val.as_closure().function;
     self.enqueue_first_compile(func, proto_value, Some(target_ip));
     None
+  }
+
+  /// Enters compiled code at a loop header for the frame the caller is
+  /// interpreting. A deopt comes back to that same caller rather than
+  /// to a fresh `run_until` stacked inside it: the caller is already
+  /// running this frame, and a loop that leaves compiled code on every
+  /// iteration (for its own `catch` handler, say) would otherwise nest
+  /// one interpreter inside another on each trip round and run out of
+  /// native stack.
+  fn osr_enter(&mut self, entry: EntryFn, closure_val: Value, osr_id: i32) -> Osr {
+    match self.enter_compiled(entry, closure_val, osr_id) {
+      Entered::Finished(result) => Osr::Finished(result),
+      Entered::Deopted(deopt_ip) => {
+        self.settle_deopt(deopt_ip, false);
+        Osr::Resumed
+      },
+    }
   }
 
   /// The one choke point every single-frame removal funnels through.
@@ -5540,9 +5598,20 @@ impl VM {
               let dst_in_caller = self.frames[frame_idx].dst_in_caller;
               if let Some(outcome) = self.maybe_osr(func, target) {
                 match outcome {
+                  // The deopt left the frames ready to interpret, possibly
+                  // with a call compiled code had inlined pushed on top.
+                  Osr::Resumed => {
+                    frame_idx = self.frames.len() - 1;
+                    let frame = &self.frames[frame_idx];
+                    base = frame.base;
+                    func_ptr = frame.function;
+                    closure_ptr = frame.closure_val.as_closure() as *const ObjClosure;
+                    ip = frame.ip;
+                    continue 'dispatch;
+                  },
                   // Mirrors Instr::Return: OSR ran the current frame to
                   // completion, so from here this is a return, not a jump.
-                  Ok(ret) => {
+                  Osr::Finished(Ok(ret)) => {
                     if self.frames.len() == stop_depth {
                       return Ok(ret);
                     }
@@ -5559,7 +5628,7 @@ impl VM {
                   // uses; compiled code never pops its own frame on
                   // error, so catch_stack sees this like an ordinary
                   // interpreted instruction failing.
-                  Err(exc) => break 'step Err(exc),
+                  Osr::Finished(Err(exc)) => break 'step Err(exc),
                 }
               }
             }

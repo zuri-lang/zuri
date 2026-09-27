@@ -760,12 +760,12 @@ mod test_command {
     let text = combined(&output);
 
     let listed: Vec<&str> = text.lines().filter(|line| !line.is_empty()).collect();
+    let expected: Vec<String> = ["tests/deep/nested.zu", "tests/fail.zu", "tests/pass.zu"]
+      .iter()
+      .map(|path| path.replace('/', std::path::MAIN_SEPARATOR_STR))
+      .collect();
 
-    assert_eq!(
-      listed,
-      vec!["tests/deep/nested.zu", "tests/fail.zu", "tests/pass.zu"],
-      "\n--- actual ---\n{text}\n"
-    );
+    assert_eq!(listed, expected, "\n--- actual ---\n{text}\n");
     assert!(output.status.success(), "--list must exit 0\n{text}");
   }
 

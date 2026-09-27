@@ -67,6 +67,7 @@ const EXPORTS: &[(&str, &str)] = &[
   ("unix_close", "close"),
 ];
 
+#[cfg(unix)]
 pub(crate) const UNIX_STREAM: &str = "zuri::net::UnixStream";
 
 #[cfg(not(unix))]

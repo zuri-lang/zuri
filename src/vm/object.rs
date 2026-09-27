@@ -2129,45 +2129,56 @@ pub fn obj_str_ascii_offset() -> i32 {
 /// then `push_str` a short probe text) so its length and capacity are
 /// GUARANTEED distinct values; `String::from(short_literal)` alone
 /// would allocate exact-fit, making `len == capacity`, which would
-/// make the two indistinguishable by value when scanning raw bytes
-/// below.
+/// make the two indistinguishable by value.
+///
+/// Only the `String`'s own words are searched, never the whole `Obj`
+/// around it. The enum has padding, and padding holds whatever was on
+/// the stack before, which can include a copy of the very `String`
+/// being moved into place.
 fn obj_str_data_offsets() -> (i32, i32, i32) {
   static OFFSETS: std::sync::OnceLock<(i32, i32, i32)> = std::sync::OnceLock::new();
   *OFFSETS.get_or_init(|| {
     let mut probe_string = String::with_capacity(64);
     probe_string.push_str("zuri-string-offset-probe");
-    let want_ptr = probe_string.as_ptr() as usize;
-    let want_len = probe_string.len();
-    let want_cap = probe_string.capacity();
-    debug_assert_ne!(want_len, want_cap);
+    let want = [
+      probe_string.as_ptr() as usize,
+      probe_string.len(),
+      probe_string.capacity(),
+    ];
 
     let probe = Obj::string(probe_string);
-    let obj_bytes = unsafe {
-      std::slice::from_raw_parts(
-        &probe as *const Obj as *const u8,
-        std::mem::size_of::<Obj>(),
-      )
+    let Obj::Str(string) = &probe else {
+      unreachable!("the probe was just built as an Obj::Str")
     };
+    let text = string.flat_text();
+    let base = (text as *const String as usize - &probe as *const Obj as usize) as i32;
+    let [ptr, len, cap] = word_offsets(text, want, "String");
 
-    let word = std::mem::size_of::<usize>();
-    let mut ptr_off = None;
-    let mut len_off = None;
-    let mut cap_off = None;
-    for i in (0..=obj_bytes.len() - word).step_by(word) {
-      let value = usize::from_ne_bytes(obj_bytes[i..i + word].try_into().unwrap());
-      if value == want_ptr {
-        ptr_off = Some(i as i32);
-      } else if value == want_len {
-        len_off = Some(i as i32);
-      } else if value == want_cap {
-        cap_off = Some(i as i32);
-      }
-    }
-    (
-      ptr_off.expect("String's data pointer not found anywhere in Obj::Str's raw bytes"),
-      len_off.expect("String's byte length not found anywhere in Obj::Str's raw bytes"),
-      cap_off.expect("String's capacity not found anywhere in Obj::Str's raw bytes"),
-    )
+    (base + ptr, base + len, base + cap)
+  })
+}
+
+/// Where each of `want` sits among the words of `value`, as byte
+/// offsets from its start. `T` must be made of whole initialized words
+/// with no padding, which holds for `String` and `Vec`, and each wanted
+/// value must turn up exactly once.
+fn word_offsets<T, const N: usize>(value: &T, want: [usize; N], what: &str) -> [i32; N] {
+  let word = std::mem::size_of::<usize>();
+  let size = std::mem::size_of::<T>();
+  assert_eq!(size % word, 0, "{what} is not a whole number of words");
+
+  let words = unsafe { std::slice::from_raw_parts(value as *const T as *const usize, size / word) };
+
+  want.map(|wanted| {
+    let mut found = words.iter().enumerate().filter(|(_, w)| **w == wanted);
+    let (index, _) = found
+      .next()
+      .unwrap_or_else(|| panic!("{what}: {wanted:#x} is not among its words"));
+    assert!(
+      found.next().is_none(),
+      "{what}: {wanted:#x} appears more than once"
+    );
+    (index * word) as i32
   })
 }
 
@@ -2183,38 +2194,28 @@ pub fn obj_str_len_offset() -> i32 {
   obj_str_data_offsets().1
 }
 
+/// The byte stream counterpart to `obj_str_data_offsets`, measured
+/// the same way on the `Vec` inside the `RefCell`.
 fn obj_bytes_data_offsets() -> (i32, i32) {
   static OFFSETS: std::sync::OnceLock<(i32, i32)> = std::sync::OnceLock::new();
   *OFFSETS.get_or_init(|| {
     let mut probe_vec: Vec<u8> = Vec::with_capacity(64);
     probe_vec.extend_from_slice(b"zuri-bytes-offset-probe");
-    let want_ptr = probe_vec.as_ptr() as usize;
-    let want_len = probe_vec.len();
-    debug_assert_ne!(want_len, probe_vec.capacity());
+    let want = [
+      probe_vec.as_ptr() as usize,
+      probe_vec.len(),
+      probe_vec.capacity(),
+    ];
 
     let probe = Obj::Bytes(std::cell::RefCell::new(probe_vec));
-    let obj_bytes = unsafe {
-      std::slice::from_raw_parts(
-        &probe as *const Obj as *const u8,
-        std::mem::size_of::<Obj>(),
-      )
+    let Obj::Bytes(cell) = &probe else {
+      unreachable!("the probe was just built as an Obj::Bytes")
     };
+    let data = unsafe { &*cell.as_ptr() };
+    let base = (data as *const Vec<u8> as usize - &probe as *const Obj as usize) as i32;
+    let [ptr, len, _] = word_offsets(data, want, "Vec<u8>");
 
-    let word = std::mem::size_of::<usize>();
-    let mut ptr_off = None;
-    let mut len_off = None;
-    for i in (0..=obj_bytes.len() - word).step_by(word) {
-      let value = usize::from_ne_bytes(obj_bytes[i..i + word].try_into().unwrap());
-      if value == want_ptr {
-        ptr_off = Some(i as i32);
-      } else if value == want_len {
-        len_off = Some(i as i32);
-      }
-    }
-    (
-      ptr_off.expect("Bytes' data pointer not found anywhere in Obj::Bytes' raw bytes"),
-      len_off.expect("Bytes' byte length not found anywhere in Obj::Bytes' raw bytes"),
-    )
+    (base + ptr, base + len)
   })
 }
 

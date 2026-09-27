@@ -73,7 +73,10 @@ def test_exhaustion() {
   assert exhausted
 
   held.close()
-  assert pool.acquire() != nil
+
+  var again = pool.acquire()
+  assert again != nil
+  again.close()
 
   pool.close()
   scrub()

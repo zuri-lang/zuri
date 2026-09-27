@@ -5,6 +5,7 @@
 #
 # Everything needing a live server is in postgres_integration.zu.
 
+import net.unix
 import sql
 import sql.postgres { DRIVER }
 import sql.postgres.auth
@@ -366,6 +367,17 @@ def test_unix_socket_paths() {
   }
 
   assert failed != nil
+
+  # Without unix domain sockets the driver refuses before looking for
+  # the file, and says to connect over TCP instead.
+  if !unix.is_supported() {
+    assert instance_of(failed, NotSupportedError)
+    assert failed.message.index_of('.s.PGSQL.5432') > -1
+
+    echo 'test_unix_socket_paths passed'
+    return
+  }
+
   assert instance_of(failed, ConnectionError)
   assert !instance_of(failed, NotSupportedError)
   assert failed.message.index_of('/nonexistent/socket/dir/.s.PGSQL.5432') > -1
