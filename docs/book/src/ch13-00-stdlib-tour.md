@@ -595,6 +595,27 @@ yourself.
 
 Concurrency. Covered in [Chapter 11](ch11-00-isolates.md).
 
+### `ffi`
+
+Calling C and Rust. `ffi` loads shared libraries, reads their C headers
+or Rust sources as declarations, calls their functions with checked
+conversions, and turns Zuri functions into callbacks; it links static
+libraries into loadable ones too.
+
+```zuri
+import ffi
+
+var c = ffi.open(ffi.LIBC).declare('size_t strlen(const char *s);')
+
+echo c.strlen('interop')
+```
+
+```console
+7
+```
+
+Covered in [Chapter 26](ch26-00-ffi.md).
+
 ## The Network
 
 ### `net`

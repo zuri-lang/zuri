@@ -6,7 +6,8 @@
 //! object (name, arity, methods, fields, superclass, module members).
 //! It deliberately does NOT know anything about source position or
 //! doc comments; those are a `zuri.parse()` concern (see
-//! `libs/zuri/ast.zu`), not a live-object one.
+//! `libs/zuri/ast.zu`), not a live-object one. It also runs the
+//! collector on demand.
 
 use crate::builtins::enforce::ArgType;
 use crate::enforce_arg_count;
@@ -56,6 +57,7 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "bind_method",
       native(vm, "bind_method", 2, false, bind_method_fn),
     ),
+    ("gc", native(vm, "gc", 0, false, gc_fn)),
   ]
 }
 
@@ -528,4 +530,12 @@ fn bind_method_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     Some(m) => Ok(ctx.heap().alloc_bound_method(object, m)),
     None => Ok(Value::nil()),
   }
+}
+
+/// `gc()`: a full collection now, rather than when the heap next
+/// crosses its threshold.
+fn gc_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  ctx.vm.collect_garbage();
+  Ok(Value::nil())
 }

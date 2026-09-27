@@ -1,0 +1,252 @@
+/**
+ * ffi_memory.zu
+ *
+ * Test suite for native memory in the `ffi` module: allocation, typed
+ * and untyped access, bounds and use-after-free checking, ownership of
+ * memory C allocated, text in every encoding, bytes passed without a
+ * copy, lists and dictionaries written back after a call, members read
+ * and written through a pointer, and flexible array members.
+ */
+# @fixture: ffi
+
+import ffi
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi memory: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var fixtures = os.get_env('ZURI_FFI_FIXTURES')
+assert fixtures, 'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+
+var header = file(os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h')).read()
+var lib = ffi.open('ffifixture', { paths: [fixtures] })
+var api = ffi.declare(header)
+var fx = api.bind(lib)
+
+# Allocation and typed access.
+
+var ints = ffi.alloc(ffi.int, 4)
+assert ints.to_list(4) == [0, 0, 0, 0], 'allocated memory starts zeroed'
+ints.set(0, 10)
+ints.set(3, -40)
+assert ints.get() == 10 and ints.get(3) == -40, 'elements read back'
+assert ints.size() == 16, 'the pointer knows the block size'
+assert ints.type().equals(ffi.int), 'and its element type'
+assert ints.add(3).get() == -40, 'add() steps by elements'
+assert ints.offset(4).get() == 0, 'offset() steps by bytes'
+assert ints.add(1).size() == 12, 'bytes left shrink as the pointer moves'
+assert ints.add(2).add(-2).equals(ints), 'stepping back lands on the same address'
+ok('typed allocation, elements and pointer arithmetic')
+
+var e = caught(@() => ints.get(4))
+assert e and e.type == 'PointerError', 'reading past the block is refused'
+e = caught(@() => ints.set(-1, 0))
+assert e and e.type == 'PointerError', 'writing before the block is refused'
+e = caught(@() => ints.read(ffi.int64, 12))
+assert e and e.type == 'PointerError', 'a read that straddles the end is refused'
+ok('access outside a block is refused before it happens')
+
+var raw = ffi.alloc_bytes(16)
+assert raw.type() == nil, 'alloc_bytes() is untyped'
+raw.write(ffi.uint32, 3735928559)
+raw.write(ffi.double, 1.5, 8)
+assert raw.read(ffi.uint32) == 3735928559 and raw.read(ffi.double, 8) == 1.5,
+  'read and write at offsets'
+assert raw.read(ffi.uint8) == 239, 'memory is little-endian'
+e = caught(@() => raw.get())
+assert e and e.type == 'TypeError', 'an untyped pointer has no elements'
+assert raw.cast(ffi.uint16).get(1) == 57005, 'cast() gives it a type'
+ok('untyped memory with read(), write() and cast()')
+
+var before = ints.to_list(4)
+e = caught(@() => ints.write(ffi.int.array(4), [1, 2, 'x']))
+assert e and e.type == 'TypeError', 'a value that fails to convert is refused'
+assert ints.to_list(4) == before, 'and nothing was written'
+ok('a failed write leaves memory as it was')
+
+ints.free()
+assert ints.is_freed(), 'free() releases the block'
+e = caught(@() => ints.get())
+assert e and e.type == 'PointerError', 'using freed memory is refused'
+e = caught(@() => ints.free())
+assert e and e.type == 'PointerError', 'freeing twice is refused'
+var derived = raw.offset(4)
+e = caught(@() => derived.free())
+assert e and e.type == 'PointerError', 'only the start of a block can free it'
+ok('use after free and double free are refused')
+
+var copy = ffi.alloc_bytes(8)
+copy.copy_from('abcdefgh'.to_bytes(), 8)
+var other = ffi.alloc_bytes(8)
+other.copy_from(copy, 8)
+assert other.read_bytes(8) == 'abcdefgh'.to_bytes(), 'copy_from() copies bytes and pointers'
+assert copy.compare(other, 8) == 0, 'compare() finds them equal'
+other.fill(0, 4)
+assert other.read_bytes(8) == bytes([0, 0, 0, 0]) + 'efgh'.to_bytes(), 'fill() sets bytes'
+assert copy.compare(other, 8) == 1, 'and compare() orders them'
+ok('copying, filling and comparing memory')
+
+var address = raw.address()
+assert ffi.at(address, ffi.uint32).get() == 3735928559, 'at() makes a pointer from an address'
+assert ffi.at(0).is_null(), 'at(0) is null'
+e = caught(@() => ffi.at(0, ffi.int).get())
+assert e and e.type == 'PointerError', 'reading through null is refused'
+ok('pointers from addresses')
+
+# Memory C allocated.
+
+var joined = fx.fx_concat('left', 'right')
+assert joined.type().name() == 'char', 'char * comes back as a pointer'
+assert joined.read_string() == 'leftright', 'and reads as text'
+assert !joined.is_owned(), 'memory from C is not owned by default'
+joined.own(fx.fx_release)
+assert joined.is_owned(), 'own() takes it over'
+joined.free()
+assert joined.is_freed(), 'free() calls the destructor'
+
+var plain = fx.fx_concat('a', 'b').own()
+assert plain.read_string() == 'ab', 'own() without a destructor uses free()'
+plain.free()
+
+e = caught(@() => fx.fx_concat('x', 'y').own(fx.fx_add))
+assert e and e.type == 'TypeError', 'a destructor takes one pointer'
+e = caught(@() => ffi.alloc(ffi.int).own())
+assert e and e.type == 'PointerError', 'memory with an owner cannot be owned again'
+ok('memory C allocated, taken over and released')
+
+var buffer = ffi.malloc(32)
+fx.fx_fill(buffer.cast(ffi.int), 8)
+assert buffer.cast(ffi.int).to_list(8) == [0, 1, 4, 9, 16, 25, 36, 49],
+  'malloc() memory is filled by C'
+buffer.free()
+ok('memory from the C allocator')
+
+assert fx.fx_nothing() == nil, 'a null pointer comes back as nil'
+assert fx.fx_greeting() == 'hello from C', 'const char * comes back as a string'
+ok('null and text returns')
+
+# Text.
+
+var greeting = ffi.alloc_string('héllo')
+assert greeting.read_string() == 'héllo', 'UTF-8 round trip'
+assert greeting.read_bytes(6) == bytes([104, 195, 169, 108, 108, 111]), 'stored as UTF-8'
+assert greeting.read_string(3) == 'hé', 'a length counts code units, which are bytes in UTF-8'
+
+var wide = ffi.alloc_string('wide ✓', 'wide')
+assert fx.fx_wide_length(wide) == 6, 'a wide string for wchar_t'
+assert wide.read_string(nil, 'wide') == 'wide ✓', 'read back as wide'
+assert fx.fx_wide_length('direct') == 6, 'a string passed for wchar_t * is encoded as wide text'
+
+var utf16 = ffi.alloc_string('𝄞 clef', 'utf-16')
+assert fx.fx_utf16_length(utf16) == 7, 'UTF-16 counts the surrogate pair as two units'
+assert utf16.read_string(nil, 'utf-16') == '𝄞 clef', 'UTF-16 round trip'
+assert fx.fx_utf16_length('abc') == 3, 'a string passed for char16_t * is UTF-16'
+
+var utf32 = ffi.alloc_string('a𝄞', 'utf-32')
+assert utf32.read_string(nil, 'utf-32') == 'a𝄞', 'UTF-32 round trip'
+
+var scratch = ffi.alloc_bytes(8)
+assert scratch.write_string('four') == 5, 'write_string() writes the terminator too'
+assert scratch.read_string() == 'four', 'and reads back'
+e = caught(@() => scratch.write_string('too long for eight'))
+assert e and e.type == 'PointerError', 'text that does not fit is refused'
+
+var invalid = ffi.alloc_bytes(4)
+invalid.write_bytes(bytes([0xff, 0xfe, 0]))
+e = caught(@() => invalid.read_string())
+assert e and e.type == 'ValueError', 'invalid UTF-8 is an error when read explicitly'
+
+var unterminated = ffi.alloc_bytes(4)
+unterminated.fill(65, 4)
+e = caught(@() => unterminated.read_string())
+assert e and e.type == 'PointerError', 'no terminator within the block'
+assert unterminated.read_string(4) == 'AAAA', 'a length reads what is there'
+ok('text in UTF-8, UTF-16, UTF-32 and wchar_t')
+
+# Arguments that borrow memory.
+
+var data = bytes([1, 2, 3, 250])
+assert fx.fx_bytes_sum(data, 4) == 256, 'bytes pass their own storage'
+fx.fx_bytes_invert(data, 2)
+assert data[0] == 254 and data[1] == 253 and data[2] == 3, 'C writes straight into the bytes'
+
+var squares = [0, 0, 0, 0, 0]
+fx.fx_fill(squares, 5)
+assert squares == [0, 1, 4, 9, 16], 'a list passed for a pointer is written back'
+
+var readonly = [1, 2, 3]
+assert fx.fx_sum(readonly, 3) == 6, 'a list passed for a const pointer is read'
+
+var point = { x: 3, y: 4 }
+fx.fx_scale_point(point, 2)
+assert point == { x: 6, y: 8 }, 'a dictionary passed for a record pointer is written back'
+assert fx.fx_point_length_squared({ x: 1, y: 2 }) == 5, 'and read for a const one'
+
+assert fx.fx_strings_join(['a', 'b', 'c'], 3) == 'a+b+c', 'a list of strings for const char **'
+
+e = caught(@() => ffi.alloc(api.type('fx_point')).write(ffi.string, 'x'))
+assert e and e.type == 'TypeError', 'temporary text cannot be stored in lasting memory'
+ok('bytes, lists and dictionaries as pointer arguments')
+
+# Records through pointers.
+
+var Point = api.type('fx_point')
+var p = ffi.alloc(Point, 2)
+p.set(0, { x: 1, y: 2 })
+p.add(1).set_field('y', 9)
+assert p.get(1) == { x: 0, y: 9 }, 'set_field() writes one member'
+assert p.get_field('x') == 1, 'get_field() reads one member'
+var y = p.field('y')
+assert y.type().equals(ffi.double) and y.get() == 2, 'field() points at the member'
+y.set(0, 5)
+assert p.get() == { x: 1, y: 5 }, 'writing through it changes the record'
+fx.fx_scale_point(p, 10)
+assert p.get() == { x: 10, y: 50 }, 'C writes through the same pointer'
+
+var boxes = ffi.alloc(api.type('fx_box'))
+boxes.field('max').set_field('x', 3)
+assert boxes.get().max.x == 3, 'nested members through a chain of field()'
+
+var flags = ffi.alloc(api.type('fx_bits'))
+flags.set_field('mode', 7)
+flags.set_field('delta', -16)
+flags.set_field('flag', true)
+assert flags.get() == { ready: 0, mode: 7, delta: -16, count: 0, flag: true },
+  'bitfields through a pointer'
+e = caught(@() => flags.set_field('mode', 8))
+assert e and e.type == 'RangeError', 'a bitfield keeps its width'
+e = caught(@() => flags.field('mode'))
+assert e and e.type == 'TypeError', 'a bitfield has no address'
+e = caught(@() => p.get_field('z'))
+assert e and e.type == 'ValueError', 'an unknown member is refused'
+ok('records read and written through pointers')
+
+var flexible = fx.fx_flexible_make(5).own(fx.fx_flexible_free)
+assert flexible.get_field('length') == 5, 'the fixed part of a flexible record'
+assert flexible.field('data').to_list(5) == [1, 2, 3, 4, 5], 'the flexible part through field()'
+flexible.free()
+ok('flexible array members')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

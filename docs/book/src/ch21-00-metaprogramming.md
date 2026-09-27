@@ -410,6 +410,33 @@ true
 exports. That is enough for a plugin loader: import a directory of modules,
 ask each whether it has a known function, and call the ones that do.
 
+### The Collector
+
+The garbage collector runs on its own as a program allocates. `gc()` runs
+a full collection on the spot:
+
+```zuri
+import zuri
+
+var scratch = [1, 2, 3]
+scratch = nil
+
+zuri.reflect.gc()
+echo 'collected'
+```
+
+```console
+collected
+```
+
+Every object nothing reaches is freed before `gc()` returns, and anything
+that releases a resource when collected releases it then: an `ffi` pointer
+taken over with `own()` runs its destructor. No program needs `gc()` to
+stay correct. It is for the moments timing matters, such as releasing
+native resources at a known point, or a test checking what collection
+does. A full collection visits every live object, so calling it in a loop
+is slow.
+
 ## Tokens
 
 `tokenize()` is the first stage: text in, a flat list of lexical tokens

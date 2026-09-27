@@ -1,0 +1,492 @@
+/**
+ * @module types
+ *
+ * C types as values.
+ *
+ * Every type the module works with is a `Type`: the built-in ones the
+ * module exports (`ffi.int`, `ffi.double`, `ffi.size_t`), the ones built
+ * from them (`ffi.pointer(ffi.char)`, `ffi.array(ffi.int, 4)`), records
+ * built member by member, and every type a declaration names. A type
+ * knows its size and alignment on this platform, and it is what every
+ * conversion between a Zuri value and C memory is driven by.
+ *
+ * Records are built with chained calls and are laid out the first time
+ * anything needs their size, after which they can no longer change:
+ *
+ * ```zuri,ignore
+ * var Point = ffi.struct('Point')
+ *   .add_field('x', ffi.double)
+ *   .add_field('y', ffi.double)
+ *
+ * echo Point.size()
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import .errors { FfiError }
+
+/**
+ * A C type.
+ *
+ * Types are never constructed directly. They come from the module's
+ * constants and builders, and from declarations.
+ *
+ * @printable
+ */
+class Type {
+  var _handle
+
+  @new() {
+    raise FfiError('types come from the ffi module, never from the Type constructor')
+  }
+
+  /**
+   * The type as C spells it: `int`, `const char *`, `struct point`, or
+   * the name a typedef or a Rust declaration gave it.
+   *
+   * @returns string
+   */
+  name() {
+    return _ffi.type_name(self._handle)
+  }
+
+  /**
+   * What sort of type this is.
+   *
+   * One of `'void'`, `'bool'`, `'int'` (every integer and character
+   * type), `'float'` (`float`, `double` and `long double`), `'complex'`,
+   * `'char'` (a Rust `char`), `'pointer'`, `'string'` (a pointer that
+   * converts to and from a string), `'function pointer'`, `'array'`,
+   * `'struct'`, `'union'`, `'enum'` (C enums and Rust enums alike) and
+   * `'function'`.
+   *
+   * @returns string
+   */
+  kind() {
+    return _ffi.type_kind(self._handle)
+  }
+
+  /**
+   * Size in bytes on this platform, as C's `sizeof` gives it.
+   *
+   * Asking for a record's size lays the record out, after which no
+   * member can be added to it.
+   *
+   * @returns number
+   * @throws FfiError when the type has no size: `void`, a function, an
+   *   array without a length, or a record that was declared and never
+   *   defined.
+   */
+  size() {
+    return _ffi.type_size(self._handle)
+  }
+
+  /**
+   * Alignment in bytes on this platform, as C's `_Alignof` gives it.
+   *
+   * @returns number
+   * @throws FfiError when the type has no alignment, for the same types
+   *   that have no size.
+   */
+  align() {
+    return _ffi.type_align(self._handle)
+  }
+
+  /**
+   * Whether the type is `const`-qualified.
+   *
+   * A pointer to a `const` type is never written through, so a list or
+   * dictionary passed for one is not updated after the call.
+   *
+   * @returns bool
+   */
+  is_const() {
+    return _ffi.type_is_const(self._handle)
+  }
+
+  /**
+   * The type this one is made from: what a pointer points at, what an
+   * array holds, or the integer type an enum is stored as. `nil` for
+   * every other type.
+   *
+   * @returns Type|nil
+   */
+  target() {
+    return _ffi.type_target(self._handle)
+  }
+
+  /**
+   * An array type's number of elements, or `nil` for any other type and
+   * for an array declared without a length.
+   *
+   * @returns number|nil
+   */
+  length() {
+    return _ffi.type_length(self._handle)
+  }
+
+  /**
+   * The signature of a function type or a function pointer type, as
+   * `{ returns, params, variadic, abi }`, or `nil` for any other type.
+   *
+   * `returns` is a `Type`, `params` a list of them, `variadic` whether
+   * arguments may follow the fixed ones, and `abi` the calling
+   * convention's name: `'default'`, `'win64'` or `'sysv64'`.
+   *
+   * @returns dict|nil
+   */
+  signature() {
+    return _ffi.type_signature(self._handle)
+  }
+
+  /**
+   * A pointer to this type; the same as `ffi.pointer(type)`.
+   *
+   * @returns Type
+   */
+  pointer() {
+    return _ffi.pointer_type(self._handle, nil)
+  }
+
+  /**
+   * An array of `length` values of this type; the same as
+   * `ffi.array(type, length)`.
+   *
+   * @param number|nil length Leave out for an array of unknown length,
+   *   as a flexible array member is declared.
+   * @returns Type
+   */
+  array(length) {
+    return _ffi.array_type(self._handle, length)
+  }
+
+  /**
+   * This type with `const` added.
+   *
+   * @returns Type
+   */
+  as_const() {
+    return _ffi.const_type(self._handle)
+  }
+
+  /**
+   * `value` marked as this type, for passing to a variadic function.
+   *
+   * A variadic function's extra arguments have no declared types, so
+   * each one otherwise travels as the type its value suggests (see
+   * `Library.function()`). This fixes it instead:
+   *
+   * ```zuri,ignore
+   * c.printf('%f %ld\n', ffi.double.of(1), ffi.long.of(7))
+   * ```
+   *
+   * C's default promotions still apply on top: a `float` travels as a
+   * `double`, and an integer narrower than `int` as an `int`.
+   *
+   * @param any value
+   * @returns Typed
+   */
+  of(value) {
+    return Typed(self, value)
+  }
+
+  /**
+   * Whether `other` is the same type.
+   *
+   * Scalars, pointers and arrays compare by shape, so `ffi.int32` equals
+   * `ffi.int`, and a typedef equals what it names. Records and enums
+   * compare by identity: two structs built separately are different
+   * types even with the same members, as they are in C.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    return _ffi.type_equals(self._handle, other)
+  }
+
+  to_string() {
+    return _ffi.type_name(self._handle)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A struct or a union, built member by member.
+ *
+ * Members go in declaration order, each at the offset the platform's C
+ * compiler would give it: GCC and Clang's rules on Linux and macOS,
+ * MSVC's on Windows. The two differ only for bitfields. The record is
+ * laid out the first time anything needs its size, including passing a
+ * value of it, and from then on it cannot change.
+ *
+ * @printable
+ */
+class RecordType < Type {
+
+  /**
+   * Adds a member, returning the record for chaining.
+   *
+   * ```zuri,ignore
+   * var Header = ffi.struct('Header')
+   *   .add_field('magic', ffi.uint32)
+   *   .add_field('payload', ffi.uint8.array(16))
+   *   .add_field('checksum', ffi.uint64, 16)
+   * ```
+   *
+   * An array type without a length is a flexible array member and must
+   * come last. A struct or union added with an empty name is an
+   * anonymous member, whose own members are reached as this record's.
+   *
+   * @param string name
+   * @param Type type
+   * @param number|nil align A minimum alignment in bytes, as `_Alignas`
+   *   gives a member. A power of two. Defaults to the type's own.
+   * @returns self
+   * @throws FfiError when the record has already been laid out, the
+   *   name is taken, or a member follows a flexible array member.
+   */
+  add_field(name: string, type, align) {
+    _ffi.record_add_field(self._handle, name, type, nil, align)
+    return self
+  }
+
+  /**
+   * Adds a bitfield, returning the record for chaining.
+   *
+   * ```zuri,ignore
+   * var Flags = ffi.struct('Flags')
+   *   .add_bitfield('ready', ffi.uint, 1)
+   *   .add_bitfield('mode', ffi.uint, 3)
+   *   .add_bitfield('', ffi.uint, 0)
+   *   .add_bitfield('count', ffi.uint, 12)
+   * ```
+   *
+   * An empty name is an unnamed bitfield, which only takes up space;
+   * one of width zero ends the current storage unit, as in C.
+   *
+   * @param string name
+   * @param Type type An integer, `bool` or enum type.
+   * @param number bits The width, at most the type's own.
+   * @returns self
+   * @throws FfiError when the type is not an integer type or the width
+   *   does not fit it.
+   */
+  add_bitfield(name: string, type, bits: number) {
+    _ffi.record_add_field(self._handle, name, type, bits, nil)
+    return self
+  }
+
+  /**
+   * Packs the members to at most `bytes` alignment, as
+   * `#pragma pack(n)` does, or tightly when `bytes` is left out, as
+   * `__attribute__((packed))` does.
+   *
+   * @param number|nil bytes 1, 2, 4, 8 or 16. Defaults to 1.
+   * @returns self
+   */
+  set_packed(bytes) {
+    _ffi.record_set_pack(self._handle, bytes == nil ? 1 : bytes)
+    return self
+  }
+
+  /**
+   * Raises the record's own alignment to at least `bytes`, as
+   * `__attribute__((aligned(n)))` on the record does. Its size grows to
+   * a multiple of the new alignment.
+   *
+   * @param number bytes A power of two.
+   * @returns self
+   */
+  set_align(bytes: number) {
+    _ffi.record_set_align(self._handle, bytes)
+    return self
+  }
+
+  /**
+   * Every member in declaration order, with the members of anonymous
+   * members listed in their place.
+   *
+   * Each is `{ name, type, offset, bits, bit_offset }`. `offset` is in
+   * bytes from the start of the record. For a bitfield, `bits` is its
+   * width and `bit_offset` the position of its first bit from the start
+   * of the record; both are `nil` for every other member.
+   *
+   * @returns list
+   */
+  fields() {
+    return _ffi.record_fields(self._handle)
+  }
+
+  /**
+   * A member's offset in bytes, as C's `offsetof` gives it. For a
+   * bitfield, the byte its first bit is in.
+   *
+   * @param string name
+   * @returns number
+   * @throws ValueError when there is no such member.
+   */
+  offset_of(name: string) {
+    return _ffi.record_offset(self._handle, name)
+  }
+
+  /**
+   * Whether the record has a member called `name`.
+   *
+   * @param string name
+   * @returns bool
+   */
+  has_field(name: string) {
+    return self.fields().some(@(f) => f.name == name)
+  }
+
+  /**
+   * For a Rust enum with fields, each variant's name and discriminant;
+   * `nil` for an ordinary record.
+   *
+   * @returns dict|nil
+   */
+  variants() {
+    if self.kind() != 'enum' {
+      return nil
+    }
+
+    return _ffi.enum_constants(self._handle)
+  }
+}
+
+/**
+ * A C struct, or a Rust `#[repr(C)]` struct or enum with fields.
+ *
+ * A struct value passes into C as a dictionary of its members and comes
+ * back out as one. A member left out of the dictionary is zero. A Rust
+ * enum with fields is a dictionary too, with a `variant` key naming the
+ * variant, and a variant without fields may be passed as just its name.
+ *
+ * @printable
+ */
+class StructType < RecordType {}
+
+/**
+ * A C union.
+ *
+ * A union value passes into C as a dictionary holding exactly one of its
+ * members, the one to store. Read back, it is a dictionary of every
+ * member, each read from the same bytes, since which one is meaningful
+ * is something only the program knows.
+ *
+ * @printable
+ */
+class UnionType < RecordType {}
+
+/**
+ * A C enum, or a Rust enum without fields.
+ *
+ * A value of an enum type is a number, and anywhere one is passed in, the
+ * name of a constant can be passed instead:
+ *
+ * ```zuri,ignore
+ * var Color = ffi.enum('Color').add_constant('RED', 0).add_constant('GREEN', 1)
+ * set_color('GREEN')
+ * ```
+ *
+ * @printable
+ */
+class EnumType < Type {
+
+  /**
+   * Adds a named constant, returning the enum for chaining.
+   *
+   * @param string name
+   * @param number value An integer that fits the enum's storage type.
+   * @returns self
+   * @throws ValueError when the enum already has a constant of that name.
+   * @throws RangeError when the value does not fit.
+   */
+  add_constant(name: string, value) {
+    _ffi.enum_add(self._handle, name, value)
+    return self
+  }
+
+  /**
+   * Every constant, by name, in the order they were declared.
+   *
+   * @returns dict
+   */
+  constants() {
+    return _ffi.enum_constants(self._handle)
+  }
+
+  /**
+   * The value of the constant called `name`.
+   *
+   * @param string name
+   * @returns number
+   * @throws ValueError when there is no such constant.
+   */
+  value(name: string) {
+    var all = self.constants()
+
+    if !all.contains(name) {
+      raise ValueError('${self.name()} has no constant named ${name}')
+    }
+
+    return all.get(name)
+  }
+}
+
+/**
+ * A value marked with the C type it should travel as. Made by
+ * `Type.of()`, and only meaningful as an argument to a variadic
+ * function.
+ *
+ * @printable
+ */
+class Typed {
+  var _type
+  var _value
+
+  /**
+   * @param Type type
+   * @param any value
+   * @constructor
+   */
+  @new(type, value) {
+    self._type = type
+    self._value = value
+  }
+
+  /**
+   * The type the value travels as.
+   *
+   * @returns Type
+   */
+  type() {
+    return self._type
+  }
+
+  /**
+   * The value itself.
+   *
+   * @returns any
+   */
+  value() {
+    return self._value
+  }
+
+  to_string() {
+    return '<Typed ${self._type.name()}: ${self._value}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+_ffi.install({ Type, StructType, UnionType, EnumType, Typed })

@@ -1,0 +1,248 @@
+/**
+ * ffi_callbacks.zu
+ *
+ * Test suite for C calling back into Zuri: functions passed inline for
+ * one call, lasting callbacks C keeps, records and small integers
+ * through callbacks, errors raised inside one, release, and callbacks
+ * called from threads C starts, both while a threaded call waits and
+ * after it has returned, and destructors that call back.
+ */
+# @fixture: ffi
+
+import ffi
+import os
+import zuri
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi callbacks: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var fixtures = os.get_env('ZURI_FFI_FIXTURES')
+assert fixtures, 'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+
+var header = file(os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h')).read()
+var lib = ffi.open('ffifixture', { paths: [fixtures] })
+var fx = ffi.declare(header).bind(lib)
+
+# Inline callbacks.
+
+assert fx.fx_apply(@(x) => x * x, 9) == 81, 'an anonymous function'
+
+def triple(x) {
+  return x * 3
+}
+
+assert fx.fx_apply(triple, 5) == 15, 'a named function'
+
+var calls = []
+var sum = fx.fx_reduce([1, 2, 3, 4], 4, @(acc, x) {
+  calls.append(x)
+  return acc + x
+}, 100)
+assert sum == 110, 'a callback run once per element'
+assert calls == [1, 2, 3, 4], 'in the order C calls it'
+ok('Zuri functions passed straight to a function pointer')
+
+var length = fx.fx_with_point(@(p) => (p.x * p.x + p.y * p.y).sqrt(), { x: 3, y: 4 })
+assert length == 5, 'a record passed to a callback arrives as a dictionary'
+var made = fx.fx_point_via(@(x) {
+  return { x, y: -x }
+}, 2.5)
+assert made == { x: 2.5, y: -2.5 }, 'a callback returns a record'
+assert fx.fx_widened(@() => -3) == -3, 'a small signed result is widened for C'
+ok('records and small integers through callbacks')
+
+# Errors inside callbacks.
+
+var e = caught(@() => fx.fx_apply(@(x) {
+  raise ValueError('bad ${x}')
+}, 7))
+assert e and e.type == 'ValueError' and e.message == 'bad 7',
+  'the original error surfaces after C returns'
+
+e = caught(@() => fx.fx_apply(@(x) => 'text', 1))
+assert e and e.type == 'TypeError', 'a result of the wrong type is an error at the boundary'
+
+var steps = 0
+e = caught(@() => fx.fx_reduce([1, 2, 3], 3, @(acc, x) {
+  steps++
+  if x == 2 {
+    raise ValueError('stop')
+  }
+  return acc + x
+}, 0))
+assert e and e.message == 'stop', 'the first error is the one raised'
+assert steps == 3, 'C runs to completion; later calls see the error value'
+ok('errors raised in a callback are raised again once C returns')
+
+# Lasting callbacks.
+
+var seen = []
+var handler_type = ffi.function_type(ffi.void, [ffi.int])
+var handler = ffi.callback(@(value) {
+  seen.append(value)
+}, handler_type)
+
+fx.fx_set_handler(handler)
+assert fx.fx_fire(1) == 1 and fx.fx_fire(2) == 1, 'C keeps the pointer and calls it later'
+assert seen == [1, 2], 'every call arrives'
+assert handler.pointer().type().kind() == 'function', 'the callback exposes its pointer'
+assert handler.type().kind() == 'function pointer', 'and its type'
+
+handler.release()
+assert handler.is_released(), 'released'
+e = caught(@() => fx.fx_set_handler(handler))
+assert e and e.type == 'CallbackError', 'a released callback cannot be passed again'
+fx.fx_set_handler(nil)
+assert fx.fx_fire(3) == 0, 'nil clears the pointer'
+ok('lasting callbacks and their release')
+
+var guarded = ffi.callback(@(x) {
+  raise Error('nope')
+}, ffi.function_type(ffi.int, [ffi.int]), { error_value: -1 })
+var apply = lib.function('fx_apply', ffi.int, [guarded.type(), ffi.int])
+e = caught(@() => apply(guarded, 5))
+assert e and e.message == 'nope', 'the error still surfaces'
+guarded.release()
+ok('an error value for a lasting callback')
+
+e = caught(@() => ffi.callback(@() => 1, ffi.function_type(ffi.int, [], { variadic: true })))
+assert e and e.type == 'TypeError', 'a callback cannot be variadic'
+ok('callback signatures are checked')
+
+# Destructors that call back into Zuri.
+
+var released = []
+var on_release = ffi.callback(@(value) {
+  released.append(value)
+}, handler_type)
+fx.fx_set_handler(on_release)
+
+var freed_now = fx.fx_concat('a', 'b').own(fx.fx_release_firing)
+freed_now.free()
+assert fx.fx_releases_fired() == 1, 'free() runs the destructor'
+assert released == [-1], 'and the destructor calls back into Zuri'
+
+def drop_owned() {
+  fx.fx_concat('c', 'd').own(fx.fx_release_firing)
+}
+
+drop_owned()
+zuri.reflect.gc()
+assert fx.fx_releases_fired() == 2, 'the collector runs the destructor'
+assert released == [-1], 'with every callback refused while it does'
+
+# Collected while a callback runs inside a foreign call, when the VM is
+# the one C would otherwise call straight back into.
+var inside = fx.fx_apply(@(x) {
+  drop_owned()
+  zuri.reflect.gc()
+  return x + 1
+}, 1)
+assert inside == 2, 'the outer call finishes'
+assert fx.fx_releases_fired() == 3, 'the destructor runs inside the callback'
+assert released == [-1], 'and its callback is still refused'
+
+fx.fx_set_handler(nil)
+on_release.release()
+ok('destructors call back from free() and never from the collector')
+
+# Callbacks from other threads.
+
+var from_thread = []
+var worker = ffi.callback(@(i) {
+  from_thread.append(i)
+}, handler_type)
+
+var run_on_thread = ffi.threaded(fx.fx_threaded_calls)
+assert run_on_thread(worker, 5) == 5, 'the threaded call returns'
+assert from_thread == [0, 1, 2, 3, 4], 'every call from the C thread ran, in order'
+ok('a threaded call answers callbacks from the thread it waits on')
+
+var later = []
+var async_worker = ffi.callback(@(i) {
+  later.append(i * 10)
+}, handler_type)
+
+fx.fx_async_start(async_worker, 4)
+
+var waited = 0
+while later.length() < 4 and waited < 2000 {
+  ffi.serve(10)
+  waited++
+}
+
+var join = ffi.threaded(fx.fx_async_join)
+join()
+assert later == [0, 10, 20, 30], 'calls from a thread C started are answered'
+ok('ffi.serve() answers calls from threads that outlive the call')
+
+var polled = []
+var poll_worker = ffi.callback(@(i) {
+  polled.append(i)
+}, handler_type)
+
+fx.fx_async_start(poll_worker, 3)
+
+# Nothing here asks for the calls; the loop's own safepoints run them.
+var started = time()
+var spins = 0
+while polled.length() < 3 and time() - started < 10 {
+  spins++
+}
+
+join()
+assert polled == [0, 1, 2], 'calls from another thread run at the isolate safepoints'
+ok('a busy isolate still answers callbacks from other threads')
+
+# A foreign call answers waiting calls before converting its own
+# arguments, and the answers here collect, so every argument has to
+# survive being moved.
+var collections = 0
+var collecting = ffi.callback(@(i) {
+  collections++
+  zuri.reflect.gc()
+}, handler_type)
+
+fx.fx_async_start(collecting, 10)
+
+var intact = 0
+iter var i = 0; i < 200; i++ {
+  var joined = fx.fx_concat('left-${i}-', 'right-${i}').own()
+  if joined.read_string() == 'left-${i}-right-${i}' {
+    intact++
+  }
+}
+
+join()
+assert collections == 10, 'every call from the thread was answered'
+assert intact == 200, 'arguments survive the collections those answers run'
+ok('arguments outlive the callbacks a foreign call answers first')
+
+worker.release()
+async_worker.release()
+poll_worker.release()
+collecting.release()
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

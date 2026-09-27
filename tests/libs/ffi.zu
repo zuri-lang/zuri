@@ -1,0 +1,275 @@
+/**
+ * ffi.zu
+ *
+ * Test suite for the `ffi` module's own surface, against the C runtime
+ * every platform has: the built-in types and what they report, types
+ * built member by member and the rules that seal them, libraries found,
+ * opened, closed and asked for symbols, binding by hand and from
+ * declarations, and the errors each of these raises.
+ */
+
+import ffi
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var platform = ffi.platform()
+var windows = platform.os == 'windows'
+
+# Built-in types.
+
+assert ffi.char.size() == 1 and ffi.short.size() == 2 and ffi.int.size() == 4, 'the small integers'
+assert ffi.longlong.size() == 8 and ffi.size_t.size() == 8 and ffi.ptr.size() == 8,
+  'the 64-bit ones'
+assert ffi.long.size() == (windows ? 4 : 8), 'long follows the platform'
+assert ffi.long.size() == platform.long_size, 'and platform() says so'
+assert ffi.wchar_t.size() == platform.wchar_size, 'so does wchar_t'
+assert ffi.int128.size() == 16 and ffi.int128.align() == 16, 'the 128-bit integers'
+assert ffi.float.size() == 4 and ffi.double.size() == 8, 'floating point'
+assert ffi.longdouble.size() == (platform.long_double == 'double' ? 8 : 16), 'long double'
+assert ffi.bool.size() == 1 and ffi.rust_char.size() == 4, 'bool and Rust char'
+assert ffi.complex_double.size() == 16, 'complex double'
+ok('built-in types have the sizes this platform gives them')
+
+assert ffi.int.kind() == 'int' and ffi.uchar.kind() == 'int', 'integer kinds'
+assert ffi.double.kind() == 'float' and ffi.longdouble.kind() == 'float', 'floating kinds'
+assert ffi.ptr.kind() == 'pointer' and ffi.string.kind() == 'string', 'pointer kinds'
+assert ffi.void.kind() == 'void' and ffi.complex_float.kind() == 'complex', 'the rest'
+assert ffi.int32.equals(ffi.int) and ffi.i32.equals(ffi.int32), 'same shape, same type'
+assert !ffi.int.equals(ffi.uint) and !ffi.int.equals(nil), 'different types are not equal'
+assert ffi.uint64.name() == 'uint64_t' and ffi.ulong.to_string() == 'unsigned long', 'names'
+ok('kinds, names and equality')
+
+var e = caught(@() => ffi.void.size())
+assert e and e.type == 'FfiError' and e.message.contains('no size'), 'void has no size'
+e = caught(@() => ffi.int.array().size())
+assert e and e.type == 'FfiError', 'nor does an array without a length'
+ok('types without a size say so')
+
+var int_ptr = ffi.pointer(ffi.int)
+assert int_ptr.name() == 'int *' and int_ptr.target().equals(ffi.int), 'pointer types'
+assert ffi.int.pointer().equals(int_ptr), 'Type.pointer() is the same thing'
+var arr = ffi.array(ffi.double, 3)
+assert arr.size() == 24 and arr.length() == 3 and arr.target().equals(ffi.double), 'array types'
+assert ffi.int.array(2).name() == 'int[2]', 'Type.array()'
+var constant = ffi.char.as_const()
+assert constant.is_const() and !ffi.char.is_const() and constant.name() == 'const char',
+  'const types'
+var fn = ffi.function_type(ffi.int, [ffi.ptr, ffi.ptr])
+assert fn.kind() == 'function' and fn.signature().params.length() == 2, 'function types'
+assert fn.signature().returns.equals(ffi.int) and fn.signature().abi == 'default',
+  'their signatures'
+assert fn.pointer().kind() == 'function pointer', 'pointers to them'
+var nonnull = ffi.pointer(ffi.int, { nonnull: true })
+assert nonnull.kind() == 'pointer', 'a non-null pointer type'
+var text = ffi.pointer(ffi.char, { text: 'utf-16' })
+assert text.kind() == 'string', 'a text pointer type'
+ok('types built from others')
+
+assert ffi.type('unsigned long long').equals(ffi.ulonglong), 'ffi.type() reads C spellings'
+assert ffi.type('const char *').target().is_const(), 'with qualifiers'
+e = caught(@() => ffi.type('nonsense_t'))
+assert e and e.type == 'DeclarationError', 'and refuses what is not a type'
+ok('types from C spellings')
+
+# Building records.
+
+var Point = ffi.struct('Point').add_field('x', ffi.double).add_field('y', ffi.double)
+assert Point.kind() == 'struct' and Point.name() == 'Point', 'a struct type'
+assert Point.size() == 16 and Point.offset_of('y') == 8, 'laid out on first use'
+assert Point.has_field('x') and !Point.has_field('z'), 'has_field()'
+var fields = Point.fields()
+assert fields.length() == 2 and fields[1].name == 'y' and fields[1].type.equals(ffi.double),
+  'fields()'
+assert fields[0].bits == nil, 'fields that are not bitfields have no width'
+
+e = caught(@() => Point.add_field('z', ffi.double))
+assert e and e.type == 'FfiError' and e.message.contains('laid out'),
+  'a record is sealed once laid out'
+
+var Dup = ffi.struct('Dup').add_field('a', ffi.int)
+e = caught(@() => Dup.add_field('a', ffi.int))
+assert e and e.message.contains('already has'), 'member names are unique'
+e = caught(@() => ffi.struct('Bad').add_bitfield('f', ffi.double, 3))
+assert e and e.message.contains('integer type'), 'a bitfield is an integer'
+e = caught(@() => ffi.struct('Bad').add_bitfield('f', ffi.uint8, 9))
+assert e and e.message.contains('9 bits'), 'no wider than its type'
+e = caught(@() => ffi.struct('Bad').set_packed(3))
+assert e and e.message.contains('power of two'), 'packing is a power of two'
+ok('records are built member by member and sealed on first use')
+
+var Packed = ffi.struct('Packed').add_field('c', ffi.char).add_field('i', ffi.int).set_packed()
+assert Packed.size() == 5 and Packed.offset_of('i') == 1, 'set_packed()'
+var Two = ffi.struct('Two').add_field('c', ffi.char).add_field('i', ffi.int).set_packed(2)
+assert Two.size() == 6, 'set_packed(2)'
+var Wide = ffi.struct('Wide').add_field('c', ffi.char).set_align(32)
+assert Wide.size() == 32 and Wide.align() == 32, 'set_align()'
+var Member = ffi.struct('Member').add_field('c', ffi.char).add_field('d', ffi.char, 8)
+assert Member.offset_of('d') == 8, 'an aligned member'
+ok('packing and alignment')
+
+var Bits = ffi.struct('Bits')
+  .add_bitfield('a', ffi.uint, 3)
+  .add_bitfield('b', ffi.uint, 5)
+  .add_bitfield('', ffi.uint, 0)
+  .add_bitfield('c', ffi.int, 4)
+assert Bits.size() == 8, 'a zero-width bitfield starts a new unit'
+assert Bits.fields()[1].bit_offset == 3 and Bits.fields()[1].bits == 5, 'bit positions'
+assert Bits.fields().length() == 3, 'an unnamed bitfield is not a member'
+var bits = ffi.alloc(Bits)
+bits.set_field('c', -8)
+bits.set_field('b', 31)
+assert bits.get() == { a: 0, b: 31, c: -8 }, 'bitfields read and write'
+ok('bitfields built by hand')
+
+var Number = ffi.union('Number').add_field('i', ffi.int64).add_field('d', ffi.double)
+assert Number.kind() == 'union' and Number.size() == 8, 'a union type'
+var n = ffi.alloc(Number)
+n.write(Number, { d: 1 })
+assert n.get_field('i') == 4607182418800017408n, 'members share their bytes'
+ok('unions built by hand')
+
+var Color = ffi.enum('Color').add_constant('RED', 1).add_constant('GREEN', 2)
+assert Color.kind() == 'enum' and Color.size() == 4, 'an enum type'
+assert Color.constants() == { RED: 1, GREEN: 2 } and Color.value('GREEN') == 2, 'its constants'
+assert Color.target().equals(ffi.int), 'stored as an int'
+e = caught(@() => Color.add_constant('RED', 3))
+assert e and e.type == 'ValueError', 'constant names are unique'
+e = caught(@() => ffi.enum('Byte', ffi.uint8).add_constant('BIG', 256))
+assert e and e.type == 'RangeError', 'constants fit the storage type'
+e = caught(@() => Color.value('BLUE'))
+assert e and e.type == 'ValueError', 'value() of an unknown constant'
+ok('enums built by hand')
+
+var Slice = ffi.slice(ffi.uint8)
+assert Slice.size() == 16 and Slice.fields()[0].type.target().is_const(),
+  'a slice of const elements'
+assert ffi.slice(ffi.uint8, true).fields()[0].type.target().is_const() == false, 'or mutable ones'
+ok('Rust slices')
+
+var typed = ffi.float.of(2)
+assert typed.type().equals(ffi.float) and typed.value() == 2, 'Type.of() marks a value'
+ok('typed values')
+
+# Libraries.
+
+var libc = ffi.open(ffi.LIBC)
+assert !libc.is_closed() and libc.path() != nil, 'the C runtime opens'
+assert libc.has('strlen') and !libc.has('zuri_no_such_symbol'), 'has()'
+assert libc.symbol('strlen') != nil and libc.symbol('zuri_no_such_symbol') == nil, 'symbol()'
+
+var strlen = libc.function('strlen', ffi.size_t, [ffi.string])
+assert strlen('hello') == 5 and strlen('') == 0, 'a function bound by hand'
+assert strlen.name() == 'strlen' and ffi.is_foreign(strlen), 'it knows what it is'
+var info = ffi.describe(strlen)
+assert info.name == 'strlen' and !info.threaded and info.pointer.equals(libc.symbol('strlen')),
+  'describe()'
+assert !ffi.is_foreign(@() => 1), 'a Zuri function is not foreign'
+
+e = caught(@() => libc.function('zuri_no_such_symbol', ffi.int, []))
+assert e and e.type == 'SymbolError' and e.message.contains('zuri_no_such_symbol'),
+  'a missing symbol'
+e = caught(@() => ffi.open('zuri_no_such_library'))
+assert e and e.type == 'LoadError' and e.message.contains('zuri_no_such_library'),
+  'a missing library'
+assert ffi.find('zuri_no_such_library') == nil, 'find() gives nil for what is not there'
+ok('opening libraries and binding functions by hand')
+
+var libm = ffi.open(ffi.LIBM).declare('double cos(double x); double pow(double x, double y);')
+assert libm.cos(0) == 1 and libm.pow(2, 10) == 1024, 'the maths library'
+
+var c = libc.declare('
+  typedef struct { int quot; int rem; } div_t;
+  div_t div(int numerator, int denominator);
+  int abs(int n);
+  void qsort(void *base, size_t count, size_t size, int (*compare)(const void *, const void *));
+  int zuri_no_such_function(void);
+', { allow_missing: true })
+assert c.abs(-9) == 9, 'bound from declarations'
+assert c.div(17, 5) == { quot: 3, rem: 2 }, 'a record returned by value'
+assert c.div_t.size() == 8, 'typedefs are namespace members'
+
+var numbers = ffi.alloc(ffi.double, 5)
+for i, v in [3.5, -1, 8, 0, 2] {
+  numbers.set(i, v)
+}
+c.qsort(numbers, 5, 8, @(a, b) {
+  var x = a.cast(ffi.double).get()
+  var y = b.cast(ffi.double).get()
+  return x < y ? -1 : x > y ? 1 : 0
+})
+assert numbers.to_list(5) == [-1, 0, 2, 3.5, 8], 'qsort with a Zuri comparator'
+ok('binding from declarations, with missing symbols allowed')
+
+e = caught(@() => libc.declare('int zuri_no_such_function(void); int also_missing(void);'))
+assert e and e.type == 'SymbolError', 'missing symbols are an error by default'
+assert e.message.contains('zuri_no_such_function') and e.message.contains('also_missing'),
+  'naming every one'
+ok('missing symbols named together')
+
+var fresh = ffi.open(ffi.LIBC)
+var bound = fresh.function('abs', ffi.int, [ffi.int])
+fresh.close()
+assert fresh.is_closed(), 'close() marks the library closed'
+e = caught(@() => bound(-1))
+assert e and e.type == 'LoadError' and e.message.contains('closed'), 'its functions stop working'
+e = caught(@() => fresh.function('abs', ffi.int, [ffi.int]))
+assert e and e.type == 'LoadError', 'and nothing more binds from it'
+ok('closing a library')
+
+e = caught(@() => ffi.threaded(strlen)(42))
+assert e and e.type == 'TypeError', 'a threaded function converts arguments the same way'
+e = caught(@() => ffi.threaded(@() => 1))
+assert e and e.type == 'TypeError', 'only a foreign function can be threaded'
+assert ffi.threaded(strlen)('four') == 4, 'a threaded call returns its result'
+ok('threaded variants of a function')
+
+e = caught(@() => ffi.callback('nope', fn))
+assert e and e.type == 'TypeError', 'a callback needs a function'
+e = caught(@() => ffi.callback(@() => 1, ffi.int))
+assert e and e.type == 'TypeError', 'and a function type'
+ok('callback arguments are checked')
+
+assert ffi.errno() == 0, 'errno starts at zero'
+ffi.set_errno(5)
+assert ffi.errno() == 5, 'set_errno() sets it'
+strlen('x')
+assert ffi.errno() == 0, 'and a call clears it again'
+assert ffi.last_error() == 0 or windows, 'last_error() is zero off Windows'
+ok('errno')
+
+assert Point.to_string() == 'Point' and ffi.alloc(ffi.int).to_string().contains('to int'),
+  'to_string()'
+assert libc.to_string().starts_with('<Library '), 'libraries print'
+assert ffi.open().to_string().contains('running process'), 'the process prints'
+ok('printable values')
+
+e = caught(@() => ffi.Pointer())
+assert e and e.type == 'FfiError', 'pointers are not built by hand'
+e = caught(@() => ffi.Type())
+assert e and e.type == 'FfiError', 'nor are types'
+ok('constructors that only the module uses refuse to run')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

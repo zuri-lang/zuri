@@ -43,6 +43,17 @@ fn main() {
   println!("cargo:rustc-env=ZURI_BUILD_TIME={}", now);
   println!("cargo:rustc-env=ZURI_HISTORY_SIZE={}", history_size);
 
+  // The test harness compiles the ffi suites' C fixture for the same
+  // target the runtime is built for, and needs to know which that is.
+  println!(
+    "cargo:rustc-env=ZURI_BUILD_TARGET={}",
+    env::var("TARGET").unwrap_or_default()
+  );
+  println!(
+    "cargo:rustc-env=ZURI_BUILD_HOST={}",
+    env::var("HOST").unwrap_or_default()
+  );
+
   // Tell Cargo to re-run this script if Cargo.toml changes
   println!("cargo:rerun-if-changed=Cargo.toml");
 

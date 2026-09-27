@@ -1,0 +1,197 @@
+/**
+ * @module declare
+ *
+ * Declarations read from C and Rust source.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import .errors { FfiError }
+
+/**
+ * A set of declarations: types, functions, variables and constants, read
+ * from any mix of C and Rust source.
+ *
+ * Each source added sees everything added before it, and anything in
+ * the declarations it includes. Nothing is bound to a library until
+ * `bind()`, so one set of declarations serves any number of libraries.
+ *
+ * ```zuri,ignore
+ * var api = ffi.declarations()
+ *   .declare('typedef struct { double x, y; } point;')
+ *   .declare('double length(point p);')
+ *
+ * var geometry = api.bind(ffi.open('geometry'))
+ * echo geometry.length({ x: 3, y: 4 })
+ * ```
+ *
+ * @printable
+ */
+class Declarations {
+  var _handle
+
+  @new() {
+    raise FfiError(
+      'declarations come from ffi.declarations(), never from the Declarations constructor'
+    )
+  }
+
+  /**
+   * Reads C declarations into the set, returning it for chaining.
+   *
+   * Typedefs, structs, unions, enums, function prototypes, `extern`
+   * variables and `_Static_assert`s are read. So are object-like
+   * `#define`s, which become constants, and `#if` and its relatives,
+   * which are evaluated for this platform. `#pragma pack` is honoured.
+   * Including a C standard header is accepted, since everything it
+   * declares is already known; including any other file is an error, as
+   * is expanding a function-like macro.
+   *
+   * A function returning `const char *` returns a string. A function
+   * with a body, as an inline helper in a header has, is read and not
+   * bound, since the library need not export it.
+   *
+   * @param string source
+   * @returns self
+   * @throws DeclarationError with the line and column of the problem.
+   */
+  declare(source: string) {
+    _ffi.declare_c(self._handle, source)
+    return self
+  }
+
+  /**
+   * Reads Rust declarations into the set, returning it for chaining.
+   *
+   * Functions in `extern "C"` blocks, and `extern "C" fn` definitions
+   * marked `#[no_mangle]` or `#[export_name]`, are read with their
+   * bodies skipped. So are `#[repr(C)]`, `#[repr(transparent)]`,
+   * `packed` and `align` structs and unions, enums with `#[repr(C)]` or
+   * an integer `#[repr]` (with or without fields), `type` aliases,
+   * `const` items and `extern` statics. `#[cfg(...)]` is evaluated for
+   * this platform. Anything else, from `use` lines to `impl` blocks, is
+   * skipped, and a type may be used before it is declared.
+   *
+   * @param string source
+   * @returns self
+   * @throws DeclarationError with the line and column of the problem.
+   */
+  declare_rust(source: string) {
+    _ffi.declare_rust(self._handle, source)
+    return self
+  }
+
+  /**
+   * Makes the types and constants of `other` usable by sources added to
+   * this set from now on, returning this set for chaining.
+   *
+   * @param Declarations other
+   * @returns self
+   * @throws ValueError when that would make a set include itself.
+   */
+  include(other) {
+    _ffi.include(self._handle, other)
+    return self
+  }
+
+  /**
+   * A type written in C, resolved against these declarations:
+   * `'struct stat *'`, `'point[4]'`, `'int (*)(const void *, const void *)'`.
+   *
+   * @param string spelling
+   * @returns Type
+   * @throws DeclarationError when it does not name a type.
+   */
+  type(spelling: string) {
+    return _ffi.scope_type(self._handle, spelling)
+  }
+
+  /**
+   * The value of a declared constant: an enum constant, a `#define`, or
+   * a Rust `const`.
+   *
+   * @param string name
+   * @returns number|bigint|string
+   * @throws ValueError when no constant of that name was declared.
+   */
+  constant(name: string) {
+    return _ffi.scope_constant(self._handle, name)
+  }
+
+  /**
+   * Every declared constant, by name, in the order declared.
+   *
+   * @returns dict
+   */
+  constants() {
+    return _ffi.scope_constants(self._handle)
+  }
+
+  /**
+   * Every named type: typedefs and Rust type names under their names,
+   * and tagged C types under their tags, such as `'struct point'`.
+   *
+   * @returns dict
+   */
+  types() {
+    return _ffi.scope_types(self._handle)
+  }
+
+  /**
+   * Every declared function's type, by name.
+   *
+   * @returns dict
+   */
+  functions() {
+    return _ffi.scope_functions(self._handle)
+  }
+
+  /**
+   * Every declared variable's type, by name.
+   *
+   * @returns dict
+   */
+  variables() {
+    return _ffi.scope_variables(self._handle)
+  }
+
+  /**
+   * Binds the declarations to `library`, returning a namespace.
+   *
+   * The namespace holds a function for each declared function, a
+   * `Pointer` for each declared variable, each constant, and each type
+   * that has a name of its own (a typedef or a Rust type); tagged C
+   * types are reached with `type()`. Members are read the way a module's
+   * are:
+   *
+   * ```zuri,ignore
+   * var sqlite = api.bind(ffi.open('sqlite3'))
+   * echo sqlite.sqlite3_libversion()
+   * ```
+   *
+   * @param Library library
+   * @param dict|nil options `allow_missing`: when `true`, a declared
+   *   function or variable the library does not export is left out of
+   *   the namespace instead of being an error. Defaults to `false`.
+   * @returns module
+   * @throws SymbolError naming every missing symbol, unless
+   *   `allow_missing` is set.
+   */
+  bind(library, options) {
+    options = options or {}
+    return _ffi.bind(self._handle, library, options.get('allow_missing', false))
+  }
+
+  to_string() {
+    var counts = '${self.functions().length()} functions, ${self.types().length()} types'
+    return '<Declarations ${counts}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+_ffi.install({ Declarations })

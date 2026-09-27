@@ -59,6 +59,13 @@ fn arity(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
 
   let v = ctx.args[0];
+
+  // A foreign function is carried as a bound native, but it is not a
+  // method: what it declares is the C function's parameter list.
+  if let Some(f) = crate::modules::ffi_util::call::function_of(v) {
+    return Ok(Value::number(f.sig.params.len() as f64));
+  }
+
   let r = match unsafe { &*v.as_obj() } {
     Obj::Closure(x) => v.as_closure().function.as_func().arity,
     Obj::BoundMethod(x) => {
@@ -80,6 +87,11 @@ fn is_variadic(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
 
   let v = ctx.args[0];
+
+  if let Some(f) = crate::modules::ffi_util::call::function_of(v) {
+    return Ok(Value::bool(f.sig.variadic));
+  }
+
   let r = match unsafe { &*v.as_obj() } {
     Obj::Closure(x) => v.as_closure().function.as_func().variadic,
     Obj::BoundMethod(x) => {

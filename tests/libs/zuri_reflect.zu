@@ -175,6 +175,21 @@ ok('has_decorator()/get_decorator() work correctly')
 assert zuri.reflect.pointer_type(add) == nil, 'pointer_type on a non-pointer value must be nil'
 ok('pointer_type() returns nil for a non-pointer value')
 
+# gc() collects what nothing reaches and leaves live objects intact.
+var survivors = []
+iter var i = 0; i < 1000; i++ {
+  var discarded = { index: i, text: 'garbage ${i}' }
+  survivors.append('kept ${i}')
+}
+
+assert zuri.reflect.gc() == nil, 'gc() must return nil'
+zuri.reflect.gc()
+assert survivors.length() == 1000, 'gc() must keep a reachable list whole'
+assert survivors[0] == 'kept 0' and survivors[999] == 'kept 999',
+  'gc() must keep reachable strings intact, even when it moves them'
+assert rex.name == 'Max', 'gc() must keep a reachable instance intact'
+ok('gc() runs a full collection on demand')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

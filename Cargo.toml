@@ -178,6 +178,18 @@ libsqlite3-sys = { version = "0.38.2", features = [
     "column_metadata",
 ] }
 
+# --- ffi (src/modules/ffi.rs, src/modules/ffi_util/) ----------------------
+
+# libffi is what actually makes a call through a signature only known at
+# run time, and what builds the closures a C library calls back into.
+# The raw bindings rather than the `libffi` crate's safe layer: every
+# type the module describes is laid out by its own code, and the safe
+# layer's owned `Type` values cannot express a struct whose size and
+# alignment are fixed ahead of time. The default build compiles the
+# bundled libffi sources, so no system copy is looked for. Complex
+# types exist only where the C compiler has them, which rules out MSVC.
+libffi-sys = "4.2.2"
+
 # --- io::TTY.getsize (src/modules/io.rs) -----------------------------------
 
 # The rest of io::TTY (raw mode, tcgetattr/tcsetattr) is genuinely termios-
@@ -191,6 +203,9 @@ libsqlite3-sys = { version = "0.38.2", features = [
 # ToolHelp for the process-snapshot walk os.ppid() needs (Windows has
 # no direct getppid syscall), and Threading for OpenProcess/
 # TerminateProcess behind os.kill()/Process.kill().
+[target.'cfg(not(windows))'.dependencies]
+libffi-sys = { version = "4.2.2", features = ["complex"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_System_Console",
@@ -208,8 +223,25 @@ windows-sys = { version = "0.59", features = [
     # its own fields, so without it the struct does not exist.
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    # LoadLibraryExW, GetProcAddress and friends, for `ffi.open()`, plus
+    # the module walk that stands in for dlsym(RTLD_DEFAULT) when a
+    # symbol is looked up in the process as a whole. SearchPathW is how
+    # `ffi.find()` answers without loading anything.
+    "Win32_System_LibraryLoader",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Storage_FileSystem",
 ] }
+# Locates MSVC's link.exe, and the environment it needs, for turning a
+# static library into a DLL in `ffi.link()`. The same crate `cc` uses to
+# find the compiler, and already in the build through it.
+find-msvc-tools = "0.1.9"
 
+
+# Builds the C library the ffi suites call into, with the same compiler
+# discovery the build uses for its own C dependencies.
+[dev-dependencies]
+cc = "1.2.67"
 
 # The test harness reads each fixture's resident memory to hold it to a
 # cap; on Windows that is GetProcessMemoryInfo.

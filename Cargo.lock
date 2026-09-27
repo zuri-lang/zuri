@@ -1864,6 +1864,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "libffi-sys"
+version = "4.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eab801a4ae9065bfea87f37204a7940523e752056e4a090eaaaab9b47fc826b5"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libfuzzer-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4391,6 +4400,7 @@ dependencies = [
  "bzip2",
  "caseless",
  "cbc",
+ "cc",
  "chacha20poly1305",
  "chrono",
  "chrono-tz",
@@ -4403,12 +4413,14 @@ dependencies = [
  "digest",
  "ecdsa",
  "ed25519-dalek",
+ "find-msvc-tools",
  "fontdue",
  "gost94",
  "hkdf",
  "image",
  "itertools 0.15.0",
  "libc",
+ "libffi-sys",
  "libsqlite3-sys",
  "lz4_flex",
  "md-5",

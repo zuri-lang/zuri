@@ -12,6 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::builtins;
 use crate::jit::{CompileFacts, EntryFn, background, escape, typeflow};
+use crate::modules::{ffi_util, os_util};
 use crate::vm::chunk::{Instr, JumpKey, ParamType, kind};
 use crate::vm::natives;
 use crate::vm::object::{
@@ -781,6 +782,16 @@ pub struct VM {
   /// program that registers and drops functions in a loop would leak a
   /// slot per registration for the life of the VM.
   native_roots_free: Vec<usize>,
+  /// The `ffi` module's state for this VM: the classes `libs/ffi`
+  /// registered, the inbox other threads post callback calls to, and
+  /// `errno` as the last foreign call left it. `None` until the module
+  /// is first used.
+  pub(crate) ffi: Option<Box<ffi_util::VmState>>,
+  /// Whether anything besides a collection can be waiting at a
+  /// safepoint: a signal handler, or a callback another thread called.
+  /// The interpreter tests this once per instruction, which is why it
+  /// is one flag rather than a test of each source.
+  pub(crate) async_armed: bool,
   /// Set while `run_exit_handlers` is draining, so `os.exit()` called
   /// from inside a handler exits instead of starting the drain again.
   running_exit_handlers: bool,
@@ -1020,6 +1031,8 @@ impl VM {
       exit_handlers: Vec::new(),
       native_roots: Vec::new(),
       native_roots_free: Vec::new(),
+      ffi: None,
+      async_armed: false,
       running_exit_handlers: false,
       pending_exit_code: None,
       jit_scalar_roots: Vec::new(),
@@ -3643,7 +3656,8 @@ impl VM {
   /// any new slots with `nil`) the first time this VM ever registers
   /// one.
   pub(crate) fn set_signal_callback(&mut self, idx: usize, value: Value) {
-    let count = crate::modules::os_util::signal::NAMES.len();
+    self.async_armed = true;
+    let count = os_util::signal::NAMES.len();
     if self.signal_callbacks.len() < count {
       self.signal_callbacks.resize(count, Value::nil());
     }
@@ -3686,7 +3700,7 @@ impl VM {
     let outcome = self.call_value(callback, &[])?;
 
     if outcome.is_falsey() {
-      crate::modules::os_util::signal::perform_default_action(idx);
+      os_util::signal::perform_default_action(idx);
     }
 
     Ok(())
@@ -3751,6 +3765,23 @@ impl VM {
   #[inline]
   pub(crate) fn has_signal_callbacks(&self) -> bool {
     !self.signal_callbacks.is_empty()
+  }
+
+  /// Whether another thread has posted a call to one of this VM's ffi
+  /// callbacks that has not been answered yet. One atomic load.
+  #[inline]
+  pub(crate) fn ffi_calls_waiting(&self) -> bool {
+    self
+      .ffi
+      .as_ref()
+      .and_then(|state| state.inbox.as_ref())
+      .is_some_and(|inbox| inbox.has_pending())
+  }
+
+  /// Takes the error a native parked with `rethrow`, if one is waiting.
+  pub(crate) fn take_pending_error(&mut self) -> Option<Value> {
+    let idx = self.pending_error.take()?;
+    self.gc_pins.get(idx).copied()
   }
 
   /// Guarantees `closure_val` isn't `Young` before handing it to compiled
@@ -5281,9 +5312,14 @@ impl VM {
       // `modules::os_util::signal` for why the real OS signal handler
       // never does more than flip a flag, and why delivery is
       // deliberately deferred all the way to here instead.
-      if self.has_signal_callbacks() {
-        if crate::modules::os_util::signal::any_pending() {
-          while let Some(idx) = crate::modules::os_util::signal::take_pending() {
+      //
+      // Callbacks that C code called from another thread wait here too,
+      // posted to this VM's ffi inbox, and run under the same rules.
+      if self.async_armed {
+        let mut delivered = false;
+
+        if self.has_signal_callbacks() && os_util::signal::any_pending() {
+          while let Some(idx) = os_util::signal::take_pending() {
             // A callback raising is reported the same way an uncaught
             // error from ordinary script code would be; it unwinds
             // this run_until the normal way rather than being
@@ -5291,6 +5327,15 @@ impl VM {
             // silently doing nothing.
             self.deliver_signal(idx)?;
           }
+          delivered = true;
+        }
+
+        if self.ffi_calls_waiting() {
+          ffi_util::callback::service_at_safepoint(self)?;
+          delivered = true;
+        }
+
+        if delivered {
           closure_ptr = self.frames[frame_idx].closure_val.as_closure() as *const ObjClosure;
         }
       }
@@ -7042,8 +7087,8 @@ impl VM {
   /// walked with an explicit work-list, not recursion, so a long chain
   /// can't blow the stack.
   ///
-  /// Called automatically once the heap crosses its threshold; also
-  /// exposed to native code via the `gc` native. See `collect_minor` for
+  /// Called automatically once the heap crosses its threshold, and by
+  /// `zuri.reflect.gc()`. See `collect_minor` for
   /// the cheaper, far more frequent counterpart this normally relies on.
   pub(crate) fn collect_garbage(&mut self) {
     // Empty the nursery first so every live object is uniformly

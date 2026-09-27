@@ -256,6 +256,10 @@ pub enum TransferNode {
   /// A moved native-resource payload: see this module's own
   /// top-level docs.
   Ptr(PtrSlot),
+  /// A native payload that is a shared description rather than an
+  /// exclusive resource, such as an ffi type or pointer: each side gets
+  /// its own handle on the same thing, and the source stays usable.
+  SharedPtr(&'static str, crate::modules::ffi_util::SharedPayload),
   /// A bare, not-yet-closed-over function prototype; either a
   /// nested one (only ever appears inside another `CapturedFunction`'s
   /// own `constants`, mirroring how `Obj::Func` only ever appears
@@ -495,6 +499,12 @@ fn capture_value(
       .cloned()
       .ok_or_else(|| "internal error: malformed isolate handle".to_string())?;
     return Ok(TransferValue::IsolateHandle(handle));
+  }
+  if let Some((type_name, make)) = crate::modules::ffi_util::shareable(v) {
+    let idx = arena.len() as u32;
+    arena.push(TransferNode::SharedPtr(type_name, make));
+    memo.insert(ptr, idx);
+    return Ok(TransferValue::Ref(idx));
   }
   if v.is_ptr() {
     // A genuine MOVE, not a copy: see this module's own top-level
@@ -1177,6 +1187,12 @@ fn materialize_ref(
       Ok(bound)
     },
     TransferNode::Class(cc) => materialize_class(vm, cc, idx, arena, node_pin),
+    TransferNode::SharedPtr(type_name, make) => {
+      let val = vm.heap_mut().alloc_ptr_boxed(type_name, make());
+      let p = vm.pin_values([val]);
+      node_pin[idx as usize] = Some(p);
+      Ok(val)
+    },
     TransferNode::Ptr(slot) => {
       let taken = slot.lock().unwrap().take();
       let Some((type_name, payload)) = taken else {

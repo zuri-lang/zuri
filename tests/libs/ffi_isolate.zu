@@ -1,0 +1,84 @@
+/**
+ * ffi_isolate.zu
+ *
+ * Test suite for the `ffi` module across isolates: types, pointers,
+ * libraries, foreign functions and declarations are shared rather than
+ * moved, so both sides keep using them, and memory one isolate writes
+ * another reads.
+ */
+# @fixture: ffi
+
+import ffi
+import isolate
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi isolates: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var fixtures = os.get_env('ZURI_FFI_FIXTURES')
+assert fixtures, 'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+
+var header = file(os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h')).read()
+var lib = ffi.open('ffifixture', { paths: [fixtures] })
+var api = ffi.declare(header)
+var fx = api.bind(lib)
+
+def use_everything(add, point_type, memory, library) {
+  var sum = add(20, 22)
+  memory.set(1, 99)
+  var point = ffi.alloc(point_type)
+  point.set_field('y', 3.5)
+  var mul = library.function('fx_mul', ffi.int, [ffi.int, ffi.int])
+
+  return [sum, point.get(), memory.get(0), mul(6, 7), point_type.size()]
+}
+
+var shared = ffi.alloc(ffi.int, 2)
+shared.set(0, 7)
+
+var result = isolate.spawn(use_everything, fx.fx_add, api.type('fx_point'), shared, lib).join()
+assert result[0] == 42, 'a foreign function is called from another isolate'
+assert result[1] == { x: 0, y: 3.5 }, 'a record type works there'
+assert result[2] == 7, 'memory written here is read there'
+assert result[3] == 42, 'a library binds functions there'
+assert result[4] == 16, 'the type keeps its layout'
+ok('types, pointers, libraries and functions cross to another isolate')
+
+assert shared.get(1) == 99, 'memory written there is read here'
+assert fx.fx_add(1, 2) == 3, 'the function still works here'
+assert lib.function('fx_add', ffi.int, [ffi.int, ffi.int])(2, 2) == 4, 'and so does the library'
+ok('nothing is moved away from the sending isolate')
+
+def count_types(declarations) {
+  return declarations.types().length()
+}
+
+var types_there = isolate.spawn(count_types, api).join()
+assert types_there == api.types().length(), 'declarations are shared'
+ok('declarations cross too')
+
+def sum_on_thread(add, n) {
+  var total = 0
+  iter var i = 0; i < n; i++ {
+    total = add(total, i)
+  }
+  return total
+}
+
+var workers = [100, 200, 300].map(@(n) => isolate.spawn(sum_on_thread, fx.fx_add, n))
+var totals = workers.map(@(w) => w.join())
+assert totals == [4950, 19900, 44850], 'several isolates call into the same library at once'
+ok('concurrent foreign calls from several isolates')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

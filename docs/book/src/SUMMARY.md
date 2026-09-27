@@ -76,6 +76,10 @@
   - [Running It for Real](ch25-07-running-it.md)
   - [Testing the Board](ch25-08-testing.md)
 
+# Interoperability
+
+- [Foreign Functions: C and Rust](ch26-00-ffi.md)
+
 # Appendices
 
 - [A - Keywords](appendix-01-keywords.md)

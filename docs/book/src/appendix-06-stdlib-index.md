@@ -67,6 +67,7 @@ a doc block stating its parameters, its defaults and its edge cases.
 | `args` | a command-line parser with subcommands and `--help` | [20](ch20-00-args.md) |
 | `log` | levelled, structured logging with pluggable transports | [13](ch13-00-stdlib-tour.md) |
 | `isolate` | OS-thread concurrency, channels and broadcasts | [11](ch11-00-isolates.md) |
+| `ffi` | calling C and Rust libraries, callbacks, and linking static libraries | [26](ch26-00-ffi.md) |
 
 ## Testing
 
@@ -144,6 +145,17 @@ One module per element width, each exporting a single class.
 | `compress.tar` | reading and writing TAR archives |
 | `compress.zip` | reading and writing ZIP archives |
 | `compress.checksum` | CRC32, CRC32C, Adler-32 |
+
+### `ffi`
+
+| Submodule | What it is for |
+| --- | --- |
+| `ffi.errors` | every error the module raises, under `FfiError` |
+| `ffi.types` | `Type`, and the struct, union and enum builders |
+| `ffi.pointer` | `Pointer`: native memory and access through it |
+| `ffi.library` | `Library`: a loaded shared library |
+| `ffi.declare` | `Declarations`: C and Rust source read into types and signatures |
+| `ffi.callback` | `Callback`: a Zuri function behind a C function pointer |
 
 ### `html`
 

@@ -1,0 +1,210 @@
+/**
+ * ffi_rust.zu
+ *
+ * Test suite for calling Rust through the `ffi` module. The fixture
+ * crate's own source is read with `declare_rust()`, and every C-ABI
+ * shape a crate exposes is called: `#[repr(C)]` records, references and
+ * `Option<&T>`, 128-bit integers, `char` and `bool`, slices as a pointer
+ * and a length, enums with and without fields in both `repr(C)` and
+ * primitive layouts, packed, aligned and transparent types, `NonZero`
+ * niches, `extern "C" fn` callbacks, boxed values handed out and back,
+ * and statics.
+ */
+# @fixture: ffi
+
+import ffi
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi rust: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var fixtures = os.get_env('ZURI_FFI_FIXTURES')
+assert fixtures, 'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+
+var source_path = os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'rust', 'src', 'lib.rs')
+var source = file(source_path).read()
+
+var lib = ffi.open('ffirust', { paths: [fixtures] })
+var api = ffi.declare_rust(source)
+var rs = api.bind(lib)
+
+# Layouts agree with rustc.
+
+var table = ffi.alloc(ffi.usize, 14)
+rs.rs_layouts(table)
+var sizes = table.to_list(14)
+var names = ['Point', 'Shape', 'Token', 'Packed', 'Aligned', 'Op']
+
+for i, name in names {
+  var type = api.type(name)
+  assert type.size() == sizes[i * 2],
+    '${name} is ${sizes[i * 2]} bytes to rustc, ${type.size()} here'
+  assert type.align() == sizes[i * 2 + 1], '${name} aligns to ${sizes[i * 2 + 1]} for rustc'
+}
+
+assert ffi.i128.size() == sizes[12] and ffi.i128.align() == sizes[13], 'i128 matches rustc'
+ok('layouts match what rustc reports, enums with fields included')
+
+# The declarations themselves.
+
+assert api.constant('RS_LIMIT') == 64, 'a const evaluates'
+assert api.constant('RS_GREETING') == 'hi', 'a string const'
+assert rs.RS_LIMIT == 64, 'constants are namespace members'
+assert api.functions().contains('rs_distance'), 'extern "C" definitions are read'
+assert !api.functions().contains('private_helper'), 'Rust-ABI functions are skipped'
+assert api.functions().contains('rs_from_module'), 'functions inside a module are read'
+assert rs.rs_internal_name(3) == 21, 'bound under its Rust name, found by its exported one'
+assert rs.rs_platform() == (ffi.platform().os == 'windows' ? 1 : 2), '#[cfg] picks this platform'
+ok('declare_rust() reads a crate as written')
+
+# Scalars.
+
+assert rs.rs_is_even(4) == true and rs.rs_is_even(3) == false, 'bool'
+assert rs.rs_next_char('a') == 'b', 'char is a one-character string'
+assert rs.rs_next_char('😀') == '😁', 'outside the Basic Multilingual Plane'
+var e = caught(@() => rs.rs_next_char('ab'))
+assert e and e.type == 'TypeError', 'a char is exactly one character'
+
+var huge = 85070591730234615865843651857942052864n
+assert rs.rs_add_i128(huge, huge) == -(1n << 127n), 'i128 wraps as Rust wraps it'
+assert rs.rs_add_i128(huge, 1) == huge + 1n, 'i128 by value, both ways'
+assert rs.rs_add_i128(-3, 1) == -2, 'a small i128 is a number'
+assert rs.rs_mul_u128(1n << 64n, 3) == 3n << 64n, 'u128 by value'
+assert rs.rs_i128_mix(1, 2, 3, 4) == 4321, 'i128 arguments between narrow ones keep their registers'
+var through = rs.rs_i128_via(@(a, b, c, d, e, f) {
+  return b + d * 2n + f * 3n + (a + 10 * c + 100 * e).to_bigint()
+}, huge / 8n)
+assert through == huge / 8n * 6n + 322n, 'an i128 returned from a callback'
+var many = ffi.alloc(ffi.i128, 3)
+many.set(0, huge)
+many.set(1, -huge)
+many.set(2, 5)
+assert rs.rs_sum_i128(many, 3) == 5, 'i128 in memory'
+ok('bool, char and 128-bit integers')
+
+# Records and references.
+
+assert rs.rs_distance({ x: 0, y: 0 }, { x: 3, y: 4 }) == 5, '#[repr(C)] struct by value'
+assert rs.rs_midpoint({ x: 0, y: 0 }, { x: 2, y: 4 }) == { x: 1, y: 2 }, 'references to records'
+e = caught(@() => rs.rs_midpoint(nil, { x: 1, y: 1 }))
+assert e and e.type == 'TypeError', 'a reference is never null'
+assert rs.rs_length_or_zero(nil) == 0, 'Option<&T> takes nil'
+assert rs.rs_length_or_zero({ x: 6, y: 8 }) == 10, 'and a value'
+ok('records, references and Option<&T>')
+
+assert rs.rs_packed_sum({ a: 1, b: 41 }) == 42, 'repr(C, packed)'
+assert rs.rs_aligned_value({ v: 9 }) == 9, 'repr(C, align(16))'
+assert rs.rs_double_meters(1.25) == 2.5, 'repr(transparent) is its field'
+assert rs.rs_nonzero_or(nil, 7) == 7 and rs.rs_nonzero_or(3, 7) == 3, 'Option<NonZeroU32> is a u32'
+ok('packed, aligned, transparent and niche-optimised types')
+
+var values = ffi.alloc(ffi.i32, 4)
+for i, v in [5, 10, 15, 20] {
+  values.set(i, v)
+}
+assert rs.rs_sum_slice({ ptr: values, len: 4 }) == 50, 'a slice as a pointer and a length'
+var Slice = ffi.slice(ffi.i32)
+assert Slice.fields().map(@(f) => f.name) == ['ptr', 'len'], 'ffi.slice() builds the same shape'
+var text = 'héllo'.to_bytes()
+assert rs.rs_count_chars(text, text.length()) == 5, 'UTF-8 bytes and a length'
+ok('slices')
+
+# Enums.
+
+assert rs.rs_apply('Add', 3, 4) == 7, 'a fieldless enum by variant name'
+assert rs.rs_apply(2, 3, 4) == 12, 'or by discriminant'
+assert rs.rs_apply('Neg', 5, 0) == -5, 'a discriminant computed from another'
+assert api.type('Op').constants() == { Add: 1, Mul: 2, Neg: 4 }, 'the constants'
+
+assert rs.rs_area({ variant: 'Rect', w: 2, h: 3 }) == 6, 'repr(C) enum with fields'
+assert rs.rs_area({ variant: 'Circle', radius: 2 }) == 12, 'another variant'
+assert rs.rs_area('Empty') == 0, 'a unit variant by name'
+assert rs.rs_make_shape(1, 2) == { variant: 'Rect', w: 2, h: 4 }, 'returned as a dictionary'
+assert rs.rs_make_shape(9, 0) == { variant: 'Empty' }, 'a unit variant comes back'
+
+assert rs.rs_token_value({ variant: 'Number', '0': -99 }) == -99, 'repr(u8) enum, tuple variant'
+assert rs.rs_token_value('Plus') == -1, 'repr(u8) unit variant'
+assert rs.rs_token_value({ variant: 'Word', len: 4, upper: true }) == 40, 'repr(u8) struct variant'
+assert rs.rs_make_word(3, false) == { variant: 'Word', len: 3, upper: false }, 'repr(u8) returned'
+assert api.type('Token').variants() == { Number: 0, Plus: 1, Word: 2 }, 'variants and discriminants'
+
+e = caught(@() => rs.rs_area({ variant: 'Triangle' }))
+assert e and e.type == 'ValueError', 'an unknown variant is refused'
+e = caught(@() => rs.rs_area({ variant: 'Rect', depth: 1 }))
+assert e and e.type == 'TypeError', 'an unknown field is refused'
+ok('enums with and without fields, in both layouts')
+
+# Callbacks and function pointers.
+
+var data = ffi.alloc(ffi.f64, 3)
+for i, v in [1, 2, 3] {
+  data.set(i, v)
+}
+assert rs.rs_fold(data, 3, @(acc, v) => acc * 10 + v, 0) == 123, 'extern "C" fn callback'
+assert rs.rs_maybe_call(nil, 5) == -1, 'Option<extern "C" fn> takes nil'
+assert rs.rs_maybe_call(@(x) => x + 1, 5) == 6, 'and a function'
+e = caught(@() => rs.rs_fold(data, 3, nil, 0))
+assert e and e.type == 'TypeError', 'a plain fn pointer is never null'
+ok('callbacks')
+
+# Ownership.
+
+var counter = rs.rs_counter_new(10).own(rs.rs_counter_free)
+assert rs.rs_counter_bump(counter) == 11 and rs.rs_counter_bump(counter) == 12,
+  'a Box handed out and used'
+counter.free()
+e = caught(@() => rs.rs_counter_bump(counter))
+assert e and e.type == 'PointerError', 'a freed box cannot be passed again'
+e = caught(@() => counter.type().size())
+assert e and e.message.contains('repr(C)'), 'a type without repr(C) is only usable behind a pointer'
+
+var greeting = rs.rs_greet('zuri').own(rs.rs_string_free)
+assert greeting.read_string() == 'hello, zuri', 'a CString handed out'
+greeting.free()
+assert rs.rs_version_text() == 'ffirust 0.1', '*const c_char comes back as a string'
+ok('boxes and strings handed out and given back')
+
+assert rs.RS_VERSION.get() == 7, 'a static'
+assert rs.rs_bump_counter() == 1, 'a static mut changes'
+assert rs.RS_COUNTER.get() == 1, 'and reads through its pointer'
+ok('statics')
+
+# Declarations that are refused.
+
+e = caught(@() => ffi.declare_rust('pub extern "C" fn unexported(x: i32) -> i32 { x }'))
+assert e and e.type == 'DeclarationError' and e.message.contains('no_mangle'),
+  'a mangled name cannot be bound'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(s: &str) {}'))
+assert e and e.message.contains('&str'), '&str is not FFI-safe'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(v: Vec<u8>) {}'))
+assert e and e.message.contains('stable layout'), 'Vec has no stable layout'
+var no_repr = 'pub enum E { A, B }\n#[no_mangle] pub extern "C" fn f(e: E) {}'
+e = caught(@() => ffi.declare_rust(no_repr))
+assert e and e.message.contains('#[repr'), 'an enum needs a repr'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(x: i32 {}'))
+assert e and e.line == 1 and e.column > 0, 'syntax errors carry a position'
+ok('what cannot cross is refused with a reason')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

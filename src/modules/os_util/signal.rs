@@ -15,7 +15,7 @@
 use std::{
   io::{Write, stderr, stdout},
   process,
-  sync::atomic::{AtomicBool, Ordering},
+  sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 #[cfg(windows)]
@@ -95,10 +95,49 @@ pub fn pending_hint_addr() -> usize {
 /// for the poll.
 static ARMED: AtomicBool = AtomicBool::new(false);
 
-/// Whether any signal handler has been installed yet.
+/// Whether any signal handler has been installed yet, or any ffi
+/// callback that another thread may call.
 #[inline]
 pub fn armed() -> bool {
   ARMED.load(Ordering::Relaxed)
+}
+
+/// Arms the back-edge polls for ffi callbacks, which reach a VM through
+/// the same safepoint a signal does.
+pub fn arm_async() {
+  ARMED.store(true, Ordering::SeqCst);
+}
+
+/// Callback calls posted to some VM's ffi inbox and not yet answered.
+/// While any are, the hint stays set, whichever VM's safepoint looks.
+static ASYNC_PENDING: AtomicUsize = AtomicUsize::new(0);
+
+/// Records a posted callback call and raises the hint for it.
+pub fn start_async() {
+  ASYNC_PENDING.fetch_add(1, Ordering::SeqCst);
+  PENDING_HINT.store(true, Ordering::SeqCst);
+}
+
+/// Records that a posted call was answered or abandoned.
+pub fn finish_async() {
+  ASYNC_PENDING.fetch_sub(1, Ordering::SeqCst);
+}
+
+/// Clears the hint unless something is still waiting behind it.
+///
+/// Cleared first and set again after looking, for the reason
+/// `take_pending` gives: the only harmful outcome is a hint left clear
+/// with work behind it, and this order cannot produce one.
+pub fn settle_hint() {
+  if !PENDING_HINT.load(Ordering::Relaxed) {
+    return;
+  }
+
+  PENDING_HINT.store(false, Ordering::SeqCst);
+
+  if any_pending() || ASYNC_PENDING.load(Ordering::SeqCst) > 0 {
+    PENDING_HINT.store(true, Ordering::SeqCst);
+  }
 }
 
 /// Cheap fast-path check for the per-instruction safepoint: is
@@ -122,6 +161,12 @@ pub fn take_pending() -> Option<usize> {
   // hint cleared out from under it, which compiled code would never
   // look at again.
   PENDING_HINT.store(false, Ordering::SeqCst);
+
+  // An ffi callback call posted for any VM keeps the hint up until it
+  // is answered.
+  if ASYNC_PENDING.load(Ordering::SeqCst) > 0 {
+    PENDING_HINT.store(true, Ordering::SeqCst);
+  }
 
   for (idx, flag) in PENDING.iter().enumerate() {
     if flag.swap(false, Ordering::SeqCst) {

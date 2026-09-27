@@ -1,0 +1,359 @@
+/**
+ * ffi_declare.zu
+ *
+ * Test suite for reading declarations, with no library involved: C
+ * type specifiers and declarators, records and enums, constant
+ * expressions, the preprocessor subset, attributes, errors and their
+ * positions, sets of declarations that include each other, and the Rust
+ * reader's own edge cases.
+ */
+
+import ffi
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+def kind_of(api, name) {
+  return api.functions().get(name).signature()
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi declarations: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+# Specifiers and declarators.
+
+var api = ffi.declare('
+  unsigned u;
+  long long int lli;
+  short int si;
+  signed s;
+  unsigned char uc;
+  long double ld;
+  const volatile int cv;
+  char *strings[4];
+  int (*handlers[2])(int, char **);
+  void (*signal_like(int sig, void (*handler)(int)))(int);
+  int matrix[3][4];
+  const char *const *table;
+')
+
+var vars = api.variables()
+assert vars.u.name() == 'unsigned int', 'unsigned alone is unsigned int'
+assert vars.lli.equals(ffi.longlong), 'long long int'
+assert vars.si.equals(ffi.short), 'short int'
+assert vars.s.equals(ffi.int), 'signed alone is int'
+assert vars.uc.equals(ffi.uchar), 'unsigned char'
+assert vars.ld.equals(ffi.longdouble), 'long double'
+assert vars.cv.is_const(), 'const survives beside volatile'
+assert vars.strings.kind() == 'array' and vars.strings.length() == 4, 'an array of pointers'
+assert vars.strings.target().target().equals(ffi.char), 'of char'
+assert vars.handlers.target().kind() == 'function pointer', 'an array of function pointers'
+assert vars.handlers.target().signature().params.length() == 2, 'with their parameters'
+assert vars.matrix.size() == 48 and vars.matrix.target().length() == 4, 'a two-dimensional array'
+assert !vars.table.is_const(), 'the outer pointer is not const'
+assert vars.table.target().is_const() and vars.table.target().target().is_const(),
+  'const at two levels'
+
+var signal_like = api.functions().signal_like.signature()
+assert signal_like.returns.kind() == 'function pointer', 'a function returning a function pointer'
+assert signal_like.params[1].kind() == 'function pointer', 'taking one'
+ok('specifier combinations and declarators, however nested')
+
+# Records.
+
+api = ffi.declare('
+  struct node;
+  typedef struct node node_t;
+  struct node { int value; node_t *next; struct node *prev; };
+  typedef struct { struct { int x, y; } origin; union { int id; char tag[8]; }; } shape;
+  struct outer { struct inner { char c; } first; struct inner second; };
+')
+
+var node = api.type('struct node')
+assert node.size() == 24, 'a record defined after it was declared'
+assert api.type('node_t').equals(node), 'the typedef names the same record'
+assert api.type('struct node').fields()[1].type.target().equals(node), 'a record pointing at itself'
+var shape = api.type('shape')
+assert shape.offset_of('origin') == 0 and shape.offset_of('id') == 8, 'nested and anonymous members'
+assert shape.has_field('tag'), 'an anonymous member flattens into the record'
+assert api.type('struct inner').size() == 1, 'a tag declared inside another record'
+assert api.type('struct outer').size() == 2, 'and used again'
+ok('records: forward declarations, self-reference, nesting, anonymous members')
+
+var e = caught(@() => ffi.declare('struct a { int x; }; struct a { int y; };'))
+assert e and e.type == 'DeclarationError' and e.message.contains('already defined'),
+  'a record is defined once'
+
+e = caught(@() => ffi.declare('struct opaque; struct opaque value;').variables().value.size())
+assert e and e.message.contains('never defined'), 'an incomplete record has no size'
+ok('record redefinition and incomplete records')
+
+# Enums and constant expressions.
+
+api = ffi.declare('
+  enum flags {
+    A = 1 << 0, B = 1 << 3, C = A | B,
+    D = sizeof(long long) * 2, E = \'x\', F = (char)300, G
+  };
+  enum big { HUGE = 0x100000000 };
+  enum __attribute__((packed)) tiny { T0, T1 };
+  enum fixed : unsigned short { F0 = 65535 };
+  typedef enum { NEG = -5, POS = 5 } signed_enum;
+  _Static_assert(C == 9, "constants are known where they are declared");
+')
+
+var flags = api.type('enum flags')
+assert flags.constants() == { A: 1, B: 8, C: 9, D: 16, E: 120, F: 44, G: 45 },
+  'constant expressions'
+assert flags.size() == 4, 'an enum is an int'
+if ffi.platform().os == 'windows' {
+  assert api.type('enum big').size() == 4, 'MSVC makes every enum an int'
+  assert api.constant('HUGE') == 0, 'and truncates a constant that does not fit'
+} else {
+  assert api.type('enum big').size() == 8, 'an enum whose values need 64 bits'
+  assert api.constant('HUGE') == 4294967296, 'large constants'
+  assert api.type('enum tiny').size() == 1, 'a packed enum takes the smallest type'
+}
+assert api.type('enum fixed').size() == 2, 'a fixed underlying type'
+assert api.type('signed_enum').value('NEG') == -5, 'negative constants'
+e = caught(@() => ffi.declare('_Static_assert(sizeof(int) == 8, "ints are wide");'))
+assert e and e.message.contains('ints are wide'), 'a failing static assertion is an error'
+ok('enums, constant expressions and static assertions')
+
+# The preprocessor.
+
+api = ffi.declare('
+  #include <stdint.h>
+  #include <stdio.h>
+  #define WIDTH 4
+  #define HEIGHT (WIDTH * 2)
+  #define LABEL "zu" "ri"
+  #define HEX 0x1Fu
+  #define OCTAL 017
+  #define SCALE 2.5f
+  #define EMPTY
+  #define TWICE(x) ((x) * 2)
+  #define API_CALL
+  #if WIDTH > 3 && defined(HEIGHT)
+    int grid[WIDTH][HEIGHT];
+  #elif 1
+    int never;
+  #endif
+  #ifndef MISSING
+    #ifdef WIDTH
+      int nested;
+    #else
+      int nope;
+    #endif
+  #endif
+  #if __has_include(<windows.h>) || __has_attribute(unused)
+    int has_things;
+  #endif
+  #undef WIDTH
+  #ifdef WIDTH
+    int undefined_still;
+  #endif
+  API_CALL int calls(FILE *stream) EMPTY;
+')
+
+vars = api.variables()
+assert vars.grid.size() == 4 * 8 * 4, 'macros expand inside declarations and #if'
+assert vars.contains('nested') and !vars.contains('never') and !vars.contains('nope'),
+  'nested conditionals'
+assert !vars.contains('has_things'), '__has_ queries answer no'
+assert !vars.contains('undefined_still'), '#undef removes a macro'
+assert api.constant('LABEL') == 'zuri', 'adjacent strings join'
+assert api.constant('HEX') == 31 and api.constant('OCTAL') == 15, 'integer suffixes and bases'
+assert api.constant('SCALE') == 2.5, 'float constants'
+assert api.constant('HEIGHT') == 8, 'a macro built from another'
+assert !api.constants().contains('WIDTH'), 'an undefined macro is no longer a constant'
+assert api.functions().contains('calls'), 'empty macros vanish'
+assert api.type('FILE').kind() == 'struct', '<stdio.h> declares FILE'
+ok('#define, #if and relatives, #undef and standard headers')
+
+e = caught(@() => ffi.declare('#include "local.h"'))
+assert e and e.message.contains('local.h') and e.line == 1, 'including a file is refused'
+e = caught(@() => ffi.declare('#define SQUARE(x) ((x) * (x))\nint a[SQUARE(2)];'))
+assert e and e.message.contains('function-like') and e.line == 2,
+  'a function-like macro cannot expand'
+e = caught(@() => ffi.declare('#if 1\n#error stop here\n#endif'))
+assert e and e.message.contains('stop here') and e.line == 2, '#error is an error'
+e = caught(@() => ffi.declare('#if 1\nint a;'))
+assert e and e.message.contains('#endif'), 'an unclosed #if'
+ok('what the preprocessor refuses')
+
+var packed = ffi.declare('
+  #pragma pack(push, 2)
+  struct two { char c; int i; };
+  #pragma pack(pop)
+  struct natural { char c; int i; };
+  #pragma pack(1)
+  struct one { char c; double d; };
+  #pragma pack()
+')
+assert packed.type('struct two').size() == 6, '#pragma pack(push, 2)'
+assert packed.type('struct natural').size() == 8, '#pragma pack(pop) restores the default'
+assert packed.type('struct one').size() == 9, '#pragma pack(1)'
+ok('#pragma pack applies where it is written')
+
+# Attributes and names.
+
+api = ffi.declare('
+  __attribute__((visibility("default"))) int visible(void);
+  int renamed(void) __asm__("real_symbol");
+  __declspec(dllimport) int imported(int) ;
+  struct __attribute__((aligned(32))) wide { char c; };
+  struct member_aligned { char c; __attribute__((aligned(8))) char d; };
+  int [[deprecated]] modern(int x);
+  static inline int helper(int x) { return x * 2; }
+  _Noreturn void stop(void);
+  const char *text(void);
+  char *buffer(void);
+  const unsigned char *bytes_back(void);
+')
+
+var functions = api.functions()
+assert functions.contains('visible') and functions.contains('imported'), 'attributes are read past'
+assert functions.contains('modern'), 'a C23 attribute is read past'
+assert !functions.contains('helper'), 'an inline function with a body is not bound'
+assert api.type('struct wide').size() == 32, 'aligned on a record'
+assert api.type('struct member_aligned').offset_of('d') == 8, 'aligned on a member'
+assert functions.text.signature().returns.kind() == 'string', 'const char * comes back as a string'
+assert functions.buffer.signature().returns.kind() == 'pointer', 'char * comes back as a pointer'
+assert functions.bytes_back.signature().returns.kind() == 'pointer',
+  'unsigned char * stays a pointer'
+ok('attributes, asm labels and text returns')
+
+# Errors carry positions.
+
+e = caught(@() => ffi.declare('int ok;\nmystery_t value;'))
+assert e and e.type == 'DeclarationError' and e.message.contains('mystery_t'),
+  'an unknown type name'
+assert e.line == 2 and e.column == 1, 'with its position'
+e = caught(@() => ffi.declare('int a\nint b;'))
+assert e and e.line == 2, 'a missing semicolon'
+e = caught(@() => ffi.declare('int x = 5;'))
+assert e and e.message.contains('initializer'), 'an initializer'
+e = caught(@() => ffi.declare('_Thread_local int t;'))
+assert e and e.message.contains('thread-local'), 'a thread-local variable'
+e = caught(@() => ffi.declare('struct { int a : 40; } s;'))
+assert e and e.message.contains('40 bits'), 'a bitfield wider than its type'
+e = caught(@() => ffi.declare('void v[3];'))
+assert e and e.message.contains('array'), 'an array of void'
+e = caught(@() => ffi.declare('int f(void) \'unterminated'))
+assert e and e.type == 'DeclarationError', 'a broken literal'
+ok('errors name the problem and where it is')
+
+# Sets of declarations.
+
+var common = ffi.declare('typedef struct { int x, y; } point;')
+var shapes = ffi.declarations().include(common).declare('typedef struct { point a, b; } line;')
+assert shapes.type('line').size() == 16, 'an included set supplies types'
+assert shapes.type('point *').target().equals(common.type('point')), 'the very same type'
+e = caught(@() => common.include(shapes))
+assert e and e.type == 'ValueError', 'a set cannot include itself through another'
+var grown = ffi.declare('typedef int meters;').declare('meters distance;')
+assert grown.variables().distance.name() == 'meters', 'later sources see earlier ones'
+ok('including one set in another, and growing a set')
+
+assert ffi.type('unsigned long').equals(ffi.ulong), 'ffi.type() reads built-in names'
+assert ffi.type('int (*)(const void *, const void *)').kind() == 'function pointer',
+  'abstract declarators'
+assert ffi.type('char[16]').size() == 16, 'arrays'
+e = caught(@() => ffi.type('point'))
+assert e and e.type == 'DeclarationError', 'only built-in names without a set'
+ok('type names on their own')
+
+# The Rust reader.
+
+var rs = ffi.declare_rust('
+  use core::ffi::c_int;
+
+  pub const BASE: u32 = 1 << 4;
+  pub const SIZE: usize = core::mem::size_of::<Pair>() * 2;
+
+  #[repr(C)]
+  pub struct Pair(pub i32, pub i32);
+
+  #[repr(C)]
+  pub struct Holder<> { pub pair: Pair, pub numbers: [u16; BASE as usize], pub flag: bool }
+
+  pub type Handler = Option<unsafe extern "C" fn(*mut Holder, c_int) -> c_int>;
+  pub type Alias = Handler;
+
+  #[cfg(any(unix, windows))]
+  #[repr(C)]
+  pub struct Everywhere { pub v: u8 }
+
+  #[cfg(all(unix, not(unix)))]
+  pub struct Nowhere { pub v: u8 }
+
+  unsafe extern "C" {
+    #[link_name = "printf"]
+    pub fn print(format: *const core::ffi::c_char, ...) -> c_int;
+    pub safe fn plain(x: i8) -> u8;
+    pub static mut GLOBAL: *mut Holder;
+    type Opaque;
+    pub fn take(o: *mut Opaque);
+  }
+
+  impl Pair {
+    pub fn sum(&self) -> i32 { self.0 + self.1 }
+  }
+
+  macro_rules! ignored { () => {} }
+')
+
+assert rs.constant('BASE') == 16, 'a const expression'
+assert rs.constant('SIZE') == 16, 'size_of in a const'
+assert rs.type('Pair').fields().map(@(f) => f.name) == ['0', '1'],
+  'a tuple struct names fields by position'
+assert rs.type('Holder').size() == 44, 'arrays sized by a constant, padded to the record alignment'
+assert rs.type('Alias').kind() == 'function pointer', 'aliases of aliases'
+assert rs.types().contains('Everywhere') and !rs.types().contains('Nowhere'), '#[cfg] predicates'
+assert rs.functions().print.signature().variadic, 'a variadic extern function'
+assert rs.variables().contains('GLOBAL'), 'an extern static'
+e = caught(@() => rs.type('Opaque').size())
+assert e and e.message.contains('extern type'), 'an extern type has no size'
+ok('the Rust reader: consts, tuple structs, aliases, cfg, extern blocks')
+
+e = caught(@() => ffi.declare_rust('#[repr(C)] pub struct G<T> { v: T }'))
+assert e and e.message.contains('generic'), 'a generic repr(C) type is refused'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(t: (i32, i32)) {}'))
+assert e and e.message.contains('tuple'), 'a tuple has no C layout'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(o: Option<i32>) {}'))
+assert e and e.message.contains('Option<'), 'an Option without a niche'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(d: &dyn Fn()) {}'))
+assert e and e.message.contains('trait object'), 'a trait object'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "C" fn f(x: Unknown) {}'))
+assert e and e.message.contains('Unknown'), 'an unknown type'
+e = caught(@() => ffi.declare_rust('#[no_mangle] pub extern "Rust" fn f() {}'))
+assert e and e.message.contains('Rust'), 'the Rust ABI'
+ok('what the Rust reader refuses')
+
+var mixed = ffi.declare_rust('#[repr(C)] pub struct Shared { pub a: u32 }')
+  .declare('uint32_t read_shared(const Shared *s);')
+assert mixed.functions().read_shared.signature().params[0].target().name() == 'const Shared',
+  'C sees Rust types'
+ok('C and Rust in one set')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

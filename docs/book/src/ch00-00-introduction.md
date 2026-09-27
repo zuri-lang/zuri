@@ -109,6 +109,9 @@ debug a program that is doing something you did not expect.
 **The capstone**, Chapter 25. One application, built in seven steps, using
 almost everything the book has covered.
 
+**Interoperability**, Chapter 26. Calling C and Rust libraries, and being
+called back by them.
+
 **Appendices.** Keywords, operators and precedence, decorated methods,
 built-in functions, every method on every built-in type, the standard
 library index, the error hierarchy, and the notes for readers arriving from

@@ -397,6 +397,15 @@ pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
     }
   }
 
+  // Callbacks another thread called, posted to this VM's ffi inbox.
+  if vm.async_armed && vm.ffi_calls_waiting() {
+    if let Err(e) = crate::modules::ffi_util::callback::service_at_safepoint(vm) {
+      return fail(vm, e);
+    }
+  }
+
+  crate::modules::os_util::signal::settle_hint();
+
   OK
 }
 

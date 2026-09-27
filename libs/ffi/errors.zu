@@ -1,0 +1,168 @@
+/**
+ * @module errors
+ *
+ * Every error the `ffi` module raises, under one root.
+ *
+ * `FfiError` is that root, and each subclass names the stage that
+ * failed: finding a library, finding a symbol in it, reading a
+ * declaration, touching memory, running a callback, or linking a static
+ * library. A value that cannot be converted to the C type it is headed
+ * for is a `TypeError` or `RangeError` from the prelude instead, the
+ * same errors any other function raises for a bad argument, and the
+ * message names the parameter and the type.
+ *
+ * ```zuri,ignore
+ * catch {
+ *   var sqlite = ffi.open('sqlite3')
+ * } as error {
+ *   if instance_of(error, ffi.LoadError) {
+ *     echo 'SQLite is not installed: ${error.message}'
+ *   }
+ * }
+ * ```
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+/**
+ * Base class for every error this module raises.
+ *
+ * Catch this to catch anything `ffi` itself can do. Raised directly for
+ * a type that cannot be used the way it was asked to be: a record with
+ * no size passed by value, a signature libffi cannot call.
+ *
+ * @printable
+ */
+class FfiError < Error {
+  /**
+   * @param string message
+   * @constructor
+   */
+  @new(message) {
+    parent(message)
+  }
+
+  to_string() {
+    return '<${typeof(self)}: ${self.message}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * A library could not be found or loaded.
+ *
+ * The message carries the loader's own explanation when it gave one:
+ * a missing dependency, a library built for another architecture, a
+ * file that is not a library at all. Also raised when a function is
+ * called after its library was closed.
+ *
+ * @printable
+ */
+class LoadError < FfiError {}
+
+/**
+ * A library does not export a symbol that was asked for.
+ *
+ * Raised by `Library.function()`, `Library.variable()` and by binding
+ * declarations, which lists every name it could not find in one error.
+ *
+ * @printable
+ */
+class SymbolError < FfiError {}
+
+/**
+ * C or Rust source handed to a declaration could not be read.
+ *
+ * `line` and `column` are both 1-based and point at the token the reader
+ * stopped at, counted within the source string that was passed in.
+ *
+ * ```zuri,ignore
+ * catch {
+ *   ffi.declare('int add(int a, int b)')
+ * } as error {
+ *   echo '${error.message} at ${error.line}:${error.column}'
+ * }
+ * ```
+ *
+ * @property number line The 1-based line the problem is on.
+ * @property number column The 1-based column within that line.
+ * @printable
+ */
+class DeclarationError < FfiError {
+  /**
+   * The 1-based line the reader stopped at.
+   * @type number
+   */
+  var line = 0
+
+  /**
+   * The 1-based column within that line.
+   * @type number
+   */
+  var column = 0
+
+  /**
+   * @param string message
+   * @param number|nil line
+   * @param number|nil column
+   * @constructor
+   */
+  @new(message, line, column) {
+    parent(message)
+
+    self.line = line or 0
+    self.column = column or 0
+  }
+
+  to_string() {
+    return '<DeclarationError at ${self.line}:${self.column}: ${self.message}>'
+  }
+}
+
+/**
+ * Memory was touched in a way that would have been undefined in C.
+ *
+ * Reading or writing through a null pointer, past the end of a block
+ * the module allocated or was told the size of, through memory that
+ * has already been freed, freeing twice, or freeing memory this program
+ * does not own. The access is refused before it happens, so nothing has
+ * been corrupted when this is raised.
+ *
+ * @printable
+ */
+class PointerError < FfiError {}
+
+/**
+ * A callback could not be created, or was used after its release.
+ *
+ * An error raised by the Zuri function behind a callback is not wrapped
+ * in this. It is raised again, as it was, once the C code that called
+ * the callback returns.
+ *
+ * @printable
+ */
+class CallbackError < FfiError {}
+
+/**
+ * A static library could not be linked into a loadable one.
+ *
+ * The message includes the linker's own output.
+ *
+ * @printable
+ */
+class LinkError < FfiError {}
+
+_ffi.install({
+  FfiError,
+  LoadError,
+  SymbolError,
+  DeclarationError,
+  PointerError,
+  CallbackError,
+  LinkError,
+})

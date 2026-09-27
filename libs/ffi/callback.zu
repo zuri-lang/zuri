@@ -1,0 +1,84 @@
+/**
+ * @module callback
+ *
+ * Zuri functions that C can call.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import .errors { FfiError }
+
+/**
+ * A Zuri function behind a C function pointer, made by `ffi.callback()`.
+ *
+ * A callback lives until `release()`. Nothing else frees it, because
+ * nothing can know when the C library has finished with the pointer; a
+ * callback that is never released is kept for the life of the program,
+ * and so is the function behind it.
+ *
+ * A Zuri function passed straight to a function-pointer parameter needs
+ * none of this: it becomes a callback for the length of that one call.
+ * Make one explicitly when C keeps the pointer past the call.
+ *
+ * @printable
+ */
+class Callback {
+  var _handle
+
+  @new() {
+    raise FfiError('callbacks come from ffi.callback(), never from the Callback constructor')
+  }
+
+  /**
+   * The C function pointer, typed with the callback's signature.
+   *
+   * @returns Pointer
+   * @throws CallbackError when the callback has been released.
+   */
+  pointer() {
+    return _ffi.callback_pointer(self._handle)
+  }
+
+  /**
+   * The callback's type: a pointer to its function type.
+   *
+   * @returns Type
+   */
+  type() {
+    return _ffi.callback_type(self._handle)
+  }
+
+  /**
+   * Frees the callback's code and lets go of its function.
+   *
+   * C must not call the pointer again. Passing the callback to a foreign
+   * function after this raises `CallbackError`; a call C still makes
+   * through a pointer it kept is undefined, exactly as a call through
+   * any freed function pointer is. Releasing twice does nothing.
+   */
+  release() {
+    _ffi.callback_release(self._handle)
+  }
+
+  /**
+   * Whether `release()` has been called.
+   *
+   * @returns bool
+   */
+  is_released() {
+    return _ffi.callback_is_released(self._handle)
+  }
+
+  to_string() {
+    var state = self.is_released() ? ' (released)' : ''
+    return '<Callback ${self.type().name()}${state}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+_ffi.install({ Callback })

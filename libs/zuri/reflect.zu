@@ -4,7 +4,7 @@
  * Runtime introspection: metadata about a live function, class,
  * or module, and property/method access on an instance or module
  * by name, without needing to already know that name at compile
- * time.
+ * time. It also runs the garbage collector on demand.
  *
  * This is deliberately a RUNTIME-only view. It does not know a
  * function/class's declaration line or its doc block; those live
@@ -294,4 +294,32 @@ def get_decorator(object, name) {
   }
 
   raise NotImplementedError("class ${typeof(object)} does not implement decorator '${name}'")
+}
+
+/**
+ * Runs a full garbage collection now, instead of waiting for the
+ * heap to cross its threshold.
+ *
+ * Every object nothing reaches is freed before this returns, and
+ * anything that releases a resource when collected releases it:
+ * an owned `ffi` pointer's destructor runs, for one.
+ *
+ * A program never needs this to stay correct; the collector runs
+ * on its own as the program allocates. It is for the moments the
+ * timing matters: releasing native resources at a known point, or
+ * a test that checks what collection does. A full collection
+ * visits every live object, so calling it in a loop is slow.
+ *
+ * ```zuri
+ * import zuri
+ *
+ * var scratch = [1, 2, 3]
+ * scratch = nil
+ * zuri.reflect.gc()
+ * ```
+ *
+ * @returns nil
+ */
+def gc() {
+  _zuri_reflect.gc()
 }

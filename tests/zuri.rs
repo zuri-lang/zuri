@@ -13,8 +13,9 @@
 
 use std::fs;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 fn run_fixture(zu_path_str: &str) {
@@ -109,14 +110,31 @@ const OUTPUT_GRACE: Duration = Duration::from_secs(5);
 /// fixture itself.
 fn run_zuri(zu_path_str: &str) -> (ExitStatus, String) {
   let (mut output, writer) = std::io::pipe().expect("failed to create the output pipe");
-  let mut child = Command::new(env!("CARGO_BIN_EXE_zuri"))
+  let mut command = Command::new(env!("CARGO_BIN_EXE_zuri"));
+  command
     .arg("run")
     .arg(zu_path_str)
     .stdin(Stdio::null())
     .stdout(writer.try_clone().expect("failed to share the output pipe"))
-    .stderr(writer)
+    .stderr(writer);
+
+  for fixture in wanted_fixtures(zu_path_str) {
+    match fixture.as_str() {
+      "ffi" => {
+        command.env("ZURI_FFI_FIXTURES", ffi_fixtures());
+      },
+      other => panic!("{zu_path_str}: unknown @fixture '{other}'"),
+    }
+  }
+
+  let mut child = command
     .spawn()
     .unwrap_or_else(|e| panic!("failed to run zuri on {zu_path_str}: {e}"));
+
+  // The command still holds this process's copies of the pipe's write
+  // end, and the collector below only finishes once every copy is
+  // closed.
+  drop(command);
 
   // Drained on its own thread, since a fixture that fills the pipe
   // would otherwise block on its next write while this one waits for
@@ -174,6 +192,192 @@ fn run_zuri(zu_path_str: &str) -> (ExitStatus, String) {
   }
 
   (status, text)
+}
+
+/// The fixtures a test asks for with `# @fixture: name` lines in its
+/// header: things built once per run and handed to it through the
+/// environment.
+fn wanted_fixtures(zu_path_str: &str) -> Vec<String> {
+  const HEADER_LINES: usize = 80;
+
+  let Ok(source) = fs::read_to_string(zu_path_str) else {
+    return Vec::new();
+  };
+
+  source
+    .lines()
+    .take(HEADER_LINES)
+    .filter_map(|line| line.trim().strip_prefix("# @fixture:"))
+    .map(|name| name.trim().to_string())
+    .collect()
+}
+
+/// The directory holding the libraries the ffi suites call into, built
+/// by the first test that needs them and shared by the rest.
+///
+/// Four libraries, named the way `ffi.open()` finds them by bare name:
+/// the C fixture as a shared library and as a static one, and the Rust
+/// fixture crate as a `cdylib` and a `staticlib`.
+fn ffi_fixtures() -> PathBuf {
+  static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+
+  match BUILT.get_or_init(build_ffi_fixtures) {
+    Ok(dir) => dir.clone(),
+    Err(e) => panic!("the ffi fixtures could not be built:\n{e}"),
+  }
+}
+
+fn build_ffi_fixtures() -> Result<PathBuf, String> {
+  let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+  let source_dir = manifest.join("tests").join("libs").join("ffi_fixture");
+  let out = Path::new(env!("CARGO_BIN_EXE_zuri"))
+    .parent()
+    .expect("the binary lives in a directory")
+    .join("ffi-fixtures");
+
+  fs::create_dir_all(&out).map_err(|e| format!("cannot create {}: {e}", out.display()))?;
+
+  build_c_fixture(&source_dir, &out)?;
+  build_rust_fixture(&source_dir.join("rust"), &out)?;
+
+  Ok(out)
+}
+
+fn c_build(source_dir: &Path, out: &Path) -> cc::Build {
+  let mut build = cc::Build::new();
+  build
+    .file(source_dir.join("fixture.c"))
+    .include(source_dir)
+    .target(env!("ZURI_BUILD_TARGET"))
+    .host(env!("ZURI_BUILD_HOST"))
+    .opt_level(1)
+    .debug(false)
+    .out_dir(out)
+    .cargo_metadata(false)
+    .cargo_warnings(false)
+    .warnings(false);
+
+  if build.get_compiler().is_like_msvc() {
+    build.flag("/std:c11");
+  } else {
+    build.flag("-std=gnu11");
+  }
+
+  build
+}
+
+fn build_c_fixture(source_dir: &Path, out: &Path) -> Result<(), String> {
+  // The static library, for `ffi.link()`.
+  c_build(source_dir, out)
+    .try_compile("ffifixture")
+    .map_err(|e| format!("compiling the C fixture as a static library: {e}"))?;
+
+  // The shared library, linked by the same compiler driver.
+  let compiler = c_build(source_dir, out)
+    .try_get_compiler()
+    .map_err(|e| format!("finding a C compiler: {e}"))?;
+  let mut command = compiler.to_command();
+  let source = source_dir.join("fixture.c");
+
+  if compiler.is_like_msvc() {
+    // The DLL's import library is named the way cargo names a cdylib's,
+    // so it leaves the static `ffifixture.lib` alone.
+    command
+      .arg("/LD")
+      .arg("/MD")
+      .arg(&source)
+      .arg(format!("/Fe:{}", out.join("ffifixture.dll").display()))
+      .arg(format!("/Fo:{}\\", out.display()))
+      .arg("/link")
+      .arg(format!(
+        "/IMPLIB:{}",
+        out.join("ffifixture.dll.lib").display()
+      ));
+  } else if cfg!(target_vendor = "apple") {
+    command
+      .arg("-dynamiclib")
+      .arg("-fPIC")
+      .arg(&source)
+      .arg("-o")
+      .arg(out.join("libffifixture.dylib"));
+  } else {
+    command
+      .arg("-shared")
+      .arg("-fPIC")
+      .arg(&source)
+      .arg("-o")
+      .arg(out.join("libffifixture.so"))
+      .arg("-lpthread");
+  }
+
+  run_build(command, "linking the C fixture as a shared library")
+}
+
+fn build_rust_fixture(crate_dir: &Path, out: &Path) -> Result<(), String> {
+  let cargo = std::env::var("CARGO")
+    .ok()
+    .or_else(|| option_env!("CARGO").map(str::to_string))
+    .unwrap_or_else(|| "cargo".to_string());
+  let target_dir = out.join("rust");
+
+  let mut command = Command::new(cargo);
+  command
+    .arg("build")
+    .arg("--quiet")
+    .arg("--manifest-path")
+    .arg(crate_dir.join("Cargo.toml"))
+    .arg("--target-dir")
+    .arg(&target_dir)
+    .env_remove("CARGO_TARGET_DIR")
+    .env_remove("RUSTFLAGS")
+    .env_remove("CARGO_ENCODED_RUSTFLAGS");
+
+  // A cross-compiled suite loads the fixture into a binary built for
+  // another target, so the crate is built for that target too.
+  let target = env!("ZURI_BUILD_TARGET");
+  let cross = target != env!("ZURI_BUILD_HOST");
+  if cross {
+    command.arg("--target").arg(target);
+  }
+
+  run_build(command, "building the Rust fixture crate")?;
+
+  let built = if cross {
+    target_dir.join(target).join("debug")
+  } else {
+    target_dir.join("debug")
+  };
+  let artifacts: &[&str] = if cfg!(windows) {
+    &["ffirust.dll", "ffirust.lib"]
+  } else if cfg!(target_vendor = "apple") {
+    &["libffirust.dylib", "libffirust.a"]
+  } else {
+    &["libffirust.so", "libffirust.a"]
+  };
+
+  for name in artifacts {
+    fs::copy(built.join(name), out.join(name)).map_err(|e| format!("copying {name}: {e}"))?;
+  }
+
+  Ok(())
+}
+
+fn run_build(mut command: Command, what: &str) -> Result<(), String> {
+  let shown = format!("{command:?}");
+  let output = command
+    .output()
+    .map_err(|e| format!("{what}: cannot run {shown}: {e}"))?;
+
+  if !output.status.success() {
+    return Err(format!(
+      "{what} failed ({}):\n{}\n{}",
+      output.status,
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    ));
+  }
+
+  Ok(())
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]

@@ -1,0 +1,20 @@
+# The Rust library the ffi suites call into, built as a shared and a
+# static library. A workspace of its own, so the runtime's workspace
+# never tries to build it.
+[package]
+name = "ffirust"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib"]
+
+[workspace]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

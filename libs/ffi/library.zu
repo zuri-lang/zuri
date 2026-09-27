@@ -1,0 +1,224 @@
+/**
+ * @module library
+ *
+ * A loaded shared library, and binding what it exports.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import .errors { FfiError }
+import .declare { Declarations }
+
+/**
+ * A shared library loaded into the process, or the process itself.
+ *
+ * Libraries come from `ffi.open()` and `ffi.link()`. Functions are bound
+ * from one either one at a time with `function()`, or in bulk from
+ * declarations with `declare()`, `declare_rust()` and `bind()`.
+ *
+ * A library stays loaded while anything bound from it is still
+ * reachable, even after `close()`: closing only stops further use.
+ *
+ * @printable
+ */
+class Library {
+  var _handle
+
+  @new() {
+    raise FfiError('libraries come from ffi.open(), never from the Library constructor')
+  }
+
+  /**
+   * The path the library was loaded from, as the loader was given it, or
+   * `nil` for the running process.
+   *
+   * @returns string|nil
+   */
+  path() {
+    return _ffi.lib_path(self._handle)
+  }
+
+  /**
+   * Stops the library being used. Every function bound from it raises
+   * `LoadError` when called from now on. The code is unloaded once
+   * nothing refers to the library any longer.
+   */
+  close() {
+    _ffi.lib_close(self._handle)
+  }
+
+  /**
+   * Whether `close()` has been called.
+   *
+   * @returns bool
+   */
+  is_closed() {
+    return _ffi.lib_is_closed(self._handle)
+  }
+
+  /**
+   * Binds one function by name and signature, returning it as a Zuri
+   * function.
+   *
+   * ```zuri,ignore
+   * var strlen = libc.function('strlen', ffi.size_t, [ffi.string])
+   * echo strlen('hello')
+   * ```
+   *
+   * For a variadic function, `params` lists only the fixed parameters.
+   * Each extra argument travels as the type its value suggests: an
+   * integral number that fits an `int` as `int`, a larger one as
+   * `long long`, any other number as `double`, a bool as `int`, a string
+   * as `const char *`, and a pointer, bytes or `nil` as `void *`. Give
+   * any other type with `Type.of()`.
+   *
+   * On glibc, `name@VERSION` binds that version of a versioned symbol.
+   *
+   * @param string name
+   * @param Type returns
+   * @param list params The parameter types.
+   * @param dict|nil options `variadic` (default `false`) and `abi`, the
+   *   calling convention: `'default'`, or on x86-64 `'win64'` or
+   *   `'sysv64'`.
+   * @returns function
+   * @throws SymbolError when the library does not export `name`.
+   * @throws FfiError when libffi cannot call the signature.
+   */
+  function(name: string, returns, params: list, options) {
+    options = options or {}
+
+    var type = _ffi.function_type(
+      returns,
+      params,
+      options.get('variadic', false),
+      options.get('abi', nil),
+    )
+
+    return _ffi.lib_function(self._handle, name, type)
+  }
+
+  /**
+   * A pointer to a global variable the library exports, typed as the
+   * variable, so `get()` reads it and `set()` writes it.
+   *
+   * @param string name
+   * @param Type type
+   * @returns Pointer
+   * @throws SymbolError when the library does not export `name`.
+   */
+  variable(name: string, type) {
+    return _ffi.lib_variable(self._handle, name, type)
+  }
+
+  /**
+   * The address of an exported symbol, or `nil` when there is none.
+   *
+   * @param string name
+   * @param Type|nil type The type to give the pointer.
+   * @returns Pointer|nil
+   */
+  symbol(name: string, type) {
+    return _ffi.lib_symbol(self._handle, name, type)
+  }
+
+  /**
+   * Whether the library exports `name`.
+   *
+   * @param string name
+   * @returns bool
+   */
+  has(name: string) {
+    return _ffi.lib_symbol(self._handle, name, nil) != nil
+  }
+
+  /**
+   * Reads C declarations and binds them to this library in one step,
+   * returning the namespace `Declarations.bind()` does.
+   *
+   * ```zuri,ignore
+   * var c = libc.declare('
+   *   size_t strlen(const char *s);
+   *   int abs(int n);
+   * ')
+   *
+   * echo c.strlen('hello')
+   * ```
+   *
+   * @param string source
+   * @param dict|nil options `allow_missing` as for `bind()`, and
+   *   `include`, a list of `Declarations` whose types the source may use.
+   * @returns module
+   * @throws DeclarationError when the source cannot be read.
+   * @throws SymbolError when a declared function or variable is missing.
+   */
+  declare(source: string, options) {
+    return self._declare(source, false, options)
+  }
+
+  /**
+   * Reads Rust declarations and binds them to this library in one step.
+   *
+   * ```zuri,ignore
+   * var geometry = ffi.open('geometry').declare_rust('
+   *   #[repr(C)]
+   *   pub struct Point { pub x: f64, pub y: f64 }
+   *
+   *   #[no_mangle]
+   *   pub extern "C" fn distance(a: Point, b: Point) -> f64 { 0.0 }
+   * ')
+   * ```
+   *
+   * @param string source
+   * @param dict|nil options As for `declare()`.
+   * @returns module
+   * @throws DeclarationError when the source cannot be read.
+   * @throws SymbolError when a declared function or variable is missing.
+   */
+  declare_rust(source: string, options) {
+    return self._declare(source, true, options)
+  }
+
+  /**
+   * Binds everything `declarations` holds to this library; the same as
+   * `declarations.bind(library, options)`.
+   *
+   * @param Declarations declarations
+   * @param dict|nil options As for `Declarations.bind()`.
+   * @returns module
+   */
+  bind(declarations, options) {
+    return declarations.bind(self, options)
+  }
+
+  _declare(source, rust, options) {
+    options = options or {}
+
+    var declarations = _ffi.declarations()
+
+    for other in options.get('include', []) {
+      declarations.include(other)
+    }
+
+    if rust {
+      declarations.declare_rust(source)
+    } else {
+      declarations.declare(source)
+    }
+
+    return declarations.bind(self, options)
+  }
+
+  to_string() {
+    var where = self.path() or 'the running process'
+    var state = self.is_closed() ? ' (closed)' : ''
+    return '<Library ${where}${state}>'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+_ffi.install({ Library })

@@ -162,6 +162,7 @@ Already here:
 - [x] **Database & ORM**, so that persisting a record never means reaching
       outside the language.
 - [x] **A test runner.**
+- [x] **C and Rust compatible FFI interop.**
 
 On the way, in the order it matters:
 
@@ -172,7 +173,6 @@ On the way, in the order it matters:
       public and private organizations to share Zuri packages whichever way 
       they like.
 - [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
-- [ ] **C and Rust compatible FFI interop.**
 
 ## AI Involvement
 

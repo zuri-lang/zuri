@@ -1,0 +1,341 @@
+/**
+ * ffi_calls.zu
+ *
+ * Test suite for calling C through the `ffi` module: every scalar type,
+ * records of each shape the calling conventions treat differently,
+ * arguments that spill to the stack, variadic functions, 128-bit and
+ * complex values, explicit calling conventions, enums, and function
+ * pointers handed back by C. Layouts are checked against the table the
+ * C compiler produced for the same header.
+ */
+# @fixture: ffi
+
+import ffi
+import os
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# Catches whatever `fn` raises and hands it back for inspection.
+def caught(fn) {
+  catch {
+    fn()
+  } as e {
+    return e
+  }
+
+  return nil
+}
+
+def near(a, b) {
+  return (a - b).abs() < 1e-9
+}
+
+echo '═══════════════════════════════════════════════════════'
+echo '  ffi calls: test suite'
+echo '═══════════════════════════════════════════════════════'
+
+var fixtures = os.get_env('ZURI_FFI_FIXTURES')
+assert fixtures, 'ZURI_FFI_FIXTURES names the directory the fixture libraries were built into'
+
+var header_path = os.join_paths(os.dir_name(__file__), 'ffi_fixture', 'fixture.h')
+var header = file(header_path).read()
+
+var lib = ffi.open('ffifixture', { paths: [fixtures] })
+var api = ffi.declare(header)
+var fx = api.bind(lib)
+
+# Layouts agree with the C compiler.
+
+var Layout = api.type('struct fx_layout')
+var layouts = lib.variable('fx_layouts', Layout)
+var checked = 0
+
+iter var i = 0; true; i++ {
+  var entry = layouts.add(i)
+  var name = entry.get_field('name')
+
+  if !name {
+    break
+  }
+
+  var type = api.type(name.read_string())
+  assert type.size() == entry.get_field('size'),
+    '${type.name()} is ${entry.get_field("size")} bytes to the compiler, ${type.size()} here'
+  assert type.align() == entry.get_field('align'),
+    '${type.name()} aligns to ${entry.get_field("align")} for the compiler, ${type.align()} here'
+  checked++
+}
+
+assert checked > 20, 'every layout in the table was checked'
+ok('sizes and alignments match the C compiler for ${checked} types')
+
+var Offset = api.type('struct fx_offset')
+var offsets = lib.variable('fx_offsets', Offset)
+checked = 0
+
+iter var i = 0; true; i++ {
+  var entry = offsets.add(i)
+  var type_name = entry.get_field('type')
+
+  if !type_name {
+    break
+  }
+
+  var type = api.type(type_name.read_string())
+  var field = entry.get_field('field').read_string()
+  assert type.offset_of(field) == entry.get_field('offset'),
+    '${type.name()}.${field} sits at ${entry.get_field("offset")} for the compiler'
+  checked++
+}
+
+assert checked > 10, 'every offset in the table was checked'
+ok('member offsets match the C compiler, #pragma pack and _Alignas included')
+
+# Scalars.
+
+assert fx.fx_i8(-128) == -127, 'int8_t crosses both ways'
+assert fx.fx_u8(254) == 255, 'uint8_t crosses both ways'
+assert fx.fx_i16(-32768) == -32767, 'int16_t crosses both ways'
+assert fx.fx_u16(65534) == 65535, 'uint16_t crosses both ways'
+assert fx.fx_i32(-5) == -4, 'int32_t crosses both ways'
+assert fx.fx_u32(4294967294) == 4294967295, 'uint32_t reaches its maximum'
+assert fx.fx_i64(-9007199254740991) == -9007199254740990,
+  'int64_t within the exact range is a number'
+ok('fixed-width integers cross both ways')
+
+var big = fx.fx_u64(18446744073709551614n)
+assert is_bigint(big) and big == 18446744073709551615n,
+  'uint64_t beyond 2^53 comes back as a bigint'
+assert fx.fx_i64(9007199254740992n) == 9007199254740993n,
+  'int64_t beyond 2^53 takes and returns a bigint'
+assert is_number(fx.fx_u64(41)), 'a small uint64_t is still a number'
+ok('64-bit integers past 2^53 travel as bigints')
+
+assert fx.fx_f32(1.25) == 2.5, 'float crosses both ways'
+assert fx.fx_f64(0.1) == 0.2, 'double crosses both ways'
+assert fx.fx_not(true) == false and fx.fx_not(false) == true, 'bool crosses as a bool'
+assert fx.fx_upper('a') == 'A'.ord(), 'a one-character string passes as a char'
+assert fx.fx_upper(98) == 66, 'a number passes as a char'
+assert fx.fx_wide_next('A') == 66, 'wchar_t takes a one-character string'
+assert fx.fx_long(0) == -1, 'long crosses both ways'
+assert fx.fx_double_size(21) == 42, 'size_t crosses both ways'
+ok('floating point, bool, character and platform integer types')
+
+assert fx.fx_long_double(1.5) == 3, 'long double crosses both ways'
+assert fx.fx_long_double(1e-310) == 2e-310, 'a subnormal long double rounds back exactly'
+assert fx.fx_long_double(-0.0) == 0, 'negative zero survives'
+ok('long double converts through its wider format')
+
+var total = fx.fx_many(1, 0.5, 2, 0.5, 3, 0.5, 4, 0.5, 5, 0.5, 6, 0.5, 7, 0.5, 8, 0.5)
+assert total == 40, 'sixteen mixed arguments, past every register, arrive in order'
+ok('arguments beyond the registers spill to the stack correctly')
+
+# Range and type checking.
+
+var e = caught(@() => fx.fx_u8(256))
+assert e and e.type == 'RangeError', '256 does not fit uint8_t'
+assert e.message.contains('fx_u8() argument 1'), 'the error names the function and argument'
+
+e = caught(@() => fx.fx_i8(1.5))
+assert e and e.type == 'TypeError', 'a fraction is not an integer'
+
+e = caught(@() => fx.fx_i32('7'))
+assert e and e.type == 'TypeError', 'a string is not an int'
+
+e = caught(@() => fx.fx_not(1))
+assert e and e.type == 'TypeError', 'a number is not a bool'
+
+e = caught(@() => fx.fx_u64(-1))
+assert e and e.type == 'RangeError', 'a negative number does not fit an unsigned type'
+
+e = caught(@() => fx.fx_i32(1, 2))
+assert e and e.type == 'ArgumentError', 'the argument count is checked'
+ok('values that do not fit are refused, naming the argument')
+
+# Records by value.
+
+assert fx.fx_pair_make(3, 4) == { a: 3, b: 4 }, 'two ints come back as a dictionary'
+assert fx.fx_pair_sum({ a: 3, b: 4 }) == 7, 'two ints go in as a dictionary'
+assert fx.fx_pair_sum({ a: 3 }) == 3, 'a member left out is zero'
+assert fx.fx_small_sum(fx.fx_small_make(2, 300)) == 302, 'char and short pack into one register'
+assert fx.fx_three_sum(fx.fx_three_make(1, 2, 3)) == 6, 'a three-byte struct'
+ok('small integer records')
+
+var v2 = fx.fx_vec2_scale({ x: 1.5, y: -2 }, 2)
+assert v2 == { x: 3, y: -4 }, 'two floats share a vector register'
+var v3 = fx.fx_vec3_scale({ x: 1, y: 2, z: 3 }, 0.5)
+assert v3 == { x: 0.5, y: 1, z: 1.5 }, 'three floats span two eightbytes'
+var q = fx.fx_quad_scale({ v: [1, 2, 3, 4] }, 3)
+assert q.v == [3, 6, 9, 12], 'an array of four floats is a homogeneous aggregate'
+var p = fx.fx_point_add({ x: 1, y: 2 }, { x: 10, y: 20 })
+assert p == { x: 11, y: 22 }, 'two doubles'
+ok('floating-point records')
+
+assert near(fx.fx_mixed_sum(fx.fx_mixed_make(2, 0.5)), 2.5), 'an int and a float share an eightbyte'
+assert near(fx.fx_tail_sum(fx.fx_tail_make(1.25, 3)), 4.25), 'a double then an int'
+assert fx.fx_large_sum(fx.fx_large_make(10)) == 46, 'thirty-two bytes travel in memory'
+var label = fx.fx_label_make('zuri')
+assert label.text == 'zuri', 'a char array member reads as the string in it'
+assert fx.fx_label_length({ text: 'abcdef' }) == 6, 'a string fills a char array member'
+assert fx.fx_box_area(fx.fx_box_make(0, 0, 3, 4)) == 12, 'nested records'
+ok('mixed, large and nested records')
+
+assert fx.fx_packed_sum(fx.fx_packed_make(1, 1000)) == 1001,
+  '#pragma pack(1) record, misaligned member'
+assert fx.fx_attr_packed_sum(fx.fx_attr_packed_make(2, 2000)) == 2002, 'packed attribute record'
+assert fx.fx_overaligned_sum(fx.fx_overaligned_make(7, 70)) == 77, 'an over-aligned member'
+assert fx.fx_pair16_after_int(3, { lo: 4, hi: 5 }) == 4053,
+  'a sixteen-byte aligned record after an int'
+ok('packed and over-aligned records match the compiler')
+
+var bits = fx.fx_bits_make(1, 5, -7, 4000, true)
+assert bits == { ready: 1, mode: 5, delta: -7, count: 4000, flag: true }, 'bitfields read back'
+assert fx.fx_bits_encode(bits) == 1 + 50 - 700 + 40000000 + 100000000, 'bitfields go back in'
+e = caught(@() => fx.fx_bits_encode({ mode: 8 }))
+assert e and e.type == 'RangeError', 'a value wider than its bitfield is refused'
+ok('bitfields, signed and unsigned, across a zero-width break')
+
+var u = fx.fx_union_from_int(1065353216)
+assert u.i == 1065353216 and u.f == 1, 'a union reads back as every member'
+assert fx.fx_union_as_float({ f: 2.5 }) == 2.5, 'a union goes in as one member'
+assert fx.fx_wide_as_double(fx.fx_wide_from_double(6.25)) == 6.25,
+  'a union of a double and a long long'
+e = caught(@() => fx.fx_union_as_float({ f: 1, i: 2 }))
+assert e and e.type == 'TypeError', 'a union holds one member at a time'
+var tagged = fx.fx_tagged_real(2.75)
+assert tagged.kind == 2 and tagged.real == 2.75, 'anonymous union members read as the record own'
+assert fx.fx_tagged_value({ kind: 2, real: 9.5 }) == 9.5, 'anonymous union members go in by name'
+ok('unions, including anonymous members')
+
+assert fx.fx_stack_pairs(1, 1, 1, 1, 1, 1, { a: 1, b: 2 }, { a: 3, b: 4 }) == 432106,
+  'records after the registers run out'
+assert fx.fx_stack_points(1, 1, 1, 1, 1, 1, 1, { x: 1, y: 2 }, { x: 3, y: 4 }) == 432107,
+  'floating-point records after the vector registers run out'
+ok('records spilled to the stack')
+
+# Variadic functions.
+
+assert fx.fx_sum_ints(3, 10, 20, 30) == 60, 'untyped integers pass as int'
+assert fx.fx_sum_doubles(2, 1.5, 2.25) == 3.75, 'untyped fractions pass as double'
+assert fx.fx_sum_doubles(2, ffi.double.of(1), ffi.float.of(2)) == 3,
+  'typed arguments, float promoted'
+var buffer = ffi.alloc(ffi.char, 64)
+var n = fx.fx_format(buffer, 64, '%s=%d (%.1f) %c %lld', 'answer', 42, 2.5, ffi.char.of(90),
+  ffi.longlong.of(1234567890123))
+assert buffer.read_string() == 'answer=42 (2.5) Z 1234567890123', 'every kind of variadic argument'
+assert n == 31, 'the return value comes back'
+e = caught(@() => fx.fx_sum_ints())
+assert e and e.type == 'ArgumentError', 'the fixed arguments are still required'
+ok('variadic calls, inferred and typed')
+
+# Extended types.
+
+var platform = ffi.platform()
+
+if platform.complex {
+  var product = fx.fx_complex_mul([1, 2], [3, 4])
+  assert product == [-5, 10], 'double _Complex by value'
+  var conj = fx.fx_complex_conj([1.5, 2])
+  assert conj == [1.5, -2], 'float _Complex by value'
+
+  var a = 170141183460469231731687303715884105000n
+  assert fx.fx_i128_add(a, 27n) == 170141183460469231731687303715884105027n, '__int128 by value'
+  assert fx.fx_i128_add(-5, 3) == -2, 'a small __int128 is a number'
+  var product128 = fx.fx_u128_mul(18446744073709551615n, 18446744073709551615n)
+  assert product128 == 340282366920938463426481119284349108225n, 'unsigned __int128 by value'
+  e = caught(@() => fx.fx_i128_add(2n ** 127n, 0))
+  assert e and e.type == 'RangeError', '2^127 does not fit __int128'
+
+  # Each of these puts an __int128 where a register pair would start on
+  # an odd register, or past the last one.
+  var big = 2n ** 100n
+  assert fx.fx_i128_after_int(7, big) == big + 7n, '__int128 after an int'
+  assert fx.fx_i128_late(1, 2, 3, 4, 5, 6, 7, big) == big * 10n + 28n,
+    '__int128 after seven ints'
+  var via = fx.fx_i128_via(@(n, v) => v + n.to_bigint(), 5, big)
+  assert via == big + 6n, '__int128 after an int, through a callback'
+  ok('__int128 and _Complex by value')
+}
+
+if platform.arch == 'x86_64' and platform.os != 'windows' {
+  assert fx.fx_win64_sum(1, 2, 3, 4, 5, 6) == 91, 'a Microsoft x64 function called from System V'
+  var direct = lib.function('fx_win64_sum', ffi.int,
+    [ffi.int, ffi.int, ffi.int, ffi.int, ffi.int, ffi.int], { abi: 'win64' })
+  assert direct(6, 5, 4, 3, 2, 1) == 56, 'the win64 convention chosen by hand'
+
+  # Microsoft x64 returns a 128-bit integer in xmm0, and passes one by
+  # reference; six arguments put two of them on the stack.
+  var wide = 2n ** 100n
+  assert fx.fx_win64_i128(1, wide, 2, 3, 4, -wide) == wide + 4321n,
+    'an __int128 from a win64 function'
+  var wide_type = ffi.function_type(ffi.i128,
+    [ffi.int, ffi.i128, ffi.int, ffi.int, ffi.int, ffi.i128], { abi: 'win64' })
+  var widened = ffi.callback(@(a, b, c, d, e, f) {
+    return b + f + (a + 10 * c + 100 * d + 1000 * e).to_bigint()
+  }, wide_type)
+  assert fx.fx_win64_i128_via(widened, wide) == wide * 2n + 4322n,
+    'an __int128 returned from a win64 callback'
+  widened.release()
+  ok('an explicit calling convention')
+}
+
+# Enums and function pointers.
+
+assert fx.fx_next_color(0) == 5, 'an enum is a number'
+assert fx.fx_next_color('FX_GREEN') == api.constant('FX_BLUE'), 'an enum takes a constant name'
+assert fx.fx_flip_size('FX_SMALL') == 100, 'an enum with a negative constant'
+e = caught(@() => fx.fx_next_color('FX_PURPLE'))
+assert e and e.type == 'ValueError', 'an unknown constant name is refused'
+ok('enums')
+
+var add = fx.fx_operation(0)
+var mul = fx.fx_operation(1)
+assert ffi.is_foreign(add), 'a returned function pointer is a foreign function'
+assert add(2, 3) == 5 and mul(2, 3) == 6, 'function pointers from C are callable'
+assert fx.fx_operation(9) == nil, 'a null function pointer is nil'
+var unary = ffi.function_type(ffi.int, [ffi.int])
+var twice = lib.function('fx_apply', ffi.int, [unary.pointer(), ffi.int])
+assert twice(@(x) => x * 3, 4) == 12, 'a Zuri function passes where a function pointer is expected'
+ok('function pointers handed back by C')
+
+# Process symbols, errno and globals.
+
+var process = ffi.open()
+assert process.path() == nil, 'the running process has no path'
+assert process.has('malloc'), 'the C runtime is visible through the process'
+
+# A library is opened local to itself unless asked otherwise; opening it
+# again as global makes its symbols part of the process's.
+ffi.open('ffifixture', { paths: [fixtures], global: true })
+assert process.has('fx_add'), 'a global library is visible through the process'
+
+assert fx.fx_fail_with(34) == -1, 'the call returns'
+assert ffi.errno() == 34, 'errno is captured right after the call'
+fx.fx_i32(1)
+assert ffi.errno() == 0, 'errno is cleared before every call'
+
+if platform.os == 'windows' {
+  fx.fx_set_last_error(1234)
+  assert ffi.last_error() == 1234, 'GetLastError is captured too'
+}
+
+ok('the process, errno and last error')
+
+assert fx.fx_counter.get() == 0, 'a global reads through its pointer'
+fx.fx_bump()
+fx.fx_bump()
+assert fx.fx_counter.get() == 2, 'the pointer sees C change the global'
+fx.fx_counter.set(0, 40)
+assert fx.fx_bump() == 41, 'writing through the pointer changes the global C sees'
+assert fx.fx_label_text.get().read_string() == 'fixture label', 'a global pointer to text'
+ok('global variables')
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} assertions passed.'
+echo '═══════════════════════════════════════════════════════'

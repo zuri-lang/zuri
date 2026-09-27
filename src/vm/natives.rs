@@ -17,7 +17,6 @@ pub fn install(vm: &mut VM) {
   register(vm, "file", 1, true, file);
   register(vm, "instance_of", 2, false, instance_of);
   register(vm, "typeof", 1, false, typeof_fn);
-  // register(vm, "gc", 0, false, gc);
 
   register(vm, "delprop", 2, false, delprop);
   register(vm, "getprop", 2, false, getprop);
@@ -589,16 +588,4 @@ fn is_object(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn is_string(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   Ok(Value::bool(ctx.args[0].is_string()))
-}
-
-/// Force an immediate mark-and-sweep collection, bypassing the usual
-/// allocation-threshold heuristic. Mainly useful for exercising or
-/// benchmarking the collector directly from a script; set the
-/// ZURI_GC_LOG environment variable before running to see what each
-/// collection actually freed.
-#[allow(unused)]
-fn gc(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_arg_count!(ctx, 0);
-  ctx.vm.collect_garbage();
-  Ok(Value::nil())
 }

@@ -14,6 +14,8 @@ mod compress;
 mod compress_util;
 mod crypto;
 mod date;
+mod ffi;
+pub(crate) mod ffi_util;
 mod hash;
 mod imagine;
 mod io;
@@ -58,6 +60,7 @@ pub static REGISTRY: &[BuiltinModuleDef] = &[
   json::MODULE,
   base64::MODULE,
   date::MODULE,
+  ffi::MODULE,
   sqlite::MODULE,
   r#struct::MODULE,
   compress::MODULE,

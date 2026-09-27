@@ -86,6 +86,11 @@ var GROUPS = [
     modules: ['mail'],
   },
   {
+    title: 'Interoperability',
+    blurb: 'Calling C and Rust libraries, being called back by them, and linking static ones.',
+    modules: ['ffi'],
+  },
+  {
     title: 'The Language Itself',
     blurb: 'Types, reflection, and the compiler Zuri is written with.',
     modules: ['types', 'enum', 'convert', 'zuri'],

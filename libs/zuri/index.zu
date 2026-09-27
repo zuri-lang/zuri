@@ -12,9 +12,9 @@
  *   every comment and doc block preserved in place; see {zuri.ast}.
  * - `compile(source)` returns `source`'s compiled VM instructions;
  *   see {zuri.compile}.
- * - `zuri.reflect` inspects live functions, classes and modules, and
- *   reads or updates an instance's own properties; see
- *   {zuri.reflect}.
+ * - `zuri.reflect` inspects live functions, classes and modules,
+ *   reads or updates an instance's own properties, and runs the
+ *   garbage collector on demand; see {zuri.reflect}.
  *
  * The ordinary starting point in practice is a real file on
  * disk, not a source string already sitting in a variable, so

@@ -1,0 +1,407 @@
+/**
+ * @module pointer
+ *
+ * Addresses in native memory, and reading and writing through them.
+ *
+ * A `Pointer` is an address with, optionally, the type of what it points
+ * at. The type is what `get()`, `set()` and the field methods read and
+ * write, and the unit `add()` steps by; `read()` and `write()` take a
+ * type of their own and work on any pointer.
+ *
+ * Memory this module allocated knows its own extent, and every access
+ * through a pointer into it is checked against that extent and against
+ * the memory having been freed. A pointer C handed back carries no
+ * extent, so only a null pointer is caught; reading past what the C
+ * library says is there is as undefined as it is in C.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import .errors { FfiError }
+
+/**
+ * An address in native memory.
+ *
+ * Pointers come from `ffi.alloc()` and its siblings, from functions that
+ * return one, and from reading a pointer out of memory. A null pointer
+ * returned from C arrives as `nil` instead, so `if ptr` is how a program
+ * checks for one.
+ *
+ * Memory from `ffi.alloc()` is freed when the last pointer into it is
+ * collected. Keep a pointer reachable for as long as C code holds the
+ * address.
+ *
+ * @printable
+ */
+class Pointer {
+  var _handle
+
+  @new() {
+    raise FfiError('pointers come from the ffi module, never from the Pointer constructor')
+  }
+
+  /**
+   * The address, as a number, or as a bigint where it is too large for
+   * a number to hold exactly.
+   *
+   * @returns number|bigint
+   */
+  address() {
+    return _ffi.ptr_address(self._handle)
+  }
+
+  /**
+   * Whether the address is zero. A null pointer only exists as the
+   * result of arithmetic or `ffi.at(0)`; C returning one gives `nil`.
+   *
+   * @returns bool
+   */
+  is_null() {
+    return _ffi.ptr_is_null(self._handle)
+  }
+
+  /**
+   * The type of what the pointer points at, or `nil` for an untyped
+   * pointer such as `ffi.alloc_bytes()` returns.
+   *
+   * @returns Type|nil
+   */
+  type() {
+    return _ffi.ptr_type(self._handle)
+  }
+
+  /**
+   * The same address, pointing at `type` instead. Bounds and ownership
+   * carry over. Pass `nil` for an untyped pointer.
+   *
+   * @param Type|nil type
+   * @returns Pointer
+   */
+  cast(type) {
+    return _ffi.ptr_cast(self._handle, type)
+  }
+
+  /**
+   * The pointer `bytes` further on, negative for back. Keeps the type.
+   *
+   * @param number bytes
+   * @returns Pointer
+   */
+  offset(bytes) {
+    return _ffi.ptr_offset(self._handle, bytes)
+  }
+
+  /**
+   * The pointer `count` elements further on, as C's `ptr + count` is.
+   *
+   * @param number count Negative steps back.
+   * @returns Pointer
+   * @throws TypeError when the pointer has no element type, or its
+   *   element type has no size.
+   */
+  add(count) {
+    return _ffi.ptr_add(self._handle, count)
+  }
+
+  /**
+   * How many bytes are known to be addressable from here to the end of
+   * the block, or `nil` when the extent is unknown, as it is for any
+   * pointer C handed back.
+   *
+   * @returns number|nil
+   */
+  size() {
+    return _ffi.ptr_size(self._handle)
+  }
+
+  /**
+   * Reads a value of `type` at `offset` bytes from the pointer.
+   *
+   * ```zuri,ignore
+   * var header = ffi.alloc_bytes(16)
+   * var magic = header.read(ffi.uint32)
+   * var length = header.read(ffi.uint64, 8)
+   * ```
+   *
+   * @param Type type
+   * @param number|nil offset Defaults to 0.
+   * @returns any
+   * @throws PointerError when the pointer is null, the memory is freed,
+   *   or the read runs outside a known block.
+   */
+  read(type, offset) {
+    return _ffi.ptr_read(self._handle, type, offset)
+  }
+
+  /**
+   * Writes `value` as `type` at `offset` bytes from the pointer.
+   *
+   * Nothing is written when the value does not convert, so a failed
+   * write never leaves half a value behind. Writing a record or array
+   * as a whole replaces every member; members the value leaves out keep
+   * what they held.
+   *
+   * @param Type type
+   * @param any value
+   * @param number|nil offset Defaults to 0.
+   * @throws PointerError for the reasons `read()` does.
+   * @throws TypeError when `value` cannot be stored as `type`.
+   * @throws RangeError when a number does not fit `type`.
+   */
+  write(type, value, offset) {
+    _ffi.ptr_write(self._handle, type, value, offset)
+  }
+
+  /**
+   * Reads element `index` of the pointer's type, as C's `ptr[index]`.
+   *
+   * @param number|nil index Defaults to 0.
+   * @returns any
+   * @throws TypeError when the pointer has no element type.
+   * @throws PointerError for the reasons `read()` does.
+   */
+  get(index) {
+    return _ffi.ptr_get(self._handle, index == nil ? 0 : index)
+  }
+
+  /**
+   * Writes element `index` of the pointer's type, as C's
+   * `ptr[index] = value`.
+   *
+   * @param number index
+   * @param any value
+   * @throws TypeError when the pointer has no element type or the value
+   *   does not convert.
+   * @throws PointerError for the reasons `read()` does.
+   */
+  set(index, value) {
+    _ffi.ptr_set(self._handle, index, value)
+  }
+
+  /**
+   * Reads one member of the struct or union the pointer points at, as
+   * C's `ptr->name`. Bitfields read like any other member.
+   *
+   * @param string name
+   * @returns any
+   * @throws TypeError when the pointer does not point at a record.
+   * @throws ValueError when the record has no such member.
+   */
+  get_field(name) {
+    return _ffi.ptr_get_field(self._handle, name)
+  }
+
+  /**
+   * Writes one member of the struct or union the pointer points at, as
+   * C's `ptr->name = value`, leaving the other members alone.
+   *
+   * @param string name
+   * @param any value
+   * @throws TypeError when the pointer does not point at a record, or
+   *   the value does not convert.
+   * @throws ValueError when the record has no such member.
+   * @throws RangeError when a number does not fit, including a bitfield's
+   *   width.
+   */
+  set_field(name, value) {
+    _ffi.ptr_set_field(self._handle, name, value)
+  }
+
+  /**
+   * A pointer to one member, typed as the member, as C's `&ptr->name`.
+   * Reaching into nested records is a chain of these.
+   *
+   * An array member gives a pointer to its first element instead, typed
+   * as the element, as the member itself decays to in C. That is how a
+   * flexible array member's elements are reached.
+   *
+   * @param string name
+   * @returns Pointer
+   * @throws TypeError for a bitfield, which has no address.
+   */
+  field(name) {
+    return _ffi.ptr_field(self._handle, name)
+  }
+
+  /**
+   * Reads text.
+   *
+   * With a `length`, exactly that many code units; without one, up to
+   * the first zero code unit, which must lie within the block when the
+   * block's extent is known.
+   *
+   * @param number|nil length In code units, not bytes.
+   * @param string|nil encoding `'utf-8'` (the default), `'utf-16'`,
+   *   `'utf-32'`, or `'wide'` for `wchar_t`, which is UTF-16 on Windows
+   *   and UTF-32 elsewhere.
+   * @param number|nil offset In bytes. Defaults to 0.
+   * @returns string
+   * @throws ValueError when the text is not valid in its encoding.
+   * @throws PointerError when there is no terminator inside a known block.
+   */
+  read_string(length, encoding, offset) {
+    return _ffi.ptr_read_string(self._handle, length, encoding, offset)
+  }
+
+  /**
+   * Writes `text` and a terminating zero, returning the bytes written.
+   *
+   * @param string text
+   * @param string|nil encoding As for `read_string()`.
+   * @param number|nil offset In bytes. Defaults to 0.
+   * @returns number
+   * @throws PointerError when the text and terminator do not fit a known
+   *   block.
+   */
+  write_string(text, encoding, offset) {
+    return _ffi.ptr_write_string(self._handle, text, encoding, offset)
+  }
+
+  /**
+   * Copies `length` bytes out.
+   *
+   * @param number length
+   * @param number|nil offset Defaults to 0.
+   * @returns bytes
+   */
+  read_bytes(length, offset) {
+    return _ffi.ptr_read_bytes(self._handle, length, offset)
+  }
+
+  /**
+   * Copies `data` in, returning how many bytes were written.
+   *
+   * @param bytes data
+   * @param number|nil offset Defaults to 0.
+   * @returns number
+   */
+  write_bytes(data, offset) {
+    return _ffi.ptr_write_bytes(self._handle, data, offset)
+  }
+
+  /**
+   * Reads `count` elements of the pointer's type into a list.
+   *
+   * @param number count
+   * @returns list
+   */
+  to_list(count) {
+    return _ffi.ptr_to_list(self._handle, count)
+  }
+
+  /**
+   * Copies `length` bytes from `source`, a pointer or bytes, to here.
+   * The two ranges may overlap.
+   *
+   * @param Pointer|bytes source
+   * @param number length
+   */
+  copy_from(source, length) {
+    _ffi.ptr_copy(self._handle, source, length)
+  }
+
+  /**
+   * Sets `length` bytes to `byte`.
+   *
+   * @param number byte 0 to 255.
+   * @param number length
+   */
+  fill(byte, length) {
+    _ffi.ptr_fill(self._handle, byte, length)
+  }
+
+  /**
+   * Compares `length` bytes here with `length` bytes at `other`, as
+   * `memcmp` does: -1, 0 or 1.
+   *
+   * @param Pointer other
+   * @param number length
+   * @returns number
+   */
+  compare(other, length) {
+    return _ffi.ptr_compare(self._handle, other, length)
+  }
+
+  /**
+   * Takes ownership of memory C allocated, so it is released when the
+   * pointer is collected.
+   *
+   * `destructor` is the C function that releases it, taking the address
+   * as its one argument. Leave it out for memory from the C allocator,
+   * which `free` releases. Pointers derived from this one afterwards
+   * share the ownership.
+   *
+   * A destructor run by the collector cannot call back into Zuri: any
+   * callback it calls returns zero to C, or its `error_value`. `free()`
+   * runs the destructor with callbacks working as usual.
+   *
+   * ```zuri,ignore
+   * var text = c.strdup('hello').own()
+   * var db = sqlite.open_handle(path).own(sqlite.sqlite3_close)
+   * ```
+   *
+   * @param function|nil destructor A foreign function of one pointer.
+   * @returns self
+   * @throws PointerError when the pointer is null or already owned.
+   * @throws TypeError when the destructor is not a foreign function of
+   *   one pointer.
+   */
+  own(destructor) {
+    _ffi.ptr_own(self._handle, destructor)
+    return self
+  }
+
+  /**
+   * Releases owned memory now rather than when it is collected: memory
+   * from `ffi.alloc()` or `ffi.malloc()`, or taken over with `own()`.
+   * Every pointer into it refuses access from then on.
+   *
+   * @throws PointerError when the pointer does not own its memory, does
+   *   not point at the start of it, or it has already been freed.
+   */
+  free() {
+    _ffi.ptr_free(self._handle)
+  }
+
+  /**
+   * Whether the memory this pointer owns has been freed.
+   *
+   * @returns bool
+   */
+  is_freed() {
+    return _ffi.ptr_is_freed(self._handle)
+  }
+
+  /**
+   * Whether this pointer owns its memory: it came from `ffi.alloc()` or
+   * `ffi.malloc()`, or `own()` was called on it or a pointer it came
+   * from.
+   *
+   * @returns bool
+   */
+  is_owned() {
+    return _ffi.ptr_is_owned(self._handle)
+  }
+
+  /**
+   * Whether `other` is a pointer to the same address.
+   *
+   * @param any other
+   * @returns bool
+   */
+  equals(other) {
+    return _ffi.ptr_equals(self._handle, other)
+  }
+
+  to_string() {
+    return _ffi.ptr_describe(self._handle)
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+_ffi.install({ Pointer })

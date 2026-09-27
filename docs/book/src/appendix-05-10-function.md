@@ -44,7 +44,9 @@ single parameter.
 3
 ```
 
-A bound method's arity does not count its receiver.
+A method read off an instance counts the instance as its first
+parameter, so a method declaring two parameters reports `3`. A foreign
+function from `ffi` has no receiver and reports its C parameter list.
 
 - **Returns** `number`
 

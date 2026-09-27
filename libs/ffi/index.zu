@@ -1,0 +1,880 @@
+/**
+ * @module ffi
+ *
+ * Calling C and Rust libraries, and being called by them.
+ *
+ * `ffi` loads a shared library, describes the functions in it, and calls
+ * them with ordinary Zuri values. Every conversion across the boundary
+ * is checked against the C type, so a value that does not fit is an
+ * error at the call rather than a corrupted argument inside the library.
+ * The module reads C and Rust declarations as their headers and crates
+ * write them, links static libraries into loadable ones, and turns Zuri
+ * functions into C function pointers.
+ *
+ * ```zuri,ignore
+ * import ffi
+ *
+ * var c = ffi.open(ffi.LIBC).declare('
+ *   size_t strlen(const char *s);
+ *   int abs(int n);
+ * ')
+ *
+ * echo c.strlen('hello')
+ * echo c.abs(-7)
+ * ```
+ *
+ * ### Values at the boundary
+ *
+ * Numbers become any C integer or floating-point type, with integers
+ * range-checked against their type. Integers too large for a number to
+ * hold exactly, 64- and 128-bit ones, travel as bigints both ways. A
+ * string passed to a `char *` becomes a NUL-terminated copy for the
+ * duration of the call; bytes pass their own storage with nothing
+ * copied; a list or dictionary passed to a pointer becomes a temporary
+ * array or struct, written back afterwards unless the pointer is to
+ * `const`. Structs and unions by value are dictionaries. `nil` is a null
+ * pointer, and a null pointer coming back is `nil`.
+ *
+ * ### Memory
+ *
+ * `alloc()` and its siblings hand out memory that knows its own size,
+ * and every access through a pointer into it is bounds-checked and
+ * refused once the memory is freed. Memory C returns can be taken over
+ * with `Pointer.own()`, which releases it with the right function when
+ * the pointer is collected.
+ *
+ * ### Callbacks
+ *
+ * A Zuri function passed to a function-pointer parameter works as a
+ * callback for that call. `callback()` makes one that lasts, for a
+ * library that keeps the pointer. A callback can be called from any
+ * thread: from another thread, the call waits until the isolate that
+ * made the callback runs it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import _ffi
+
+import @.errors { * }
+import @.types { Type, RecordType, StructType, UnionType, EnumType, Typed }
+import @.pointer { Pointer }
+import @.library { Library }
+import @.callback { Callback }
+import @.declare { Declarations }
+
+/**
+ * The C runtime library of this platform, as `open()` takes it:
+ * `libc.so.6` on Linux, the system library on macOS, and the Universal
+ * C Runtime, `ucrtbase.dll`, on Windows.
+ *
+ * @type string
+ */
+var LIBC = _ffi.libc_name()
+
+/**
+ * The C maths library, which on macOS and Windows is the same library
+ * as `LIBC`.
+ *
+ * @type string
+ */
+var LIBM = _ffi.libm_name()
+
+/**
+ * `void`: the return type of a function that returns nothing.
+ * @type Type
+ */
+var void = _ffi.builtin_type('void')
+
+/**
+ * `bool`: C's `_Bool` and Rust's `bool`, one byte; a Zuri bool.
+ * @type Type
+ */
+var bool = _ffi.builtin_type('bool')
+
+/**
+ * `char`: signed on x86-64 and on Apple's Arm platforms, unsigned on
+ * Arm Linux, as the platform's C compiler has it.
+ * @type Type
+ */
+var char = _ffi.builtin_type('char')
+
+/**
+ * `signed char`.
+ * @type Type
+ */
+var schar = _ffi.builtin_type('signed char')
+
+/**
+ * `unsigned char`.
+ * @type Type
+ */
+var uchar = _ffi.builtin_type('unsigned char')
+
+/**
+ * `short`, 16 bits.
+ * @type Type
+ */
+var short = _ffi.builtin_type('short')
+
+/**
+ * `unsigned short`, 16 bits.
+ * @type Type
+ */
+var ushort = _ffi.builtin_type('unsigned short')
+
+/**
+ * `int`, 32 bits.
+ * @type Type
+ */
+var int = _ffi.builtin_type('int')
+
+/**
+ * `unsigned int`, 32 bits.
+ * @type Type
+ */
+var uint = _ffi.builtin_type('unsigned int')
+
+/**
+ * `long`: 64 bits, except on Windows, where it is 32.
+ * @type Type
+ */
+var long = _ffi.builtin_type('long')
+
+/**
+ * `unsigned long`: 64 bits, except on Windows, where it is 32.
+ * @type Type
+ */
+var ulong = _ffi.builtin_type('unsigned long')
+
+/**
+ * `long long`, 64 bits.
+ * @type Type
+ */
+var longlong = _ffi.builtin_type('long long')
+
+/**
+ * `unsigned long long`, 64 bits.
+ * @type Type
+ */
+var ulonglong = _ffi.builtin_type('unsigned long long')
+
+/**
+ * `int8_t`.
+ * @type Type
+ */
+var int8 = _ffi.builtin_type('int8_t')
+
+/**
+ * `uint8_t`.
+ * @type Type
+ */
+var uint8 = _ffi.builtin_type('uint8_t')
+
+/**
+ * `int16_t`.
+ * @type Type
+ */
+var int16 = _ffi.builtin_type('int16_t')
+
+/**
+ * `uint16_t`.
+ * @type Type
+ */
+var uint16 = _ffi.builtin_type('uint16_t')
+
+/**
+ * `int32_t`.
+ * @type Type
+ */
+var int32 = _ffi.builtin_type('int32_t')
+
+/**
+ * `uint32_t`.
+ * @type Type
+ */
+var uint32 = _ffi.builtin_type('uint32_t')
+
+/**
+ * `int64_t`. Values beyond 2^53 in magnitude read back as bigints.
+ * @type Type
+ */
+var int64 = _ffi.builtin_type('int64_t')
+
+/**
+ * `uint64_t`. Values above 2^53 read back as bigints.
+ * @type Type
+ */
+var uint64 = _ffi.builtin_type('uint64_t')
+
+/**
+ * `__int128`, a 128-bit integer; Rust's `i128`.
+ * @type Type
+ */
+var int128 = _ffi.builtin_type('__int128')
+
+/**
+ * `unsigned __int128`; Rust's `u128`.
+ * @type Type
+ */
+var uint128 = _ffi.builtin_type('unsigned __int128')
+
+/**
+ * `size_t`, 64 bits.
+ * @type Type
+ */
+var size_t = _ffi.builtin_type('size_t')
+
+/**
+ * `ssize_t`, 64 bits.
+ * @type Type
+ */
+var ssize_t = _ffi.builtin_type('ssize_t')
+
+/**
+ * `ptrdiff_t`, 64 bits.
+ * @type Type
+ */
+var ptrdiff_t = _ffi.builtin_type('ptrdiff_t')
+
+/**
+ * `intptr_t`, 64 bits.
+ * @type Type
+ */
+var intptr_t = _ffi.builtin_type('intptr_t')
+
+/**
+ * `uintptr_t`, 64 bits.
+ * @type Type
+ */
+var uintptr_t = _ffi.builtin_type('uintptr_t')
+
+/**
+ * `wchar_t`: 16 bits and unsigned on Windows, 32 bits elsewhere.
+ * @type Type
+ */
+var wchar_t = _ffi.builtin_type('wchar_t')
+
+/**
+ * `char16_t`, a UTF-16 code unit.
+ * @type Type
+ */
+var char16_t = _ffi.builtin_type('char16_t')
+
+/**
+ * `char32_t`, a UTF-32 code unit.
+ * @type Type
+ */
+var char32_t = _ffi.builtin_type('char32_t')
+
+/**
+ * `float`, 32 bits.
+ * @type Type
+ */
+var float = _ffi.builtin_type('float')
+
+/**
+ * `double`, 64 bits.
+ * @type Type
+ */
+var double = _ffi.builtin_type('double')
+
+/**
+ * `long double`: 80-bit extended precision on x86-64 Linux and macOS,
+ * 128-bit quad precision on Arm Linux, and the same as `double` on
+ * Windows and Apple's Arm platforms. A Zuri number is a double, so a
+ * wider value is rounded to the nearest double when read.
+ * @type Type
+ */
+var longdouble = _ffi.builtin_type('long double')
+
+/**
+ * `float _Complex`: a list of two numbers, `[real, imaginary]`. Passing
+ * one by value is not available on Windows, whose C compiler has no
+ * `_Complex`; in memory it works everywhere.
+ * @type Type
+ */
+var complex_float = _ffi.builtin_type('float _Complex')
+
+/**
+ * `double _Complex`, as `complex_float` with doubles.
+ * @type Type
+ */
+var complex_double = _ffi.builtin_type('double _Complex')
+
+/**
+ * `void *`, the untyped pointer.
+ * @type Type
+ */
+var ptr = _ffi.builtin_type('void *')
+
+/**
+ * `const char *` that converts to and from a string: a string passed in
+ * becomes a NUL-terminated UTF-8 copy for the call, and a pointer coming
+ * back is read up to its terminator into a string, or is `nil` when
+ * null. Use `pointer(char)` to receive the pointer itself.
+ * @type Type
+ */
+var string = _ffi.builtin_type('string')
+
+/**
+ * `const wchar_t *` that converts to and from a string, as `string` does
+ * in `wchar_t`'s encoding: UTF-16 on Windows and UTF-32 elsewhere.
+ * @type Type
+ */
+var wstring = _ffi.builtin_type('wstring')
+
+/**
+ * Rust's `i8`.
+ * @type Type
+ */
+var i8 = _ffi.builtin_type('i8')
+
+/**
+ * Rust's `u8`.
+ * @type Type
+ */
+var u8 = _ffi.builtin_type('u8')
+
+/**
+ * Rust's `i16`.
+ * @type Type
+ */
+var i16 = _ffi.builtin_type('i16')
+
+/**
+ * Rust's `u16`.
+ * @type Type
+ */
+var u16 = _ffi.builtin_type('u16')
+
+/**
+ * Rust's `i32`.
+ * @type Type
+ */
+var i32 = _ffi.builtin_type('i32')
+
+/**
+ * Rust's `u32`.
+ * @type Type
+ */
+var u32 = _ffi.builtin_type('u32')
+
+/**
+ * Rust's `i64`.
+ * @type Type
+ */
+var i64 = _ffi.builtin_type('i64')
+
+/**
+ * Rust's `u64`.
+ * @type Type
+ */
+var u64 = _ffi.builtin_type('u64')
+
+/**
+ * Rust's `i128`.
+ * @type Type
+ */
+var i128 = _ffi.builtin_type('i128')
+
+/**
+ * Rust's `u128`.
+ * @type Type
+ */
+var u128 = _ffi.builtin_type('u128')
+
+/**
+ * Rust's `isize`.
+ * @type Type
+ */
+var isize = _ffi.builtin_type('isize')
+
+/**
+ * Rust's `usize`.
+ * @type Type
+ */
+var usize = _ffi.builtin_type('usize')
+
+/**
+ * Rust's `f32`.
+ * @type Type
+ */
+var f32 = _ffi.builtin_type('f32')
+
+/**
+ * Rust's `f64`.
+ * @type Type
+ */
+var f64 = _ffi.builtin_type('f64')
+
+/**
+ * Rust's `char`: four bytes holding a Unicode scalar value, which is a
+ * one-character string on the Zuri side.
+ * @type Type
+ */
+var rust_char = _ffi.builtin_type('rust char')
+
+/**
+ * Loads a shared library.
+ *
+ * `name` is a path, a file name, or a bare name the platform's naming
+ * convention completes: `sqlite3` is tried as `libsqlite3.so` and then
+ * as the versioned file the loader's cache lists on Linux,
+ * `libsqlite3.dylib` and `sqlite3.framework` on macOS, and `sqlite3.dll`
+ * on Windows. The directories in `paths` are searched first, then the
+ * platform's own search order.
+ *
+ * With no name, the result is the running process itself, whose symbols
+ * include everything already loaded into it.
+ *
+ * ```zuri,ignore
+ * var libc = ffi.open(ffi.LIBC)
+ * var local = ffi.open('mylib', { paths: ['./build'] })
+ * ```
+ *
+ * @param string|nil name
+ * @param dict|nil options `paths`, a list of directories searched first;
+ *   `lazy`, resolve symbols as they are first used rather than at load
+ *   (default `false`); `global`, make the library's symbols visible to
+ *   libraries loaded after it (default `false`). `lazy` and `global`
+ *   have no effect on Windows.
+ * @returns Library
+ * @throws LoadError when the library cannot be found or loaded.
+ */
+def open(name, options) {
+  options = options or {}
+
+  return _ffi.open(
+    name,
+    options.get('paths', []),
+    options.get('lazy', false),
+    options.get('global', false),
+  )
+}
+
+/**
+ * Where `name` would be loaded from, without loading it, or `nil` when
+ * it cannot be found. Resolves names the same way `open()` does.
+ *
+ * @param string name
+ * @param list|nil paths Directories searched first.
+ * @returns string|nil
+ */
+def find(name: string, paths) {
+  return _ffi.find(name, paths or [])
+}
+
+/**
+ * An empty set of declarations to add C and Rust source to.
+ *
+ * @returns Declarations
+ */
+def declarations() {
+  return _ffi.declarations()
+}
+
+/**
+ * A set of declarations read from C source; the same as
+ * `declarations().declare(source)`.
+ *
+ * @param string source
+ * @returns Declarations
+ * @throws DeclarationError when the source cannot be read.
+ */
+def declare(source: string) {
+  return _ffi.declarations().declare(source)
+}
+
+/**
+ * A set of declarations read from Rust source; the same as
+ * `declarations().declare_rust(source)`.
+ *
+ * @param string source
+ * @returns Declarations
+ * @throws DeclarationError when the source cannot be read.
+ */
+def declare_rust(source: string) {
+  return _ffi.declarations().declare_rust(source)
+}
+
+/**
+ * A new struct type to add members to.
+ *
+ * @param string|nil name The name it prints as.
+ * @returns StructType
+ */
+def struct(name) {
+  return _ffi.record_type(name, false)
+}
+
+/**
+ * A new union type to add members to.
+ *
+ * @param string|nil name The name it prints as.
+ * @returns UnionType
+ */
+def union(name) {
+  return _ffi.record_type(name, true)
+}
+
+/**
+ * A new enum type to add constants to.
+ *
+ * @param string|nil name The name it prints as.
+ * @param Type|nil type The integer type values are stored as. Defaults
+ *   to `int`, which is what C uses.
+ * @returns EnumType
+ */
+def enum(name, type) {
+  return _ffi.enum_type(name, type)
+}
+
+/**
+ * A pointer type.
+ *
+ * @param Type type What it points at; `void` for an untyped pointer.
+ * @param dict|nil options `nonnull`, `true` to refuse `nil` where one is
+ *   passed, as a Rust reference does (default `false`); `text`, an
+ *   encoding (`'utf-8'`, `'utf-16'`, `'utf-32'` or `'wide'`) that makes
+ *   the pointer convert to and from a string the way `ffi.string` does.
+ * @returns Type
+ */
+def pointer(type, options) {
+  return _ffi.pointer_type(type, options)
+}
+
+/**
+ * An array type.
+ *
+ * @param Type type The element type.
+ * @param number|nil length Leave out for an array of unknown length.
+ * @returns Type
+ */
+def array(type, length) {
+  return _ffi.array_type(type, length)
+}
+
+/**
+ * A function type, for callbacks and for calling function pointers.
+ *
+ * ```zuri,ignore
+ * var compare = ffi.function_type(ffi.int, [ffi.ptr, ffi.ptr])
+ * ```
+ *
+ * @param Type returns
+ * @param list params The parameter types.
+ * @param dict|nil options `variadic` (default `false`) and `abi`, as for
+ *   `Library.function()`.
+ * @returns Type
+ */
+def function_type(returns, params: list, options) {
+  options = options or {}
+
+  return _ffi.function_type(
+    returns,
+    params,
+    options.get('variadic', false),
+    options.get('abi', nil),
+  )
+}
+
+/**
+ * The `#[repr(C)]` struct of a pointer and a length that a Rust slice is
+ * passed across the C ABI as: `{ ptr, len }`, with `len` a `usize`
+ * counting elements.
+ *
+ * @param Type type The element type.
+ * @param bool|nil mutable Whether the pointer is `*mut`; defaults to a
+ *   `*const` one.
+ * @returns StructType
+ */
+def slice(type, mutable) {
+  return _ffi.slice_type(type, mutable == true)
+}
+
+/**
+ * A type written as C writes it, using only built-in type names:
+ * `'unsigned long'`, `'const char *'`, `'int[4]'`, `'void (*)(int)'`.
+ * `Declarations.type()` resolves names declared there too.
+ *
+ * @param string spelling
+ * @returns Type
+ * @throws DeclarationError when it does not name a type.
+ */
+def type(spelling: string) {
+  return _ffi.parse_type(spelling, nil)
+}
+
+/**
+ * Zeroed memory for `count` values of `type`, typed as `type`.
+ *
+ * Freed when the last pointer into it is collected, or by
+ * `Pointer.free()`.
+ *
+ * ```zuri,ignore
+ * var numbers = ffi.alloc(ffi.int, 4)
+ * numbers.set(2, 99)
+ * ```
+ *
+ * @param Type type
+ * @param number|nil count Defaults to 1.
+ * @returns Pointer
+ * @throws FfiError when the type has no size.
+ */
+def alloc(type, count) {
+  return _ffi.alloc(type, count == nil ? 1 : count)
+}
+
+/**
+ * `size` zeroed bytes, as an untyped pointer.
+ *
+ * @param number size
+ * @param number|nil align A power of two. Defaults to 16, enough for any
+ *   C type.
+ * @returns Pointer
+ */
+def alloc_bytes(size, align) {
+  return _ffi.alloc_bytes(size, align)
+}
+
+/**
+ * `size` zeroed bytes from the C allocator, as an untyped pointer.
+ *
+ * Unlike `alloc()`, this memory is never freed when the pointer is
+ * collected, because the usual reason to want it is to hand it to C
+ * code that frees it with `free()`. Free it with `Pointer.free()`
+ * otherwise.
+ *
+ * @param number size
+ * @returns Pointer
+ */
+def malloc(size) {
+  return _ffi.malloc(size)
+}
+
+/**
+ * A NUL-terminated copy of `text` in memory that lasts, typed as its
+ * code unit: `char`, `char16_t`, `wchar_t` or `char32_t`.
+ *
+ * Needed where a string must outlive a call: stored in a struct, or
+ * kept by the library.
+ *
+ * @param string text
+ * @param string|nil encoding `'utf-8'` (the default), `'utf-16'`,
+ *   `'utf-32'` or `'wide'`.
+ * @returns Pointer
+ */
+def alloc_string(text: string, encoding) {
+  return _ffi.alloc_string(text, encoding)
+}
+
+/**
+ * A pointer to a known address. Nothing about the address is checked.
+ *
+ * @param number|bigint address
+ * @param Type|nil type What it points at.
+ * @returns Pointer
+ */
+def at(address, type) {
+  return _ffi.at(address, type)
+}
+
+/**
+ * A Zuri function that calls the C function at `pointer` with the
+ * signature of `type`.
+ *
+ * @param Pointer pointer
+ * @param Type type A function type, or a pointer to one.
+ * @param string|nil name The name the function reports.
+ * @returns function
+ * @throws PointerError when the pointer is null.
+ */
+def function(pointer, type, name) {
+  return _ffi.function(pointer, type, name)
+}
+
+/**
+ * The same foreign function, run on a helper thread while the calling
+ * isolate keeps answering callbacks called from other threads.
+ *
+ * This is for a function that waits on threads of its own which call
+ * back into Zuri. Called the ordinary way, such a function would wait
+ * forever, because the isolate that has to run the callbacks is the one
+ * waiting for it.
+ *
+ * @param function function A foreign function.
+ * @returns function
+ * @throws TypeError when `function` is not a foreign function.
+ */
+def threaded(function) {
+  return _ffi.threaded(function)
+}
+
+/**
+ * Whether `value` is a foreign function this module made.
+ *
+ * @param any value
+ * @returns bool
+ */
+def is_foreign(value) {
+  return _ffi.is_foreign(value)
+}
+
+/**
+ * What a foreign function is: `{ name, pointer, type, threaded,
+ * library }`, where `pointer` is its address as a `Pointer`, `type` its
+ * function pointer type, and `library` the path of the library it came
+ * from, or `nil`.
+ *
+ * @param function function A foreign function.
+ * @returns dict
+ */
+def describe(function) {
+  return _ffi.function_info(function)
+}
+
+/**
+ * A lasting C function pointer that calls `function`.
+ *
+ * ```zuri,ignore
+ * var on_event = ffi.callback(@(code) {
+ *   echo 'event ${code}'
+ * }, ffi.function_type(ffi.void, [ffi.int]))
+ *
+ * lib.set_handler(on_event)
+ * ```
+ *
+ * The callback lives until `Callback.release()`. When the Zuri function
+ * raises, C gets `error_value` (or zero), and the error is raised again
+ * as soon as control returns to Zuri.
+ *
+ * @param function function
+ * @param Type type A function type, or a pointer to one.
+ * @param dict|nil options `error_value`, returned to C when `function`
+ *   raises. Defaults to zero, or nothing for a `void` callback.
+ * @returns Callback
+ * @throws TypeError when `type` is not a function type or is variadic.
+ * @throws CallbackError when 256 callbacks returning a 128-bit integer
+ *   under the Microsoft x64 convention are alive already; each one
+ *   released makes room for another.
+ */
+def callback(function, type, options) {
+  options = options or {}
+  return _ffi.callback(function, type, options.get('error_value', nil))
+}
+
+/**
+ * Runs every callback called from another thread that is waiting for
+ * this isolate, returning how many ran.
+ *
+ * Such calls also run at the isolate's own safepoints, during foreign
+ * calls and in threaded calls, so this is for a program that wants
+ * them answered at a point of its choosing, or wants to wait for one.
+ *
+ * @param number|nil timeout Milliseconds to wait for a call when none
+ *   is waiting. Returns at once when left out.
+ * @returns number
+ */
+def serve(timeout) {
+  return _ffi.serve(timeout)
+}
+
+/**
+ * `errno` as the most recent foreign call on this isolate left it.
+ *
+ * `errno` is cleared before every foreign call and read immediately
+ * after it, so this is always what that one call set, or 0.
+ *
+ * @returns number
+ */
+def errno() {
+  return _ffi.errno()
+}
+
+/**
+ * Sets `errno`, for the rare API that reads it.
+ *
+ * @param number value
+ */
+def set_errno(value) {
+  _ffi.set_errno(value)
+}
+
+/**
+ * On Windows, `GetLastError()` as the most recent foreign call on this
+ * isolate left it, cleared before the call and read after it as `errno`
+ * is. Always 0 on other platforms.
+ *
+ * @returns number
+ */
+def last_error() {
+  return _ffi.last_error()
+}
+
+/**
+ * Links static libraries into a shared one with the platform's linker,
+ * and loads it.
+ *
+ * ```zuri,ignore
+ * var lib = ffi.link('target/release/libgeometry.a')
+ * ```
+ *
+ * Every object in the archives is linked in. The result is cached under
+ * a name derived from the archives' contents and the options, so the
+ * linker runs once for a given input. An archive holding Rust code is
+ * recognised and linked against the system libraries Rust's standard
+ * library needs.
+ *
+ * The linker is the C compiler, `cc` or `$CC`, on Linux and macOS, and
+ * MSVC's `link.exe` on Windows, found through the Visual Studio
+ * installation. On Windows a static library's functions are not
+ * exported by default, so every symbol the archives define with an
+ * unmangled name is.
+ *
+ * @param string|list archives One path or a list of them.
+ * @param dict|nil options `libraries`, names to link against (`['m']`);
+ *   `search_paths`, directories to find them in; `exports`, on Windows
+ *   the exact symbols to export; `linker`, the program to run; `flags`,
+ *   further arguments for it; `cache`, the directory results are kept
+ *   in (default `default_link_cache()`); `rust`, whether the archives
+ *   hold Rust code (detected when left out).
+ * @returns Library
+ * @throws LinkError with the linker's output when linking fails.
+ * @throws LoadError when the linked library cannot be loaded.
+ */
+def link(archives, options) {
+  if is_string(archives) {
+    archives = [archives]
+  }
+
+  var path = _ffi.link(archives, options or {})
+  return open(path)
+}
+
+/**
+ * The directory `link()` keeps linked libraries in by default:
+ * `$XDG_CACHE_HOME/zuri/ffi` (or `~/.cache/zuri/ffi`) on Linux,
+ * `~/Library/Caches/zuri/ffi` on macOS, and `%LOCALAPPDATA%\zuri\ffi` on
+ * Windows.
+ *
+ * @returns string
+ */
+def default_link_cache() {
+  return _ffi.default_cache()
+}
+
+/**
+ * The facts about this platform that decide how C types are laid out:
+ * `{ os, arch, pointer_size, long_size, wchar_size, char_signed,
+ * long_double, complex, layout }`.
+ *
+ * `long_double` is `'x87'`, `'binary128'` or `'double'`; `complex` says
+ * whether complex numbers can be passed by value; `layout` is `'msvc'`
+ * on Windows and `'itanium'` elsewhere, the rules records follow.
+ *
+ * @returns dict
+ */
+def platform() {
+  return _ffi.platform()
+}
