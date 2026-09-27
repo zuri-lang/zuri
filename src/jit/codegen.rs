@@ -61,6 +61,190 @@ impl RegBits {
   }
 }
 
+/// How far from zero a result may reach and still count as small: well
+/// inside the integers a double holds exactly, so no rounding in working
+/// out the bounds can carry a value past 2^53 unnoticed.
+const SPAN_SMALL: f64 = (1u64 << 52) as f64;
+
+/// How many times a position's state may change before growing bounds
+/// there are given up as unbounded.
+const SPAN_WIDEN_AFTER: u16 = 8;
+
+/// Passes that take back, after widening, what the loop tests bound.
+const SPAN_NARROWINGS: usize = 3;
+
+/// A comparison a register's value is the result of.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum SpanCmp {
+  Lt,
+  Le,
+  Gt,
+  Ge,
+}
+
+/// That the register holds `reg <cmp> bound`, `bound` being the range of
+/// whatever it was compared against.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct SpanTest {
+  reg: u8,
+  cmp: SpanCmp,
+  lo: f64,
+  hi: f64,
+}
+
+/// What `compute_int_small_defs` knows about a register: the bounds of
+/// its value whenever that is a number other than NaN, whether it is
+/// known truthy or falsy, and the comparison it holds the result of.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Span {
+  lo: f64,
+  hi: f64,
+  truth: Option<bool>,
+  test: Option<SpanTest>,
+}
+
+impl Span {
+  const ANY: Span = Span {
+    lo: f64::NEG_INFINITY,
+    hi: f64::INFINITY,
+    truth: None,
+    test: None,
+  };
+
+  fn range(lo: f64, hi: f64) -> Span {
+    if lo.is_nan() || hi.is_nan() {
+      return Span::ANY;
+    }
+    Span {
+      lo,
+      hi,
+      truth: None,
+      test: None,
+    }
+  }
+
+  fn test(reg: u8, cmp: SpanCmp, bound: Span) -> Span {
+    Span {
+      test: Some(SpanTest {
+        reg,
+        cmp,
+        lo: bound.lo,
+        hi: bound.hi,
+      }),
+      ..Span::ANY
+    }
+  }
+
+  fn join(&self, other: &Span) -> Span {
+    Span {
+      lo: self.lo.min(other.lo),
+      hi: self.hi.max(other.hi),
+      truth: if self.truth == other.truth {
+        self.truth
+      } else {
+        None
+      },
+      test: if self.test == other.test {
+        self.test
+      } else {
+        None
+      },
+    }
+  }
+
+  /// Gives up a bound that grew since `old`.
+  fn widen_from(&mut self, old: &Span) {
+    if self.lo < old.lo {
+      self.lo = f64::NEG_INFINITY;
+    }
+    if self.hi > old.hi {
+      self.hi = f64::INFINITY;
+    }
+  }
+
+  fn add(self, other: Span) -> Span {
+    Span::range(self.lo + other.lo, self.hi + other.hi)
+  }
+
+  fn neg(self) -> Span {
+    Span::range(-self.hi, -self.lo)
+  }
+
+  fn mul(self, other: Span) -> Span {
+    let corners = [
+      self.lo * other.lo,
+      self.lo * other.hi,
+      self.hi * other.lo,
+      self.hi * other.hi,
+    ];
+    if corners.iter().any(|c| c.is_nan()) {
+      return Span::ANY;
+    }
+    Span::range(
+      corners.iter().copied().fold(f64::INFINITY, f64::min),
+      corners.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    )
+  }
+
+  /// The result of `!` on this value: the opposite truth, and the
+  /// opposite comparison.
+  fn not(self) -> Span {
+    Span {
+      truth: self.truth.map(|t| !t),
+      test: self.test.map(|t| SpanTest {
+        cmp: match t.cmp {
+          SpanCmp::Lt => SpanCmp::Ge,
+          SpanCmp::Le => SpanCmp::Gt,
+          SpanCmp::Gt => SpanCmp::Le,
+          SpanCmp::Ge => SpanCmp::Lt,
+        },
+        ..t
+      }),
+      ..Span::ANY
+    }
+  }
+
+  fn within(&self, limit: f64) -> bool {
+    self.lo >= -limit && self.hi <= limit
+  }
+}
+
+/// `state` along an edge where register `cond` was `truth`, or `None`
+/// when the state already says it never is.
+///
+/// A comparison that came out false says its opposite holds. For a NaN
+/// that opposite does not hold either, but bounds describe numbers other
+/// than NaN, so that costs nothing.
+fn span_refine(mut state: Vec<Span>, cond: u8, truth: bool) -> Option<Vec<Span>> {
+  let c = state[cond as usize];
+  if c.truth == Some(!truth) {
+    return None;
+  }
+  state[cond as usize].truth = Some(truth);
+  let Some(t) = c.test else {
+    return Some(state);
+  };
+  let cmp = if truth {
+    t.cmp
+  } else {
+    match t.cmp {
+      SpanCmp::Lt => SpanCmp::Ge,
+      SpanCmp::Le => SpanCmp::Gt,
+      SpanCmp::Gt => SpanCmp::Le,
+      SpanCmp::Ge => SpanCmp::Lt,
+    }
+  };
+  let r = &mut state[t.reg as usize];
+  match cmp {
+    SpanCmp::Lt | SpanCmp::Le => r.hi = r.hi.min(t.hi),
+    SpanCmp::Gt | SpanCmp::Ge => r.lo = r.lo.max(t.lo),
+  }
+  if r.lo > r.hi {
+    return None;
+  }
+  Some(state)
+}
+
 /// The integer operation that fills an arithmetic result's integer view,
 /// on the operands' own views.
 #[derive(Clone, Copy)]
@@ -898,6 +1082,8 @@ struct FuncCompiler<'a, 'b> {
   int_tracked: Vec<bool>,
   /// See `compute_int_exact_defs`.
   int_exact_defs: Vec<bool>,
+  /// See `compute_int_small_defs`.
+  int_small_defs: Vec<bool>,
   /// Registers that some float-path instruction reads or writes, found
   /// by a plain syntactic scan of the bytecode. Purely a budget on how
   /// many `reg_vars_f64` entries are worth materializing: a register
@@ -1693,6 +1879,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       reg_vars_int: Vec::new(),
       int_tracked: Vec::new(),
       int_exact_defs: Vec::new(),
+      int_small_defs: Vec::new(),
       f64_tracked: Vec::new(),
       f64_canonical: CanonicalWebs::default(),
       canonical_written: SmallVec::new(),
@@ -2214,6 +2401,356 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.inline_plan(ip, callee, func, num_args).is_some()
   }
 
+  /// Per instruction, whether the arithmetic result it writes provably
+  /// stays within 2^52 of zero. There its integer view cannot drift from
+  /// the double, so the check `arith_int_view` makes for an exact reader
+  /// is not needed. `i--` counting down from 50 while `i > 0` is the
+  /// shape that matters: the count is bounded by the test that keeps the
+  /// loop going.
+  ///
+  /// Ranges come from constants, copies, arithmetic, a remainder by a
+  /// constant and an `&` with a constant, and are narrowed along the way
+  /// a branch on a comparison goes. A range that keeps growing round a
+  /// loop is given up, and a few narrowing passes then take back what
+  /// the tests bound.
+  fn compute_int_small_defs(&self) -> Vec<bool> {
+    let code = &self.proto.chunk.code;
+    let n = code.len();
+    if !self.int_exact_defs.iter().any(|&e| e) {
+      return vec![false; n];
+    }
+    let regs = self.proto.num_registers as usize;
+    let succs: Vec<Vec<usize>> = (0..n)
+      .map(|ip| typeflow::successors(ip, &code[ip], self.proto))
+      .collect();
+
+    let mut entry: Vec<Option<Vec<Span>>> = vec![None; n];
+    if n > 0 {
+      entry[0] = Some(vec![Span::ANY; regs]);
+    }
+    let mut changes = vec![0u16; n];
+    let mut work: Vec<usize> = vec![0];
+    let mut queued = vec![false; n];
+    if n > 0 {
+      queued[0] = true;
+    }
+    while let Some(ip) = work.pop() {
+      queued[ip] = false;
+      for (s, state) in self.span_edges(ip, &entry, &succs) {
+        let Some(state) = state else {
+          continue;
+        };
+        let merged = match &entry[s] {
+          Some(old) => {
+            let mut m: Vec<Span> = old.iter().zip(&state).map(|(a, b)| a.join(b)).collect();
+            if changes[s] >= SPAN_WIDEN_AFTER {
+              for (w, o) in m.iter_mut().zip(old) {
+                w.widen_from(o);
+              }
+            }
+            m
+          },
+          None => state,
+        };
+        if entry[s].as_ref() != Some(&merged) {
+          entry[s] = Some(merged);
+          changes[s] = changes[s].saturating_add(1);
+          if !queued[s] {
+            queued[s] = true;
+            work.push(s);
+          }
+        }
+      }
+    }
+
+    // Narrowing: recompute each entry from its incoming edges alone, in
+    // order and from the latest states, so a bound a loop's test sets
+    // gets all the way round in one pass. Starting from states that
+    // already cover every run, this only ever tightens them.
+    for _ in 0..SPAN_NARROWINGS {
+      for s in 1..n {
+        let mut joined: Option<Vec<Span>> = None;
+        for &p in &self.preds[s] {
+          for (t, state) in self.span_edges(p, &entry, &succs) {
+            let (true, Some(state)) = (t == s, state) else {
+              continue;
+            };
+            joined = Some(match joined {
+              Some(cur) => cur.iter().zip(&state).map(|(a, b)| a.join(b)).collect(),
+              None => state,
+            });
+          }
+        }
+        entry[s] = joined;
+      }
+    }
+
+    (0..n)
+      .map(|ip| {
+        if !self.int_exact_defs[ip] {
+          return false;
+        }
+        let Some(state) = &entry[ip] else {
+          return false;
+        };
+        let Some(d) = typeflow::any_dst(&code[ip]) else {
+          return false;
+        };
+        let out = self.span_transfer(ip, &code[ip], state);
+        out[d as usize].within(SPAN_SMALL)
+      })
+      .collect()
+  }
+
+  /// The state along each edge out of `ip`, `None` for an edge the
+  /// state proves is never taken.
+  ///
+  /// A conditional jump looks back through its own predecessors, each
+  /// with what its edge in already knows. That is what lets the test in
+  /// `a and i-- > 0` bound `i`: the edge from the `and`'s short circuit
+  /// arrives with the condition known false and so never falls through.
+  fn span_edges(
+    &self,
+    ip: usize,
+    entry: &[Option<Vec<Span>>],
+    succs: &[Vec<usize>],
+  ) -> Vec<(usize, Option<Vec<Span>>)> {
+    let code = &self.proto.chunk.code;
+    let n = code.len();
+    let Some(state) = &entry[ip] else {
+      return Vec::new();
+    };
+    let mut out = Vec::with_capacity(succs[ip].len());
+    let branch = match code[ip] {
+      Instr::JmpIfFalse { cond, offset } => Some((cond, offset, false)),
+      Instr::JmpIfTrue { cond, offset } => Some((cond, offset, true)),
+      _ => None,
+    };
+    let direct = |s: usize| match code[ip] {
+      Instr::JmpIfFalse { offset, .. }
+      | Instr::JmpIfTrue { offset, .. }
+      | Instr::Jmp { offset } => s == (ip as isize + 1 + offset as isize) as usize || s == ip + 1,
+      Instr::Return { .. } => false,
+      Instr::UsingJump { .. } => true,
+      _ => s == ip + 1,
+    };
+    let after = self.span_transfer(ip, &code[ip], state);
+    for &s in &succs[ip] {
+      if s >= n {
+        continue;
+      }
+      if !direct(s) {
+        // Into a catch handler: the error may have come before or after
+        // this instruction wrote anything.
+        let either = state.iter().zip(&after).map(|(a, b)| a.join(b)).collect();
+        out.push((s, Some(either)));
+        continue;
+      }
+      let Some((cond, offset, jumps_when)) = branch else {
+        out.push((s, Some(after.clone())));
+        continue;
+      };
+      let target = (ip as isize + 1 + offset as isize) as usize;
+      // Taking the jump means the condition was `jumps_when`; falling
+      // through means the opposite. When the target is the next
+      // instruction both hold, and nothing is learned.
+      let truth = match (s == target, s == ip + 1) {
+        (true, false) => Some(jumps_when),
+        (false, true) => Some(!jumps_when),
+        _ => None,
+      };
+      let Some(truth) = truth else {
+        out.push((s, Some(after.clone())));
+        continue;
+      };
+      let mut joined: Option<Vec<Span>> = None;
+      let own_preds = &self.preds[ip];
+      let from_preds: Vec<Option<Vec<Span>>> = if own_preds.is_empty() || ip == 0 {
+        vec![Some(state.clone())]
+      } else {
+        own_preds
+          .iter()
+          .map(|&p| self.span_edge_into(p, ip, entry, succs))
+          .collect()
+      };
+      for incoming in from_preds.into_iter().flatten() {
+        if let Some(refined) = span_refine(incoming, cond, truth) {
+          joined = Some(match joined {
+            Some(j) => j.iter().zip(&refined).map(|(a, b)| a.join(b)).collect(),
+            None => refined,
+          });
+        }
+      }
+      out.push((s, joined));
+    }
+    out
+  }
+
+  /// The state along the edge from `p` into `ip`.
+  fn span_edge_into(
+    &self,
+    p: usize,
+    ip: usize,
+    entry: &[Option<Vec<Span>>],
+    succs: &[Vec<usize>],
+  ) -> Option<Vec<Span>> {
+    let code = &self.proto.chunk.code;
+    let state = entry[p].as_ref()?;
+    let after = self.span_transfer(p, &code[p], state);
+    let branch = match code[p] {
+      Instr::JmpIfFalse { cond, offset } => Some((cond, offset, false)),
+      Instr::JmpIfTrue { cond, offset } => Some((cond, offset, true)),
+      _ => None,
+    };
+    let Some((cond, offset, jumps_when)) = branch else {
+      let direct = matches!(code[p], Instr::Jmp { .. } | Instr::UsingJump { .. }) || ip == p + 1;
+      if !direct && succs[p].contains(&ip) {
+        return Some(state.iter().zip(&after).map(|(a, b)| a.join(b)).collect());
+      }
+      return Some(after);
+    };
+    let target = (p as isize + 1 + offset as isize) as usize;
+    match (ip == target, ip == p + 1) {
+      (true, false) => span_refine(after, cond, jumps_when),
+      (false, true) => span_refine(after, cond, !jumps_when),
+      _ => Some(after),
+    }
+  }
+
+  /// One instruction of `compute_int_small_defs`.
+  fn span_transfer(&self, ip: usize, instr: &Instr, state: &[Span]) -> Vec<Span> {
+    let mut out = state.to_vec();
+    let num = |r: u8| self.proven_numeric(ip, r);
+    let konst = |idx: u16| {
+      let c = self.proto.chunk.constants[idx as usize];
+      c.is_number().then(|| c.as_number())
+    };
+    let written: Option<(u8, Span)> = match *instr {
+      Instr::LoadConst { dst, const_idx } => Some((
+        dst,
+        konst(const_idx).map_or(Span::ANY, |c| Span::range(c, c)),
+      )),
+      Instr::Move { dst, src } => Some((dst, state[src as usize])),
+      Instr::AddImm { dst, a, imm_const } => Some((
+        dst,
+        match (num(a), konst(imm_const)) {
+          (true, Some(k)) => state[a as usize].add(Span::range(k, k)),
+          _ => Span::ANY,
+        },
+      )),
+      Instr::SubImm { dst, a, imm_const } => Some((
+        dst,
+        match (num(a), konst(imm_const)) {
+          (true, Some(k)) => state[a as usize].add(Span::range(-k, -k)),
+          _ => Span::ANY,
+        },
+      )),
+      Instr::MulImm { dst, a, imm_const } => Some((
+        dst,
+        match (num(a), konst(imm_const)) {
+          (true, Some(k)) => state[a as usize].mul(Span::range(k, k)),
+          _ => Span::ANY,
+        },
+      )),
+      Instr::Add { dst, a, b } => Some((
+        dst,
+        if num(a) && num(b) {
+          state[a as usize].add(state[b as usize])
+        } else {
+          Span::ANY
+        },
+      )),
+      Instr::Sub { dst, a, b } => Some((
+        dst,
+        if num(a) && num(b) {
+          state[a as usize].add(state[b as usize].neg())
+        } else {
+          Span::ANY
+        },
+      )),
+      Instr::Mul { dst, a, b } => Some((
+        dst,
+        if num(a) && num(b) {
+          state[a as usize].mul(state[b as usize])
+        } else {
+          Span::ANY
+        },
+      )),
+      Instr::Neg { dst, src } => Some((
+        dst,
+        if num(src) {
+          state[src as usize].neg()
+        } else {
+          Span::ANY
+        },
+      )),
+      // The remainder takes the sign of what is divided and stays short
+      // of the divisor's size.
+      Instr::Mod { dst, a, b } => Some((
+        dst,
+        match self.proven_const(ip, b) {
+          Some(k) if num(a) && k.is_finite() && k != 0.0 => {
+            if state[a as usize].lo >= 0.0 {
+              Span::range(0.0, k.abs())
+            } else {
+              Span::range(-k.abs(), k.abs())
+            }
+          },
+          _ => Span::ANY,
+        },
+      )),
+      // Anding with a whole number that is never negative keeps no more
+      // than its bits.
+      Instr::BitAnd { dst, a, b } => Some((
+        dst,
+        match (self.proven_const(ip, a), self.proven_const(ip, b)) {
+          (_, Some(k)) | (Some(k), _) if num(a) && num(b) && k >= 0.0 && k.fract() == 0.0 => {
+            Span::range(0.0, k)
+          },
+          _ => Span::ANY,
+        },
+      )),
+      Instr::Lt { dst, a, b } => Some((dst, Span::test(a, SpanCmp::Lt, state[b as usize]))),
+      Instr::Le { dst, a, b } => Some((dst, Span::test(a, SpanCmp::Le, state[b as usize]))),
+      Instr::Gt { dst, a, b } => Some((dst, Span::test(a, SpanCmp::Gt, state[b as usize]))),
+      Instr::Ge { dst, a, b } => Some((dst, Span::test(a, SpanCmp::Ge, state[b as usize]))),
+      Instr::LtImm { dst, a, imm_const }
+      | Instr::LeImm { dst, a, imm_const }
+      | Instr::GtImm { dst, a, imm_const }
+      | Instr::GeImm { dst, a, imm_const } => {
+        let cmp = match *instr {
+          Instr::LtImm { .. } => SpanCmp::Lt,
+          Instr::LeImm { .. } => SpanCmp::Le,
+          Instr::GtImm { .. } => SpanCmp::Gt,
+          _ => SpanCmp::Ge,
+        };
+        Some((
+          dst,
+          match konst(imm_const) {
+            Some(k) => Span::test(a, cmp, Span::range(k, k)),
+            None => Span::ANY,
+          },
+        ))
+      },
+      Instr::Not { dst, src } => Some((dst, state[src as usize].not())),
+      _ => typeflow::any_dst(instr).map(|d| (d, Span::ANY)),
+    };
+    if let Some((dst, value)) = written {
+      out[dst as usize] = if self.captured[dst as usize] {
+        Span::ANY
+      } else {
+        value
+      };
+      // Whatever tested the old value no longer says anything.
+      for s in out.iter_mut() {
+        if s.test.is_some_and(|t| t.reg == dst) {
+          s.test = None;
+        }
+      }
+    }
+    out
+  }
+
   /// `Instr::Div { dst, a, b }`'s strength-reduction check: is `b`'s
   /// value PROVABLY a compile-time constant that's an exact power of
   /// two, so `x / b` can compile to `x * (1.0/b)` instead of a real
@@ -2304,6 +2841,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.f64_tracked = Self::compute_f64_tracked(self.proto);
     self.int_tracked = self.compute_int_tracked();
     self.int_exact_defs = self.compute_int_exact_defs();
+    self.int_small_defs = self.compute_int_small_defs();
     // Declared for every register, but only ever defined or used for
     // the tracked ones; an untracked entry is inert.
     self.reg_vars_f64 = (0..num_regs)
@@ -15377,7 +15915,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// on a cold branch, wherever `compute_int_exact_defs` says a reader
   /// depends on it. Everywhere else the plain wrapping op is enough.
   fn arith_int_view(&mut self, ip: usize, op: IntOp, f: IrValue) -> IrValue {
-    let exact = self.int_exact_defs.get(ip).copied().unwrap_or(true);
+    let exact = self.int_exact_defs.get(ip).copied().unwrap_or(true)
+      && !self.int_small_defs.get(ip).copied().unwrap_or(false);
     let (ir, overflow) = match op {
       IntOp::Add(a, b) if exact => {
         let (r, o) = self.fb.ins().sadd_overflow(a, b);

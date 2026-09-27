@@ -60,10 +60,31 @@ def reaches(a, mark) {
   return [s == mark, s > mark, s % 4, t & 3]
 }
 
+# Counted down while above zero, as an escape-time loop does, then taken
+# apart. From 50 the count stays small; from `start` it need not.
+def settle(limit) {
+  var i = 50
+  var steps = 0
+  while steps < limit and i-- > 0 {
+    steps++
+  }
+  return [i == 0, i % 4, i & 3, steps]
+}
+
+def countdown(start, limit) {
+  var i = start
+  var steps = 0
+  while steps < limit and i-- > 0 {
+    steps++
+  }
+  return [i == 0, i % 4, i & 3, steps]
+}
+
 var total = 0
 iter var i = 0; i < 3000; i++ {
   total = total + walk(i, 3, 20)[0] + walk_back(i, 3, 20)[1] + bounce(i, 20)[2]
   total = total + scale(i, 3, 5)[1] + reaches(i, i + 1)[3]
+  total = total + settle(i % 70)[1] + countdown(i % 60, 100)[2]
 }
 echo total
 
@@ -89,4 +110,8 @@ for pair in edges {
   echo [walk(a, b, 1), walk(a, b, 2), walk_back(a, b, 1), walk_back(b, a, 2)]
   echo [up, down]
   echo [scale(a, 3, 1), scale(b, 2, 2), reaches(a, 2 ** 53), reaches(-a, 2 ** 53)]
+}
+
+for start in [0, 1, 2 ** 53, 2 ** 53 + 4, 9007199254740993, -(2 ** 53) - 2] {
+  echo [start, countdown(start, 3), settle(3), settle(60)]
 }
