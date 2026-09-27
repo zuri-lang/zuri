@@ -210,9 +210,13 @@ fn run_script(vm: &mut VM, path: &Path, name: &str, display_path: Rc<str>) {
           process::exit(1);
         }
 
-        if let Some(code) = vm.take_exit_code() {
-          process::exit(code);
-        }
+        // The program is over: its exit handlers have run and its output
+        // is flushed. Dropping the VM from here would only free memory
+        // the process is about to give back anyway, and would first wait
+        // for any compile still reading the heap, which can outlast the
+        // program by any amount. Exiting here also takes down the
+        // compiler threads and isolate workers where they stand.
+        process::exit(vm.take_exit_code().unwrap_or(0));
       },
       Err(errors) => {
         eprintln!("{}", format_parse_errors(&errors, &display_path, &content));
@@ -329,8 +333,10 @@ fn main() {
     },
   };
 
-  let heap = Heap::new();
-  let mut vm = VM::new(heap);
+  // Never dropped, on any path out of here, a panic included. Compiler
+  // workers read functions straight out of this heap, and nothing waits
+  // for them to finish, so the heap has to last as long as the process.
+  let mut vm = std::mem::ManuallyDrop::new(VM::new(Heap::new()));
   vm.init();
 
   match script {

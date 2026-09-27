@@ -93,6 +93,8 @@
 //! operand, `Raise`, arithmetic/bitwise/concat/unary ops; is
 //! escaping.
 
+use std::collections::BTreeSet;
+
 use rustc_hash::FxHashSet;
 use smallvec::{SmallVec, smallvec};
 
@@ -377,13 +379,13 @@ fn global_ref_facts_for(
     out
   };
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<MustSet> = (0..code_len)
     .map(|ip| transfer(&entry[ip], &code[ip]))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = MustSet::full(num_registers);
@@ -406,7 +408,7 @@ fn global_ref_facts_for(
       for &s in &typeflow::successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -755,16 +757,16 @@ pub fn analyze_one_with_facts(
   let mut seeded_alloc_out = AliasSet::empty(num_registers);
   seeded_alloc_out.set(alloc_reg, true);
 
-  let mut worklist: Vec<usize> = Vec::new();
+  let mut worklist: BTreeSet<usize> = BTreeSet::new();
   let mut in_worklist = vec![false; code_len];
   for &s in &typeflow::successors(alloc_ip, &code[alloc_ip], proto) {
     if s != alloc_ip && s < code_len && !in_worklist[s] {
       in_worklist[s] = true;
-      worklist.push(s);
+      worklist.insert(s);
     }
   }
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
     debug_assert!(ip != alloc_ip, "alloc_ip is never pushed onto the worklist");
 
@@ -874,7 +876,7 @@ pub fn analyze_one_with_facts(
       for &s in &typeflow::successors(ip, instr, proto) {
         if s != alloc_ip && s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -973,11 +975,11 @@ fn analyze_param_escape(
   // goes through the exact same loop body as everything else below).
   entry[0].set(param_reg, true);
 
-  let mut worklist: Vec<usize> = vec![0];
+  let mut worklist = BTreeSet::from([0]);
   let mut in_worklist = vec![false; code_len];
   in_worklist[0] = true;
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let new_in = if ip == 0 {
@@ -1061,7 +1063,7 @@ fn analyze_param_escape(
       for &s in &typeflow::successors(ip, instr, proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }

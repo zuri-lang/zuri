@@ -9,6 +9,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::mem::ManuallyDrop;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -199,7 +200,7 @@ impl IsolatePool {
 
   fn stop_compiler(&self) {
     let mut comp = lock(&self.compiler);
-    if let Some(mut c) = comp.take() {
+    if let Some(c) = comp.take() {
       c.shutdown.store(true, Ordering::Release);
 
       // Every isolate VM that used this compiler kept a clone of the
@@ -212,10 +213,11 @@ impl IsolatePool {
           .job_tx
           .send(crate::jit::background::CompileJob::shutdown_signal());
       }
-      drop(c.job_tx);
-      for thread in c.threads.drain(..) {
-        let _ = thread.join();
-      }
+
+      // Not joined. A worker part way through a compile finishes it on
+      // its own time and then exits, and the isolate that got here has
+      // no reason to wait for it.
+      drop(c);
     }
   }
 
@@ -274,8 +276,12 @@ struct Task {
 /// task's home (see `transfer::Home`) is cached per-isolate, so only
 /// the very first task from a given module/entry script pays to
 /// compile and run it.
+///
+/// The VM is never dropped. Compiler workers read functions out of its
+/// heap without anything waiting for them, so one replaced after a
+/// panic is leaked rather than freed under a compile still reading it.
 struct IsolateIsolate {
-  vm: VM,
+  vm: ManuallyDrop<VM>,
 }
 
 impl IsolateIsolate {
@@ -289,7 +295,9 @@ impl IsolateIsolate {
     // thread ever sets it: the entry script is never run again.
     vm.adopt_app_root_path();
 
-    IsolateIsolate { vm }
+    IsolateIsolate {
+      vm: ManuallyDrop::new(vm),
+    }
   }
 }
 

@@ -817,9 +817,6 @@ pub struct VM {
   /// Handle to the background compiler pool, lazily spawned on first
   /// use. `None` until the first function crosses its warmup threshold.
   jit_compiler: Option<background::JitCompilerHandle>,
-  /// Keeps `heap` alive for compiler workers still reading a function
-  /// from it; closed when the VM drops.
-  heap_gate: std::sync::Arc<background::HeapGate>,
   /// For isolate VMs: a shared background compiler job sender and reply channel.
   shared_compiler: Option<(
     std::sync::mpsc::Sender<background::CompileJob>,
@@ -1029,7 +1026,6 @@ impl VM {
       jit_scalar_roots_len: Cell::new(0),
       catch_stack: Vec::new(),
       jit_compiler: None,
-      heap_gate: std::sync::Arc::default(),
       shared_compiler: None,
       pending_jit_compiles: Vec::new(),
       jit_pending_error: Cell::new(Value::nil()),
@@ -2764,7 +2760,6 @@ impl VM {
     let sent = if let Some((job_tx, _, reply_tx, pending)) = &self.shared_compiler {
       let job = background::CompileJob {
         proto: background::SendPtr(proto as *const ObjFunction),
-        gate: Some(std::sync::Arc::clone(&self.heap_gate)),
         speculative_params,
         speculative_regs,
         facts,
@@ -2775,7 +2770,6 @@ impl VM {
     } else {
       let job = background::CompileJob {
         proto: background::SendPtr(proto as *const ObjFunction),
-        gate: Some(std::sync::Arc::clone(&self.heap_gate)),
         speculative_params,
         speculative_regs,
         facts,
@@ -7960,13 +7954,6 @@ fn drop_compiled(proto: &ObjFunction) {
   proto.jit.profiling.set(false);
   if proto.jit.tier2.get() != crate::vm::object::TIER2_DECLINED {
     proto.jit.tier2.set(crate::vm::object::TIER2_NONE);
-  }
-}
-
-impl Drop for VM {
-  fn drop(&mut self) {
-    self.heap_gate.close();
-    drop(self.jit_compiler.take());
   }
 }
 

@@ -27,7 +27,7 @@ use cranelift_frontend::{FunctionBuilder, Variable};
 use cranelift_jit::JITModule;
 use cranelift_module::{FuncId, Module};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::sync::atomic::AtomicBool;
+use std::collections::BTreeSet;
 
 use smallvec::SmallVec;
 
@@ -390,7 +390,6 @@ pub fn compile(
   speculative_params: Option<u64>,
   speculative_regs: Option<typeflow::SpeculativeRegs>,
   facts: CompileFacts,
-  shutdown: Option<&AtomicBool>,
 ) -> Result<FxHashMap<usize, i32>, String> {
   // A function with a `catch` compiles too. Its handlers go on the VM's
   // own handler stack as the interpreter's would, and an error inside a
@@ -428,7 +427,6 @@ pub fn compile(
     speculative_params,
     speculative_regs,
     facts,
-    shutdown,
   );
   fc.run()
 }
@@ -1300,7 +1298,6 @@ struct FuncCompiler<'a, 'b> {
   self_method_protos: FxHashMap<String, usize>,
   is_specialized_pass: bool,
   active_guarded_classes: FxHashMap<u8, u64>,
-  shutdown: Option<&'a AtomicBool>,
   /// Which sites this compilation guards on the kinds the interpreter
   /// recorded there; see `select_site_speculation`.
   site_spec: typeflow::SiteSpeculation,
@@ -1731,7 +1728,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
-    shutdown: Option<&'a AtomicBool>,
   ) -> Self {
     let blocks = (0..code_len).map(|_| fb.create_block()).collect();
     let preds = typeflow::build_predecessors(proto);
@@ -1935,7 +1931,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self_method_protos: facts.self_method_protos,
       is_specialized_pass: false,
       active_guarded_classes: FxHashMap::default(),
-      shutdown,
       site_spec,
       captured: typeflow::captured_registers(proto),
       site_classes: facts.site_classes,
@@ -2429,13 +2424,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       entry[0] = Some(vec![Span::ANY; regs]);
     }
     let mut changes = vec![0u16; n];
-    let mut work: Vec<usize> = vec![0];
-    let mut queued = vec![false; n];
-    if n > 0 {
-      queued[0] = true;
-    }
-    while let Some(ip) = work.pop() {
-      queued[ip] = false;
+    let mut work: BTreeSet<usize> = BTreeSet::from([0]);
+    while let Some(ip) = work.pop_first() {
       for (s, state) in self.span_edges(ip, &entry, &succs) {
         let Some(state) = state else {
           continue;
@@ -2455,10 +2445,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
         if entry[s].as_ref() != Some(&merged) {
           entry[s] = Some(merged);
           changes[s] = changes[s].saturating_add(1);
-          if !queued[s] {
-            queued[s] = true;
-            work.push(s);
-          }
+          work.insert(s);
         }
       }
     }
@@ -3052,11 +3039,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.active_guarded.clear();
     self.active_guarded_classes.clear();
     for ip in 0..self.blocks.len() {
-      if let Some(shutdown) = self.shutdown {
-        if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-          return Err("compilation aborted: VM shutdown".to_string());
-        }
-      }
       self.fb.switch_to_block(self.blocks[ip]);
       self.maybe_clear_guarded_instances(ip);
       self.maybe_clear_list_headers(ip);
@@ -3089,11 +3071,6 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       self.active_guarded.clear();
       self.active_guarded_classes.clear();
       for ip in 0..code_len {
-        if let Some(shutdown) = self.shutdown {
-          if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err("compilation aborted: VM shutdown".to_string());
-          }
-        }
         self.fb.switch_to_block(self.blocks[ip]);
         self.maybe_clear_guarded_instances(ip);
         self.maybe_clear_list_headers(ip);

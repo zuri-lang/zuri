@@ -172,17 +172,9 @@ impl JitEngine {
     &mut self,
     proto: &ObjFunction,
     feedback: &crate::jit::ir::build::Feedback,
-    shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(PendingCompile, usize), String> {
-    let aborted = || shutdown.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed));
     let mut ir = crate::jit::ir::build::build(proto, feedback)?;
-    if aborted() {
-      return Err("compilation aborted: VM shutdown".to_string());
-    }
     crate::jit::ir::passes::run(&mut ir, feedback)?;
-    if aborted() {
-      return Err("compilation aborted: VM shutdown".to_string());
-    }
     if crate::jit::log_ir_enabled() {
       eprintln!("[jit] Bayelsa IR for '{}':\n{ir}", proto.display_name());
     }
@@ -253,13 +245,7 @@ impl JitEngine {
     mut pending: PendingCompile,
     // Only named in the debug build's verifier report below.
     #[cfg_attr(not(debug_assertions), allow(unused_variables))] name: &str,
-    shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<(EntryFn, FxHashMap<usize, i32>), String> {
-    if let Some(shutdown) = shutdown {
-      if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-        return Err("compilation aborted: VM shutdown".to_string());
-      }
-    }
     constants_right(&mut pending.ctx.func);
     let mut ctrl_plane = cranelift_codegen::control::ControlPlane::default();
     let compile_result = pending.ctx.compile(&*self.isa, &mut ctrl_plane);
@@ -298,8 +284,7 @@ impl JitEngine {
 
   /// Stage 1 of compiling `proto`: translate its bytecode to Cranelift
   /// IR (`jit::codegen`'s job) and declare a slot for it in `module`.
-  /// This is the only stage that reads `proto`, so the worker holds its
-  /// VM's heap lease for this and nothing after it: `finish` does the
+  /// This is the only stage that reads `proto`: `finish` does the
   /// register allocation and encoding from the Cranelift IR alone.
   /// `Err(reason)` means `proto` is permanently
   /// ineligible (see `codegen::compile`'s own eligibility scan); the
@@ -312,7 +297,6 @@ impl JitEngine {
     speculative_params: Option<u64>,
     speculative_regs: Option<typeflow::SpeculativeRegs>,
     facts: CompileFacts,
-    shutdown: Option<&std::sync::atomic::AtomicBool>,
   ) -> Result<PendingCompile, String> {
     self.next_id += 1;
     let name = format!("zuri_fn_{}", self.next_id);
@@ -354,7 +338,6 @@ impl JitEngine {
         speculative_params,
         speculative_regs,
         facts,
-        shutdown,
       )?;
       builder.seal_all_blocks();
       builder.finalize(self.module.target_config());

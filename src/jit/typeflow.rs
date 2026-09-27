@@ -38,6 +38,8 @@
 //! proof survives the call intact, even though `sum`'s doesn't (it's
 //! reassigned from the call's own result, which isn't proven).
 
+use std::collections::BTreeSet;
+
 use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 
@@ -470,7 +472,7 @@ pub fn analyze(
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   // Seed every out set from its (possibly still-`full()`, not-yet-
   // converged) in set, so the worklist loop below has a real starting
@@ -511,7 +513,7 @@ pub fn analyze(
     })
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(total_slots);
@@ -583,7 +585,7 @@ pub fn analyze(
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -1908,7 +1910,7 @@ pub fn analyze_int(
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<(RegSet, ElemState)> = (0..code_len)
     .map(|ip| {
@@ -1938,7 +1940,7 @@ pub fn analyze_int(
     })
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -1992,7 +1994,7 @@ pub fn analyze_int(
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2233,13 +2235,13 @@ pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_bool(&entry[ip], &code[ip]))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2261,7 +2263,7 @@ pub fn analyze_bool(proto: &ObjFunction, preds: &[Vec<usize>]) -> BoolFacts {
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2332,13 +2334,13 @@ pub fn analyze_list(
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_list(&entry[ip], &code[ip], proto, global_lists))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2365,7 +2367,7 @@ pub fn analyze_list(
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2480,13 +2482,13 @@ pub fn analyze_byte_value(
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_byte_value(&entry[ip], bytes_facts.entry_set(ip), &code[ip], proto))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2508,7 +2510,7 @@ pub fn analyze_byte_value(
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2592,13 +2594,13 @@ pub fn analyze_dict(proto: &ObjFunction, preds: &[Vec<usize>]) -> DictFacts {
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_dict(&entry[ip], &code[ip], proto))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2620,7 +2622,7 @@ pub fn analyze_dict(proto: &ObjFunction, preds: &[Vec<usize>]) -> DictFacts {
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2722,13 +2724,13 @@ pub fn analyze_bytes(proto: &ObjFunction, preds: &[Vec<usize>]) -> BytesFacts {
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_bytes(&entry[ip], &code[ip], proto))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2750,7 +2752,7 @@ pub fn analyze_bytes(proto: &ObjFunction, preds: &[Vec<usize>]) -> BytesFacts {
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -2864,13 +2866,13 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| transfer_string(&entry[ip], &code[ip], proto))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -2892,7 +2894,7 @@ pub fn analyze_string(proto: &ObjFunction, preds: &[Vec<usize>]) -> StringFacts 
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -3036,13 +3038,13 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<Vec<ConstFact>> = (0..code_len)
     .map(|ip| transfer_const(&entry[ip], &code[ip], proto))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = vec![ConstFact::Top; num_registers];
@@ -3074,7 +3076,7 @@ pub fn analyze_const(proto: &ObjFunction, preds: &[Vec<usize>]) -> ConstFacts {
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -3156,13 +3158,13 @@ pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
     })
     .collect();
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
   let mut out: Vec<RegSet> = (0..code_len)
     .map(|ip| ref_transfer(&entry[ip], ip, &code[ip], proto, type_facts))
     .collect();
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_first() {
     in_worklist[ip] = false;
 
     let mut new_in = RegSet::full(num_registers);
@@ -3186,7 +3188,7 @@ pub fn classify_refs(proto: &ObjFunction, type_facts: &TypeFacts) -> RefFacts {
       for &s in &successors(ip, &code[ip], proto) {
         if s < code_len && !in_worklist[s] {
           in_worklist[s] = true;
-          worklist.push(s);
+          worklist.insert(s);
         }
       }
     }
@@ -3964,10 +3966,10 @@ pub fn int_demand(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<RegSet> {
   let mut demand_in: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
   let mut demand_out: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
 
-  let mut worklist: Vec<usize> = (0..code_len).collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_last() {
     in_worklist[ip] = false;
 
     let mut out = RegSet::empty(num_registers);
@@ -4029,7 +4031,7 @@ pub fn int_demand(proto: &ObjFunction, preds: &[Vec<usize>]) -> Vec<RegSet> {
       for &p in &preds[ip] {
         if !in_worklist[p] {
           in_worklist[p] = true;
-          worklist.push(p);
+          worklist.insert(p);
         }
       }
     }
@@ -4047,10 +4049,10 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
   let mut live_in: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
   let mut live_out: Vec<RegSet> = vec![RegSet::empty(num_registers); code_len];
 
-  let mut worklist: Vec<usize> = (0..code_len).rev().collect();
+  let mut worklist: BTreeSet<usize> = (0..code_len).collect();
   let mut in_worklist = vec![true; code_len];
 
-  while let Some(ip) = worklist.pop() {
+  while let Some(ip) = worklist.pop_last() {
     in_worklist[ip] = false;
 
     let mut new_out = RegSet::empty(num_registers);
@@ -4075,7 +4077,7 @@ pub fn liveness(proto: &ObjFunction, preds: &[Vec<usize>]) -> LivenessFacts {
       for &p in &preds[ip] {
         if !in_worklist[p] {
           in_worklist[p] = true;
-          worklist.push(p);
+          worklist.insert(p);
         }
       }
     }

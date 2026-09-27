@@ -56,17 +56,17 @@
 //! address is fixed for life, the same fact `codegen::func_ptr_const`
 //! relies on to bake it in as an immediate.
 //!
-//! The heap itself goes away with its VM, which can happen while a
-//! worker still has that VM's job. Each job carries its VM's `HeapGate`,
-//! and a worker holds a lease on it for as long as it translates the
-//! function, the only stage that reads heap objects. Dropping the VM
-//! closes the gate, which waits out the leases in flight but not the
-//! backend compiles that follow them, so a program that ends mid-compile
-//! exits without waiting for code it will never run.
+//! Nor can the heap under it go away while a worker is reading it: no
+//! VM's heap is ever freed while the process that owns it goes on. The
+//! main VM ends with the process, which exits without dropping it, and
+//! an isolate worker keeps its VM for as long as its thread runs, and
+//! leaks rather than frees the one it replaces after a panic. So nothing
+//! ever waits for a compile to finish, and a program that ends mid-compile
+//! takes the workers down with it.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rustc_hash::FxHashMap;
 
@@ -79,71 +79,10 @@ use crate::vm::object::ObjFunction;
 pub struct SendPtr(pub *const ObjFunction);
 unsafe impl Send for SendPtr {}
 
-/// Keeps a VM's heap alive for the compiler workers reading it. A worker
-/// takes a lease before it touches the function it compiles and lets go
-/// once translation is done; closing the gate waits for the leases out
-/// and refuses new ones.
-#[derive(Default)]
-pub struct HeapGate {
-  closed: AtomicBool,
-  readers: Mutex<usize>,
-  idle: Condvar,
-}
-
-impl HeapGate {
-  /// A lease on the heap, or `None` once the gate has closed.
-  pub fn enter(&self) -> Option<HeapLease<'_>> {
-    let mut readers = self.readers.lock().unwrap_or_else(PoisonError::into_inner);
-    if self.closed.load(Ordering::Relaxed) {
-      return None;
-    }
-    *readers += 1;
-    Some(HeapLease(self))
-  }
-
-  /// Set once the gate closes. Translation polls it so a lease held
-  /// over a large function is given back early.
-  pub fn closed(&self) -> &AtomicBool {
-    &self.closed
-  }
-
-  /// Refuses new leases and waits until every one handed out so far
-  /// has been returned.
-  pub fn close(&self) {
-    let mut readers = self.readers.lock().unwrap_or_else(PoisonError::into_inner);
-    self.closed.store(true, Ordering::Relaxed);
-    while *readers > 0 {
-      readers = self
-        .idle
-        .wait(readers)
-        .unwrap_or_else(PoisonError::into_inner);
-    }
-  }
-}
-
-pub struct HeapLease<'a>(&'a HeapGate);
-
-impl Drop for HeapLease<'_> {
-  fn drop(&mut self) {
-    let mut readers = self
-      .0
-      .readers
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner);
-    *readers -= 1;
-    if *readers == 0 {
-      self.0.idle.notify_all();
-    }
-  }
-}
-
 pub struct CompileJob {
   /// The function to compile, or a null pointer when this job is the
   /// wake-up `CompileJob::shutdown_signal()` sends.
   pub proto: SendPtr,
-  /// The gate of the VM whose heap `proto` lives in; `None` only on the
-  /// shutdown wake-up.
-  pub gate: Option<Arc<HeapGate>>,
   /// Carried through purely for `VM::drain_jit_results`'s log line
   /// (see `codegen::compile`'s own docs on what this means).
   pub speculative_params: Option<u64>,
@@ -179,7 +118,6 @@ impl CompileJob {
   pub fn shutdown_signal() -> Self {
     CompileJob {
       proto: SendPtr(std::ptr::null()),
-      gate: None,
       speculative_params: None,
       speculative_regs: None,
       facts: CompileFacts::default(),
@@ -233,9 +171,8 @@ impl Drop for JitCompilerHandle {
       }
     }
 
-    // Not joined. The VM closed its heap gate before dropping this, so
-    // no worker is reading the heap any more, and one still inside a
-    // backend compile only has its own memory to finish with.
+    // Not joined: a worker part way through a compile finishes it on
+    // its own time, and nothing here needs the result.
     drop(self.job_tx.take());
     self.threads.clear();
   }
@@ -342,9 +279,6 @@ fn spawn_workers(
   threads
 }
 
-/// Why a job ends without code once its VM has gone.
-const ABANDONED: &str = "compilation aborted: VM shutdown";
-
 fn compiler_loop(
   jobs: Arc<Mutex<Receiver<CompileJob>>>,
   result_tx: Sender<CompileResult>,
@@ -381,11 +315,6 @@ fn compiler_loop(
       return;
     }
 
-    let gate = job
-      .gate
-      .as_deref()
-      .expect("a compile job carries its VM's heap gate");
-    let closed = Some(gate.closed());
     let speculative_lists = job.facts.speculative_lists;
     let speculative_ints = job.facts.speculative_ints;
     // A panic inside Cranelift is a compiler bug, but it is a bug about
@@ -402,13 +331,11 @@ fn compiler_loop(
       // The optimizing tier declines functions it cannot build; those
       // still get the baseline tier's code.
       if let Some(feedback) = &tier2 {
-        let lease = gate.enter().ok_or(ABANDONED)?;
         let proto = unsafe { &*job.proto.0 };
         let name = proto.display_name();
-        let built = engine.build_tier2(proto, feedback, closed);
-        drop(lease);
-        let finished =
-          built.and_then(|(pending, reach)| Ok((engine.finish(pending, &name, closed)?, reach)));
+        let finished = engine
+          .build_tier2(proto, feedback)
+          .and_then(|(pending, reach)| Ok((engine.finish(pending, &name)?, reach)));
         match finished {
           Ok((compiled, reach)) => {
             tier = 2;
@@ -422,7 +349,6 @@ fn compiler_loop(
           },
         }
       }
-      let lease = gate.enter().ok_or(ABANDONED)?;
       let proto = unsafe { &*job.proto.0 };
       let name = proto.display_name();
       let pending = engine.build_ir(
@@ -430,10 +356,8 @@ fn compiler_loop(
         job.speculative_params,
         job.speculative_regs,
         job.facts,
-        closed,
-      );
-      drop(lease);
-      engine.finish(pending?, &name, closed)
+      )?;
+      engine.finish(pending, &name)
     }));
     let (outcome, osr_ids) = match compiled {
       Ok(Ok((entry, osr_ids))) => (Ok(entry), osr_ids),
