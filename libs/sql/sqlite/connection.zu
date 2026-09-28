@@ -500,7 +500,7 @@ class SqliteConnection < DriverConnection {
    *
    * ```zuri,ignore
    * db.native().create_function('initials', 1, @(name) {
-   *   return name.split(' ').map(@(part) => part[0, 1]).join('')
+   *   return ''.join(name.split(' ').map(@(part) => part[0, 1]))
    * })
    *
    * db.query('select initials(name) from authors')
@@ -611,9 +611,11 @@ class SqliteConnection < DriverConnection {
    * Called after each row an INSERT, UPDATE or DELETE changes, with
    * the operation name, the database, the table and the row id.
    *
-   * Only changes statements make directly are reported. What a trigger
-   * or a foreign key action goes on to change is not, and neither is
-   * anything later rolled back.
+   * Rows a trigger or a foreign key action changes are reported too.
+   * Each change is reported as it is made, so one a transaction later
+   * rolls back has still been reported. A DELETE with no WHERE clause
+   * empties the table without visiting its rows, and a WITHOUT ROWID
+   * table has no rowid to report, so neither is reported at all.
    *
    * @param function|nil handler Nil clears it.
    */

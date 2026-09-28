@@ -589,10 +589,14 @@ pub fn preprocess(tokens: Vec<Token>, scope: &mut Scope) -> Parse<Vec<Token>> {
           } else {
             Macro::Object(line[2..].to_vec())
           };
-          if let Macro::Object(ref tokens) = body
-            && let Some(value) = constant_of(tokens, scope)
-          {
-            scope.add_constant(&name, value);
+          if let Macro::Object(ref tokens) = body {
+            match constant_of(tokens, scope) {
+              Some(value) => scope.add_constant(&name, value),
+              // It may name a type declared further down, which is
+              // only known once the whole source has been read.
+              None if !tokens.is_empty() => scope.deferred.push(name.clone()),
+              None => {},
+            }
           }
           scope.macros.insert(name, body);
         },
@@ -900,6 +904,15 @@ fn constant_of(tokens: &[Token], scope: &Scope) -> Option<Constant> {
     line_start: true,
   });
 
+  if let Some((ty, address)) = Parser::for_expression(expanded.clone(), scope).pointer_cast() {
+    // An address wraps as C converts an integer to a pointer, so -1 is
+    // the all-ones address.
+    return Some(Constant::Pointer {
+      ty,
+      address: address as u64 as usize,
+    });
+  }
+
   let mut parser = Parser::for_expression(expanded, scope);
   let value = parser.expression().ok()?;
   if !matches!(parser.peek().tok, Tok::Eof) {
@@ -1083,7 +1096,22 @@ pub fn declare(source: &str, scope: &mut Scope) -> Parse<()> {
     scope: ScopeAccess::Write(scope),
     pack,
   };
-  parser.translation_unit()
+  parser.translation_unit()?;
+
+  // A macro expands where it is used, not where it is defined, so one
+  // naming a type declared after it still has a value.
+  for name in std::mem::take(&mut scope.deferred) {
+    if scope.constant(&name).is_some() {
+      continue;
+    }
+    if let Some(Macro::Object(tokens)) = scope.macros.get(&name).cloned()
+      && let Some(value) = constant_of(&tokens, scope)
+    {
+      scope.add_constant(&name, value);
+    }
+  }
+
+  Ok(())
 }
 
 /// Parses a C type name, such as `const char *` or `struct point[4]`,
@@ -2327,6 +2355,37 @@ impl<'a> Parser<'a> {
     )
   }
 
+  /// A constant cast to a pointer type, however many parentheses it
+  /// sits in: the type and the integer it casts.
+  fn pointer_cast(&mut self) -> Option<(TypeRef, i128)> {
+    let mut depth = 0;
+    loop {
+      if !self.is_punct("(") {
+        return None;
+      }
+      self.pos += 1;
+      if self.starts_type() {
+        break;
+      }
+      depth += 1;
+    }
+
+    let ty = self.type_name().ok()?;
+    ty.pointer()?;
+    if !self.eat_punct(")") {
+      return None;
+    }
+
+    let value = self.unary().ok()?;
+    for _ in 0..depth {
+      if !self.eat_punct(")") {
+        return None;
+      }
+    }
+
+    matches!(self.peek().tok, Tok::Eof).then_some((ty, value))
+  }
+
   // Constant expressions.
 
   pub fn expression(&mut self) -> Parse<i128> {
@@ -2494,6 +2553,11 @@ impl<'a> Parser<'a> {
           t.line,
           t.column,
           format!("'{n}' is a string, not a number"),
+        )),
+        Some(Constant::Pointer { .. }) => Err(error_at(
+          t.line,
+          t.column,
+          format!("'{n}' is a pointer, not a number"),
         )),
         None => Err(error_at(
           t.line,

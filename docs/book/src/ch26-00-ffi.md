@@ -548,7 +548,11 @@ preprocessor runs for it to read as written:
 - `#define` of a value is expanded wherever the name appears and becomes a
   constant: numbers in any base with any suffix, floating-point numbers,
   character constants, strings, adjacent strings joined, and expressions
-  over other constants.
+  over other constants. A value cast to a pointer type, the way a header
+  spells a sentinel such as `((void *) -1)`, is a `Pointer` of that type at
+  that address, and `nil` when the address is zero. A macro can use a type
+  declared after it, as C allows, since a macro means something only where
+  it is used.
 - `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else` and `#endif` are evaluated,
   with `defined()`, against the macros the target platform's compiler
   predefines: `__linux__`, `__APPLE__`, `_WIN32`, `__x86_64__`,

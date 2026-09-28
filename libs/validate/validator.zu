@@ -1096,7 +1096,7 @@ class Validator {
    *
    * class Palindrome < Rule {
    *   validate(value) {
-   *     return value == value.to_list().reverse().join('')
+   *     return value == ''.join(value.to_list().reverse())
    *   }
    *
    *   error() {

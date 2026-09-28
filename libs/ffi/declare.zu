@@ -112,8 +112,14 @@ class Declarations {
    * The value of a declared constant: an enum constant, a `#define`, or
    * a Rust `const`.
    *
+   * A `#define` casting a constant to a pointer type, as a header spells
+   * a sentinel address, is a `Pointer` of that type at that address:
+   * `((void *) -1)` is the all-ones address, and a null one is `nil`.
+   * Passed where C takes that pointer, it is exactly the value the C
+   * code would pass.
+   *
    * @param string name
-   * @returns number|bigint|string
+   * @returns number|bigint|string|Pointer|nil
    * @throws ValueError when no constant of that name was declared.
    */
   constant(name: string) {

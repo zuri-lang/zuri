@@ -20,6 +20,12 @@ pub enum Constant {
   Int(i128),
   Float(f64),
   Str(String),
+  /// A constant cast to a pointer type, as headers spell a sentinel
+  /// address: `((void *) -1)`, `((sqlite3_destructor_type) -1)`.
+  Pointer {
+    ty: TypeRef,
+    address: usize,
+  },
 }
 
 #[derive(Clone)]
@@ -58,6 +64,9 @@ pub struct Scope {
   pub variables: Vec<VariableDecl>,
   pub constants: Vec<(String, Constant)>,
   pub macros: FxHashMap<String, Macro>,
+  /// Object-like macros that did not evaluate where they were defined,
+  /// tried again once the source they came in has been read.
+  pub deferred: Vec<String>,
   pub includes: Vec<ScopeRef>,
   /// `#pragma pack` state.
   pub pack: Option<usize>,

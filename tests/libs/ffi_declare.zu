@@ -136,6 +136,26 @@ e = caught(@() => ffi.declare('_Static_assert(sizeof(int) == 8, "ints are wide")
 assert e and e.message.contains('ints are wide'), 'a failing static assertion is an error'
 ok('enums, constant expressions and static assertions')
 
+# A cast to a pointer type is how a header spells a sentinel address.
+api = ffi.declare('
+  #define TRANSIENT ((destructor)-1)
+  #define STATIC ((destructor)0)
+  #define FAILED ((void *) -1)
+  #define ONE ((void *)(long)1)
+  #define WIDE ((long)-1)
+  typedef void (*destructor)(void *);
+  typedef struct thing *handle;
+  #define NO_HANDLE ((handle)0)
+')
+var transient = api.constant('TRANSIENT')
+assert transient.address() == 2n ** 64n - 1n, '-1 becomes the all-ones address'
+assert transient.type().kind() == 'function', 'typed as the pointer it was cast to'
+assert api.constant('STATIC') == nil and api.constant('NO_HANDLE') == nil, 'a null one is nil'
+assert api.constant('FAILED').address() == 2n ** 64n - 1n, 'a void pointer'
+assert api.constant('ONE').address() == 1, 'through more than one cast'
+assert api.constant('WIDE') == -1, 'a cast to an integer stays a number'
+ok('pointer constants, from types declared before or after them')
+
 # The preprocessor.
 
 api = ffi.declare('

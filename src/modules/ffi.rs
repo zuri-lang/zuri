@@ -1751,12 +1751,20 @@ fn scope_type(ctx: &mut ZuriContext) -> Result<Value, String> {
   finish!(ctx, type_value(ctx.vm, ty))
 }
 
-fn constant_value(vm: &mut VM, c: Constant) -> Value {
-  match c {
+fn constant_value(vm: &mut VM, c: Constant) -> Result<Value, Fail> {
+  Ok(match c {
     Constant::Int(v) => convert::number_value(vm, v),
     Constant::Float(f) => Value::number(f),
     Constant::Str(s) => vm.heap_mut().alloc_string(s),
-  }
+    // Null is nil, as a null pointer loads anywhere else. Any other
+    // address is a `Pointer` of the type it was cast to, never a
+    // callable function: a sentinel has nothing at it to call.
+    Constant::Pointer { address: 0, .. } => Value::nil(),
+    Constant::Pointer { ty, address } => {
+      let target = ty.pointer().map(|p| p.target.clone());
+      convert::pointer_instance(vm, PointerData::raw(address, target))?
+    },
+  })
 }
 
 fn scope_constant(ctx: &mut ZuriContext) -> Result<Value, String> {
@@ -1764,7 +1772,7 @@ fn scope_constant(ctx: &mut ZuriContext) -> Result<Value, String> {
   let name = attempt!(ctx, string_arg(ctx, 1, "a constant name"));
   let found = scope.lock().unwrap().constant(&name);
   match found {
-    Some(c) => Ok(constant_value(ctx.vm, c)),
+    Some(c) => finish!(ctx, constant_value(ctx.vm, c)),
     None => Err(util::raise(
       ctx.vm,
       Fail::value(format!("no constant named '{name}' was declared")),
@@ -1778,7 +1786,7 @@ fn scope_constants(ctx: &mut ZuriContext) -> Result<Value, String> {
   let mut out = Vec::new();
   for (name, c) in constants {
     let key = str_value(ctx.vm, name);
-    let v = constant_value(ctx.vm, c);
+    let v = attempt!(ctx, constant_value(ctx.vm, c));
     out.push((key, v));
   }
   Ok(ctx.vm.heap_mut().alloc_dict(out))
@@ -1868,7 +1876,7 @@ fn bind(ctx: &mut ZuriContext) -> Result<Value, String> {
     if name.contains("::") {
       continue;
     }
-    let v = constant_value(ctx.vm, c);
+    let v = attempt!(ctx, constant_value(ctx.vm, c));
     members.push((name, v));
   }
 
