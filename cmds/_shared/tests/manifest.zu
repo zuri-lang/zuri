@@ -1,0 +1,157 @@
+# Reading and editing project.toml.
+
+import test { * }
+
+import ..manifest { DEFAULT_REGISTRY, ManifestError, parse, parse_dependency, resolve_registry }
+
+var SOURCE = '# ours
+[project]
+name = "shop"   # the name
+version = "1.2.0"
+description = "A shop."
+keywords = ["web", "store"]
+
+[dependencies]
+http-extra = "^1.4"
+internal = { version = "^2", registry = "company" }
+forked = { git = "https://example.test/forked.git", tag = "v1.0.0" }
+sibling = { path = "../sibling" }
+
+[dev-dependencies]
+fixtures = "~0.3"
+
+[install]
+allow-hooks = ["native-sqlite"]
+
+[registries]
+company = "https://packages.example.test"
+'
+
+describe('reading', @{
+  it('reads the project fields', @{
+    var m = parse(SOURCE)
+
+    expect(m.name()).to_equal('shop')
+    expect(m.version()).to_equal('1.2.0')
+    expect(m.list('keywords')).to_equal(['web', 'store'])
+    expect(m.text('homepage')).to_be_nil()
+  })
+
+  it('reads every kind of dependency', @{
+    var deps = parse(SOURCE).dependencies(true, {})
+    var by_name = {}
+
+    for dep in deps {
+      by_name.set(dep.name, dep)
+    }
+
+    expect(deps.length()).to_equal(5)
+    expect(by_name['http-extra'].kind).to_equal('registry')
+    expect(by_name['http-extra'].range).to_equal('^1.4')
+    expect(by_name['internal'].registry).to_equal('company')
+    expect(by_name['forked'].kind).to_equal('git')
+    expect(by_name['forked'].ref).to_equal({ kind: 'tag', value: 'v1.0.0' })
+    expect(by_name['sibling'].kind).to_equal('path')
+    expect(by_name['fixtures'].dev).to_be_true()
+  })
+
+  it('leaves development dependencies out when asked', @{
+    expect(parse(SOURCE).dependencies(false, {}).length()).to_equal(4)
+  })
+
+  it('reads the hook allow list, normalised', @{
+    expect(parse(SOURCE).allowed_hooks()).to_equal(['native_sqlite'])
+  })
+})
+
+describe('refusing', @{
+  it('refuses a declaration that says nothing sensible', @{
+    var bad = [
+      ['x', 'not a range'],
+      ['x', { git: 'https://a', path: '../b' }],
+      ['x', { git: 'https://a', tag: 'v1', branch: 'main' }],
+      ['x', { tag: 'v1' }],
+      ['x', { version: '^1', colour: 'red' }],
+      ['x', { registry: 'company' }],
+      ['x', 5],
+    ]
+
+    for pair in bad {
+      expect(@{
+        parse_dependency(pair[0], pair[1], false, nil, {})
+      }).to_raise_instance_of(ManifestError)
+    }
+  })
+
+  it('refuses the same package declared twice under two spellings', @{
+    var m = parse('[dependencies]\na-b = "1"\n\n[dev-dependencies]\na_b = "1"\n')
+
+    expect(@{
+      m.dependencies(true, {})
+    }).to_raise_instance_of(ManifestError)
+  })
+
+  it('refuses text that is not TOML', @{
+    expect(@{
+      parse('[project\nname = ')
+    }).to_raise_instance_of(ManifestError)
+  })
+})
+
+describe('editing', @{
+  it('adds a dependency and keeps every comment', @{
+    var m = parse(SOURCE)
+
+    m.add_dependency(parse_dependency('json-schema', '^0.4', false, nil, {}))
+
+    var text = m.to_string()
+
+    expect(text).to_contain('# ours')
+    expect(text).to_contain('name = "shop"   # the name')
+    expect(text).to_contain('json-schema = "^0.4"')
+  })
+
+  it('moves a dependency between sections rather than declaring it twice', @{
+    var m = parse(SOURCE)
+
+    m.add_dependency(parse_dependency('fixtures', '^1.0', false, nil, {}))
+
+    var deps = m.dependencies(true, {}).filter(@(d) => d.name == 'fixtures')
+
+    expect(deps.length()).to_equal(1)
+    expect(deps[0].dev).to_be_false()
+  })
+
+  it('removes a dependency under either spelling', @{
+    var m = parse(SOURCE)
+
+    expect(m.remove_dependency('http_extra')).to_be_true()
+    expect(m.dependency('http-extra')).to_be_nil()
+    expect(m.remove_dependency('never-there')).to_be_false()
+  })
+
+  it('writes a git dependency as a table', @{
+    var dep = parse_dependency('forked', { git: 'https://a/b.git', rev: 'abc' }, false, nil, {})
+
+    expect(dep.declaration()).to_equal({ git: 'https://a/b.git', rev: 'abc' })
+  })
+})
+
+describe('resolve_registry', @{
+  it('reads an alias, an address, or the default', @{
+    var aliases = { company: 'https://packages.example.test/' }
+
+    expect(resolve_registry(nil, {})).to_equal(DEFAULT_REGISTRY)
+    expect(resolve_registry('company', aliases)).to_equal('https://packages.example.test')
+    expect(resolve_registry('https://other.test', aliases)).to_equal('https://other.test')
+    var with_default = { 'default': 'https://mine.test' }
+
+    expect(resolve_registry(nil, with_default)).to_equal('https://mine.test')
+  })
+
+  it('refuses an alias nobody defined', @{
+    expect(@{
+      resolve_registry('nowhere', {})
+    }).to_raise_instance_of(ManifestError)
+  })
+})

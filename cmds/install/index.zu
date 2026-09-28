@@ -1,0 +1,96 @@
+/**
+ * @command install
+ * @description Adds packages to the project, or installs everything
+ *    it declares.
+ *
+ *   zuri install [package[@range]...] [options]
+ *
+ * A package named with no range is recorded at the version chosen,
+ * as a caret range that takes compatible updates, or exactly with the
+ * exact option. Git repositories and directories on this machine work
+ * the same way through their own options. With nothing named, every
+ * declared dependency is installed at the version the lockfile pins,
+ * resolving again only for what project.toml changed.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.git
+import .._shared.manifest as manifest_module
+import .._shared.names
+import .._shared.sync
+
+import .plan
+
+# A git or path dependency added without a name takes the one its own
+# project.toml states.
+def _discover_name(dependency, workspace) {
+  if dependency.name != nil {
+    return
+  }
+
+  if dependency.kind == 'path' {
+    var root = workspace.project.is_global ? os.cwd() : workspace.project.root
+    var manifest_path = os.join_paths(os.abs_path(os.join_paths(root, dependency.path)),
+      'project.toml')
+
+    if !file(manifest_path).exists() {
+      raise UsageError('there is no project.toml at ${dependency.path}')
+    }
+
+    dependency.name = manifest_module.load(manifest_path).name()
+  } else {
+    var commit = git.resolve(dependency.git, dependency.ref)
+
+    dependency.name = git.fetch(nil, dependency.git, commit, nil).manifest.name()
+  }
+
+  if dependency.name == nil {
+    raise UsageError('the package at ${dependency.describe()} states no name')
+  }
+
+  names.check_name(dependency.name)
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var options = cli.sync_options(parsed)
+  var global = parsed.options.get('global', false) == true
+  var workspace = cli.workspace('install', global, options)
+  var root = global ? nil : workspace.project.root
+  var wanted = plan.requested(parsed, root)
+  var provisional = []
+
+  for dependency in wanted {
+    _discover_name(dependency, workspace)
+
+    # A registry package named without a range may take any version;
+    # the one chosen becomes its range once it is known.
+    if dependency.kind == 'registry' and dependency.range == nil {
+      dependency.range = '*'
+      provisional.append(dependency)
+    }
+
+    workspace.manifest.add_dependency(dependency)
+    options.unlock.append(names.normalized(dependency.name))
+  }
+
+  var resolved = sync.resolve(workspace)
+  var lock = resolved[0]
+  var exact = parsed.options.get('exact', false) == true
+
+  for dependency in provisional {
+    dependency.range = plan.recorded_range(lock.get(dependency.name).version, exact)
+    workspace.manifest.add_dependency(dependency)
+  }
+
+  var outcome = sync.apply(workspace, lock, resolved[1], !wanted.is_empty())
+
+  cli.report(outcome)
+}
+
+run('install', main)

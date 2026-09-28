@@ -1,0 +1,90 @@
+/**
+ * The `account` command's parser and the rules it applies before
+ * talking to a registry.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+import .._shared.cli
+import .._shared.errors { UsageError }
+
+/** How long a token made by signing in lasts, in days. */
+var LOGIN_DAYS = 365
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('account', true)
+
+  parser.description = 'Signs this machine in to a registry, and manages the account and its '
+    + 'tokens there.'
+
+  cli.add_registry_option(parser)
+  cli.add_json_option(parser)
+
+  parser.add_command('create', 'Creates an account on the registry and signs in to it')
+  parser.add_command('login', 'Signs in, with a password or a token, and saves a token here')
+    .add_option('token-stdin', 'Read a token from standard input instead of asking for a password',
+      nil)
+    .add_option('username', 'The account to sign in to',
+      { short_name: 'u', type: args.STRING, metavar: 'name' })
+  parser.add_command('logout', 'Revokes the saved token on the registry and forgets it here')
+  parser.add_command('whoami', 'Says which account the saved token belongs to')
+  parser.add_command('tokens', 'Lists the tokens the account holds')
+  parser.add_command('token', 'Issues a new token, printed once',
+    { type: args.OPTIONAL, metavar: 'name' })
+    .add_option('scopes', 'What it may do: publish, yank, owners, account',
+      { type: args.LIST, metavar: 'scope' })
+    .add_option('days', 'How long it lasts; 365 by default',
+      { type: args.INT, metavar: 'days' })
+  parser.add_command('revoke', 'Revokes a token by its id', { type: args.STRING, metavar: 'id' })
+
+  return parser
+}
+
+/**
+ * The name a token made by signing in from this machine is given, so
+ * the account's token list says where each one lives.
+ *
+ * @returns string
+ */
+def login_token_name() {
+  var host = 'this machine'
+
+  catch {
+    host = os.hostname()
+  } as error {
+    host = 'this machine'
+  }
+
+  var name = 'zuri on ${host}'
+
+  return name.length() > 64 ? name[0, 64] : name
+}
+
+/**
+ * A token read from standard input, checked for shape.
+ *
+ * @param string text
+ * @returns string
+ * @raises UsageError
+ */
+def token_from(text: string) {
+  var token = text.replace('/\\s+/', '', true)
+
+  if token.is_empty() {
+    raise UsageError('no token arrived on standard input')
+  }
+
+  if token.length() > 512 {
+    raise UsageError('that is too long to be a token')
+  }
+
+  return token
+}

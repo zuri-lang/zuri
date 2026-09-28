@@ -1,0 +1,1315 @@
+/**
+ * Making a project's installed packages match what it declares.
+ *
+ * Every package command comes through here. `install`, `update` and
+ * `uninstall` change what is declared or what may move, resolve, and
+ * apply; `restore` applies the lockfile as it stands. The work has
+ * three parts:
+ *
+ * - resolving: choosing a version of every package the project needs,
+ *   directly or not, from registries, git repositories and paths;
+ * - planning: comparing that with what is installed, which yields what
+ *   to add, change and remove;
+ * - applying: unpacking and swapping the packages in, running the
+ *   hooks the project allows, and writing the lockfile and the record
+ *   of what was installed.
+ *
+ * Applying holds the project's lock throughout, and happens as one
+ * transaction: a failure anywhere, a hook included, leaves the
+ * packages exactly as they were.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .config
+import .errors { CommandError, UsageError }
+import .files
+import .fsx
+import .git
+import .hooks
+import .lock as lock_module
+import .lockfile
+import .manifest as manifest_module
+import .names
+import .paths
+import .registry { Registry, RegistryError }
+import .resolver
+import .semver
+import .store
+
+/**
+ * How a sync should behave.
+ */
+class Options {
+
+  /**
+   * Answer from the download cache alone.
+   * @type bool
+   */
+  var offline = false
+
+  /**
+   * Allow a token over plain HTTP to another machine.
+   * @type bool
+   */
+  var insecure = false
+
+  /**
+   * Run no hooks at all.
+   * @type bool
+   */
+  var no_hooks = false
+
+  /**
+   * Packages whose hooks may run this time, on top of the manifest's
+   * `allow-hooks`.
+   * @type list
+   */
+  var allow_hooks = []
+
+  /**
+   * Replace directories in `.zuri/libs` that zuri did not install.
+   * @type bool
+   */
+  var force = false
+
+  /**
+   * Work out what would happen and change nothing.
+   * @type bool
+   */
+  var dry_run = false
+
+  /**
+   * Leave out packages only development dependencies need.
+   * @type bool
+   */
+  var production = false
+
+  /**
+   * Check every installed package's files against the record.
+   * @type bool
+   */
+  var verify = false
+
+  /**
+   * Refuse to resolve: the lockfile must already say everything.
+   * @type bool
+   */
+  var frozen = false
+
+  /**
+   * Normalised names free to move off their locked version, or `true`
+   * for all of them.
+   * @type list|bool
+   */
+  var unlock = []
+
+  /**
+   * Called with a line of progress.
+   * @type ?function
+   */
+  var report
+
+  @new(fields: ?dict) {
+    self.allow_hooks = []
+    self.unlock = []
+
+    if fields != nil {
+      for key, value in fields {
+        setprop(self, key, value)
+      }
+    }
+  }
+
+  unlocked(key: string) {
+    if self.unlock == true {
+      return true
+    }
+
+    return self.unlock.contains(key)
+  }
+
+  say(line: string) {
+    var report = self.report
+
+    if report != nil {
+      report(line)
+    }
+  }
+}
+
+/**
+ * A project, or the global installation, opened for a sync.
+ */
+class Workspace {
+
+  /**
+   * @type paths.Project
+   */
+  var project
+
+  /**
+   * @type manifest.Manifest
+   */
+  var manifest
+
+  /**
+   * The lockfile as it was read.
+   * @type Lockfile
+   */
+  var lock
+
+  /**
+   * @type store.Installed
+   */
+  var installed
+
+  /**
+   * Registry aliases in effect.
+   * @type dict
+   */
+  var aliases
+
+  /**
+   * @type Options
+   */
+  var options
+
+  /**
+   * The standard library's module names.
+   * @type dict
+   */
+  var stdlib
+
+  var _registries = {}
+
+  /**
+   * @param project: a `paths.Project`.
+   * @param Options options
+   */
+  @new(project, options) {
+    self.project = project
+    self.options = options
+    self._registries = {}
+    self.manifest = project.is_global
+      ? manifest_module.load_or_create(project.manifest)
+      : manifest_module.load(project.manifest)
+    self.lock = lockfile.load(project.lockfile)
+    self.installed = store.load_installed(project.installed_record())
+    self.aliases = config.registries(self.manifest)
+    self.stdlib = names.stdlib_names()
+  }
+
+  /**
+   * What to call the project in messages.
+   *
+   * @returns string
+   */
+  display_name() {
+    if self.project.is_global {
+      return 'your global installation'
+    }
+
+    var name = self.manifest.name()
+
+    return name == nil ? 'your project' : name
+  }
+
+  /**
+   * The registry client for `address`, made once and reused.
+   *
+   * @param string address
+   * @returns Registry
+   */
+  registry(address: string) {
+    if !self._registries.contains(address) {
+      self._registries.set(address, Registry(address, {
+        token: config.token_for(address, self.aliases),
+        offline: self.options.offline,
+        insecure: self.options.insecure,
+      }))
+    }
+
+    return self._registries.get(address)
+  }
+
+  /**
+   * The address a registry alias or address means here.
+   *
+   * @param ?string alias_or_address
+   * @returns string
+   */
+  registry_address(alias_or_address: ?string) {
+    return manifest_module.resolve_registry(alias_or_address, self.aliases)
+  }
+
+  /**
+   * Where a declared dependency of the project comes from.
+   *
+   * @param dependency: a `manifest.Dependency`.
+   * @param ?string base: the directory a path is relative to; the
+   *    project root when left off.
+   * @param ?dict aliases: the aliases to read a registry name with.
+   * @returns dict: `{ kind, location, ref }`.
+   */
+  place_of(dependency, base: ?string, aliases: ?dict) {
+    if dependency.kind == 'git' {
+      return { kind: 'git', location: dependency.git, ref: dependency.ref }
+    }
+
+    if dependency.kind == 'path' {
+      var root = base == nil ? self.project.root : base
+      var absolute = os.abs_path(os.join_paths(root, dependency.path))
+
+      return { kind: 'path', location: absolute, ref: nil }
+    }
+
+    var address = manifest_module.resolve_registry(
+      dependency.registry, aliases == nil ? self.aliases : aliases
+    )
+
+    return { kind: 'registry', location: address, ref: nil }
+  }
+
+  /**
+   * The lockfile spelling of a place: a path is written relative to
+   * the project root.
+   *
+   * @param dict place
+   * @param ?string commit
+   * @returns Source
+   */
+  source_of(place: dict, commit: ?string) {
+    if place.kind == 'path' {
+      var relative = os.relative_path(self.project.root, place.location).replace('\\', '/', false)
+
+      return lockfile.Source('path', relative)
+    }
+
+    return lockfile.Source(place.kind, place.location, place.ref, commit)
+  }
+
+  /**
+   * A lockfile source read back into a place.
+   *
+   * @param Source source
+   * @returns dict
+   */
+  place_from(source) {
+    if source.kind == 'path' {
+      return {
+        kind: 'path',
+        location: os.abs_path(os.join_paths(self.project.root, source.location)),
+        ref: nil,
+      }
+    }
+
+    return { kind: source.kind, location: source.location, ref: source.ref }
+  }
+}
+
+# Two places are the same when they point at the same thing.
+def _same_place(a: dict, b: dict) {
+  if a.kind != b.kind or a.location != b.location {
+    return false
+  }
+
+  var a_ref = a.ref == nil ? '' : '${a.ref.kind}=${a.ref.value}'
+  var b_ref = b.ref == nil ? '' : '${b.ref.kind}=${b.ref.value}'
+
+  return a_ref == b_ref
+}
+
+# A place in words.
+def _describe_place(place: dict) {
+  if place.kind == 'git' {
+    var pin = place.ref == nil ? '' : ' (${place.ref.kind} ${place.ref.value})'
+
+    return '${place.location}${pin}'
+  }
+
+  return place.location
+}
+
+/**
+ * What the solver asks, answered from registries, repositories and
+ * paths, remembering everything it learns along the way.
+ */
+class Provider {
+  @new(workspace) {
+    self.workspace = workspace
+    self.places = {}
+    self.display = {}
+    self.wanted_by = {}
+    self.entries = {}
+    self.checked_out = {}
+    self.local = {}
+    self.deps = {}
+    self.notes = []
+  }
+
+  # Records where `key` comes from, refusing a second place for it.
+  want(key: string, name: string, place: dict, who: string) {
+    var known = self.places.get(key, nil)
+
+    if known != nil {
+      if !_same_place(known, place) {
+        raise CommandError(
+          "'${name}' is wanted from ${_describe_place(known)} by ${self.wanted_by.get(key)} "
+            + 'and from ${_describe_place(place)} by ${who}; a package can come from one '
+            + 'place only'
+        )
+      }
+
+      return
+    }
+
+    catch {
+      names.check_name(name, self.workspace.stdlib)
+    } as error {
+      raise CommandError('${who} depends on ${name}, which cannot be installed: ${error.message}')
+    }
+
+    self.places.set(key, place)
+    self.display.set(key, name)
+    self.wanted_by.set(key, who)
+  }
+
+  # The locked entry for `key`, when it still points at the same place.
+  _locked(key: string) {
+    var entry = self.workspace.lock.get(key)
+
+    if entry == nil {
+      return nil
+    }
+
+    var place = self.places.get(key)
+
+    if !_same_place(self.workspace.place_from(entry.source), place) {
+      return nil
+    }
+
+    return entry
+  }
+
+  versions(key: string) {
+    var place = self.places.get(key)
+    var name = self.display.get(key)
+    var locked = self._locked(key)
+    var keep = locked != nil and !self.workspace.options.unlocked(key)
+
+    if place.kind == 'registry' {
+      var index
+
+      catch {
+        index = self.workspace.registry(place.location).index(name)
+      } as error {
+        if instance_of(error, RegistryError) and error.code == 'not_found' {
+          self.notes.append("'${name}' does not exist on ${place.location}")
+
+          return []
+        }
+
+        raise error
+      }
+
+      var by_version = {}
+      var usable = []
+
+      for entry in index.get('versions', []) {
+        var version = entry.version
+        var is_locked = locked != nil and locked.version == version
+
+        if entry.get('yanked', false) and !is_locked {
+          continue
+        }
+
+        var needs = entry.get('zuri', nil)
+
+        if needs != nil and !semver.Range(needs).satisfies(os.version) {
+          continue
+        }
+
+        by_version.set(version, entry)
+        usable.append(version)
+      }
+
+      self.entries.set(key, by_version)
+
+      var ordered = semver.sorted(usable).reverse()
+
+      if keep and ordered.contains(locked.version) {
+        ordered = [locked.version] + ordered.filter(@(v) => v != locked.version)
+      }
+
+      return ordered
+    }
+
+    if place.kind == 'git' {
+      var commit = keep ? locked.source.commit : git.resolve(place.location, place.ref)
+      var expected = keep and locked.source.commit == commit ? locked.checksum : nil
+
+      self.workspace.options.say('Fetching ${name} from ${place.location}')
+
+      var fetched = git.fetch(name, place.location, commit, expected)
+
+      self._check_runtime(name, fetched.manifest)
+      self.checked_out.set(key, fetched)
+
+      return [self._version_of(name, fetched.manifest)]
+    }
+
+    var manifest_path = os.join_paths(place.location, paths.MANIFEST)
+
+    if !file(manifest_path).exists() {
+      raise CommandError("'${name}' points at ${place.location}, which holds no project.toml")
+    }
+
+    var found = manifest_module.load(manifest_path)
+    var declared = found.name()
+
+    if declared == nil or names.normalized(declared) != key {
+      raise CommandError(
+        "'${name}' points at ${place.location}, whose project.toml names '${declared}'"
+      )
+    }
+
+    self._check_runtime(name, found)
+    self.local.set(key, found)
+
+    return [self._version_of(name, found)]
+  }
+
+  _version_of(name: string, found) {
+    var version = found.version()
+
+    if version == nil or !semver.is_valid(version) {
+      raise CommandError("'${name}' does not state a valid version in its project.toml")
+    }
+
+    return semver.parse(version).to_string()
+  }
+
+  _check_runtime(name: string, found) {
+    var needs = found.zuri_range()
+
+    if needs != nil and !semver.Range(needs).satisfies(os.version) {
+      raise CommandError("'${name}' needs zuri ${needs}, and this is zuri ${os.version}")
+    }
+  }
+
+  dependencies(key: string, version: string) {
+    var cache_key = '${key}@${version}'
+
+    if self.deps.contains(cache_key) {
+      return self.deps.get(cache_key)
+    }
+
+    var place = self.places.get(key)
+    var name = self.display.get(key)
+    var who = '${name} ${version}'
+    var listed = []
+
+    if place.kind == 'registry' {
+      var entry = self.entries.get(key).get(version)
+
+      for dependency in entry.get('dependencies', []) {
+        var address = dependency.get('registry', nil)
+
+        if address == nil {
+          address = place.location
+        }
+
+        var dep_key = names.normalized(dependency.name)
+
+        self.want(dep_key, dependency.name, { kind: 'registry', location: address, ref: nil }, who)
+        listed.append({ name: dep_key, range: dependency.range })
+      }
+    } else {
+      var found = place.kind == 'git'
+        ? self.checked_out.get(key).manifest
+        : self.local.get(key)
+
+      var base = place.kind == 'path' ? place.location : nil
+      var aliases = config.registries(found)
+
+      for dependency in found.dependencies(false, self.workspace.stdlib) {
+        if place.kind == 'git' and dependency.kind == 'path' {
+          raise CommandError(
+            '${name} comes from git and depends on ${dependency.name} by path, which only '
+              + 'means something on the machine it was written on'
+          )
+        }
+
+        var dep_place = self.workspace.place_of(dependency, base, aliases)
+        var dep_key = names.normalized(dependency.name)
+        var range = dependency.range == nil ? '*' : dependency.range
+
+        self.want(dep_key, dependency.name, dep_place, who)
+        listed.append({ name: dep_key, range })
+      }
+    }
+
+    self.deps.set(cache_key, listed)
+
+    return listed
+  }
+}
+
+/**
+ * The outcome of a sync.
+ */
+class Outcome {
+  @new() {
+    self.added = []
+    self.changed = []
+    self.removed = []
+    self.kept = 0
+    self.hooks_run = []
+    self.hooks_skipped = []
+    self.lock = nil
+    self.notes = []
+    self.recovered = 0
+    self.dry_run = false
+  }
+
+  /**
+   * Whether anything was, or would be, installed or removed.
+   *
+   * @returns bool
+   */
+  changed_anything() {
+    return !self.added.is_empty() or !self.changed.is_empty() or !self.removed.is_empty()
+  }
+}
+
+/**
+ * Resolves the workspace's declared dependencies.
+ *
+ * @param Workspace workspace
+ * @returns list: `[lock, provider]`, the lockfile the resolution
+ *    describes and the provider that answered it.
+ * @raises resolver.SolveError, CommandError
+ */
+def resolve(workspace) {
+  var provider = Provider(workspace)
+  var declared = workspace.manifest.dependencies(true, workspace.stdlib)
+  var root_deps = []
+  var root_name = workspace.display_name()
+  var dev_keys = {}
+
+  for dependency in declared {
+    var key = names.normalized(dependency.name)
+    var place = workspace.place_of(dependency)
+
+    provider.want(key, dependency.name, place, root_name)
+    root_deps.append({ name: key, range: dependency.range == nil ? '*' : dependency.range })
+
+    if dependency.dev {
+      dev_keys.set(key, true)
+    }
+  }
+
+  workspace.options.say('Resolving dependencies')
+
+  var chosen
+
+  catch {
+    chosen = resolver.solve(provider, '0.0.0', root_deps, root_name)
+  } as error {
+    if instance_of(error, resolver.SolveError) and !provider.notes.is_empty() {
+      var extra = provider.notes.map(@(note) => '  ${note}')
+
+      raise resolver.SolveError(error.message + '\n\n' + '\n'.join(extra))
+    }
+
+    raise error
+  }
+
+  # What the project's runtime dependencies reach; everything else is
+  # there for development only.
+  var production = {}
+  var queue = root_deps.filter(@(dep) => !dev_keys.contains(dep.name)).map(@(dep) => dep.name)
+
+  while !queue.is_empty() {
+    var key = queue.pop()
+
+    if production.contains(key) or !chosen.contains(key) {
+      continue
+    }
+
+    production.set(key, true)
+
+    for dependency in provider.dependencies(key, chosen.get(key)) {
+      queue.append(dependency.name)
+    }
+  }
+
+  var lock = lockfile.Lockfile()
+
+  for key, version in chosen {
+    var place = provider.places.get(key)
+    var checksum = nil
+    var commit = nil
+
+    if place.kind == 'registry' {
+      checksum = provider.entries.get(key).get(version).checksum
+    } else if place.kind == 'git' {
+      var fetched = provider.checked_out.get(key)
+
+      checksum = fetched.checksum
+      commit = fetched.commit
+    }
+
+    var dependency_names = provider.dependencies(key, version).map(@(dependency) {
+      return provider.display.get(dependency.name)
+    })
+
+    lock.put(lockfile.Locked({
+      name: provider.display.get(key),
+      version,
+      source: workspace.source_of(place, commit),
+      checksum,
+      dependencies: dependency_names,
+      dev: !production.contains(key),
+    }))
+  }
+
+  return [lock, provider]
+}
+
+/**
+ * The ways the lockfile disagrees with the manifest, in words. Empty
+ * when the lockfile can be installed as it stands.
+ *
+ * @param Workspace workspace
+ * @returns list[string]
+ */
+def lock_differences(workspace) {
+  var differences = []
+  var lock = workspace.lock
+
+  if !file(workspace.project.lockfile).exists() {
+    return ['there is no project.lock yet']
+  }
+
+  var roots = []
+
+  for dependency in workspace.manifest.dependencies(true, workspace.stdlib) {
+    var entry = lock.get(dependency.name)
+
+    if entry == nil {
+      differences.append('${dependency.name} is declared but not locked')
+
+      continue
+    }
+
+    roots.append(entry.name)
+
+    var place = workspace.place_of(dependency)
+
+    if !_same_place(workspace.place_from(entry.source), place) {
+      differences.append(
+        '${dependency.name} is declared from ${_describe_place(place)} but locked from '
+          + entry.source.to_string()
+      )
+
+      continue
+    }
+
+    if dependency.range != nil and !semver.Range(dependency.range).satisfies(entry.version) {
+      differences.append(
+        '${dependency.name} is declared as ${dependency.range} but locked at ${entry.version}'
+      )
+    }
+  }
+
+  # Everything locked must be needed, and everything needed locked.
+  var reached = {}
+  var queue = roots.clone()
+
+  while !queue.is_empty() {
+    var name = queue.pop()
+    var key = names.normalized(name)
+
+    if reached.contains(key) {
+      continue
+    }
+
+    reached.set(key, true)
+
+    var entry = lock.get(name)
+
+    if entry == nil {
+      differences.append('${name} is needed but not locked')
+
+      continue
+    }
+
+    for dependency in entry.dependencies {
+      queue.append(dependency)
+    }
+  }
+
+  for entry in lock.entries() {
+    if !reached.contains(names.normalized(entry.name)) {
+      differences.append('${entry.name} is locked but nothing needs it')
+    }
+  }
+
+  return differences
+}
+
+/**
+ * One package's place in a plan.
+ */
+class Step {
+  @new(entry, action: string, previous: ?dict) {
+    self.entry = entry
+    self.action = action
+    self.previous = previous
+  }
+}
+
+/**
+ * What applying `lock` to the workspace would do.
+ *
+ * @param Workspace workspace
+ * @param Lockfile lock
+ * @returns dict: `{ steps, removals }`: a `Step` for every package in
+ *    the lock, and the import names to remove.
+ * @raises CommandError when a directory zuri did not install is in the
+ *    way, and the sync was not told to replace it.
+ */
+def plan(workspace, lock) {
+  var steps = []
+  var wanted = {}
+  var options = workspace.options
+
+  for entry in lock.entries() {
+    if options.production and entry.dev {
+      continue
+    }
+
+    var import_name = entry.import_name()
+    var dir = workspace.project.package_dir(import_name)
+    var record = workspace.installed.get(import_name)
+    var present = os.dir_exists(dir) or file(dir).exists()
+
+    wanted.set(import_name, true)
+
+    if record == nil {
+      if present and !options.force {
+        raise CommandError(
+          "'${os.relative_path(workspace.project.root, dir)}' holds code zuri did not install, "
+            + 'and ${entry.name} ${entry.version} would replace it; move it aside, or run again '
+            + 'with force to replace it'
+        )
+      }
+
+      steps.append(Step(entry, 'add'))
+
+      continue
+    }
+
+    var same = record.get('version', '') == entry.version
+      and record.get('source', '') == entry.source.to_string()
+      and record.get('checksum', nil) == entry.checksum
+
+    if !same {
+      steps.append(Step(entry, 'change', record))
+    } else if !present {
+      steps.append(Step(entry, 'add'))
+    } else if entry.source.kind == 'path' {
+      steps.append(Step(entry, 'refresh', record))
+    } else if options.verify and fsx.tree_digest(dir) != record.get('tree', '') {
+      steps.append(Step(entry, 'repair', record))
+    } else {
+      steps.append(Step(entry, 'keep', record))
+    }
+  }
+
+  var removals = []
+
+  for import_name, record in workspace.installed.packages {
+    if !wanted.contains(import_name) {
+      removals.append(import_name)
+    }
+  }
+
+  removals.sort()
+
+  return { steps, removals }
+}
+
+# `lock`'s packages, each after everything it depends on.
+def _in_dependency_order(lock) {
+  var ordered = []
+  var seen = {}
+
+  var visit = nil
+
+  visit = @(entry) {
+    var key = names.normalized(entry.name)
+
+    if seen.contains(key) {
+      return
+    }
+
+    seen.set(key, true)
+
+    for dependency in entry.dependencies {
+      var inner = lock.get(dependency)
+
+      if inner != nil {
+        visit(inner)
+      }
+    }
+
+    ordered.append(entry)
+  }
+
+  for entry in lock.entries() {
+    visit(entry)
+  }
+
+  return ordered
+}
+
+# Gets the archive, or the files, for one step into the transaction.
+def _stage(workspace, transaction, entry, provider) {
+  var import_name = entry.import_name()
+  var place = workspace.place_from(entry.source)
+
+  if place.kind == 'registry' {
+    if entry.checksum == nil {
+      raise CommandError('${entry.name} ${entry.version} is locked without a checksum')
+    }
+
+    var client = workspace.registry(place.location)
+    var archive_path = client.download(entry.name, entry.version, entry.checksum)
+
+    return transaction.stage_archive(import_name, archive_path)
+  }
+
+  if place.kind == 'git' {
+    var fetched = nil
+
+    if provider != nil {
+      fetched = provider.checked_out.get(names.normalized(entry.name), nil)
+    }
+
+    var stale = fetched == nil or fetched.commit != entry.source.commit
+      or !file(fetched.archive).exists()
+
+    if stale {
+      workspace.options.say('Fetching ${entry.name} from ${place.location}')
+      fetched = git.fetch(entry.name, place.location, entry.source.commit, entry.checksum)
+    }
+
+    return transaction.stage_archive(import_name, fetched.archive)
+  }
+
+  var found = manifest_module.load(os.join_paths(place.location, paths.MANIFEST))
+  var selected = files.select(place.location, {
+    include: found.list('include'),
+    exclude: found.list('exclude'),
+    use_git: false,
+  })
+
+  if !selected.links.is_empty() {
+    raise CommandError(
+      '${entry.name} holds symbolic links, which cannot be installed: ${selected.links[0]}'
+    )
+  }
+
+  return transaction.stage_files(import_name, place.location, selected.files)
+}
+
+# Checks what was staged is the package the lockfile says it is.
+def _check_staged(entry, dir: string) {
+  var manifest_path = os.join_paths(dir, paths.MANIFEST)
+
+  if !file(manifest_path).exists() {
+    raise CommandError('${entry.name} ${entry.version} holds no project.toml')
+  }
+
+  var found = manifest_module.load(manifest_path)
+
+  if found.name() == nil or names.normalized(found.name()) != names.normalized(entry.name) {
+    raise CommandError(
+      "the package installed as ${entry.name} calls itself '${found.name()}'"
+    )
+  }
+
+  var version = found.version()
+
+  if version == nil or !semver.is_valid(version)
+    or semver.compare(version, entry.version) != 0 {
+    raise CommandError(
+      '${entry.name} was locked at ${entry.version}, and what arrived says it is ${version}'
+    )
+  }
+
+  return found
+}
+
+/**
+ * Applies `lock` to the workspace: installs, replaces and removes
+ * packages until the installed set is exactly what it describes, then
+ * writes the lockfile, the record and, when `save_manifest` says so,
+ * the manifest.
+ *
+ * @param Workspace workspace
+ * @param Lockfile lock
+ * @param ?Provider provider: the provider that resolved `lock`, whose
+ *    git checkouts are reused.
+ * @param ?bool save_manifest
+ * @returns Outcome
+ */
+def apply(workspace, lock, provider, save_manifest: ?bool) {
+  var options = workspace.options
+  var project = workspace.project
+  var outcome = Outcome()
+
+  outcome.lock = lock
+  outcome.dry_run = options.dry_run
+
+  var body = @{
+    outcome.recovered = store.recover(project.staging_dir())
+
+    # Reread under the lock: another command may have finished while
+    # this one waited for it.
+    workspace.installed = store.load_installed(project.installed_record())
+
+    var planned = plan(workspace, lock)
+    var steps = planned.steps
+
+    for step in steps {
+      if step.action == 'add' {
+        outcome.added.append(step.entry)
+      } else if step.action == 'change' {
+        outcome.changed.append({ entry: step.entry, from: step.previous.get('version', '?') })
+      } else if step.action == 'keep' {
+        outcome.kept++
+      }
+    }
+
+    for import_name in planned.removals {
+      var record = workspace.installed.get(import_name)
+
+      outcome.removed.append({
+        name: record.get('name', import_name),
+        version: record.get('version', '?'),
+      })
+    }
+
+    if options.dry_run {
+      return
+    }
+
+    var transaction = store.Transaction(project.libs, project.staging_dir())
+    var staged = {}
+
+    catch {
+      # Held while archives are fetched and unpacked, so a `zuri clean`
+      # cannot take one out from under the install.
+      fsx.ensure_dir(paths.cache_dir())
+      lock_module.holding(os.join_paths(paths.cache_dir(), 'lock'), @{
+        for step in steps {
+          if step.action == 'keep' {
+            continue
+          }
+
+          options.say('Installing ${step.entry.name} ${step.entry.version}')
+
+          var dir = _stage(workspace, transaction, step.entry, provider)
+
+          staged.set(step.entry.import_name(), {
+            entry: step.entry,
+            dir,
+            manifest: _check_staged(step.entry, dir),
+            commands: store.commands_in(dir),
+          })
+        }
+      }, @(pid) {
+        options.say('Waiting for another zuri command (process ${pid}) to finish with the cache')
+      })
+
+      _check_commands(workspace, steps, staged)
+
+      for import_name in planned.removals {
+        transaction.remove(import_name)
+      }
+    } as error {
+      transaction.abandon()
+
+      raise error
+    }
+
+    # Uninstall hooks run while the packages are still in place.
+    var allowed = workspace.manifest.allowed_hooks()
+      + options.allow_hooks.map(@(name) => names.normalized(name))
+
+    for import_name in planned.removals {
+      var dir = project.package_dir(import_name)
+      var record = workspace.installed.get(import_name)
+      var name = record.get('name', import_name)
+      var manifest_path = os.join_paths(dir, paths.MANIFEST)
+
+      if !file(manifest_path).exists() {
+        continue
+      }
+
+      var script = manifest_module.load(manifest_path).hook('pre-uninstall')
+
+      if script == nil {
+        continue
+      }
+
+      if !hooks.permitted(name, false, allowed, options.no_hooks) {
+        outcome.hooks_skipped.append({ name, hook: 'pre-uninstall' })
+
+        continue
+      }
+
+      options.say('Running ${name} pre-uninstall')
+
+      hooks.run({
+        hook: 'pre-uninstall',
+        script,
+        name,
+        version: record.get('version', nil),
+        dir,
+        project: project.root,
+      })
+
+      outcome.hooks_run.append({ name, hook: 'pre-uninstall' })
+    }
+
+    transaction.commit()
+
+    catch {
+      for entry in _in_dependency_order(lock) {
+        var item = staged.get(entry.import_name(), nil)
+
+        if item == nil {
+          continue
+        }
+
+        var script = item.manifest.hook('post-install')
+
+        if script == nil {
+          continue
+        }
+
+        if !hooks.permitted(entry.name, false, allowed, options.no_hooks) {
+          outcome.hooks_skipped.append({ name: entry.name, hook: 'post-install' })
+
+          continue
+        }
+
+        options.say('Running ${entry.name} post-install')
+
+        hooks.run({
+          hook: 'post-install',
+          script,
+          name: entry.name,
+          version: entry.version,
+          dir: project.package_dir(entry.import_name()),
+          project: project.root,
+        })
+
+        outcome.hooks_run.append({ name: entry.name, hook: 'post-install' })
+      }
+
+      var own = project.is_global ? nil : workspace.manifest.hook('post-install')
+
+      if own != nil and outcome.changed_anything() and !options.no_hooks {
+        options.say('Running ${workspace.display_name()} post-install')
+
+        hooks.run({
+          hook: 'post-install',
+          script: own,
+          name: workspace.display_name(),
+          version: workspace.manifest.version(),
+          dir: project.root,
+          project: project.root,
+        })
+
+        outcome.hooks_run.append({ name: workspace.display_name(), hook: 'post-install' })
+      }
+    } as error {
+      transaction.rollback()
+      transaction.finish()
+
+      raise error
+    }
+
+    for import_name in planned.removals {
+      workspace.installed.forget(import_name)
+    }
+
+    for import_name, item in staged {
+      var entry = item.entry
+
+      workspace.installed.put(import_name, {
+        name: entry.name,
+        version: entry.version,
+        source: entry.source.to_string(),
+        checksum: entry.checksum == nil ? '' : entry.checksum,
+        tree: fsx.tree_digest(project.package_dir(import_name)),
+        dev: entry.dev,
+        commands: item.commands,
+      })
+    }
+
+    # A record whose checksum was blank is written without one.
+    for import_name, record in workspace.installed.packages {
+      if record.get('checksum', nil) == '' {
+        record.remove('checksum')
+      }
+    }
+
+    workspace.installed.save()
+    lock.save(project.lockfile)
+
+    if save_manifest == true {
+      workspace.manifest.save()
+    }
+
+    workspace.lock = lock
+    transaction.finish()
+
+    if project.is_global {
+      _update_launchers(workspace, outcome)
+    }
+  }
+
+  if options.dry_run {
+    body()
+  } else {
+    fsx.ensure_dir(project.state)
+    lock_module.holding(project.lock_path(), body, @(pid) {
+      options.say('Waiting for another zuri command (process ${pid}) to finish here')
+    })
+  }
+
+  return outcome
+}
+
+# Refuses two installed packages claiming the same command.
+def _check_commands(workspace, steps: list, staged: dict) {
+  var claims = {}
+
+  for step in steps {
+    var import_name = step.entry.import_name()
+    var item = staged.get(import_name, nil)
+    var commands = item != nil
+      ? item.commands
+      : workspace.installed.get(import_name).get('commands', [])
+
+    for command in commands {
+      var list = claims.get(command, [])
+
+      list.append(step.entry.name)
+      claims.set(command, list)
+    }
+  }
+
+  for command, owners in claims {
+    if owners.length() > 1 {
+      raise CommandError(
+        "the command '${command}' would be provided by both ${' and '.join(owners)}; "
+          + 'only one installed package may provide a command'
+      )
+    }
+  }
+}
+
+/**
+ * The launcher that runs a globally installed command from the shell,
+ * as text.
+ *
+ * @param string command
+ * @param string entry: the command's file.
+ * @param bool windows
+ * @returns string
+ */
+def launcher_text(command: string, entry: string, windows: bool) {
+  var runtime = os.real_path(os.exe_path)
+
+  if windows {
+    return '@ECHO OFF\r\n'
+      + 'REM Runs the zuri command "${command}". Written by zuri install; do not edit.\r\n'
+      + 'SET "ZURI_EXE=${runtime}"\r\n'
+      + 'IF NOT EXIST "%ZURI_EXE%" SET "ZURI_EXE=zuri"\r\n'
+      + '"%ZURI_EXE%" run "${entry}" %*\r\n'
+      + 'EXIT /B %ERRORLEVEL%\r\n'
+  }
+
+  var quoted_runtime = "'" + runtime.replace("'", "'\\''", false) + "'"
+  var quoted_entry = "'" + entry.replace("'", "'\\''", false) + "'"
+
+  return '#!/bin/sh\n'
+    + '# Runs the zuri command "${command}". Written by zuri install; do not edit.\n'
+    + 'ZURI_EXE=${quoted_runtime}\n'
+    + '[ -x "$ZURI_EXE" ] || ZURI_EXE=zuri\n'
+    + 'exec "$ZURI_EXE" run ${quoted_entry} "$@"\n'
+}
+
+# Writes a launcher for every globally installed command, and removes
+# the launchers of commands no longer installed.
+def _update_launchers(workspace, outcome) {
+  var bin = paths.global_bin()
+  var windows = os.platform == 'windows'
+  var wanted = {}
+
+  fsx.ensure_dir(bin)
+
+  for import_name, record in workspace.installed.packages {
+    for command in record.get('commands', []) {
+      var dir = os.join_paths(workspace.project.package_dir(import_name), 'cmds')
+      var entry = os.join_paths(dir, command, 'index.zu')
+
+      if !file(entry).exists() {
+        entry = os.join_paths(dir, command + '.zu')
+      }
+
+      var launcher = os.join_paths(bin, windows ? command + '.cmd' : command)
+
+      fsx.atomic_write(launcher, launcher_text(command, entry, windows), 0c755)
+      wanted.set(os.base_name(launcher), true)
+    }
+  }
+
+  var marker = 'Written by zuri install'
+
+  for entry in os.read_dir(bin) {
+    if entry == '.' or entry == '..' or wanted.contains(entry) {
+      continue
+    }
+
+    var full = os.join_paths(bin, entry)
+
+    catch {
+      if fsx.read_text(full).contains(marker) {
+        file(full).delete()
+      }
+    } as error {
+      # Not ours, or not readable: leave it.
+    }
+  }
+
+  var on_path = os.get_env('PATH', '').split(windows ? ';' : ':').some(@(dir) {
+    return os.abs_path(dir) == os.abs_path(bin)
+  })
+
+  if !on_path and !wanted.is_empty() {
+    outcome.notes.append(
+      'The commands installed globally are in ${bin}, which is not on your PATH yet.'
+    )
+  }
+}

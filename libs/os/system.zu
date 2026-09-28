@@ -16,6 +16,21 @@ import _os
 var version = _os.version
 
 /**
+ * The platform the running runtime was built for, as a target triple:
+ * `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`,
+ * `x86_64-pc-windows-msvc` and so on. Release archives are named by it,
+ * which is what makes it the way to find a runtime for this machine.
+ *
+ * ```zuri-repl
+ * %> os.target
+ * 'x86_64-unknown-linux-gnu'
+ * ```
+ *
+ * @type string
+ */
+var target = _os.target
+
+/**
  * The current Zuri VM version.
  * @type string
  */

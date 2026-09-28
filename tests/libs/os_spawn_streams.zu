@@ -1,0 +1,25 @@
+# A program started with its streams piped hands back end-of-file once
+# it exits, even when something it started in turn is still running.
+# The runtime keeps its own copies of the standard streams, and a copy
+# a grandchild inherited would hold the pipe open for its whole life.
+
+import os
+import os.process { spawn }
+
+var helper = os.join_paths(os.dir_name(__file__), 'os_spawn_streams_helper.zu')
+var started = time()
+
+var child = spawn(os.exe_path, ['run', helper], {
+  stdin: 'null',
+  stdout: 'pipe',
+  stderr: 'pipe',
+})
+
+child.wait()
+
+echo child.read_stdout().to_string().lines()[0]
+echo child.read_stderr().to_string().trim() == '' ? 'nothing on stderr' : 'stderr had output'
+
+# The grandchild sleeps for ten seconds, so a read that waited for it
+# would take at least that long.
+echo time() - started < 8 ? 'the pipes closed with the child' : 'a grandchild held the pipes open'

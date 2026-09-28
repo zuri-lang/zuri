@@ -1,0 +1,268 @@
+/**
+ * What `zuri bundle` builds: for which platforms, in which shape, and
+ * what goes in.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import compress.zlib
+import hash
+import os
+import struct
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+
+/** The platforms releases are built for, which `all` means. */
+var TARGETS = [
+  'x86_64-unknown-linux-gnu',
+  'aarch64-unknown-linux-gnu',
+  'x86_64-apple-darwin',
+  'aarch64-apple-darwin',
+  'x86_64-pc-windows-msvc',
+]
+
+/** The shapes a bundle can take. */
+var FORMATS = ['dir', 'archive', 'exe', 'app']
+
+/** The most a bundle's files may come to: 4 GiB. */
+var MAX_ARCHIVE = 4294967296
+
+/** The last eight bytes of a single-file bundle. */
+var MAGIC = 'ZURIBND1'
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('bundle', false)
+
+  parser.description = 'Packages the project and a runtime together, into something that runs '
+    + 'on a machine with no zuri installed.'
+  parser.epilog = 'Run zuri restore first; a bundle carries the packages that are installed.'
+
+  parser.add_option('target', 'host, all, or a platform such as aarch64-apple-darwin',
+    { short_name: 't', type: args.LIST, metavar: 'target' })
+  parser.add_option('format', 'dir, archive, exe (one file) or app (macOS); archive by default',
+    { short_name: 'f', type: args.CHOICE, choices: FORMATS, metavar: 'format', value: 'archive' })
+  parser.add_option('output', 'Where bundles are written; dist in the project by default',
+    { short_name: 'o', type: args.STRING, metavar: 'dir' })
+  parser.add_option('name', 'What the program is called; the project name by default',
+    { type: args.STRING, metavar: 'name' })
+  parser.add_option('runtime', 'A runtime to build with, unpacked, in place of a release',
+    { type: args.STRING, metavar: 'dir' })
+  parser.add_option('force', 'Replace a bundle that is already there', nil)
+  parser.add_option('json', 'Print what was built as JSON', nil)
+
+  return parser
+}
+
+/**
+ * The platforms asked for.
+ *
+ * @param ?list asked
+ * @param string host: the platform this runtime was built for.
+ * @returns list[string]
+ * @raises UsageError for a platform there are no releases for.
+ */
+def targets(asked: ?list, host: string) {
+  if asked == nil or asked.is_empty() {
+    return [host]
+  }
+
+  var chosen = []
+
+  for word in asked {
+    var picked = word == 'host' ? [host] : (word == 'all' ? TARGETS : [word])
+
+    for target in picked {
+      if target != host and !TARGETS.contains(target) {
+        raise UsageError(
+          "'${target}' is not a platform zuri is released for; choose from "
+            + ', '.join(TARGETS)
+        )
+      }
+
+      if !chosen.contains(target) {
+        chosen.append(target)
+      }
+    }
+  }
+
+  return chosen
+}
+
+/**
+ * Whether `target` is Windows.
+ *
+ * @param string target
+ * @returns bool
+ */
+def is_windows(target: string) {
+  return target.contains('windows')
+}
+
+/**
+ * Whether `target` is macOS.
+ *
+ * @param string target
+ * @returns bool
+ */
+def is_apple(target: string) {
+  return target.contains('apple')
+}
+
+/**
+ * The name one bundle is written under.
+ *
+ * @param string name
+ * @param string version
+ * @param string target
+ * @param string format
+ * @returns string
+ */
+def output_name(name: string, version: string, target: string, format: string) {
+  var base = '${name}-${version}-${target}'
+
+  using format {
+    when 'archive' return base + (is_windows(target) ? '.zip' : '.tar.gz')
+    when 'exe' return base + (is_windows(target) ? '.exe' : '')
+    when 'app' return '${name}.app'
+  }
+
+  return base
+}
+
+/**
+ * Refuses a format that cannot be built for `target` from this
+ * machine.
+ *
+ * @param string format
+ * @param string target
+ * @param string host_platform: `os.platform`.
+ * @raises UsageError
+ */
+def check_format(format: string, target: string, host_platform: string) {
+  if format == 'app' and !is_apple(target) {
+    raise UsageError('an .app is a macOS application; ${target} is not macOS')
+  }
+
+  # Appending to a signed executable breaks its signature, and only a
+  # Mac can sign it again.
+  if format == 'exe' and is_apple(target) and host_platform != 'macos' {
+    raise UsageError(
+      'a single-file bundle for ${target} has to be signed again once it is built, which '
+        + 'only macOS can do; build it on a Mac, or use the app or archive format'
+    )
+  }
+}
+
+/**
+ * The `bundle.toml` a bundle is marked with.
+ *
+ * @param dict details: `{ name, version, target, zuri }`.
+ * @returns string
+ */
+def marker(details: dict) {
+  return '# Written by zuri bundle. The runtime beside this file runs app/index.zu.\n\n'
+    + 'name = "${details.name}"\n'
+    + 'version = "${details.version}"\n'
+    + 'target = "${details.target}"\n'
+    + 'zuri = "${details.zuri}"\n'
+}
+
+# `text` escaped for an XML text node.
+def _xml(text: string) {
+  return text.replace('&', '&amp;', false).replace('<', '&lt;', false)
+    .replace('>', '&gt;', false).replace('"', '&quot;', false)
+}
+
+/**
+ * The `Info.plist` of a macOS application.
+ *
+ * @param dict details: `{ name, display, identifier, version, icon }`,
+ *    `icon` being whether an icon is included.
+ * @returns string
+ */
+def info_plist(details: dict) {
+  var lines = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+      + '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '  <key>CFBundleDevelopmentRegion</key><string>en</string>',
+    '  <key>CFBundleExecutable</key><string>${_xml(details.name)}</string>',
+    '  <key>CFBundleIdentifier</key><string>${_xml(details.identifier)}</string>',
+    '  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>',
+    '  <key>CFBundleName</key><string>${_xml(details.display)}</string>',
+    '  <key>CFBundlePackageType</key><string>APPL</string>',
+    '  <key>CFBundleShortVersionString</key><string>${_xml(details.version)}</string>',
+    '  <key>CFBundleVersion</key><string>${_xml(details.version)}</string>',
+    '  <key>NSHighResolutionCapable</key><true/>',
+  ]
+
+  if details.icon {
+    lines.append('  <key>CFBundleIconFile</key><string>icon.icns</string>')
+  }
+
+  lines.append('</dict>')
+  lines.append('</plist>')
+
+  return '\n'.join(lines) + '\n'
+}
+
+/**
+ * Whether `identifier` is a reverse-DNS bundle identifier.
+ *
+ * @param string identifier
+ * @returns bool
+ */
+def valid_identifier(identifier: string) {
+  return is_dict(identifier.match('/^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$/'))
+}
+
+/**
+ * The payload a single-file bundle carries: every file and directory
+ * under `root` as the runtime reads them back, compressed, followed by
+ * the trailer that says where it starts and what it hashes to.
+ *
+ * @param string root
+ * @returns bytes: what goes after the runtime.
+ */
+def payload(root: string) {
+  var stream = bytes(0)
+
+  for entry in fsx.walk(root) {
+    var path = entry.path.to_bytes()
+
+    if entry.kind == 'dir' {
+      stream.extend(struct.pack('CVV', 1, 0c755, path.length()))
+      stream.extend(path)
+
+      continue
+    }
+
+    if entry.kind == 'link' {
+      raise UsageError("'${entry.path}' is a symbolic link, which a bundle cannot carry")
+    }
+
+    var full = os.join_paths(root, entry.path)
+    var data = fsx.read_bytes(full)
+    var mode = (file(full).stats().mode & 0c111) != 0 ? 0c755 : 0c644
+
+    stream.extend(struct.pack('CVV', 0, mode, path.length()))
+    stream.extend(path)
+    stream.extend(struct.pack('P', data.length()))
+    stream.extend(data)
+  }
+
+  var compressed = zlib.compress(stream)
+  var digest = hash.sha256(compressed, true)
+  var trailer = digest + struct.pack('P', compressed.length()) + MAGIC.to_bytes()
+
+  return compressed + trailer
+}

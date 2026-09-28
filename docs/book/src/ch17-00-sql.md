@@ -935,6 +935,15 @@ inner undone
 [outer]
 ```
 
+Schema changes are part of the transaction on SQLite and PostgreSQL,
+so a set of `create table` statements that fails half way leaves
+nothing behind. MySQL and MariaDB commit the open transaction at every
+`create`, `alter` and `drop`, and a `transaction()` whose body changes
+the schema there raises `TransactionError` when it comes to commit.
+`db.supports('transactional_ddl')` tells the two apart, so a program
+that migrates its own schema can run each change inside a transaction
+where that holds and on its own where it does not.
+
 An isolation level can be asked for. Where an engine cannot provide one
 it says so rather than quietly giving something weaker:
 

@@ -536,7 +536,8 @@ class MySqlConnection < DriverConnection {
   _assert_in_transaction(what) {
     if !self.in_transaction() {
       raise TransactionError(
-        'there is no open transaction to ${what}',
+        'there is no open transaction to ${what}; mysql commits the ' +
+        'transaction around any create, alter or drop',
         { driver: 'mysql' }
       )
     }

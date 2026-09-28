@@ -1,0 +1,298 @@
+# Running a real repository and the real commands against it, for the
+# end-to-end suites. Everything lives under a fresh directory in the
+# system's temporary directory, which is removed when it is done.
+
+import http
+import json
+import net
+import os
+import os.process { spawn }
+
+
+/**
+ * Removes `path`, whatever it is, if it is there.
+ *
+ * @param string path
+ */
+def remove(path: string) {
+  if os.dir_exists(path) {
+    os.remove_dir(path, true)
+  } else if file(path).exists() {
+    file(path).delete()
+  }
+}
+
+/**
+ * The text of the file at `path`.
+ *
+ * @param string path
+ * @returns string
+ */
+def read(path: string) {
+  var handle = file(path, 'r')
+  var text = handle.read()
+
+  handle.close()
+
+  return text
+}
+
+/**
+ * Writes `text` to `path`, making the directories it needs.
+ *
+ * @param string path
+ * @param string text
+ */
+def put(path: string, text: string) {
+  if !os.dir_exists(os.dir_name(path)) {
+    os.create_dir(os.dir_name(path), 0c755, true)
+  }
+
+  var handle = file(path, 'w')
+
+  handle.write(text)
+  handle.close()
+}
+
+/**
+ * One scratch world: a `ZURI_HOME`, a repository's storage, and room
+ * for projects.
+ */
+class World {
+  @new(name: string) {
+    # Outside any checkout, so the projects made here, each a git
+    # repository of its own, can never end up inside another one.
+    self.root = os.create_temp_dir('zuri-${name}-')
+    self.home = os.join_paths(self.root, 'home')
+    self.server = nil
+    self.url = nil
+
+    remove(self.root)
+    os.create_dir(self.home, 0c755, true)
+  }
+
+  # A free port on this machine, found by binding to one and letting go.
+  _free_port() {
+    var probe = net.TcpStream()
+
+    probe.bind('127.0.0.1:0')
+
+    var port = probe.local_address().port()
+
+    probe.close()
+
+    return port
+  }
+
+  /**
+   * Starts `zuri serve`, and waits until it answers.
+   *
+   * @param ?list extra: more flags for it.
+   */
+  start(extra: ?list) {
+    var port = self._free_port()
+
+    self.url = 'http://127.0.0.1:${port}'
+
+    var flags = [
+      'serve', '--storage', os.join_paths(self.root, 'nyssa'), '--port', port.to_string(),
+      '--workers', '2', '--public-url', self.url,
+    ]
+
+    if extra != nil {
+      flags = flags + extra
+    }
+
+    self.server = spawn(os.exe_path, flags, {
+      stdout: 'null', stderr: 'null', stdin: 'null', env: self.env(),
+    })
+
+    iter var tries = 0; tries < 150; tries++ {
+      catch {
+        if http.get(self.url + '/healthz', { timeout: 1000 }).status == 200 {
+          return
+        }
+      } as error {
+        os.sleep(0.1)
+      }
+    }
+
+    self.stop()
+
+    raise Error('zuri serve did not come up on ${self.url}')
+  }
+
+  /**
+   * Stops the repository and removes the scratch directory.
+   */
+  stop() {
+    if self.server != nil {
+      self.server.kill(15)
+      self.server.wait(5000)
+      self.server = nil
+    }
+  }
+
+  finish() {
+    self.stop()
+    remove(self.root)
+  }
+
+  env() {
+    return { ZURI_HOME: self.home, NO_COLOR: '1' }
+  }
+
+  /**
+   * A directory under the scratch root, made fresh.
+   *
+   * @param string name
+   * @returns string
+   */
+  dir(name: string) {
+    var path = os.join_paths(self.root, name)
+
+    remove(path)
+    os.create_dir(path, 0c755, true)
+
+    return path
+  }
+
+  /**
+   * Runs `zuri` with `words` in `cwd`.
+   *
+   * @param list words
+   * @param string cwd
+   * @param ?string input: what to give it on standard input.
+   * @returns dict: `{ status, out, err, all }`.
+   */
+  zuri(words: list, cwd: string, input: ?string) {
+    var child = spawn(os.exe_path, words, {
+      cwd,
+      env: self.env(),
+      stdin: input == nil ? 'null' : 'pipe',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+
+    if input != nil {
+      child.write_stdin(input)
+      child.close_stdin()
+    }
+
+    var status = child.wait(120000)
+    var out = child.read_stdout().to_string().replace('\r\n', '\n', false)
+    var err = child.read_stderr().to_string().replace('\r\n', '\n', false)
+
+    return { status, out, err, all: out + err }
+  }
+
+  /**
+   * Creates an account through the API and signs the commands in with
+   * its token.
+   *
+   * @param string username
+   * @param string cwd
+   * @returns dict: what the registry answered.
+   */
+  account(username: string, cwd: string) {
+    var created = http.post(self.url + '/api/v1/accounts', {
+      username,
+      email: '${username}@example.test',
+      password: 'a long enough password',
+    }).as_dict()
+
+    var login = self.zuri(['account', 'login', '--registry', self.url, '--token-stdin'], cwd,
+      created.token.token)
+
+    if login.status != 0 {
+      raise Error('signing in failed: ${login.all}')
+    }
+
+    return created
+  }
+
+  /**
+   * A new project, made with `zuri init`.
+   *
+   * @param string name
+   * @param ?list flags
+   * @returns string: its directory.
+   */
+  project(name: string, flags: ?list) {
+    var projects = os.join_paths(self.root, 'projects')
+
+    if !os.dir_exists(projects) {
+      os.create_dir(projects, 0c755, true)
+    }
+
+    remove(os.join_paths(projects, name))
+
+    # Each project is a repository of its own with everything
+    # committed, which is how publish expects to find one.
+    var words = ['init', name, '--yes', '--vcs', 'git', '--description', 'The ${name} package']
+
+    if flags != nil {
+      words = words + flags
+    }
+
+    var made = self.zuri(words, projects)
+
+    if made.status != 0 {
+      raise Error('zuri init failed: ${made.all}')
+    }
+
+    var dir = os.join_paths(projects, name)
+
+    commit(dir)
+
+    return dir
+  }
+}
+
+/**
+ * Commits everything in the repository at `dir`.
+ *
+ * @param string dir
+ */
+def commit(dir: string) {
+  var env = {
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.test',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.test',
+  }
+
+  for words in [['add', '-A'], ['commit', '-q', '--allow-empty', '-m', 'snapshot']] {
+    var child = spawn('git', words, {
+      cwd: dir, env, stdin: 'null', stdout: 'null', stderr: 'pipe',
+    })
+
+    var said = child.read_stderr().to_string()
+
+    if child.wait() != 0 {
+      raise Error('git ${words[0]} failed in ${dir}: ${said}')
+    }
+  }
+}
+
+/**
+ * Sets `version` in the project.toml at `dir`.
+ *
+ * @param string dir
+ * @param string version
+ */
+def set_version(dir: string, version: string) {
+  var path = os.join_paths(dir, 'project.toml')
+
+  put(path, read(path).replace('/^version = ".*"$/m', 'version = "${version}"', true))
+  commit(dir)
+}
+
+/**
+ * Writes `text` to `path` under `dir`.
+ *
+ * @param string dir
+ * @param string path
+ * @param string text
+ */
+def write(dir: string, path: string, text: string) {
+  put(os.join_paths(dir, path), text)
+}

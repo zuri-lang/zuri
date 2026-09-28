@@ -1,0 +1,380 @@
+# What the repository refuses: hostile archives, names that would pass
+# for another package, tokens used beyond their scopes, forged forms,
+# and anyone guessing passwords.
+
+import hash
+import http
+import json
+import test { * }
+import url
+import compress.tar { Tar, COMPRESS_GZIP }
+
+import ._harness { World }
+
+var world = World('security')
+var ADA = nil
+var EVE = nil
+
+# Sends `method` to `path`, with `token` when one is given.
+def api(method: string, path: string, token: ?string, body: ?dict) {
+  var options = { headers: { Accept: 'application/json' } }
+
+  if token != nil {
+    options.set('auth', ['bearer', token])
+  }
+
+  if body != nil {
+    options.headers.set('Content-Type', 'application/json')
+    options.set('body', json.encode(body))
+  }
+
+  return http.HttpClient().request(method, world.url + path, options)
+}
+
+# The error code a response carries.
+def code(response) {
+  return response.as_dict().error.code
+}
+
+# An account created through the API, and its token.
+def account(username: string) {
+  var created = api('POST', '/api/v1/accounts', nil, {
+    username,
+    email: '${username}@example.test',
+    password: 'a long enough password',
+  })
+
+  return created.as_dict().token.token
+}
+
+# A gzip-compressed tar holding `entries`, each `{ name, text }` or a
+# full header for anything that is not a plain file.
+def tarball(entries: list) {
+  var archive = Tar()
+
+  archive.set_compression(9, COMPRESS_GZIP)
+  archive.create(nil)
+
+  for entry in entries {
+    var data = entry.get('text', '').to_bytes()
+
+    archive.add_data(data, {
+      filename: entry.name,
+      perm: 0c644,
+      uid: 0,
+      gid: 0,
+      size: entry.get('typeflag', 0) == 0 ? data.length() : 0,
+      mtime: 0,
+      typeflag: entry.get('typeflag', 0),
+      link: entry.get('link', ''),
+      uname: '',
+      gname: '',
+    })
+  }
+
+  return archive.get_archive()
+}
+
+# The project.toml of a package called `name` at `version`.
+def manifest(name: string, version: string) {
+  return '[project]\nname = "${name}"\nversion = "${version}"\n'
+    + 'description = "A package"\nlicense = "MIT"\n'
+}
+
+# A well-formed package.
+def package(name: string, version: string) {
+  return tarball([
+    { name: 'project.toml', text: manifest(name, version) },
+    { name: 'app/index.zu', text: 'echo "hello"\n' },
+  ])
+}
+
+# Publishes `data` as `name` at `version`, with a checksum that matches
+# unless `checksum` says otherwise.
+def publish(token: ?string, data: bytes, name: string, version: string, checksum: ?string) {
+  var form = http.MultipartBuilder()
+
+  form.add_field('metadata', json.encode({
+    name,
+    version,
+    checksum: checksum == nil ? 'sha256:' + hash.sha256(data) : checksum,
+  }))
+  form.add_file('archive', 'package.tar.gz', data, 'application/gzip')
+
+  var options = { multipart: form }
+
+  if token != nil {
+    options.set('auth', ['bearer', token])
+  }
+
+  return http.HttpClient().request('PUT', world.url + '/api/v1/packages', options)
+}
+
+before_all(@{
+  world.start(['--max-archive-size', '65536'])
+
+  ADA = account('ada')
+  EVE = account('eve')
+})
+
+after_all(@{
+  world.finish()
+})
+
+describe('archives', @{
+  it('accepts a well-formed package', @{
+    var published = publish(ADA, package('safe-kit', '1.0.0'), 'safe-kit', '1.0.0', nil)
+
+    expect(published.status).to_equal(201)
+  })
+
+  it_each([
+    ['a path climbing out', [{ name: '../evil.zu', text: 'x' }]],
+    ['an absolute path', [{ name: '/etc/evil', text: 'x' }]],
+    ['a symbolic link', [{ name: 'app/link', typeflag: 2, link: '/etc/passwd' }]],
+    ['a hard link', [{ name: 'app/link', typeflag: 1, link: 'project.toml' }]],
+    ['a name repeated in another case', [
+      { name: 'app/a.zu', text: 'x' },
+      { name: 'APP/A.zu', text: 'y' },
+    ]],
+  ], 'refuses an archive holding $0', @(what, extra) {
+    var entries = [{ name: 'project.toml', text: manifest('hostile-kit', '1.0.0') }] + extra
+    var refused = publish(ADA, tarball(entries), 'hostile-kit', '1.0.0', nil)
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('bad_archive')
+  })
+
+  it('refuses an archive with no project.toml', @{
+    var refused = publish(ADA, tarball([{ name: 'app/index.zu', text: 'x' }]), 'bare', '1.0.0',
+      nil)
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('bad_archive')
+  })
+
+  it('refuses what is not a gzip archive at all', @{
+    var refused = publish(ADA, 'plain text'.to_bytes(), 'plain', '1.0.0', nil)
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('bad_archive')
+  })
+
+  it('refuses an upload that does not match its checksum', @{
+    var refused = publish(ADA, package('damaged', '1.0.0'), 'damaged', '1.0.0',
+      'sha256:' + '0' * 64)
+
+    expect(refused.status).to_equal(400)
+    expect(code(refused)).to_equal('checksum_mismatch')
+  })
+
+  it('refuses an archive over the size limit before reading it', @{
+    var big = bytes(70000)
+    var refused = publish(ADA, big, 'big', '1.0.0', nil)
+
+    expect(refused.status).to_equal(413)
+    expect(code(refused)).to_equal('too_large')
+  })
+
+  it('refuses an upload that says it is another package', @{
+    var refused = publish(ADA, package('real-name', '1.0.0'), 'other-name', '1.0.0', nil)
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('metadata_mismatch')
+  })
+})
+
+describe('names and versions', @{
+  it('refuses a name that differs only by hyphens, underscores or case', @{
+    expect(publish(ADA, package('http-extra', '1.0.0'), 'http-extra', '1.0.0', nil).status)
+      .to_equal(201)
+
+    var refused = publish(EVE, package('http_extra', '1.0.0'), 'http_extra', '1.0.0', nil)
+
+    expect(code(refused)).to_equal('name_taken')
+    expect(refused.status).to_equal(409)
+
+    var shouted = publish(EVE, package('HTTP-Extra', '1.0.0'), 'HTTP-Extra', '1.0.0', nil)
+
+    expect(code(shouted)).to_equal('bad_name')
+  })
+
+  it('lets only an owner publish a new version', @{
+    var refused = publish(EVE, package('http-extra', '2.0.0'), 'http-extra', '2.0.0', nil)
+
+    expect(refused.status).to_equal(403)
+    expect(code(refused)).to_equal('not_owner')
+  })
+
+  it('never replaces a published version, yanked or not', @{
+    var again = publish(ADA, package('http-extra', '1.0.0'), 'http-extra', '1.0.0', nil)
+
+    expect(again.status).to_equal(409)
+    expect(code(again)).to_equal('version_exists')
+
+    expect(api('POST', '/api/v1/packages/http-extra/1.0.0/yank', ADA, nil).status)
+      .to_equal(200)
+
+    var changed = tarball([
+      { name: 'project.toml', text: manifest('http-extra', '1.0.0') },
+      { name: 'app/index.zu', text: 'echo "different"\n' },
+    ])
+
+    var replaced = publish(ADA, changed, 'http-extra', '1.0.0', nil)
+
+    expect(replaced.status).to_equal(409)
+    expect(code(replaced)).to_equal('version_exists')
+  })
+
+  it('refuses a name the standard library uses', @{
+    var refused = publish(ADA, package('json', '1.0.0'), 'json', '1.0.0', nil)
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('bad_name')
+  })
+})
+
+describe('tokens', @{
+  it('refuses a missing, unknown or revoked token', @{
+    expect(publish(nil, package('t', '1.0.0'), 't', '1.0.0', nil).status).to_equal(401)
+    expect(publish('nys_forged', package('t', '1.0.0'), 't', '1.0.0', nil).status)
+      .to_equal(401)
+
+    var issued = api('POST', '/api/v1/tokens', ADA, { name: 'short-lived' }).as_dict()
+
+    expect(api('DELETE', '/api/v1/tokens/${issued.id}', ADA, nil).status).to_equal(200)
+    expect(api('GET', '/api/v1/me', issued.token, nil).status).to_equal(401)
+  })
+
+  it('does only what its scopes allow', @{
+    var yank_only = api('POST', '/api/v1/tokens', ADA, { name: 'ci', scopes: ['yank'] })
+      .as_dict().token
+
+    var refused = publish(yank_only, package('safe-kit', '1.1.0'), 'safe-kit', '1.1.0', nil)
+
+    expect(refused.status).to_equal(403)
+    expect(code(refused)).to_equal('insufficient_scope')
+
+    expect(api('POST', '/api/v1/packages/safe-kit/1.0.0/yank', yank_only, nil).status)
+      .to_equal(200)
+    expect(api('DELETE', '/api/v1/packages/safe-kit/1.0.0/yank', yank_only, nil).status)
+      .to_equal(200)
+  })
+
+  it('cannot hand on a scope it does not carry', @{
+    var account_only = api('POST', '/api/v1/tokens', ADA, { name: 'a', scopes: ['account'] })
+      .as_dict().token
+
+    var refused = api('POST', '/api/v1/tokens', account_only, { name: 'b', scopes: ['publish'] })
+
+    expect(refused.status).to_equal(403)
+    expect(code(refused)).to_equal('insufficient_scope')
+  })
+
+  it('refuses a scope that does not exist', @{
+    var refused = api('POST', '/api/v1/tokens', nil, {
+      username: 'ada',
+      password: 'a long enough password',
+      name: 'x',
+      scopes: ['everything'],
+    })
+
+    expect(refused.status).to_equal(422)
+    expect(code(refused)).to_equal('bad_scope')
+  })
+})
+
+describe('requests', @{
+  it('sorts only by what it offers', @{
+    for sort in ['name; drop table packages', 'published_by', 'id desc'] {
+      var refused = api('GET', '/api/v1/search?q=kit&sort=' + url.encode(sort), nil, nil)
+
+      expect(refused.status).to_equal(400)
+      expect(code(refused)).to_equal('bad_sort')
+    }
+
+    expect(api('GET', '/api/v1/search?q=kit', nil, nil).as_dict().total)
+      .to_be_greater_than(0)
+  })
+
+  it('caps how many results one page holds, and how far pages go', @{
+    for asked in ['5000', '100000000'] {
+      var found = api('GET', '/api/v1/search?q=kit&per_page=${asked}', nil, nil).as_dict()
+
+      expect(found.per_page).to_equal(100)
+    }
+
+    expect(api('GET', '/api/v1/search?q=kit&per_page=many', nil, nil).as_dict().per_page)
+      .to_equal(20)
+
+    var far = api('GET', '/api/v1/search?q=kit&page=999999999', nil, nil)
+
+    expect(far.status).to_equal(200)
+    expect(far.as_dict().page).to_equal(10000)
+    expect(far.as_dict().packages).to_equal([])
+  })
+
+  it('serves nothing from outside its public files', @{
+    for path in ['/static/../db.zu', '/static/%2e%2e/db.zu', '/static/..%2fdb.zu',
+      '/static/%2e%2e%2f%2e%2e%2fnyssa.db'] {
+      var response = http.get(world.url + path)
+
+      expect(response.status).not.to_equal(200)
+    }
+
+    expect(http.get(world.url + '/static/nyssa.css').status).to_equal(200)
+  })
+
+  it('refuses a form sent without the token from its own page', @{
+    var client = http.HttpClient()
+
+    for path in ['/login', '/signup', '/account/password', '/logout'] {
+      var forged = client.request('POST', world.url + path, {
+        form: { username: 'ada', password: 'a long enough password' },
+      })
+
+      expect(forged.status).to_equal(403)
+    }
+  })
+
+  it('names each page in its title, with what a visitor typed escaped', @{
+    expect(http.get(world.url + '/').as_text()).to_contain('<title>Nyssa</title>')
+    expect(http.get(world.url + '/login').as_text())
+      .to_contain('<title>Sign in · Nyssa</title>')
+    expect(http.get(world.url + '/packages/safe-kit').as_text())
+      .to_contain('<title>safe-kit 1.0.0 · Nyssa</title>')
+
+    var search = http.get(world.url + '/search?q=' + url.encode('</title><b>'))
+
+    expect(search.as_text())
+      .to_contain('<title>&lt;/title&gt;&lt;b&gt; · Search · Nyssa</title>')
+  })
+
+  it('sends pages with a policy that runs no scripts', @{
+    var page = http.get(world.url + '/')
+    var policy = page.headers.get('Content-Security-Policy', '')
+
+    expect(policy).to_contain("script-src 'none'")
+    expect(policy).to_contain("frame-ancestors 'none'")
+  })
+})
+
+describe('guessing passwords', @{
+  it('holds an account after five wrong passwords, even for the right one', @{
+    account('grace')
+
+    iter var i = 0; i < 5; i++ {
+      var wrong = api('POST', '/api/v1/tokens', nil, { username: 'grace', password: 'wrong' })
+
+      expect(wrong.status).to_equal(401)
+    }
+
+    var held = api('POST', '/api/v1/tokens', nil, {
+      username: 'grace',
+      password: 'a long enough password',
+    })
+
+    expect(held.status).to_equal(429)
+    expect(code(held)).to_equal('too_many_attempts')
+  })
+})

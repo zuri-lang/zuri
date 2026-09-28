@@ -1,0 +1,193 @@
+# Where every setting of `zuri serve` comes from.
+
+import os
+import test { * }
+
+import ._harness { put, remove }
+import ..plan
+
+var ROOT = os.create_temp_dir('zuri-nyssa-plan-')
+var HOME = os.join_paths(ROOT, 'home')
+
+# The settings for `words` on the command line and `environment`.
+def settings(words: list, environment: ?dict) {
+  return plan.settings(plan.parser().parse(words), environment == nil ? {} : environment)
+}
+
+# The message a failed call raised, or `nil`.
+def failure(body: function) {
+  catch {
+    body()
+  } as error {
+    return error.message
+  }
+
+  return nil
+}
+
+before_each(@{
+  remove(ROOT)
+  os.create_dir(HOME, 0c755, true)
+  os.set_env('ZURI_HOME', HOME, true)
+})
+
+after_all(@{
+  remove(ROOT)
+})
+
+describe('defaults', @{
+  it('keeps everything under ZURI_HOME and listens on this machine', @{
+    var chosen = settings([], nil)
+    var storage = os.join_paths(HOME, 'nyssa')
+
+    expect(chosen.storage).to_equal(storage)
+    expect(chosen.config).to_equal(os.join_paths(storage, 'nyssa.toml'))
+    expect(chosen.database).to_equal('sqlite://' + os.join_paths(storage, 'nyssa.db'))
+    expect(chosen.host).to_equal('127.0.0.1')
+    expect(chosen.port).to_equal(3000)
+    expect(chosen.public_url).to_equal('http://127.0.0.1:3000')
+    expect(chosen.signup).to_equal('open')
+    expect(chosen.workers).to_equal(os.num_cpus().min(8).max(1))
+    expect(plan.exposed_in_clear(chosen)).to_be_false()
+  })
+})
+
+describe('the environment', @{
+  it('moves the storage, and the configuration file with it', @{
+    var storage = os.join_paths(ROOT, 'elsewhere')
+
+    put(os.join_paths(storage, 'nyssa.toml'), '[server]\nport = 8080\n')
+
+    var chosen = settings([], { NYSSA_STORAGE: storage })
+
+    expect(chosen.storage).to_equal(storage)
+    expect(chosen.port).to_equal(8080)
+    expect(chosen.database).to_equal('sqlite://' + os.join_paths(storage, 'nyssa.db'))
+  })
+
+  it('names the configuration file', @{
+    var path = os.join_paths(ROOT, 'custom.toml')
+
+    put(path, '[registry]\nname = "Custom"\n')
+
+    expect(settings([], { NYSSA_CONFIG: path }).name).to_equal('Custom')
+    expect(failure(@{
+      settings([], { NYSSA_CONFIG: os.join_paths(ROOT, 'missing.toml') })
+    })).to_contain('there is no configuration file')
+  })
+
+  it('gives every setting', @{
+    var chosen = settings([], {
+      NYSSA_HOST: '0.0.0.0',
+      NYSSA_PORT: '8443',
+      NYSSA_PUBLIC_URL: 'https://packages.example.test/',
+      NYSSA_WORKERS: '3',
+      NYSSA_TRUST_PROXY: 'yes',
+      NYSSA_READ_ONLY: '1',
+      NYSSA_DATABASE: 'postgres://nyssa@db.test/nyssa',
+      NYSSA_NAME: 'Example Packages',
+      NYSSA_SIGNUP: 'closed',
+      NYSSA_MAX_ARCHIVE_SIZE: '1048576',
+      NYSSA_MAIL_URL: 'smtp://mail.example.test',
+      NYSSA_MAIL_USERNAME: 'nyssa',
+      NYSSA_MAIL_PASSWORD: 'secret',
+      NYSSA_MAIL_FROM: 'Packages <packages@example.test>',
+    })
+
+    expect(chosen.host).to_equal('0.0.0.0')
+    expect(chosen.port).to_equal(8443)
+    expect(chosen.public_url).to_equal('https://packages.example.test')
+    expect(chosen.workers).to_equal(3)
+    expect(chosen.trust_proxy).to_be_true()
+    expect(chosen.read_only).to_be_true()
+    expect(chosen.database).to_equal('postgres://nyssa@db.test/nyssa')
+    expect(chosen.name).to_equal('Example Packages')
+    expect(chosen.signup).to_equal('closed')
+    expect(chosen.max_archive_size).to_equal(1048576)
+    expect(chosen.mail_url).to_equal('smtp://mail.example.test')
+    expect(chosen.mail_username).to_equal('nyssa')
+    expect(chosen.mail_password).to_equal('secret')
+    expect(chosen.mail_from).to_equal('Packages <packages@example.test>')
+  })
+
+  it('names the variable a bad value came from', @{
+    expect(failure(@{
+      settings([], { NYSSA_PORT: 'eighty' })
+    })).to_contain('NYSSA_PORT')
+
+    expect(failure(@{
+      settings([], { NYSSA_TRUST_PROXY: 'perhaps' })
+    })).to_contain('NYSSA_TRUST_PROXY')
+  })
+})
+
+describe('precedence', @{
+  it('takes a flag over the environment over the file', @{
+    var storage = os.join_paths(HOME, 'nyssa')
+
+    put(os.join_paths(storage, 'nyssa.toml'), '[server]\nport = 8080\nhost = "0.0.0.0"\n')
+
+    expect(settings([], nil).port).to_equal(8080)
+    expect(settings([], { NYSSA_PORT: '9090' }).port).to_equal(9090)
+    expect(settings(['--port', '7070'], { NYSSA_PORT: '9090' }).port).to_equal(7070)
+    expect(settings(['--port', '7070'], { NYSSA_PORT: '9090' }).host).to_equal('0.0.0.0')
+  })
+
+  it('takes a storage flag over the environment', @{
+    var flag = os.join_paths(ROOT, 'flag')
+    var variable = os.join_paths(ROOT, 'variable')
+
+    expect(settings(['--storage', flag], { NYSSA_STORAGE: variable }).storage).to_equal(flag)
+  })
+})
+
+describe('checks', @{
+  it('refuses settings that cannot work', @{
+    expect(failure(@{
+      settings(['--workers', '0'], nil)
+    })).to_contain('workers must be between 1 and 256')
+
+    expect(failure(@{
+      settings([], { NYSSA_SIGNUP: 'maybe' })
+    })).to_contain("signup must be 'open' or 'closed'")
+
+    expect(failure(@{
+      settings(['--max-archive-size', '10'], nil)
+    })).to_contain('the archive size limit')
+
+    expect(failure(@{
+      settings([], { NYSSA_PUBLIC_URL: 'packages.example.test' })
+    })).to_contain('must start with http:// or https://')
+
+    expect(failure(@{
+      settings(['--tls-cert', os.join_paths(ROOT, 'cert.pem')], nil)
+    })).to_contain('both a certificate and its key')
+  })
+
+  it('warns about listening beyond this machine in the clear', @{
+    expect(plan.exposed_in_clear(settings(['--host', '0.0.0.0'], nil))).to_be_true()
+    expect(plan.exposed_in_clear(
+      settings(['--host', '0.0.0.0', '--trust-proxy'], nil)
+    )).to_be_false()
+  })
+
+  it('names localhost in the public address for a wildcard host', @{
+    expect(settings(['--host', '0.0.0.0', '--port', '4000'], nil).public_url)
+      .to_equal('http://localhost:4000')
+  })
+})
+
+describe('handing the settings to the workers', @{
+  after_all(@{
+    os.unset_env(plan.SETTINGS_VARIABLE)
+  })
+
+  it('reads back what was handed over', @{
+    var chosen = settings([], { NYSSA_NAME: 'Handed' })
+
+    os.set_env(plan.SETTINGS_VARIABLE, plan.encode(chosen), true)
+
+    expect(plan.decode().name).to_equal('Handed')
+    expect(plan.decode().storage).to_equal(chosen.storage)
+  })
+})

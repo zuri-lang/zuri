@@ -1,0 +1,142 @@
+/**
+ * @command publish
+ * @description Publishes the project as a new version on a registry.
+ *
+ *   zuri publish [options]
+ *
+ * The project is packed the way every package is packed, so the same
+ * files always make the same archive, and uploaded with the token
+ * `zuri account login` saved for the registry. A published version
+ * never changes. The dry-run option shows exactly what would be sent
+ * and sends nothing.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.archive
+import .._shared.cli
+import .._shared.errors { run }
+import .._shared.fsx
+import .._shared.paths
+import .._shared.registry { RegistryError }
+import .._shared.ui
+
+import .plan
+
+def main() {
+  var parsed = plan.parser().parse()
+  var project = cli.require_project('publish')
+  var dry_run = parsed.options.get('dry-run', false) == true
+  var as_json = parsed.options.get('json', false) == true
+  var quiet = parsed.options.get('quiet', false) == true
+
+  var prepared = plan.prepare(project.root, {
+    allow_dirty: parsed.options.get('allow-dirty', false) == true,
+  })
+
+  for warning in prepared.warnings {
+    ui.complain(ui.warn('warning: ${warning}'))
+  }
+
+  var staging = os.join_paths(paths.cache_dir(), 'publish')
+  var packed_path = os.join_paths(staging, '${fsx.unique()}.tar.gz')
+
+  fsx.ensure_dir(staging)
+
+  catch {
+    var packed = archive.pack(project.root, prepared.files, packed_path)
+
+    if dry_run {
+      _show(prepared, packed, project.root, as_json)
+      fsx.remove(packed_path)
+
+      return
+    }
+
+    var registry = cli.registry_from(parsed)
+
+    if !as_json and !quiet {
+      echo 'Publishing ${ui.accent(prepared.name)} ${prepared.version} to ${registry.address}'
+    }
+
+    var published = nil
+    var already = false
+
+    catch {
+      published = registry.publish(packed_path, {
+        name: prepared.name,
+        version: prepared.version,
+        checksum: packed.checksum,
+      })
+    } as error {
+      # An upload that timed out may still have arrived. The registry
+      # holding exactly this archive under this version means it did.
+      var same = instance_of(error, RegistryError) and error.code == 'version_exists'
+        and error.details != nil and error.details.get('checksum', nil) == packed.checksum
+
+      if !same {
+        raise error
+      }
+
+      published = { name: prepared.name, version: prepared.version, checksum: packed.checksum }
+      already = true
+    }
+
+    fsx.remove(packed_path)
+
+    if as_json {
+      published.set('already_published', already)
+      cli.print_json(published)
+    } else if quiet {
+      return
+    } else if already {
+      echo '${ui.accent(published.name)} ${published.version} is already published with exactly '
+        + 'these files.'
+    } else {
+      echo 'Published ${ui.accent(published.name)} ${published.version} '
+        + ui.muted('(${ui.size(packed.size)}, ${packed.checksum})')
+    }
+  } as error {
+    fsx.remove(packed_path)
+
+    raise error
+  }
+}
+
+# The dry run: every file, its size, and what the archive came to.
+def _show(prepared: dict, packed: dict, root: string, as_json: bool) {
+  var rows = []
+  var listed = []
+
+  for path in prepared.files {
+    var size = file(os.join_paths(root, path)).stats().size
+
+    rows.append([ui.muted(ui.size(size)), path])
+    listed.append({ path, size })
+  }
+
+  if as_json {
+    cli.print_json({
+      name: prepared.name,
+      version: prepared.version,
+      files: listed,
+      size: packed.size,
+      unpacked_size: packed.unpacked_size,
+      checksum: packed.checksum,
+    })
+
+    return
+  }
+
+  echo '${ui.heading("Would publish")} ${ui.accent(prepared.name)} ${prepared.version}'
+  echo ''
+  ui.say(ui.table(rows))
+  echo ''
+  echo '${ui.count(prepared.files.length(), "file")}, ${ui.size(packed.unpacked_size)} '
+    + 'unpacked, ${ui.size(packed.size)} packed'
+  echo ui.muted(packed.checksum)
+}
+
+run('publish', main)

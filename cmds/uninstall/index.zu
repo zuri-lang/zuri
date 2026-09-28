@@ -1,0 +1,99 @@
+/**
+ * @command uninstall
+ * @description Removes packages from the project, along with anything
+ *    only they needed.
+ *
+ *   zuri uninstall <package...> [options]
+ *
+ * Each package is taken out of project.toml, the project is resolved
+ * again with every other package kept at its locked version, and
+ * whatever nothing needs any more is removed from `.zuri/libs`. A
+ * package another dependency still needs stays installed, and the
+ * command says which one needs it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.names
+import .._shared.sync
+import .._shared.ui
+
+def parser() {
+  var parser = args.Parser('uninstall', true)
+
+  parser.description = 'Removes packages from the project, along with anything only they needed.'
+
+  parser.add_index('packages', 'The packages to remove',
+    { type: args.LIST, metavar: 'package', required: true })
+  parser.add_option('global', 'Remove from this user rather than the project', { short_name: 'g' })
+  parser.add_option('dry-run', 'Show what would change and change nothing', { short_name: 'n' })
+  parser.add_option('no-hooks', 'Run no uninstall scripts at all', nil)
+  parser.add_option('allow-hooks', 'Let these packages run their scripts this time',
+    { type: args.LIST, metavar: 'package' })
+  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+
+  return parser
+}
+
+# Who, in `lock`, depends on `name`.
+def _needed_by(lock, name: string) {
+  var wanted = names.normalized(name)
+  var who = []
+
+  for entry in lock.entries() {
+    for dependency in entry.dependencies {
+      if names.normalized(dependency) == wanted {
+        who.append(entry.name)
+      }
+    }
+  }
+
+  return who
+}
+
+def main() {
+  var parsed = parser().parse()
+  var options = cli.sync_options(parsed)
+  var workspace = cli.workspace('uninstall', parsed.options.get('global', false) == true, options)
+  var removed = []
+
+  for name in parsed.indexes[0] {
+    if workspace.manifest.remove_dependency(name) {
+      removed.append(name)
+
+      continue
+    }
+
+    var who = _needed_by(workspace.lock, name)
+
+    if !who.is_empty() {
+      raise UsageError(
+        "'${name}' is not declared in project.toml; it is installed because "
+          + '${", ".join(who)} ${who.length() == 1 ? "needs" : "need"} it'
+      )
+    }
+
+    raise UsageError("'${name}' is not a dependency of ${workspace.display_name()}")
+  }
+
+  var resolved = sync.resolve(workspace)
+  var lock = resolved[0]
+  var outcome = sync.apply(workspace, lock, resolved[1], true)
+
+  cli.report(outcome)
+
+  for name in removed {
+    if lock.has(name) {
+      var who = _needed_by(lock, name)
+
+      echo ui.muted('${name} stays installed, because ${", ".join(who)} '
+        + '${who.length() == 1 ? "needs" : "need"} it.')
+    }
+  }
+}
+
+run('uninstall', main)

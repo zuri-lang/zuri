@@ -1,0 +1,87 @@
+/**
+ * Colouring Zuri code on a page.
+ *
+ * The code is split into tokens by Zuri's own lexer, so what is
+ * coloured as a keyword is exactly what the language reads as one.
+ * Everything is escaped as it is written, and a class names each kind
+ * of token; the stylesheet decides the colours.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import html
+import zuri
+
+var _CLASSES = {
+  Literal: 'str',
+  Interpolation: 'str',
+  Integer: 'num',
+  Double: 'num',
+  BigNumber: 'num',
+  Comment: 'com',
+  DocBlock: 'com',
+  Identifier: 'id',
+  Decorator: 'dec',
+}
+
+# The class for one token, or `nil` for punctuation.
+def _class_of(token) {
+  var known = _CLASSES.get(token.kind, nil)
+
+  if known != nil {
+    return known
+  }
+
+  if is_dict(token.text.match('/^[a-z_]+$/')) {
+    return 'kw'
+  }
+
+  return nil
+}
+
+/**
+ * `source` as highlighted markup, or `nil` when it does not lex, in
+ * which case the caller shows it plain.
+ *
+ * @param string source
+ * @returns ?string
+ */
+def zuri_code(source: string) {
+  var tokens
+
+  catch {
+    tokens = zuri.tokenize(source)
+  } as error {
+    return nil
+  }
+
+  var out = []
+  var at = 0
+
+  for token in tokens {
+    if token.kind == 'Error' {
+      return nil
+    }
+
+    if token.kind == 'Eof' {
+      break
+    }
+
+    # Whatever the lexer skipped between tokens, spaces mostly.
+    if token.start > at {
+      out.append(html.escape_text(source[at, token.start]))
+    }
+
+    var text = html.escape_text(source[token.start, token.end])
+    var kind = _class_of(token)
+
+    out.append(kind == nil ? text : '<span class="${kind}">${text}</span>')
+    at = token.end
+  }
+
+  if at < source.length() {
+    out.append(html.escape_text(source[at,]))
+  }
+
+  return ''.join(out)
+}

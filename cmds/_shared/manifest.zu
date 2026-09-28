@@ -1,0 +1,741 @@
+/**
+ * `project.toml`: what a project is, what it depends on, and how it is
+ * installed, published and bundled.
+ *
+ * ```toml
+ * [project]
+ * name = "web-tools"
+ * version = "1.4.0"
+ * description = "Helpers for building web services."
+ * authors = ["Ada Lovelace <ada@example.com>"]
+ * license = "MIT"
+ * readme = "README.md"
+ * zuri = ">=0.1"
+ * include = ["app", "index.zu", "README.md"]
+ * exclude = ["app/fixtures"]
+ *
+ * [dependencies]
+ * http-extra = "^1.2"
+ * internal = { version = "^2", registry = "company" }
+ * forked = { git = "https://example.com/forked.git", tag = "v1.0.0" }
+ * sibling = { path = "../sibling" }
+ *
+ * [dev-dependencies]
+ * fixtures = "^0.3"
+ *
+ * [hooks]
+ * post-install = "scripts/setup.zu"
+ * pre-uninstall = "scripts/teardown.zu"
+ *
+ * [install]
+ * allow-hooks = ["native-sqlite"]
+ *
+ * [registries]
+ * company = "https://packages.example.com"
+ *
+ * [bundle]
+ * name = "Web Tools"
+ * identifier = "com.example.webtools"
+ * ```
+ *
+ * Reading keeps the document the file came from, so writing it back
+ * after `add_dependency()` or `remove_dependency()` changes only the
+ * lines those touched. Every comment and blank line the author wrote
+ * survives.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import toml
+
+import .errors { UsageError }
+import .fsx
+import .names
+import .semver
+
+/** The section runtime dependencies are declared in. */
+var DEPENDENCIES = 'dependencies'
+
+/** The section development dependencies are declared in. */
+var DEV_DEPENDENCIES = 'dev-dependencies'
+
+/** The registry a dependency comes from when it names none. */
+var DEFAULT_REGISTRY = 'https://pub.zurilang.org'
+
+/**
+ * Raised for a manifest that cannot be read or does not describe a
+ * project.
+ */
+class ManifestError < UsageError {}
+
+/**
+ * One declared dependency.
+ *
+ * @printable
+ */
+class Dependency {
+
+  /**
+   * The package's name, as declared.
+   * @type string
+   */
+  var name
+
+  /**
+   * `'registry'`, `'git'` or `'path'`.
+   * @type string
+   */
+  var kind
+
+  /**
+   * The version range, for a registry dependency. Git and path
+   * dependencies may carry one too, which the version they hold must
+   * then fall in.
+   * @type ?string
+   */
+  var range
+
+  /**
+   * For a registry dependency, the registry it names: an alias from
+   * `[registries]` or an address. `nil` for the default one.
+   * @type ?string
+   */
+  var registry
+
+  /**
+   * For a git dependency, the repository address.
+   * @type ?string
+   */
+  var git
+
+  /**
+   * For a git dependency, which of `tag`, `rev` or `branch` pins it,
+   * and to what. `nil` follows the default branch.
+   * @type ?dict
+   */
+  var ref
+
+  /**
+   * For a path dependency, the path as written, relative to the
+   * project root unless absolute.
+   * @type ?string
+   */
+  var path
+
+  /**
+   * Whether it was declared under `dev-dependencies`.
+   * @type bool
+   */
+  var dev = false
+
+  /**
+   * @param dict fields
+   */
+  @new(fields: dict) {
+    self.name = fields.name
+    self.kind = fields.kind
+    self.range = fields.get('range', nil)
+    self.registry = fields.get('registry', nil)
+    self.git = fields.get('git', nil)
+    self.ref = fields.get('ref', nil)
+    self.path = fields.get('path', nil)
+    self.dev = fields.get('dev', false)
+  }
+
+  /**
+   * The name the package is imported by.
+   *
+   * @returns string
+   */
+  import_name() {
+    return names.import_name(self.name)
+  }
+
+  /**
+   * How the declaration is written in `project.toml`: a plain range
+   * where that says everything, a table otherwise.
+   *
+   * @returns string|dict
+   */
+  declaration() {
+    if self.kind == 'registry' and self.registry == nil {
+      return self.range
+    }
+
+    var table = {}
+
+    if self.kind == 'git' {
+      table.set('git', self.git)
+
+      if self.ref != nil {
+        table.set(self.ref.kind, self.ref.value)
+      }
+    } else if self.kind == 'path' {
+      table.set('path', self.path)
+    }
+
+    if self.range != nil and (self.kind == 'registry' or self.range != '*') {
+      table.set('version', self.range)
+    }
+
+    if self.registry != nil {
+      table.set('registry', self.registry)
+    }
+
+    return table
+  }
+
+  /**
+   * The declaration as one line a person would read.
+   *
+   * @returns string
+   */
+  describe() {
+    if self.kind == 'git' {
+      var pin = self.ref == nil ? '' : ' (${self.ref.kind} ${self.ref.value})'
+
+      return '${self.name} from ${self.git}${pin}'
+    }
+
+    if self.kind == 'path' {
+      return '${self.name} from ${self.path}'
+    }
+
+    var from = self.registry == nil ? '' : ' from ${self.registry}'
+
+    return '${self.name} ${self.range}${from}'
+  }
+
+  to_string() {
+    return self.describe()
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+# `value` as a list of strings, or the error saying what `key` should
+# have been.
+def _string_list(value, key: string, where: string) {
+  if value == nil {
+    return []
+  }
+
+  if !is_list(value) {
+    raise ManifestError("${where}: '${key}' must be a list of strings")
+  }
+
+  for item in value {
+    if !is_string(item) {
+      raise ManifestError("${where}: '${key}' must be a list of strings")
+    }
+  }
+
+  return value
+}
+
+# `value` as a string, or `nil` when absent.
+def _optional_string(value, key: string, where: string) {
+  if value != nil and !is_string(value) {
+    raise ManifestError("${where}: '${key}' must be a string")
+  }
+
+  return value
+}
+
+/**
+ * One declaration read into a `Dependency`.
+ *
+ * @param string name
+ * @param value: the declaration as written, a string or a table.
+ * @param bool dev
+ * @param ?string where: what to name in an error; the manifest's
+ *    path, say.
+ * @param ?dict stdlib: `names.stdlib_names()`, when already read.
+ * @returns Dependency
+ * @raises ManifestError
+ */
+def parse_dependency(name: string, value, dev: bool, where: ?string, stdlib: ?dict) {
+  var section = dev ? DEV_DEPENDENCIES : DEPENDENCIES
+
+  if where == nil {
+    where = 'project.toml'
+  }
+
+  var context = '${where} [${section}] ${name}'
+
+  catch {
+    names.check_name(name, stdlib)
+  } as error {
+    raise ManifestError('${context}: ${error.message}')
+  }
+
+  if is_string(value) {
+    if !semver.is_valid_range(value) {
+      raise ManifestError("${context}: '${value}' is not a valid version range")
+    }
+
+    return Dependency({ name, kind: 'registry', range: value, dev })
+  }
+
+  if !is_dict(value) {
+    raise ManifestError('${context}: a dependency is a version range or a table')
+  }
+
+  var known = ['version', 'registry', 'git', 'tag', 'rev', 'branch', 'path']
+
+  for key in value.keys() {
+    if !known.contains(key) {
+      raise ManifestError("${context}: '${key}' is not something a dependency can say")
+    }
+  }
+
+  var range = _optional_string(value.get('version', nil), 'version', context)
+
+  if range != nil and !semver.is_valid_range(range) {
+    raise ManifestError("${context}: '${range}' is not a valid version range")
+  }
+
+  var git = _optional_string(value.get('git', nil), 'git', context)
+  var path = _optional_string(value.get('path', nil), 'path', context)
+  var registry = _optional_string(value.get('registry', nil), 'registry', context)
+
+  if git != nil and path != nil {
+    raise ManifestError('${context}: a dependency comes from git or from a path, not both')
+  }
+
+  var pins = []
+
+  for kind in ['tag', 'rev', 'branch'] {
+    var pinned = _optional_string(value.get(kind, nil), kind, context)
+
+    if pinned != nil {
+      pins.append({ kind, value: pinned })
+    }
+  }
+
+  if git != nil {
+    if registry != nil {
+      raise ManifestError('${context}: a git dependency does not come from a registry')
+    }
+
+    if pins.length() > 1 {
+      raise ManifestError('${context}: pin a git dependency with one of tag, rev or branch')
+    }
+
+    var ref = pins.is_empty() ? nil : pins[0]
+
+    return Dependency({ name, kind: 'git', git, ref, range, dev })
+  }
+
+  if !pins.is_empty() {
+    raise ManifestError("${context}: '${pins[0].kind}' only means something with 'git'")
+  }
+
+  if path != nil {
+    if registry != nil {
+      raise ManifestError('${context}: a path dependency does not come from a registry')
+    }
+
+    return Dependency({ name, kind: 'path', path, range, dev })
+  }
+
+  if range == nil {
+    raise ManifestError("${context}: say which versions with 'version'")
+  }
+
+  return Dependency({ name, kind: 'registry', range, registry, dev })
+}
+
+/**
+ * A project's manifest, read and ready to be changed.
+ */
+class Manifest {
+
+  /**
+   * Where it was read from, or `nil` for one built in memory.
+   * @type ?string
+   */
+  var path
+
+  /**
+   * The document, which keeps the text around every value.
+   * @type toml.Document
+   */
+  var document
+
+  /**
+   * Everything the file says, as plain values.
+   * @type dict
+   */
+  var data
+
+  /**
+   * @param toml.Document document
+   * @param ?string path
+   */
+  @new(document, path: ?string) {
+    self.document = document
+    self.path = path
+    self.data = document.to_value()
+  }
+
+  _where() {
+    return self.path == nil ? 'project.toml' : self.path
+  }
+
+  _project() {
+    var project = self.data.get('project', {})
+
+    if !is_dict(project) {
+      raise ManifestError('${self._where()}: [project] must be a table')
+    }
+
+    return project
+  }
+
+  /**
+   * The project's name, or `nil` when it states none.
+   *
+   * @returns ?string
+   */
+  name() {
+    return _optional_string(self._project().get('name', nil), 'name', self._where())
+  }
+
+  /**
+   * The project's version, or `nil` when it states none.
+   *
+   * @returns ?string
+   */
+  version() {
+    return _optional_string(self._project().get('version', nil), 'version', self._where())
+  }
+
+  /**
+   * One text field of `[project]`, or `nil`.
+   *
+   * @param string key
+   * @returns ?string
+   */
+  text(key: string) {
+    return _optional_string(self._project().get(key, nil), key, self._where())
+  }
+
+  /**
+   * One list field of `[project]`, or an empty list.
+   *
+   * @param string key
+   * @returns list[string]
+   */
+  list(key: string) {
+    return _string_list(self._project().get(key, nil), key, self._where())
+  }
+
+  /**
+   * The runtime versions the project supports, as written, or `nil`.
+   *
+   * @returns ?string
+   */
+  zuri_range() {
+    var range = self.text('zuri')
+
+    if range != nil and !semver.is_valid_range(range) {
+      raise ManifestError("${self._where()}: zuri = '${range}' is not a valid version range")
+    }
+
+    return range
+  }
+
+  /**
+   * The declared dependencies, runtime ones first, each section in
+   * the order written.
+   *
+   * @param ?bool include_dev: include `dev-dependencies`. Default
+   *    `true`.
+   * @param ?dict stdlib: `names.stdlib_names()`, when already read.
+   * @returns list[Dependency]
+   * @raises ManifestError when a declaration is invalid, or a package
+   *    is declared in both sections.
+   */
+  dependencies(include_dev: ?bool, stdlib: ?dict) {
+    if stdlib == nil {
+      stdlib = names.stdlib_names()
+    }
+
+    var found = []
+    var seen = {}
+    var sections = [[DEPENDENCIES, false]]
+
+    if include_dev != false {
+      sections.append([DEV_DEPENDENCIES, true])
+    }
+
+    for pair in sections {
+      var table = self.data.get(pair[0], {})
+
+      if !is_dict(table) {
+        raise ManifestError('${self._where()}: [${pair[0]}] must be a table')
+      }
+
+      for name, value in table {
+        var key = names.normalized(name)
+
+        if seen.contains(key) {
+          raise ManifestError(
+            "${self._where()}: '${name}' is declared twice; keep it in one section "
+              + 'under one spelling'
+          )
+        }
+
+        seen.set(key, true)
+        found.append(parse_dependency(name, value, pair[1], self._where(), stdlib))
+      }
+    }
+
+    return found
+  }
+
+  /**
+   * The declared dependency called `name`, in either section, or
+   * `nil`.
+   *
+   * @param string name
+   * @returns ?Dependency
+   */
+  dependency(name: string) {
+    for dependency in self.dependencies() {
+      if names.normalized(dependency.name) == names.normalized(name) {
+        return dependency
+      }
+    }
+
+    return nil
+  }
+
+  /**
+   * The registries the project names, alias to address.
+   *
+   * @returns dict
+   */
+  registries() {
+    var table = self.data.get('registries', {})
+
+    if !is_dict(table) {
+      raise ManifestError('${self._where()}: [registries] must be a table')
+    }
+
+    for alias, address in table {
+      if !is_string(address) {
+        raise ManifestError("${self._where()}: registry '${alias}' must be an address")
+      }
+    }
+
+    return table
+  }
+
+  /**
+   * The script a hook runs, relative to the project root, or `nil`.
+   *
+   * @param string hook: `'post-install'` or `'pre-uninstall'`.
+   * @returns ?string
+   */
+  hook(hook: string) {
+    var table = self.data.get('hooks', {})
+
+    if !is_dict(table) {
+      raise ManifestError('${self._where()}: [hooks] must be a table')
+    }
+
+    return _optional_string(table.get(hook, nil), hook, '${self._where()} [hooks]')
+  }
+
+  /**
+   * The packages whose hooks may run when they are installed, as
+   * normalised names.
+   *
+   * @returns list[string]
+   */
+  allowed_hooks() {
+    var table = self.data.get('install', {})
+
+    if !is_dict(table) {
+      raise ManifestError('${self._where()}: [install] must be a table')
+    }
+
+    var allowed = _string_list(table.get('allow-hooks', nil), 'allow-hooks', self._where())
+
+    return allowed.map(@(name) => names.normalized(name))
+  }
+
+  /**
+   * The `[bundle]` table, or an empty one.
+   *
+   * @returns dict
+   */
+  bundle() {
+    var table = self.data.get('bundle', {})
+
+    if !is_dict(table) {
+      raise ManifestError('${self._where()}: [bundle] must be a table')
+    }
+
+    return table
+  }
+
+  /**
+   * Records `dependency` in its section, replacing any declaration of
+   * the same package in either section.
+   *
+   * @param Dependency dependency
+   */
+  add_dependency(dependency) {
+    self.remove_dependency(dependency.name)
+
+    var section = dependency.dev ? DEV_DEPENDENCIES : DEPENDENCIES
+
+    self.document.table(section).set([dependency.name], dependency.declaration())
+    self.data = self.document.to_value()
+  }
+
+  /**
+   * Removes every declaration of `name`, under any spelling, from
+   * both sections.
+   *
+   * @param string name
+   * @returns bool: whether anything was declared.
+   */
+  remove_dependency(name: string) {
+    var removed = false
+
+    for section in [DEPENDENCIES, DEV_DEPENDENCIES] {
+      var table = self.data.get(section, nil)
+
+      if !is_dict(table) {
+        continue
+      }
+
+      for declared in table.keys() {
+        if names.normalized(declared) == names.normalized(name) {
+          self.document.table(section).remove([declared])
+          removed = true
+        }
+      }
+    }
+
+    self.data = self.document.to_value()
+
+    return removed
+  }
+
+  /**
+   * The file's text as it stands.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.document.to_string()
+  }
+
+  /**
+   * Writes the manifest back where it came from, or to `path`.
+   *
+   * @param ?string path
+   */
+  save(path: ?string) {
+    var target = path == nil ? self.path : path
+
+    if target == nil {
+      raise ManifestError('this manifest was not read from a file; say where to save it')
+    }
+
+    fsx.atomic_write(target, self.document.to_string())
+    self.path = target
+  }
+}
+
+/**
+ * Reads a manifest from text.
+ *
+ * @param string text
+ * @param ?string path: where it came from, for errors and `save()`.
+ * @returns Manifest
+ * @raises ManifestError when it is not valid TOML.
+ */
+def parse(text: string, path: ?string) {
+  catch {
+    return Manifest(toml.edit(text), path)
+  } as error {
+    var where = path == nil ? 'project.toml' : path
+
+    raise ManifestError('${where} is not valid TOML: ${error.message}')
+  }
+}
+
+/**
+ * Reads the manifest at `path`.
+ *
+ * @param string path
+ * @returns Manifest
+ * @raises ManifestError when it is missing or not valid TOML.
+ */
+def load(path: string) {
+  if !file(path).exists() {
+    raise ManifestError("there is no manifest at '${path}'")
+  }
+
+  return parse(fsx.read_text(path), path)
+}
+
+/**
+ * The manifest at `path`, or an empty one that will be written there,
+ * for the global installation, which has no manifest until something
+ * is installed.
+ *
+ * @param string path
+ * @returns Manifest
+ */
+def load_or_create(path: string) {
+  if file(path).exists() {
+    return load(path)
+  }
+
+  var text = '# The packages installed globally for this user.\n\n'
+    + '[dependencies]\n'
+
+  return parse(text, path)
+}
+
+/**
+ * The registry address `alias_or_address` means for this manifest: an
+ * alias from `[registries]` or from the user's configuration, an
+ * address used as it stands, or the default registry for `nil`.
+ *
+ * @param ?string alias_or_address
+ * @param dict aliases: alias to address, the manifest's merged over
+ *    the user's.
+ * @returns string: the address, without a trailing slash.
+ * @raises ManifestError for an alias nobody defined.
+ */
+def resolve_registry(alias_or_address: ?string, aliases: dict) {
+  var address = alias_or_address
+
+  if address == nil {
+    address = aliases.get('default', DEFAULT_REGISTRY)
+  } else if aliases.contains(address) {
+    address = aliases.get(address)
+  } else if !address.contains('://') {
+    raise ManifestError(
+      "'${alias_or_address}' is not a registry alias this project or your configuration "
+        + 'defines; add it under [registries] or give its address'
+    )
+  }
+
+  while address.ends_with('/') {
+    address = address[0, address.length() - 1]
+  }
+
+  return address
+}

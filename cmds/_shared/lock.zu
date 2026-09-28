@@ -1,0 +1,207 @@
+/**
+ * One command at a time on a project, or on the download cache.
+ *
+ * A lock is a file created in `x` mode, which the operating system
+ * creates only if nothing is there, so two commands can never both
+ * hold it. The holder writes its process id and host into it. A lock
+ * whose holder is on this machine and no longer running was left by a
+ * command that was killed, and is taken over rather than waited on.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import os.process { at_exit, kill, pid }
+
+import .errors { CommandError }
+import .fsx
+
+/** How long `acquire()` waits for another command, in seconds. */
+var DEFAULT_WAIT = 120
+
+/**
+ * Raised when a lock cannot be had in time.
+ */
+class LockError < CommandError {}
+
+# Whether the process `id` is running on this machine.
+def _alive(id: number) {
+  catch {
+    kill(id, 0)
+
+    return true
+  } as error {
+    return false
+  }
+}
+
+/**
+ * A lock file and whether this process holds it.
+ */
+class Lock {
+
+  /**
+   * @type string
+   */
+  var path
+
+  /**
+   * Whether this process holds the lock.
+   * @type bool
+   */
+  var held = false
+
+  /**
+   * @param string path
+   */
+  @new(path: string) {
+    self.path = path
+  }
+
+  # Creates the file, or returns what the holder wrote in it.
+  _try() {
+    fsx.ensure_dir(os.dir_name(self.path))
+
+    catch {
+      file(self.path, 'x').write('${pid()}\n${os.hostname()}\n')
+
+      return nil
+    } as error {
+      if !file(self.path).exists() {
+        raise LockError("could not create the lock '${self.path}': ${error.message}")
+      }
+    }
+
+    catch {
+      var lines = fsx.read_text(self.path).split('\n')
+
+      return {
+        pid: lines.length() > 0 and !lines[0].is_empty() ? lines[0].to_number() : 0,
+        host: lines.length() > 1 ? lines[1] : '',
+      }
+    } as error {
+      # Gone between the failed create and the read: try again.
+      return { pid: 0, host: '' }
+    }
+  }
+
+  # Whether an empty lock has been left that way for long enough that
+  # nobody is about to write to it.
+  _abandoned() {
+    catch {
+      return time() - file(self.path).stats().mtime > 5
+    } as error {
+      return true
+    }
+  }
+
+  /**
+   * Takes the lock, waiting for another command to let go of it.
+   *
+   * @param ?function on_wait: called once, with the holder's process
+   *    id, when the lock has to be waited for.
+   * @param ?number wait: seconds to wait. Default `DEFAULT_WAIT`.
+   * @raises LockError when it is still held after that long.
+   */
+  acquire(on_wait: ?function, wait: ?number) {
+    if self.held {
+      return
+    }
+
+    var deadline = time() + (wait == nil ? DEFAULT_WAIT : wait)
+    var told = false
+
+    while true {
+      var holder = self._try()
+
+      if holder == nil {
+        self.held = true
+
+        at_exit(@{
+          self.release()
+        })
+
+        return
+      }
+
+      var local = holder.host == os.hostname()
+
+      # A lock with nothing in it yet belongs to a command that has
+      # created the file and not finished writing its id. Only one that
+      # stays empty is abandoned.
+      if holder.pid <= 0 and !self._abandoned() {
+        os.sleep(0.05)
+
+        continue
+      }
+
+      if holder.pid <= 0 or (local and !_alive(holder.pid)) {
+        # Its holder is gone; the lock is stale.
+        catch {
+          file(self.path).delete()
+        } as error {
+          # Another command cleared it first.
+        }
+
+        continue
+      }
+
+      if time() >= deadline {
+        raise LockError(
+          'another zuri command (process ${holder.pid}${local ? "" : " on " + holder.host}) '
+            + "is still working here; if it is not, delete '${self.path}'"
+        )
+      }
+
+      if !told and on_wait != nil {
+        on_wait(holder.pid)
+        told = true
+      }
+
+      os.sleep(0.2)
+    }
+  }
+
+  /**
+   * Lets go of the lock, if this process holds it.
+   */
+  release() {
+    if !self.held {
+      return
+    }
+
+    self.held = false
+
+    catch {
+      file(self.path).delete()
+    } as error {
+      # Already gone.
+    }
+  }
+}
+
+/**
+ * Takes the lock at `path`, runs `body`, and lets go whatever happens.
+ *
+ * @param string path
+ * @param function body
+ * @param ?function on_wait
+ * @returns whatever `body` returns.
+ */
+def holding(path: string, body: function, on_wait: ?function) {
+  var lock = Lock(path)
+
+  lock.acquire(on_wait)
+
+  catch {
+    var result = body()
+
+    lock.release()
+
+    return result
+  } as error {
+    lock.release()
+
+    raise error
+  }
+}

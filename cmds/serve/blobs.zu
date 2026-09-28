@@ -1,0 +1,105 @@
+/**
+ * Where published archives are kept: one file per archive, named by
+ * its checksum, under `blobs/sha256` in the storage directory.
+ *
+ * An archive is written to a temporary file and renamed into place, so
+ * a reader never sees half of one, and it is never changed or deleted
+ * afterwards. Yanking a version leaves its archive where it is, since a
+ * lockfile that already names it must go on installing.
+ *
+ * Archives are found by checksum and by nothing a request supplies, so
+ * no path a request names ever reaches the filesystem.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.archive
+import .._shared.fsx
+
+/**
+ * The archives under one storage directory.
+ */
+class Blobs {
+
+  /**
+   * @type string
+   */
+  var root
+
+  /**
+   * @param string storage
+   */
+  @new(storage: string) {
+    self.root = os.join_paths(storage, 'blobs', 'sha256')
+    fsx.ensure_dir(self.root)
+  }
+
+  /**
+   * Where the archive with `checksum` is kept.
+   *
+   * @param string checksum: `sha256:` and 64 hexadecimal digits.
+   * @returns ?string: `nil` for anything that is not a checksum.
+   */
+  path_of(checksum: string) {
+    var hex = checksum.replace('sha256:', '', false)
+
+    if !is_dict(hex.match('/^[0-9a-f]{64}$/')) {
+      return nil
+    }
+
+    return os.join_paths(self.root, hex[0, 2], hex + '.tar.gz')
+  }
+
+  /**
+   * Whether the archive with `checksum` is here.
+   *
+   * @param string checksum
+   * @returns bool
+   */
+  has(checksum: string) {
+    var path = self.path_of(checksum)
+
+    return path != nil and file(path).exists()
+  }
+
+  /**
+   * Stores `data` under its own checksum.
+   *
+   * @param bytes data
+   * @returns string: the checksum.
+   */
+  put(data: bytes) {
+    var checksum = archive.checksum(data)
+    var path = self.path_of(checksum)
+
+    if !file(path).exists() {
+      fsx.atomic_write(path, data, 0c644)
+    }
+
+    return checksum
+  }
+
+  /**
+   * Every stored archive, as checksum and path.
+   *
+   * @returns list[dict]
+   */
+  all() {
+    var found = []
+
+    for entry in fsx.walk(self.root) {
+      if entry.kind == 'file' and entry.path.ends_with('.tar.gz') {
+        var hex = os.base_name(entry.path).replace('.tar.gz', '', false)
+
+        found.append({
+          checksum: 'sha256:' + hex,
+          path: os.join_paths(self.root, entry.path),
+        })
+      }
+    }
+
+    return found
+  }
+}

@@ -1,0 +1,307 @@
+/**
+ * What every request handler in one worker shares: the settings, the
+ * database, the archives, and the few helpers the API and the site
+ * both lean on.
+ *
+ * Each worker builds its own. Workers share nothing but the storage
+ * directory, so everything here that counts or caches is per worker,
+ * and anything that must agree across workers lives in the database.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+import mail
+import os
+
+import .._shared.names
+import .._shared.semver
+import .auth
+import .blobs { Blobs }
+import .db { Database }
+
+/** How long download counts wait in memory before being written. */
+var FLUSH_INTERVAL = 30
+
+/**
+ * `timestamp` as an ISO 8601 date and time in UTC, or `nil`.
+ *
+ * @param ?number timestamp
+ * @returns ?string
+ */
+def iso(timestamp) {
+  if timestamp == nil {
+    return nil
+  }
+
+  return date.from_time(timestamp).to_offset(0).format('c')
+}
+
+/**
+ * Answers with the error shape every API failure takes.
+ *
+ * @param response
+ * @param number status
+ * @param string code
+ * @param string message
+ * @param ?dict details: more fields for the error.
+ */
+def fail(response, status: number, code: string, message: string, details: ?dict) {
+  var error = { code, message }
+
+  if details != nil {
+    for key, value in details {
+      error.set(key, value)
+    }
+  }
+
+  response.json({ error }, status)
+}
+
+/**
+ * The version a list of version rows is best described by: the
+ * highest release not yanked, else the highest version not yanked.
+ *
+ * @param list rows
+ * @returns ?string
+ */
+def latest_of(rows: list) {
+  var releases = []
+  var everything = []
+
+  for row in rows {
+    if row.yanked_at != nil {
+      continue
+    }
+
+    everything.append(row.version)
+
+    if !semver.parse(row.version).is_prerelease() {
+      releases.append(row.version)
+    }
+  }
+
+  var pool = releases.is_empty() ? everything : releases
+
+  if pool.is_empty() {
+    return nil
+  }
+
+  return semver.sorted(pool).last()
+}
+
+/**
+ * One worker's view of the repository.
+ */
+class Nyssa {
+
+  /**
+   * @type dict
+   */
+  var settings
+
+  /**
+   * @type Database
+   */
+  var db
+
+  /**
+   * @type Blobs
+   */
+  var blobs
+
+  /**
+   * The standard library's module names, which no package may take.
+   * @type dict
+   */
+  var stdlib
+
+  var _pending = {}
+  var _last_flush = 0
+
+  /**
+   * @param dict settings
+   */
+  @new(settings: dict) {
+    self.settings = settings
+    self.db = Database(settings.database)
+    self.blobs = Blobs(settings.storage)
+    self.stdlib = names.stdlib_names()
+    self._pending = {}
+    self._last_flush = time()
+  }
+
+  /**
+   * Whether the repository sends mail.
+   *
+   * @returns bool
+   */
+  mail_enabled() {
+    return self.settings.get('mail_url', nil) != nil and self.settings.get('mail_from', nil) != nil
+  }
+
+  /**
+   * Sends one plain-text message.
+   *
+   * @param string to
+   * @param string subject
+   * @param string body
+   */
+  send_mail(to: string, subject: string, body: string) {
+    var message = mail.message()
+      .set_from(self.settings.mail_from)
+      .add_to(to)
+      .set_subject('${self.settings.name}: ${subject}')
+      .set_text(body)
+
+    var options = {}
+
+    if self.settings.get('mail_username', nil) != nil {
+      options.set('username', self.settings.mail_username)
+      options.set('password', self.settings.get('mail_password', ''))
+    }
+
+    mail.send(self.settings.mail_url, message, options)
+  }
+
+  /**
+   * Counts one download of a version, writing the counts out once
+   * enough time has passed.
+   *
+   * @param dict version: the version row.
+   */
+  count_download(version: dict) {
+    var key = version.id.to_string()
+    var entry = self._pending.get(key, nil)
+
+    if entry == nil {
+      entry = { version_id: version.id, package_id: version.package_id, count: 0 }
+      self._pending.set(key, entry)
+    }
+
+    entry.set('count', entry.count + 1)
+
+    if time() - self._last_flush >= FLUSH_INTERVAL {
+      self.flush_downloads()
+    }
+  }
+
+  /**
+   * Writes every waiting download count.
+   */
+  flush_downloads() {
+    var pending = self._pending
+
+    self._pending = {}
+    self._last_flush = time()
+
+    if pending.is_empty() {
+      return
+    }
+
+    var day = date().to_offset(0).format('Y-m-d')
+
+    self.db.transaction(@{
+      for key, entry in pending {
+        self.db.add_downloads(entry.version_id, entry.package_id, entry.count, day)
+      }
+    })
+  }
+
+  /**
+   * The client's address, believing forwarding headers only when the
+   * repository was told a proxy stands in front of it.
+   *
+   * @param request
+   * @returns string
+   */
+  address_of(request) {
+    catch {
+      var address = request.client_ip(self.settings.trust_proxy == true)
+
+      return address == nil ? 'unknown' : address
+    } as error {
+      return 'unknown'
+    }
+  }
+
+  /**
+   * The account and token behind the request's bearer token, when it
+   * carries a valid one.
+   *
+   * @param request
+   * @returns ?dict: the token row, joined with its publisher's
+   *    username, role, suspension and whether their email is
+   *    confirmed.
+   */
+  token_of(request) {
+    var presented = request.bearer_token()
+
+    if presented == nil or !presented.starts_with(auth.TOKEN_PREFIX) {
+      return nil
+    }
+
+    var row = self.db.token_by_digest(auth.digest(presented))
+
+    if row == nil or row.revoked_at != nil or row.suspended_at != nil {
+      return nil
+    }
+
+    if row.expires_at != nil and row.expires_at <= time() {
+      return nil
+    }
+
+    # Recording every use would be a write per request; once a minute
+    # says as much.
+    if row.last_used_at == nil or time() - row.last_used_at > 60 {
+      self.db.touch_token(row.id)
+    }
+
+    return row
+  }
+
+  /**
+   * The token row for a request that must carry one with `scope`, or
+   * `nil` after answering the refusal.
+   *
+   * @param request
+   * @param response
+   * @param ?string scope
+   * @returns ?dict
+   */
+  require_token(request, response, scope: ?string) {
+    var token = self.token_of(request)
+
+    if token == nil {
+      response.header('WWW-Authenticate', 'Bearer realm="nyssa"')
+      fail(response, 401, 'unauthenticated', 'a valid token is required')
+
+      return nil
+    }
+
+    if scope != nil and !token.scopes.split(' ').contains(scope) {
+      fail(response, 403, 'insufficient_scope', "this token does not carry the '${scope}' scope")
+
+      return nil
+    }
+
+    return token
+  }
+
+  /**
+   * Refuses a change while the repository is read-only.
+   *
+   * @param response
+   * @returns bool: whether the request was refused.
+   */
+  refuse_if_read_only(response) {
+    if self.settings.read_only == true {
+      response.header('Retry-After', '300')
+      fail(response, 503, 'read_only', 'this repository is read-only at the moment')
+
+      return true
+    }
+
+    return false
+  }
+}

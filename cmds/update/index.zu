@@ -1,0 +1,193 @@
+/**
+ * @command update
+ * @description Moves packages to the newest versions their ranges
+ *    allow, or with latest, to the newest there are.
+ *
+ *   zuri update [package...] [options]
+ *
+ * Without names, every package may move; with them, only those do,
+ * and everything else keeps its locked version. The latest option
+ * rewrites each named dependency's range in project.toml to the
+ * newest release there is, which can cross a major version, and says
+ * so. The dry-run option shows what is out of date and changes
+ * nothing, and the check option does the same and exits `1` when
+ * anything is, which is what a scheduled job wants.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+import os.process { exit }
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.names
+import .._shared.semver
+import .._shared.sync
+import .._shared.ui
+
+def parser() {
+  var parser = args.Parser('update', false)
+
+  parser.description = 'Moves packages to the newest versions their ranges allow.'
+
+  parser.add_index('packages', 'Only these; every package when none is named',
+    { type: args.LIST, metavar: 'package' })
+  parser.add_option('latest', 'Move each range in project.toml to the newest release there is',
+    { short_name: 'L' })
+  parser.add_option('dry-run', 'Show what is out of date and change nothing', { short_name: 'n' })
+  parser.add_option('check', 'Like dry-run, and exit 1 when anything is out of date', nil)
+  parser.add_option('global', 'Update the packages installed for this user', { short_name: 'g' })
+  parser.add_option('offline', 'Use only what is already downloaded', nil)
+  parser.add_option('no-hooks', 'Run no install scripts at all', nil)
+  parser.add_option('allow-hooks', 'Let these packages run their scripts this time',
+    { type: args.LIST, metavar: 'package' })
+  parser.add_option('insecure', 'Allow a token to cross plain http to another machine', nil)
+  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+# The newest release in an index answer that this runtime can use and
+# that is not yanked, or `nil`.
+def _newest(index: dict) {
+  var usable = []
+
+  for entry in index.get('versions', []) {
+    if entry.get('yanked', false) or semver.parse(entry.version).is_prerelease() {
+      continue
+    }
+
+    var needs = entry.get('zuri', nil)
+
+    if needs != nil and !semver.Range(needs).satisfies(os.version) {
+      continue
+    }
+
+    usable.append(entry.version)
+  }
+
+  return usable.is_empty() ? nil : semver.sorted(usable).last()
+}
+
+def main() {
+  var parsed = parser().parse()
+  var given = parsed.options
+  var only = parsed.indexes.is_empty() ? [] : parsed.indexes[0]
+  var checking = given.get('check', false) == true
+  var dry_run = given.get('dry-run', false) == true or checking
+  var as_json = given.get('json', false) == true
+
+  var options = cli.sync_options(parsed, {
+    dry_run,
+    unlock: only.is_empty() ? true : only.map(@(name) => names.normalized(name)),
+  })
+
+  var workspace = cli.workspace('update', given.get('global', false) == true, options)
+  var declared = workspace.manifest.dependencies()
+
+  for name in only {
+    if !workspace.lock.has(name) and workspace.manifest.dependency(name) == nil {
+      raise UsageError("'${name}' is not a dependency of ${workspace.display_name()}")
+    }
+  }
+
+  var breaking = []
+
+  if given.get('latest', false) == true {
+    for dependency in declared {
+      var chosen = only.is_empty() or only.some(@(name) {
+        return names.normalized(name) == names.normalized(dependency.name)
+      })
+
+      if !chosen or dependency.kind != 'registry' {
+        continue
+      }
+
+      var address = workspace.registry_address(dependency.registry)
+      var newest = _newest(workspace.registry(address).index(dependency.name))
+
+      if newest == nil or semver.Range(dependency.range).satisfies(newest) {
+        continue
+      }
+
+      var locked = workspace.lock.get(dependency.name)
+
+      if locked != nil and semver.is_breaking(locked.version, newest) {
+        breaking.append('${dependency.name} ${locked.version} -> ${newest}')
+      }
+
+      dependency.range = (dependency.range.starts_with('=') ? '=' : '^') + newest
+      workspace.manifest.add_dependency(dependency)
+    }
+  }
+
+  var resolved = sync.resolve(workspace)
+  var lock = resolved[0]
+  var provider = resolved[1]
+  var rows = []
+
+  for entry in lock.entries() {
+    var before = workspace.lock.get(entry.name)
+    var current = before == nil ? nil : before.version
+    var newest = nil
+    var known = provider.entries.get(names.normalized(entry.name), nil)
+
+    if known != nil {
+      var releases = known.keys().filter(@(v) => !semver.parse(v).is_prerelease())
+
+      newest = releases.is_empty() ? nil : semver.sorted(releases).last()
+    }
+
+    rows.append({ name: entry.name, current, wanted: entry.version, latest: newest })
+  }
+
+  var outdated = rows.filter(@(row) => row.current != row.wanted)
+  var behind = rows.filter(@(row) => row.latest != nil and row.latest != row.wanted)
+
+  if dry_run {
+    if as_json {
+      cli.print_json(rows)
+    } else if outdated.is_empty() and behind.is_empty() {
+      echo 'Everything is up to date.'
+    } else {
+      var table = [[ui.heading('package'), ui.heading('current'), ui.heading('wanted'),
+        ui.heading('latest')]]
+
+      for row in rows {
+        if row.current == row.wanted and (row.latest == nil or row.latest == row.wanted) {
+          continue
+        }
+
+        var latest = row.latest == nil ? '' : row.latest
+
+        var base = row.current == nil ? row.wanted : row.current
+
+        if row.latest != nil and semver.is_breaking(base, row.latest) {
+          latest = ui.warn(latest + ' (breaking)')
+        }
+
+        table.append([row.name, row.current == nil ? 'none' : row.current,
+          ui.accent(row.wanted), latest])
+      }
+
+      ui.say(ui.table(table))
+    }
+
+    if checking and !outdated.is_empty() {
+      exit(1)
+    }
+
+    return
+  }
+
+  for change in breaking {
+    ui.complain(ui.warn('warning: ${change} is a new major version, which may break callers'))
+  }
+
+  cli.report(sync.apply(workspace, lock, provider, given.get('latest', false) == true))
+}
+
+run('update', main)

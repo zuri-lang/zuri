@@ -124,6 +124,12 @@ fn build_tty_submodule(vm: &mut VM) -> Value {
 /// object simply being GC'd and dropped; closes only the
 /// duplicate, never the process's real stdin/stdout/stderr.
 ///
+/// The duplicate is close-on-exec. Every program the script starts
+/// already gets the real streams as its own 0, 1 and 2 when it asks
+/// for them; an inherited copy under another number would only keep
+/// the parent's pipes open for as long as that program lives, so
+/// whoever reads the other end never sees them close.
+///
 /// `binary` comes off the mode string exactly as it does for a
 /// user-built `file(path, mode)`, so the two agree on what `b` means.
 /// stdin is opened `"rb"`: whatever is piped in is arbitrary bytes,
@@ -134,7 +140,7 @@ fn build_tty_submodule(vm: &mut VM) -> Value {
 #[cfg(unix)]
 fn std_file(fd: i32, path: &str, mode: &str) -> FileHandle {
   use std::os::unix::io::FromRawFd;
-  let dup_fd = unsafe { libc::dup(fd) };
+  let dup_fd = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
   let handle = if dup_fd >= 0 {
     Some(unsafe { File::from_raw_fd(dup_fd) })
   } else {

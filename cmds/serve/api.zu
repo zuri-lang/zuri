@@ -1,0 +1,501 @@
+/**
+ * The registry API, version 1: what `zuri install`, `zuri publish` and
+ * the other commands talk to.
+ *
+ * Every answer is JSON except an archive. Every failure is
+ * `{ "error": { "code", "message" } }` with the status that describes
+ * it, and the code is stable: a client decides what to do from it,
+ * never from the message.
+ *
+ * - `GET /api/v1/config`: what the repository is and accepts.
+ * - `GET /api/v1/index/:name`: every version of a package.
+ * - `GET /api/v1/packages/:name`: a package as the site shows it.
+ * - `GET /api/v1/packages/:name/:version/archive`: one archive.
+ * - `GET /api/v1/search`: packages matching `q`.
+ * - `PUT /api/v1/packages`: publish.
+ * - `POST` and `DELETE /api/v1/packages/:name/:version/yank`: yank a
+ *   version, and restore it.
+ * - `GET` and `PUT /api/v1/packages/:name/owners`: the owners, and
+ *   adding one.
+ * - `DELETE /api/v1/packages/:name/owners/:username`: removing one.
+ * - `POST /api/v1/accounts`: creating an account.
+ * - `POST` and `GET /api/v1/tokens`: signing in or issuing a token,
+ *   and listing them.
+ * - `DELETE /api/v1/tokens/:id`: revoking one, `current` being the one
+ *   the request carries.
+ * - `GET /api/v1/me`: the account behind the token.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import hash
+import json
+
+import .._shared.names
+import .._shared.registry { API_VERSION }
+import .._shared.semver
+import .context { fail, iso, latest_of }
+import .service
+
+/** Results per page when a search asks for none. */
+var DEFAULT_PER_PAGE = 20
+
+/** The most results one page of a search may hold. */
+var MAX_PER_PAGE = 100
+
+/** The furthest page a search goes to; a later one is this one. */
+var MAX_PAGE = 10000
+
+# Runs `body`, answering a service refusal as the API does.
+def _guard(response, body: function) {
+  catch {
+    body()
+  } as error {
+    if !instance_of(error, service.ServiceError) {
+      raise error
+    }
+
+    fail(response, error.status, error.code, error.message, error.details)
+  }
+}
+
+# The JSON body of a request, or `nil` after refusing it.
+def _body(request, response) {
+  var body = nil
+
+  catch {
+    body = request.json_body()
+  } as error {
+    body = nil
+  }
+
+  if !is_dict(body) {
+    fail(response, 400, 'bad_request', 'the request body must be a JSON object')
+
+    return nil
+  }
+
+  return body
+}
+
+# A positive whole number out of a query parameter, or `fallback` for
+# anything else. The caller caps it.
+def _count(request, name: string, fallback: number) {
+  var raw = request.query_param(name, nil)
+
+  if raw == nil or !is_dict(raw.match('/^[0-9]{1,9}$/')) {
+    return fallback
+  }
+
+  var value = raw.to_number()
+
+  return value < 1 ? fallback : value
+}
+
+/**
+ * Registers every API route on `server`.
+ *
+ * @param server
+ * @param nyssa
+ */
+def routes(server, nyssa) {
+  server.get('/api/v1/config', @(request, response) {
+    response.json({
+      api: API_VERSION,
+      name: nyssa.settings.name,
+      public_url: nyssa.settings.public_url,
+      max_archive_size: nyssa.settings.max_archive_size,
+      signup: nyssa.settings.signup,
+      read_only: nyssa.settings.read_only == true,
+    })
+  })
+
+  server.get('/api/v1/index/:name', @(request, response) {
+    var found = service.index(nyssa, request.param('name'))
+
+    if found == nil {
+      fail(response, 404, 'not_found', "there is no package called '${request.param("name")}' here")
+
+      return
+    }
+
+    var body = json.encode(found)
+    var tag = '"' + hash.sha256(body)[0, 32] + '"'
+
+    response.header('ETag', tag)
+    response.header('Cache-Control', 'no-cache')
+
+    if request.header('if-none-match', nil) == tag {
+      response.status = 304
+
+      return
+    }
+
+    response.content_type('application/json')
+    response.write(body)
+  })
+
+  server.get('/api/v1/packages/:name', @(request, response) {
+    var package = nyssa.db.package_by_name(names.normalized(request.param('name')))
+
+    if package == nil {
+      fail(response, 404, 'not_found', "there is no package called '${request.param("name")}' here")
+
+      return
+    }
+
+    var rows = nyssa.db.versions_of(package.id)
+    var ordered = semver.sorted(rows.map(@(row) => row.version)).reverse()
+    var by_version = {}
+
+    for row in rows {
+      by_version.set(row.version, row)
+    }
+
+    var body = {
+      name: package.name,
+      description: package.description,
+      homepage: package.homepage,
+      repository: package.repository,
+      license: package.license,
+      keywords: package.keywords.is_empty() ? [] : package.keywords.split(' '),
+      latest: package.latest,
+      downloads: package.downloads,
+      owners: nyssa.db.owners_of(package.id),
+      created_at: iso(package.created_at),
+      updated_at: iso(package.updated_at),
+      versions: ordered.map(@(version) {
+        var row = by_version.get(version)
+
+        return {
+          version,
+          yanked: row.yanked_at != nil,
+          published_at: iso(row.published_at),
+          downloads: row.downloads,
+          size: row.size,
+        }
+      }),
+    }
+
+    if request.query_param('readme', nil) == '1' and package.latest != nil {
+      body.set('readme', by_version.get(package.latest).readme)
+    }
+
+    response.json(body)
+  })
+
+  server.get('/api/v1/packages/:name/:version/archive', @(request, response) {
+    var package = nyssa.db.package_by_name(names.normalized(request.param('name')))
+    var wanted = request.param('version')
+
+    if package == nil or !semver.is_valid(wanted) {
+      fail(response, 404, 'not_found', 'there is no such package version here')
+
+      return
+    }
+
+    var parsed = semver.parse(wanted)
+
+    parsed.build = []
+
+    var row = nyssa.db.version_of(package.id, parsed.to_string())
+    var path = row == nil ? nil : nyssa.blobs.path_of(row.checksum)
+
+    if row == nil or path == nil or !file(path).exists() {
+      fail(response, 404, 'not_found', 'there is no such package version here')
+
+      return
+    }
+
+    nyssa.count_download(row)
+
+    response.header('X-Checksum', row.checksum)
+    response.header('Cache-Control', 'public, max-age=31536000, immutable')
+    response.content_type('application/gzip')
+    response.file(path)
+  })
+
+  server.get('/api/v1/search', @(request, response) {
+    var query = request.query_param('q', '')
+    var page = _count(request, 'page', 1).min(MAX_PAGE)
+    var per_page = _count(request, 'per_page', DEFAULT_PER_PAGE).min(MAX_PER_PAGE)
+    var sort = request.query_param('sort', 'relevance')
+
+    if !['relevance', 'downloads', 'updated', 'name'].contains(sort) {
+      fail(response, 400, 'bad_sort', 'sort by relevance, downloads, updated or name')
+
+      return
+    }
+
+    var found = nyssa.db.search(query, sort, per_page, (page - 1) * per_page)
+
+    response.json({
+      total: found.total,
+      page,
+      per_page,
+      packages: found.packages.map(@(row) {
+        return {
+          name: row.name,
+          description: row.description,
+          latest: row.latest,
+          downloads: row.downloads,
+          updated_at: iso(row.updated_at),
+        }
+      }),
+    })
+  })
+
+  server.put('/api/v1/packages', @(request, response) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var token = nyssa.require_token(request, response, 'publish')
+
+    if token == nil {
+      return
+    }
+
+    var upload = request.file('archive')
+    var raw_metadata = request.form_field('metadata', nil)
+
+    if upload == nil or raw_metadata == nil {
+      fail(response, 400, 'bad_request',
+        "send the archive as 'archive' and its details as 'metadata'")
+
+      return
+    }
+
+    var metadata = nil
+
+    catch {
+      metadata = json.decode(raw_metadata)
+    } as error {
+      metadata = nil
+    }
+
+    if !is_dict(metadata) {
+      fail(response, 400, 'bad_request', 'the metadata must be a JSON object')
+
+      return
+    }
+
+    _guard(response, @{
+      var published = service.publish(
+        nyssa, token, upload.content, metadata, nyssa.address_of(request)
+      )
+
+      response.json(published, 201)
+    })
+  })
+
+  var yank = @(request, response, undo: bool) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var token = nyssa.require_token(request, response, 'yank')
+
+    if token == nil {
+      return
+    }
+
+    _guard(response, @{
+      response.json(service.yank(
+        nyssa, token.publisher_id, request.param('name'), request.param('version'), undo,
+        nyssa.address_of(request)
+      ))
+    })
+  }
+
+  server.post('/api/v1/packages/:name/:version/yank', @(request, response) {
+    yank(request, response, false)
+  })
+
+  server.delete('/api/v1/packages/:name/:version/yank', @(request, response) {
+    yank(request, response, true)
+  })
+
+  server.get('/api/v1/packages/:name/owners', @(request, response) {
+    _guard(response, @{
+      response.json({ owners: service.owners(nyssa, request.param('name')) })
+    })
+  })
+
+  server.put('/api/v1/packages/:name/owners', @(request, response) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var token = nyssa.require_token(request, response, 'owners')
+    var body = token == nil ? nil : _body(request, response)
+
+    if body == nil {
+      return
+    }
+
+    _guard(response, @{
+      var owners = service.add_owner(
+        nyssa, token.publisher_id, request.param('name'), body.get('username', '').to_string(),
+        nyssa.address_of(request)
+      )
+
+      response.json({ owners })
+    })
+  })
+
+  server.delete('/api/v1/packages/:name/owners/:username', @(request, response) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var token = nyssa.require_token(request, response, 'owners')
+
+    if token == nil {
+      return
+    }
+
+    _guard(response, @{
+      var owners = service.remove_owner(
+        nyssa, token.publisher_id, request.param('name'), request.param('username'),
+        nyssa.address_of(request)
+      )
+
+      response.json({ owners })
+    })
+  })
+
+  server.post('/api/v1/accounts', @(request, response) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var body = _body(request, response)
+
+    if body == nil {
+      return
+    }
+
+    _guard(response, @{
+      var created = service.create_account(nyssa, body, nyssa.address_of(request))
+
+      response.json({
+        username: created.publisher.username,
+        email: created.publisher.email,
+        recovery_key: created.recovery_key,
+        token: created.token,
+        email_confirmed: created.publisher.email_verified == 1,
+      }, 201)
+    })
+  })
+
+  server.post('/api/v1/tokens', @(request, response) {
+    var body = _body(request, response)
+
+    if body == nil {
+      return
+    }
+
+    _guard(response, @{
+      var publisher_id = nil
+      var allowed = nil
+
+      if body.contains('password') {
+        var publisher = service.sign_in(
+          nyssa, body.get('username', '').to_string(), body.get('password', '').to_string(),
+          nyssa.address_of(request)
+        )
+
+        publisher_id = publisher.id
+      } else {
+        var token = nyssa.require_token(request, response, 'account')
+
+        if token == nil {
+          return
+        }
+
+        publisher_id = token.publisher_id
+        allowed = token.scopes.split(' ')
+      }
+
+      var scopes = body.get('scopes', nil)
+
+      # A token can only hand on what it carries itself.
+      if allowed != nil and scopes != nil {
+        var asked = is_list(scopes) ? scopes : scopes.to_string().split(' ')
+
+        for scope in asked {
+          if !allowed.contains(scope) {
+            fail(response, 403, 'insufficient_scope',
+              "this token cannot issue one with the '${scope}' scope")
+
+            return
+          }
+        }
+      } else if allowed != nil {
+        scopes = allowed
+      }
+
+      var issued = service.create_token(
+        nyssa, publisher_id, body.get('name', nil), scopes, body.get('expires_in_days', nil)
+      )
+
+      nyssa.db.audit(publisher_id, 'create_token', issued.name, { id: issued.id },
+        nyssa.address_of(request))
+
+      response.json(issued, 201)
+    })
+  })
+
+  server.get('/api/v1/tokens', @(request, response) {
+    var token = nyssa.require_token(request, response, 'account')
+
+    if token != nil {
+      response.json({ tokens: service.tokens(nyssa, token.publisher_id) })
+    }
+  })
+
+  server.delete('/api/v1/tokens/:id', @(request, response) {
+    var wanted = request.param('id')
+    var token = nyssa.require_token(request, response, wanted == 'current' ? nil : 'account')
+
+    if token == nil {
+      return
+    }
+
+    var id = wanted == 'current' ? token.id : wanted
+
+    if !nyssa.db.revoke_token(id, token.publisher_id) {
+      fail(response, 404, 'not_found', 'there is no such token on this account')
+
+      return
+    }
+
+    nyssa.db.audit(token.publisher_id, 'revoke_token', id, nil, nyssa.address_of(request))
+    response.json({ revoked: id })
+  })
+
+  server.get('/api/v1/me', @(request, response) {
+    var token = nyssa.require_token(request, response, nil)
+
+    if token == nil {
+      return
+    }
+
+    var publisher = nyssa.db.publisher_by_id(token.publisher_id)
+
+    response.json({
+      username: publisher.username,
+      email: publisher.email,
+      role: publisher.role,
+      email_confirmed: publisher.email_verified == 1,
+      created_at: iso(publisher.created_at),
+      token: { id: token.id, name: token.name, scopes: token.scopes.split(' ') },
+    })
+  })
+
+  server.get('/healthz', @(request, response) {
+    response.no_cache()
+    response.json({ status: 'ok' })
+  })
+}

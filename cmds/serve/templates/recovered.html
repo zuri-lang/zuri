@@ -1,0 +1,10 @@
+<extend base="layout.html">
+  <define name="content">
+    <div class="panel">
+      <h1>Your password is changed</h1>
+      <p>This is your new recovery key. The old one no longer works. It is shown only this once.</p>
+      <pre class="secret"><code>{{ recovery_key }}</code></pre>
+      <p>Every token the account held was revoked. <a href="/login">Sign in</a> with the new password, and sign the command line in again.</p>
+    </div>
+  </define>
+</extend>

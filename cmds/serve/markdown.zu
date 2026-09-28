@@ -1,0 +1,839 @@
+/**
+ * Turning a package's README into a page.
+ *
+ * The renderer covers the Markdown people write in READMEs: ATX and
+ * underlined headings, paragraphs, block quotes, ordered and unordered
+ * lists nested to any depth, fenced and indented code, horizontal
+ * rules, tables, raw HTML, code spans, emphasis, strong emphasis,
+ * strikethrough, links, reference links, images, autolinks and hard
+ * line breaks. Zuri code blocks are coloured by the language's own
+ * lexer.
+ *
+ * Everything it produces is passed through `sanitize.clean()` before
+ * it is returned, so what a README can do to the page it is shown on
+ * does not depend on this renderer getting every corner of Markdown
+ * right.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .highlight
+import .sanitize
+
+# Text escaped for markup.
+def _escape(text: string) {
+  return text.replace('&', '&amp;', false).replace('<', '&lt;', false)
+    .replace('>', '&gt;', false).replace('"', '&quot;', false)
+}
+
+# The groups `pattern` captured in `text`, or `nil` when it did not
+# match. An optional group that took no part comes back empty.
+def _captures(text: string, pattern: string) {
+  var found = text.matches(pattern)
+
+  if !is_dict(found) or found.get(0, []).is_empty() {
+    return nil
+  }
+
+  var groups = []
+  var index = 0
+
+  while found.contains(index) {
+    var group = found.get(index)
+
+    groups.append(group.is_empty() or group[0] == nil ? '' : group[0])
+    index++
+  }
+
+  return groups
+}
+
+def _is_blank(line: string) {
+  return line.trim().is_empty()
+}
+
+# How many columns of indentation `line` opens with.
+def _indent(line: string) {
+  var count = 0
+
+  while count < line.length() and line[count] == ' ' {
+    count++
+  }
+
+  return count
+}
+
+# `line` with up to `width` columns of indentation taken off.
+def _dedent(line: string, width: number) {
+  var drop = _indent(line).min(width)
+
+  return line[drop,]
+}
+
+var _FENCE = '/^( {0,3})(`{3,}|~{3,})\\s*([^\\s`]*)[^`]*$/'
+var _ATX = '/^ {0,3}(#{1,6})(?:[ ]+(.*?))?[ ]*#*[ ]*$/'
+var _RULE = '/^ {0,3}(?:(?:-[ ]*){3,}|(?:\\*[ ]*){3,}|(?:_[ ]*){3,})$/'
+var _QUOTE = '/^ {0,3}> ?(.*)$/'
+var _ITEM = '/^( {0,3})([-*+]|[0-9]{1,9}[.)])( {1,4}|$)(.*)$/'
+var _HTML_BLOCK = '/^ {0,3}<(?:\\/?[a-zA-Z][a-zA-Z0-9-]*[\\s>\\/]|\\/?[a-zA-Z][a-zA-Z0-9-]*$|!--)/'
+var _TABLE_RULE = '/^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-+:?\\s*)*\\|?\\s*$/'
+var _REFERENCE = '/^ {0,3}\\[([^\\]]+)\\]:\\s*<?([^\\s>]+)>?(?:\\s+["\'(](.*)["\')])?\\s*$/'
+
+# Whether `line` starts a block that interrupts a paragraph.
+def _interrupts(line: string) {
+  if _captures(line, _FENCE) != nil or _captures(line, _ATX) != nil {
+    return true
+  }
+
+  if _captures(line, _RULE) != nil or _captures(line, _QUOTE) != nil {
+    return true
+  }
+
+  var item = _captures(line, _ITEM)
+
+  if item != nil and !item[4].trim().is_empty() {
+    return !is_dict(item[2].match('/^[0-9]/')) or item[2].starts_with('1')
+  }
+
+  return _captures(line, _HTML_BLOCK) != nil
+}
+
+# Takes `[label]: url` lines out of `lines` into `refs`.
+def _collect_references(lines: list, refs: dict) {
+  var kept = []
+  var in_fence = false
+
+  for line in lines {
+    if _captures(line, _FENCE) != nil {
+      in_fence = !in_fence
+    }
+
+    var found = in_fence ? nil : _captures(line, _REFERENCE)
+
+    if found != nil {
+      var label = found[1].lower().replace('/\\s+/', ' ', true).trim()
+
+      if !refs.contains(label) {
+        refs.set(label, { href: found[2], title: found.length() > 3 ? found[3] : '' })
+      }
+
+      continue
+    }
+
+    kept.append(line)
+  }
+
+  return kept
+}
+
+# The cells of a table row.
+def _cells(line: string) {
+  var text = line.trim()
+
+  if text.starts_with('|') {
+    text = text[1,]
+  }
+
+  if text.ends_with('|') and !text.ends_with('\\|') {
+    text = text[0, text.length() - 1]
+  }
+
+  var cells = []
+  var current = ''
+  var i = 0
+
+  while i < text.length() {
+    var c = text[i]
+
+    if c == '\\' and i + 1 < text.length() and text[i + 1] == '|' {
+      current += '|'
+      i += 2
+
+      continue
+    }
+
+    if c == '|' {
+      cells.append(current.trim())
+      current = ''
+    } else {
+      current += c
+    }
+
+    i++
+  }
+
+  cells.append(current.trim())
+
+  return cells
+}
+
+# One block of code, coloured when it is Zuri.
+def _code_block(lines: list, info: string) {
+  var source = '\n'.join(lines)
+  var language = info.lower()
+  var body = nil
+
+  if language == 'zuri' or language == 'zu' or language.starts_with('zuri,') {
+    body = highlight.zuri_code(source)
+    language = 'zuri'
+  }
+
+  if body == nil {
+    body = _escape(source)
+  }
+
+  var cls = is_dict(language.match('/^[a-z0-9_+-]+$/')) ? ' class="language-${language}"' : ''
+
+  return '<pre><code${cls}>${body}\n</code></pre>'
+}
+
+# Renders a run of lines as blocks.
+def _blocks(lines: list, refs: dict, tight: bool) {
+  var out = []
+  var i = 0
+
+  while i < lines.length() {
+    var line = lines[i]
+
+    if _is_blank(line) {
+      i++
+
+      continue
+    }
+
+    var fence = _captures(line, _FENCE)
+
+    if fence != nil {
+      var marker = fence[2]
+      var indent = fence[1].length()
+      var body = []
+
+      i++
+
+      while i < lines.length() {
+        var closing = _captures(lines[i], '/^ {0,3}(`{3,}|~{3,})\\s*$/')
+
+        if closing != nil and closing[1][0] == marker[0]
+          and closing[1].length() >= marker.length() {
+          i++
+
+          break
+        }
+
+        body.append(_dedent(lines[i], indent))
+        i++
+      }
+
+      out.append(_code_block(body, fence[3]))
+
+      continue
+    }
+
+    var heading = _captures(line, _ATX)
+
+    if heading != nil {
+      var level = heading[1].length()
+
+      out.append('<h${level}>${_inline(heading[2], refs)}</h${level}>')
+      i++
+
+      continue
+    }
+
+    if _captures(line, _RULE) != nil {
+      out.append('<hr>')
+      i++
+
+      continue
+    }
+
+    if _captures(line, _QUOTE) != nil {
+      var quoted = []
+
+      while i < lines.length() {
+        var inner = _captures(lines[i], _QUOTE)
+
+        if inner != nil {
+          quoted.append(inner[1])
+        } else if !_is_blank(lines[i]) and !quoted.is_empty() and !_is_blank(quoted.last())
+          and !_interrupts(lines[i]) {
+          quoted.append(lines[i])
+        } else {
+          break
+        }
+
+        i++
+      }
+
+      out.append('<blockquote>${_blocks(quoted, refs, false)}</blockquote>')
+
+      continue
+    }
+
+    var item = _captures(line, _ITEM)
+
+    if item != nil {
+      var consumed = _list(lines, i, refs)
+
+      out.append(consumed[0])
+      i = consumed[1]
+
+      continue
+    }
+
+    if _captures(line, _HTML_BLOCK) != nil {
+      var raw = []
+
+      while i < lines.length() and !_is_blank(lines[i]) {
+        raw.append(lines[i])
+        i++
+      }
+
+      out.append('\n'.join(raw))
+
+      continue
+    }
+
+    if _indent(line) >= 4 {
+      var code = []
+
+      while i < lines.length() and (_indent(lines[i]) >= 4 or _is_blank(lines[i])) {
+        code.append(_dedent(lines[i], 4))
+        i++
+      }
+
+      while !code.is_empty() and _is_blank(code.last()) {
+        code.pop()
+      }
+
+      out.append(_code_block(code, ''))
+
+      continue
+    }
+
+    var is_table = line.contains('|') and i + 1 < lines.length()
+      and _captures(lines[i + 1], _TABLE_RULE) != nil
+
+    if is_table {
+      var header = _cells(line)
+      var alignments = _cells(lines[i + 1]).map(@(cell) {
+        var left = cell.starts_with(':')
+        var right = cell.ends_with(':')
+
+        if left and right {
+          return 'center'
+        }
+
+        return right ? 'right' : (left ? 'left' : '')
+      })
+
+      var table = ['<table><thead><tr>']
+
+      for index, cell in header {
+        var align = index < alignments.length() and !alignments[index].is_empty()
+          ? ' align="${alignments[index]}"'
+          : ''
+
+        table.append('<th${align}>${_inline(cell, refs)}</th>')
+      }
+
+      table.append('</tr></thead><tbody>')
+      i += 2
+
+      while i < lines.length() and !_is_blank(lines[i]) and lines[i].contains('|') {
+        table.append('<tr>')
+
+        for index, cell in _cells(lines[i]) {
+          if index >= header.length() {
+            break
+          }
+
+          var align = index < alignments.length() and !alignments[index].is_empty()
+            ? ' align="${alignments[index]}"'
+            : ''
+
+          table.append('<td${align}>${_inline(cell, refs)}</td>')
+        }
+
+        table.append('</tr>')
+        i++
+      }
+
+      table.append('</tbody></table>')
+      out.append(''.join(table))
+
+      continue
+    }
+
+    # A paragraph, which an underline below turns into a heading.
+    var paragraph = [line.ltrim()]
+
+    i++
+
+    while i < lines.length() and !_is_blank(lines[i]) {
+      var next = lines[i]
+
+      if _captures(next, '/^ {0,3}=+\\s*$/') != nil {
+        out.append('<h1>${_inline("\n".join(paragraph), refs)}</h1>')
+        paragraph = []
+        i++
+
+        break
+      }
+
+      if _captures(next, '/^ {0,3}-+\\s*$/') != nil {
+        out.append('<h2>${_inline("\n".join(paragraph), refs)}</h2>')
+        paragraph = []
+        i++
+
+        break
+      }
+
+      if _interrupts(next) {
+        break
+      }
+
+      paragraph.append(next.ltrim())
+      i++
+    }
+
+    if !paragraph.is_empty() {
+      var text = _inline('\n'.join(paragraph), refs)
+
+      out.append(tight ? text : '<p>${text}</p>')
+    }
+  }
+
+  return '\n'.join(out)
+}
+
+# Whether a list item's marker continues the list it follows.
+def _same_kind(item: list, ordered: bool, delimiter: string) {
+  var marker = item[2]
+
+  if ordered {
+    return is_dict(marker.match('/^[0-9]/')) and marker.ends_with(delimiter)
+  }
+
+  return marker == delimiter
+}
+
+# Renders the list starting at `start`. Returns the markup and the
+# index of the first line after it.
+def _list(lines: list, start: number, refs: dict) {
+  var first = _captures(lines[start], _ITEM)
+  var ordered = is_dict(first[2].match('/^[0-9]/'))
+  var delimiter = ordered ? first[2][first[2].length() - 1] : first[2]
+  var items = []
+  var loose = false
+  var i = start
+
+  while i < lines.length() {
+    var item = _captures(lines[i], _ITEM)
+
+    if item == nil {
+      break
+    }
+
+    if !_same_kind(item, ordered, delimiter) {
+      break
+    }
+
+    var marker = item[2]
+
+    var spacing = item[3].is_empty() ? 1 : item[3].length()
+    var content_indent = item[1].length() + marker.length() + spacing
+    var body = [item[4]]
+    var saw_blank = false
+
+    i++
+
+    while i < lines.length() {
+      var line = lines[i]
+
+      if _is_blank(line) {
+        saw_blank = true
+        body.append('')
+        i++
+
+        continue
+      }
+
+      if _indent(line) >= content_indent {
+        if saw_blank and !body.is_empty() {
+          loose = true
+        }
+
+        body.append(_dedent(line, content_indent))
+        saw_blank = false
+        i++
+
+        continue
+      }
+
+      # A line that is not indented enough ends the item, unless it is
+      # a lazy continuation of the paragraph the item ended on.
+      if !saw_blank and _captures(line, _ITEM) == nil and !_interrupts(line) {
+        body.append(line.trim())
+        i++
+
+        continue
+      }
+
+      break
+    }
+
+    while !body.is_empty() and _is_blank(body.last()) {
+      body.pop()
+    }
+
+    items.append(body)
+
+    var next_item = i < lines.length() ? _captures(lines[i], _ITEM) : nil
+    var continues = next_item != nil and _same_kind(next_item, ordered, delimiter)
+
+    if saw_blank and continues {
+      loose = true
+    }
+
+    if saw_blank and !continues {
+      break
+    }
+  }
+
+  var tag = ordered ? 'ol' : 'ul'
+  var opening = '<${tag}>'
+
+  if ordered {
+    var number = first[2][0, first[2].length() - 1].to_number()
+
+    if number != 1 {
+      opening = '<ol start="${number}">'
+    }
+  }
+
+  var out = [opening]
+
+  for body in items {
+    out.append('<li>${_blocks(body, refs, !loose)}</li>')
+  }
+
+  out.append('</${tag}>')
+
+  return ['\n'.join(out), i]
+}
+
+# The position of the `]` closing the bracket opened at `from`, or -1.
+def _closing_bracket(text: string, from: number) {
+  var depth = 0
+  var i = from
+
+  while i < text.length() {
+    var c = text[i]
+
+    if c == '\\' {
+      i += 2
+
+      continue
+    }
+
+    if c == '`' {
+      var end = text.index_of('`', i + 1)
+
+      if end > i {
+        i = end + 1
+
+        continue
+      }
+    }
+
+    if c == '[' {
+      depth++
+    } else if c == ']' {
+      depth--
+
+      if depth == 0 {
+        return i
+      }
+    }
+
+    i++
+  }
+
+  return -1
+}
+
+# Reads `(destination "title")` starting at `from`. Returns the
+# destination, the title and the index after `)`, or `nil`.
+def _destination(text: string, from: number) {
+  if from >= text.length() or text[from] != '(' {
+    return nil
+  }
+
+  var depth = 0
+  var i = from
+
+  while i < text.length() {
+    var c = text[i]
+
+    if c == '\\' {
+      i += 2
+
+      continue
+    }
+
+    if c == '(' {
+      depth++
+    } else if c == ')' {
+      depth--
+
+      if depth == 0 {
+        var inside = text[from + 1, i].trim()
+        var parts = _captures(inside, '/^<?([^\\s>]*)>?(?:\\s+["\'(](.*)["\')])?$/')
+
+        if parts == nil {
+          return nil
+        }
+
+        return [parts[1], parts.length() > 2 ? parts[2] : '', i + 1]
+      }
+    }
+
+    i++
+  }
+
+  return nil
+}
+
+var _EMPHASIS = [
+  ['/\\*\\*(?=\\S)(.+?)(?<=\\S)\\*\\*/', '<strong>$1</strong>'],
+  ['/(?<![A-Za-z0-9_])__(?=\\S)(.+?)(?<=\\S)__(?![A-Za-z0-9_])/', '<strong>$1</strong>'],
+  ['/\\*(?=[^\\s*])(.+?)(?<=[^\\s*])\\*/', '<em>$1</em>'],
+  ['/(?<![A-Za-z0-9_])_(?=[^\\s_])(.+?)(?<=[^\\s_])_(?![A-Za-z0-9_])/', '<em>$1</em>'],
+  ['/~~(?=\\S)(.+?)(?<=\\S)~~/', '<del>$1</del>'],
+]
+
+# Emphasis, strong emphasis and strikethrough in escaped text.
+def _emphasis(text: string) {
+  var result = text
+
+  for rule in _EMPHASIS {
+    result = result.replace(rule[0], rule[1], true)
+  }
+
+  return result
+}
+
+var _ENTITY = '/^&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});/'
+
+# Characters a backslash may escape.
+var _ESCAPABLE = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
+
+/**
+ * One run of inline Markdown as markup.
+ *
+ * @param string text
+ * @param dict refs: the document's reference links.
+ * @returns string
+ */
+def _inline(text: string, refs: dict) {
+  var out = []
+  var plain = ''
+  var i = 0
+
+  # Text waiting to have emphasis applied is flushed before anything
+  # that must not be touched by it: code, links, markup.
+  var flush = @{
+    if !plain.is_empty() {
+      out.append(_emphasis(plain))
+      plain = ''
+    }
+  }
+
+  while i < text.length() {
+    var c = text[i]
+
+    if c == '\\' and i + 1 < text.length() {
+      var next = text[i + 1]
+
+      if next == '\n' {
+        flush()
+        out.append('<br>\n')
+        i += 2
+
+        continue
+      }
+
+      if _ESCAPABLE.contains(next) {
+        plain += _escape(next)
+        i += 2
+
+        continue
+      }
+    }
+
+    if c == '`' {
+      var run = 0
+
+      while i + run < text.length() and text[i + run] == '`' {
+        run++
+      }
+
+      var ticks = '`' * run
+      var end = text.index_of(ticks, i + run)
+
+      if end > 0 {
+        var code = text[i + run, end].replace('\n', ' ', false)
+
+        if code.length() > 1 and code.starts_with(' ') and code.ends_with(' ') {
+          code = code[1, code.length() - 1]
+        }
+
+        flush()
+        out.append('<code>${_escape(code)}</code>')
+        i = end + run
+
+        continue
+      }
+
+      plain += ticks
+      i += run
+
+      continue
+    }
+
+    var is_image = c == '!' and i + 1 < text.length() and text[i + 1] == '['
+
+    if c == '[' or is_image {
+      var open = is_image ? i + 1 : i
+      var close = _closing_bracket(text, open)
+
+      if close > open {
+        var label = text[open + 1, close]
+        var target = _destination(text, close + 1)
+        var after = close + 1
+
+        if target == nil {
+          # A reference: [text][ref], [text][] or [text].
+          var ref_name = label
+          var ref_end = close + 1
+
+          if close + 1 < text.length() and text[close + 1] == '[' {
+            var ref_close = text.index_of(']', close + 2)
+
+            if ref_close > 0 {
+              var inner = text[close + 2, ref_close]
+
+              ref_name = inner.trim().is_empty() ? label : inner
+              ref_end = ref_close + 1
+            }
+          }
+
+          var found = refs.get(ref_name.lower().replace('/\\s+/', ' ', true).trim(), nil)
+
+          if found != nil {
+            target = [found.href, found.title, ref_end]
+          }
+        }
+
+        if target != nil {
+          flush()
+
+          var href = _escape(target[0])
+          var title = target[1].is_empty() ? '' : ' title="${_escape(target[1])}"'
+
+          if is_image {
+            out.append('<img src="${href}" alt="${_escape(label)}"${title}>')
+          } else {
+            out.append('<a href="${href}"${title}>${_inline(label, refs)}</a>')
+          }
+
+          i = target[2]
+
+          continue
+        }
+      }
+    }
+
+    if c == '<' {
+      var rest = text[i,]
+      var autolink = _captures(rest, '/^<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^\\s<>]*)>/')
+
+      if autolink != nil {
+        flush()
+        out.append('<a href="${_escape(autolink[1])}">${_escape(autolink[1])}</a>')
+        i += autolink[0].length()
+
+        continue
+      }
+
+      var email = _captures(rest, '/^<([^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+)>/')
+
+      if email != nil {
+        flush()
+        out.append('<a href="mailto:${_escape(email[1])}">${_escape(email[1])}</a>')
+        i += email[0].length()
+
+        continue
+      }
+
+      var tag = _captures(rest, '/^<\\/?[a-zA-Z][a-zA-Z0-9-]*(?:\\s[^<>]*)?\\/?>/')
+
+      if tag != nil {
+        flush()
+        out.append(tag[0])
+        i += tag[0].length()
+
+        continue
+      }
+    }
+
+    if c == '&' {
+      var entity = _captures(text[i,], _ENTITY)
+
+      if entity != nil {
+        plain += entity[0]
+        i += entity[0].length()
+
+        continue
+      }
+    }
+
+    if c == '\n' {
+      if plain.ends_with('  ') {
+        plain = plain.rtrim(' ')
+        flush()
+        out.append('<br>\n')
+      } else {
+        plain += '\n'
+      }
+
+      i++
+
+      continue
+    }
+
+    plain += _escape(c)
+    i++
+  }
+
+  flush()
+
+  return ''.join(out)
+}
+
+/**
+ * `source` as safe markup.
+ *
+ * @param string source: Markdown.
+ * @returns string
+ */
+def render(source: string) {
+  var normalised = source.replace('\r\n', '\n', false).replace('\r', '\n', false)
+    .replace('\t', '    ', false)
+
+  var refs = {}
+  var lines = _collect_references(normalised.split('\n'), refs)
+
+  return sanitize.clean(_blocks(lines, refs, false))
+}

@@ -1,0 +1,210 @@
+/**
+ * Everything `zuri publish` decides before anything is uploaded: what
+ * the package is, which files it holds, and whether it may go at all.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+import os.process { spawn }
+
+import .._shared.cli
+import .._shared.errors { UsageError }
+import .._shared.files
+import .._shared.manifest as manifest_module
+import .._shared.names
+import .._shared.semver
+
+# A license written as an SPDX expression: identifiers joined by AND,
+# OR and WITH, optionally in parentheses. Enough to tell `MIT` and
+# `Apache-2.0 OR MIT` from `see LICENSE`.
+var _SPDX = '/^\\(?[A-Za-z0-9.+-]+\\)?(\\s+(AND|OR|WITH)\\s+\\(?[A-Za-z0-9.+-]+\\)?)*$/'
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('publish', false)
+
+  parser.description = 'Packs the project and publishes it as a new version on a registry.'
+  parser.epilog = 'Run it from anywhere inside the project. A published version never changes.'
+
+  cli.add_registry_option(parser)
+  parser.add_option('dry-run', 'Show exactly what would be published and publish nothing',
+    { short_name: 'n' })
+  parser.add_option('allow-dirty', 'Publish even when git has uncommitted changes', nil)
+  parser.add_option('quiet', 'Print nothing but a failure', { short_name: 'q' })
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+# The files git reports as changed and not committed, relative to
+# `root`, when `root` is in a work tree.
+def _uncommitted(root: string) {
+  if !files.in_git_tree(root) {
+    return []
+  }
+
+  var arguments = ['-C', root, 'status', '--porcelain', '--untracked-files=all', '--', '.']
+  var child = spawn('git', arguments, { stdout: 'pipe', stderr: 'pipe', stdin: 'null' })
+
+  var listing = child.read_stdout().to_string()
+
+  if child.wait() != 0 {
+    return []
+  }
+
+  # git names paths from the top of the work tree; this names them
+  # from the project root, like everything else here.
+  var top_child = spawn('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+    stdout: 'pipe', stderr: 'pipe', stdin: 'null',
+  })
+
+  var top = top_child.read_stdout().to_string().rtrim('\n').rtrim('\r')
+
+  top_child.wait()
+
+  var changed = []
+
+  for line in listing.split('\n') {
+    if line.length() < 4 {
+      continue
+    }
+
+    var path = line[3,]
+
+    # A rename is written `old -> new`; the new name is the one there.
+    var arrow = path.index_of(' -> ')
+
+    if arrow >= 0 {
+      path = path[arrow + 4,]
+    }
+
+    if path.starts_with('"') and path.ends_with('"') {
+      path = path[1, path.length() - 1]
+    }
+
+    var full = os.join_paths(top, path)
+
+    changed.append(os.relative_path(root, full).replace('\\', '/', false))
+  }
+
+  return changed
+}
+
+/**
+ * The package at `root`, checked and with its files chosen.
+ *
+ * @param string root
+ * @param ?dict options: `allow_dirty` (`bool`).
+ * @returns dict: `{ manifest, name, version, files, warnings }`.
+ * @raises UsageError listing every reason it cannot be published.
+ */
+def prepare(root: string, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var found = manifest_module.load(os.join_paths(root, 'project.toml'))
+  var problems = []
+  var warnings = []
+
+  var name = found.name()
+  var version = found.version()
+
+  if name == nil {
+    problems.append('project.toml states no name')
+  } else {
+    catch {
+      names.check_name(name)
+    } as error {
+      problems.append(error.message)
+    }
+  }
+
+  if version == nil {
+    problems.append('project.toml states no version')
+  } else if !semver.is_valid(version) {
+    problems.append("'${version}' is not a valid version")
+  } else {
+    version = semver.parse(version).to_string()
+  }
+
+  var description = found.text('description')
+
+  if description == nil or description.trim().is_empty() {
+    problems.append('project.toml has no description; say in one line what the package does')
+  }
+
+  var license = found.text('license')
+
+  if license == nil or license.trim().is_empty() {
+    warnings.append('project.toml states no license, so nobody may safely use the package')
+  } else if !is_dict(license.trim().match(_SPDX)) {
+    warnings.append("'${license}' does not read as an SPDX license identifier, such as MIT")
+  }
+
+  catch {
+    for dependency in found.dependencies(false) {
+      if dependency.kind != 'registry' {
+        problems.append(
+          '${dependency.name} is a ${dependency.kind} dependency; a published package can only '
+            + 'depend on packages from a registry'
+        )
+      }
+    }
+  } as error {
+    problems.append(error.message)
+  }
+
+  var readme = found.text('readme') == nil ? 'README.md' : found.text('readme')
+  var selected = files.select(root, {
+    include: found.list('include'),
+    exclude: found.list('exclude'),
+  })
+
+  if !selected.files.contains(readme) {
+    warnings.append('there is no ${readme}, which is what the registry shows as the package page')
+  }
+
+  if !selected.secrets.is_empty() {
+    problems.append(
+      'these look like they hold secrets and were left out, so nothing was published: '
+        + ', '.join(selected.secrets) + '; if they are meant to go, name them in [project] include'
+    )
+  }
+
+  if !selected.links.is_empty() {
+    problems.append('a package cannot hold symbolic links: ' + ', '.join(selected.links))
+  }
+
+  if !selected.files.contains('project.toml') {
+    problems.append('project.toml itself would be left out')
+  }
+
+  if options.get('allow_dirty', false) != true {
+    var dirty = _uncommitted(root).filter(@(path) => selected.files.contains(path))
+
+    if !dirty.is_empty() {
+      var shown = dirty.length() > 5 ? dirty[0, 5] + ['and ${dirty.length() - 5} more'] : dirty
+
+      problems.append(
+        'these have changes git has not committed: ' + ', '.join(shown)
+          + '; commit them so the published version is one you can find again, or pass '
+          + 'allow-dirty'
+      )
+    }
+  }
+
+  if !problems.is_empty() {
+    raise UsageError(
+      'the package cannot be published:\n' + '\n'.join(problems.map(@(p) => '  - ' + p))
+    )
+  }
+
+  return { manifest: found, name, version, files: selected.files, warnings }
+}

@@ -1,0 +1,115 @@
+/**
+ * What `zuri clean` removes, worked out before anything goes.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+
+var _UNITS = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 }
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('clean', false)
+
+  parser.description = 'Frees the space downloads, logs and installed packages take up.'
+  parser.epilog = 'With nothing chosen, the download cache and the logs are cleaned.'
+
+  parser.add_option('cache', 'The download cache: archives, registry indexes, git checkouts',
+    { short_name: 'c' })
+  parser.add_option('runtimes', 'The runtimes zuri bundle downloaded', nil)
+  parser.add_option('logs', 'The logs install and uninstall scripts left', { short_name: 'l' })
+  parser.add_option('libs', "The project's installed packages; zuri restore brings them back",
+    nil)
+  parser.add_option('all', 'All of the above', { short_name: 'a' })
+  parser.add_option('older-than', 'Only what has not changed for this long, such as 30d or 12h',
+    { type: args.STRING, metavar: 'age' })
+  parser.add_option('global', "With libs, this user's packages rather than the project's",
+    { short_name: 'g' })
+  parser.add_option('dry-run', 'Say what would go and remove nothing', { short_name: 'n' })
+
+  return parser
+}
+
+/**
+ * An age written as a number and a unit: `s`, `m`, `h`, `d` or `w`.
+ *
+ * @param string text
+ * @returns number: seconds.
+ * @raises UsageError
+ */
+def parse_age(text: string) {
+  var found = text.trim().lower().matches('/^([0-9]+)([smhdw])$/')
+
+  if !is_dict(found) or found.get(0, []).is_empty() {
+    raise UsageError(
+      "'${text}' is not an age; write a number and a unit, such as 30d, 12h or 2w"
+    )
+  }
+
+  return found.get(1)[0].to_number() * _UNITS.get(found.get(2)[0])
+}
+
+/**
+ * What to clean, from the flags.
+ *
+ * @param dict parsed
+ * @returns dict: `{ cache, runtimes, logs, libs }`, each a bool.
+ */
+def choices(parsed) {
+  var given = parsed.options
+  var all = given.get('all', false) == true
+  var chosen = {
+    cache: all or given.get('cache', false) == true,
+    runtimes: all or given.get('runtimes', false) == true,
+    logs: all or given.get('logs', false) == true,
+    libs: all or given.get('libs', false) == true,
+  }
+
+  if !chosen.values().some(@(value) => value) {
+    chosen.set('cache', true)
+    chosen.set('logs', true)
+  }
+
+  return chosen
+}
+
+/**
+ * The files under `root` older than `cutoff`, or every file when
+ * `cutoff` is `nil`, with their sizes.
+ *
+ * @param string root
+ * @param ?number cutoff: seconds since the epoch.
+ * @param ?list keep: names directly under `root` to leave alone.
+ * @returns list[dict]: `{ path, size }`, paths absolute.
+ */
+def stale_files(root: string, cutoff: ?number, keep: ?list) {
+  var found = []
+
+  for entry in fsx.walk(root) {
+    if entry.kind != 'file' {
+      continue
+    }
+
+    if keep != nil and keep.contains(entry.path.split('/')[0]) {
+      continue
+    }
+
+    var full = os.join_paths(root, entry.path)
+    var stats = file(full).stats()
+
+    if cutoff == nil or stats.mtime < cutoff {
+      found.append({ path: full, size: stats.size })
+    }
+  }
+
+  return found
+}

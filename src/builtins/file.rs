@@ -58,19 +58,27 @@ where
   f(&mut v.as_file_cell().borrow_mut())
 }
 
-/// Opens `path` per a Zuri mode string (`r`, `w`, `a`, `r+`, `w+`,
-/// `a+`, any of those with a trailing/embedded `b`, or a mixed form
-/// like `r+w`). Shared by the `file(...)` constructor native
+/// Opens `path` per a Zuri mode string (`r`, `w`, `a`, `x`, `r+`,
+/// `w+`, `a+`, `x+`, any of those with a trailing/embedded `b`, or a
+/// mixed form like `r+w`). Shared by the `file(...)` constructor native
 /// (`natives.rs`) and this file's own `.open()` method, so a file
 /// re-opened after being closed gets identical semantics to its first
 /// open. `w+` deliberately does NOT truncate an existing file, per
-/// spec; only bare `w` does.
+/// spec; only bare `w` does. `x` creates the file and fails if anything
+/// is already at the path, which the operating system checks and acts
+/// on in one step, so two processes racing for the same path cannot
+/// both win.
 pub(crate) fn open_with_mode(path: &str, mode: &str) -> Result<std::fs::File, String> {
   let base = mode.replace('b', "");
   let has_plus = base.contains('+');
   let mut opts = std::fs::OpenOptions::new();
 
-  if base.starts_with('a') {
+  if base.starts_with('x') {
+    opts.write(true).create_new(true);
+    if has_plus {
+      opts.read(true);
+    }
+  } else if base.starts_with('a') {
     opts.append(true).create(true);
     if has_plus {
       opts.read(true);

@@ -30,6 +30,7 @@ a server.
   - [Timeouts and Retries](#timeouts-and-retries)
   - [Streaming a Response](#streaming-a-response)
   - [TLS and Certificates](#tls-and-certificates)
+  - [Proxies](#proxies)
 - [Serving Requests](#serving-requests)
   - [Routing](#routing)
   - [The Request Object](#the-request-object)
@@ -618,6 +619,34 @@ There is also `verify = false`, which turns verification off
 completely. It exists for local development, and it makes the
 connection encrypted but unauthenticated — which is to say, trivially
 interceptable. `add_ca()` is the right answer everywhere else.
+
+### Proxies
+
+A client goes through the proxy the environment names, the way command
+line tools do: `HTTPS_PROXY` for `https` addresses, `HTTP_PROXY` for
+`http` ones, and `ALL_PROXY` for either, each in upper or lower case.
+`NO_PROXY` lists the hosts reached directly, separated by commas: a
+name covers every name under it, an entry with a port covers only that
+port, and `*` covers everything. This machine's own loopback addresses
+never go through a proxy.
+
+A client of your own can name its proxy instead, or ignore the
+environment altogether:
+
+```zuri,ignore
+var api = http.client('https://api.example.com', {
+  proxy: 'http://ada:secret@proxy.internal:3128',
+})
+
+var direct = http.client('https://api.example.com', { trust_env: false })
+```
+
+An `https` request is tunnelled through the proxy with `CONNECT`, so the
+proxy carries the encrypted bytes and never sees what they say, and the
+certificate checked is the destination's own. An `http` request is
+handed to the proxy whole. Credentials in the proxy address are sent to
+the proxy alone, as `Proxy-Authorization`. The proxy itself is reached
+over plain HTTP; an `https://` proxy address is refused.
 
 ## Serving Requests
 

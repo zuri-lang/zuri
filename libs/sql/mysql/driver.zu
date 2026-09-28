@@ -99,6 +99,10 @@ class MySqlDriver < Driver {
     caps.set('named_parameters', false)
     caps.set('last_insert_id', true)
     caps.set('returning', false)
+
+    # Every CREATE, ALTER and DROP commits whatever transaction was open
+    # around it, on MariaDB as much as MySQL.
+    caps.set('transactional_ddl', false)
     caps.set('isolation_levels', [
       READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE,
     ])

@@ -1,0 +1,76 @@
+/**
+ * The errors a command reports to the person who ran it, and the one
+ * place that turns them into a message and an exit status.
+ *
+ * Anything that is not one of these is a bug. It goes up unhandled, so
+ * its stack trace is there to be read.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os.process { exit }
+
+import .ui
+
+/**
+ * Something the person can put right by typing something else: a
+ * flag with a bad value, a name that cannot be a package, a command
+ * run where it cannot work.
+ */
+class UsageError < Error {}
+
+/**
+ * Something that went wrong while doing what was asked: a registry
+ * that refused, a download that failed its checksum, a conflict
+ * between what two packages need.
+ */
+class CommandError < Error {}
+
+/**
+ * Whether `error` is one of the errors a command reports rather than
+ * a bug.
+ *
+ * @param error
+ * @returns bool
+ */
+def is_reported(error) {
+  return instance_of(error, UsageError) or instance_of(error, CommandError)
+}
+
+/**
+ * Runs `main`, turning a reported error into `name: message` on
+ * standard error and exit status `1`. Anything else goes up.
+ *
+ * @param string name: the command, as the user typed it.
+ * @param function main
+ * @param ?list others: further error classes to report the same way.
+ */
+def run(name: string, main: function, others: ?list) {
+  catch {
+    main()
+  } as error {
+    var reported = is_reported(error)
+
+    if !reported and others != nil {
+      for kind in others {
+        if instance_of(error, kind) {
+          reported = true
+        }
+      }
+    }
+
+    if !reported {
+      raise error
+    }
+
+    for index, line in error.message.split('\n') {
+      if index == 0 {
+        ui.complain('${ui.failure(name + ":")} ${line}')
+      } else {
+        ui.complain(line)
+      }
+    }
+
+    exit(1)
+  }
+}

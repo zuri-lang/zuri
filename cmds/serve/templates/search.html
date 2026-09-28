@@ -1,0 +1,30 @@
+<extend base="layout.html">
+  <define name="content">
+    <h1 x-if="query">Packages matching “{{ query }}”</h1>
+    <h1 x-else>All packages</h1>
+    <form class="sort" method="get" action="/search">
+      <input type="hidden" name="q" value="{{ query }}">
+      <label>Sort by
+        <select name="sort">
+          <option value="relevance" x-attr="{ selected: sort == 'relevance' }">relevance</option>
+          <option value="downloads" x-attr="{ selected: sort == 'downloads' }">downloads</option>
+          <option value="updated" x-attr="{ selected: sort == 'updated' }">recently updated</option>
+          <option value="name" x-attr="{ selected: sort == 'name' }">name</option>
+        </select>
+      </label>
+      <button>Sort</button>
+    </form>
+    <p class="meta">{{ total|number_format }} {{ total == 1 ? 'package' : 'packages' }}</p>
+    <ul class="cards">
+      <template x-for="results" x-value="item"><include path="card.html" /></template>
+    </ul>
+    <nav class="pages" x-if="pages|length > 1">
+      <a x-if="previous" href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ previous }}">Previous</a>
+      <template x-for="pages" x-value="p">
+        <strong x-if="p.current">{{ p.number }}</strong>
+        <a x-else href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ p.number }}">{{ p.number }}</a>
+      </template>
+      <a x-if="next_page" href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ next_page }}">Next</a>
+    </nav>
+  </define>
+</extend>

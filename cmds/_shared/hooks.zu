@@ -1,0 +1,137 @@
+/**
+ * The scripts a package asks to run around its installation.
+ *
+ * A package may name a `post-install` script, run once it is in place
+ * and its dependencies are too, and a `pre-uninstall` script, run
+ * before it is removed. Either can do anything the user running
+ * `zuri install` can, so they are not run for just any package:
+ *
+ * - the project's own hooks run, since the project is the user's own
+ *   code;
+ * - a dependency's hooks run only when the project's
+ *   `[install] allow-hooks` names it;
+ * - nothing runs when the command was told to skip hooks.
+ *
+ * A hook runs as `zuri run <script>` from the package's own directory,
+ * with no shell in between, and must finish within
+ * `HOOK_TIMEOUT` seconds with status `0`. Its output goes to a log in
+ * `$ZURI_HOME/logs`, which a failure names. `ZURI_PACKAGE_NAME`,
+ * `ZURI_PACKAGE_VERSION`, `ZURI_PACKAGE_DIR` and `ZURI_PROJECT_DIR`
+ * tell the script where it is.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import date
+import os
+import os.process { spawn }
+
+import .errors { CommandError }
+import .fsx
+import .names
+import .paths
+
+/** How long a hook may run, in seconds. */
+var HOOK_TIMEOUT = 600
+
+/**
+ * Raised when a hook fails, or names a script that is not there.
+ */
+class HookError < CommandError {}
+
+/**
+ * Whether a hook of the package `name` may run.
+ *
+ * @param string name
+ * @param bool is_root: whether it is the project itself.
+ * @param list allowed: normalised names the project allows.
+ * @param bool disabled: whether the command was told to skip hooks.
+ * @returns bool
+ */
+def permitted(name: string, is_root: bool, allowed: list, disabled: bool) {
+  if disabled {
+    return false
+  }
+
+  return is_root or allowed.contains(names.normalized(name))
+}
+
+/**
+ * Runs one hook.
+ *
+ * @param dict details:
+ *    - `hook` (`string`): `'post-install'` or `'pre-uninstall'`.
+ *    - `script` (`string`): as the manifest names it, relative to
+ *      `dir`.
+ *    - `name`, `version` (`string`): the package's.
+ *    - `dir` (`string`): the package's directory.
+ *    - `project` (`string`): the project's root.
+ * @returns string: the log the output went to.
+ * @raises HookError when the script is missing, escapes the package,
+ *    fails or runs too long.
+ */
+def run(details: dict) {
+  var dir = details.dir
+  var script = os.join_paths(dir, details.script)
+
+  if !os.path_contains(dir, script) {
+    raise HookError(
+      "${details.name}'s ${details.hook} hook names '${details.script}', which is outside "
+        + 'the package'
+    )
+  }
+
+  if !file(script).exists() {
+    raise HookError(
+      "${details.name}'s ${details.hook} hook names '${details.script}', which is not there"
+    )
+  }
+
+  fsx.ensure_dir(paths.logs_dir())
+
+  var stamp = date().format('Ymd-His')
+  var log = os.join_paths(
+    paths.logs_dir(), '${details.hook}-${names.import_name(details.name)}-${stamp}.log'
+  )
+
+  var child = spawn(os.exe_path, ['run', script], {
+    cwd: dir,
+    stdin: 'null',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: {
+      ZURI_PACKAGE_NAME: details.name,
+      ZURI_PACKAGE_VERSION: details.version == nil ? '' : details.version,
+      ZURI_PACKAGE_DIR: dir,
+      ZURI_PROJECT_DIR: details.project,
+    },
+  })
+
+  var status = child.wait(HOOK_TIMEOUT * 1000)
+
+  if status == nil {
+    child.kill(9)
+    child.wait()
+  }
+
+  var out = child.read_stdout().to_string()
+  var err = child.read_stderr().to_string()
+
+  fsx.atomic_write(log, out + err)
+
+  if status == nil {
+    raise HookError(
+      "${details.name}'s ${details.hook} hook ran for more than ${HOOK_TIMEOUT} seconds and "
+        + 'was stopped; its output is in ${log}'
+    )
+  }
+
+  if status != 0 {
+    raise HookError(
+      "${details.name}'s ${details.hook} hook failed with status ${status}; its output is "
+        + 'in ${log}'
+    )
+  }
+
+  return log
+}

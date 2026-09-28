@@ -309,6 +309,9 @@ class Tar {
    * @param {?string} include a regular expression of files to
    *    include
    * @throws {TarIOError}
+   * @throws {TarCorruptedError} when an entry's name would place it
+   *    outside `outdir`, by being absolute or by climbing out through
+   *    `..`. Nothing past that entry is extracted.
    * @return {list[string]}
    */
   extract(outdir: string, strip: ?int|string, exclude: ?string, include: ?string) {
@@ -340,8 +343,22 @@ class Tar {
       if exclude and header.filename.match(exclude) continue
       if include and !header.filename.match(include) continue
 
-      # create output directory
+      # An entry named with an absolute path or enough `..` segments
+      # would land outside `outdir`, which is how a malicious archive
+      # overwrites files it was never meant to reach. The whole archive
+      # is refused rather than the entry skipped: one that tries this
+      # cannot be trusted with anything else either.
       var output = os.join_paths(outdir, header.filename)
+
+      if header.filename.starts_with('/') or header.filename.starts_with('\\')
+        or !os.path_contains(outdir, output) {
+        self.close()
+        raise TarCorruptedError(
+          'entry "${header.filename}" would be written outside "${outdir}"'
+        )
+      }
+
+      # create output directory
       var directory = _without_trailing_separator(is_dir ? output : os.dir_name(output))
       if !os.dir_exists(directory) {
         # Recursively: an archive is not obliged to carry an entry for

@@ -1,0 +1,68 @@
+# The file helpers.
+
+import os
+import test { * }
+
+import ..fsx
+
+# A scratch directory of this run's own, outside any checkout.
+var ROOT = os.create_temp_dir('zuri-fsx-')
+
+describe('fsx', @{
+  before_each(@{
+    fsx.remove(ROOT)
+    fsx.ensure_dir(ROOT)
+  })
+
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('writes atomically and leaves no temporary file behind', @{
+    var path = os.join_paths(ROOT, 'a', 'b', 'file.txt')
+
+    fsx.atomic_write(path, 'first')
+    fsx.atomic_write(path, 'second', 0c600)
+
+    expect(fsx.read_text(path)).to_equal('second')
+    expect(os.read_dir(os.dir_name(path)).filter(@(n) => n.ends_with('.tmp'))).to_be_empty()
+    expect(file(path).stats().mode & 0c777).to_equal(0c600)
+  })
+
+  it('gives the same digest to the same tree, and another to a changed one', @{
+    var one = os.join_paths(ROOT, 'one')
+    var two = os.join_paths(ROOT, 'two')
+
+    for dir in [one, two] {
+      fsx.ensure_dir(os.join_paths(dir, 'app'))
+      file(os.join_paths(dir, 'app', 'x.zu'), 'w').write('echo 1')
+    }
+
+    expect(fsx.tree_digest(one)).to_equal(fsx.tree_digest(two))
+
+    file(os.join_paths(two, 'app', 'x.zu'), 'w').write('echo 2')
+
+    expect(fsx.tree_digest(one)).not.to_equal(fsx.tree_digest(two))
+  })
+
+  it('copies a tree, leaving out what keep refuses', @{
+    var source = os.join_paths(ROOT, 'source')
+
+    fsx.ensure_dir(os.join_paths(source, 'keep'))
+    fsx.ensure_dir(os.join_paths(source, 'skip'))
+    file(os.join_paths(source, 'keep', 'a.zu'), 'w').write('a')
+    file(os.join_paths(source, 'skip', 'b.zu'), 'w').write('b')
+
+    var target = os.join_paths(ROOT, 'target')
+
+    fsx.copy_tree(source, target, @(path, kind) => !path.starts_with('skip'))
+
+    expect(file(os.join_paths(target, 'keep', 'a.zu')).exists()).to_be_true()
+    expect(os.dir_exists(os.join_paths(target, 'skip'))).to_be_false()
+  })
+
+  it('writes hexadecimal', @{
+    expect(fsx.hex(bytes([0, 15, 255]))).to_equal('000fff')
+    expect(fsx.unique().length()).to_equal(16)
+  })
+})

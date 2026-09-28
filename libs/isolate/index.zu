@@ -711,9 +711,13 @@ def scope(body: function) {
 }
 
 /**
- * Sets the isolate pool's isolate-thread count. Has no effect if
- * the pool has already started; its size is fixed once the first
- * isolate runs.
+ * Sets how many isolate threads the pool may run at once. Has no
+ * effect if the pool has already started; its size is fixed once the
+ * first isolate runs.
+ *
+ * The size is a ceiling. A thread is started only when an isolate is
+ * waiting and every thread already started is busy, so a pool sized
+ * for peak load costs only the threads the load actually needed.
  *
  * @param int threads
  * @returns bool: `true` if applied, `false` if the pool had
@@ -728,14 +732,25 @@ def configure(threads: int) {
 }
 
 /**
- * The isolate pool's isolate-thread count. Starts the pool, with
- * whatever size `configure()` set or the machine's CPU count
+ * How many isolate threads the pool may run at once. Starts the pool,
+ * with whatever size `configure()` set or the machine's CPU count
  * otherwise, if it has not started yet.
  *
  * @returns int
  */
 def pool_size() {
   return _isolate.pool_size()
+}
+
+/**
+ * How many isolate threads the pool has started so far. Threads start
+ * as isolates need them, so this grows with the most isolates ever
+ * waiting at once and never passes `pool_size()`.
+ *
+ * @returns int
+ */
+def started_count() {
+  return _isolate.started_count()
 }
 
 /**

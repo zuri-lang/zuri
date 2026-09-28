@@ -1,0 +1,686 @@
+/**
+ * Talking to a package registry: the client half of protocol v1,
+ * which `zuri serve` implements.
+ *
+ * Every response is JSON except an archive download. A failure is
+ * answered with `{ "error": { "code", "message" } }` and a status
+ * that says what kind of failure it was, and arrives here as a
+ * `RegistryError` carrying both.
+ *
+ * Reads are retried when the registry or the network stumbles: a
+ * connection that fails, a timeout, `429`, `502`, `503` and `504` are
+ * tried again up to three times, waiting longer each time and never
+ * less than a `Retry-After` asks. Writes are sent once.
+ *
+ * A package's index is kept in the download cache with the `ETag` it
+ * came with, so asking again costs a `304` when nothing changed, and
+ * `offline` answers from the cache alone. An archive is kept under its
+ * checksum and never downloaded twice.
+ *
+ * A token is only ever sent over HTTPS. A registry on `http://` is
+ * accepted for anything anonymous, and for authenticated requests only
+ * on this machine's own loopback address, unless `insecure` says
+ * otherwise.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import hash
+import http
+import http.errors as http_errors
+import json
+import os
+import url
+
+import .archive
+import .errors { CommandError }
+import .fsx
+import .paths
+
+/** The protocol version this client speaks. */
+var API_VERSION = 1
+
+/** The largest archive this client will download: 256 MiB. */
+var MAX_DOWNLOAD = 268435456
+
+var _RETRY_STATUSES = [429, 502, 503, 504]
+var _ATTEMPTS = 4
+
+/**
+ * Raised for anything a registry refused or failed to answer.
+ */
+class RegistryError < CommandError {
+
+  /**
+   * The HTTP status, or `0` when there was no response at all.
+   * @type number
+   */
+  var status = 0
+
+  /**
+   * The registry's own name for the failure, such as `not_found` or
+   * `version_exists`, or `nil`.
+   * @type ?string
+   */
+  var code
+
+  /**
+   * What the registry said, beyond the message, when it said more.
+   * @type ?dict
+   */
+  var details
+
+  /**
+   * @param string message
+   * @param ?number status
+   * @param ?string code
+   * @param ?dict details
+   */
+  @new(message: string, status: ?number, code: ?string, details: ?dict) {
+    parent(message)
+    self.status = status == nil ? 0 : status
+    self.code = code
+    self.details = details
+  }
+}
+
+# Whether `host` is this machine.
+def _is_loopback(host: string) {
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].contains(host.lower())
+}
+
+/**
+ * One registry, at one address.
+ */
+class Registry {
+
+  /**
+   * The address, without a trailing slash.
+   * @type string
+   */
+  var address
+
+  /**
+   * The token authenticated requests present, or `nil`.
+   * @type ?string
+   */
+  var token
+
+  /**
+   * Answer from the cache alone and never touch the network.
+   * @type bool
+   */
+  var offline = false
+
+  /**
+   * Allow a token to cross plain HTTP to a machine other than this one.
+   * @type bool
+   */
+  var insecure = false
+
+  var _client
+  var _secure = false
+  var _host = ''
+
+  /**
+   * @param string address
+   * @param ?dict options: `token`, `offline`, `insecure`, and
+   *    `timeout` (read timeout in milliseconds, default 60000).
+   * @raises CommandError for an address that is not HTTP or HTTPS.
+   */
+  @new(address: string, options: ?dict) {
+    if options == nil {
+      options = {}
+    }
+
+    var trimmed = address
+
+    while trimmed.ends_with('/') {
+      trimmed = trimmed[0, trimmed.length() - 1]
+    }
+
+    var parsed
+
+    catch {
+      parsed = url.parse(trimmed)
+    } as error {
+      raise CommandError("'${address}' is not a registry address")
+    }
+
+    if parsed.scheme != 'https' and parsed.scheme != 'http' {
+      raise CommandError("'${address}' is not a registry address; it must start with https://")
+    }
+
+    self.address = trimmed
+    self.token = options.get('token', nil)
+    self.offline = options.get('offline', false) == true
+    self.insecure = options.get('insecure', false) == true
+    self._secure = parsed.scheme == 'https'
+    self._host = parsed.host == nil ? '' : parsed.host
+
+    self._client = http.HttpClient(nil, {
+      connect_timeout: 15000,
+      read_timeout: options.get('timeout', 60000),
+      max_body_size: MAX_DOWNLOAD,
+      user_agent: 'zuri/${os.version}',
+    })
+  }
+
+  # The directory this registry's cached index entries live in.
+  _index_cache() {
+    var key = hash.sha256(self.address)[0, 16]
+
+    return os.join_paths(paths.cache_dir(), 'index', key)
+  }
+
+  # Refuses to put a token on the wire in the clear.
+  _check_transport() {
+    if self._secure or self.insecure or _is_loopback(self._host) {
+      return
+    }
+
+    raise CommandError(
+      '${self.address} is not HTTPS, and credentials are never sent over a connection '
+        + 'anyone between here and there can read; use its https:// address'
+    )
+  }
+
+  # Turns a failed response into the error it describes.
+  _failure(response, doing: string) {
+    var code = nil
+    var message = nil
+    var details = nil
+
+    catch {
+      var body = response.as_dict()
+
+      if is_dict(body) and is_dict(body.get('error', nil)) {
+        code = body.error.get('code', nil)
+        message = body.error.get('message', nil)
+        details = body.error
+      }
+    } as error {
+      # Not JSON; the status speaks for itself.
+    }
+
+    if message == nil {
+      message = '${response.status} ${response.reason_phrase()}'
+    }
+
+    return RegistryError('${doing}: ${message}', response.status, code, details)
+  }
+
+  /**
+   * Sends one request and returns the response, whatever its status.
+   *
+   * @param string method
+   * @param string path: under the registry address.
+   * @param ?dict options: as `HttpClient.request()` takes them, plus
+   *    `auth` (`true` to present the token and fail without one,
+   *    `'optional'` to present it when there is one and the
+   *    connection is safe to send it over, which is how a private
+   *    registry's packages are read) and `doing` (what to say the
+   *    request was for, in an error).
+   * @returns HttpResponse
+   * @raises RegistryError when the registry cannot be reached.
+   */
+  send(method: string, path: string, options: ?dict) {
+    if options == nil {
+      options = {}
+    }
+
+    var doing = options.get('doing', 'talking to ${self.address}')
+
+    if self.offline {
+      raise RegistryError('${doing}: working offline, and this needs the registry')
+    }
+
+    var request = options.clone()
+
+    request.remove('doing')
+
+    if request.get('auth', false) == true {
+      if self.token == nil {
+        raise RegistryError(
+          '${doing}: you are not logged in to ${self.address}; run `zuri account login`',
+          401, 'unauthenticated'
+        )
+      }
+
+      self._check_transport()
+      request.set('auth', ['bearer', self.token])
+    } else if request.get('auth', false) == 'optional' and self.token != nil
+      and (self._secure or self.insecure or _is_loopback(self._host)) {
+      request.set('auth', ['bearer', self.token])
+    } else {
+      request.remove('auth')
+    }
+
+    var idempotent = ['GET', 'HEAD'].contains(method.upper())
+    var attempts = idempotent ? _ATTEMPTS : 1
+    var wait = 0.5
+
+    iter var attempt = 1; attempt <= attempts; attempt++ {
+      var response = nil
+      var failure = nil
+
+      catch {
+        response = self._client.request(method, self.address + path, request)
+      } as error {
+        if !instance_of(error, http_errors.HttpError) {
+          raise error
+        }
+
+        failure = error
+      }
+
+      var retry = failure != nil
+        or (response != nil and _RETRY_STATUSES.contains(response.status))
+
+      if !retry or attempt == attempts {
+        if failure != nil {
+          raise RegistryError('${doing}: could not reach ${self.address}: ${failure.message}')
+        }
+
+        return response
+      }
+
+      var pause = wait
+
+      if response != nil {
+        var asked = response.headers.get('retry-after', nil)
+
+        if asked != nil and is_dict(asked.match('/^[0-9]+$/')) {
+          pause = asked.to_number().max(wait).min(30)
+        }
+      }
+
+      os.sleep(pause)
+      wait = wait * 2
+    }
+  }
+
+  # Sends a request that is expected to answer with JSON and a 2xx.
+  _json(method: string, path: string, options: ?dict) {
+    var doing = options == nil ? 'talking to ${self.address}' : options.get('doing', '')
+    var response = self.send(method, path, options)
+
+    if !response.is_ok() {
+      raise self._failure(response, doing)
+    }
+
+    if response.status == 204 {
+      return {}
+    }
+
+    catch {
+      return response.as_dict()
+    } as error {
+      raise RegistryError('${doing}: ${self.address} answered with something that is not JSON')
+    }
+  }
+
+  /**
+   * What the registry says about itself.
+   *
+   * @returns dict: `{ api, name, max_archive_size, signup }`.
+   */
+  info() {
+    var answer = self._json('GET', '/api/v1/config', { doing: 'reading ${self.address}' })
+
+    if answer.get('api', nil) != API_VERSION {
+      raise RegistryError(
+        '${self.address} speaks protocol version ${answer.get("api", "unknown")}, and this '
+          + 'version of zuri speaks ${API_VERSION}'
+      )
+    }
+
+    return answer
+  }
+
+  /**
+   * Every version of `name` the registry holds, oldest first.
+   *
+   * @param string name
+   * @returns dict: `{ name, versions }`, each version
+   *    `{ version, checksum, size, dependencies, zuri, yanked,
+   *    published_at }`.
+   * @raises RegistryError with `code` `not_found` when there is no
+   *    such package.
+   */
+  index(name: string) {
+    var cache = os.join_paths(self._index_cache(), '${name}.json')
+    var cached = nil
+
+    if file(cache).exists() {
+      catch {
+        cached = json.decode(fsx.read_text(cache))
+      } as error {
+        cached = nil
+      }
+    }
+
+    if self.offline {
+      if cached == nil {
+        raise RegistryError(
+          "working offline, and '${name}' from ${self.address} was never downloaded here",
+          404, 'not_found'
+        )
+      }
+
+      return cached.body
+    }
+
+    var headers = {}
+
+    if cached != nil and cached.get('etag', nil) != nil {
+      headers.set('If-None-Match', cached.etag)
+    }
+
+    var doing = "looking up '${name}' on ${self.address}"
+    var response = self.send('GET', '/api/v1/index/${name}', {
+      headers,
+      doing,
+      auth: 'optional',
+    })
+
+    if response.status == 304 and cached != nil {
+      return cached.body
+    }
+
+    if response.status == 404 {
+      raise RegistryError(
+        "there is no package called '${name}' on ${self.address}", 404, 'not_found'
+      )
+    }
+
+    if !response.is_ok() {
+      raise self._failure(response, doing)
+    }
+
+    var body = response.as_dict()
+    var etag = response.headers.get('etag', nil)
+
+    catch {
+      fsx.atomic_write(cache, json.encode({ etag, body }))
+    } as error {
+      # The cache is a convenience; a read-only one costs a download.
+    }
+
+    return body
+  }
+
+  /**
+   * The archive of `name` at `version`, downloaded into the cache
+   * unless it is already there, and checked against `checksum`.
+   *
+   * @param string name
+   * @param string version
+   * @param string checksum: `sha256:` and hexadecimal.
+   * @returns string: the archive's path in the cache.
+   * @raises RegistryError when it cannot be had, or does not match.
+   */
+  download(name: string, version: string, checksum: string) {
+    var target = cached_archive(checksum)
+
+    if file(target).exists() and archive.checksum(target, true) == checksum {
+      return target
+    }
+
+    if self.offline {
+      raise RegistryError(
+        'working offline, and ${name} ${version} was never downloaded here', 404, 'not_found'
+      )
+    }
+
+    var doing = 'downloading ${name} ${version} from ${self.address}'
+    var response = self.send('GET', '/api/v1/packages/${name}/${version}/archive', {
+      doing,
+      timeout: 300000,
+      auth: 'optional',
+    })
+
+    if !response.is_ok() {
+      raise self._failure(response, doing)
+    }
+
+    var data = response.as_bytes()
+    var actual = archive.checksum(data)
+
+    if actual != checksum {
+      raise RegistryError(
+        '${doing}: the archive does not match its checksum\n'
+          + '  expected ${checksum}\n  received ${actual}\n'
+          + 'Nothing was installed. The download was damaged on the way, or the registry '
+          + 'is not serving what it published.'
+      )
+    }
+
+    fsx.atomic_write(target, data)
+
+    return target
+  }
+
+  /**
+   * Searches the registry.
+   *
+   * @param string query
+   * @param ?dict options: `page` (from 1), `per_page`, and `sort`
+   *    (`relevance`, `downloads`, `updated` or `name`).
+   * @returns dict: `{ total, page, per_page, packages }`.
+   */
+  search(query: string, options: ?dict) {
+    var params = { q: query }
+
+    if options != nil {
+      for key, value in options {
+        if value != nil {
+          params.set(key, value.to_string())
+        }
+      }
+    }
+
+    return self._json('GET', '/api/v1/search', {
+      query: params,
+      doing: 'searching ${self.address}',
+      auth: 'optional',
+    })
+  }
+
+  /**
+   * Everything the registry shows about `name`.
+   *
+   * @param string name
+   * @param ?bool readme: include the latest version's README.
+   * @returns dict
+   */
+  package(name: string, readme: ?bool) {
+    var doing = "looking up '${name}' on ${self.address}"
+    var response = self.send('GET', '/api/v1/packages/${name}', {
+      query: readme == true ? { readme: '1' } : {},
+      doing,
+      auth: 'optional',
+    })
+
+    if response.status == 404 {
+      raise RegistryError(
+        "there is no package called '${name}' on ${self.address}", 404, 'not_found'
+      )
+    }
+
+    if !response.is_ok() {
+      raise self._failure(response, doing)
+    }
+
+    return response.as_dict()
+  }
+
+  /**
+   * Uploads a packed archive.
+   *
+   * @param string path: the archive.
+   * @param dict metadata: `{ name, version, checksum }`.
+   * @returns dict: what the registry recorded.
+   * @raises RegistryError; `code` is `version_exists` when that
+   *    version is already published, with the checksum it was
+   *    published under in `details`.
+   */
+  publish(path: string, metadata: dict) {
+    var form = http.MultipartBuilder()
+
+    form.add_field('metadata', json.encode(metadata))
+    form.add_file('archive', os.base_name(path), fsx.read_bytes(path), 'application/gzip')
+
+    return self._json('PUT', '/api/v1/packages', {
+      multipart: form,
+      auth: true,
+      timeout: 300000,
+      doing: 'publishing ${metadata.name} ${metadata.version} to ${self.address}',
+    })
+  }
+
+  /**
+   * Yanks a version, or with `undo`, restores it.
+   *
+   * @param string name
+   * @param string version
+   * @param ?bool undo
+   * @returns dict
+   */
+  yank(name: string, version: string, undo: ?bool) {
+    var doing = '${undo == true ? "restoring" : "yanking"} ${name} ${version}'
+    var method = undo == true ? 'DELETE' : 'POST'
+
+    return self._json(method, '/api/v1/packages/${name}/${version}/yank', {
+      auth: true,
+      doing,
+    })
+  }
+
+  /**
+   * The publishers who own `name`.
+   *
+   * @param string name
+   * @returns list[string]
+   */
+  owners(name: string) {
+    var answer = self._json('GET', '/api/v1/packages/${name}/owners', {
+      doing: 'listing the owners of ${name}',
+    })
+
+    return answer.get('owners', [])
+  }
+
+  /**
+   * Adds `username` as an owner of `name`.
+   *
+   * @param string name
+   * @param string username
+   * @returns dict
+   */
+  add_owner(name: string, username: string) {
+    return self._json('PUT', '/api/v1/packages/${name}/owners', {
+      json: { username },
+      auth: true,
+      doing: 'adding ${username} as an owner of ${name}',
+    })
+  }
+
+  /**
+   * Removes `username` from the owners of `name`.
+   *
+   * @param string name
+   * @param string username
+   * @returns dict
+   */
+  remove_owner(name: string, username: string) {
+    return self._json('DELETE', '/api/v1/packages/${name}/owners/${username}', {
+      auth: true,
+      doing: 'removing ${username} from the owners of ${name}',
+    })
+  }
+
+  /**
+   * Creates a publisher account.
+   *
+   * @param dict details: `{ username, email, password }`.
+   * @returns dict: `{ username, email, recovery_key, token }`.
+   */
+  create_account(details: dict) {
+    self._check_transport()
+
+    return self._json('POST', '/api/v1/accounts', {
+      json: details,
+      doing: 'creating an account on ${self.address}',
+    })
+  }
+
+  /**
+   * Creates a token, signing in with a password or with the current
+   * token.
+   *
+   * @param dict details: `{ name, scopes, expires_in_days }`, plus
+   *    `{ username, password }` when signing in.
+   * @returns dict: `{ id, token, name, scopes, expires_at }`.
+   */
+  create_token(details: dict) {
+    self._check_transport()
+
+    var with_password = details.contains('password')
+
+    return self._json('POST', '/api/v1/tokens', {
+      json: details,
+      auth: !with_password,
+      doing: 'signing in to ${self.address}',
+    })
+  }
+
+  /**
+   * The tokens issued to the signed-in publisher.
+   *
+   * @returns list[dict]
+   */
+  tokens() {
+    return self._json('GET', '/api/v1/tokens', {
+      auth: true,
+      doing: 'listing tokens on ${self.address}',
+    }).get('tokens', [])
+  }
+
+  /**
+   * Revokes a token by id, or the token in use for `'current'`.
+   *
+   * @param string id
+   * @returns dict
+   */
+  revoke(id: string) {
+    return self._json('DELETE', '/api/v1/tokens/${id}', {
+      auth: true,
+      doing: 'revoking a token on ${self.address}',
+    })
+  }
+
+  /**
+   * Who the current token belongs to.
+   *
+   * @returns dict: `{ username, email, created_at }`.
+   */
+  me() {
+    return self._json('GET', '/api/v1/me', {
+      auth: true,
+      doing: 'asking ${self.address} who you are',
+    })
+  }
+}
+
+/**
+ * Where the archive with `checksum` is kept in the download cache.
+ *
+ * @param string checksum
+ * @returns string
+ */
+def cached_archive(checksum: string) {
+  var hex = checksum.replace('sha256:', '', false)
+
+  return os.join_paths(paths.cache_dir(), 'archives', hex[0, 2], hex + '.tar.gz')
+}

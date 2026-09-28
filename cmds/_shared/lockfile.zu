@@ -1,0 +1,441 @@
+/**
+ * `project.lock`: the exact version of every package a project was
+ * resolved to, where each one came from, and the checksum it was
+ * published with.
+ *
+ * ```toml
+ * version = 1
+ *
+ * [[package]]
+ * name = "http-extra"
+ * version = "1.4.2"
+ * source = "registry+https://pub.zurilang.org"
+ * checksum = "sha256:9f2c..."
+ * dependencies = ["json-schema"]
+ * ```
+ *
+ * A source is one of:
+ *
+ * - `registry+<address>`
+ * - `git+<address>?<tag|rev|branch>=<pin>#<commit>`, or
+ *   `git+<address>#<commit>` when the default branch was followed
+ * - `path+<path>`, relative to the project root unless absolute
+ *
+ * `dev = true` marks a package only development dependencies reach,
+ * which a production restore leaves out. Packages are kept in name order
+ * so a change to the lockfile reads as the change it is.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import toml
+
+import .errors { UsageError }
+import .fsx
+import .names
+
+/** The format this module reads and writes. */
+var FORMAT = 1
+
+var _HEADER = '# Written by zuri: the exact packages this project was resolved to.\n'
+  + '# Change project.toml and run `zuri install` rather than editing this file.\n\n'
+
+/**
+ * Raised for a lockfile that cannot be read.
+ */
+class LockfileError < UsageError {}
+
+/**
+ * Where one package came from.
+ *
+ * @printable
+ */
+class Source {
+
+  /**
+   * `'registry'`, `'git'` or `'path'`.
+   * @type string
+   */
+  var kind
+
+  /**
+   * The registry or repository address, or the path.
+   * @type string
+   */
+  var location
+
+  /**
+   * For git: `{ kind, value }` naming the tag, rev or branch that was
+   * asked for, or `nil`.
+   * @type ?dict
+   */
+  var ref
+
+  /**
+   * For git: the commit it resolved to.
+   * @type ?string
+   */
+  var commit
+
+  /**
+   * @param string kind
+   * @param string location
+   * @param ?dict ref
+   * @param ?string commit
+   */
+  @new(kind: string, location: string, ref: ?dict, commit: ?string) {
+    self.kind = kind
+    self.location = location
+    self.ref = ref
+    self.commit = commit
+  }
+
+  /**
+   * The source as the lockfile spells it.
+   *
+   * @returns string
+   */
+  to_string() {
+    if self.kind == 'git' {
+      var query = self.ref == nil ? '' : '?${self.ref.kind}=${self.ref.value}'
+      var commit = self.commit == nil ? '' : '#${self.commit}'
+
+      return 'git+${self.location}${query}${commit}'
+    }
+
+    return '${self.kind}+${self.location}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+
+  /**
+   * Whether this is the same place as `other`, the pinned commit
+   * aside.
+   *
+   * @param Source other
+   * @returns bool
+   */
+  same_place(other) {
+    if self.kind != other.kind or self.location != other.location {
+      return false
+    }
+
+    if self.kind != 'git' {
+      return true
+    }
+
+    var mine = self.ref == nil ? '' : '${self.ref.kind}=${self.ref.value}'
+    var theirs = other.ref == nil ? '' : '${other.ref.kind}=${other.ref.value}'
+
+    return mine == theirs
+  }
+}
+
+/**
+ * A source out of the lockfile's spelling of one.
+ *
+ * @param string text
+ * @returns Source
+ * @raises LockfileError
+ */
+def parse_source(text: string) {
+  var plus = text.index_of('+')
+
+  if plus <= 0 {
+    raise LockfileError("'${text}' is not a package source")
+  }
+
+  var kind = text[0, plus]
+  var rest = text[plus + 1,]
+
+  if !['registry', 'git', 'path'].contains(kind) or rest.is_empty() {
+    raise LockfileError("'${text}' is not a package source")
+  }
+
+  if kind != 'git' {
+    return Source(kind, rest)
+  }
+
+  var commit = nil
+  var hash_at = rest.index_of('#')
+
+  if hash_at >= 0 {
+    commit = rest[hash_at + 1,]
+    rest = rest[0, hash_at]
+  }
+
+  var ref = nil
+  var query_at = rest.index_of('?')
+
+  if query_at >= 0 {
+    var query = rest[query_at + 1,]
+    var equals_at = query.index_of('=')
+
+    rest = rest[0, query_at]
+
+    if equals_at <= 0 {
+      raise LockfileError("'${text}' is not a package source")
+    }
+
+    ref = { kind: query[0, equals_at], value: query[equals_at + 1,] }
+  }
+
+  return Source('git', rest, ref, commit)
+}
+
+/**
+ * One resolved package.
+ *
+ * @printable
+ */
+class Locked {
+
+  /**
+   * @type string
+   */
+  var name
+
+  /**
+   * @type string
+   */
+  var version
+
+  /**
+   * @type Source
+   */
+  var source
+
+  /**
+   * The archive's checksum, `sha256:` and hexadecimal. `nil` for a
+   * path dependency, which is read where it lies.
+   * @type ?string
+   */
+  var checksum
+
+  /**
+   * The names of the packages this one depends on.
+   * @type list[string]
+   */
+  var dependencies = []
+
+  /**
+   * Whether only development dependencies reach it.
+   * @type bool
+   */
+  var dev = false
+
+  /**
+   * @param dict fields
+   */
+  @new(fields: dict) {
+    self.name = fields.name
+    self.version = fields.version
+    self.source = fields.source
+    self.checksum = fields.get('checksum', nil)
+    self.dependencies = fields.get('dependencies', [])
+    self.dev = fields.get('dev', false)
+  }
+
+  /**
+   * The name it is imported by, and installed under.
+   *
+   * @returns string
+   */
+  import_name() {
+    return names.import_name(self.name)
+  }
+
+  /**
+   * The entry as the lockfile writes it.
+   *
+   * @returns dict
+   */
+  to_dict() {
+    var entry = {
+      name: self.name,
+      version: self.version,
+      source: self.source.to_string(),
+    }
+
+    if self.checksum != nil {
+      entry.set('checksum', self.checksum)
+    }
+
+    var sorted = self.dependencies.clone()
+
+    sorted.sort()
+    entry.set('dependencies', sorted)
+
+    if self.dev {
+      entry.set('dev', true)
+    }
+
+    return entry
+  }
+
+  to_string() {
+    return '${self.name} ${self.version}'
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * Every package a lockfile holds.
+ */
+class Lockfile {
+
+  /**
+   * Keyed by normalised name.
+   * @type dict
+   */
+  var packages = {}
+
+  @new() {
+    self.packages = {}
+  }
+
+  /**
+   * Adds `entry`, replacing any package by the same name.
+   *
+   * @param Locked entry
+   */
+  put(entry) {
+    self.packages.set(names.normalized(entry.name), entry)
+  }
+
+  /**
+   * The package called `name`, or `nil`.
+   *
+   * @param string name
+   * @returns ?Locked
+   */
+  get(name: string) {
+    return self.packages.get(names.normalized(name), nil)
+  }
+
+  /**
+   * Whether a package called `name` is locked.
+   *
+   * @param string name
+   * @returns bool
+   */
+  has(name: string) {
+    return self.packages.contains(names.normalized(name))
+  }
+
+  /**
+   * Every locked package, in name order.
+   *
+   * @returns list[Locked]
+   */
+  entries() {
+    var keys = self.packages.keys()
+
+    keys.sort()
+
+    return keys.map(@(key) => self.packages.get(key))
+  }
+
+  /**
+   * Whether anything is locked.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self.packages.is_empty()
+  }
+
+  /**
+   * The lockfile's text.
+   *
+   * @returns string
+   */
+  to_string() {
+    var entries = self.entries().map(@(entry) => entry.to_dict())
+
+    if entries.is_empty() {
+      return _HEADER + toml.dump({ version: FORMAT })
+    }
+
+    return _HEADER + toml.dump({ version: FORMAT, package: entries })
+  }
+
+  /**
+   * Writes the lockfile to `path`.
+   *
+   * @param string path
+   */
+  save(path: string) {
+    fsx.atomic_write(path, self.to_string())
+  }
+}
+
+/**
+ * A lockfile out of its text.
+ *
+ * @param string text
+ * @param ?string where: what to name in an error.
+ * @returns Lockfile
+ * @raises LockfileError
+ */
+def parse(text: string, where: ?string) {
+  if where == nil {
+    where = 'project.lock'
+  }
+
+  var data
+
+  catch {
+    data = toml.parse(text)
+  } as error {
+    raise LockfileError('${where} is not valid TOML: ${error.message}')
+  }
+
+  var format = data.get('version', nil)
+
+  if format != FORMAT {
+    raise LockfileError(
+      '${where} is in format ${format}, which this version of zuri does not read; '
+        + 'delete it and run `zuri install` to write it again'
+    )
+  }
+
+  var lock = Lockfile()
+
+  for entry in data.get('package', []) {
+    if !is_dict(entry) or !is_string(entry.get('name', nil))
+      or !is_string(entry.get('version', nil)) or !is_string(entry.get('source', nil)) {
+      raise LockfileError('${where} holds a package entry without a name, version and source')
+    }
+
+    lock.put(Locked({
+      name: entry.name,
+      version: entry.version,
+      source: parse_source(entry.source),
+      checksum: entry.get('checksum', nil),
+      dependencies: entry.get('dependencies', []),
+      dev: entry.get('dev', false) == true,
+    }))
+  }
+
+  return lock
+}
+
+/**
+ * The lockfile at `path`, or an empty one when there is none.
+ *
+ * @param string path
+ * @returns Lockfile
+ */
+def load(path: string) {
+  if !file(path).exists() {
+    return Lockfile()
+  }
+
+  return parse(fsx.read_text(path), path)
+}

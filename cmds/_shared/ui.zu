@@ -1,0 +1,272 @@
+/**
+ * How the commands talk to a person at a terminal.
+ *
+ * Output is painted only where the runtime paints its own: a real
+ * terminal with `NO_COLOR` unset. Everything here returns strings
+ * rather than printing, so what a command says can be tested as text.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import colors
+import io
+import os
+
+# The runtime paints its own output on exactly these terms, and a
+# command that disagreed with it would look like a different program.
+var _paint = os.get_env('NO_COLOR') == nil and io.stdout.is_tty()
+
+/**
+ * Whether output is being painted at all.
+ *
+ * @returns bool
+ */
+def painting() {
+  return _paint
+}
+
+def _styled(text, color, bold: bool) {
+  var value = text.to_string()
+
+  if !_paint {
+    return value
+  }
+
+  var painted = colors.text(value, color)
+
+  return bold ? colors.text(painted, colors.style.bold) : painted
+}
+
+/**
+ * A heading: bold green.
+ *
+ * @param text
+ * @returns string
+ */
+def heading(text) {
+  return _styled(text, colors.text_color.green, true)
+}
+
+/**
+ * Something to pick out of a line, a name or a version: bold cyan.
+ *
+ * @param text
+ * @returns string
+ */
+def accent(text) {
+  return _styled(text, colors.text_color.cyan, true)
+}
+
+/**
+ * Something said in passing: dark grey.
+ *
+ * @param text
+ * @returns string
+ */
+def muted(text) {
+  return _styled(text, colors.text_color.dark_grey, false)
+}
+
+/**
+ * A warning: yellow.
+ *
+ * @param text
+ * @returns string
+ */
+def warn(text) {
+  return _styled(text, colors.text_color.yellow, false)
+}
+
+/**
+ * Something that went wrong: bold red.
+ *
+ * @param text
+ * @returns string
+ */
+def failure(text) {
+  return _styled(text, colors.text_color.red, true)
+}
+
+/**
+ * `count` and `noun`, with the noun made plural unless there is
+ * exactly one: `1 package`, `3 packages`.
+ *
+ * @param number count
+ * @param string noun
+ * @param ?string plural: the plural when adding `s` is wrong.
+ * @returns string
+ */
+def count(count: number, noun: string, plural: ?string) {
+  if count == 1 {
+    return '1 ${noun}'
+  }
+
+  return '${count} ${plural == nil ? noun + "s" : plural}'
+}
+
+/**
+ * A byte count as a person reads one: `512 B`, `1.4 KiB`, `12.0 MiB`.
+ *
+ * @param number bytes
+ * @returns string
+ */
+def size(bytes: number) {
+  var units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+  var value = bytes
+  var unit = 0
+
+  while value >= 1024 and unit < units.length() - 1 {
+    value = value / 1024
+    unit++
+  }
+
+  if unit == 0 {
+    return '${bytes} B'
+  }
+
+  return '${(value * 10).round() / 10} ${units[unit]}'
+}
+
+# How wide `text` is on screen, with any painting left out.
+def _width(text) {
+  return text.to_string().replace('/\\x1b\\[[0-9;]*m/', '', true).length()
+}
+
+/**
+ * `rows` laid out as aligned columns, each row one line, two spaces
+ * between columns. The last column is never padded, so nothing trails
+ * the line.
+ *
+ * @param list rows: lists of cells; a cell is anything with a string
+ *    form, painted or not.
+ * @param ?string indent: put in front of every line. Default two
+ *    spaces.
+ * @returns list[string]
+ */
+def table(rows: list, indent: ?string) {
+  if indent == nil {
+    indent = '  '
+  }
+
+  var widths = []
+
+  for row in rows {
+    for index, cell in row {
+      var width = _width(cell)
+
+      if index >= widths.length() {
+        widths.append(width)
+      } else if width > widths[index] {
+        widths[index] = width
+      }
+    }
+  }
+
+  var lines = []
+
+  for row in rows {
+    var parts = []
+
+    for index, cell in row {
+      var text = cell.to_string()
+
+      if index < row.length() - 1 {
+        text += ' ' * (widths[index] - _width(cell))
+      }
+
+      parts.append(text)
+    }
+
+    lines.append((indent + '  '.join(parts)).rtrim(' '))
+  }
+
+  return lines
+}
+
+/**
+ * Prints each of `lines`.
+ *
+ * @param list lines
+ */
+def say(lines: list) {
+  for line in lines {
+    echo line
+  }
+}
+
+/**
+ * Writes a line to standard error.
+ *
+ * @param string line
+ */
+def complain(line: string) {
+  io.stderr.write(line + '\n')
+}
+
+/**
+ * Whether there is somebody at the other end to answer a question: a
+ * terminal on both standard input and standard output.
+ *
+ * @returns bool
+ */
+def interactive() {
+  catch {
+    return io.stdin.is_tty() and io.stdout.is_tty()
+  } as error {
+    return false
+  }
+}
+
+/**
+ * Asks a yes-or-no question, `default` standing when the answer is
+ * empty.
+ *
+ * @param string question
+ * @param bool default_answer
+ * @returns bool
+ */
+def confirm(question: string, default_answer: bool) {
+  var hint = default_answer ? '[Y/n]' : '[y/N]'
+  var typed = io.readline('${question} ${muted(hint)} ')
+  var answer = typed.to_string().replace('/\\s+/', '', true).lower()
+
+  if answer.is_empty() {
+    return default_answer
+  }
+
+  return answer.starts_with('y')
+}
+
+/**
+ * Asks for one line of text, offering `current` as the default.
+ *
+ * @param string label
+ * @param ?string current
+ * @returns string
+ */
+def ask(label: string, current: ?string) {
+  var offer = current == nil or current.is_empty() ? '' : muted(' (${current})')
+  var typed = io.readline('${label}${offer}: ').to_string()
+  var answer = typed.replace('/\\s+/', ' ', true).trim()
+
+  if answer.is_empty() and current != nil {
+    return current
+  }
+
+  return answer
+}
+
+/**
+ * Asks for a secret without echoing it.
+ *
+ * @param string label
+ * @returns string
+ */
+def ask_secret(label: string) {
+  var typed = io.readline('${label}: ', true, '').to_string()
+
+  # The terminal stayed on the prompt's line while nothing was echoed.
+  echo ''
+
+  return typed.rtrim('\n').rtrim('\r')
+}

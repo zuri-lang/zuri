@@ -1,0 +1,110 @@
+/**
+ * Where the running runtime is installed, and whether it can be
+ * replaced from here.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+import .._shared.semver
+
+/** What a release install holds beside the executable. */
+var PARTS = ['libs', 'cmds']
+
+/** The files a release carries that are copied over as they are. */
+var EXTRAS = ['LICENSE', 'README.md']
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('upgrade', false)
+
+  parser.description = 'Replaces this installation of zuri with a newer release.'
+
+  parser.add_option('version', 'The release to install; the newest one by default',
+    { short_name: 'V', type: args.STRING, metavar: 'version' })
+  parser.add_option('check', 'Say whether a newer release exists, and exit 1 when one does', nil)
+  parser.add_option('prerelease', 'Consider pre-releases too', nil)
+  parser.add_option('allow-downgrade', 'Allow installing an older release than this one', nil)
+  parser.add_option('dry-run', 'Download and check the release, and replace nothing',
+    { short_name: 'n' })
+  parser.add_option('json', 'Print the result as JSON', nil)
+
+  return parser
+}
+
+/**
+ * The installation the running runtime belongs to.
+ *
+ * @param string executable: the runtime's own path.
+ * @param ?string zuri_root: `ZURI_ROOT`, when it is set.
+ * @returns dict: `{ root, executable }`.
+ * @raises UsageError when this is not an installation `upgrade` can
+ *    replace: one with its standard library somewhere else, or not laid
+ *    out the way a release is.
+ */
+def installation(executable: string, zuri_root: ?string) {
+  var real = os.real_path(executable)
+  var root = os.dir_name(real)
+
+  if zuri_root != nil and !zuri_root.is_empty() and os.abs_path(zuri_root) != root {
+    raise UsageError(
+      'ZURI_ROOT points this runtime at ${zuri_root}, which is not where it is installed; '
+        + 'unset it to upgrade, or upgrade however that installation was put there'
+    )
+  }
+
+  for part in PARTS {
+    if !os.dir_exists(os.join_paths(root, part)) {
+      raise UsageError(
+        'this runtime at ${real} is not laid out the way a release is (it has no ${part} '
+          + 'beside it), so it was installed some other way; upgrade it the same way'
+      )
+    }
+  }
+
+  return { root, executable: real }
+}
+
+/**
+ * Whether the installation directory can be written to.
+ *
+ * @param string root
+ * @returns bool
+ */
+def writable(root: string) {
+  var probe = os.join_paths(root, '.zuri-upgrade-probe-${fsx.unique()}')
+
+  catch {
+    file(probe, 'w').write('')
+    file(probe).delete()
+
+    return true
+  } as error {
+    return false
+  }
+}
+
+/**
+ * What moving from `current` to `offered` would be.
+ *
+ * @param string current
+ * @param string offered
+ * @returns string: `'same'`, `'newer'` or `'older'`.
+ */
+def direction(current: string, offered: string) {
+  var order = semver.compare(offered, current)
+
+  if order == 0 {
+    return 'same'
+  }
+
+  return order > 0 ? 'newer' : 'older'
+}

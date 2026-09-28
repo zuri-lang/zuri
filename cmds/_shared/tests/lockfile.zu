@@ -1,0 +1,71 @@
+# The lockfile's format and sources.
+
+import test { * }
+
+import ..lockfile { Locked, Lockfile, LockfileError, Source, parse, parse_source }
+
+describe('sources', @{
+  it('reads and writes every kind', @{
+    var texts = [
+      'registry+https://pub.zurilang.org',
+      'git+https://example.test/x.git?tag=v1.0.0#0123456789abcdef',
+      'git+https://example.test/x.git#0123456789abcdef',
+      'path+../sibling',
+    ]
+
+    for text in texts {
+      expect(parse_source(text).to_string()).to_equal(text)
+    }
+  })
+
+  it('splits a git source into its parts', @{
+    var source = parse_source('git+https://example.test/x.git?branch=main#abc')
+
+    expect(source.kind).to_equal('git')
+    expect(source.location).to_equal('https://example.test/x.git')
+    expect(source.ref).to_equal({ kind: 'branch', value: 'main' })
+    expect(source.commit).to_equal('abc')
+  })
+
+  it('refuses what is not a source', @{
+    for text in ['https://x', 'ftp+x', 'registry+', '+x'] {
+      expect(@{
+        parse_source(text)
+      }).to_raise_instance_of(LockfileError)
+    }
+  })
+})
+
+describe('the file', @{
+  it('comes back from its text as it went in', @{
+    var lock = Lockfile()
+
+    lock.put(Locked({
+      name: 'b-pkg',
+      version: '2.0.0',
+      source: parse_source('registry+https://r.test'),
+      checksum: 'sha256:' + 'a' * 64,
+      dependencies: ['z', 'a'],
+    }))
+    lock.put(Locked({
+      name: 'a-pkg',
+      version: '1.0.0',
+      source: parse_source('path+../a'),
+      dev: true,
+    }))
+
+    var again = parse(lock.to_string())
+
+    expect(again.entries().map(@(e) => e.name)).to_equal(['a-pkg', 'b-pkg'])
+    expect(again.get('b_pkg').dependencies).to_equal(['a', 'z'])
+    expect(again.get('a-pkg').dev).to_be_true()
+    expect(again.get('a-pkg').checksum).to_be_nil()
+    expect(again.to_string()).to_equal(lock.to_string())
+  })
+
+  it('refuses a format it does not read', @{
+    expect(@{
+      parse('version = 99\n')
+    }).to_raise_instance_of(LockfileError)
+  })
+})

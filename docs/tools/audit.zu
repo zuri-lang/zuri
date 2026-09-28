@@ -258,6 +258,12 @@ def _entry_command(name: string) {
   var enclosing = os.dir_name(name)
   var base = os.base_name(name)
 
+  # A name starting with `_` is private and never a command, however
+  # it is spelled: `_shared/`, `_help.zu`, `_help/index.zu`.
+  if name.starts_with('_') {
+    return nil
+  }
+
   if enclosing == '' or enclosing == '.' {
     if base == 'index.zu' {
       return nil

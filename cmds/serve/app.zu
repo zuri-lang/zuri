@@ -1,0 +1,79 @@
+/**
+ * One worker of the repository: the routes, the middleware, and the
+ * database connection it serves them with.
+ *
+ * `http.serve()` calls `setup()` once inside each worker, which reads
+ * the settings the main process resolved and published in the
+ * environment.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import http.middleware
+import http.session
+import http.session.sql { SqlStore }
+
+import .api
+import .context { Nyssa }
+import .plan
+import .web
+
+/** The content security policy every page is sent with. */
+var POLICY = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; "
+  + "script-src 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; "
+  + "base-uri 'none'"
+
+# The paths where a password or a new account is submitted, which are
+# rate limited per address on top of the per-account limits.
+var _GUARDED = ['/api/v1/tokens', '/api/v1/accounts', '/login', '/signup', '/recover', '/reset']
+
+/**
+ * Configures one worker's server.
+ *
+ * @param server
+ */
+def setup(server) {
+  var settings = plan.decode()
+  var nyssa = Nyssa(settings)
+  var trust = settings.trust_proxy == true
+
+  # A multipart upload carries a little more than the archive itself.
+  server.max_body_size = settings.max_archive_size + 1048576
+  server.trust_proxy = trust
+
+  var store = SqlStore(nyssa.db.connection, { table: 'sessions' })
+
+  store.migrate()
+
+  var limited = middleware.rate_limit({ limit: 30, window: 60, trust_proxy: trust })
+
+  server.use(middleware.request_id())
+  server.use(middleware.logger({ trust_proxy: trust }))
+  server.use(middleware.security_headers({ content_security_policy: POLICY }))
+
+  server.use(@(request, response, next) {
+    var guarded = request.method == 'POST' and _GUARDED.some(@(path) {
+      return request.path == path or request.path.starts_with(path + '/')
+    })
+
+    if guarded {
+      limited(request, response, next)
+
+      return
+    }
+
+    next()
+  })
+
+  server.use(session.session({
+    store,
+    name: 'nyssa_session',
+    secret: settings.session_secret,
+    secure: settings.public_url.starts_with('https://') ? true : nil,
+  }))
+
+  server.use(web.csrf_guard(nyssa))
+
+  api.routes(server, nyssa)
+  web.routes(server, nyssa)
+}

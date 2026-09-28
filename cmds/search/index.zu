@@ -1,0 +1,84 @@
+/**
+ * @command search
+ * @description Finds packages on a registry by name, description or
+ *    keyword.
+ *
+ *   zuri search <words...> [options]
+ *
+ * Results come in pages; the page option moves through them and the
+ * sort option orders them by relevance, downloads, most recently
+ * updated, or name.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+
+import .._shared.cli
+import .._shared.errors { run }
+import .._shared.ui
+
+def parser() {
+  var parser = args.Parser('search', true)
+
+  parser.description = 'Finds packages on a registry by name, description or keyword.'
+
+  parser.add_index('words', 'What to look for',
+    { type: args.LIST, metavar: 'word', required: true })
+  cli.add_registry_option(parser)
+  parser.add_option('page', 'Which page of results; the first by default',
+    { short_name: 'p', type: args.INT, metavar: 'page', value: 1 })
+  parser.add_option('limit', 'Results per page, up to 100; 20 by default',
+    { short_name: 'l', type: args.INT, metavar: 'count', value: 20 })
+  parser.add_option('sort', 'relevance, downloads, updated or name',
+    { type: args.CHOICE, choices: ['relevance', 'downloads', 'updated', 'name'],
+      metavar: 'order', value: 'relevance' })
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+def main() {
+  var parsed = parser().parse()
+  var query = ' '.join(parsed.indexes[0])
+  var registry = cli.registry_from(parsed)
+  var page = parsed.options.page.max(1)
+  var limit = parsed.options.limit.max(1).min(100)
+
+  var found = registry.search(query, { page, per_page: limit, sort: parsed.options.sort })
+
+  if parsed.options.get('json', false) == true {
+    cli.print_json(found)
+
+    return
+  }
+
+  if found.packages.is_empty() {
+    echo 'Nothing on ${registry.address} matches "${query}".'
+
+    return
+  }
+
+  var rows = []
+
+  for package in found.packages {
+    var about = package.description == nil ? '' : package.description
+
+    if about.length() > 60 {
+      about = about[0, 57] + '...'
+    }
+
+    rows.append([ui.accent(package.name), package.latest == nil ? '' : package.latest, about])
+  }
+
+  ui.say(ui.table(rows))
+
+  var pages = ((found.total + limit - 1) // limit).max(1)
+
+  echo ''
+  var total = ui.count(found.total, 'package')
+
+  echo ui.muted('${total} on ${registry.address}, page ${page} of ${pages}')
+}
+
+run('search', main)

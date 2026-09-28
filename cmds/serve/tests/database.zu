@@ -1,0 +1,363 @@
+# Nyssa's database layer on SQLite, from migrations up.
+
+import os
+import test { * }
+import sql.errors { UniqueViolation }
+
+import ._harness { remove }
+import ..db { Database, like_escape, sqlite_path }
+
+var ROOT = os.create_temp_dir('zuri-nyssa-db-')
+var db = nil
+
+# A publisher with everything the table asks for.
+def publisher(username: string) {
+  return db.create_publisher({
+    username,
+    email: '${username}@example.test',
+    password_hash: 'hash',
+    recovery_digest: 'digest',
+  })
+}
+
+# A package with a published version, so listings and search see it.
+def listed(name: string, fields: dict) {
+  var id = db.create_package({ name, name_key: name.lower().replace('-', '_', false) })
+
+  db.update_package(id, {
+    description: fields.get('description', ''),
+    keywords: fields.get('keywords', ''),
+    homepage: nil,
+    repository: nil,
+    license: 'MIT',
+    latest: '1.0.0',
+  })
+
+  return id
+}
+
+def version(package_id, text: string) {
+  return db.create_version({
+    package_id,
+    version: text,
+    version_key: text.lower(),
+    checksum: 'sha256:00',
+    size: 10,
+    manifest: { name: 'x' },
+    dependencies: {},
+    zuri: nil,
+    readme: nil,
+    published_by: nil,
+  })
+}
+
+before_each(@{
+  if db != nil {
+    db.close()
+  }
+
+  remove(ROOT)
+  db = Database('sqlite://' + os.join_paths(ROOT, 'nyssa.db'))
+  db.migrate()
+})
+
+after_all(@{
+  db.close()
+  remove(ROOT)
+})
+
+describe('connection strings', @{
+  it('finds the file a SQLite connection string names', @{
+    expect(sqlite_path('sqlite://data/nyssa.db')).to_equal('data/nyssa.db')
+    expect(sqlite_path('nyssa.db')).to_equal('nyssa.db')
+    expect(sqlite_path(':memory:')).to_be_nil()
+    expect(sqlite_path('postgres://nyssa@localhost/nyssa')).to_be_nil()
+    expect(sqlite_path('host=localhost dbname=nyssa')).to_be_nil()
+  })
+
+  it('makes the directory a SQLite file goes in', @{
+    var nested = os.join_paths(ROOT, 'a', 'b', 'nyssa.db')
+    var other = Database(nested)
+
+    expect(file(nested).exists()).to_be_true()
+    expect(other.engine).to_equal('sqlite')
+    other.close()
+  })
+})
+
+describe('migrations', @{
+  it('applies each migration once', @{
+    var available = db.available_migrations()
+
+    expect(available.length()).to_be_greater_than(0)
+    expect(db.applied_migrations()).to_equal(available)
+    expect(db.migrate()).to_equal(0)
+  })
+
+  it('brings an empty database up to date', @{
+    var fresh = Database(os.join_paths(ROOT, 'fresh.db'))
+
+    expect(fresh.migrate()).to_equal(fresh.available_migrations().length())
+    expect(fresh.count_publishers()).to_equal(0)
+    fresh.close()
+  })
+})
+
+describe('publishers', @{
+  it('finds a publisher by name and email in any case', @{
+    var id = publisher('Ada')
+
+    expect(db.publisher_by_name('ADA').id).to_equal(id)
+    expect(db.publisher_by_email('ADA@EXAMPLE.TEST').username).to_equal('Ada')
+    expect(db.publisher_by_id(id).role).to_equal('publisher')
+    expect(db.publisher_by_name('grace')).to_be_nil()
+  })
+
+  it('refuses a name that differs only in case', @{
+    publisher('ada')
+
+    expect(@{
+      db.create_publisher({
+        username: 'ADA',
+        email: 'other@example.test',
+        password_hash: 'hash',
+        recovery_digest: 'digest',
+      })
+    }).to_raise_instance_of(UniqueViolation)
+  })
+
+  it('suspends and restores a publisher', @{
+    var id = publisher('ada')
+
+    db.set_suspended(id, true)
+    expect(db.publisher_by_id(id).suspended_at).not.to_be_nil()
+
+    db.set_suspended(id, false)
+    expect(db.publisher_by_id(id).suspended_at).to_be_nil()
+  })
+})
+
+describe('tokens', @{
+  it('finds a token with its publisher, and revokes it once', @{
+    var id = publisher('ada')
+
+    db.create_token({ id: 't1', publisher_id: id, name: 'ci', digest: 'd1', scopes: 'publish' })
+
+    var found = db.token_by_digest('d1')
+
+    expect(found.username).to_equal('ada')
+    expect(found.scopes).to_equal('publish')
+    expect(db.tokens_of(id).length()).to_equal(1)
+
+    expect(db.revoke_token('t1', id)).to_be_true()
+    expect(db.revoke_token('t1', id)).to_be_false()
+    expect(db.tokens_of(id)).to_equal([])
+  })
+
+  it('never revokes another publisher\'s token', @{
+    var ada = publisher('ada')
+    var grace = publisher('grace')
+
+    db.create_token({ id: 't1', publisher_id: ada, name: 'ci', digest: 'd1', scopes: 'publish' })
+
+    expect(db.revoke_token('t1', grace)).to_be_false()
+    expect(db.tokens_of(ada).length()).to_equal(1)
+  })
+})
+
+describe('sign-in failures', @{
+  it('counts failures within the window and starts again after it', @{
+    db.record_failure('ada', 900)
+    db.record_failure('ada', 900)
+    db.record_failure('ada', 900)
+
+    expect(db.failures('ada', 900)).to_equal(3)
+    expect(db.failures('ada', -1)).to_equal(0)
+
+    db.record_failure('ada', -1)
+    expect(db.failures('ada', 900)).to_equal(1)
+
+    db.clear_failures('ada')
+    expect(db.failures('ada', 900)).to_equal(0)
+  })
+})
+
+describe('one-time codes', @{
+  it('is spent once, for its own purpose, before it expires', @{
+    var id = publisher('ada')
+
+    db.create_code('c1', id, 'reset', time() + 600)
+    db.create_code('c2', id, 'reset', time() - 1)
+
+    expect(db.use_code('c1', 'confirm')).to_be_nil()
+    expect(db.use_code('c1', 'reset')).to_equal(id)
+    expect(db.use_code('c1', 'reset')).to_be_nil()
+    expect(db.use_code('c2', 'reset')).to_be_nil()
+    expect(db.use_code('missing', 'reset')).to_be_nil()
+  })
+})
+
+describe('packages', @{
+  it('keeps owners, adding each once', @{
+    var ada = publisher('ada')
+    var grace = publisher('grace')
+    var id = listed('http-extra', {})
+
+    db.add_owner(id, ada)
+    db.add_owner(id, ada)
+    db.add_owner(id, grace)
+
+    expect(db.owners_of(id)).to_equal(['ada', 'grace'])
+    expect(db.packages_of(grace).length()).to_equal(1)
+
+    db.remove_owner(id, ada)
+
+    expect(db.is_owner(id, ada)).to_be_false()
+    expect(db.owners_of(id)).to_equal(['grace'])
+  })
+
+  it('refuses a version published twice', @{
+    var id = listed('http-extra', {})
+
+    version(id, '1.0.0')
+
+    expect(@{
+      version(id, '1.0.0')
+    }).to_raise_instance_of(UniqueViolation)
+  })
+
+  it('yanks and restores a version', @{
+    var id = listed('http-extra', {})
+    var v = version(id, '1.0.0')
+
+    db.set_yanked(v, true)
+    expect(db.version_of(id, '1.0.0').yanked_at).not.to_be_nil()
+
+    db.set_yanked(v, false)
+    expect(db.version_of(id, '1.0.0').yanked_at).to_be_nil()
+  })
+
+  it('lists versions in the order they were published', @{
+    var id = listed('http-extra', {})
+
+    version(id, '1.0.0')
+    version(id, '0.9.0')
+    version(id, '1.1.0-beta.1')
+
+    var listed_versions = []
+
+    for row in db.versions_of(id) {
+      listed_versions.append(row.version)
+    }
+
+    expect(listed_versions).to_equal(['1.0.0', '0.9.0', '1.1.0-beta.1'])
+  })
+
+  it('adds downloads to the version, the package and the day', @{
+    var id = listed('http-extra', {})
+    var v = version(id, '1.0.0')
+
+    db.add_downloads(v, id, 3, '2026-01-02')
+    db.add_downloads(v, id, 2, '2026-01-02')
+    db.add_downloads(v, id, 1, '2026-01-03')
+
+    expect(db.package_by_id(id).downloads).to_equal(6)
+    expect(db.version_of(id, '1.0.0').downloads).to_equal(6)
+    expect(db.connection.fetch_value(
+      'select downloads from downloads_daily where version_id = ? and day = ?',
+      [v, '2026-01-02'], nil
+    )).to_equal(5)
+
+    var totals = db.statistics()
+
+    expect(totals.downloads).to_equal(6)
+    expect(totals.versions).to_equal(1)
+  })
+})
+
+describe('search', @{
+  before_each(@{
+    listed('http-extra', { description: 'Extra helpers for http' })
+    listed('httpd', { description: 'A small server' })
+    listed('notes', { keywords: 'http markdown' })
+    listed('fifty', { description: 'Takes 50% off' })
+
+    # Created but never published, so never found.
+    db.create_package({ name: 'http-draft', name_key: 'http_draft' })
+  })
+
+  it('matches names, descriptions and keywords, best first', @{
+    var found = db.search('http', 'relevance', 20, 0)
+    var names = []
+
+    for row in found.packages {
+      names.append(row.name)
+    }
+
+    expect(found.total).to_equal(3)
+    expect(names[-1]).to_equal('notes')
+    expect(names).not.to_contain('http-draft')
+  })
+
+  it('puts an exact name first, however it was typed', @{
+    var found = db.search('HTTP-Extra', 'relevance', 20, 0)
+
+    expect(found.packages[0].name).to_equal('http-extra')
+  })
+
+  it('treats % and _ as the characters they are', @{
+    expect(db.search('%', 'relevance', 20, 0).total).to_equal(1)
+    expect(db.search('_', 'relevance', 20, 0).packages[0].name).to_equal('http-extra')
+    expect(db.search('_', 'relevance', 20, 0).total).to_equal(1)
+    expect(db.search('!', 'relevance', 20, 0).total).to_equal(0)
+  })
+
+  it('picks the order from a fixed set and nothing else', @{
+    var found = db.search('http', 'name; drop table packages', 20, 0)
+
+    expect(found.total).to_equal(3)
+    expect(db.connection.count('packages', nil)).to_equal(5)
+  })
+
+  it('pages through results', @{
+    var first = db.search('http', 'name', 2, 0)
+    var second = db.search('http', 'name', 2, 2)
+
+    expect(first.packages.length()).to_equal(2)
+    expect(second.packages.length()).to_equal(1)
+    expect(second.total).to_equal(3)
+    expect(first.packages[0].name).to_equal('http-extra')
+  })
+})
+
+describe('transactions and the audit trail', @{
+  it('undoes everything when the body raises', @{
+    expect(@{
+      db.transaction(@{
+        publisher('ada')
+        raise Error('stop')
+      })
+    }).to_raise_instance_of(Error)
+
+    expect(db.count_publishers()).to_equal(0)
+  })
+
+  it('records what was done, by whom and from where', @{
+    var id = publisher('ada')
+
+    db.audit(id, 'publish', 'http-extra@1.0.0', { size: 10 }, '127.0.0.1')
+    db.audit(nil, 'sign-in-failed', 'ada', nil, nil)
+
+    var rows = db.connection.find('audit_log', nil, { order: ['id'] }).rows
+
+    expect(rows.length()).to_equal(2)
+    expect(rows[0].detail).to_equal('{"size":10}')
+    expect(rows[1].publisher_id).to_be_nil()
+  })
+})
+
+describe('like_escape', @{
+  it('escapes the wildcards and the escape character', @{
+    expect(like_escape('a%b_c!d')).to_equal('a!%b!_c!!d')
+  })
+})

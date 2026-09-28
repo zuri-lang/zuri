@@ -1,0 +1,130 @@
+# The user's registries and saved tokens.
+
+import os
+import test { * }
+
+import ..config
+import ..fsx
+import ..manifest
+import ..paths
+
+# A scratch directory of this run's own, outside any checkout.
+var HOME = os.create_temp_dir('zuri-config-')
+
+describe('credentials', @{
+  before_each(@{
+    fsx.remove(HOME)
+    os.set_env('ZURI_HOME', HOME, true)
+    os.unset_env('ZURI_TOKEN')
+    os.unset_env('ZURI_TOKEN_COMPANY')
+  })
+
+  after_all(@{
+    fsx.remove(HOME)
+  })
+
+  it('saves a token readable by its owner alone, and forgets it', @{
+    config.save_token('https://r.test', 'nys_secret', 'ada')
+
+    var path = os.join_paths(HOME, 'credentials.toml')
+
+    expect(config.token_for('https://r.test')).to_equal('nys_secret')
+    expect(config.username_for('https://r.test')).to_equal('ada')
+
+    if os.platform != 'windows' {
+      expect(file(path).stats().mode & 0c777).to_equal(0c600)
+    }
+
+    expect(config.forget_token('https://r.test')).to_be_true()
+    expect(config.token_for('https://r.test')).to_be_nil()
+  })
+
+  it('prefers the environment, the alias first', @{
+    config.save_token('https://company.test', 'from-file')
+
+    var aliases = { company: 'https://company.test' }
+
+    expect(config.token_for('https://company.test', aliases)).to_equal('from-file')
+
+    os.set_env('ZURI_TOKEN', 'general', true)
+    expect(config.token_for('https://company.test', aliases)).to_equal('general')
+
+    os.set_env('ZURI_TOKEN_COMPANY', 'specific', true)
+    expect(config.token_for('https://company.test', aliases)).to_equal('specific')
+  })
+
+  it('names the variable for an alias', @{
+    expect(config.token_variable('my-company.eu')).to_equal('ZURI_TOKEN_MY_COMPANY_EU')
+  })
+})
+
+describe('the default registry', @{
+  before_each(@{
+    fsx.remove(HOME)
+    fsx.ensure_dir(HOME)
+    os.set_env('ZURI_HOME', HOME, true)
+    os.unset_env('ZURI_REGISTRY')
+
+    fsx.atomic_write(os.join_paths(HOME, 'config.toml'), '[registries]\n'
+      + 'default = "https://user.test"\n'
+      + 'company = "https://company.test"\n')
+  })
+
+  after_all(@{
+    os.unset_env('ZURI_REGISTRY')
+    fsx.remove(HOME)
+  })
+
+  it('comes from the configuration file', @{
+    expect(config.registries(nil).get('default')).to_equal('https://user.test')
+  })
+
+  it('comes from ZURI_REGISTRY first, by address or by alias', @{
+    os.set_env('ZURI_REGISTRY', 'https://mirror.test', true)
+    expect(config.registries(nil).get('default')).to_equal('https://mirror.test')
+
+    os.set_env('ZURI_REGISTRY', 'company', true)
+    expect(config.registries(nil).get('default')).to_equal('https://company.test')
+  })
+
+  it('reads an alias only the project defines', @{
+    var found = manifest.parse('[project]\nname = "app"\nversion = "1.0.0"\n\n'
+      + '[registries]\ninternal = "https://internal.test"\n')
+
+    os.set_env('ZURI_REGISTRY', 'internal', true)
+    expect(config.registries(found).get('default')).to_equal('https://internal.test')
+  })
+
+  it('never overrides a default the project names', @{
+    var found = manifest.parse('[project]\nname = "app"\nversion = "1.0.0"\n\n'
+      + '[registries]\ndefault = "https://project.test"\n')
+
+    os.set_env('ZURI_REGISTRY', 'https://mirror.test', true)
+    expect(config.registries(found).get('default')).to_equal('https://project.test')
+  })
+
+  it('refuses a name that is neither an alias nor an address', @{
+    os.set_env('ZURI_REGISTRY', 'nowhere', true)
+
+    expect(@{
+      config.registries(nil)
+    }).to_raise_instance_of(config.ConfigError)
+  })
+})
+
+describe('the cache', @{
+  after_all(@{
+    os.unset_env('ZURI_CACHE')
+  })
+
+  it('lives in ZURI_HOME unless ZURI_CACHE moves it', @{
+    os.set_env('ZURI_HOME', HOME, true)
+    os.unset_env('ZURI_CACHE')
+    expect(paths.cache_dir()).to_equal(os.join_paths(HOME, 'cache'))
+
+    var elsewhere = os.join_paths(HOME, 'elsewhere')
+
+    os.set_env('ZURI_CACHE', elsewhere, true)
+    expect(paths.cache_dir()).to_equal(os.abs_path(elsewhere))
+  })
+})

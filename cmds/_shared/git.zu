@@ -1,0 +1,315 @@
+/**
+ * Dependencies that come straight from a git repository.
+ *
+ * A git dependency names a repository and, optionally, a tag, a branch
+ * or a commit. Installing it resolves that to a commit, checks the
+ * commit out into a scratch directory, and packs the package files out
+ * of it with the same rules `publish` uses, so a git dependency
+ * installs exactly as it would have had it been published. The commit
+ * and the archive's checksum go into the lockfile, and `restore`
+ * installs that commit again whatever the branch has moved on to.
+ *
+ * Only `https://`, `http://`, `ssh://`, `git://` and `file://`
+ * addresses, `user@host:path` for ssh, and local paths are accepted.
+ * Git's other transports can run commands of the address's choosing
+ * and are refused, and git is never allowed to stop and ask for a
+ * password: a repository that needs credentials must be reachable
+ * through an ssh key or a credential helper.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import os.process { spawn }
+
+import .archive
+import .errors { CommandError }
+import .files
+import .fsx
+import .manifest as manifest_module
+import .names
+import .paths
+import .registry { cached_archive }
+
+/**
+ * Raised when git cannot do what a dependency asks.
+ */
+class GitError < CommandError {}
+
+# The environment every git command runs in: no prompts, and only the
+# transports that cannot run a command of the remote's choosing.
+var _ENV = {
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_ASKPASS: '',
+  SSH_ASKPASS: '',
+  GIT_ALLOW_PROTOCOL: 'https:http:ssh:git:file',
+}
+
+/**
+ * Whether `address` is one git may be pointed at.
+ *
+ * @param string address
+ * @returns bool
+ */
+def is_allowed(address: string) {
+  if address.is_empty() or address.starts_with('-') {
+    return false
+  }
+
+  for scheme in ['https://', 'http://', 'ssh://', 'git://', 'file://'] {
+    if address.starts_with(scheme) {
+      return true
+    }
+  }
+
+  # Any other `scheme::` or `scheme://` is a transport git would hand
+  # to a helper program.
+  if address.contains('::') or address.contains('://') {
+    return false
+  }
+
+  # `user@host:path`, the short form of ssh, or a local path.
+  return true
+}
+
+/**
+ * Runs git with `args` and returns what it printed.
+ *
+ * @param list args
+ * @param ?string cwd
+ * @returns string
+ * @raises GitError when git is missing or fails.
+ */
+def run(args: list, cwd: ?string) {
+  if os.which('git') == nil {
+    raise GitError('this dependency comes from git, and git is not installed')
+  }
+
+  var child = spawn('git', args, {
+    cwd: cwd == nil ? os.cwd() : cwd,
+    env: _ENV,
+    stdin: 'null',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  var out = child.read_stdout().to_string()
+  var err = child.read_stderr().to_string()
+
+  if child.wait() != 0 {
+    var said = err.replace('/\\s+/', ' ', true).trim()
+
+    raise GitError('git ${args[0]} failed: ${said.is_empty() ? "no reason given" : said}')
+  }
+
+  return out
+}
+
+/**
+ * The commit `ref` names in the repository at `address`, without
+ * cloning it.
+ *
+ * @param string address
+ * @param ?dict ref: `{ kind, value }`, or `nil` for the default
+ *    branch.
+ * @returns string: the full commit id.
+ * @raises GitError
+ */
+def resolve(address: string, ref: ?dict) {
+  if !is_allowed(address) {
+    raise GitError("'${address}' is not a repository address git may be pointed at")
+  }
+
+  if ref != nil and ref.kind == 'rev' {
+    if is_dict(ref.value.match('/^[0-9a-f]{40}([0-9a-f]{24})?$/')) {
+      return ref.value
+    }
+  }
+
+  var wanted = ref == nil ? 'HEAD' : ref.value
+  var listing = run(['-c', 'protocol.ext.allow=never', 'ls-remote', '--', address, wanted])
+
+  var candidates = []
+
+  for line in listing.split('\n') {
+    var parts = line.replace('/\\s+/', ' ', true).trim().split(' ')
+
+    if parts.length() == 2 {
+      candidates.append({ commit: parts[0], name: parts[1] })
+    }
+  }
+
+  # A tag is peeled to the commit it points at when git lists that.
+  for candidate in candidates {
+    if candidate.name.ends_with('^{}') {
+      return candidate.commit
+    }
+  }
+
+  if !candidates.is_empty() {
+    return candidates[0].commit
+  }
+
+  if ref != nil and ref.kind == 'rev' {
+    # An abbreviated commit id; the fetch will say if it exists.
+    return ref.value
+  }
+
+  var what = ref == nil ? 'a default branch' : "${ref.kind} '${ref.value}'"
+
+  raise GitError('${address} has no ${what}')
+}
+
+/**
+ * Checks out `commit` from `address` and packs it into the download
+ * cache, unless it is there already.
+ *
+ * @param ?string name: the dependency's name, which the repository's
+ *    own manifest must agree with; `nil` to take whatever name it
+ *    states, which is how a package being added learns what it is
+ *    called.
+ * @param string address
+ * @param string commit
+ * @param ?string checksum: the checksum the lockfile expects, when
+ *    there is one; a pack that disagrees is refused.
+ * @returns dict: `{ archive, checksum, version, manifest, commit }`.
+ * @raises GitError
+ */
+def fetch(name: ?string, address: string, commit: string, checksum: ?string) {
+  if checksum != nil {
+    var cached = cached_archive(checksum)
+
+    if file(cached).exists() and archive.checksum(cached, true) == checksum {
+      var known = _read_manifest_from(cached)
+
+      return {
+        archive: cached,
+        checksum,
+        version: known.version(),
+        manifest: known,
+        commit,
+      }
+    }
+  }
+
+  var scratch = os.join_paths(paths.cache_dir(), 'git', fsx.unique())
+
+  fsx.ensure_dir(scratch)
+
+  catch {
+    run(['init', '--quiet'], scratch)
+    run(['-c', 'protocol.ext.allow=never', 'remote', 'add', 'origin', '--', address], scratch)
+
+    # A shallow fetch of the one commit, where the server allows it,
+    # then the whole history where it does not.
+    catch {
+      run(['-c', 'protocol.ext.allow=never', 'fetch', '--quiet', '--depth', '1', 'origin',
+        commit], scratch)
+    } as shallow {
+      run(['-c', 'protocol.ext.allow=never', 'fetch', '--quiet', 'origin'], scratch)
+    }
+
+    run(['-c', 'advice.detachedHead=false', 'checkout', '--quiet', commit], scratch)
+
+    var full = run(['rev-parse', 'HEAD'], scratch).trim().rtrim('\n').rtrim('\r')
+
+    var result = pack_checkout(name, scratch, full, checksum)
+
+    fsx.remove(scratch)
+
+    return result
+  } as error {
+    fsx.remove(scratch)
+
+    raise error
+  }
+}
+
+# The manifest inside a packed archive.
+def _read_manifest_from(path: string) {
+  var text = nil
+
+  archive.read(path, @(entry, data) {
+    if entry.path == 'project.toml' {
+      text = data.to_string()
+    }
+  })
+
+  if text == nil {
+    raise GitError('the repository holds no project.toml at its root')
+  }
+
+  return manifest_module.parse(text, 'project.toml')
+}
+
+/**
+ * Packs the package in the checkout at `root` into the cache.
+ *
+ * @param ?string name
+ * @param string root
+ * @param string commit
+ * @param ?string checksum
+ * @returns dict
+ */
+def pack_checkout(name: ?string, root: string, commit: string, checksum: ?string) {
+  var manifest_path = os.join_paths(root, 'project.toml')
+
+  if !file(manifest_path).exists() {
+    raise GitError('the repository at commit ${commit[0, 12]} holds no project.toml at its root')
+  }
+
+  var found = manifest_module.load(manifest_path)
+  var declared = found.name()
+
+  if declared == nil {
+    raise GitError("the repository's project.toml states no name")
+  }
+
+  if name == nil {
+    name = declared
+  } else if names.normalized(declared) != names.normalized(name) {
+    raise GitError(
+      "the repository's project.toml names the package '${declared}', not '${name}'"
+    )
+  }
+
+  var selected = files.select(root, {
+    include: found.list('include'),
+    exclude: found.list('exclude'),
+    use_git: false,
+  })
+
+  if !selected.links.is_empty() {
+    raise GitError('${name} holds symbolic links, which a package cannot: ${selected.links[0]}')
+  }
+
+  var staged = os.join_paths(paths.cache_dir(), 'git', fsx.unique() + '.tar.gz')
+  var packed = archive.pack(root, selected.files, staged)
+
+  if checksum != nil and packed.checksum != checksum {
+    fsx.remove(staged)
+
+    raise GitError(
+      '${name} at commit ${commit[0, 12]} no longer packs to the checksum the lockfile '
+        + 'recorded; the repository was rewritten, or its files changed'
+    )
+  }
+
+  var target = cached_archive(packed.checksum)
+
+  fsx.ensure_dir(os.dir_name(target))
+
+  if file(target).exists() {
+    fsx.remove(staged)
+  } else {
+    os.rename(staged, target)
+  }
+
+  return {
+    archive: target,
+    checksum: packed.checksum,
+    version: found.version(),
+    manifest: found,
+    commit,
+  }
+}

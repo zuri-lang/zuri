@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title ? page_title + ' · ' + site : site }}</title>
+    <link rel="stylesheet" href="/static/nyssa.css">
+  </head>
+  <body>
+    <header class="top">
+      <div class="bar">
+        <a class="brand" href="/">{{ site }}</a>
+        <form class="search" method="get" action="/search" role="search">
+          <input type="search" name="q" value="{{ query }}" placeholder="Search packages" aria-label="Search packages">
+        </form>
+        <nav>
+          <a href="/docs">Docs</a>
+          <template x-if="viewer">
+            <a href="/account">{{ viewer }}</a>
+            <form class="inline" method="post" action="/logout">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="link">Sign out</button>
+            </form>
+          </template>
+          <template x-else>
+            <a href="/login">Sign in</a>
+            <a x-if="signup_open" href="/signup">Sign up</a>
+          </template>
+        </nav>
+      </div>
+    </header>
+    <p class="notice" x-if="read_only">This repository is read-only at the moment. Everything can be browsed and installed; nothing can be published.</p>
+    <p class="notice" x-if="notice">{{ notice }}</p>
+    <main>
+      <declare name="content"></declare>
+    </main>
+    <footer>
+      <p>{{ site }} runs on Nyssa, the Zuri package repository.</p>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,363 @@
+/**
+ * @command info
+ * @description Describes the project and its packages, or one package
+ *    on a registry.
+ *
+ *   zuri info [options]
+ *   zuri info <package[@version]> [options]
+ *
+ * About the project: what project.toml says, and for every package,
+ * the range declared, the version locked and the version installed,
+ * with anything that does not line up called out. The tree option
+ * shows what depends on what. About a package: its versions, owners,
+ * links and dependencies, straight from the registry.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.fsx
+import .._shared.names
+import .._shared.semver
+import .._shared.store
+import .._shared.sync
+import .._shared.ui
+
+def parser() {
+  var parser = args.Parser('info', false)
+
+  parser.description = 'Describes the project and its packages, or one package on a registry.'
+
+  parser.add_index('package', 'A package on a registry, as name or name@version',
+    { metavar: 'package' })
+  parser.add_option('tree', 'Show what depends on what', { short_name: 't' })
+  parser.add_option('depth', 'How deep the tree goes; all the way by default',
+    { type: args.INT, metavar: 'levels' })
+  parser.add_option('verify', 'Check each installed package against what was installed', nil)
+  parser.add_option('readme', "Print the package's README", nil)
+  parser.add_option('global', 'Describe the packages installed for this user', { short_name: 'g' })
+  cli.add_registry_option(parser)
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+# How a dependency was declared, in a word or a range.
+def _declared(dependency) {
+  if dependency == nil {
+    return nil
+  }
+
+  return dependency.range == nil ? dependency.kind : dependency.range
+}
+
+# Every package: what is declared, locked and installed, and whether
+# those agree.
+def _packages(workspace, verify: bool) {
+  var declared = {}
+
+  for dependency in workspace.manifest.dependencies() {
+    declared.set(names.normalized(dependency.name), dependency)
+  }
+
+  var rows = []
+  var seen = {}
+
+  for entry in workspace.lock.entries() {
+    var key = names.normalized(entry.name)
+    var import_name = entry.import_name()
+    var record = workspace.installed.get(import_name)
+    var dir = workspace.project.package_dir(import_name)
+    var dependency = declared.get(key, nil)
+    var status = 'ok'
+
+    seen.set(key, true)
+
+    if record == nil {
+      status = os.dir_exists(dir) ? 'unmanaged' : 'missing'
+    } else if record.get('version', '') != entry.version
+      or record.get('source', '') != entry.source.to_string() {
+      status = 'drifted'
+    } else if !os.dir_exists(dir) {
+      status = 'missing'
+    } else if verify and fsx.tree_digest(dir) != record.get('tree', '') {
+      status = 'modified'
+    }
+
+    rows.append({
+      name: entry.name,
+      declared: _declared(dependency),
+      dev: entry.dev,
+      direct: dependency != nil,
+      locked: entry.version,
+      installed: record == nil ? nil : record.get('version', nil),
+      source: entry.source.to_string(),
+      commands: record == nil ? [] : record.get('commands', []),
+      status,
+    })
+  }
+
+  for key, dependency in declared {
+    if !seen.contains(key) {
+      rows.append({
+        name: dependency.name,
+        declared: _declared(dependency),
+        dev: dependency.dev,
+        direct: true,
+        locked: nil,
+        installed: nil,
+        source: nil,
+        commands: [],
+        status: 'unlocked',
+      })
+    }
+  }
+
+  for import_name, record in workspace.installed.packages {
+    if !workspace.lock.has(record.get('name', import_name)) {
+      rows.append({
+        name: record.get('name', import_name),
+        declared: nil,
+        dev: false,
+        direct: false,
+        locked: nil,
+        installed: record.get('version', nil),
+        source: record.get('source', nil),
+        commands: record.get('commands', []),
+        status: 'extraneous',
+      })
+    }
+  }
+
+  return rows
+}
+
+# The dependency tree, as lines.
+def _tree(workspace, depth: ?number) {
+  var lines = []
+  var lock = workspace.lock
+
+  var visit = nil
+
+  visit = @(name: string, prefix: string, last: bool, level: number, path: list) {
+    var entry = lock.get(name)
+    var branch = last ? '└── ' : '├── '
+    var label = entry == nil
+      ? '${name} ${ui.failure("(not locked)")}'
+      : '${entry.name} ${entry.version}'
+    var key = names.normalized(name)
+
+    if path.contains(key) {
+      lines.append(prefix + branch + label + ui.muted(' (cycle)'))
+
+      return
+    }
+
+    lines.append(prefix + branch + label)
+
+    if entry == nil or (depth != nil and level >= depth) {
+      return
+    }
+
+    var children = entry.dependencies.clone()
+
+    children.sort()
+
+    for index, child in children {
+      visit(child, prefix + (last ? '    ' : '│   '), index == children.length() - 1, level + 1,
+        path + [key])
+    }
+  }
+
+  var roots = workspace.manifest.dependencies().map(@(d) => d.name)
+
+  roots.sort()
+
+  lines.append(ui.accent(workspace.display_name()))
+
+  for index, name in roots {
+    visit(name, '', index == roots.length() - 1, 1, [])
+  }
+
+  return lines
+}
+
+def _project(parsed) {
+  var given = parsed.options
+  var workspace = cli.workspace('info', given.get('global', false) == true, sync.Options())
+  var rows = _packages(workspace, given.get('verify', false) == true)
+  var manifest = workspace.manifest
+
+  if given.get('json', false) == true {
+    cli.print_json({
+      name: manifest.name(),
+      version: manifest.version(),
+      description: manifest.text('description'),
+      license: manifest.text('license'),
+      root: workspace.project.root,
+      packages: rows,
+    })
+
+    return
+  }
+
+  if given.get('tree', false) == true {
+    ui.say(_tree(workspace, given.get('depth', nil)))
+
+    return
+  }
+
+  var name = manifest.name() == nil ? workspace.display_name() : manifest.name()
+
+  echo '${ui.accent(name)} ${manifest.version() == nil ? "" : manifest.version()}'
+
+  var description = manifest.text('description')
+
+  if description != nil and !description.is_empty() {
+    echo description
+  }
+
+  echo ui.muted(workspace.project.root)
+  echo ''
+
+  if rows.is_empty() {
+    echo 'No packages.'
+
+    return
+  }
+
+  var table = [[ui.heading('package'), ui.heading('declared'), ui.heading('locked'),
+    ui.heading('installed'), ui.heading('')]]
+
+  for row in rows {
+    var status = row.status == 'ok' ? '' : ui.warn(row.status)
+    var name_cell = row.direct ? row.name : ui.muted(row.name)
+
+    if row.dev {
+      name_cell += ui.muted(' (dev)')
+    }
+
+    table.append([
+      name_cell,
+      row.declared == nil ? ui.muted('-') : row.declared,
+      row.locked == nil ? ui.muted('-') : row.locked,
+      row.installed == nil ? ui.muted('-') : row.installed,
+      status,
+    ])
+  }
+
+  ui.say(ui.table(table))
+
+  var commands = []
+
+  for row in rows {
+    for command in row.commands {
+      commands.append('${command} (from ${row.name})')
+    }
+  }
+
+  if !commands.is_empty() {
+    echo ''
+    echo 'Commands: ' + ', '.join(commands)
+  }
+
+  var problems = rows.filter(@(row) => row.status != 'ok')
+
+  if !problems.is_empty() {
+    echo ''
+    echo ui.muted('Run `zuri restore` to install what the lockfile names, or `zuri install` '
+      + 'when project.toml has changed.')
+  }
+}
+
+def _package(parsed) {
+  var spec = parsed.indexes[0]
+  var at = spec.index_of('@')
+  var name = names.check_name(at < 0 ? spec : spec[0, at])
+  var wanted = at < 0 ? nil : spec[at + 1,]
+  var registry = cli.registry_from(parsed)
+  var readme = parsed.options.get('readme', false) == true
+  var about = registry.package(name, readme)
+  var index = registry.index(name)
+  var version = wanted == nil ? about.latest : wanted
+  var entry = index.versions.find(@(v) => v.version == version)
+
+  if wanted != nil and entry == nil {
+    raise UsageError('${name} has no version ${wanted} on ${registry.address}')
+  }
+
+  if parsed.options.get('json', false) == true {
+    about.set('dependencies', entry == nil ? [] : entry.dependencies)
+    cli.print_json(about)
+
+    return
+  }
+
+  if readme {
+    echo about.get('readme', nil) == nil ? 'The latest version has no README.' : about.readme
+
+    return
+  }
+
+  echo '${ui.accent(about.name)} ${version == nil ? "" : version}'
+  echo about.description
+
+  var facts = [
+    ['license', about.license == nil ? 'not stated' : about.license],
+    ['owners', ', '.join(about.owners)],
+    ['downloads', about.downloads.to_string()],
+  ]
+
+  if about.homepage != nil {
+    facts.append(['homepage', about.homepage])
+  }
+
+  if about.repository != nil {
+    facts.append(['repository', about.repository])
+  }
+
+  if !about.keywords.is_empty() {
+    facts.append(['keywords', ', '.join(about.keywords)])
+  }
+
+  if entry != nil {
+    var deps = entry.dependencies.map(@(d) => '${d.name} ${d.range}')
+
+    facts.append(['depends on', deps.is_empty() ? 'nothing' : ', '.join(deps)])
+
+    if entry.zuri != nil {
+      facts.append(['needs zuri', entry.zuri])
+    }
+  }
+
+  echo ''
+  ui.say(ui.table(facts.map(@(fact) => [ui.muted(fact[0]), fact[1]])))
+  echo ''
+
+  var shown = about.versions.length() > 10 ? about.versions[0, 10] : about.versions
+  var listed = shown.map(@(v) {
+    return v.yanked ? '${v.version} ${ui.warn("(yanked)")}' : v.version
+  })
+
+  echo 'versions: ' + ', '.join(listed)
+
+  if about.versions.length() > shown.length() {
+    echo ui.muted('and ${about.versions.length() - shown.length()} older')
+  }
+}
+
+def main() {
+  var parsed = parser().parse()
+
+  if parsed.indexes.is_empty() {
+    _project(parsed)
+  } else {
+    _package(parsed)
+  }
+}
+
+run('info', main)

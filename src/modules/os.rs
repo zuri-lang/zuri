@@ -124,6 +124,9 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
   let vm_version_val = vm.heap_mut().alloc_string(env!("ZVM_VERSION"));
   members.push(("vm_version", vm_version_val));
 
+  let target_val = vm.heap_mut().alloc_string(env!("ZURI_BUILD_TARGET"));
+  members.push(("target", target_val));
+
   let platform_val = vm.heap_mut().alloc_string(std::env::consts::OS);
   members.push(("platform", platform_val));
 

@@ -21,8 +21,15 @@ var writer = file('notes.txt', 'w')
 | `r+` | read and update; the file must exist |
 | `w+` | read and update; creates the file, does **not** truncate |
 | `a+` | read and append; creates the file |
+| `x` | write; creates the file, fails if the path already exists |
+| `x+` | read and write; creates the file, fails if the path already exists |
 
 Append `b` to any of them for binary mode: `'rb'`, `'wb'`, `'ab'`.
+
+`x` is the one to reach for when two programs might create the same file.
+The existence check and the creation happen in a single step, so exactly
+one of them succeeds and every other one fails, which is what a lock file
+needs.
 
 Creating a handle does not touch the disk. Nothing happens until you read,
 write or call `open()`.

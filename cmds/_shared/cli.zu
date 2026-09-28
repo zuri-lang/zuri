@@ -1,0 +1,218 @@
+/**
+ * What the package commands share at the command line: the flags they
+ * all take, finding the project, choosing a registry, and reporting
+ * what a sync did.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import json
+import os
+
+import .config
+import .errors { UsageError }
+import .manifest as manifest_module
+import .paths
+import .registry { Registry }
+import .sync
+import .ui
+
+/**
+ * Adds the registry option to a parser, and the one allowing a token
+ * over plain http.
+ *
+ * @param parser
+ */
+def add_registry_option(parser) {
+  parser.add_option(
+    'registry', 'The registry to use, by alias or address; the default one otherwise',
+    { short_name: 'r', type: args.STRING, metavar: 'registry' },
+  )
+  parser.add_option(
+    'insecure', 'Allow a token to cross plain http to another machine', nil,
+  )
+}
+
+/**
+ * Adds the option that prints JSON instead of text.
+ *
+ * @param parser
+ */
+def add_json_option(parser) {
+  parser.add_option('json', 'Print the result as JSON, for another program to read', nil)
+}
+
+/**
+ * The project the command runs in.
+ *
+ * @param string command: the command's name, for the error.
+ * @returns paths.Project
+ * @raises UsageError when there is none.
+ */
+def require_project(command: string) {
+  var found = paths.project()
+
+  if found == nil {
+    raise UsageError(
+      "there is no project.toml here or above; run 'zuri init' to start a project, or "
+        + 'pass --global to work on the packages installed for your user'
+    )
+  }
+
+  return found
+}
+
+/**
+ * The project manifest here, or `nil`.
+ *
+ * @returns ?manifest.Manifest
+ */
+def local_manifest() {
+  var found = paths.project()
+
+  return found == nil ? nil : manifest_module.load(found.manifest)
+}
+
+/**
+ * The registry a command addresses: the one its registry option names, or
+ * the default one, with the token saved for it.
+ *
+ * @param dict parsed
+ * @param ?bool offline
+ * @returns Registry
+ */
+def registry_from(parsed, offline: ?bool) {
+  var manifest = local_manifest()
+  var aliases = config.registries(manifest)
+  var address = manifest_module.resolve_registry(parsed.options.get('registry', nil), aliases)
+
+  return Registry(address, {
+    token: config.token_for(address, aliases),
+    offline: offline == true,
+    insecure: parsed.options.get('insecure', false) == true,
+  })
+}
+
+/**
+ * Prints `value` as JSON.
+ *
+ * @param value
+ */
+def print_json(value) {
+  echo json.encode(value)
+}
+
+/**
+ * Prints what a sync did, or would do.
+ *
+ * @param sync.Outcome outcome
+ */
+def report(outcome) {
+  var would = outcome.dry_run
+
+  for entry in outcome.added {
+    var mark = ui.heading('+')
+
+    echo '  ${mark} ${entry.name} ${ui.accent(entry.version)}${_where(entry)}'
+  }
+
+  for change in outcome.changed {
+    var mark = ui.accent('~')
+
+    echo '  ${mark} ${change.entry.name} ${change.from} -> ${ui.accent(change.entry.version)}'
+  }
+
+  for removal in outcome.removed {
+    echo '  ${ui.failure("-")} ${removal.name} ${removal.version}'
+  }
+
+  for hook in outcome.hooks_skipped {
+    ui.complain(ui.warn(
+      "  ${hook.name}'s ${hook.hook} hook was not run; allow it with "
+        + "[install] allow-hooks = [\"${hook.name}\"] in project.toml"
+    ))
+  }
+
+  if outcome.recovered > 0 {
+    echo ui.muted('  put right what an interrupted command had left half done')
+  }
+
+  var changes = outcome.added.length() + outcome.changed.length()
+  var summary = []
+
+  if changes > 0 {
+    summary.append('${would ? "would install" : "installed"} ${ui.count(changes, "package")}')
+  }
+
+  if !outcome.removed.is_empty() {
+    summary.append(
+      '${would ? "would remove" : "removed"} ${ui.count(outcome.removed.length(), "package")}'
+    )
+  }
+
+  if summary.is_empty() {
+    echo ui.muted(would ? 'Nothing would change.' : 'Everything is up to date.')
+  } else {
+    var text = ', '.join(summary)
+
+    echo text[0].upper() + text[1,] + '.'
+  }
+
+  for note in outcome.notes {
+    echo ui.muted(note)
+  }
+}
+
+# Where a locked package came from, when that is not a registry.
+def _where(entry) {
+  if entry.source.kind == 'registry' {
+    return ''
+  }
+
+  return ui.muted(' (${entry.source.kind} ${entry.source.location})')
+}
+
+/**
+ * The sync options every package command reads from its flags.
+ *
+ * @param dict parsed
+ * @param ?dict extra: more fields for the options.
+ * @returns sync.Options
+ */
+def sync_options(parsed, extra: ?dict) {
+  var given = parsed.options
+  var fields = {
+    offline: given.get('offline', false) == true,
+    insecure: given.get('insecure', false) == true,
+    no_hooks: given.get('no-hooks', false) == true,
+    allow_hooks: given.get('allow-hooks', []),
+    force: given.get('force', false) == true,
+    dry_run: given.get('dry-run', false) == true,
+    report: given.get('quiet', false) == true ? nil : @(line) {
+      echo ui.muted(line)
+    },
+  }
+
+  if extra != nil {
+    for key, value in extra {
+      fields.set(key, value)
+    }
+  }
+
+  return sync.Options(fields)
+}
+
+/**
+ * Opens the project here, or the global installation.
+ *
+ * @param string command
+ * @param bool global
+ * @param options: `sync.Options`.
+ * @returns sync.Workspace
+ */
+def workspace(command: string, global: bool, options) {
+  var project = global ? paths.global_project() : require_project(command)
+
+  return sync.Workspace(project, options)
+}

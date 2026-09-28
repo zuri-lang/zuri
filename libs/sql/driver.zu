@@ -70,6 +70,8 @@ var READ_UNCOMMITTED = 'read uncommitted'
  * | `returning` | Whether `INSERT ... RETURNING` works. |
  * | `transactions` | Whether BEGIN, COMMIT and ROLLBACK work. |
  * | `savepoints` | Whether SAVEPOINT works, which is what nested transactions are built on. |
+ * | `transactional_ddl` | Whether CREATE, ALTER and DROP stay inside
+ *   a transaction, rather than committing it. |
  * | `isolation_levels` | The levels the engine will accept. |
  * | `server_side_cursors` | Whether a result can be read without the whole of it arriving first. |
  * | `prepared_statements` | Whether a statement can be compiled once and run repeatedly. |
@@ -99,6 +101,7 @@ def default_capabilities() {
     returning: false,
     transactions: true,
     savepoints: true,
+    transactional_ddl: true,
     isolation_levels: [READ_COMMITTED, SERIALIZABLE],
     server_side_cursors: false,
     prepared_statements: true,

@@ -1,0 +1,10 @@
+<extend base="layout.html">
+  <define name="content">
+    <h1>{{ publisher.username }}</h1>
+    <p class="meta">Publishing here since {{ publisher.joined|date('F Y') }}.</p>
+    <ul class="cards">
+      <template x-for="packages" x-value="item"><include path="card.html" /></template>
+    </ul>
+    <p class="empty" x-not="packages">No packages yet.</p>
+  </define>
+</extend>

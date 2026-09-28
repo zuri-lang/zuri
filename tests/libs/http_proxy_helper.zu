@@ -1,0 +1,86 @@
+# A stand-in HTTP proxy for http_proxy.zu. It takes `count` connections
+# one after another and, for each, sends back on `seen` what arrived:
+# the request line and any Proxy-Authorization. A plain request is
+# answered as though it had been forwarded; a CONNECT is accepted, and
+# whatever comes through the tunnel next is answered from inside it.
+# A CONNECT to port 9 is refused, which is how a test sees a refusal.
+
+import net
+
+def _head(socket) {
+  var received = bytes(0)
+
+  while true {
+    var chunk = socket.read(1)
+
+    if chunk.length() == 0 {
+      break
+    }
+
+    received.extend(chunk)
+
+    var text = received.to_string()
+
+    if text.ends_with('\r\n\r\n') {
+      return text
+    }
+  }
+
+  return received.to_string()
+}
+
+def _field(head: string, name: string) {
+  for line in head.split('\r\n') {
+    if line.lower().starts_with(name + ':') {
+      return line[name.length() + 1,].trim()
+    }
+  }
+
+  return nil
+}
+
+def _answer(socket, body: string) {
+  socket.write_all('HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: '
+    + body.to_bytes().length().to_string() + '\r\nConnection: close\r\n\r\n' + body)
+}
+
+def serve(ready, seen, count) {
+  var listener = net.TcpStream()
+
+  listener.bind('127.0.0.1:0')
+  ready.send(listener.local_address().port())
+
+  iter var i = 0; i < count; i++ {
+    var socket = listener.accept()
+
+    socket.set_read_timeout(5000)
+
+    var head = _head(socket)
+    var line = head.split('\r\n')[0]
+    var auth = _field(head, 'proxy-authorization')
+
+    if line.starts_with('CONNECT ') {
+      if line.contains(':9 ') {
+        socket.write_all('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n')
+        seen.send({ line, auth, inner: nil })
+        socket.close()
+
+        continue
+      }
+
+      socket.write_all('HTTP/1.1 200 Connection established\r\n\r\n')
+
+      var inner = _head(socket).split('\r\n')[0]
+
+      _answer(socket, 'tunnelled ' + inner)
+      seen.send({ line, auth, inner })
+    } else {
+      _answer(socket, 'forwarded ' + line)
+      seen.send({ line, auth, inner: nil })
+    }
+
+    socket.close()
+  }
+
+  listener.close()
+}

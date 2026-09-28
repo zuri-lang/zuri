@@ -1,0 +1,580 @@
+/**
+ * Package archives: gzip-compressed tar files packed the same way
+ * every time, and unpacked only after every entry has proved it is
+ * safe to write.
+ *
+ * Packing sorts the files, writes directories ahead of what they
+ * hold, and strips everything that would make two packings of the
+ * same tree differ: owners are 0, times are 0, and permissions are
+ * `644`, or `755` for a file that is executable. The same files
+ * therefore always produce the same bytes, and the same checksum.
+ *
+ * Unpacking accepts regular files and directories and nothing else.
+ * An archive is refused outright, and nothing it holds is left behind,
+ * when any entry
+ *
+ * - is absolute, or climbs out through `..`, or has an empty or `.`
+ *   part;
+ * - is a link, a device or anything but a file or a directory;
+ * - uses `\`, a control character, or `<>:"|?*`, or has a part that
+ *   ends in a dot or a space, or is a name Windows reserves (`CON`,
+ *   `NUL`, `COM1` and the rest), any of which would unpack
+ *   differently or not at all on some machine;
+ * - repeats another entry, or differs from one only in letter case;
+ * - has a path longer than 240 characters;
+ *
+ * or when the archive holds more than `MAX_ENTRIES` entries or
+ * unpacks to more than `MAX_UNPACKED_SIZE` bytes.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import compress.gzip
+import hash
+import os
+
+import .errors { CommandError }
+import .fsx
+
+/** The most entries one archive may hold. */
+var MAX_ENTRIES = 20000
+
+/** The most bytes one archive may unpack to: 256 MiB. */
+var MAX_UNPACKED_SIZE = 268435456
+
+/** The longest path an entry may have. */
+var MAX_PATH = 240
+
+var _BLOCK = 512
+
+var _RESERVED = [
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+]
+
+/**
+ * Raised for an archive that cannot be packed or will not be unpacked.
+ */
+class ArchiveError < CommandError {}
+
+/**
+ * The checksum of `data`, or of the file at `data` when it is a path,
+ * as `sha256:` and 64 hexadecimal digits.
+ *
+ * @param string|bytes data
+ * @param ?bool is_path: treat `data` as a path. Default `false`.
+ * @returns string
+ */
+def checksum(data, is_path: ?bool) {
+  if is_path == true {
+    data = fsx.read_bytes(data)
+  }
+
+  return 'sha256:' + hash.sha256(data)
+}
+
+/**
+ * Why `path` cannot be an archive entry, or `nil` when it can.
+ *
+ * @param string path: `/`-separated, relative.
+ * @returns ?string
+ */
+def unsafe_reason(path: string) {
+  if path.is_empty() {
+    return 'an entry has no name'
+  }
+
+  if path.length() > MAX_PATH {
+    return "'${path}' is longer than ${MAX_PATH} characters"
+  }
+
+  if path.starts_with('/') or path.index_of('\\') >= 0 {
+    return "'${path}' is not a relative path with / between its parts"
+  }
+
+  if is_dict(path.match('/[\\x00-\\x1f<>:"|?*]/')) {
+    return "'${path}' holds a character that is not allowed in a file name everywhere"
+  }
+
+  for part in path.split('/') {
+    if part.is_empty() or part == '.' or part == '..' {
+      return "'${path}' has an empty, '.' or '..' part"
+    }
+
+    if part.ends_with('.') or part.ends_with(' ') {
+      return "'${path}' has a part ending in a dot or a space"
+    }
+
+    var stem = part.lower()
+    var dot = stem.index_of('.')
+
+    if dot >= 0 {
+      stem = stem[0, dot]
+    }
+
+    if _RESERVED.contains(stem) {
+      return "'${path}' uses '${part}', a name Windows reserves"
+    }
+  }
+
+  return nil
+}
+
+# `value` in octal, `width - 1` digits and a NUL, as a tar field.
+def _octal(value: number, width: number) {
+  var digits = ''
+  var rest = value
+
+  if rest == 0 {
+    digits = '0'
+  }
+
+  while rest > 0 {
+    digits = (rest % 8).to_string() + digits
+    rest = rest // 8
+  }
+
+  if digits.length() > width - 1 {
+    raise ArchiveError('${value} does not fit in a ${width}-byte tar field')
+  }
+
+  return digits.lpad(width - 1, '0').to_bytes() + bytes(1)
+}
+
+# `text` as a NUL-padded field `width` bytes wide.
+def _field(text: string, width: number) {
+  var data = text.to_bytes()
+
+  if data.length() > width {
+    raise ArchiveError("'${text}' does not fit in a tar header")
+  }
+
+  return data + bytes(width - data.length())
+}
+
+# The name and prefix fields for `path`: a path over 100 bytes is split
+# at a `/` so the prefix takes the front.
+def _split_name(path: string) {
+  var data = path.to_bytes()
+
+  if data.length() <= 100 {
+    return [path, '']
+  }
+
+  var parts = path.split('/')
+
+  iter var cut = parts.length() - 1; cut > 0; cut-- {
+    var prefix = '/'.join(parts[0, cut])
+    var name = '/'.join(parts[cut,])
+
+    if prefix.to_bytes().length() <= 155 and name.to_bytes().length() <= 100 {
+      return [name, prefix]
+    }
+  }
+
+  raise ArchiveError("'${path}' cannot be stored: a single part is over 100 bytes")
+}
+
+# One 512-byte ustar header.
+def _header(path: string, mode: number, size: number, is_dir: bool) {
+  var split = _split_name(path)
+
+  var head = _field(split[0], 100) + _octal(mode, 8) + _octal(0, 8) + _octal(0, 8)
+    + _octal(size, 12) + _octal(0, 12)
+
+  var tail = (is_dir ? '5' : '0').to_bytes() + bytes(100) + 'ustar'.to_bytes() + bytes(1)
+    + '00'.to_bytes() + bytes(32) + bytes(32) + _octal(0, 8) + _octal(0, 8)
+    + _field(split[1], 155) + bytes(12)
+
+  # The checksum is taken with its own field read as eight spaces.
+  var blank = head + '        '.to_bytes() + tail
+  var sum = 0
+
+  for byte in blank {
+    sum += byte
+  }
+
+  var checksum = _octal(sum, 7) + ' '.to_bytes()
+
+  return head + checksum + tail
+}
+
+# Zero bytes to fill out a block of `size`.
+def _padding(size: number) {
+  var over = size % _BLOCK
+
+  return over == 0 ? bytes(0) : bytes(_BLOCK - over)
+}
+
+/**
+ * Packs `files` from under `root` into a gzip-compressed tar at
+ * `destination`.
+ *
+ * @param string root
+ * @param list files: paths relative to `root`, `/`-separated. Only
+ *    files; the directories they sit in are added as needed.
+ * @param string destination
+ * @param ?number limit: the most bytes the files may come to.
+ *    `MAX_UNPACKED_SIZE` by default, which is what a package is held
+ *    to; an archive that is not a package, a bundle say, can ask for
+ *    more.
+ * @returns dict: `{ checksum, size, entries, unpacked_size }`, `size`
+ *    being the archive's own size in bytes.
+ * @raises ArchiveError when a path is unsafe, or the total goes over
+ *    the limit.
+ */
+def pack(root: string, files: list, destination: string, limit: ?number) {
+  if limit == nil {
+    limit = MAX_UNPACKED_SIZE
+  }
+
+  var ordered = files.clone()
+
+  ordered.sort()
+
+  var directories = {}
+  var entries = []
+
+  for path in ordered {
+    var reason = unsafe_reason(path)
+
+    if reason != nil {
+      raise ArchiveError(reason)
+    }
+
+    var parts = path.split('/')
+
+    iter var i = 1; i < parts.length(); i++ {
+      var directory = '/'.join(parts[0, i])
+
+      if !directories.contains(directory) {
+        directories.set(directory, true)
+        entries.append({ path: directory, is_dir: true })
+      }
+    }
+
+    entries.append({ path, is_dir: false })
+  }
+
+  # Directories first, each ahead of whatever it holds, then files,
+  # each list in name order: the same set of files always lands in the
+  # same order.
+  var sorted_dirs = directories.keys()
+
+  sorted_dirs.sort()
+
+  var encoder = gzip.GzipEncoder()
+  var unpacked = 0
+  var count = 0
+
+  for directory in sorted_dirs {
+    encoder.write(_header(directory + '/', 0c755, 0, true))
+    count++
+  }
+
+  for entry in entries {
+    if entry.is_dir {
+      continue
+    }
+
+    var full = os.join_paths(root, entry.path)
+
+    if os.is_symlink(full) {
+      raise ArchiveError("'${entry.path}' is a symbolic link, which a package cannot hold")
+    }
+
+    var data = fsx.read_bytes(full)
+    var executable = (file(full).stats().mode & 0c111) != 0
+
+    unpacked += data.length()
+    count++
+
+    if unpacked > limit or count > MAX_ENTRIES {
+      raise ArchiveError('the files come to more than ${limit} bytes, which is too large to pack')
+    }
+
+    encoder.write(_header(entry.path, executable ? 0c755 : 0c644, data.length(), false))
+    encoder.write(data)
+    encoder.write(_padding(data.length()))
+  }
+
+  # Two empty blocks end a tar archive.
+  encoder.write(bytes(_BLOCK * 2))
+
+  var compressed = encoder.finish()
+
+  fsx.atomic_write(destination, compressed)
+
+  return {
+    checksum: checksum(compressed),
+    size: compressed.length(),
+    entries: count,
+    unpacked_size: unpacked,
+  }
+}
+
+# Pulls whole 512-byte blocks out of a gzip stream, counting every
+# byte against the unpacking limit.
+class _Blocks {
+  @new(data: bytes) {
+    self._decoder = gzip.GzipDecoder(data)
+    self._buffer = bytes(0)
+    self.read = 0
+  }
+
+  _fill(wanted: number) {
+    while self._buffer.length() < wanted {
+      var chunk = self._decoder.read(65536)
+
+      if chunk.length() == 0 {
+        return false
+      }
+
+      self.read += chunk.length()
+
+      if self.read > MAX_UNPACKED_SIZE + _BLOCK * (MAX_ENTRIES + 2) {
+        raise ArchiveError('the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes')
+      }
+
+      self._buffer.extend(chunk)
+    }
+
+    return true
+  }
+
+  take(size: number) {
+    if !self._fill(size) {
+      return nil
+    }
+
+    var part = self._buffer[0, size]
+
+    self._buffer = self._buffer[size,]
+
+    return part
+  }
+}
+
+# The text of a NUL-padded field.
+def _text(data: bytes) {
+  var end = data.index_of(0)
+  var used = end < 0 ? data : data[0, end]
+
+  return used.to_string()
+}
+
+# The number an octal field holds.
+def _number(data: bytes) {
+  var text = _text(data).replace('/[\\s]/', '', true)
+
+  if text.is_empty() {
+    return 0
+  }
+
+  if !is_dict(text.match('/^[0-7]+$/')) {
+    raise ArchiveError('the archive has a damaged header')
+  }
+
+  return text.to_number(8)
+}
+
+# Whether a block is all zeros, which is how an archive ends.
+def _is_blank(block: bytes) {
+  for byte in block {
+    if byte != 0 {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * Reads the archive at `path` without writing anything, checking
+ * every entry.
+ *
+ * @param string path
+ * @param ?function each: called as `each(entry, data)` for every
+ *    entry, `data` being the file's bytes, or `nil` for a directory.
+ * @returns list[dict]: `{ path, kind, size, mode }` for each entry,
+ *    `kind` being `'file'` or `'dir'`.
+ * @raises ArchiveError at the first entry that is not safe, or when
+ *    the archive is damaged or over a limit.
+ */
+def read(path: string, each: ?function) {
+  var raw = fsx.read_bytes(path)
+  var blocks
+
+  catch {
+    blocks = _Blocks(raw)
+  } as error {
+    raise ArchiveError("'${os.base_name(path)}' is not a gzip-compressed archive")
+  }
+
+  var entries = []
+  var seen = {}
+  var total = 0
+  var long_name = nil
+
+  while true {
+    var header
+
+    catch {
+      header = blocks.take(_BLOCK)
+    } as error {
+      if instance_of(error, ArchiveError) {
+        raise error
+      }
+
+      raise ArchiveError("'${os.base_name(path)}' is damaged: ${error.message}")
+    }
+
+    if header == nil or _is_blank(header) {
+      break
+    }
+
+    var name = _text(header[0, 100])
+    var mode = _number(header[100, 108])
+    var size = _number(header[124, 136])
+    var type = _text(header[156, 157])
+    var prefix = _text(header[345, 500])
+
+    if size > MAX_UNPACKED_SIZE {
+      raise ArchiveError('the archive holds an entry larger than ${MAX_UNPACKED_SIZE} bytes')
+    }
+
+    var body_size = size + _padding(size).length()
+
+    if type == 'L' {
+      var body = blocks.take(body_size)
+
+      if body == nil {
+        raise ArchiveError('the archive ends in the middle of an entry')
+      }
+
+      long_name = _text(body[0, size])
+
+      continue
+    }
+
+    var full = prefix.is_empty() ? name : prefix + '/' + name
+
+    if long_name != nil {
+      full = long_name
+      long_name = nil
+    }
+
+    while full.starts_with('./') {
+      full = full[2,]
+    }
+
+    var is_dir = type == '5'
+
+    if is_dir and full.ends_with('/') {
+      full = full[0, full.length() - 1]
+    }
+
+    if type != '0' and type != '' and !is_dir {
+      raise ArchiveError("'${full}' is not a plain file or directory, which a package cannot hold")
+    }
+
+    var reason = unsafe_reason(full)
+
+    if reason != nil {
+      raise ArchiveError(reason)
+    }
+
+    var folded = full.lower()
+
+    if seen.contains(folded) {
+      raise ArchiveError("'${full}' appears in the archive more than once")
+    }
+
+    seen.set(folded, true)
+
+    if entries.length() >= MAX_ENTRIES {
+      raise ArchiveError('the archive holds more than ${MAX_ENTRIES} entries')
+    }
+
+    total += size
+
+    if total > MAX_UNPACKED_SIZE {
+      raise ArchiveError('the archive unpacks to more than ${MAX_UNPACKED_SIZE} bytes')
+    }
+
+    var data = nil
+
+    if body_size > 0 {
+      var body = blocks.take(body_size)
+
+      if body == nil {
+        raise ArchiveError('the archive ends in the middle of an entry')
+      }
+
+      data = body[0, size]
+    }
+
+    if is_dir {
+      data = nil
+    } else if data == nil {
+      data = bytes(0)
+    }
+
+    var entry = { path: full, kind: is_dir ? 'dir' : 'file', size, mode }
+
+    entries.append(entry)
+
+    if each != nil {
+      each(entry, data)
+    }
+  }
+
+  return entries
+}
+
+/**
+ * Unpacks the archive at `path` into `destination`, which must not
+ * exist yet. On any failure `destination` is removed again, so a
+ * refused archive leaves nothing behind.
+ *
+ * @param string path
+ * @param string destination
+ * @returns list[dict]: the entries, as `read()` reports them.
+ * @raises ArchiveError
+ */
+def extract(path: string, destination: string) {
+  if os.dir_exists(destination) or file(destination).exists() {
+    raise ArchiveError("'${destination}' already exists")
+  }
+
+  # Everything is checked before a byte is written.
+  read(path)
+
+  fsx.ensure_dir(destination)
+
+  catch {
+    return read(path, @(entry, data) {
+      var target = os.join_paths(destination, entry.path)
+
+      if entry.kind == 'dir' {
+        fsx.ensure_dir(target)
+      } else {
+        fsx.ensure_dir(os.dir_name(target))
+
+        var handle = file(target, 'wb')
+
+        handle.write(data)
+        handle.close()
+
+        if (entry.mode & 0c111) != 0 {
+          file(target).chmod(0c755)
+        }
+      }
+    })
+  } as error {
+    fsx.remove(destination)
+
+    raise error
+  }
+}

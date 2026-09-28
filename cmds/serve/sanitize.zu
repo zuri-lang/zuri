@@ -1,0 +1,174 @@
+/**
+ * Making markup that came from a package safe to put on a page.
+ *
+ * A README is written by whoever published the package, and anything
+ * it holds is shown to everyone who looks at it. The markup is parsed
+ * into a real tree, the way a browser would read it, and written out
+ * again keeping only what is on the lists below. Anything that could
+ * run a script, load something that runs one, or pass itself off as
+ * part of the site is gone before the page is sent.
+ *
+ * - Elements on `ALLOWED` are kept, with only the attributes allowed
+ *   for them.
+ * - Elements on `REMOVED`, and everything inside them, are dropped.
+ * - Any other element is dropped and what it held is kept, so an
+ *   unknown wrapper costs its wrapping and nothing else.
+ * - A link or an image may only point at `http`, `https` or `mailto`,
+ *   or at a relative address. Links to other sites are marked
+ *   `nofollow ugc noopener` so a README cannot borrow the site's
+ *   standing, or reach back into the page that opened it.
+ * - Comments are dropped.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import html
+
+/** The elements kept, and the attributes each may carry. */
+var ALLOWED = {
+  a: ['href', 'title'],
+  abbr: ['title'],
+  b: [], blockquote: [], br: [], code: ['class'], dd: [], del: [],
+  details: ['open'], div: ['align'], dl: [], dt: [], em: [],
+  h1: ['align'], h2: ['align'], h3: ['align'], h4: [], h5: [], h6: [],
+  hr: [], i: [],
+  img: ['src', 'alt', 'title', 'width', 'height', 'align'],
+  ins: [], kbd: [], li: [], ol: ['start'], p: ['align'], pre: [], q: [], s: [],
+  samp: [], small: [], span: ['class'], strong: [], sub: [], summary: [], sup: [],
+  table: [], tbody: [], td: ['align', 'colspan', 'rowspan'], tfoot: [],
+  th: ['align', 'colspan', 'rowspan'], thead: [], tr: [], tt: [], u: [], ul: [], 'var': [],
+}
+
+/** The elements dropped along with everything inside them. */
+var REMOVED = [
+  'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'form',
+  'input', 'button', 'textarea', 'select', 'option', 'noscript', 'template', 'svg', 'math',
+  'link', 'meta', 'base', 'title', 'head', 'audio', 'video', 'source', 'track', 'canvas',
+  'portal', 'dialog',
+]
+
+var _VOID = ['br', 'hr', 'img']
+
+var _URL_ATTRIBUTES = ['href', 'src']
+
+/**
+ * Whether `value` is a safe place for a link or an image to point.
+ *
+ * @param string value
+ * @returns bool
+ */
+def safe_url(value: string) {
+  # Browsers ignore whitespace and control characters in a scheme,
+  # which is exactly how `java\tscript:` gets past a naive check.
+  var squeezed = value.replace('/[\\x00-\\x20]/', '', true).lower()
+  var colon = squeezed.index_of(':')
+
+  if colon < 0 {
+    return true
+  }
+
+  var slash = squeezed.index_of('/')
+  var query = squeezed.index_of('?')
+  var fragment = squeezed.index_of('#')
+
+  # A colon after the path has started is not a scheme.
+  for position in [slash, query, fragment] {
+    if position >= 0 and position < colon {
+      return true
+    }
+  }
+
+  var scheme = squeezed[0, colon]
+
+  return ['http', 'https', 'mailto'].contains(scheme)
+}
+
+# Whether `href` leaves the site.
+def _external(href: string) {
+  var lower = href.trim().lower()
+
+  return lower.starts_with('http://') or lower.starts_with('https://') or lower.starts_with('//')
+}
+
+def _write(node, out: list) {
+  if node.is_text() {
+    out.append(html.escape_text(node.text_content()))
+
+    return
+  }
+
+  if !node.is_element() {
+    return
+  }
+
+  var tag = node.tag_name.lower()
+
+  if REMOVED.contains(tag) {
+    return
+  }
+
+  if !ALLOWED.contains(tag) {
+    for child in node.children {
+      _write(child, out)
+    }
+
+    return
+  }
+
+  var parts = ['<', tag]
+  var kept = ALLOWED.get(tag)
+
+  for name in node.attribute_names() {
+    var lower = name.lower()
+
+    if !kept.contains(lower) {
+      continue
+    }
+
+    var value = node.get_attribute(name)
+
+    if _URL_ATTRIBUTES.contains(lower) and !safe_url(value) {
+      continue
+    }
+
+    if lower == 'class' and !is_dict(value.match('/^[a-zA-Z0-9_ -]*$/')) {
+      continue
+    }
+
+    parts.append(' ${lower}="${html.escape_attribute(value)}"')
+  }
+
+  if tag == 'a' and node.has_attribute('href') and _external(node.get_attribute('href')) {
+    parts.append(' rel="nofollow ugc noopener"')
+  }
+
+  parts.append('>')
+  out.append(''.join(parts))
+
+  if _VOID.contains(tag) {
+    return
+  }
+
+  for child in node.children {
+    _write(child, out)
+  }
+
+  out.append('</${tag}>')
+}
+
+/**
+ * `markup`, with everything that is not allowed taken out.
+ *
+ * @param string markup
+ * @returns string
+ */
+def clean(markup: string) {
+  var fragment = html.parse_fragment(markup, 'div')
+  var out = []
+
+  for child in fragment.children {
+    _write(child, out)
+  }
+
+  return ''.join(out)
+}

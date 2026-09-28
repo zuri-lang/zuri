@@ -1,0 +1,705 @@
+/**
+ * The Nyssa site: browsing and searching packages, and managing an
+ * account and the packages it owns.
+ *
+ * Every page is a `wire` template, so everything shown is escaped for
+ * where it lands. Every change is a `POST` carrying the form's CSRF
+ * token, which is checked before anything else runs. Signing in
+ * replaces the session, so a session identifier planted beforehand is
+ * worth nothing afterwards.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import crypto
+import http.util { secure_equals }
+import json
+import os
+import wire
+
+import .._shared.fsx
+import .._shared.names
+import .._shared.semver
+import .context { fail, iso }
+import .markdown
+import .service
+
+/** Packages per page of a search or a listing. */
+var PER_PAGE = 20
+
+var _ROOT = os.dir_name(__file__)
+
+var _view = wire.wire()
+
+_view.set_root(os.join_paths(_ROOT, 'templates'))
+
+/**
+ * The documentation pages, in the order they are listed.
+ */
+var DOCS = [
+  { slug: 'getting-started', title: 'Getting started' },
+  { slug: 'installing', title: 'Installing packages' },
+  { slug: 'publishing', title: 'Publishing packages' },
+  { slug: 'accounts', title: 'Accounts and tokens' },
+  { slug: 'hosting', title: 'Hosting a repository' },
+]
+
+# The CSRF token of the visitor's session, made on first use.
+def _csrf(request) {
+  var session = request.session()
+  var token = session.get('csrf', nil)
+
+  if token == nil {
+    token = fsx.hex(crypto.random_bytes(24))
+    session.set('csrf', token)
+  }
+
+  return token
+}
+
+# The signed-in publisher, or `nil`.
+def _viewer(nyssa, request) {
+  var id = request.session().get('publisher_id', nil)
+
+  if id == nil {
+    return nil
+  }
+
+  var publisher = nyssa.db.publisher_by_id(id)
+
+  if publisher == nil or publisher.suspended_at != nil {
+    request.session().destroy()
+
+    return nil
+  }
+
+  return publisher
+}
+
+# What each page with a fixed name is called in the browser, ahead of
+# the site's own name.
+var _TITLES = {
+  login: 'Sign in',
+  signup: 'Sign up',
+  welcome: 'Welcome',
+  account: 'Your account',
+  token: 'New token',
+  recover: 'Recover an account',
+  recovered: 'Recovered',
+  reset: 'Choose a new password',
+}
+
+# Renders a page with what every page needs. A page's title is
+# `page_title` when the caller gives one, the name `_TITLES` holds for
+# it, or its own `title`.
+def _page(nyssa, request, response, template: string, variables: ?dict, status: ?number) {
+  var viewer = _viewer(nyssa, request)
+  var values = {
+    site: nyssa.settings.name,
+    public_url: nyssa.settings.public_url,
+    viewer: viewer == nil ? nil : viewer.username,
+    csrf: _csrf(request),
+    notice: request.session().take_flash('notice'),
+    signup_open: nyssa.settings.signup == 'open',
+    read_only: nyssa.settings.read_only == true,
+  }
+
+  if variables != nil {
+    for key, value in variables {
+      values.set(key, value)
+    }
+  }
+
+  if values.get('page_title', nil) == nil {
+    values.set('page_title', _TITLES.get(template, values.get('title', nil)))
+  }
+
+  response.status = status == nil ? 200 : status
+  response.content_type('text/html; charset=utf-8')
+  response.write(_view.render(template, values))
+}
+
+# A page that says one thing.
+def _message(nyssa, request, response, title: string, text: string, status: ?number) {
+  _page(nyssa, request, response, 'message', { title, text }, status)
+}
+
+# Sends the visitor to sign in, when they are not.
+def _require_viewer(nyssa, request, response) {
+  var viewer = _viewer(nyssa, request)
+
+  if viewer == nil {
+    response.redirect('/login?next=' + request.path, 303)
+  }
+
+  return viewer
+}
+
+# A local path to go back to after signing in, or `/account`. Anything
+# else would let a link send a signed-in visitor anywhere.
+def _next_path(raw) {
+  if raw == nil or !raw.starts_with('/') or raw.starts_with('//') or raw.contains('\\') {
+    return '/account'
+  }
+
+  return raw
+}
+
+# A package row as the templates show it.
+def _card(row: dict) {
+  return {
+    name: row.name,
+    description: row.description,
+    latest: row.latest,
+    downloads: row.downloads,
+    updated: iso(row.updated_at),
+  }
+}
+
+# The page numbers to link from page `page` of `pages`.
+def _pages(page: number, pages: number) {
+  var first = (page - 3).max(1)
+  var last = (page + 3).min(pages)
+  var listed = []
+
+  iter var n = first; n <= last; n++ {
+    listed.append({ number: n, current: n == page })
+  }
+
+  return listed
+}
+
+# Runs a form handler, showing a refusal on the page the form was on.
+def _form(nyssa, request, response, template: string, extra: dict, body: function) {
+  catch {
+    body()
+  } as error {
+    if !instance_of(error, service.ServiceError) {
+      raise error
+    }
+
+    var variables = extra.clone()
+
+    variables.set('error', error.message)
+    _page(nyssa, request, response, template, variables, error.status)
+  }
+}
+
+/**
+ * Refuses a form that does not carry the session's CSRF token.
+ *
+ * @param nyssa
+ * @returns function: middleware.
+ */
+def csrf_guard(nyssa) {
+  return @(request, response, next) {
+    var changes = !['GET', 'HEAD', 'OPTIONS'].contains(request.method)
+
+    if !changes or request.path.starts_with('/api/') {
+      next()
+
+      return
+    }
+
+    var expected = request.session().get('csrf', nil)
+    var given = request.form_field('_csrf', '')
+
+    if expected == nil or !secure_equals(expected, given) {
+      _message(nyssa, request, response, 'That form has expired',
+        'Go back, reload the page, and send it again.', 403)
+
+      return
+    }
+
+    next()
+  }
+}
+
+/**
+ * Registers every page on `server`.
+ *
+ * @param server
+ * @param nyssa
+ */
+def routes(server, nyssa) {
+  server.get('/', @(request, response) {
+    _page(nyssa, request, response, 'home', {
+      stats: nyssa.db.statistics(),
+      popular: nyssa.db.popular(8).map(_card),
+      recent: nyssa.db.recent(8).map(_card),
+    })
+  })
+
+  server.get('/search', @(request, response) {
+    var query = request.query_param('q', '').trim()
+    var sort = request.query_param('sort', 'relevance')
+    var raw_page = request.query_param('page', '1')
+    var page = is_dict(raw_page.match('/^[0-9]{1,5}$/')) ? raw_page.to_number().max(1) : 1
+
+    if !['relevance', 'downloads', 'updated', 'name'].contains(sort) {
+      sort = 'relevance'
+    }
+
+    var found = nyssa.db.search(query, sort, PER_PAGE, (page - 1) * PER_PAGE)
+    var pages = ((found.total + PER_PAGE - 1) // PER_PAGE).max(1)
+
+    _page(nyssa, request, response, 'search', {
+      page_title: query.is_empty() ? 'Search' : '${query} · Search',
+      query,
+      sort,
+      total: found.total,
+      results: found.packages.map(_card),
+      page,
+      pages: _pages(page, pages),
+      previous: page > 1 ? page - 1 : nil,
+      next_page: page < pages ? page + 1 : nil,
+    })
+  })
+
+  var show_package = @(request, response, wanted) {
+    var package = nyssa.db.package_by_name(names.normalized(request.param('name')))
+
+    if package == nil {
+      _message(nyssa, request, response, 'No such package',
+        "There is no package called '${request.param("name")}' here.", 404)
+
+      return
+    }
+
+    var rows = nyssa.db.versions_of(package.id)
+    var by_version = {}
+
+    for row in rows {
+      by_version.set(row.version, row)
+    }
+
+    var shown_version = wanted == nil ? package.latest : wanted
+
+    if shown_version == nil and !rows.is_empty() {
+      shown_version = semver.sorted(rows.map(@(row) => row.version)).last()
+    }
+
+    var shown = shown_version == nil ? nil : by_version.get(shown_version, nil)
+
+    if shown == nil {
+      _message(nyssa, request, response, 'No such version',
+        '${package.name} has no version ${wanted}.', 404)
+
+      return
+    }
+
+    var viewer = _viewer(nyssa, request)
+    var owners = nyssa.db.owners_of(package.id)
+    var ordered = semver.sorted(rows.map(@(row) => row.version)).reverse()
+    var dependencies = shown.dependencies
+
+    if is_string(dependencies) {
+      dependencies = json.decode(dependencies)
+    }
+
+    var readme = shown.readme == nil ? nil : wire.safe(markdown.render(shown.readme))
+
+    _page(nyssa, request, response, 'package', {
+      page_title: '${package.name} ${shown.version}',
+      package: {
+        name: package.name,
+        description: package.description,
+        homepage: package.homepage,
+        repository: package.repository,
+        license: package.license,
+        keywords: package.keywords.is_empty() ? [] : package.keywords.split(' '),
+        downloads: package.downloads,
+        import_name: names.import_name(package.name),
+      },
+      version: {
+        version: shown.version,
+        yanked: shown.yanked_at != nil,
+        published: iso(shown.published_at),
+        size: shown.size,
+        checksum: shown.checksum,
+        zuri: shown.zuri,
+        downloads: shown.downloads,
+      },
+      dependencies,
+      readme,
+      owners,
+      is_owner: viewer != nil and owners.contains(viewer.username),
+      versions: ordered.map(@(version) {
+        var row = by_version.get(version)
+
+        return {
+          version,
+          yanked: row.yanked_at != nil,
+          published: iso(row.published_at),
+          downloads: row.downloads,
+          current: version == shown.version,
+        }
+      }),
+    })
+  }
+
+  server.get('/packages/:name', @(request, response) {
+    show_package(request, response, nil)
+  })
+
+  server.get('/packages/:name/:version', @(request, response) {
+    var wanted = request.param('version')
+
+    if !semver.is_valid(wanted) {
+      _message(nyssa, request, response, 'No such version', "'${wanted}' is not a version.", 404)
+
+      return
+    }
+
+    show_package(request, response, semver.parse(wanted).to_string())
+  })
+
+  server.get('/publishers/:username', @(request, response) {
+    var publisher = nyssa.db.publisher_by_name(request.param('username'))
+
+    if publisher == nil or publisher.suspended_at != nil {
+      _message(nyssa, request, response, 'No such publisher',
+        "There is no publisher called '${request.param("username")}' here.", 404)
+
+      return
+    }
+
+    _page(nyssa, request, response, 'publisher', {
+      page_title: publisher.username,
+      publisher: { username: publisher.username, joined: iso(publisher.created_at) },
+      packages: nyssa.db.packages_of(publisher.id).map(_card),
+    })
+  })
+
+  server.get('/login', @(request, response) {
+    _page(nyssa, request, response, 'login', { next: _next_path(request.query_param('next', nil)) })
+  })
+
+  server.post('/login', @(request, response) {
+    var next_path = _next_path(request.form_field('next', nil))
+
+    _form(nyssa, request, response, 'login', { next: next_path }, @{
+      var publisher = service.sign_in(
+        nyssa, request.form_field('username', '').trim(), request.form_field('password', ''),
+        nyssa.address_of(request)
+      )
+
+      request.session().regenerate()
+      request.session().set('publisher_id', publisher.id)
+      request.session().remove('csrf')
+      response.redirect(next_path, 303)
+    })
+  })
+
+  server.post('/logout', @(request, response) {
+    request.session().destroy()
+    response.redirect('/', 303)
+  })
+
+  server.get('/signup', @(request, response) {
+    if nyssa.settings.signup != 'open' {
+      _message(nyssa, request, response, 'Sign-up is closed',
+        'This repository is not taking new accounts.', 403)
+
+      return
+    }
+
+    _page(nyssa, request, response, 'signup', {})
+  })
+
+  server.post('/signup', @(request, response) {
+    if nyssa.refuse_if_read_only(response) {
+      return
+    }
+
+    var username = request.form_field('username', '').trim()
+    var email = request.form_field('email', '').trim()
+
+    _form(nyssa, request, response, 'signup', { username, email }, @{
+      if request.form_field('password', '') != request.form_field('password_again', '') {
+        raise service.ServiceError(422, 'bad_password', 'the two passwords are not the same')
+      }
+
+      var created = service.create_account(nyssa, {
+        username,
+        email,
+        password: request.form_field('password', ''),
+      }, nyssa.address_of(request))
+
+      # The first token is for the command line; the site signs in with
+      # the session instead, so it is revoked rather than left lying
+      # around unseen.
+      nyssa.db.revoke_token(created.token.id, created.publisher.id)
+
+      request.session().regenerate()
+      request.session().set('publisher_id', created.publisher.id)
+      request.session().remove('csrf')
+
+      _page(nyssa, request, response, 'welcome', {
+        recovery_key: created.recovery_key,
+        confirm: created.publisher.email_verified != 1,
+      }, 201)
+    })
+  })
+
+  server.get('/account', @(request, response) {
+    var viewer = _require_viewer(nyssa, request, response)
+
+    if viewer == nil {
+      return
+    }
+
+    _page(nyssa, request, response, 'account', {
+      account: {
+        username: viewer.username,
+        email: viewer.email,
+        confirmed: viewer.email_verified == 1,
+        joined: iso(viewer.created_at),
+      },
+      packages: nyssa.db.packages_of(viewer.id).map(_card),
+      tokens: service.tokens(nyssa, viewer.id),
+    })
+  })
+
+  server.post('/account/password', @(request, response) {
+    var viewer = _require_viewer(nyssa, request, response)
+
+    if viewer == nil {
+      return
+    }
+
+    catch {
+      if request.form_field('password', '') != request.form_field('password_again', '') {
+        raise service.ServiceError(422, 'bad_password', 'the two new passwords are not the same')
+      }
+
+      service.change_password(
+        nyssa, viewer, request.form_field('current', ''), request.form_field('password', ''),
+        nyssa.address_of(request)
+      )
+
+      request.session().flash('notice', 'Your password is changed.')
+    } as error {
+      if !instance_of(error, service.ServiceError) {
+        raise error
+      }
+
+      request.session().flash('notice', error.message)
+    }
+
+    response.redirect('/account', 303)
+  })
+
+  server.post('/account/tokens', @(request, response) {
+    var viewer = _require_viewer(nyssa, request, response)
+
+    if viewer == nil {
+      return
+    }
+
+    catch {
+      var days = request.form_field('days', '365')
+      var scopes = request.form_all().get('scopes', [])
+      var issued = service.create_token(
+        nyssa, viewer.id, request.form_field('name', 'zuri'), scopes.is_empty() ? nil : scopes,
+        is_dict(days.match('/^[0-9]{1,4}$/')) ? days.to_number() : 0
+      )
+
+      nyssa.db.audit(viewer.id, 'create_token', issued.name, { id: issued.id },
+        nyssa.address_of(request))
+
+      _page(nyssa, request, response, 'token', { issued })
+    } as error {
+      if !instance_of(error, service.ServiceError) {
+        raise error
+      }
+
+      request.session().flash('notice', error.message)
+      response.redirect('/account', 303)
+    }
+  })
+
+  server.post('/account/tokens/:id/revoke', @(request, response) {
+    var viewer = _require_viewer(nyssa, request, response)
+
+    if viewer == nil {
+      return
+    }
+
+    if nyssa.db.revoke_token(request.param('id'), viewer.id) {
+      nyssa.db.audit(viewer.id, 'revoke_token', request.param('id'), nil, nyssa.address_of(request))
+      request.session().flash('notice', 'The token is revoked.')
+    }
+
+    response.redirect('/account', 303)
+  })
+
+  var owner_action = @(request, response, action: function) {
+    var viewer = _require_viewer(nyssa, request, response)
+
+    if viewer == nil {
+      return
+    }
+
+    catch {
+      action(viewer)
+    } as error {
+      if !instance_of(error, service.ServiceError) {
+        raise error
+      }
+
+      request.session().flash('notice', error.message)
+    }
+
+    response.redirect('/packages/${request.param("name")}', 303)
+  }
+
+  server.post('/packages/:name/:version/yank', @(request, response) {
+    owner_action(request, response, @(viewer) {
+      service.yank(nyssa, viewer.id, request.param('name'), request.param('version'), false,
+        nyssa.address_of(request))
+      request.session().flash('notice', '${request.param("version")} is yanked.')
+    })
+  })
+
+  server.post('/packages/:name/:version/unyank', @(request, response) {
+    owner_action(request, response, @(viewer) {
+      service.yank(nyssa, viewer.id, request.param('name'), request.param('version'), true,
+        nyssa.address_of(request))
+      request.session().flash('notice', '${request.param("version")} is restored.')
+    })
+  })
+
+  server.post('/packages/:name/owners', @(request, response) {
+    owner_action(request, response, @(viewer) {
+      var username = request.form_field('username', '').trim()
+
+      service.add_owner(nyssa, viewer.id, request.param('name'), username,
+        nyssa.address_of(request))
+      request.session().flash('notice', '${username} is now an owner.')
+    })
+  })
+
+  server.post('/packages/:name/owners/:username/remove', @(request, response) {
+    owner_action(request, response, @(viewer) {
+      service.remove_owner(nyssa, viewer.id, request.param('name'), request.param('username'),
+        nyssa.address_of(request))
+      request.session().flash('notice', '${request.param("username")} is no longer an owner.')
+    })
+  })
+
+  server.get('/recover', @(request, response) {
+    _page(nyssa, request, response, 'recover', { mail: nyssa.mail_enabled() })
+  })
+
+  server.post('/recover', @(request, response) {
+    var username = request.form_field('username', '').trim()
+
+    _form(nyssa, request, response, 'recover', { username, mail: nyssa.mail_enabled() }, @{
+      if request.form_field('password', '') != request.form_field('password_again', '') {
+        raise service.ServiceError(422, 'bad_password', 'the two new passwords are not the same')
+      }
+
+      var fresh = service.recover(
+        nyssa, username, request.form_field('recovery_key', ''),
+        request.form_field('password', ''), nyssa.address_of(request)
+      )
+
+      _page(nyssa, request, response, 'recovered', { recovery_key: fresh })
+    })
+  })
+
+  server.post('/reset', @(request, response) {
+    _form(nyssa, request, response, 'recover', { mail: nyssa.mail_enabled() }, @{
+      service.request_reset(nyssa, request.form_field('email', ''))
+      _message(nyssa, request, response, 'Check your email',
+        'If that address has an account, a link to choose a new password is on its way.')
+    })
+  })
+
+  server.get('/reset/:code', @(request, response) {
+    _page(nyssa, request, response, 'reset', { code: request.param('code') })
+  })
+
+  server.post('/reset/:code', @(request, response) {
+    var code = request.param('code')
+
+    _form(nyssa, request, response, 'reset', { code }, @{
+      if request.form_field('password', '') != request.form_field('password_again', '') {
+        raise service.ServiceError(422, 'bad_password', 'the two passwords are not the same')
+      }
+
+      service.complete_reset(nyssa, code, request.form_field('password', ''),
+        nyssa.address_of(request))
+      request.session().flash('notice', 'Your password is changed. Sign in with it now.')
+      response.redirect('/login', 303)
+    })
+  })
+
+  server.get('/confirm/:code', @(request, response) {
+    if service.confirm_email(nyssa, request.param('code')) {
+      _message(nyssa, request, response, 'Address confirmed',
+        'Your email address is confirmed, and you can publish packages.')
+    } else {
+      _message(nyssa, request, response, 'That link has expired',
+        'The link is out of date or was already used.', 410)
+    }
+  })
+
+  server.get('/docs', @(request, response) {
+    response.redirect('/docs/getting-started', 302)
+  })
+
+  server.get('/docs/:page', @(request, response) {
+    var slug = request.param('page')
+    var entry = DOCS.find(@(doc) => doc.slug == slug)
+
+    if entry == nil {
+      _message(nyssa, request, response, 'No such page', 'There is no such page here.', 404)
+
+      return
+    }
+
+    var source = fsx.read_text(os.join_paths(_ROOT, 'docs', slug + '.md'))
+      .replace('{{site}}', nyssa.settings.name, false)
+      .replace('{{url}}', nyssa.settings.public_url, false)
+
+    _page(nyssa, request, response, 'doc', {
+      title: entry.title,
+      body: wire.safe(markdown.render(source)),
+      docs: DOCS.map(@(doc) {
+        return { slug: doc.slug, title: doc.title, current: doc.slug == slug }
+      }),
+    })
+  })
+
+  server.serve_files('/static', os.join_paths(_ROOT, 'public'), { cache_age: 86400 })
+
+  server.not_found(@(request, response) {
+    if request.path.starts_with('/api/') {
+      fail(response, 404, 'not_found', 'there is nothing at ${request.path}')
+
+      return
+    }
+
+    _message(nyssa, request, response, 'Not found', 'There is nothing at this address.', 404)
+  })
+
+  server.error_handler(@(request, response, error) {
+    if request.path.starts_with('/api/') {
+      response.json({ error: { code: 'internal', message: 'something went wrong on our side' } },
+        500)
+
+      return
+    }
+
+    response.status = 500
+    response.content_type('text/html; charset=utf-8')
+    response.write(_view.render('message', {
+      site: nyssa.settings.name,
+      page_title: 'Something went wrong',
+      title: 'Something went wrong',
+      text: 'Something went wrong on our side. Try again in a moment.',
+    }))
+  })
+}

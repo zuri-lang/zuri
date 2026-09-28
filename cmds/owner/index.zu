@@ -1,0 +1,66 @@
+/**
+ * @command owner
+ * @description Lists, adds and removes the publishers who own a
+ *    package.
+ *
+ *   zuri owner list <package>
+ *   zuri owner add <package> <username>
+ *   zuri owner remove <package> <username>
+ *
+ * Every owner may publish, yank, and change the owners. A package
+ * always keeps at least one.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.names
+
+def parser() {
+  var parser = args.Parser('owner', true)
+
+  parser.description = 'Lists, adds and removes the publishers who own a package.'
+
+  parser.add_index('action', 'list, add or remove',
+    { type: args.CHOICE, choices: ['list', 'add', 'remove'], required: true })
+  parser.add_index('package', 'The package', { required: true })
+  parser.add_index('username', 'The publisher to add or remove')
+  cli.add_registry_option(parser)
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+def main() {
+  var parsed = parser().parse()
+  var action = parsed.indexes[0]
+  var package = names.check_name(parsed.indexes[1])
+  var username = parsed.indexes.length() > 2 ? parsed.indexes[2] : nil
+  var registry = cli.registry_from(parsed)
+  var owners
+
+  if action == 'list' {
+    owners = registry.owners(package)
+  } else {
+    if username == nil {
+      raise UsageError('say which publisher to ${action}')
+    }
+
+    owners = action == 'add'
+      ? registry.add_owner(package, username).owners
+      : registry.remove_owner(package, username).owners
+  }
+
+  if parsed.options.get('json', false) == true {
+    cli.print_json({ package, owners })
+
+    return
+  }
+
+  echo '${package} is owned by ${", ".join(owners)}.'
+}
+
+run('owner', main)

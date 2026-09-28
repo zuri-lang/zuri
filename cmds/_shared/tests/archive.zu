@@ -1,0 +1,234 @@
+# Packing a tree the same way every time, and refusing any archive that
+# would unpack somewhere, or into something, it should not.
+
+import compress.tar
+import os
+import test { * }
+
+import ..archive { * }
+import ..fsx
+
+# A scratch directory of this run's own, outside any checkout.
+var SCRATCH = os.create_temp_dir('zuri-archive-')
+
+# A small tree to pack: nested, with an executable, and a file whose
+# path is long enough to need the ustar prefix field.
+def make_tree(root: string) {
+  fsx.remove(root)
+  fsx.ensure_dir(os.join_paths(root, 'app', 'deep'))
+
+  file(os.join_paths(root, 'index.zu'), 'w').write('import @.app { * }\n')
+  file(os.join_paths(root, 'app', 'index.zu'), 'w').write('def main() {\n}\n')
+  file(os.join_paths(root, 'app', 'deep', 'data.bin'), 'wb').write(bytes([0, 1, 2, 255]))
+
+  var tool = os.join_paths(root, 'app', 'tool.zu')
+
+  file(tool, 'w').write('echo 1\n')
+  file(tool).chmod(0c755)
+
+  var long_dir = os.join_paths(root, 'a' * 60, 'b' * 60)
+
+  fsx.ensure_dir(long_dir)
+  file(os.join_paths(long_dir, 'c' * 40 + '.zu'), 'w').write('echo 2\n')
+
+  return [
+    'index.zu',
+    'app/index.zu',
+    'app/deep/data.bin',
+    'app/tool.zu',
+    '${"a" * 60}/${"b" * 60}/${"c" * 40}.zu',
+  ]
+}
+
+# Writes an archive holding the entries given, through the standard
+# library's own writer, so nothing about it depends on `pack()`.
+def hostile(name: string, entries: list) {
+  var path = os.join_paths(SCRATCH, name + '.tar.gz')
+  var writer = tar.Tar()
+
+  writer.create(path)
+
+  for entry in entries {
+    writer.add_data(entry.get('data', '').to_bytes(), {
+      filename: entry.path,
+      perm: 0c644,
+      uid: 0,
+      gid: 0,
+      size: entry.get('data', '').to_bytes().length(),
+      mtime: 0,
+      typeflag: entry.get('type', 0),
+      link: entry.get('link', ''),
+      uname: '',
+      gname: '',
+    })
+  }
+
+  writer.close()
+
+  return path
+}
+
+describe('pack', @{
+  before_each(@{
+    fsx.remove(SCRATCH)
+    fsx.ensure_dir(SCRATCH)
+  })
+
+  after_all(@{
+    fsx.remove(SCRATCH)
+  })
+
+  it('packs the same files into the same bytes every time', @{
+    var root = os.join_paths(SCRATCH, 'tree')
+    var files = make_tree(root)
+
+    var first = pack(root, files, os.join_paths(SCRATCH, 'one.tar.gz'))
+
+    # Touch every file so its time changes, and pack in another order.
+    for path in files {
+      var full = os.join_paths(root, path)
+
+      file(full).set_times(1000000, 1000000)
+    }
+
+    var second = pack(root, files.reverse(), os.join_paths(SCRATCH, 'two.tar.gz'))
+
+    expect(second.checksum).to_equal(first.checksum)
+    expect(first.checksum).to_start_with('sha256:')
+    expect(checksum(os.join_paths(SCRATCH, 'one.tar.gz'), true)).to_equal(first.checksum)
+  })
+
+  it('unpacks to the tree it was packed from', @{
+    var root = os.join_paths(SCRATCH, 'tree')
+    var files = make_tree(root)
+    var archive = os.join_paths(SCRATCH, 'tree.tar.gz')
+
+    pack(root, files, archive)
+
+    var out = os.join_paths(SCRATCH, 'out')
+
+    extract(archive, out)
+
+    expect(fsx.tree_digest(out)).to_equal(fsx.tree_digest(root))
+    expect(file(os.join_paths(out, 'app', 'tool.zu')).stats().mode & 0c111).not.to_be_zero()
+  })
+
+  it('writes an archive the standard tar reader understands', @{
+    var root = os.join_paths(SCRATCH, 'tree')
+    var files = make_tree(root)
+    var archive = os.join_paths(SCRATCH, 'tree.tar.gz')
+
+    pack(root, files, archive)
+
+    var reader = tar.Tar()
+
+    reader.open(archive)
+
+    var names = reader.contents().map(@(header) => header.filename)
+
+    expect(names).to_contain('app/tool.zu')
+    expect(names).to_contain(files[4])
+  })
+
+  it('refuses a symbolic link', @{
+    var root = os.join_paths(SCRATCH, 'linked')
+
+    fsx.ensure_dir(root)
+    file(os.join_paths(root, 'real.zu'), 'w').write('echo 1\n')
+    file(os.join_paths(root, 'real.zu')).symlink(os.join_paths(root, 'link.zu'))
+
+    expect(@{
+      pack(root, ['link.zu'], os.join_paths(SCRATCH, 'linked.tar.gz'))
+    }).to_raise_instance_of(ArchiveError)
+  })
+})
+
+describe('extract', @{
+  before_each(@{
+    fsx.remove(SCRATCH)
+    fsx.ensure_dir(SCRATCH)
+  })
+
+  after_all(@{
+    fsx.remove(SCRATCH)
+  })
+
+  it('refuses entries that leave the destination, and writes nothing', @{
+    var cases = ['../escaped.zu', 'app/../../escaped.zu', '/etc/escaped.zu', './../escaped.zu']
+
+    for index, name in cases {
+      var archive = hostile('escape${index}', [{ path: 'fine.zu', data: 'ok' }, { path: name }])
+      var out = os.join_paths(SCRATCH, 'out${index}')
+
+      expect(@{
+        extract(archive, out)
+      }).to_raise_instance_of(ArchiveError)
+
+      expect(os.dir_exists(out)).to_be_false()
+      expect(file(os.join_paths(SCRATCH, 'escaped.zu')).exists()).to_be_false()
+    }
+  })
+
+  it('refuses links and devices', @{
+    for type in [1, 2, 3, 4, 6] {
+      var archive = hostile('type${type}', [{ path: 'thing', type, link: '/etc/passwd' }])
+
+      expect(@{
+        read(archive)
+      }).to_raise_instance_of(ArchiveError)
+    }
+  })
+
+  it('refuses names that unpack differently on some machine', @{
+    var names = ['a\\b.zu', 'CON.zu', 'dir/nul', 'trailing.', 'space ', 'what?.zu', 'a//b.zu']
+
+    for index, name in names {
+      var archive = hostile('portable${index}', [{ path: name, data: 'x' }])
+
+      expect(@{
+        read(archive)
+      }).to_raise_instance_of(ArchiveError)
+    }
+  })
+
+  it('refuses the same path twice, whatever its case', @{
+    var archive = hostile('twice', [{ path: 'App.zu', data: '1' }, { path: 'app.zu', data: '2' }])
+
+    expect(@{
+      read(archive)
+    }).to_raise_instance_of(ArchiveError)
+  })
+
+  it('refuses what is not a gzip-compressed archive', @{
+    var path = os.join_paths(SCRATCH, 'plain.tar.gz')
+
+    file(path, 'w').write('this is not an archive')
+
+    expect(@{
+      read(path)
+    }).to_raise_instance_of(ArchiveError)
+  })
+
+  it('refuses to unpack over something already there', @{
+    var archive = hostile('fine', [{ path: 'fine.zu', data: 'ok' }])
+    var out = os.join_paths(SCRATCH, 'taken')
+
+    fsx.ensure_dir(out)
+
+    expect(@{
+      extract(archive, out)
+    }).to_raise_instance_of(ArchiveError)
+  })
+})
+
+describe('unsafe_reason', @{
+  it('accepts ordinary relative paths', @{
+    for path in ['index.zu', 'app/index.zu', 'app/deep/data.bin', '.hidden', 'a.b.c'] {
+      expect(unsafe_reason(path)).to_be_nil()
+    }
+  })
+
+  it('refuses a path longer than the limit', @{
+    expect(unsafe_reason('a' * (MAX_PATH + 1))).not.to_be_nil()
+  })
+})

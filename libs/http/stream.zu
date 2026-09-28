@@ -683,6 +683,111 @@ def connect(host: string, port: int, options: ?dict) {
 }
 
 /**
+ * Opens a connection to `host:port` through an HTTP proxy's `CONNECT`
+ * tunnel, running a TLS handshake with `host` inside it when `secure`
+ * is set.
+ *
+ * The proxy sees only where the tunnel goes. Everything sent through it
+ * after the handshake is between this end and `host`, encrypted, and
+ * the certificate checked is `host`'s own.
+ *
+ * @param dict proxy: `host` and `port` of an HTTP proxy, and
+ *    `authorization`, the `Proxy-Authorization` value to send, or
+ *    `nil`.
+ * @param string host
+ * @param int port
+ * @param ?dict options: as `connect()` takes them.
+ * @returns Connection
+ * @throws ConnectionError when the proxy cannot be reached or refuses
+ *    the tunnel, or the handshake through it fails
+ */
+def tunnel(proxy: dict, host: string, port: int, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var plain = options.clone()
+
+  plain.set('secure', false)
+
+  var carrier = connect(proxy.host, proxy.port, plain)
+  var target = '${host}:${port}'
+  var head = 'CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n'
+
+  if proxy.get('authorization', nil) != nil {
+    head += 'Proxy-Authorization: ${proxy.authorization}\r\n'
+  }
+
+  catch {
+    carrier.write(head + '\r\n')
+    carrier.flush()
+
+    var status = carrier.read_line(8192)
+
+    if status == nil {
+      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} closed the connection')
+    }
+
+    var parts = status.split(' ')
+    var code = parts.length() > 1 ? parts[1].to_number() : 0
+
+    # The headers of the answer, which say nothing a tunnel needs.
+    while true {
+      var line = carrier.read_line(8192)
+
+      if line == nil or line.is_empty() {
+        break
+      }
+    }
+
+    if code < 200 or code > 299 {
+      raise ConnectionError(
+        'the proxy at ${proxy.host}:${proxy.port} refused to open a tunnel to ${target}: '
+          + status
+      )
+    }
+
+    if carrier.buffered() > 0 {
+      raise ConnectionError('the proxy at ${proxy.host}:${proxy.port} spoke before ${host} did')
+    }
+  } as error {
+    carrier.close()
+
+    if instance_of(error, ConnectionError) {
+      raise error
+    }
+
+    raise ConnectionError('the tunnel through ${proxy.host}:${proxy.port} failed: ${error.message}')
+  }
+
+  if !options.get('secure', false) {
+    return carrier
+  }
+
+  var config = options.get('tls_config', nil)
+
+  if config == nil {
+    config = tls.TlsConfig()
+  }
+
+  var server_name = options.get('server_name', nil) or host
+  var secured
+
+  catch {
+    secured = tls.TlsStream.connect(carrier.transport(), config, server_name)
+  } as tls_error
+
+  if tls_error {
+    carrier.close()
+    raise ConnectionError(
+      'TLS handshake with ${host} through the proxy failed: ${tls_error.message}'
+    )
+  }
+
+  return Connection(secured, carrier.peer_address, carrier.local_address)
+}
+
+/**
  * Turns a freshly accepted `TcpStream` into a `Connection`, running a
  * server-side TLS handshake first when `tls_config` is given.
  *

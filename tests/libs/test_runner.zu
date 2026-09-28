@@ -213,6 +213,20 @@ var broken_suite = scenario(@{
 assert broken_suite.failed == 2, 'a failing before_all must fail every test in the suite'
 ok('a failing before_all fails every test under it')
 
+# What a setup acquired before failing is still released.
+var released = false
+
+scenario(@{
+  describe('half set up', @{
+    before_all(@{ raise ValueError('second step failed') })
+    after_all(@{ released = true })
+    it('one', @{ expect(1).to_be(1) })
+  })
+}, nil)
+
+assert released, 'after_all must run when before_all failed'
+ok('after_all runs even when before_all failed')
+
 # ---------------------------------------------------------------------------
 # Focusing and skipping
 # ---------------------------------------------------------------------------

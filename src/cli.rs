@@ -5,7 +5,8 @@
 //! REPL. With `run`, it launches a script, a package directory, or the
 //! working directory's own entrypoint. With anything else, that word
 //! names a command, and commands live in a `cmds` directory beside the
-//! installed runtime or in the project's `.zuri` directory.
+//! installed runtime, in the project's `.zuri` directory, or inside a
+//! package the project or the user has installed.
 //!
 //! `--version` and `--help` sit outside all three: they report what the
 //! runtime is and what it can reach, and run nothing.
@@ -63,6 +64,10 @@ pub enum Launch {
 pub struct Script {
   /// The file to compile and run.
   pub path: PathBuf,
+  /// Where the search for the project this run belongs to starts: the
+  /// script's own directory under `run`, the working directory for a
+  /// command, which works on wherever it was started.
+  pub anchor: PathBuf,
   /// What the user typed, which is what diagnostics should name.
   pub name: String,
   /// The arguments meant for the script, with none of zuri's own left
@@ -112,15 +117,22 @@ fn resolve_run(rest: &[String]) -> Result<Launch, LaunchError> {
 
   let (path, name) = match target {
     None => {
-      let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+      let cwd = working_dir();
       let name = cwd.display().to_string();
       (entrypoint_of(&cwd, &name)?, name)
     },
     Some(given) => (resolve_run_path(given)?, given.to_string()),
   };
 
+  let anchor = match path.parent() {
+    Some(dir) if dir.as_os_str().is_empty() => working_dir(),
+    Some(dir) => working_dir().join(dir),
+    None => working_dir(),
+  };
+
   Ok(Launch::Script(Script {
     path,
+    anchor,
     name,
     args: args.to_vec(),
   }))
@@ -164,24 +176,92 @@ fn entrypoint_of(dir: &Path, name: &str) -> Result<PathBuf, LaunchError> {
 /// `zuri <command> [args...]`.
 ///
 /// The command directory beside the runtime is searched first, then
-/// the project's. Everything after the command name belongs to it,
-/// flags included.
+/// the project's, then the packages the project has installed, then the
+/// packages installed for the user. Everything after the command name
+/// belongs to it, flags included.
 fn resolve_command(name: &str, rest: &[String]) -> Result<Launch, LaunchError> {
   if !is_command_name(name) {
     return Err(LaunchError::new(name, "Unknown command"));
   }
 
+  let launch = |path: PathBuf| {
+    Launch::Script(Script {
+      path,
+      anchor: working_dir(),
+      name: name.to_string(),
+      args: rest.to_vec(),
+    })
+  };
+
   for dir in command_dirs() {
     if let Some(path) = command_in(&dir, name) {
-      return Ok(Launch::Script(Script {
-        path,
-        name: name.to_string(),
-        args: rest.to_vec(),
-      }));
+      return Ok(launch(path));
+    }
+  }
+
+  for libs in package_libs() {
+    let providers = providers_of(&libs, name);
+
+    match providers.as_slice() {
+      [] => continue,
+      [(_, path)] => return Ok(launch(path.clone())),
+      _ => {
+        let names = providers.iter().map(|(package, _)| package.as_str());
+        let reason = format!(
+          "Provided by more than one installed package: {}",
+          names.collect::<Vec<_>>().join(", ")
+        );
+
+        return Err(LaunchError::new(name, &reason));
+      },
     }
   }
 
   Err(LaunchError::new(name, "Unknown command"))
+}
+
+/// The working directory, or `.` when it cannot be read.
+fn working_dir() -> PathBuf {
+  std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// The directories installed packages live in, in the order their
+/// commands win: the project's own, then the user's.
+fn package_libs() -> Vec<PathBuf> {
+  [crate::project::project_libs(), crate::project::global_libs()]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// Every installed package under `libs` that carries a command called
+/// `name`, as `(package, entry file)`, sorted by package so a report of
+/// the clash reads the same way twice.
+fn providers_of(libs: &Path, name: &str) -> Vec<(String, PathBuf)> {
+  let Ok(entries) = fs::read_dir(libs) else {
+    return Vec::new();
+  };
+
+  let mut found = Vec::new();
+
+  for entry in entries.flatten() {
+    let package = entry.path();
+
+    if !package.is_dir() {
+      continue;
+    }
+
+    let Some(package_name) = package.file_name().and_then(|n| n.to_str()) else {
+      continue;
+    };
+
+    if let Some(path) = command_in(&package.join(COMMAND_DIR), name) {
+      found.push((package_name.to_string(), path));
+    }
+  }
+
+  found.sort();
+  found
 }
 
 /// The command a directory holds under `name`, if it holds one at all.
@@ -205,7 +285,8 @@ fn command_in(dir: &Path, name: &str) -> Option<PathBuf> {
   }
 }
 
-/// Where commands are looked for, in the order they win.
+/// Where commands are looked for, in the order they win, before any
+/// installed package is asked.
 ///
 /// The installed set comes first so that a project cannot shadow a
 /// command the runtime ships, and the project's `.zuri/cmds` follows
@@ -230,11 +311,10 @@ fn installed_command_dir() -> Option<PathBuf> {
     .and_then(|p| p.parent().map(|p| p.join(COMMAND_DIR)))
 }
 
-/// The `cmds` directory this project carries of its own.
+/// The `cmds` directory this project carries of its own, under the
+/// project root, or the working directory when there is no project.
 fn project_command_dir() -> Option<PathBuf> {
-  std::env::current_dir()
-    .ok()
-    .map(|cwd| cwd.join(".zuri").join(COMMAND_DIR))
+  crate::project::state_path(COMMAND_DIR)
 }
 
 /// One command a listing can name.
@@ -243,6 +323,10 @@ pub struct Command {
   pub name: String,
   /// The one line it says about itself, empty when it says nothing.
   pub description: String,
+  /// The installed packages it comes from, empty for a command the
+  /// runtime or the project carries itself. More than one means the
+  /// name is claimed twice and running it is refused.
+  pub packages: Vec<String>,
 }
 
 /// Every command that can be invoked from here, split by where it came
@@ -252,20 +336,23 @@ pub struct Commands {
   pub global: Vec<Command>,
   /// The commands this project carries.
   pub local: Vec<Command>,
+  /// The commands installed packages provide.
+  pub packaged: Vec<Command>,
 }
 
 impl Commands {
   /// Whether there is anything at all to list.
   pub fn is_empty(&self) -> bool {
-    self.global.is_empty() && self.local.is_empty()
+    self.global.is_empty() && self.local.is_empty() && self.packaged.is_empty()
   }
 
-  /// The width the name column needs to hold every name in both sets.
+  /// The width the name column needs to hold every name in every set.
   pub fn name_width(&self) -> usize {
     self
       .global
       .iter()
       .chain(self.local.iter())
+      .chain(self.packaged.iter())
       .map(|command| command.name.len())
       .max()
       .unwrap_or(0)
@@ -275,8 +362,9 @@ impl Commands {
 /// Every command available from here, each described by its own doc
 /// block.
 ///
-/// A shipped command owns its name outright, so a project command it
-/// hides is left out: the listing names what can actually be run.
+/// A shipped command owns its name outright, a project command comes
+/// next, and a package command only fills a name neither of them has
+/// taken, so the listing names what `zuri <name>` would actually run.
 pub fn list_commands() -> Commands {
   let global = installed_command_dir()
     .map(|dir| commands_in(&dir))
@@ -288,7 +376,66 @@ pub fn list_commands() -> Commands {
 
   local.retain(|command| !global.iter().any(|shipped| shipped.name == command.name));
 
-  Commands { global, local }
+  let mut packaged: Vec<Command> = Vec::new();
+
+  for libs in package_libs() {
+    for command in package_commands_in(&libs) {
+      let taken = global
+        .iter()
+        .chain(local.iter())
+        .chain(packaged.iter())
+        .any(|other| other.name == command.name);
+
+      if !taken {
+        packaged.push(command);
+      }
+    }
+  }
+
+  packaged.sort_by(|a, b| a.name.cmp(&b.name));
+
+  Commands {
+    global,
+    local,
+    packaged,
+  }
+}
+
+/// The commands the packages under one `libs` directory provide,
+/// collapsed by name so a name two packages claim is listed once with
+/// both of them.
+fn package_commands_in(libs: &Path) -> Vec<Command> {
+  let Ok(entries) = fs::read_dir(libs) else {
+    return Vec::new();
+  };
+
+  let mut packages: Vec<PathBuf> = entries
+    .flatten()
+    .map(|entry| entry.path())
+    .filter(|path| path.is_dir())
+    .collect();
+
+  packages.sort();
+
+  let mut merged: Vec<Command> = Vec::new();
+
+  for package in packages {
+    let Some(package_name) = package.file_name().and_then(|n| n.to_str()) else {
+      continue;
+    };
+
+    for command in commands_in(&package.join(COMMAND_DIR)) {
+      match merged.iter_mut().find(|seen| seen.name == command.name) {
+        Some(seen) => seen.packages.push(package_name.to_string()),
+        None => merged.push(Command {
+          packages: vec![package_name.to_string()],
+          ..command
+        }),
+      }
+    }
+  }
+
+  merged
 }
 
 /// The commands one directory holds, in the order they are listed.
@@ -316,7 +463,11 @@ fn commands_in(dir: &Path) -> Vec<Command> {
       let path = command_in(dir, &name)?;
       let description = description_of(&path);
 
-      Some(Command { name, description })
+      Some(Command {
+        name,
+        description,
+        packages: Vec::new(),
+      })
     })
     .collect()
 }
@@ -475,11 +626,20 @@ fn strip_star(line: &str) -> &str {
 
 /// Whether `name` can name a command at all.
 ///
-/// A command is one ordinary path segment. Anything carrying a
+/// A command is one ordinary path segment, and not a private one: a
+/// name starting with `_` is never a command, whether it is spelled by
+/// a file or a directory, and in whichever `cmds` it sits. Anything carrying a
 /// separator, a drive prefix or a `..` is a path the user typed where a
 /// command was expected, and resolving it would reach outside the
 /// command directory entirely.
 fn is_command_name(name: &str) -> bool {
+  // A leading underscore marks a name private, as it does an
+  // identifier: `cmds/_shared` holds code the commands use, and is no
+  // command itself, whether it is a directory or a file.
+  if name.starts_with('_') {
+    return false;
+  }
+
   let mut parts = Path::new(name).components();
 
   matches!(parts.next(), Some(Component::Normal(_))) && parts.next().is_none()

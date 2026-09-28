@@ -1,0 +1,13 @@
+<extend base="layout.html">
+  <define name="content">
+    <div class="panel">
+      <h1>Your account is ready</h1>
+      <p>This is your recovery key. It is the only way back into the account if the password is lost, and it is shown only this once. Keep it somewhere safe.</p>
+      <pre class="secret"><code>{{ recovery_key }}</code></pre>
+      <p x-if="confirm">A link to confirm your email address is on its way. Packages can be published once it is confirmed.</p>
+      <p>To publish from the command line, sign in there too:</p>
+      <pre><code>zuri account login --registry {{ public_url }}</code></pre>
+      <p><a href="/account">Go to your account</a></p>
+    </div>
+  </define>
+</extend>

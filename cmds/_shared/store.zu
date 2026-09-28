@@ -1,0 +1,422 @@
+/**
+ * The packages installed in a project, and changing them without ever
+ * leaving a half-installed tree behind.
+ *
+ * `.zuri/installed.toml` records every package zuri put in
+ * `.zuri/libs`: what it is, where it came from, and a digest of what
+ * was written. A directory there that the record does not name was put
+ * there by someone else, vendored by hand, and is never replaced or
+ * removed unless the command was told to.
+ *
+ * Changes go through a `Transaction`. New packages are unpacked into a
+ * staging directory first. Only when every one of them is ready does
+ * anything in `.zuri/libs` move, and every move is written to a
+ * journal first, so a command that is killed halfway is rolled back by
+ * the next command that opens the project, rather than leaving some
+ * packages new and some old.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import json
+import os
+import toml
+
+import .archive
+import .errors { CommandError }
+import .fsx
+
+var _FORMAT = 1
+
+/**
+ * Raised when the installed packages cannot be changed.
+ */
+class StoreError < CommandError {}
+
+/**
+ * The record of what zuri installed.
+ */
+class Installed {
+
+  /**
+   * Import name to `{ name, version, source, checksum, tree, dev,
+   * commands }`.
+   * @type dict
+   */
+  var packages = {}
+
+  var _path
+
+  /**
+   * @param string path
+   * @param ?dict packages
+   */
+  @new(path: string, packages: ?dict) {
+    self._path = path
+    self.packages = packages == nil ? {} : packages
+  }
+
+  /**
+   * Whether `import_name` was installed by zuri.
+   *
+   * @param string import_name
+   * @returns bool
+   */
+  manages(import_name: string) {
+    return self.packages.contains(import_name)
+  }
+
+  /**
+   * The record of one package, or `nil`.
+   *
+   * @param string import_name
+   * @returns ?dict
+   */
+  get(import_name: string) {
+    return self.packages.get(import_name, nil)
+  }
+
+  /**
+   * Records a package.
+   *
+   * @param string import_name
+   * @param dict entry
+   */
+  put(import_name: string, entry: dict) {
+    self.packages.set(import_name, entry)
+  }
+
+  /**
+   * Forgets a package.
+   *
+   * @param string import_name
+   */
+  forget(import_name: string) {
+    if self.packages.contains(import_name) {
+      self.packages.remove(import_name)
+    }
+  }
+
+  /**
+   * Writes the record back.
+   */
+  save() {
+    var keys = self.packages.keys()
+
+    keys.sort()
+
+    var table = {}
+
+    for key in keys {
+      table.set(key, self.packages.get(key))
+    }
+
+    var text = '# Written by zuri: the packages it installed in this directory.\n\n'
+      + toml.dump({ format: _FORMAT, packages: table })
+
+    fsx.atomic_write(self._path, text)
+  }
+}
+
+/**
+ * The record at `path`, or an empty one.
+ *
+ * @param string path
+ * @returns Installed
+ */
+def load_installed(path: string) {
+  if !file(path).exists() {
+    return Installed(path)
+  }
+
+  catch {
+    var data = toml.parse(fsx.read_text(path))
+    var packages = data.get('packages', {})
+
+    return Installed(path, is_dict(packages) ? packages : {})
+  } as error {
+    raise StoreError(
+      '${path} cannot be read: ${error.message}; delete it and run `zuri restore` to '
+        + 'install everything again'
+    )
+  }
+}
+
+/**
+ * The commands a package directory provides: every entry of its
+ * `cmds` directory that `zuri <name>` would run.
+ *
+ * @param string dir
+ * @returns list[string]
+ */
+def commands_in(dir: string) {
+  var root = os.join_paths(dir, 'cmds')
+  var found = []
+
+  if !os.dir_exists(root) {
+    return found
+  }
+
+  for entry in os.read_dir(root) {
+    if entry.starts_with('.') or entry.starts_with('_') {
+      continue
+    }
+
+    var full = os.join_paths(root, entry)
+
+    if os.dir_exists(full) and file(os.join_paths(full, 'index.zu')).exists() {
+      found.append(entry)
+    } else if entry.ends_with('.zu') and !os.dir_exists(full) {
+      var name = entry[0, entry.length() - 3]
+
+      if !found.contains(name) {
+        found.append(name)
+      }
+    }
+  }
+
+  found.sort()
+
+  return found
+}
+
+/**
+ * A set of changes to one `libs` directory, made all at once or not
+ * at all.
+ */
+class Transaction {
+
+  /**
+   * @type string
+   */
+  var libs
+
+  var _root
+  var _journal
+  var _staged = {}
+  var _removed = []
+  var _done = []
+
+  /**
+   * @param string libs: the directory packages are installed in.
+   * @param string staging: where this project stages changes.
+   */
+  @new(libs: string, staging: string) {
+    self.libs = libs
+    self._root = os.join_paths(staging, fsx.unique())
+    self._journal = os.join_paths(self._root, 'journal.json')
+    self._staged = {}
+    self._removed = []
+    self._done = []
+
+    fsx.ensure_dir(os.join_paths(self._root, 'new'))
+    fsx.ensure_dir(os.join_paths(self._root, 'old'))
+    self._write_journal('staging')
+  }
+
+  _write_journal(state: string) {
+    fsx.atomic_write(self._journal, json.encode({
+      state,
+      libs: self.libs,
+      done: self._done,
+    }))
+  }
+
+  /**
+   * Where a package being staged goes before it is swapped in.
+   *
+   * @param string import_name
+   * @returns string
+   */
+  staged_path(import_name: string) {
+    return os.join_paths(self._root, 'new', import_name)
+  }
+
+  /**
+   * Unpacks an archive as the new contents of `import_name`.
+   *
+   * @param string import_name
+   * @param string archive_path
+   * @returns string: where it was staged.
+   */
+  stage_archive(import_name: string, archive_path: string) {
+    var target = self.staged_path(import_name)
+
+    archive.extract(archive_path, target)
+    self._staged.set(import_name, target)
+
+    return target
+  }
+
+  /**
+   * Copies the files of a directory as the new contents of
+   * `import_name`.
+   *
+   * @param string import_name
+   * @param string source
+   * @param list files: paths relative to `source`.
+   * @returns string: where it was staged.
+   */
+  stage_files(import_name: string, source: string, files: list) {
+    var target = self.staged_path(import_name)
+
+    fsx.ensure_dir(target)
+
+    for path in files {
+      var to = os.join_paths(target, path)
+      var from = os.join_paths(source, path)
+
+      fsx.ensure_dir(os.dir_name(to))
+      file(from).copy(to)
+      file(to).chmod(file(from).stats().mode & 0c777)
+    }
+
+    self._staged.set(import_name, target)
+
+    return target
+  }
+
+  /**
+   * Marks `import_name` for removal.
+   *
+   * @param string import_name
+   */
+  remove(import_name: string) {
+    if !self._removed.contains(import_name) {
+      self._removed.append(import_name)
+    }
+  }
+
+  /**
+   * Moves everything staged into place and everything removed out of
+   * it. If any move fails, every move already made is undone.
+   *
+   * @raises StoreError
+   */
+  commit() {
+    fsx.ensure_dir(self.libs)
+    self._write_journal('swapping')
+
+    catch {
+      for import_name in self._removed {
+        var current = os.join_paths(self.libs, import_name)
+
+        if os.dir_exists(current) or file(current).exists() {
+          os.rename(current, os.join_paths(self._root, 'old', import_name))
+          self._done.append({ name: import_name, old: true, new: false })
+          self._write_journal('swapping')
+        }
+      }
+
+      for import_name, staged in self._staged {
+        var current = os.join_paths(self.libs, import_name)
+        var had_old = os.dir_exists(current) or file(current).exists()
+
+        if had_old {
+          os.rename(current, os.join_paths(self._root, 'old', import_name))
+        }
+
+        self._done.append({ name: import_name, old: had_old, new: false })
+        self._write_journal('swapping')
+
+        os.rename(staged, current)
+        self._done[self._done.length() - 1].set('new', true)
+        self._write_journal('swapping')
+      }
+    } as error {
+      self.rollback()
+
+      raise StoreError('could not move the new packages into ${self.libs}: ${error.message}')
+    }
+
+    self._write_journal('committed')
+  }
+
+  /**
+   * Undoes every move `commit()` made.
+   */
+  rollback() {
+    _undo(self.libs, self._root, self._done)
+    self._done = []
+    self._write_journal('rolled-back')
+  }
+
+  /**
+   * Deletes what was replaced or removed, and the staging directory.
+   * Call once nothing will need rolling back.
+   */
+  finish() {
+    fsx.remove(self._root)
+  }
+
+  /**
+   * Discards everything staged without touching `libs`.
+   */
+  abandon() {
+    fsx.remove(self._root)
+  }
+}
+
+# Puts back what a list of journal entries moved, newest first.
+def _undo(libs: string, root: string, done: list) {
+  iter var i = done.length() - 1; i >= 0; i-- {
+    var entry = done[i]
+    var current = os.join_paths(libs, entry.name)
+
+    if entry.get('new', false) {
+      fsx.remove(current)
+    }
+
+    if entry.get('old', false) {
+      var saved = os.join_paths(root, 'old', entry.name)
+
+      if os.dir_exists(saved) or file(saved).exists() {
+        fsx.remove(current)
+        os.rename(saved, current)
+      }
+    }
+  }
+}
+
+/**
+ * Finishes or undoes any transaction a killed command left in
+ * `staging`. One that had committed only needs its leftovers deleted;
+ * one caught halfway through its moves is rolled back.
+ *
+ * @param string staging
+ * @returns number: how many were found.
+ */
+def recover(staging: string) {
+  if !os.dir_exists(staging) {
+    return 0
+  }
+
+  var found = 0
+
+  for entry in os.read_dir(staging) {
+    if entry == '.' or entry == '..' {
+      continue
+    }
+
+    var root = os.join_paths(staging, entry)
+    var journal = os.join_paths(root, 'journal.json')
+
+    found++
+
+    if file(journal).exists() {
+      catch {
+        var state = json.decode(fsx.read_text(journal))
+
+        if state.get('state', '') == 'swapping' {
+          _undo(state.libs, root, state.get('done', []))
+        }
+      } as error {
+        # A journal that cannot be read was never past staging.
+      }
+    }
+
+    fsx.remove(root)
+  }
+
+  return found
+}

@@ -1,0 +1,423 @@
+/**
+ * What `zuri serve` was asked to do, and every setting the repository
+ * runs with.
+ *
+ * A setting is taken from the first of these that gives it:
+ *
+ * 1. a flag on the command line;
+ * 2. an environment variable, `NYSSA_` and the setting's name in
+ *    capitals;
+ * 3. the configuration file, `nyssa.toml` in the storage directory
+ *    unless the config flag names another;
+ * 4. the default.
+ *
+ * ```toml
+ * [server]
+ * host = "0.0.0.0"
+ * port = 8080
+ * public_url = "https://packages.example.com"
+ * workers = 4
+ * trust_proxy = true
+ * read_only = false
+ *
+ * [tls]
+ * cert = "/etc/nyssa/fullchain.pem"
+ * key = "/etc/nyssa/privkey.pem"
+ *
+ * [database]
+ * url = "postgres://nyssa@db.internal/nyssa"
+ *
+ * [registry]
+ * name = "Example Packages"
+ * signup = "closed"
+ * max_archive_size = 20971520
+ *
+ * [mail]
+ * url = "smtp://mail.example.com"
+ * username = "nyssa"
+ * from = "Example Packages <packages@example.com>"
+ * ```
+ *
+ * The database is SQLite in the storage directory unless `database`
+ * names another: any connection string the `sql` module opens, so
+ * PostgreSQL, MySQL and MariaDB all work. A password belongs in
+ * `NYSSA_DATABASE` rather than the file or a flag.
+ *
+ * The mail password is read from `NYSSA_MAIL_PASSWORD` or the file's
+ * `[mail] password`, never from a flag, where it would sit in the
+ * shell history and the process list.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import json
+import os
+import toml
+
+import .._shared.errors { UsageError }
+import .._shared.fsx
+import .._shared.paths
+
+/** The environment variable settings travel to the workers in. */
+var SETTINGS_VARIABLE = 'NYSSA_SETTINGS'
+
+/** The smallest archive limit accepted: 64 KiB. */
+var MIN_ARCHIVE_SIZE = 65536
+
+/** The largest archive limit accepted: 256 MiB. */
+var MAX_ARCHIVE_SIZE = 268435456
+
+/**
+ * Every setting and its default.
+ *
+ * @returns dict
+ */
+def defaults() {
+  return {
+    host: '127.0.0.1',
+    port: 3000,
+    storage: os.join_paths(paths.home(), 'nyssa'),
+    config: nil,
+    database: nil,
+    public_url: nil,
+    workers: os.num_cpus().min(8).max(1),
+    trust_proxy: false,
+    read_only: false,
+    tls_cert: nil,
+    tls_key: nil,
+    name: 'Nyssa',
+    signup: 'open',
+    max_archive_size: 10485760,
+    mail_url: nil,
+    mail_username: nil,
+    mail_password: nil,
+    mail_from: nil,
+  }
+}
+
+# Where each setting sits in the configuration file.
+var _FILE_KEYS = {
+  host: ['server', 'host'],
+  port: ['server', 'port'],
+  public_url: ['server', 'public_url'],
+  workers: ['server', 'workers'],
+  trust_proxy: ['server', 'trust_proxy'],
+  read_only: ['server', 'read_only'],
+  tls_cert: ['tls', 'cert'],
+  tls_key: ['tls', 'key'],
+  database: ['database', 'url'],
+  name: ['registry', 'name'],
+  signup: ['registry', 'signup'],
+  max_archive_size: ['registry', 'max_archive_size'],
+  mail_url: ['mail', 'url'],
+  mail_username: ['mail', 'username'],
+  mail_password: ['mail', 'password'],
+  mail_from: ['mail', 'from'],
+}
+
+# The settings a flag can give, with their flag names.
+var _FLAGS = {
+  host: 'host',
+  port: 'port',
+  storage: 'storage',
+  config: 'config',
+  public_url: 'public-url',
+  workers: 'workers',
+  trust_proxy: 'trust-proxy',
+  read_only: 'read-only',
+  tls_cert: 'tls-cert',
+  tls_key: 'tls-key',
+  database: 'database',
+  signup: 'signup',
+  max_archive_size: 'max-archive-size',
+}
+
+var _NUMBERS = ['port', 'workers', 'max_archive_size']
+
+var _BOOLEANS = ['trust_proxy', 'read_only']
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('serve', false)
+
+  parser.description = 'Runs Nyssa, the package repository: the site, and the registry API '
+    + 'that zuri install and zuri publish talk to.'
+  parser.epilog = 'With no subcommand, the repository starts and serves until stopped.'
+
+  parser.add_option('host', 'The address to listen on; 127.0.0.1 by default',
+    { short_name: 'n', type: args.STRING, metavar: 'address' })
+  parser.add_option('port', 'The port to listen on; 3000 by default',
+    { short_name: 'p', type: args.INT, metavar: 'port' })
+  parser.add_option('storage', 'Where the database and archives live',
+    { short_name: 's', type: args.STRING, metavar: 'dir' })
+  parser.add_option('config', 'The configuration file; nyssa.toml in the storage directory',
+    { short_name: 'c', type: args.STRING, metavar: 'file' })
+  parser.add_option('public-url', 'The address people reach the repository at',
+    { type: args.STRING, metavar: 'url' })
+  parser.add_option('workers',
+    'How many connections to serve at once; one per CPU, up to 8, by default',
+    { short_name: 'w', type: args.INT, metavar: 'count' })
+  parser.add_option('trust-proxy', 'Believe the forwarding headers a proxy in front adds', nil)
+  parser.add_option('read-only', 'Serve packages but accept no changes', nil)
+  parser.add_option('tls-cert', 'A certificate chain to serve HTTPS with',
+    { type: args.STRING, metavar: 'file' })
+  parser.add_option('tls-key', 'The private key for the certificate',
+    { type: args.STRING, metavar: 'file' })
+  parser.add_option('database', 'A connection string; SQLite in the storage directory by default',
+    { short_name: 'd', type: args.STRING, metavar: 'url' })
+  parser.add_option('signup', 'Whether anyone may create an account: open or closed',
+    { type: args.CHOICE, choices: ['open', 'closed'], metavar: 'mode' })
+  parser.add_option('max-archive-size', 'The largest archive accepted, in bytes',
+    { type: args.INT, metavar: 'bytes' })
+
+  parser.add_command('migrate', 'Brings the database up to date and exits')
+  parser.add_command('check', 'Checks every stored archive against its checksum')
+  parser.add_command('backup', 'Copies the database to a file while it is in use',
+    { type: args.STRING, metavar: 'file' })
+  parser.add_command('admin', 'create, promote, demote, suspend or restore <username>',
+    { type: args.LIST, metavar: 'action username' })
+
+  return parser
+}
+
+# `value` read as the kind of value `key` holds.
+def _coerce(key: string, value, where: string) {
+  if value == nil {
+    return nil
+  }
+
+  if _NUMBERS.contains(key) {
+    if is_number(value) {
+      return value
+    }
+
+    var text = value.to_string().trim()
+
+    if !is_dict(text.match('/^[0-9]+$/')) {
+      raise UsageError('${where}: ${key} must be a whole number, not ${value}')
+    }
+
+    return text.to_number()
+  }
+
+  if _BOOLEANS.contains(key) {
+    if is_bool(value) {
+      return value
+    }
+
+    var text = value.to_string().trim().lower()
+
+    if ['1', 'true', 'yes', 'on'].contains(text) {
+      return true
+    }
+
+    if ['0', 'false', 'no', 'off', ''].contains(text) {
+      return false
+    }
+
+    raise UsageError('${where}: ${key} must be true or false, not ${value}')
+  }
+
+  return value.to_string()
+}
+
+/**
+ * Every setting, from the command line, the environment, the file
+ * and the defaults, checked.
+ *
+ * @param dict parsed: what the parser returned.
+ * @param ?dict environment: the variables to read; the process's own
+ *    when left off.
+ * @returns dict
+ * @raises UsageError for a setting that cannot be used.
+ */
+def settings(parsed, environment: ?dict) {
+  if environment == nil {
+    environment = os.environ()
+  }
+
+  var chosen = defaults()
+  var given = parsed.options
+
+  # The storage directory and the file are needed to find the rest.
+  var storage = given.get('storage', nil)
+
+  if storage == nil {
+    storage = environment.get('NYSSA_STORAGE', nil)
+  }
+
+  if storage != nil {
+    chosen.set('storage', os.abs_path(storage))
+  }
+
+  var config_path = given.get('config', nil)
+
+  if config_path == nil {
+    config_path = environment.get('NYSSA_CONFIG', nil)
+  }
+
+  var explicit = config_path != nil
+
+  if config_path == nil {
+    config_path = os.join_paths(chosen.storage, 'nyssa.toml')
+  }
+
+  config_path = os.abs_path(config_path)
+  chosen.set('config', config_path)
+
+  var from_file = {}
+
+  if file(config_path).exists() {
+    catch {
+      from_file = toml.parse(fsx.read_text(config_path))
+    } as error {
+      raise UsageError('${config_path} is not valid TOML: ${error.message}')
+    }
+  } else if explicit {
+    raise UsageError('there is no configuration file at ${config_path}')
+  }
+
+  for key, where in _FILE_KEYS {
+    var section = from_file.get(where[0], {})
+
+    if is_dict(section) and section.contains(where[1]) {
+      chosen.set(key, _coerce(key, section.get(where[1]), config_path))
+    }
+  }
+
+  for key in chosen.keys() {
+    var variable = 'NYSSA_' + key.upper()
+
+    if key != 'storage' and key != 'config' and environment.contains(variable) {
+      chosen.set(key, _coerce(key, environment.get(variable), variable))
+    }
+  }
+
+  for key, flag in _FLAGS {
+    if key == 'storage' or key == 'config' {
+      continue
+    }
+
+    var value = given.get(flag, nil)
+
+    if value != nil {
+      chosen.set(key, _coerce(key, value, '--' + flag))
+    }
+  }
+
+  return check(chosen)
+}
+
+/**
+ * `chosen` with every setting checked, and the public address worked
+ * out when none was given.
+ *
+ * @param dict chosen
+ * @returns dict
+ * @raises UsageError
+ */
+def check(chosen: dict) {
+  var port = chosen.port
+
+  if port < 0 or port > 65535 {
+    raise UsageError('the port must be between 0 and 65535, not ${port}')
+  }
+
+  if chosen.workers < 1 or chosen.workers > 256 {
+    raise UsageError('workers must be between 1 and 256, not ${chosen.workers}')
+  }
+
+  if !['open', 'closed'].contains(chosen.signup) {
+    raise UsageError("signup must be 'open' or 'closed', not '${chosen.signup}'")
+  }
+
+  var size = chosen.max_archive_size
+
+  if size < MIN_ARCHIVE_SIZE or size > MAX_ARCHIVE_SIZE {
+    raise UsageError(
+      'the archive size limit must be between ${MIN_ARCHIVE_SIZE} and ${MAX_ARCHIVE_SIZE} '
+        + 'bytes, not ${size}'
+    )
+  }
+
+  if (chosen.tls_cert == nil) != (chosen.tls_key == nil) {
+    raise UsageError('serving HTTPS takes both a certificate and its key')
+  }
+
+  for key in ['tls_cert', 'tls_key'] {
+    var path = chosen.get(key)
+
+    if path != nil and !file(path).exists() {
+      raise UsageError('there is no file at ${path}')
+    }
+  }
+
+  var public_url = chosen.public_url
+
+  if public_url == nil {
+    var scheme = chosen.tls_cert == nil ? 'http' : 'https'
+    var host = chosen.host == '0.0.0.0' or chosen.host == '::' ? 'localhost' : chosen.host
+
+    public_url = '${scheme}://${host}:${chosen.port}'
+  }
+
+  while public_url.ends_with('/') {
+    public_url = public_url[0, public_url.length() - 1]
+  }
+
+  if !public_url.starts_with('http://') and !public_url.starts_with('https://') {
+    raise UsageError("the public address must start with http:// or https://, not '${public_url}'")
+  }
+
+  chosen.set('public_url', public_url)
+
+  if chosen.database == nil or chosen.database.trim().is_empty() {
+    chosen.set('database', 'sqlite://' + os.join_paths(chosen.storage, 'nyssa.db'))
+  }
+
+  return chosen
+}
+
+/**
+ * Whether listening where `chosen` says would put the repository on a
+ * network with nothing protecting its passwords and tokens in transit.
+ *
+ * @param dict chosen
+ * @returns bool
+ */
+def exposed_in_clear(chosen: dict) {
+  var local = ['127.0.0.1', 'localhost', '::1'].contains(chosen.host)
+
+  return !local and chosen.tls_cert == nil and !chosen.trust_proxy
+}
+
+/**
+ * The settings as the workers read them back.
+ *
+ * @param dict chosen
+ * @returns string
+ */
+def encode(chosen: dict) {
+  return json.encode(chosen)
+}
+
+/**
+ * The settings the main process handed the workers.
+ *
+ * @returns dict
+ * @raises UsageError when there are none.
+ */
+def decode() {
+  var text = os.get_env(SETTINGS_VARIABLE, nil)
+
+  if text == nil {
+    raise UsageError('the repository was started without its settings')
+  }
+
+  return json.decode(text)
+}

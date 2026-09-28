@@ -987,6 +987,27 @@ not raise, so a `configure()` buried below some initialisation that already
 spawned will silently do nothing — put it at the very top of the entry
 file.
 
+The size is a ceiling, not a head count. A thread is started only when an
+isolate is waiting and every thread already started is busy, so sizing the
+pool generously for a burst costs nothing while the burst is not happening.
+`started_count()` says how many threads the pool has started so far:
+
+```zuri
+import isolate
+
+isolate.configure(8)
+
+echo isolate.started_count()
+echo isolate.spawn(@() => 21 * 2).join()
+echo isolate.started_count()
+```
+
+```console
+0
+42
+1
+```
+
 ### Why the Size Matters More Than It Looks
 
 A pool sized to your core count can **deadlock**, and the failure looks

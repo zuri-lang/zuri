@@ -139,6 +139,65 @@ class Transaction {
   }
 
   /**
+   * One column's values, as a list.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param string|number|nil column Which column, the first by
+   *    default.
+   * @returns list
+   */
+  fetch_column(sql: string, params, column) {
+    self._active()
+    return self.connection.fetch_column(sql, params, column)
+  }
+
+  /**
+   * Runs a query and returns a cursor over its result rather than
+   * reading all of it. The cursor belongs to the transaction's
+   * connection, so it has to be read to the end or closed before the
+   * transaction commits.
+   *
+   * @param string sql
+   * @param list|dict|nil params
+   * @param dict|nil options `{ batch }` on engines that fetch in
+   *    batches.
+   * @returns Cursor
+   */
+  stream(sql: string, params, options) {
+    self._active()
+    return self.connection.stream(sql, params, options)
+  }
+
+  /**
+   * Compiles a statement for repeated use inside this transaction.
+   *
+   * @param string sql
+   * @returns Statement
+   */
+  prepare(sql: string) {
+    self._active()
+    return self.connection.prepare(sql)
+  }
+
+  /**
+   * Runs one or more statements for their effect, as a script: a
+   * schema file, a migration, or a batch of settings. It binds no
+   * parameters and returns no rows.
+   *
+   * On PostgreSQL and SQLite the whole script commits or rolls back
+   * with the transaction. MySQL commits a statement that changes a
+   * table's definition as it runs it, whatever transaction it is in,
+   * so a script of those is only as atomic as MySQL makes it.
+   *
+   * @param string sql
+   */
+  exec_script(sql: string) {
+    self._active()
+    self.connection.exec_script(sql)
+  }
+
+  /**
    * Inserts a row and returns its id.
    *
    * @param string table

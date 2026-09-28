@@ -1,0 +1,841 @@
+/**
+ * Picking one version of every package a project needs, such that
+ * every package's requirements hold at once.
+ *
+ * The solver is PubGrub, the algorithm Dart's pub and several others
+ * use. It chooses versions one package at a time, preferring the
+ * highest, and whenever a choice leads to a contradiction it works out
+ * why, records the reason as a new fact, and backs up to the last
+ * choice that fact bears on. It never tries the same doomed
+ * combination twice, and when no answer exists it says why in terms of
+ * the requirements that were actually written.
+ *
+ * Every package is installed once, under the one name `import` finds
+ * it by, so two packages needing incompatible versions of a third is a
+ * conflict to report rather than something to paper over with two
+ * copies.
+ *
+ * The solver asks a provider two things:
+ *
+ * - `versions(name)`: the versions of a package that may be chosen,
+ *   most preferred first. The provider decides what preferred means:
+ *   the version already locked, then the newest.
+ * - `dependencies(name, version)`: what that version requires, as
+ *   `{ name, range }`, `range` being version range text.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { CommandError }
+import .semver
+
+/** The key the project itself is solved under. */
+var ROOT = '$root'
+
+/**
+ * Raised when no set of versions satisfies every requirement. The
+ * message is the explanation.
+ */
+class SolveError < CommandError {}
+
+# The states a term allows a package to be in: a set of versions, and
+# whether leaving the package out altogether is also allowed.
+class _States {
+  @new(versions: dict, absent: bool) {
+    self.versions = versions
+    self.absent = absent
+  }
+
+  count() {
+    return self.versions.length()
+  }
+
+  has(version: string) {
+    return self.versions.contains(version)
+  }
+}
+
+# `a` and `b` together.
+def _and(a, b) {
+  var both = {}
+
+  for version in a.versions.keys() {
+    if b.versions.contains(version) {
+      both.set(version, true)
+    }
+  }
+
+  return _States(both, a.absent and b.absent)
+}
+
+# Whether everything `a` allows, `b` allows too.
+def _within(a, b) {
+  if a.absent and !b.absent {
+    return false
+  }
+
+  for version in a.versions.keys() {
+    if !b.versions.contains(version) {
+      return false
+    }
+  }
+
+  return true
+}
+
+# Whether `a` and `b` allow nothing in common.
+def _disjoint(a, b) {
+  if a.absent and b.absent {
+    return false
+  }
+
+  for version in a.versions.keys() {
+    if b.versions.contains(version) {
+      return false
+    }
+  }
+
+  return true
+}
+
+# Whether `a` and `b` allow exactly the same.
+def _same(a, b) {
+  return a.absent == b.absent and a.count() == b.count() and _within(a, b)
+}
+
+/**
+ * One statement about one package: that it is, or is not, at one of
+ * a set of versions.
+ */
+class Term {
+  @new(package: string, states, label: ?string) {
+    self.package = package
+    self.states = states
+    self.label = label
+  }
+
+  # Positive: the package is selected, at one of these versions.
+  positive() {
+    return !self.states.absent
+  }
+}
+
+# An incompatibility: a set of terms that cannot all be true at once.
+class _Incompatibility {
+  @new(terms: list, kind: string, data: ?dict, causes: ?list) {
+    self.terms = terms
+    self.kind = kind
+    self.data = data == nil ? {} : data
+    self.causes = causes == nil ? [] : causes
+    self.line = nil
+  }
+
+  term_for(package: string) {
+    for term in self.terms {
+      if term.package == package {
+        return term
+      }
+    }
+
+    return nil
+  }
+}
+
+# One entry of the partial solution.
+class _Assignment {
+  @new(term, level: number, index: number, cause, decision: bool) {
+    self.term = term
+    self.level = level
+    self.index = index
+    self.cause = cause
+    self.decision = decision
+  }
+}
+
+/**
+ * The solver for one resolution.
+ */
+class Solver {
+
+  /**
+   * @param provider: answers `versions()` and `dependencies()`.
+   * @param string root_version
+   * @param list root_dependencies: `{ name, range }`.
+   * @param ?string root_name: what to call the project in an
+   *    explanation.
+   */
+  @new(provider, root_version: string, root_dependencies: list, root_name: ?string) {
+    self._provider = provider
+    self._root_version = root_version
+    self._root_dependencies = root_dependencies
+    self._root_name = root_name == nil ? 'your project' : root_name
+    self._universes = {}
+    self._incompatibilities = {}
+    self._assignments = []
+    self._current = {}
+    self._decided = {}
+    self._level = 0
+    self._ranges = {}
+  }
+
+  # Every version of `package` there is, most preferred first.
+  _universe(package: string) {
+    if !self._universes.contains(package) {
+      if package == ROOT {
+        self._universes.set(package, [self._root_version])
+      } else {
+        self._universes.set(package, self._provider.versions(package))
+      }
+    }
+
+    return self._universes.get(package)
+  }
+
+  # Every version of `package`, as states, with leaving it out allowed
+  # or not.
+  _all(package: string, absent: bool) {
+    var set = {}
+
+    for version in self._universe(package) {
+      set.set(version, true)
+    }
+
+    return _States(set, absent)
+  }
+
+  _negate(term) {
+    var rest = {}
+
+    for version in self._universe(term.package) {
+      if !term.states.has(version) {
+        rest.set(version, true)
+      }
+    }
+
+    return Term(term.package, _States(rest, !term.states.absent), term.label)
+  }
+
+  _intersect(a, b) {
+    var states = _and(a.states, b.states)
+    var label = nil
+
+    if _same(states, a.states) {
+      label = a.label
+    } else if _same(states, b.states) {
+      label = b.label
+    }
+
+    return Term(a.package, states, label)
+  }
+
+  # The versions of `package` in `range`.
+  _in_range(package: string, range: string) {
+    var parsed = semver.Range(range)
+    var set = {}
+
+    for version in self._universe(package) {
+      if parsed.satisfies(version) {
+        set.set(version, true)
+      }
+    }
+
+    return set
+  }
+
+  _make(terms: list, kind: string, data: ?dict, causes: ?list) {
+    # One term per package, the intersection of what was given.
+    var merged = []
+    var index = {}
+
+    for term in terms {
+      if index.contains(term.package) {
+        var at = index.get(term.package)
+
+        merged[at] = self._intersect(merged[at], term)
+      } else {
+        index.set(term.package, merged.length())
+        merged.append(term)
+      }
+    }
+
+    # A term that allows every state a package can be in is always
+    # true, so it rules nothing out. It happens when a range matches no
+    # version at all: not being in an empty set is no constraint. The
+    # reason stays in the incompatibility's data for the explanation.
+    merged = merged.filter(@(term) => !self._everything(term))
+
+    # The project is always selected, so a derived fact that also
+    # mentions it positively says nothing more for the mention.
+    if kind == 'derived' and merged.length() > 1 {
+      merged = merged.filter(@(term) => !(term.package == ROOT and term.positive()))
+    }
+
+    return _Incompatibility(merged, kind, data, causes)
+  }
+
+  _everything(term) {
+    return term.states.absent and term.states.count() == self._universe(term.package).length()
+  }
+
+  _add(incompatibility) {
+    for term in incompatibility.terms {
+      var list = self._incompatibilities.get(term.package, nil)
+
+      if list == nil {
+        list = []
+        self._incompatibilities.set(term.package, list)
+      }
+
+      list.append(incompatibility)
+    }
+  }
+
+  # What the partial solution says about `package` so far.
+  _state_of(package: string) {
+    var current = self._current.get(package, nil)
+
+    if current == nil {
+      return Term(package, self._all(package, true))
+    }
+
+    return current
+  }
+
+  # 'satisfied', 'contradicted' or 'inconclusive', for the partial
+  # solution against `term`.
+  _relation(term) {
+    var current = self._state_of(term.package)
+
+    if _within(current.states, term.states) {
+      return 'satisfied'
+    }
+
+    if _disjoint(current.states, term.states) {
+      return 'contradicted'
+    }
+
+    return 'inconclusive'
+  }
+
+  _assign(term, cause, decision: bool) {
+    var assignment = _Assignment(term, self._level, self._assignments.length(), cause, decision)
+
+    self._assignments.append(assignment)
+
+    var current = self._current.get(term.package, nil)
+
+    self._current.set(term.package, current == nil ? term : self._intersect(current, term))
+
+    if decision {
+      self._decided.set(term.package, term.states.versions.keys()[0])
+    }
+  }
+
+  _backtrack(level: number) {
+    var kept = []
+
+    for assignment in self._assignments {
+      if assignment.level <= level {
+        kept.append(assignment)
+      }
+    }
+
+    self._assignments = []
+    self._current = {}
+    self._decided = {}
+    self._level = level
+
+    for assignment in kept {
+      var saved = self._level
+
+      self._level = assignment.level
+      self._assign(assignment.term, assignment.cause, assignment.decision)
+      self._level = saved
+    }
+  }
+
+  # The earliest assignment by which the partial solution satisfies
+  # `term`.
+  _satisfier(term) {
+    var accumulated = nil
+
+    for assignment in self._assignments {
+      if assignment.term.package != term.package {
+        continue
+      }
+
+      accumulated = accumulated == nil
+        ? assignment.term
+        : self._intersect(accumulated, assignment.term)
+
+      if _within(accumulated.states, term.states) {
+        return assignment
+      }
+    }
+
+    raise Error('internal error: no assignment satisfies a term the solution satisfies')
+  }
+
+  # Unit propagation from `package`.
+  _propagate(package: string) {
+    var changed = [package]
+
+    while !changed.is_empty() {
+      var next = changed.pop()
+      var list = self._incompatibilities.get(next, [])
+
+      iter var i = list.length() - 1; i >= 0; i-- {
+        var incompatibility = list[i]
+        var result = self._propagate_one(incompatibility)
+
+        if result == 'conflict' {
+          var root_cause = self._resolve_conflict(incompatibility)
+          var again = self._propagate_one(root_cause)
+
+          if again == 'conflict' or again == nil {
+            raise Error('internal error: a learned fact did not propagate')
+          }
+
+          changed = [again]
+
+          break
+        }
+
+        if result != nil and !changed.contains(result) {
+          changed.append(result)
+        }
+      }
+    }
+  }
+
+  # Derives what `incompatibility` forces, if anything. Returns the
+  # package it said something new about, 'conflict', or `nil`.
+  _propagate_one(incompatibility) {
+    var unsatisfied = nil
+
+    for term in incompatibility.terms {
+      var relation = self._relation(term)
+
+      if relation == 'contradicted' {
+        return nil
+      }
+
+      if relation == 'inconclusive' {
+        if unsatisfied != nil {
+          return nil
+        }
+
+        unsatisfied = term
+      }
+    }
+
+    if unsatisfied == nil {
+      return 'conflict'
+    }
+
+    self._assign(self._negate(unsatisfied), incompatibility, false)
+
+    return unsatisfied.package
+  }
+
+  _is_failure(incompatibility) {
+    if incompatibility.terms.is_empty() {
+      return true
+    }
+
+    return incompatibility.terms.length() == 1 and incompatibility.terms[0].package == ROOT
+      and incompatibility.terms[0].positive()
+  }
+
+  # Works out why `incompatibility` is satisfied, learns that, and
+  # backs up to where it can be acted on.
+  _resolve_conflict(incompatibility) {
+    var learned = false
+
+    while !self._is_failure(incompatibility) {
+      var recent_term = nil
+      var recent = nil
+      var difference = nil
+      var previous_level = 1
+
+      for term in incompatibility.terms {
+        var satisfier = self._satisfier(term)
+
+        if recent == nil or satisfier.index > recent.index {
+          if recent != nil {
+            previous_level = previous_level.max(recent.level)
+          }
+
+          recent_term = term
+          recent = satisfier
+          difference = nil
+
+          # What the satisfier allows that the term does not.
+          var extra = self._intersect(satisfier.term, self._negate(term))
+
+          if extra.states.count() > 0 or extra.states.absent {
+            difference = extra
+
+            var satisfier_of_rest = self._satisfier(self._negate(extra))
+
+            previous_level = previous_level.max(satisfier_of_rest.level)
+          }
+        } else {
+          previous_level = previous_level.max(satisfier.level)
+        }
+      }
+
+      if previous_level < recent.level or recent.cause == nil {
+        self._backtrack(previous_level)
+
+        if learned {
+          self._add(incompatibility)
+        }
+
+        return incompatibility
+      }
+
+      var terms = []
+
+      for term in incompatibility.terms {
+        if term != recent_term {
+          terms.append(term)
+        }
+      }
+
+      for term in recent.cause.terms {
+        if term.package != recent.term.package {
+          terms.append(term)
+        }
+      }
+
+      if difference != nil {
+        terms.append(self._negate(difference))
+      }
+
+      incompatibility = self._make(terms, 'derived', nil, [incompatibility, recent.cause])
+      learned = true
+    }
+
+    raise SolveError(self._explain(incompatibility))
+  }
+
+  # Chooses a version for the next package that needs one. Returns
+  # the package, or `nil` when every package has one.
+  _decide() {
+    var best = nil
+    var best_count = 0
+
+    for package, term in self._current {
+      if !term.positive() or self._decided.contains(package) {
+        continue
+      }
+
+      var count = term.states.count()
+
+      if best == nil or count < best_count {
+        best = package
+        best_count = count
+      }
+    }
+
+    if best == nil {
+      return nil
+    }
+
+    var term = self._current.get(best)
+    var chosen = nil
+
+    for version in self._universe(best) {
+      if term.states.has(version) {
+        chosen = version
+
+        break
+      }
+    }
+
+    if chosen == nil {
+      self._add(self._make([term], 'no_versions', { package: best }))
+
+      return best
+    }
+
+    var conflict = false
+
+    for dependency in self._dependencies_of(best, chosen) {
+      var incompatibility = self._dependency(best, chosen, dependency)
+
+      self._add(incompatibility)
+
+      # A dependency that is already ruled out makes this version
+      # pointless to choose; propagation will say why.
+      var others_hold = true
+
+      for other in incompatibility.terms {
+        if other.package != best and self._relation(other) != 'satisfied' {
+          others_hold = false
+        }
+      }
+
+      if others_hold {
+        conflict = true
+      }
+    }
+
+    if !conflict {
+      self._level++
+
+      var only = {}
+
+      only.set(chosen, true)
+      self._assign(Term(best, _States(only, false), chosen), nil, true)
+    }
+
+    return best
+  }
+
+  _dependencies_of(package: string, version: string) {
+    if package == ROOT {
+      return self._root_dependencies
+    }
+
+    return self._provider.dependencies(package, version)
+  }
+
+  _dependency(package: string, version: string, dependency: dict) {
+    var only = {}
+
+    only.set(version, true)
+
+    var wanted = self._in_range(dependency.name, dependency.range)
+    var depender = Term(package, _States(only, false), version)
+    var needed = self._negate(Term(dependency.name, _States(wanted, false), dependency.range))
+
+    return self._make([depender, needed], 'dependency', {
+      package,
+      version,
+      dependency: dependency.name,
+      range: dependency.range,
+      none: wanted.is_empty(),
+    })
+  }
+
+  /**
+   * Runs the resolution.
+   *
+   * @returns dict: the chosen version of every package, by the name
+   *    the provider knows it by. The project itself is not included.
+   * @raises SolveError with the explanation when there is no answer.
+   */
+  solve() {
+    var nothing = _States({}, true)
+
+    self._add(self._make([Term(ROOT, nothing)], 'root'))
+
+    var next = ROOT
+
+    while next != nil {
+      self._propagate(next)
+      next = self._decide()
+    }
+
+    var chosen = {}
+
+    for package, version in self._decided {
+      if package != ROOT {
+        chosen.set(package, version)
+      }
+    }
+
+    return chosen
+  }
+
+  # What follows turns the fact that ended the search into sentences,
+  # one for each step that led to it.
+
+  _name(package: string) {
+    return package == ROOT ? self._root_name : package
+  }
+
+  # A set of versions of `package` in words.
+  _describe_set(package: string, states, label: ?string) {
+    var universe = self._universe(package)
+
+    if label != nil and states.count() > 0 {
+      return label
+    }
+
+    if states.count() == universe.length() {
+      return 'any version'
+    }
+
+    var listed = universe.filter(@(version) => states.has(version))
+
+    if listed.is_empty() {
+      return 'no version'
+    }
+
+    if listed.length() <= 3 {
+      return ', '.join(listed)
+    }
+
+    var ordered = semver.sorted(listed)
+
+    return 'one of ${listed.length()} versions from ${ordered[0]} to ${ordered.last()}'
+  }
+
+  _describe_term(term, as_positive: bool) {
+    if term.package == ROOT {
+      return self._root_name
+    }
+
+    var states = term.states
+    var label = term.label
+
+    if !term.positive() {
+      states = self._negate(term).states
+    }
+
+    var described = self._describe_set(term.package, states, label)
+
+    if described == 'any version' {
+      return term.package
+    }
+
+    return '${term.package} ${described}'
+  }
+
+  _sentence(incompatibility) {
+    var kind = incompatibility.kind
+    var data = incompatibility.data
+
+    if kind == 'root' {
+      return '${self._root_name} is being resolved'
+    }
+
+    if kind == 'dependency' {
+      var who = data.package == ROOT
+        ? self._root_name
+        : '${data.package} ${data.version}'
+
+      if data.get('none', false) {
+        if self._universe(data.dependency).is_empty() {
+          return '${who} depends on ${data.dependency} (which could not be found)'
+        }
+
+        return '${who} depends on ${data.dependency} ${data.range} (which no version of '
+          + '${data.dependency} matches)'
+      }
+
+      return '${who} depends on ${data.dependency} ${data.range}'
+    }
+
+    if kind == 'no_versions' {
+      var term = incompatibility.terms[0]
+
+      return 'no version of ${self._describe_term(term, true)} can be used'
+    }
+
+    var terms = incompatibility.terms
+
+    if terms.is_empty() {
+      return 'version solving failed'
+    }
+
+    if terms.length() == 1 {
+      var only = terms[0]
+
+      if only.package == ROOT {
+        return 'version solving failed'
+      }
+
+      if only.positive() {
+        return '${self._describe_term(only, true)} cannot be used'
+      }
+
+      return '${self._describe_term(only, true)} is required'
+    }
+
+    if terms.length() == 2 {
+      var positives = terms.filter(@(term) => term.positive())
+      var negatives = terms.filter(@(term) => !term.positive())
+
+      if positives.length() == 1 and negatives.length() == 1 {
+        var who = self._describe_term(positives[0], true)
+
+        return '${who} requires ${self._describe_term(negatives[0], true)}'
+      }
+
+      if positives.length() == 2 {
+        var first = self._describe_term(positives[0], true)
+        var second = self._describe_term(positives[1], true)
+
+        return '${first} cannot be used with ${second}'
+      }
+    }
+
+    var parts = terms.map(@(term) {
+      var described = self._describe_term(term, true)
+
+      return term.positive() ? described : 'not ' + described
+    })
+
+    return 'these cannot all hold: ' + '; '.join(parts)
+  }
+
+  _explain(failure) {
+    var lines = []
+
+    if failure.causes.is_empty() {
+      lines.append('    Because ${self._sentence(failure)}, version solving failed.')
+    } else {
+      self._visit(failure, lines, [0], true)
+    }
+
+    return 'no set of versions satisfies every requirement:\n\n' + '\n'.join(lines)
+  }
+
+  # Writes the steps behind `incompatibility`, causes first. Every step
+  # but the last is numbered, so a later step can point back at it.
+  _visit(incompatibility, lines: list, counter: list, final: bool) {
+    var reasons = []
+
+    for cause in incompatibility.causes {
+      if cause.causes.is_empty() {
+        reasons.append(self._sentence(cause))
+      } else {
+        if cause.line == nil {
+          self._visit(cause, lines, counter, false)
+        }
+
+        reasons.append('${self._sentence(cause)} (${cause.line})')
+      }
+    }
+
+    var text = 'Because ${" and ".join(reasons)}, ${self._sentence(incompatibility)}.'
+
+    if final {
+      lines.append('    ${text}')
+
+      return
+    }
+
+    counter[0] = counter[0] + 1
+    incompatibility.line = counter[0]
+    lines.append('(${counter[0]}) ${text}')
+  }
+}
+
+/**
+ * Resolves `dependencies` for a project.
+ *
+ * @param provider
+ * @param string root_version
+ * @param list dependencies: `{ name, range }`.
+ * @param ?string root_name
+ * @returns dict: name to chosen version.
+ * @raises SolveError
+ */
+def solve(provider, root_version: string, dependencies: list, root_name: ?string) {
+  return Solver(provider, root_version, dependencies, root_name).solve()
+}

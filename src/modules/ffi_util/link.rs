@@ -48,20 +48,7 @@ fn extension() -> &'static str {
 
 /// The default cache: the platform's per-user cache directory.
 pub fn default_cache() -> PathBuf {
-  let base = if cfg!(windows) {
-    std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
-  } else if cfg!(target_vendor = "apple") {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library").join("Caches"))
-  } else {
-    std::env::var_os("XDG_CACHE_HOME")
-      .map(PathBuf::from)
-      .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-  };
-
-  base
-    .unwrap_or_else(std::env::temp_dir)
-    .join("zuri")
-    .join("ffi")
+  crate::project::user_cache_dir().join("ffi")
 }
 
 /// Links `archives` into a shared library and returns its path.

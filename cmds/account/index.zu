@@ -1,0 +1,256 @@
+/**
+ * @command account
+ * @description Signs in to a registry, and manages the account and
+ *    its tokens there.
+ *
+ *   zuri account create | login | logout | whoami | tokens
+ *   zuri account token [name]
+ *   zuri account revoke <id>
+ *
+ * A registry issues this machine a token when it signs in, and that
+ * token, never the password, is what later commands send. Tokens are
+ * saved in the credentials file under `ZURI_HOME`, readable by their
+ * owner alone. Without a registry option, the default registry is the
+ * one addressed.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import io
+
+import .._shared.cli
+import .._shared.config
+import .._shared.errors { CommandError, UsageError, run }
+import .._shared.registry { RegistryError }
+import .._shared.ui
+
+import .plan
+
+def _needs_terminal(what: string) {
+  if !ui.interactive() {
+    raise UsageError(
+      '${what} asks for a password, which needs a terminal; sign in with a token from '
+        + 'standard input instead'
+    )
+  }
+}
+
+def _create(registry, as_json: bool) {
+  _needs_terminal('creating an account')
+
+  echo 'Creating an account on ${ui.accent(registry.address)}'
+  echo ''
+
+  var username = ui.ask('  username')
+  var email = ui.ask('  email')
+  var password = ui.ask_secret('  password')
+
+  if password != ui.ask_secret('  password again') {
+    raise UsageError('the two passwords are not the same')
+  }
+
+  var created = registry.create_account({ username, email, password })
+
+  config.save_token(registry.address, created.token.token, created.username)
+
+  if as_json {
+    cli.print_json({
+      username: created.username,
+      email: created.email,
+      recovery_key: created.recovery_key,
+      email_confirmed: created.email_confirmed,
+    })
+
+    return
+  }
+
+  echo ''
+  echo '${ui.heading("Created")} ${ui.accent(created.username)}, and this machine is signed in.'
+  echo ''
+  echo 'Your recovery key is the only way back into the account if the password is'
+  echo 'lost. It is shown only this once; keep it somewhere safe:'
+  echo ''
+  echo '  ${ui.accent(created.recovery_key)}'
+  echo ''
+
+  if !created.email_confirmed {
+    echo ui.muted('A link to confirm ${created.email} is on its way; confirm it before publishing.')
+  }
+}
+
+def _login(registry, parsed, as_json: bool) {
+  var username = nil
+  var token = nil
+
+  if parsed.options.get('token-stdin', false) == true {
+    token = plan.token_from(io.stdin.read().to_string())
+
+    registry.token = token
+
+    var me = registry.me()
+
+    username = me.username
+  } else {
+    _needs_terminal('signing in')
+
+    var suggested = parsed.options.get('username', nil)
+
+    if suggested == nil {
+      suggested = config.username_for(registry.address)
+    }
+
+    echo 'Signing in to ${ui.accent(registry.address)}'
+
+    username = ui.ask('  username', suggested)
+
+    var password = ui.ask_secret('  password')
+    var issued = registry.create_token({
+      username,
+      password,
+      name: plan.login_token_name(),
+      expires_in_days: plan.LOGIN_DAYS,
+    })
+
+    token = issued.token
+  }
+
+  config.save_token(registry.address, token, username)
+
+  if as_json {
+    cli.print_json({ registry: registry.address, username })
+  } else {
+    echo 'Signed in to ${registry.address} as ${ui.accent(username)}.'
+  }
+}
+
+def _logout(registry, as_json: bool) {
+  if !config.credentials().contains(registry.address) {
+    echo 'This machine is not signed in to ${registry.address}.'
+
+    return
+  }
+
+  var revoked = true
+
+  catch {
+    registry.revoke('current')
+  } as error {
+    if !instance_of(error, RegistryError) {
+      raise error
+    }
+
+    # A token the registry no longer knows is as signed out as it gets.
+    revoked = error.status == 401
+
+    if !revoked {
+      ui.complain(ui.warn(
+        'warning: the registry did not revoke the token (${error.message}); it is forgotten '
+          + 'here, and can be revoked from the account page'
+      ))
+    }
+  }
+
+  config.forget_token(registry.address)
+
+  if as_json {
+    cli.print_json({ registry: registry.address, revoked })
+  } else {
+    echo 'Signed out of ${registry.address}.'
+  }
+}
+
+def _whoami(registry, as_json: bool) {
+  if registry.token == nil {
+    raise CommandError('this machine is not signed in to ${registry.address}')
+  }
+
+  var me = registry.me()
+
+  if as_json {
+    cli.print_json(me)
+
+    return
+  }
+
+  echo '${ui.accent(me.username)} on ${registry.address}'
+  echo ui.muted('token "${me.token.name}", scopes: ${", ".join(me.token.scopes)}')
+}
+
+def _tokens(registry, as_json: bool) {
+  var tokens = registry.tokens()
+
+  if as_json {
+    cli.print_json(tokens)
+
+    return
+  }
+
+  if tokens.is_empty() {
+    echo 'The account holds no tokens.'
+
+    return
+  }
+
+  var rows = [[ui.heading('id'), ui.heading('name'), ui.heading('scopes'), ui.heading('expires')]]
+
+  for token in tokens {
+    var expires = token.expires_at == nil ? 'never' : token.expires_at[0, 10]
+
+    rows.append([token.id, token.name, ', '.join(token.scopes), expires])
+  }
+
+  ui.say(ui.table(rows))
+}
+
+def _token(registry, parsed, as_json: bool) {
+  var name = parsed.command.value
+  var issued = registry.create_token({
+    name: name == nil or name == true ? 'zuri' : name,
+    scopes: parsed.options.get('scopes', nil),
+    expires_in_days: parsed.options.get('days', nil),
+  })
+
+  if as_json {
+    cli.print_json(issued)
+
+    return
+  }
+
+  echo 'A new token, "${issued.name}", with ${", ".join(issued.scopes)}. It is shown only once:'
+  echo ''
+  echo '  ${issued.token}'
+  echo ''
+  echo ui.muted('It expires ${issued.expires_at[0, 10]}.')
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var command = parsed.command
+  var as_json = parsed.options.get('json', false) == true
+
+  if command == nil {
+    raise UsageError('say what to do: create, login, logout, whoami, tokens, token or revoke')
+  }
+
+  var registry = cli.registry_from(parsed)
+
+  using command.name {
+    when 'create' _create(registry, as_json)
+    when 'login' _login(registry, parsed, as_json)
+    when 'logout' _logout(registry, as_json)
+    when 'whoami' _whoami(registry, as_json)
+    when 'tokens' _tokens(registry, as_json)
+    when 'token' _token(registry, parsed, as_json)
+    when 'revoke' {
+      registry.revoke(command.value)
+
+      if as_json {
+        cli.print_json({ revoked: command.value })
+      } else {
+        echo 'Revoked ${command.value}.'
+      }
+    }
+  }
+}
+
+run('account', main)

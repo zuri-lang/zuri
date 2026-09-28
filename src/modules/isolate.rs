@@ -42,6 +42,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "queued_count", 0, false, queued_count),
     ),
     (
+      "started_count",
+      native(vm, "started_count", 0, false, started_count),
+    ),
+    (
       "is_shutdown",
       native(vm, "is_shutdown", 0, false, is_shutdown),
     ),
@@ -199,6 +203,11 @@ fn configure(ctx: &mut ZuriContext) -> Result<Value, String> {
 fn pool_size(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 0);
   Ok(Value::number(pool::pool_size() as f64))
+}
+
+fn started_count(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 0);
+  Ok(Value::number(pool::started_count() as f64))
 }
 
 fn cpu_count(ctx: &mut ZuriContext) -> Result<Value, String> {

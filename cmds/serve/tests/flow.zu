@@ -1,0 +1,308 @@
+# The whole cycle against a real repository: publishing, installing,
+# updating, removing and restoring, as a person runs them.
+
+import http
+import os
+import test { * }
+
+import ._harness { World, commit, put, read, remove, set_version, write }
+
+var world = World('flow')
+
+before_all(@{
+  world.start()
+})
+
+after_all(@{
+  world.finish()
+})
+
+var LIB = nil
+var APP = nil
+
+describe('publishing', @{
+  it('signs in with a token from standard input', @{
+    var dir = world.dir('signin')
+
+    world.account('ada', dir)
+
+    var me = world.zuri(['account', 'whoami', '--registry', world.url], dir)
+
+    expect(me.status).to_equal(0)
+    expect(me.out).to_contain('ada on ${world.url}')
+  })
+
+  it('shows what would be published, and publishes it', @{
+    LIB = world.project('greeting-kit')
+
+    var shown = world.zuri(['publish', '--registry', world.url, '--dry-run'], LIB)
+
+    expect(shown.status).to_equal(0)
+    expect(shown.out).to_contain('project.toml')
+    expect(shown.out).to_contain('app/index.zu')
+    expect(shown.out).to_contain('sha256:')
+
+    var published = world.zuri(['publish', '--registry', world.url], LIB)
+
+    expect(published.status).to_equal(0)
+    expect(published.out).to_contain('Published greeting-kit 0.1.0')
+  })
+
+  it('treats publishing the same files again as done', @{
+    var again = world.zuri(['publish', '--registry', world.url], LIB)
+
+    expect(again.status).to_equal(0)
+    expect(again.out).to_contain('already published with exactly these files')
+  })
+
+  it('refuses to publish what git has not committed', @{
+    write(LIB, 'app/extra.zu', 'echo 1\n')
+
+    var dirty = world.zuri(['publish', '--registry', world.url], LIB)
+
+    expect(dirty.status).to_equal(1)
+    expect(dirty.err).to_contain('app/extra.zu')
+  })
+
+  it('refuses to change a version once published', @{
+    commit(LIB)
+
+    var changed = world.zuri(['publish', '--registry', world.url], LIB)
+
+    expect(changed.status).to_equal(1)
+    expect(changed.err).to_contain('never changes')
+
+    remove(os.join_paths(LIB, 'app', 'extra.zu'))
+    commit(LIB)
+  })
+
+  it('refuses a package holding what looks like a secret', @{
+    write(LIB, '.env', 'TOKEN=abc\n')
+
+    var refused = world.zuri(['publish', '--registry', world.url], LIB)
+
+    expect(refused.status).to_equal(1)
+    expect(refused.err).to_contain('.env')
+
+    remove(os.join_paths(LIB, '.env'))
+  })
+
+  it('publishes newer versions', @{
+    for version in ['0.2.0', '1.0.0'] {
+      set_version(LIB, version)
+
+      expect(world.zuri(['publish', '--registry', world.url, '-q'], LIB).status).to_equal(0)
+    }
+  })
+})
+
+describe('installing', @{
+  it('adds the newest version its range allows', @{
+    APP = world.project('shop')
+
+    # Below 1.0.0 a caret holds the minor version, so ^0.1 is 0.1.x.
+    var installed = world.zuri(['install', 'greeting-kit@^0.1', '--registry', world.url], APP)
+
+    expect(installed.status).to_equal(0)
+    expect(installed.out).to_contain('+ greeting-kit 0.1.0')
+
+    var manifest = read(os.join_paths(APP, 'project.toml'))
+
+    expect(manifest).to_contain('greeting-kit = { version = "^0.1"')
+    expect(read(os.join_paths(APP, 'project.lock'))).to_contain('version = "0.1.0"')
+  })
+
+  it('runs code that imports it, from anywhere inside the project', @{
+    write(APP, 'app/tool/run.zu', 'import greeting_kit\necho greeting_kit.greet("shop")\n')
+
+    var ran = world.zuri(['run', 'run.zu'], os.join_paths(APP, 'app', 'tool'))
+
+    expect(ran.status).to_equal(0)
+    expect(ran.out).to_contain('Hello, shop!')
+  })
+
+  it('says nothing needs doing when everything is installed', @{
+    var again = world.zuri(['install', '--registry', world.url], APP)
+
+    expect(again.status).to_equal(0)
+    expect(again.out).to_contain('Everything is up to date.')
+  })
+
+  it('refuses to replace code it did not install', @{
+    write(APP, '.zuri/libs/vendored/index.zu', 'def hi() {\n}\n')
+
+    var other = world.project('vendored')
+
+    set_version(other, '1.0.0')
+    world.zuri(['publish', '--registry', world.url, '-q'], other)
+
+    var refused = world.zuri(['install', 'vendored', '--registry', world.url], APP)
+
+    expect(refused.status).to_equal(1)
+    expect(refused.err).to_contain('zuri did not install')
+    expect(read(os.join_paths(APP, '.zuri/libs/vendored/index.zu'))).to_contain('hi')
+
+    remove(os.join_paths(APP, '.zuri/libs/vendored'))
+    world.zuri(['install', '--registry', world.url, '-q'], APP)
+  })
+})
+
+describe('updating', @{
+  it('lists what is out of date, and fails the check', @{
+    var listed = world.zuri(['update', '--dry-run'], APP)
+
+    expect(listed.status).to_equal(0)
+    expect(listed.out).to_contain('1.0.0 (breaking)')
+
+    var checked = world.zuri(['update', '--check'], APP)
+
+    expect(checked.status).to_equal(0)
+  })
+
+  it('moves across a major version with latest, and warns', @{
+    var moved = world.zuri(['update', '--latest'], APP)
+
+    expect(moved.status).to_equal(0)
+    expect(moved.err).to_contain('new major version')
+    expect(moved.out).to_contain('greeting-kit 0.1.0 -> 1.0.0')
+    expect(read(os.join_paths(APP, 'project.toml'))).to_contain('^1.0.0')
+  })
+})
+
+describe('removing and restoring', @{
+  it('keeps a package something else still needs', @{
+    var fancy = world.project('fancy')
+
+    world.zuri(['install', 'greeting-kit', '--registry', world.url, '-q'], fancy)
+    commit(fancy)
+
+    expect(world.zuri(['publish', '--registry', world.url, '-q'], fancy).status).to_equal(0)
+    world.zuri(['install', 'fancy', '--registry', world.url, '-q'], APP)
+
+    var kept = world.zuri(['uninstall', 'greeting-kit'], APP)
+
+    expect(kept.status).to_equal(0)
+    expect(kept.out).to_contain('greeting-kit stays installed, because fancy needs it')
+
+    var gone = world.zuri(['uninstall', 'fancy'], APP)
+
+    expect(gone.out).to_contain('- greeting-kit')
+    expect(gone.out).to_contain('- fancy')
+  })
+
+  it('refuses to remove what is not declared', @{
+    var refused = world.zuri(['uninstall', 'never-there'], APP)
+
+    expect(refused.status).to_equal(1)
+    expect(refused.err).to_contain('is not a dependency')
+  })
+
+  it('restores exactly what the lockfile names', @{
+    world.zuri(['install', 'fancy', '--registry', world.url, '-q'], APP)
+    remove(os.join_paths(APP, '.zuri'))
+
+    var restored = world.zuri(['restore'], APP)
+
+    expect(restored.status).to_equal(0)
+    expect(restored.out).to_contain('Installed 2 packages.')
+  })
+
+  it('refuses a frozen restore when the lockfile is out of date', @{
+    var manifest = os.join_paths(APP, 'project.toml')
+    var saved = read(manifest)
+
+    var edited = saved.replace(
+      '/fancy = \\{ version = "[^"]*"/', 'fancy = { version = "^9.0"', true
+    )
+
+    put(manifest, edited)
+
+    var refused = world.zuri(['restore', '--frozen'], APP)
+
+    expect(refused.status).to_equal(1)
+    expect(refused.err).to_contain('fancy is declared as ^9.0')
+
+    put(manifest, saved)
+  })
+
+  it('cleans the installed packages, and restore brings them back', @{
+    var cleaned = world.zuri(['clean', '--libs'], APP)
+
+    expect(cleaned.status).to_equal(0)
+    expect(os.read_dir(os.join_paths(APP, '.zuri', 'libs')).length()).to_equal(2)
+
+    expect(world.zuri(['restore', '-q'], APP).status).to_equal(0)
+    expect(os.dir_exists(os.join_paths(APP, '.zuri', 'libs', 'fancy'))).to_be_true()
+  })
+})
+
+describe('yanking and owners', @{
+  it('yanks a version, which new resolutions leave out', @{
+    var yanked = world.zuri(['yank', 'greeting-kit@1.0.0', '--registry', world.url], APP)
+
+    expect(yanked.status).to_equal(0)
+
+    var fresh = world.project('late')
+    var installed = world.zuri(['install', 'greeting-kit', '--registry', world.url], fresh)
+
+    expect(installed.out).to_contain('+ greeting-kit 0.2.0')
+
+    world.zuri(['yank', 'greeting-kit@1.0.0', '--undo', '--registry', world.url], APP)
+  })
+
+  it('keeps a locked yanked version installable', @{
+    world.zuri(['yank', 'greeting-kit@1.0.0', '--registry', world.url], APP)
+    remove(os.join_paths(APP, '.zuri'))
+
+    var restored = world.zuri(['restore'], APP)
+
+    expect(restored.status).to_equal(0)
+    expect(restored.out).to_contain('+ greeting-kit 1.0.0')
+
+    world.zuri(['yank', 'greeting-kit@1.0.0', '--undo', '--registry', world.url], APP)
+  })
+
+  it('adds an owner and refuses to remove the last', @{
+    var dir = world.dir('owners')
+
+    http.post(world.url + '/api/v1/accounts', {
+      username: 'grace', email: 'grace@example.test', password: 'a long enough password',
+    })
+
+    var added = world.zuri(['owner', 'add', 'greeting-kit', 'grace', '--registry', world.url], dir)
+
+    expect(added.out).to_contain('ada, grace')
+
+    world.zuri(['owner', 'remove', 'greeting-kit', 'grace', '--registry', world.url], dir)
+
+    var last = world.zuri(['owner', 'remove', 'greeting-kit', 'ada', '--registry', world.url], dir)
+
+    expect(last.status).to_equal(1)
+    expect(last.err).to_contain('only owner')
+  })
+})
+
+describe('finding out', @{
+  it('describes the project', @{
+    var described = world.zuri(['info'], APP)
+
+    expect(described.out).to_contain('fancy')
+    expect(described.out).to_contain('greeting-kit')
+
+    var tree = world.zuri(['info', '--tree'], APP)
+
+    expect(tree.out).to_contain('└── fancy 0.1.0')
+  })
+
+  it('describes a package on the registry', @{
+    var described = world.zuri(['info', 'fancy', '--registry', world.url], APP)
+
+    expect(described.out).to_contain('depends on  greeting-kit ^1.0.0')
+  })
+
+  it('searches', @{
+    var found = world.zuri(['search', 'greeting', '--registry', world.url], APP)
+
+    expect(found.out).to_contain('greeting-kit')
+  })
+})

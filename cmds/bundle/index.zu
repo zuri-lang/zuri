@@ -1,0 +1,374 @@
+/**
+ * @command bundle
+ * @description Packages the project with a runtime, into something
+ *    that runs where zuri is not installed.
+ *
+ *   zuri bundle [options]
+ *
+ * A bundle is the runtime renamed after the program, the standard
+ * library it was built with, and the project with the packages it
+ * installed for production. It comes as a directory, an archive of
+ * one, a single executable that unpacks itself on first run, or a
+ * macOS application. Other platforms are built with the release of
+ * this same version for them, downloaded and checked once.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import compress.zip
+import os
+import os.process { spawn }
+
+import .._shared.archive
+import .._shared.cli
+import .._shared.errors { CommandError, UsageError, run }
+import .._shared.files
+import .._shared.fsx
+import .._shared.lockfile
+import .._shared.manifest as manifest_module
+import .._shared.names
+import .._shared.paths
+import .._shared.releases
+import .._shared.semver
+import .._shared.store
+import .._shared.sync
+import .._shared.ui
+
+import .plan
+
+# The runtime to build `target` with: its executable and its `libs`.
+def _runtime(target: string, given: ?string) {
+  var executable_name = plan.is_windows(target) ? 'zuri.exe' : 'zuri'
+
+  if given != nil {
+    var root = os.abs_path(given)
+    var executable = os.join_paths(root, executable_name)
+
+    if !file(executable).exists() or !os.dir_exists(os.join_paths(root, 'libs')) {
+      raise UsageError('${root} does not hold a ${target} runtime and its libs')
+    }
+
+    return { executable, libs: os.join_paths(root, 'libs') }
+  }
+
+  if target == os.target {
+    return { executable: os.real_path(os.exe_path), libs: paths.stdlib_dir() }
+  }
+
+  catch {
+    var root = releases.runtime(os.version, target)
+
+    return {
+      executable: os.join_paths(root, executable_name),
+      libs: os.join_paths(root, 'libs'),
+    }
+  } as error {
+    raise CommandError(
+      'there is no ${target} runtime for zuri ${os.version}: ${error.message}\n'
+        + 'Build with a released version of zuri, or name an unpacked runtime with the '
+        + 'runtime option.'
+    )
+  }
+}
+
+# The installed packages the program needs, each checked against the
+# lockfile, which has to agree with project.toml.
+def _production_packages(project) {
+  var workspace = sync.Workspace(project, sync.Options())
+  var differences = sync.lock_differences(workspace)
+
+  if !differences.is_empty() {
+    raise UsageError(
+      'project.lock does not match project.toml, so what a bundle would carry is not '
+        + 'settled:\n' + '\n'.join(differences.map(@(line) => '  - ' + line))
+        + '\nRun `zuri install`, then bundle.'
+    )
+  }
+
+  var lock = workspace.lock
+  var installed = store.load_installed(project.installed_record())
+  var needed = []
+
+  for entry in lock.entries() {
+    if entry.dev {
+      continue
+    }
+
+    var record = installed.get(entry.import_name())
+
+    if record == nil or record.get('version', '') != entry.version
+      or !os.dir_exists(project.package_dir(entry.import_name())) {
+      raise UsageError(
+        '${entry.name} ${entry.version} is locked but not installed; run `zuri restore` '
+          + 'before bundling'
+      )
+    }
+
+    needed.append(entry.import_name())
+  }
+
+  return needed
+}
+
+# The bundle's contents, apart from the executable: the marker, the
+# standard library, and the application.
+def _contents(target, runtime, project, selected, packages, details) {
+  var content = os.join_paths(paths.cache_dir(), 'bundle', fsx.unique(), 'content')
+
+  fsx.ensure_dir(content)
+  fsx.atomic_write(os.join_paths(content, 'bundle.toml'), plan.marker(details))
+  fsx.copy_tree(runtime.libs, os.join_paths(content, 'libs'))
+
+  var app = os.join_paths(content, 'app')
+
+  for path in selected {
+    var to = os.join_paths(app, path)
+
+    fsx.ensure_dir(os.dir_name(to))
+    file(os.join_paths(project.root, path)).copy(to)
+    file(to).chmod(file(os.join_paths(project.root, path)).stats().mode & 0c777)
+  }
+
+  for import_name in packages {
+    fsx.copy_tree(project.package_dir(import_name),
+      os.join_paths(app, '.zuri', 'libs', import_name))
+  }
+
+  return content
+}
+
+# Copies the runtime in as the program's own executable.
+def _place_executable(runtime, destination: string) {
+  fsx.ensure_dir(os.dir_name(destination))
+  file(runtime.executable).copy(destination)
+  file(destination).chmod(0c755)
+}
+
+# Signs a macOS executable again, with no identity, which is the least
+# an Apple silicon Mac will run.
+def _sign(path: string) {
+  if os.platform != 'macos' or os.which('codesign') == nil {
+    return
+  }
+
+  var child = spawn('codesign', ['--force', '--sign', '-', path], {
+    stdout: 'pipe', stderr: 'pipe', stdin: 'null',
+  })
+
+  var said = child.read_stderr().to_string()
+
+  if child.wait() != 0 {
+    raise CommandError('codesign could not sign ${path}: ${said.trim()}')
+  }
+}
+
+# Makes way for `path`, or refuses to.
+def _claim(path: string, force: bool) {
+  if !os.dir_exists(path) and !file(path).exists() {
+    return
+  }
+
+  if !force {
+    raise UsageError('${path} is already there; pass force to replace it')
+  }
+
+  fsx.remove(path)
+}
+
+def _build(target, format, runtime, content, destination, details) {
+  var exe_name = plan.is_windows(target) ? details.name + '.exe' : details.name
+
+  if format == 'exe' {
+    var data = fsx.read_bytes(runtime.executable) + plan.payload(content)
+
+    fsx.atomic_write(destination, data, 0c755)
+    _sign(destination)
+
+    return
+  }
+
+  if format == 'app' {
+    var contents = os.join_paths(destination, 'Contents')
+    var resources = os.join_paths(contents, 'Resources')
+
+    fsx.ensure_dir(os.dir_name(resources))
+    fsx.copy_tree(content, resources)
+    _place_executable(runtime, os.join_paths(contents, 'MacOS', details.name))
+
+    var icon = details.icon
+
+    if icon != nil {
+      file(icon).copy(os.join_paths(resources, 'icon.icns'))
+    }
+
+    fsx.atomic_write(os.join_paths(contents, 'Info.plist'), plan.info_plist({
+      name: details.name,
+      display: details.display,
+      identifier: details.identifier,
+      version: details.version,
+      icon: icon != nil,
+    }))
+
+    _sign(os.join_paths(contents, 'MacOS', details.name))
+
+    return
+  }
+
+  # A directory, or an archive of one.
+  var base = plan.output_name(details.name, details.version, target, 'dir')
+  var tree = format == 'dir' ? destination : os.join_paths(os.dir_name(content), base)
+
+  fsx.copy_tree(content, tree)
+  _place_executable(runtime, os.join_paths(tree, exe_name))
+
+  if format == 'dir' {
+    return
+  }
+
+  if plan.is_windows(target) {
+    if !zip.compress(tree, destination) {
+      raise CommandError('could not write ${destination}')
+    }
+  } else {
+    var listed = fsx.walk(tree).filter(@(entry) => entry.kind == 'file')
+      .map(@(entry) => base + '/' + entry.path)
+
+    archive.pack(os.dir_name(tree), listed, destination, plan.MAX_ARCHIVE)
+  }
+
+  fsx.remove(tree)
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var given = parsed.options
+  var project = cli.require_project('bundle')
+  var found = manifest_module.load(project.manifest)
+  var settings = found.bundle()
+  var format = given.format
+  var force = given.get('force', false) == true
+
+  var name = given.get('name', nil)
+
+  if name == nil {
+    name = settings.get('executable', found.name())
+  }
+
+  if name == nil {
+    raise UsageError('project.toml states no name to call the program by; pass one with name')
+  }
+
+  names.check_name(name, {})
+
+  var version = found.version()
+
+  if version == nil or !semver.is_valid(version) {
+    raise UsageError('project.toml must state a valid version to bundle')
+  }
+
+  if !file(os.join_paths(project.root, 'index.zu')).exists() {
+    raise UsageError('a bundle starts the program from index.zu, and the project has none')
+  }
+
+  var targets = plan.targets(given.get('target', nil), os.target)
+
+  for target in targets {
+    plan.check_format(format, target, os.platform)
+  }
+
+  var identifier = settings.get('identifier', nil)
+  var icon = settings.get('icon', nil)
+
+  if format == 'app' {
+    if identifier == nil or !plan.valid_identifier(identifier) {
+      raise UsageError(
+        'a macOS application needs [bundle] identifier in project.toml, written in reverse '
+          + 'domain form, such as com.example.tool'
+      )
+    }
+
+    if icon != nil {
+      icon = os.abs_path(os.join_paths(project.root, icon))
+
+      if !file(icon).exists() {
+        raise UsageError('[bundle] icon names ${icon}, which is not there')
+      }
+    }
+  }
+
+  var output = os.abs_path(given.get('output', os.join_paths(project.root, 'dist')))
+  var skip = []
+
+  if os.path_contains(project.root, output) {
+    skip.append(os.relative_path(project.root, output).replace('\\', '/', false))
+  }
+
+  var selected = files.select(project.root, {
+    include: found.list('include'),
+    exclude: found.list('exclude'),
+    skip,
+  })
+
+  if !selected.links.is_empty() {
+    raise UsageError('a bundle cannot carry symbolic links: ' + ', '.join(selected.links))
+  }
+
+  for held in selected.secrets {
+    ui.complain(ui.warn(
+      'warning: ${held} looks like it holds a secret and was left out; name it in [project] '
+        + 'include to ship it'
+    ))
+  }
+
+  var packages = _production_packages(project)
+  var built = []
+
+  fsx.ensure_dir(output)
+
+  for target in targets {
+    var runtime = _runtime(target, given.get('runtime', nil))
+    var destination = os.join_paths(output, plan.output_name(name, version, target, format))
+    var details = {
+      name,
+      display: settings.get('name', name),
+      identifier,
+      icon,
+      version,
+      target,
+      zuri: os.version,
+    }
+
+    _claim(destination, force)
+
+    var content = _contents(target, runtime, project, selected.files, packages, details)
+
+    catch {
+      _build(target, format, runtime, content, destination, details)
+    } as error {
+      fsx.remove(os.dir_name(content))
+      fsx.remove(destination)
+
+      raise error
+    }
+
+    fsx.remove(os.dir_name(content))
+
+    var size = os.dir_exists(destination)
+      ? fsx.tree_size(destination)
+      : file(destination).stats().size
+
+    built.append({ target, path: destination, size })
+  }
+
+  if given.get('json', false) == true {
+    cli.print_json(built)
+
+    return
+  }
+
+  for item in built {
+    echo '${ui.heading("Built")} ${item.path} ${ui.muted("(" + ui.size(item.size) + ")")}'
+  }
+}
+
+run('bundle', main)

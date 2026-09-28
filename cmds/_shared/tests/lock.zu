@@ -1,0 +1,86 @@
+# One command at a time.
+
+import os
+import os.process { pid, spawn }
+import test { * }
+
+import ..fsx
+import ..lock { Lock, LockError, holding }
+
+# A scratch directory of this run's own, outside any checkout.
+var ROOT = os.create_temp_dir('zuri-lock-')
+var PATH = os.join_paths(ROOT, 'lock')
+
+describe('Lock', @{
+  before_each(@{
+    fsx.remove(ROOT)
+  })
+
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('is held, written with the holder, and let go', @{
+    var lock = Lock(PATH)
+
+    lock.acquire()
+
+    expect(lock.held).to_be_true()
+    expect(fsx.read_text(PATH)).to_start_with('${pid()}\n')
+
+    lock.release()
+
+    expect(file(PATH).exists()).to_be_false()
+  })
+
+  it('takes over a lock whose holder is gone', @{
+    fsx.ensure_dir(ROOT)
+
+    # A process that has certainly exited.
+    var child = spawn(os.exe_path, ['--version'], { stdout: 'null', stderr: 'null' })
+    var gone = child.pid()
+
+    child.wait()
+    file(PATH, 'w').write('${gone}\n${os.hostname()}\n')
+
+    var lock = Lock(PATH)
+
+    lock.acquire(nil, 2)
+
+    expect(lock.held).to_be_true()
+    lock.release()
+  })
+
+  it('waits for a live holder, then gives up', @{
+    fsx.ensure_dir(ROOT)
+    file(PATH, 'w').write('${pid()}\n${os.hostname()}\n')
+
+    var told = nil
+    var failure = nil
+
+    catch {
+      Lock(PATH).acquire(@(holder) {
+        told = holder
+      }, 0.5)
+    } as error {
+      failure = error
+    }
+
+    expect(told).to_equal(pid())
+    expect(failure).to_be_instance_of(LockError)
+
+    file(PATH).delete()
+  })
+
+  it('lets go when the body raises', @{
+    catch {
+      holding(PATH, @{
+        raise Error('stop')
+      })
+    } as error {
+      expect(error.message).to_equal('stop')
+    }
+
+    expect(file(PATH).exists()).to_be_false()
+  })
+})

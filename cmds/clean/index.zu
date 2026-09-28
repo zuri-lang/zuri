@@ -1,0 +1,152 @@
+/**
+ * @command clean
+ * @description Frees the space downloads, logs and installed packages
+ *    take up.
+ *
+ *   zuri clean [options]
+ *
+ * Everything clean removes is either downloaded again or put back by
+ * `zuri restore` when it is needed. The installed packages option
+ * removes only packages zuri installed, never code vendored into
+ * `.zuri/libs` by hand, and never `.zuri/cmds`.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+import .._shared.cli
+import .._shared.errors { run }
+import .._shared.fsx
+import .._shared.lock as lock_module
+import .._shared.paths
+import .._shared.store
+import .._shared.ui
+
+import .plan
+
+# Removes `files` and the directories they leave empty under `root`.
+def _remove(files: list, root: string, dry_run: bool) {
+  var total = 0
+
+  for item in files {
+    total += item.size
+
+    if !dry_run {
+      fsx.remove(item.path)
+    }
+  }
+
+  if !dry_run and os.dir_exists(root) {
+    # Deepest first, so a directory is looked at after what it held.
+    var directories = fsx.walk(root).filter(@(entry) => entry.kind == 'dir').reverse()
+
+    for entry in directories {
+      var full = os.join_paths(root, entry.path)
+
+      if os.read_dir(full).filter(@(name) => name != '.' and name != '..').is_empty() {
+        os.remove_dir(full)
+      }
+    }
+  }
+
+  return total
+}
+
+def _clean_libs(project, dry_run: bool) {
+  var freed = 0
+  var removed = []
+
+  var body = @{
+    store.recover(project.staging_dir())
+
+    var installed = store.load_installed(project.installed_record())
+
+    # A copy of the names, since forgetting one changes the record.
+    for import_name in installed.packages.keys() {
+      var record = installed.get(import_name)
+      var dir = project.package_dir(import_name)
+
+      freed += fsx.tree_size(dir)
+      removed.append(record.get('name', import_name))
+
+      if !dry_run {
+        fsx.remove(dir)
+        installed.forget(import_name)
+      }
+    }
+
+    if !dry_run {
+      installed.save()
+    }
+  }
+
+  if dry_run {
+    body()
+  } else {
+    lock_module.holding(project.lock_path(), body)
+  }
+
+  return { freed, removed }
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var chosen = plan.choices(parsed)
+  var dry_run = parsed.options.get('dry-run', false) == true
+  var age = parsed.options.get('older-than', nil)
+  var cutoff = age == nil ? nil : time() - plan.parse_age(age)
+  var lines = []
+  var total = 0
+
+  var shared = @{
+    if chosen.cache {
+      var files = plan.stale_files(paths.cache_dir(), cutoff, ['lock'])
+      var freed = _remove(files, paths.cache_dir(), dry_run)
+
+      total += freed
+      lines.append(['download cache', ui.size(freed)])
+    }
+
+    if chosen.runtimes {
+      var files = plan.stale_files(paths.runtimes_dir(), cutoff)
+      var freed = _remove(files, paths.runtimes_dir(), dry_run)
+
+      total += freed
+      lines.append(['runtimes', ui.size(freed)])
+    }
+
+    if chosen.logs {
+      var files = plan.stale_files(paths.logs_dir(), cutoff)
+      var freed = _remove(files, paths.logs_dir(), dry_run)
+
+      total += freed
+      lines.append(['logs', ui.size(freed)])
+    }
+  }
+
+  if dry_run {
+    shared()
+  } else {
+    fsx.ensure_dir(paths.cache_dir())
+    lock_module.holding(os.join_paths(paths.cache_dir(), 'lock'), shared, @(pid) {
+      echo ui.muted('Waiting for another zuri command (process ${pid}) to finish downloading')
+    })
+  }
+
+  if chosen.libs {
+    var project = parsed.options.get('global', false) == true
+      ? paths.global_project()
+      : cli.require_project('clean')
+
+    var cleaned = _clean_libs(project, dry_run)
+
+    total += cleaned.freed
+    lines.append(['installed packages (${cleaned.removed.length()})', ui.size(cleaned.freed)])
+  }
+
+  ui.say(ui.table(lines.map(@(line) => [line[0], ui.muted(line[1])])))
+  echo '${dry_run ? "Would free" : "Freed"} ${ui.size(total)}.'
+}
+
+run('clean', main)

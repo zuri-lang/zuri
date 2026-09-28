@@ -1,0 +1,23 @@
+<extend base="layout.html">
+  <define name="content">
+    <div class="columns">
+      <form class="panel" method="post" action="/recover">
+        <h1>With your recovery key</h1>
+        <p class="error" x-if="error">{{ error }}</p>
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <label>Username <input name="username" value="{{ username }}" required></label>
+        <label>Recovery key <input name="recovery_key" required autocomplete="off"></label>
+        <label>New password <input name="password" type="password" autocomplete="new-password" required minlength="10"></label>
+        <label>New password again <input name="password_again" type="password" autocomplete="new-password" required minlength="10"></label>
+        <button>Set the new password</button>
+        <p class="hint">Every token the account holds is revoked, and a new recovery key replaces the one used.</p>
+      </form>
+      <form class="panel" method="post" action="/reset" x-if="mail">
+        <h2>By email</h2>
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <label>Email <input name="email" type="email" required></label>
+        <button>Send a reset link</button>
+      </form>
+    </div>
+  </define>
+</extend>

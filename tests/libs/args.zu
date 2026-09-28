@@ -209,6 +209,34 @@ assert called.command == {name: 'call', value: nil} and called.options.loud == t
   'a command\'s own options must parse independently of the top-level parser\'s options'
 ok('commands, no value')
 
+# A parser's own options stay in force after a command, as the help
+# promises by listing them as global; the command's own option of the
+# same name wins where there is one.
+var p_global = args.Parser('prog')
+p_global.add_option('registry', 'Where', {short_name: 'r', type: args.STRING})
+p_global.add_option('mode', 'Top-level mode', {type: args.STRING})
+p_global.add_command('login', 'Log in').add_option('mode', 'Login mode', {type: args.STRING})
+var after = p_global.parse(['login', '--registry', 'https://x', '-r', 'https://y', '--mode', 'fast'])
+assert after.command == {name: 'login', value: nil}, 'the command must still be found'
+assert after.options.registry == 'https://y', 'a global option after a command must be accepted'
+assert after.options.mode == 'fast', 'a command option shadowing a global one must take the value'
+var before = p_global.parse(['--registry', 'https://x', 'login'])
+assert before.options.registry == 'https://x', 'a global option before a command must still work'
+ok('global options are accepted after a command')
+
+# A trailing LIST positional takes every remaining word, flags between
+# them included, and refuses to be followed by another positional.
+var p_many = args.Parser('prog')
+p_many.add_option('dev', 'Development', {short_name: 'D'})
+p_many.add_index('packages', 'Packages', {type: args.LIST})
+var many = p_many.parse(['a', 'b@^1', '-D', 'c'])
+assert many.indexes == [['a', 'b@^1', 'c']], 'every positional word must land in the one list'
+assert many.options.dev == true, 'a flag between the words must still be read'
+assert p_many.parse([]).indexes == [], 'no words must leave the list out entirely'
+assert raises(@() { p_many.add_index('extra', 'Too late') }),
+  'a positional after a LIST one must be refused'
+ok('a trailing LIST positional gathers every remaining word')
+
 var p_cmd2 = args.Parser('cmdval')
 p_cmd2.add_command('set', 'Set a value', {type: args.INT})
 assert p_cmd2.parse(['set', '99']).command == {name: 'set', value: 99},

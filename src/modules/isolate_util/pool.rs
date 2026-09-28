@@ -1,6 +1,9 @@
 //! The isolate pool: a small, configurable number of persistent
 //! isolate OS threads, each owning its own totally independent `VM`/
-//! `Heap` ("isolate"). An isolate is a task queued onto this pool; a
+//! `Heap` ("isolate"). The configured size is a ceiling rather than a
+//! head count: a thread is started only when a task is queued and no
+//! thread is free to take it, so a process that never needs its whole
+//! pool never pays for it. An isolate is a task queued onto this pool; a
 //! channel is a plain thread-safe queue of already-`capture`d
 //! messages. Nothing here ever shares a `Value`, a heap pointer, or
 //! compiled bytecode between threads: see `transfer` for what
@@ -53,7 +56,7 @@ pub const CHANNEL_PTR_TYPE: &str = "zuri::channel";
 static POOL: OnceLock<IsolatePool> = OnceLock::new();
 static CONFIGURED_SIZE: Mutex<Option<usize>> = Mutex::new(None);
 
-/// Sets how many isolate threads the pool starts with. Only takes
+/// Sets how many isolate threads the pool may run at most. Only takes
 /// effect if the pool hasn't started yet (its size is fixed for the
 /// rest of the process once the first isolate actually runs);
 /// returns `false` rather than an error in that case, since "someone
@@ -89,8 +92,10 @@ pub fn cpu_count() -> usize {
   default_size()
 }
 
-/// The pool's real isolate count. Starts the pool (with whatever size
-/// `configure` set, or the CPU count otherwise) if it hasn't already.
+/// How many isolate threads the pool may run at once. Threads start as
+/// work needs them, up to this many. Starts the pool (with whatever
+/// size `configure` set, or the CPU count otherwise) if it hasn't
+/// already.
 pub fn pool_size() -> usize {
   pool().size
 }
@@ -106,7 +111,12 @@ pub fn active_count() -> usize {
 /// Isolates queued but not yet picked up by an isolate. Starts the
 /// pool if it hasn't already.
 pub fn queued_count() -> usize {
-  lock(&pool().queue).len()
+  lock(&pool().queue).tasks.len()
+}
+
+/// Isolate threads started so far, which never exceeds `pool_size()`.
+pub fn started_count() -> usize {
+  lock(&pool().queue).started
 }
 
 /// Whether `shutdown()` has been called. Starts the pool if it hasn't
@@ -129,8 +139,39 @@ struct IsolateCompiler {
   threads: Vec<std::thread::JoinHandle<()>>,
 }
 
+/// The work waiting for a thread, and the threads that could take it.
+/// Kept under one lock so that deciding whether a new task needs a new
+/// thread can never race with a thread going idle.
+struct Queue {
+  tasks: VecDeque<Task>,
+  /// Threads started so far.
+  started: usize,
+  /// Started threads free to take a task: parked waiting for one, or
+  /// just started and on their way to it.
+  idle: usize,
+}
+
+impl Queue {
+  /// How many more threads to start so that every waiting task has a
+  /// thread to run on, within `size`. Counts them as started, and as
+  /// idle already: a thread about to start is as free to take a task
+  /// as one parked waiting, and counting it any later would have a
+  /// burst of spawns start a thread for every task in it.
+  fn claim_threads(&mut self, size: usize) -> Vec<usize> {
+    let wanted = self.tasks.len().saturating_sub(self.idle);
+    let room = size.saturating_sub(self.started);
+    let count = wanted.min(room);
+    let first = self.started;
+
+    self.started += count;
+    self.idle += count;
+
+    (first..first + count).collect()
+  }
+}
+
 struct IsolatePool {
-  queue: Mutex<VecDeque<Task>>,
+  queue: Mutex<Queue>,
   not_empty: Condvar,
   size: usize,
   /// Queued-or-running task count, kept for `shutdown()` to know when
@@ -163,15 +204,12 @@ const ISOLATE_THREAD_PREFIX: &str = "zuri-isolate-";
 impl IsolatePool {
   fn start(size: usize) -> Self {
     install_isolate_panic_hook();
-    for i in 0..size {
-      thread::Builder::new()
-        .name(format!("{}{}", ISOLATE_THREAD_PREFIX, i))
-        .stack_size(8 * 1024 * 1024)
-        .spawn(isolate_loop)
-        .expect("failed to spawn isolate isolate thread");
-    }
     IsolatePool {
-      queue: Mutex::new(VecDeque::new()),
+      queue: Mutex::new(Queue {
+        tasks: VecDeque::new(),
+        started: 0,
+        idle: 0,
+      }),
       not_empty: Condvar::new(),
       size,
       in_flight: AtomicUsize::new(0),
@@ -180,6 +218,17 @@ impl IsolatePool {
       idle: Condvar::new(),
       idle_lock: Mutex::new(()),
       compiler: Mutex::new(None),
+    }
+  }
+
+  /// Starts the isolate threads `claim_threads` counted in.
+  fn start_threads(&self, indices: Vec<usize>) {
+    for i in indices {
+      thread::Builder::new()
+        .name(format!("{}{}", ISOLATE_THREAD_PREFIX, i))
+        .stack_size(8 * 1024 * 1024)
+        .spawn(isolate_loop)
+        .expect("failed to spawn isolate isolate thread");
     }
   }
 
@@ -304,16 +353,20 @@ impl IsolateIsolate {
 fn isolate_loop() {
   let mut isolate = IsolateIsolate::new();
   let pool = pool();
+
+  // This thread was counted idle when it was claimed, and counts itself
+  // idle again after every task, so it only ever leaves the count here.
   loop {
     let task = {
       let mut queue = lock(&pool.queue);
-      while queue.is_empty() {
+      while queue.tasks.is_empty() {
         queue = pool
           .not_empty
           .wait(queue)
           .unwrap_or_else(PoisonError::into_inner);
       }
-      queue.pop_front().unwrap()
+      queue.idle -= 1;
+      queue.tasks.pop_front().unwrap()
     };
     pool.running.fetch_add(1, Ordering::AcqRel);
 
@@ -344,7 +397,15 @@ fn isolate_loop() {
     // internal state; registers, GC bookkeeping; torn); the promise
     // that makes this sound is the one kept right below: a torn
     // isolate is never reused, only rebuilt from scratch.
-    match panic::catch_unwind(AssertUnwindSafe(|| run_task(&mut isolate, &task))) {
+    let outcome = panic::catch_unwind(AssertUnwindSafe(|| run_task(&mut isolate, &task)));
+
+    // Free again before anyone hears the result. Whoever joined this
+    // task may spawn the next one straight away, and a thread that only
+    // counted itself idle once back at the top of the loop would still
+    // look busy then, so the pool would start another for nothing.
+    lock(&pool.queue).idle += 1;
+
+    match outcome {
       Ok(result) => state.finish(result),
       Err(payload) => {
         // `&*payload`, not `&payload`: `payload` is `Box<dyn Any +
@@ -959,14 +1020,16 @@ pub fn spawn(
     state: state.clone(),
   };
   let p = pool();
-  {
+  let fresh = {
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
       return Err("cannot spawn: the isolate pool is shutting down".to_string());
     }
     p.in_flight.fetch_add(1, Ordering::AcqRel);
-    queue.push_back(task);
-  }
+    queue.tasks.push_back(task);
+    queue.claim_threads(p.size)
+  };
+  p.start_threads(fresh);
   p.not_empty.notify_one();
   Ok(state)
 }
@@ -994,14 +1057,16 @@ pub fn spawn_batch(
   }
 
   let p = pool();
-  {
+  let fresh = {
     let mut queue = lock(&p.queue);
     if p.shutting_down.load(Ordering::Acquire) {
       return Err("cannot spawn: the isolate pool is shutting down".to_string());
     }
     p.in_flight.fetch_add(tasks.len(), Ordering::AcqRel);
-    queue.extend(tasks);
-  }
+    queue.tasks.extend(tasks);
+    queue.claim_threads(p.size)
+  };
+  p.start_threads(fresh);
   p.not_empty.notify_all();
   Ok(states)
 }

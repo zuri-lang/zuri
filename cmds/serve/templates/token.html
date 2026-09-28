@@ -1,0 +1,12 @@
+<extend base="layout.html">
+  <define name="content">
+    <div class="panel">
+      <h1>Your new token</h1>
+      <p>This is shown only this once. Give it to the command line with:</p>
+      <pre><code>zuri account login --registry {{ public_url }} --token-stdin</code></pre>
+      <pre class="secret"><code>{{ issued.token }}</code></pre>
+      <p class="meta">Scopes: {{ issued.scopes|join(', ') }}. Expires {{ issued.expires_at|date('j F Y') }}.</p>
+      <p><a href="/account">Back to your account</a></p>
+    </div>
+  </define>
+</extend>

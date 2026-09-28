@@ -1,0 +1,81 @@
+/**
+ * @command restore
+ * @description Installs exactly the packages project.lock names.
+ *
+ *   zuri restore [options]
+ *
+ * What a fresh checkout, a build server or a teammate runs. Every
+ * package is installed at the version, and from the source, the
+ * lockfile pins, checked against the checksum it recorded. When the
+ * lockfile no longer matches project.toml, the project is resolved
+ * again, or with the frozen option the command refuses and lists the
+ * differences instead.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.sync
+import .._shared.ui
+
+def parser() {
+  var parser = args.Parser('restore', false)
+
+  parser.description = 'Installs exactly the packages project.lock names.'
+
+  parser.add_option('frozen',
+    'Refuse, rather than resolve again, when project.lock is out of date', nil)
+  parser.add_option('production', 'Leave out packages only development dependencies need',
+    { short_name: 'P' })
+  parser.add_option('verify', 'Check every installed package against what was installed', nil)
+  parser.add_option('global', 'Restore the packages installed for this user', { short_name: 'g' })
+  parser.add_option('offline', 'Use only what is already downloaded', nil)
+  parser.add_option('dry-run', 'Show what would change and change nothing', { short_name: 'n' })
+  parser.add_option('force', 'Replace directories in .zuri/libs that zuri did not install', nil)
+  parser.add_option('no-hooks', 'Run no install scripts at all', nil)
+  parser.add_option('allow-hooks', 'Let these packages run their scripts this time',
+    { type: args.LIST, metavar: 'package' })
+  parser.add_option('insecure', 'Allow a token to cross plain http to another machine', nil)
+  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+
+  return parser
+}
+
+def main() {
+  var parsed = parser().parse()
+  var given = parsed.options
+  var options = cli.sync_options(parsed, {
+    production: given.get('production', false) == true,
+    verify: given.get('verify', false) == true,
+    frozen: given.get('frozen', false) == true,
+  })
+
+  var workspace = cli.workspace('restore', given.get('global', false) == true, options)
+  var differences = sync.lock_differences(workspace)
+
+  if differences.is_empty() {
+    cli.report(sync.apply(workspace, workspace.lock, nil, false))
+
+    return
+  }
+
+  var listed = '\n'.join(differences.map(@(line) => '  - ' + line))
+
+  if options.frozen {
+    raise UsageError(
+      'project.lock does not match project.toml, and it is frozen:\n${listed}\n'
+        + 'Run `zuri install` to bring the lockfile up to date, and commit it.'
+    )
+  }
+
+  ui.complain(ui.warn('project.lock does not match project.toml; resolving again:\n${listed}'))
+
+  var resolved = sync.resolve(workspace)
+
+  cli.report(sync.apply(workspace, resolved[0], resolved[1], false))
+}
+
+run('restore', main)

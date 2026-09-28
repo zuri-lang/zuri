@@ -1,0 +1,22 @@
+# Started by os_spawn_streams.zu: starts a program that outlives it,
+# with every stream of that program pointed somewhere else, then exits.
+
+import io
+import os
+import os.process { spawn }
+
+if os.args.length() > 2 and os.args[2] == 'linger' {
+  os.sleep(10)
+} else {
+  # Using the streams makes sure the runtime's own copies are open.
+  io.stdout.write('')
+  io.stderr.write('')
+
+  spawn(os.exe_path, ['run', __file__, 'linger'], {
+    stdin: 'null',
+    stdout: 'null',
+    stderr: 'null',
+  })
+
+  echo 'started a program that outlives this one'
+}

@@ -316,7 +316,10 @@ The rules:
 - `before_all` runs once, immediately before the first test in its suite
   that is actually going to run. A suite everything was filtered out of
   never connects to anything.
-- `after_all` runs after the last one, and only if `before_all` ran.
+- `after_all` runs after the last one, and only if `before_all` ran. It
+  runs when `before_all` raised as well, since a setup that failed part
+  way may already hold a connection or a server, so write it to cope
+  with whatever the setup got as far as.
 - `before_each` runs outermost suite first, `after_each` innermost
   first, so teardown undoes setup in the order it was done.
 - `after_each` runs even when the test failed, which is exactly when you

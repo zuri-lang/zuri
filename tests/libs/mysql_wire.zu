@@ -829,6 +829,10 @@ def test_dsn() {
   assert sql.driver_for('mariadb://localhost/app').name() == 'mariadb'
   assert sql.driver('mysql').capabilities().returning == false
   assert sql.driver('mariadb').capabilities().returning == true
+  assert sql.driver('mysql').capabilities().transactional_ddl == false
+  assert sql.driver('mariadb').capabilities().transactional_ddl == false
+  assert sql.driver('postgres').capabilities().transactional_ddl == true
+  assert sql.driver('sqlite').capabilities().transactional_ddl == true
   assert sql.driver('mysql').quote_identifier('we`ird') == '`we``ird`'
 
   echo 'test_dsn passed'

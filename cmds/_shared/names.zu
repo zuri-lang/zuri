@@ -1,0 +1,193 @@
+/**
+ * What a package may be called, and the name it is imported by.
+ *
+ * A package is published under its name and imported by the same name
+ * with every hyphen turned into an underscore, because `import a-b`
+ * reads as `import a`. `http-extra` therefore installs into
+ * `.zuri/libs/http_extra` and is imported as `import http_extra`. Two
+ * names that differ only in `-` against `_` are the same package.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import zuri
+
+import .errors { UsageError }
+import .paths
+
+/** The longest a package name may be. */
+var NAME_LIMIT = 64
+
+# Lowercase letters, digits, hyphens and underscores, opening on a
+# letter and closing on a letter or digit.
+var _NAME_PATTERN = '/^[a-z]([a-z0-9_-]*[a-z0-9])?$/'
+
+/**
+ * Names no package may take, whatever the standard library holds.
+ */
+var RESERVED = ['zuri', 'nyssa', 'std', 'stdlib', 'libs', 'cmds']
+
+/**
+ * The name a package is imported by, and the directory it installs
+ * into: `name` with every `-` made `_`.
+ *
+ * @param string name
+ * @returns string
+ */
+def import_name(name: string) {
+  return name.replace('-', '_', false)
+}
+
+/**
+ * The form two names are compared in: two packages whose names
+ * normalise the same are the same package.
+ *
+ * @param string name
+ * @returns string
+ */
+def normalized(name: string) {
+  return import_name(name.lower())
+}
+
+/**
+ * Whether `text` is a single identifier to the language, which is
+ * what an `import` needs after it. Keywords and anything opening on a
+ * digit are not.
+ *
+ * @param string text
+ * @returns bool
+ */
+def is_identifier(text: string) {
+  catch {
+    var tokens = zuri.tokenize(text)
+    var kinds = []
+
+    for token in tokens {
+      if token.kind != 'Eof' and token.kind != 'Newline' {
+        kinds.append(token.kind)
+      }
+    }
+
+    return kinds.length() == 1 and kinds[0] == 'Identifier'
+  } as error {
+    return false
+  }
+}
+
+/**
+ * The module names the standard library at `libs` answers to, which
+ * a package must not take: an installed package is imported ahead of
+ * the standard library, and one that shadowed it would change what
+ * every other package's `import` means.
+ *
+ * @param ?string libs: the standard library directory; the running
+ *    runtime's when left off.
+ * @returns dict: the names, as keys.
+ */
+def stdlib_names(libs: ?string) {
+  if libs == nil {
+    libs = paths.stdlib_dir()
+  }
+
+  var names = {}
+
+  if !os.dir_exists(libs) {
+    return names
+  }
+
+  for entry in os.read_dir(libs) {
+    if entry == '.' or entry == '..' {
+      continue
+    }
+
+    var name = entry
+
+    if name.ends_with('.stub.zu') {
+      name = name[0, name.length() - 8]
+    } else if name.ends_with('.zu') {
+      name = name[0, name.length() - 3]
+    } else if !os.dir_exists(os.join_paths(libs, entry)) {
+      continue
+    }
+
+    names.set(normalized(name), true)
+  }
+
+  return names
+}
+
+/**
+ * `raw` as a package name.
+ *
+ * @param string raw
+ * @param ?dict stdlib: the names `stdlib_names()` returned, when the
+ *    caller has already read them.
+ * @returns string: the name, trimmed.
+ * @raises UsageError when it is empty, too long, not made of
+ *    lowercase letters, digits, hyphens and underscores between a
+ *    letter and a letter or digit, not importable, reserved, or the
+ *    name of a standard library module.
+ */
+def check_name(raw: string, stdlib: ?dict) {
+  var name = raw.replace('/^\\s+|\\s+$/', '', true)
+
+  if name.is_empty() {
+    raise UsageError('a package needs a name')
+  }
+
+  if name.length() > NAME_LIMIT {
+    raise UsageError(
+      "'${name}' is ${name.length()} characters long, but a package name can be "
+        + 'at most ${NAME_LIMIT}'
+    )
+  }
+
+  if !is_dict(name.match(_NAME_PATTERN)) {
+    raise UsageError(
+      "'${name}' cannot be a package name; use lowercase letters, digits, hyphens "
+        + 'and underscores, begin with a letter, and end with a letter or a digit'
+    )
+  }
+
+  if !is_identifier(import_name(name)) {
+    raise UsageError(
+      "'${name}' cannot be a package name; '${import_name(name)}' is not something "
+        + '`import` can name'
+    )
+  }
+
+  if RESERVED.contains(normalized(name)) {
+    raise UsageError("'${name}' is reserved and cannot be a package name")
+  }
+
+  if stdlib == nil {
+    stdlib = stdlib_names()
+  }
+
+  if stdlib.contains(normalized(name)) {
+    raise UsageError(
+      "'${name}' is the name of a standard library module; a package by that name "
+        + 'would take its place in every import'
+    )
+  }
+
+  return name
+}
+
+/**
+ * Whether `raw` is a usable package name, without saying why not.
+ *
+ * @param string raw
+ * @param ?dict stdlib
+ * @returns bool
+ */
+def is_valid(raw: string, stdlib: ?dict) {
+  catch {
+    check_name(raw, stdlib)
+
+    return true
+  } as error {
+    return false
+  }
+}

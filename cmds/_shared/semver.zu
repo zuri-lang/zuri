@@ -1,0 +1,776 @@
+/**
+ * Semantic versions and the ranges dependencies are written in.
+ *
+ * A version is `major.minor.patch`, optionally followed by a
+ * pre-release (`-rc.1`) and build metadata (`+build.5`), exactly as
+ * Semantic Versioning 2.0.0 lays it out, and versions order by its
+ * precedence rules: pre-releases sort below their release, numeric
+ * pre-release identifiers compare as numbers, and build metadata is
+ * ignored.
+ *
+ * A range is one or more comparator sets joined by `||`, and matches a
+ * version when any set does. A set is comparators separated by spaces
+ * or commas, and matches when all of them do.
+ *
+ * - `1.2.3` and `^1.2.3` mean `>=1.2.3, <2.0.0`.
+ * - `^0.2.3` means `>=0.2.3, <0.3.0`, and `^0.0.3` means
+ *   `>=0.0.3, <0.0.4`: below `1.0.0`, the first number that is not
+ *   zero is the one that may break.
+ * - `~1.2.3` means `>=1.2.3, <1.3.0`.
+ * - `=1.2.3` means exactly `1.2.3`.
+ * - `1.2.*` and `1.2.x` mean `>=1.2.0, <1.3.0`. A partial version
+ *   with nothing wildcarded is a caret range like any bare version:
+ *   `1.2` means `>=1.2.0, <2.0.0`.
+ * - `*` means any release.
+ * - `>1.2.3`, `>=1.2.3`, `<2` and `<=2.1` mean what they say.
+ *
+ * A bare version is a caret range, so a dependency written as `1.2.3`
+ * takes compatible updates. `=` pins it.
+ *
+ * A pre-release only matches a set that names a pre-release of the
+ * same `major.minor.patch` itself: `^1.2.3-beta.1` accepts
+ * `1.2.3-beta.4` but not `1.3.0-alpha.1`, and `^1.2.3` accepts
+ * neither. Nobody who asked for releases is handed an unfinished
+ * version by accident.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import .errors { UsageError }
+
+/**
+ * Raised for text that is not a version or not a range.
+ */
+class SemverError < UsageError {}
+
+var _CORE = '/^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)'
+  + '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?'
+  + '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
+
+var _PARTIAL = '/^v?(\\*|x|X|0|[1-9][0-9]*)'
+  + '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?'
+  + '(?:\\.(\\*|x|X|0|[1-9][0-9]*))?'
+  + '(?:-([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?'
+  + '(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$/'
+
+# Whether an identifier is all digits.
+def _is_numeric(text: string) {
+  return is_dict(text.match('/^[0-9]+$/'))
+}
+
+# -1, 0 or 1 for two plain numbers.
+def _order(a: number, b: number) {
+  if a < b {
+    return -1
+  }
+
+  return a > b ? 1 : 0
+}
+
+# One pre-release identifier against another: numbers as numbers and
+# below anything alphanumeric, the rest by ASCII.
+def _compare_identifier(a: string, b: string) {
+  var a_numeric = _is_numeric(a)
+  var b_numeric = _is_numeric(b)
+
+  if a_numeric and b_numeric {
+    return _order(a.to_number(), b.to_number())
+  }
+
+  if a_numeric {
+    return -1
+  }
+
+  if b_numeric {
+    return 1
+  }
+
+  var order = a.compare(b)
+
+  return order < 0 ? -1 : (order > 0 ? 1 : 0)
+}
+
+# Splits dotted identifiers, or nothing at all.
+def _identifiers(text) {
+  if text == nil or text == false or text.is_empty() {
+    return []
+  }
+
+  return text.split('.')
+}
+
+/**
+ * One semantic version.
+ *
+ * @printable
+ */
+class Version {
+
+  /**
+   * @type number
+   */
+  var major = 0
+
+  /**
+   * @type number
+   */
+  var minor = 0
+
+  /**
+   * @type number
+   */
+  var patch = 0
+
+  /**
+   * The pre-release identifiers, empty for a release.
+   * @type list[string]
+   */
+  var pre = []
+
+  /**
+   * The build metadata identifiers. Never part of an ordering.
+   * @type list[string]
+   */
+  var build = []
+
+  /**
+   * @param number major
+   * @param number minor
+   * @param number patch
+   * @param ?list pre
+   * @param ?list build
+   */
+  @new(major: number, minor: number, patch: number, pre: ?list, build: ?list) {
+    self.major = major
+    self.minor = minor
+    self.patch = patch
+    self.pre = pre == nil ? [] : pre
+    self.build = build == nil ? [] : build
+  }
+
+  /**
+   * Whether this is a pre-release.
+   *
+   * @returns bool
+   */
+  is_prerelease() {
+    return !self.pre.is_empty()
+  }
+
+  /**
+   * `-1`, `0` or `1` as this version orders below, level with, or
+   * above `other`. Build metadata is ignored, as the specification
+   * requires.
+   *
+   * @param Version other
+   * @returns number
+   */
+  compare(other) {
+    var order = _order(self.major, other.major)
+
+    if order == 0 {
+      order = _order(self.minor, other.minor)
+    }
+
+    if order == 0 {
+      order = _order(self.patch, other.patch)
+    }
+
+    if order != 0 {
+      return order
+    }
+
+    var mine = self.pre
+    var theirs = other.pre
+
+    if mine.is_empty() or theirs.is_empty() {
+      if mine.is_empty() and theirs.is_empty() {
+        return 0
+      }
+
+      return mine.is_empty() ? 1 : -1
+    }
+
+    var shared = mine.length().min(theirs.length())
+
+    iter var i = 0; i < shared; i++ {
+      var step = _compare_identifier(mine[i], theirs[i])
+
+      if step != 0 {
+        return step
+      }
+    }
+
+    return _order(mine.length(), theirs.length())
+  }
+
+  /**
+   * Whether this and `other` have the same precedence.
+   *
+   * @param Version other
+   * @returns bool
+   */
+  equals(other) {
+    return self.compare(other) == 0
+  }
+
+  /**
+   * Whether `other` has the same major, minor and patch numbers.
+   *
+   * @param Version other
+   * @returns bool
+   */
+  same_core(other) {
+    return self.major == other.major and self.minor == other.minor
+      and self.patch == other.patch
+  }
+
+  /**
+   * The version as written, build metadata included.
+   *
+   * @returns string
+   */
+  to_string() {
+    var text = '${self.major}.${self.minor}.${self.patch}'
+
+    if !self.pre.is_empty() {
+      text += '-' + '.'.join(self.pre)
+    }
+
+    if !self.build.is_empty() {
+      text += '+' + '.'.join(self.build)
+    }
+
+    return text
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+/**
+ * `text` as a version.
+ *
+ * A leading `v` is accepted and dropped, since `v1.2.3` is how a tag
+ * spells a version.
+ *
+ * @param string text
+ * @returns Version
+ * @raises SemverError when it is not one.
+ */
+def parse(text: string) {
+  var trimmed = text.replace('/\\s+/', '', true)
+  var found = trimmed.matches(_CORE)
+
+  if !_matched(found) {
+    raise SemverError(
+      "'${text}' is not a valid version; use major.minor.patch, such as 1.0.0"
+    )
+  }
+
+  # A numeric pre-release identifier with a leading zero is not
+  # allowed, since `01` and `1` would otherwise be the same thing.
+  for identifier in _identifiers(_group(found, 4)) {
+    if _is_numeric(identifier) and identifier.length() > 1 and identifier.starts_with('0') {
+      raise SemverError(
+        "'${text}' is not a valid version; the pre-release number '${identifier}' "
+          + 'has a leading zero'
+      )
+    }
+  }
+
+  return Version(
+    _group(found, 1).to_number(),
+    _group(found, 2).to_number(),
+    _group(found, 3).to_number(),
+    _identifiers(_group(found, 4)),
+    _identifiers(_group(found, 5)),
+  )
+}
+
+# Whether `matches()` found anything. It answers with a dictionary
+# either way, holding an empty list for the whole match when there
+# was none.
+def _matched(found) {
+  return is_dict(found) and !found.get(0, []).is_empty()
+}
+
+# The text one capture group caught, or `nil` when it caught nothing.
+def _group(found, index: number) {
+  var group = found.get(index, nil)
+
+  if group == nil or group.is_empty() {
+    return nil
+  }
+
+  var value = group[0]
+
+  return value == nil or value.is_empty() ? nil : value
+}
+
+/**
+ * Whether `text` is a valid version.
+ *
+ * @param string text
+ * @returns bool
+ */
+def is_valid(text: string) {
+  catch {
+    parse(text)
+
+    return true
+  } as error {
+    return false
+  }
+}
+
+/**
+ * `-1`, `0` or `1` as version text `a` orders against `b`.
+ *
+ * @param string a
+ * @param string b
+ * @returns number
+ */
+def compare(a: string, b: string) {
+  return parse(a).compare(parse(b))
+}
+
+# One primitive comparison. `explicit` is set when the version came
+# from what somebody wrote rather than from widening a caret or a
+# tilde, which is what decides whether a pre-release may match.
+class _Comparator {
+  @new(op: string, version, explicit: bool) {
+    self.op = op
+    self.version = version
+    self.explicit = explicit
+  }
+
+  test(version) {
+    var order = version.compare(self.version)
+
+    using self.op {
+      when '=' return order == 0
+      when '>' return order > 0
+      when '>=' return order >= 0
+      when '<' return order < 0
+      when '<=' return order <= 0
+    }
+
+    return false
+  }
+}
+
+# The lowest version that still counts as `major.minor.patch` for an
+# upper bound, so `<2.0.0-0` shuts out 2.0.0's own pre-releases.
+def _floor(major: number, minor: number, patch: number) {
+  return Version(major, minor, patch, ['0'])
+}
+
+# A partial version: the numbers present, and `nil` where one was
+# left off or wildcarded.
+def _partial(text: string) {
+  var found = text.matches(_PARTIAL)
+
+  if !_matched(found) {
+    return nil
+  }
+
+  var parts = []
+  var wildcard = false
+
+  iter var i = 1; i <= 3; i++ {
+    var part = _group(found, i)
+
+    if part == nil or part == '*' or part.lower() == 'x' {
+      parts.append(nil)
+
+      if part != nil {
+        wildcard = true
+      }
+    } else {
+      parts.append(part.to_number())
+    }
+  }
+
+  # Nothing may be given after a wildcard: `1.*.3` means nothing.
+  var seen_gap = false
+
+  for part in parts {
+    if part == nil {
+      seen_gap = true
+    } else if seen_gap {
+      return nil
+    }
+  }
+
+  return {
+    major: parts[0],
+    minor: parts[1],
+    patch: parts[2],
+    wildcard,
+    pre: _identifiers(_group(found, 4)),
+    build: _identifiers(_group(found, 5)),
+  }
+}
+
+# The comparators one written term stands for.
+def _desugar(term: string, whole: string) {
+  var op = ''
+  var rest = term
+
+  for candidate in ['>=', '<=', '>', '<', '=', '^', '~'] {
+    if rest.starts_with(candidate) {
+      op = candidate
+      rest = rest[candidate.length(),]
+
+      break
+    }
+  }
+
+  var p = _partial(rest)
+
+  if p == nil {
+    raise SemverError(
+      "'${whole}' is not a valid version range; '${term}' is not a version"
+    )
+  }
+
+  var major = p.major
+  var minor = p.minor
+  var patch = p.patch
+  var has_pre = !p.pre.is_empty()
+
+  if has_pre and patch == nil {
+    raise SemverError(
+      "'${whole}' is not a valid version range; a pre-release needs all three "
+        + 'numbers in front of it'
+    )
+  }
+
+  var exact = patch != nil ? Version(major, minor, patch, p.pre) : nil
+
+  if major == nil {
+    if op == '<' or op == '>' {
+      # Nothing is below or above every version.
+      return [_Comparator('<', Version(0, 0, 0, ['0']), false)]
+    }
+
+    return [_Comparator('>=', Version(0, 0, 0), false)]
+  }
+
+  var low = Version(major, minor == nil ? 0 : minor, patch == nil ? 0 : patch, p.pre)
+
+  # A written wildcard pins everything in front of it, the way `=`
+  # does for a partial version.
+  if op == '' and p.wildcard {
+    op = '='
+  }
+
+  if op == '' or op == '^' {
+    if exact == nil {
+      if minor == nil or major > 0 {
+        return [
+          _Comparator('>=', low, has_pre),
+          _Comparator('<', _floor(major + 1, 0, 0), false),
+        ]
+      }
+
+      return [
+        _Comparator('>=', low, has_pre),
+        _Comparator('<', _floor(0, minor + 1, 0), false),
+      ]
+    }
+
+    var high = _floor(major + 1, 0, 0)
+
+    if major == 0 and minor > 0 {
+      high = _floor(0, minor + 1, 0)
+    } else if major == 0 and minor == 0 {
+      high = _floor(0, 0, patch + 1)
+    }
+
+    return [_Comparator('>=', exact, has_pre), _Comparator('<', high, false)]
+  }
+
+  if op == '~' {
+    var high = minor == nil ? _floor(major + 1, 0, 0) : _floor(major, minor + 1, 0)
+
+    return [_Comparator('>=', low, has_pre), _Comparator('<', high, false)]
+  }
+
+  if op == '=' {
+    if exact != nil {
+      return [_Comparator('=', exact, has_pre)]
+    }
+
+    var high = minor == nil ? _floor(major + 1, 0, 0) : _floor(major, minor + 1, 0)
+
+    return [_Comparator('>=', low, false), _Comparator('<', high, false)]
+  }
+
+  if op == '>=' {
+    return [_Comparator('>=', low, has_pre)]
+  }
+
+  if op == '<' {
+    if exact != nil {
+      return [_Comparator('<', exact, has_pre)]
+    }
+
+    return [_Comparator('<', _floor(low.major, low.minor, low.patch), false)]
+  }
+
+  if op == '>' {
+    if exact != nil {
+      return [_Comparator('>', exact, has_pre)]
+    }
+
+    var next = minor == nil ? Version(major + 1, 0, 0) : Version(major, minor + 1, 0)
+
+    return [_Comparator('>=', next, false)]
+  }
+
+  # `<=`
+  if exact != nil {
+    return [_Comparator('<=', exact, has_pre)]
+  }
+
+  var ceiling = minor == nil ? _floor(major + 1, 0, 0) : _floor(major, minor + 1, 0)
+
+  return [_Comparator('<', ceiling, false)]
+}
+
+# Every comparator of one `||` alternative.
+def _parse_set(text: string, whole: string) {
+  # An operator written apart from its version, `>= 1.2`, is one term.
+  var joined = text.replace('/(>=|<=|>|<|=|\\^|~)\\s+/', '$1', true)
+  var terms = joined.replace('/[\\s,]+/', ' ', true).trim()
+
+  if terms.is_empty() {
+    return [_Comparator('>=', Version(0, 0, 0), false)]
+  }
+
+  var comparators = []
+
+  for term in terms.split(' ') {
+    comparators.extend(_desugar(term, whole))
+  }
+
+  return comparators
+}
+
+/**
+ * A version range: any of several comparator sets.
+ *
+ * @printable
+ */
+class Range {
+
+  /**
+   * The range as it was written, trimmed.
+   * @type string
+   */
+  var text
+
+  var _sets = []
+
+  /**
+   * @param string text
+   * @raises SemverError when it is not a range.
+   */
+  @new(text: string) {
+    self.text = text.replace('/\\s+/', ' ', true).trim()
+    self._sets = []
+
+    # Nothing written is any release, the same as `*`.
+    var alternatives = self.text.is_empty() ? [''] : self.text.split('||')
+
+    for alternative in alternatives {
+      self._sets.append(_parse_set(alternative, self.text))
+    }
+  }
+
+  /**
+   * Whether `version` falls in the range.
+   *
+   * @param version: a `Version`, or version text.
+   * @returns bool
+   */
+  satisfies(version) {
+    if is_string(version) {
+      version = parse(version)
+    }
+
+    for set in self._sets {
+      if _set_satisfies(set, version) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  /**
+   * Whether the range pins exactly one version.
+   *
+   * @returns bool
+   */
+  is_exact() {
+    return self._sets.length() == 1 and self._sets[0].length() == 1
+      and self._sets[0][0].op == '='
+  }
+
+  /**
+   * The range as written.
+   *
+   * @returns string
+   */
+  to_string() {
+    return self.text
+  }
+
+  @to_string() {
+    return self.to_string()
+  }
+}
+
+def _set_satisfies(set: list, version) {
+  for comparator in set {
+    if !comparator.test(version) {
+      return false
+    }
+  }
+
+  if !version.is_prerelease() {
+    return true
+  }
+
+  for comparator in set {
+    if comparator.explicit and comparator.version.is_prerelease()
+      and comparator.version.same_core(version) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * `text` as a range.
+ *
+ * @param string text
+ * @returns Range
+ * @raises SemverError
+ */
+def range(text: string) {
+  return Range(text)
+}
+
+/**
+ * Whether `text` is a valid range.
+ *
+ * @param string text
+ * @returns bool
+ */
+def is_valid_range(text: string) {
+  catch {
+    Range(text)
+
+    return true
+  } as error {
+    return false
+  }
+}
+
+/**
+ * `versions` in ascending order of precedence, as a new list.
+ *
+ * @param list versions: `Version`s or version text; text comes back
+ *    as text.
+ * @returns list
+ */
+def sorted(versions: list) {
+  var keyed = []
+
+  for item in versions {
+    keyed.append([is_string(item) ? parse(item) : item, item])
+  }
+
+  return _merge_sort(keyed).map(@(pair) => pair[1])
+}
+
+def _merge_sort(items: list) {
+  if items.length() <= 1 {
+    return items
+  }
+
+  var middle = items.length() // 2
+  var left = _merge_sort(items[0, middle])
+  var right = _merge_sort(items[middle,])
+  var merged = []
+  var i = 0
+  var j = 0
+
+  while i < left.length() and j < right.length() {
+    if left[i][0].compare(right[j][0]) <= 0 {
+      merged.append(left[i])
+      i++
+    } else {
+      merged.append(right[j])
+      j++
+    }
+  }
+
+  while i < left.length() {
+    merged.append(left[i])
+    i++
+  }
+
+  while j < right.length() {
+    merged.append(right[j])
+    j++
+  }
+
+  return merged
+}
+
+/**
+ * The highest of `versions` that falls in `within`.
+ *
+ * @param list versions: version text.
+ * @param within: a `Range` or range text.
+ * @returns ?string: `nil` when none does.
+ */
+def max_satisfying(versions: list, within) {
+  if is_string(within) {
+    within = Range(within)
+  }
+
+  var best = nil
+  var best_text = nil
+
+  for text in versions {
+    var version = parse(text)
+
+    if within.satisfies(version) and (best == nil or version.compare(best) > 0) {
+      best = version
+      best_text = text
+    }
+  }
+
+  return best_text
+}
+
+/**
+ * Whether moving from `current` to `next` can break a caller that was
+ * written against `current`: a new major version, or a new minor
+ * while the major is `0`, or any change at all while both are `0`.
+ *
+ * @param string current
+ * @param string next
+ * @returns bool
+ */
+def is_breaking(current: string, next: string) {
+  return !Range('^' + parse(current).to_string()).satisfies(parse(next))
+}

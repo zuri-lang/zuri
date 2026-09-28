@@ -226,6 +226,62 @@ def test_transaction_reads() {
   echo 'test_transaction_reads passed'
 }
 
+def test_transaction_scripts_and_cursors() {
+  var db = fresh()
+
+  # A script run inside a transaction goes with it: kept on commit,
+  # gone on a rollback.
+  db.transaction(@(tx) {
+    tx.exec_script(
+      'create table kept (n integer); insert into kept values (1); insert into kept values (2);'
+    )
+  }, nil)
+
+  assert db.fetch_value('select count(*) from kept', nil, 0) == 2
+
+  catch {
+    db.transaction(@(tx) {
+      tx.exec_script('create table dropped (n integer); insert into dropped values (1);')
+      raise Error('stop')
+    }, nil)
+  } as _error {
+  }
+
+  assert db.fetch_column(
+    "select name from sqlite_master where type = 'table' and name = 'dropped'", nil, nil
+  ).is_empty()
+
+  db.transaction(@(tx) {
+    tx.insert_many('t', [{ name: 'a' }, { name: 'b' }, { name: 'c' }])
+
+    assert tx.fetch_column('select name from t order by name', nil, nil) == ['a', 'b', 'c']
+
+    var seen = []
+
+    for row in tx.stream('select name from t order by name desc', nil, nil) {
+      seen.append(row.name)
+    }
+
+    assert seen == ['c', 'b', 'a']
+
+    var statement = tx.prepare('insert into t (name) values (?)')
+
+    statement.exec(['d'])
+    statement.close()
+
+    assert tx.count('t', nil) == 4
+  }, nil)
+
+  var tx = db.begin(nil)
+  tx.commit()
+
+  assert raises(@() { tx.exec_script('create table late (n integer)') })
+  assert raises(@() { tx.fetch_column('select name from t', nil, nil) })
+
+  db.close()
+  echo 'test_transaction_scripts_and_cursors passed'
+}
+
 
 test_commit_and_rollback()
 test_nesting()
@@ -234,3 +290,4 @@ test_isolation()
 test_savepoints_by_name()
 test_transaction_helpers()
 test_transaction_reads()
+test_transaction_scripts_and_cursors()

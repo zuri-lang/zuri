@@ -231,6 +231,36 @@ assert raises(@() { tar.extract(os.join_paths(_root, 'does-not-exist.tar.gz'), o
   'extracting a nonexistent archive must raise'
 ok('extract() on a nonexistent file raises')
 
+# ---------------------------------------------------------------------------
+# Entries that would land outside the output directory
+# ---------------------------------------------------------------------------
+for escaping in ['../escaped.txt', 'inside/../../escaped.txt', '/tmp/escaped-absolute.txt'] {
+  var slip_archive = os.join_paths(_root, 'slip.tar')
+  var slip_out = os.join_paths(_root, 'slip_out')
+  var writer = tar.Tar()
+
+  writer.create(slip_archive)
+  writer.add_data('stay inside'.to_bytes(), 'fine.txt')
+  writer.add_data('got out'.to_bytes(), escaping)
+  writer.close()
+
+  var reader = tar.Tar()
+  reader.open(slip_archive)
+
+  var refused = false
+
+  catch {
+    reader.extract(slip_out)
+  } as e {
+    refused = instance_of(e, tar.TarCorruptedError)
+  }
+
+  assert refused, 'an entry named "${escaping}" must be refused with TarCorruptedError'
+  assert !file(os.join_paths(_root, 'escaped.txt')).exists(),
+    'nothing may be written outside the output directory'
+}
+ok('extract() refuses entries that climb out of the output directory')
+
 os.remove_dir(_root, true)
 
 # ===========================================================================

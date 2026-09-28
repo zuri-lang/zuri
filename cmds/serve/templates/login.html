@@ -1,0 +1,14 @@
+<extend base="layout.html">
+  <define name="content">
+    <form class="panel" method="post" action="/login">
+      <h1>Sign in</h1>
+      <p class="error" x-if="error">{{ error }}</p>
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label>Username <input name="username" autocomplete="username" required autofocus></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+      <button>Sign in</button>
+      <p class="meta"><a href="/recover">Lost your password?</a></p>
+    </form>
+  </define>
+</extend>

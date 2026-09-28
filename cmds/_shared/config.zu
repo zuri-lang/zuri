@@ -1,0 +1,256 @@
+/**
+ * The user's own settings, and the tokens registries issued them.
+ *
+ * `$ZURI_HOME/config.toml` names registries by alias, and may name
+ * the one used when a dependency names none:
+ *
+ * ```toml
+ * [registries]
+ * default = "https://pub.zurilang.org"
+ * company = "https://packages.example.com"
+ * ```
+ *
+ * `$ZURI_HOME/credentials.toml` holds one token per registry address,
+ * and is written readable by its owner alone:
+ *
+ * ```toml
+ * [registries."https://pub.zurilang.org"]
+ * username = "ada"
+ * token = "zuri_..."
+ * ```
+ *
+ * `ZURI_REGISTRY` names the default registry for the user instead of
+ * the file, by alias or by address. A project that names its own
+ * `default` in `project.toml` keeps it, since that is part of what the
+ * project is, and a registry given to a command on its command line
+ * wins over both.
+ *
+ * A token in the environment takes precedence over the file, which
+ * is how a CI job authenticates: `ZURI_TOKEN_<ALIAS>` for the registry
+ * with that alias (upper-cased, with every character that is not a
+ * letter or digit made `_`), then `ZURI_TOKEN` for whichever registry
+ * the command is working with.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import toml
+
+import .errors { UsageError }
+import .fsx
+import .paths
+
+/**
+ * Raised for a configuration or credentials file that cannot be read.
+ */
+class ConfigError < UsageError {}
+
+# The TOML file at `path` as data, or an empty table.
+def _read_toml(path: string) {
+  if !file(path).exists() {
+    return {}
+  }
+
+  catch {
+    return toml.parse(fsx.read_text(path))
+  } as error {
+    raise ConfigError('${path} is not valid TOML: ${error.message}')
+  }
+}
+
+/**
+ * The registry aliases the user has configured.
+ *
+ * @returns dict: alias to address.
+ */
+def user_registries() {
+  var data = _read_toml(paths.config_file())
+  var table = data.get('registries', {})
+
+  if !is_dict(table) {
+    raise ConfigError('${paths.config_file()}: [registries] must be a table')
+  }
+
+  return table
+}
+
+/** The environment variable that names the user's default registry. */
+var REGISTRY_VARIABLE = 'ZURI_REGISTRY'
+
+/**
+ * The registry aliases in effect for a project: the user's, with
+ * `ZURI_REGISTRY` as the default when it is set, and the project's own
+ * on top.
+ *
+ * @param ?manifest: the project's `Manifest`, or `nil` outside one.
+ * @returns dict
+ * @raises ConfigError when `ZURI_REGISTRY` is neither an address nor
+ *    an alias the user or the project defines.
+ */
+def registries(manifest) {
+  var merged = user_registries().clone()
+  var own = manifest == nil ? {} : manifest.registries()
+
+  for alias, address in own {
+    merged.set(alias, address)
+  }
+
+  var chosen = os.get_env(REGISTRY_VARIABLE, '').trim()
+
+  if chosen.is_empty() or own.contains('default') {
+    return merged
+  }
+
+  if merged.contains(chosen) {
+    merged.set('default', merged.get(chosen))
+  } else if chosen.contains('://') {
+    merged.set('default', chosen)
+  } else {
+    raise ConfigError(
+      "${REGISTRY_VARIABLE} is '${chosen}', which is neither an address nor a registry alias "
+        + 'your configuration or the project defines'
+    )
+  }
+
+  return merged
+}
+
+/**
+ * The environment variable a token for the registry `alias` may be
+ * given in.
+ *
+ * @param string alias
+ * @returns string
+ */
+def token_variable(alias: string) {
+  return 'ZURI_TOKEN_' + alias.upper().replace('/[^A-Z0-9]/', '_', true)
+}
+
+/**
+ * The alias `address` goes by in `aliases`, or `nil`.
+ *
+ * @param string address
+ * @param dict aliases
+ * @returns ?string
+ */
+def alias_of(address: string, aliases: dict) {
+  for alias, known in aliases {
+    if known.rtrim('/') == address {
+      return alias
+    }
+  }
+
+  return nil
+}
+
+/**
+ * Every saved credential, keyed by registry address.
+ *
+ * @returns dict: address to `{ token, username }`.
+ */
+def credentials() {
+  var data = _read_toml(paths.credentials_file())
+  var table = data.get('registries', {})
+
+  return is_dict(table) ? table : {}
+}
+
+/**
+ * The token to present to `address`, from the environment or the
+ * credentials file, or `nil` when there is none.
+ *
+ * @param string address
+ * @param ?dict aliases
+ * @returns ?string
+ */
+def token_for(address: string, aliases: ?dict) {
+  var alias = aliases == nil ? nil : alias_of(address, aliases)
+
+  if alias != nil {
+    var specific = os.get_env(token_variable(alias), '')
+
+    if !specific.is_empty() {
+      return specific
+    }
+  }
+
+  var general = os.get_env('ZURI_TOKEN', '')
+
+  if !general.is_empty() {
+    return general
+  }
+
+  var saved = credentials().get(address, nil)
+
+  if is_dict(saved) and is_string(saved.get('token', nil)) {
+    return saved.token
+  }
+
+  return nil
+}
+
+/**
+ * Who the saved credentials for `address` belong to, or `nil`.
+ *
+ * @param string address
+ * @returns ?string
+ */
+def username_for(address: string) {
+  var saved = credentials().get(address, nil)
+
+  if is_dict(saved) and is_string(saved.get('username', nil)) {
+    return saved.username
+  }
+
+  return nil
+}
+
+# Writes the credentials table back, readable by its owner alone.
+def _save_credentials(table: dict) {
+  var text = '# Registry tokens. Keep this file private.\n\n'
+
+  if !table.is_empty() {
+    text += toml.dump({ registries: table })
+  }
+
+  fsx.atomic_write(paths.credentials_file(), text, 0c600)
+}
+
+/**
+ * Saves a token for `address`, replacing any before it.
+ *
+ * @param string address
+ * @param string token
+ * @param ?string username
+ */
+def save_token(address: string, token: string, username: ?string) {
+  var table = credentials().clone()
+  var entry = { token }
+
+  if username != nil {
+    entry.set('username', username)
+  }
+
+  table.set(address, entry)
+  _save_credentials(table)
+}
+
+/**
+ * Forgets the token for `address`.
+ *
+ * @param string address
+ * @returns bool: whether there was one.
+ */
+def forget_token(address: string) {
+  var table = credentials().clone()
+
+  if !table.contains(address) {
+    return false
+  }
+
+  table.remove(address)
+  _save_credentials(table)
+
+  return true
+}

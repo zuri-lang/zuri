@@ -1,0 +1,34 @@
+<extend base="layout.html">
+  <define name="content">
+    <section class="hero">
+      <h1>{{ site }}</h1>
+      <p>Packages for Zuri, installed with <code>zuri install</code> and published with <code>zuri publish</code>.</p>
+      <form class="search big" method="get" action="/search" role="search">
+        <input type="search" name="q" placeholder="Search packages" aria-label="Search packages">
+        <button>Search</button>
+      </form>
+      <ul class="stats">
+        <li><strong>{{ stats.packages|number_format }}</strong> packages</li>
+        <li><strong>{{ stats.versions|number_format }}</strong> versions</li>
+        <li><strong>{{ stats.downloads|number_format }}</strong> downloads</li>
+        <li><strong>{{ stats.publishers|number_format }}</strong> publishers</li>
+      </ul>
+    </section>
+    <div class="columns">
+      <section>
+        <h2>Most downloaded</h2>
+        <ul class="cards">
+          <template x-for="popular" x-value="item"><include path="card.html" /></template>
+        </ul>
+        <p x-not="popular" class="empty">Nothing has been published yet.</p>
+      </section>
+      <section>
+        <h2>Recently updated</h2>
+        <ul class="cards">
+          <template x-for="recent" x-value="item"><include path="card.html" /></template>
+        </ul>
+        <p x-not="recent" class="empty">Nothing has been published yet.</p>
+      </section>
+    </div>
+  </define>
+</extend>

@@ -1,0 +1,64 @@
+/**
+ * @command yank
+ * @description Stops a published version from being chosen, or with
+ *    undo, lets it be chosen again.
+ *
+ *   zuri yank <package@version> [options]
+ *
+ * A yanked version stays on the registry and keeps installing for
+ * every project whose lockfile already names it, so yanking never
+ * breaks a build. It is only left out when versions are chosen anew.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+
+import .._shared.cli
+import .._shared.errors { UsageError, run }
+import .._shared.names
+import .._shared.semver
+
+def parser() {
+  var parser = args.Parser('yank', true)
+
+  parser.description = 'Stops a published version from being chosen for new installs.'
+
+  parser.add_index('package', 'The version, as name@version',
+    { required: true, metavar: 'name@version' })
+  parser.add_option('undo', 'Let a yanked version be chosen again', { short_name: 'u' })
+  cli.add_registry_option(parser)
+  cli.add_json_option(parser)
+
+  return parser
+}
+
+def main() {
+  var parsed = parser().parse()
+  var spec = parsed.indexes[0]
+  var at = spec.index_of('@')
+
+  if at <= 0 {
+    raise UsageError("say which version to yank, as name@version, not '${spec}'")
+  }
+
+  var name = names.check_name(spec[0, at])
+  var version = spec[at + 1,]
+
+  if !semver.is_valid(version) {
+    raise UsageError("'${version}' is not a version")
+  }
+
+  var undo = parsed.options.get('undo', false) == true
+  var result = cli.registry_from(parsed).yank(name, version, undo)
+
+  if parsed.options.get('json', false) == true {
+    cli.print_json(result)
+  } else if undo {
+    echo '${result.name} ${result.version} can be chosen again.'
+  } else {
+    echo '${result.name} ${result.version} is yanked. Lockfiles that name it still install it.'
+  }
+}
+
+run('yank', main)

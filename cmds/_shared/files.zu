@@ -1,0 +1,302 @@
+/**
+ * Which files of a project make up the package: what `publish`
+ * uploads, what a git dependency installs, and what `bundle` ships.
+ *
+ * In a git work tree the candidates are what git tracks plus what it
+ * would track, so `.gitignore` is honoured; elsewhere they are every
+ * file under the root. From those:
+ *
+ * - `.git` and `.zuri` are always left out, wherever they are, and so
+ *   are `tmp` at the root, `*.log` files and `project.lock`.
+ * - When `[project] include` is given, only what it names goes in,
+ *   plus `project.toml`, which always does.
+ * - `[project] exclude` takes out what it names.
+ * - A file that looks like a secret (`.env`, `.env.*`, `*.pem`,
+ *   `*.key`, `*.p12`, `*.pfx`, `*.keystore`, `id_rsa`, `id_ecdsa`,
+ *   `id_ed25519`, `.netrc`, `credentials.toml`) is held back unless
+ *   `include` names it outright, and reported so the caller can
+ *   refuse.
+ *
+ * A pattern is a path relative to the root with `/` between its
+ * parts. `*` matches within one part, `**` across any number of them,
+ * and `?` one character. A pattern that names a directory takes
+ * everything under it.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+import os.process { spawn }
+
+import .errors { CommandError }
+import .fsx
+
+var _ALWAYS_OUT_ANYWHERE = ['.git', '.zuri']
+
+var _ALWAYS_OUT_AT_ROOT = ['tmp', 'project.lock']
+
+var _SECRETS = [
+  '.env', '.env.*', '*.pem', '*.key', '*.p12', '*.pfx', '*.keystore',
+  'id_rsa', 'id_rsa.*', 'id_ecdsa', 'id_ecdsa.*', 'id_ed25519', 'id_ed25519.*',
+  '.netrc', 'credentials.toml',
+]
+
+/**
+ * `pattern` as a regular expression over a whole relative path.
+ *
+ * @param string pattern
+ * @returns string
+ */
+def glob_regex(pattern: string) {
+  var text = pattern
+
+  while text.starts_with('./') {
+    text = text[2,]
+  }
+
+  while text.ends_with('/') {
+    text = text[0, text.length() - 1]
+  }
+
+  var out = ''
+  var i = 0
+
+  while i < text.length() {
+    var c = text[i]
+
+    if c == '*' {
+      if i + 1 < text.length() and text[i + 1] == '*' {
+        # `**/` matches no directories at all as well as several.
+        if i + 2 < text.length() and text[i + 2] == '/' {
+          out += '(?:.*/)?'
+          i += 3
+        } else {
+          out += '.*'
+          i += 2
+        }
+
+        continue
+      }
+
+      out += '[^/]*'
+    } else if c == '?' {
+      out += '[^/]'
+    } else if '\\.+^$()[]{}|'.contains(c) {
+      out += '\\' + c
+    } else {
+      out += c
+    }
+
+    i++
+  }
+
+  # A pattern naming a directory takes everything under it.
+  return '/^' + out + '(?:/.*)?$/'
+}
+
+/**
+ * Whether `path` matches `pattern`.
+ *
+ * @param string path
+ * @param string pattern
+ * @returns bool
+ */
+def matches(path: string, pattern: string) {
+  return is_dict(path.match(glob_regex(pattern)))
+}
+
+# Whether `path` matches any of `patterns`.
+def _any(path: string, patterns: list) {
+  for pattern in patterns {
+    if matches(path, pattern) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Whether the file at `path` looks like it holds a secret.
+ *
+ * @param string path
+ * @returns bool
+ */
+def looks_secret(path: string) {
+  var base = path.split('/').last()
+
+  for pattern in _SECRETS {
+    if matches(base, pattern) {
+      return true
+    }
+  }
+
+  return false
+}
+
+# Whether `path` is always left out.
+def _always_out(path: string) {
+  var parts = path.split('/')
+
+  for part in parts {
+    if _ALWAYS_OUT_ANYWHERE.contains(part) {
+      return true
+    }
+  }
+
+  if _ALWAYS_OUT_AT_ROOT.contains(parts[0]) {
+    return true
+  }
+
+  return path.ends_with('.log')
+}
+
+# Runs git quietly, answering its exit status and what it printed.
+def _git(root: string, arguments: list) {
+  var child = spawn('git', ['-C', root] + arguments, {
+    stdout: 'pipe', stderr: 'pipe', stdin: 'null',
+  })
+  var said = child.read_stdout().to_string()
+
+  return [child.wait(), said]
+}
+
+/**
+ * Whether git keeps track of what is under `root`: `root` is inside a
+ * work tree, and not somewhere that work tree ignores. A project kept
+ * in an ignored directory of another repository is not one git lists
+ * files for, so it is read as a plain directory instead.
+ *
+ * @param string root
+ * @returns bool
+ */
+def in_git_tree(root: string) {
+  if os.which('git') == nil {
+    return false
+  }
+
+  catch {
+    var inside = _git(root, ['rev-parse', '--is-inside-work-tree'])
+
+    if inside[0] != 0 or !inside[1].starts_with('true') {
+      return false
+    }
+
+    # `check-ignore` succeeds when the path is ignored.
+    return _git(root, ['check-ignore', '-q', '.'])[0] != 0
+  } as error {
+    return false
+  }
+}
+
+# What git tracks, or would, under `root`, relative to it.
+def _git_candidates(root: string) {
+  var child = spawn('git', [
+    '-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.',
+  ], { stdout: 'pipe', stderr: 'pipe', stdin: 'null' })
+
+  var listing = child.read_stdout().to_string()
+  var problem = child.read_stderr().to_string()
+
+  if child.wait() != 0 {
+    raise CommandError('could not list the files git knows under ${root}: ${problem}')
+  }
+
+  var found = []
+
+  for path in listing.split('\0') {
+    # A tracked file that was deleted is still listed until the change
+    # is committed; it is not a file any more.
+    if !path.is_empty() and file(os.join_paths(root, path)).exists() {
+      found.append(path)
+    }
+  }
+
+  return found
+}
+
+# Every file under `root`, relative to it.
+def _walked_candidates(root: string) {
+  var found = []
+
+  for entry in fsx.walk(root) {
+    if entry.kind != 'dir' {
+      found.append(entry.path)
+    }
+  }
+
+  return found
+}
+
+/**
+ * The files that make up the package rooted at `root`.
+ *
+ * @param string root
+ * @param ?dict options:
+ *    - `include` (`list`): patterns; everything when empty. Default
+ *      empty.
+ *    - `exclude` (`list`): patterns. Default empty.
+ *    - `use_git` (`bool`): list through git when `root` is a work
+ *      tree. Default `true`.
+ *    - `skip` (`list`): paths, relative to `root`, to leave out
+ *      whatever the patterns say. Default empty.
+ * @returns dict: `{ files, secrets, links }`: the files, sorted; the
+ *    ones held back as secrets; the symbolic links found, which a
+ *    package cannot hold.
+ */
+def select(root: string, options: ?dict) {
+  if options == nil {
+    options = {}
+  }
+
+  var include = options.get('include', [])
+  var exclude = options.get('exclude', [])
+  var skip = options.get('skip', [])
+
+  var candidates = options.get('use_git', true) != false and in_git_tree(root)
+    ? _git_candidates(root)
+    : _walked_candidates(root)
+
+  var files = []
+  var secrets = []
+  var links = []
+
+  for raw in candidates {
+    var path = raw.replace('\\', '/', false)
+
+    if _always_out(path) or _any(path, skip) {
+      continue
+    }
+
+    var named = !include.is_empty() and _any(path, include)
+    var essential = path == 'project.toml'
+
+    if !include.is_empty() and !named and !essential {
+      continue
+    }
+
+    if _any(path, exclude) and !essential {
+      continue
+    }
+
+    if looks_secret(path) and !named {
+      secrets.append(path)
+
+      continue
+    }
+
+    if os.is_symlink(os.join_paths(root, path)) {
+      links.append(path)
+
+      continue
+    }
+
+    files.append(path)
+  }
+
+  files.sort()
+  secrets.sort()
+  links.sort()
+
+  return { files, secrets, links }
+}

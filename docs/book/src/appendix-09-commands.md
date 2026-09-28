@@ -58,6 +58,12 @@ The name a command answers to is its file or directory name. It is a
 single name, never a path: `zuri tools/greet` is refused as an unknown
 command before anything is looked up.
 
+A name starting with `_` is private, the way an identifier starting with
+one is. `_notes.zu` and `_shared/index.zu` are never commands: `zuri
+--help` leaves them out and `zuri _notes` is an unknown command. That is
+the place for code several commands share, which each of them imports
+relatively, as `import .._shared.notes` from `release/index.zu`.
+
 ## Naming and Describing It
 
 The first doc block in the file introduces the command. `@command`

@@ -1,0 +1,270 @@
+/**
+ * The file operations the commands need beyond what `os` gives:
+ * writing a file so it is never seen half-written, copying and
+ * removing whole trees, and a digest of a tree's contents.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import crypto
+import hash
+import os
+
+/**
+ * `data` as lowercase hexadecimal.
+ *
+ * @param bytes data
+ * @returns string
+ */
+def hex(data: bytes) {
+  var digits = []
+
+  for byte in data {
+    digits.append(byte.hex().lpad(2, '0'))
+  }
+
+  return ''.join(digits)
+}
+
+/**
+ * A name nobody else will pick: `bits` random bits in hexadecimal.
+ *
+ * @param ?number bits: default 64.
+ * @returns string
+ */
+def unique(bits: ?number) {
+  return hex(crypto.random_bytes((bits == nil ? 64 : bits) // 8))
+}
+
+/**
+ * Creates `path` and everything above it that is missing.
+ *
+ * @param string path
+ */
+def ensure_dir(path: string) {
+  if !os.dir_exists(path) {
+    os.create_dir(path, 0c755, true)
+  }
+}
+
+/**
+ * Writes `contents` to `path` so that anyone reading `path` sees
+ * either what was there before or all of `contents`, never part of
+ * it: the data goes to a file beside `path` first, which is then
+ * renamed over it.
+ *
+ * @param string path
+ * @param string|bytes contents
+ * @param ?int mode: permission bits for the new file, applied before
+ *    it takes the place of the old one.
+ */
+def atomic_write(path: string, contents, mode: ?int) {
+  var directory = os.dir_name(path)
+
+  ensure_dir(directory)
+
+  var temporary = os.join_paths(directory, '.${os.base_name(path)}.${unique()}.tmp')
+  var binary = is_bytes(contents)
+  var handle = file(temporary, binary ? 'wb' : 'w')
+
+  catch {
+    handle.write(contents)
+    handle.close()
+
+    if mode != nil {
+      file(temporary).chmod(mode)
+    }
+
+    os.rename(temporary, path)
+  } as error {
+    if file(temporary).exists() {
+      file(temporary).delete()
+    }
+
+    raise error
+  }
+}
+
+/**
+ * The whole of the file at `path`, as text.
+ *
+ * @param string path
+ * @returns string
+ */
+def read_text(path: string) {
+  var handle = file(path, 'r')
+  var text = handle.read()
+
+  handle.close()
+
+  return text
+}
+
+/**
+ * The whole of the file at `path`, as bytes.
+ *
+ * @param string path
+ * @returns bytes
+ */
+def read_bytes(path: string) {
+  var handle = file(path, 'rb')
+  var data = handle.read()
+
+  handle.close()
+
+  return data
+}
+
+/**
+ * Every entry under `root`, as paths relative to it with `/` between
+ * their parts, in a stable order: each directory before what it
+ * holds. Symbolic links are reported as links and never followed.
+ *
+ * @param string root
+ * @returns list[dict]: `{ path, kind }`, `kind` being `'file'`,
+ *    `'dir'` or `'link'`.
+ */
+def walk(root: string) {
+  var entries = []
+
+  if !os.dir_exists(root) {
+    return entries
+  }
+
+  for name in os.read_dir(root, true) {
+    if name == '.' or name == '..' {
+      continue
+    }
+
+    var full = os.join_paths(root, name)
+    var relative = name.replace('\\', '/', false)
+    var kind = 'file'
+
+    if os.is_symlink(full) {
+      kind = 'link'
+    } else if os.dir_exists(full) {
+      kind = 'dir'
+    }
+
+    entries.append({ path: relative, kind })
+  }
+
+  return entries
+}
+
+/**
+ * Removes `path`, whatever it is, if it is there at all.
+ *
+ * @param string path
+ */
+def remove(path: string) {
+  if os.is_symlink(path) {
+    file(path).delete()
+  } else if os.dir_exists(path) {
+    os.remove_dir(path, true)
+  } else if file(path).exists() {
+    file(path).delete()
+  }
+}
+
+/**
+ * Copies the tree at `source` to `target`, which must not exist yet.
+ * Files keep their permission bits. Symbolic links are refused rather
+ * than followed out of the tree.
+ *
+ * @param string source
+ * @param string target
+ * @param ?function keep: given each relative path and kind, returns
+ *    whether to copy it. Everything is copied when left off, and a
+ *    directory that is not kept takes everything under it along.
+ * @raises Error on a symbolic link, or a file that cannot be copied.
+ */
+def copy_tree(source: string, target: string, keep: ?function) {
+  ensure_dir(target)
+
+  var skipped = []
+
+  for entry in walk(source) {
+    var inside_skipped = false
+
+    for prefix in skipped {
+      if entry.path.starts_with(prefix + '/') {
+        inside_skipped = true
+      }
+    }
+
+    if inside_skipped {
+      continue
+    }
+
+    if keep != nil and !keep(entry.path, entry.kind) {
+      if entry.kind == 'dir' {
+        skipped.append(entry.path)
+      }
+
+      continue
+    }
+
+    var from = os.join_paths(source, entry.path)
+    var to = os.join_paths(target, entry.path)
+
+    if entry.kind == 'link' {
+      raise Error("'${from}' is a symbolic link, which cannot be copied safely")
+    }
+
+    if entry.kind == 'dir' {
+      ensure_dir(to)
+    } else {
+      ensure_dir(os.dir_name(to))
+      file(from).copy(to)
+      file(to).chmod(file(from).stats().mode & 0c777)
+    }
+  }
+}
+
+/**
+ * A digest of everything under `root`: every path, whether it is a
+ * file or a directory, whether it is executable, and every file's
+ * contents. Two trees with the same digest hold the same files with
+ * the same contents, whenever and wherever they were written.
+ *
+ * @param string root
+ * @returns string: `sha256:` and 64 hexadecimal digits.
+ */
+def tree_digest(root: string) {
+  var lines = []
+
+  for entry in walk(root) {
+    var full = os.join_paths(root, entry.path)
+
+    if entry.kind == 'dir' {
+      lines.append('d ${entry.path}')
+    } else if entry.kind == 'link' {
+      lines.append('l ${entry.path} ${os.readlink(full)}')
+    } else {
+      var executable = (file(full).stats().mode & 0c111) != 0
+
+      lines.append('${executable ? "x" : "f"} ${entry.path} ${hash.sha256(read_bytes(full))}')
+    }
+  }
+
+  return 'sha256:' + hash.sha256('\n'.join(lines))
+}
+
+/**
+ * The total size of the files under `root`, in bytes.
+ *
+ * @param string root
+ * @returns number
+ */
+def tree_size(root: string) {
+  var total = 0
+
+  for entry in walk(root) {
+    if entry.kind == 'file' {
+      total += file(os.join_paths(root, entry.path)).stats().size
+    }
+  }
+
+  return total
+}

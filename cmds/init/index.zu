@@ -16,46 +16,14 @@
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
-import colors
 import io
 import os
 import os.process { exit }
 
+import .._shared.ui
 import .plan
 import .scaffold
 import .template
-
-# The runtime paints its own output on exactly these terms, and a
-# command that disagreed with it would look like a different program.
-var _paint = os.get_env('NO_COLOR') == nil and io.stdout.is_tty()
-
-def _heading(text) {
-  if !_paint {
-    return text
-  }
-
-  var green = colors.text(text, colors.text_color.green)
-
-  return colors.text(green, colors.style.bold)
-}
-
-def _accent(text) {
-  if !_paint {
-    return text
-  }
-
-  var cyan = colors.text(text, colors.text_color.cyan)
-
-  return colors.text(cyan, colors.style.bold)
-}
-
-def _muted(text) {
-  if !_paint {
-    return text
-  }
-
-  return colors.text(text, colors.text_color.dark_grey)
-}
 
 # Whether there is a reader at the other end of this to answer a
 # question. A pipe, a CI job or `--yes` all mean the defaults stand.
@@ -73,7 +41,7 @@ def _interactive(parsed) {
 
 # One question, with the current answer offered as the default.
 def _ask(label: string, current: string) {
-  var offer = current.is_empty() ? '' : _muted(' (${current})')
+  var offer = current.is_empty() ? '' : ui.muted(' (${current})')
   var typed = plan.clean(io.readline('  ${label}${offer}: '))
 
   return typed.is_empty() ? current : typed
@@ -93,7 +61,7 @@ def _ask_checked(label: string, current: string, check: function) {
         raise error
       }
 
-      echo '  ${_muted(error.message)}'
+      echo '  ${ui.muted(error.message)}'
     }
   }
 }
@@ -102,8 +70,8 @@ def _ask_checked(label: string, current: string, check: function) {
 # flag already settled is never asked about.
 def _interview(parsed, chosen, directory: string) {
   echo ''
-  echo '  ${_heading("Creating a new project in")} ${directory}'
-  echo '  ${_muted("Press enter to accept the given defaults.")}'
+  echo '  ${ui.heading("Creating a new project in")} ${directory}'
+  echo '  ${ui.muted("Press enter to accept the given defaults.")}'
   echo ''
 
   if !plan.was_given(parsed, 'name') {
@@ -152,14 +120,14 @@ def _interview(parsed, chosen, directory: string) {
 # The manifest as it will be written, and the chance to say no to it.
 def _confirm(directory: string, manifest) {
   echo ''
-  echo '  ${_heading("About to write")} ${os.join_paths(directory, scaffold.MANIFEST)}'
+  echo '  ${ui.heading("About to write")} ${os.join_paths(directory, scaffold.MANIFEST)}'
   echo ''
 
   for line in template.manifest_file(manifest).split('\n') {
     echo '  ${line}'
   }
 
-  var typed = io.readline('  Is this OK? ${_muted("(yes)")} ')
+  var typed = io.readline('  Is this OK? ${ui.muted("(yes)")} ')
   var answer = plan.clean(typed).lower()
 
   return answer.is_empty() or answer.starts_with('y')
@@ -186,7 +154,7 @@ def _next_steps(directory: string) {
 def _row(label: string, width: int, text: string, quiet: bool) {
   var padded = ' ' * (width - label.length()) + label
 
-  return '  ${quiet ? _muted(padded) : _heading(padded)}  ${quiet ? _muted(text) : text}'
+  return '  ${quiet ? ui.muted(padded) : ui.heading(padded)}  ${quiet ? ui.muted(text) : text}'
 }
 
 def _report(directory: string, manifest, outcome, dry_run: bool, git: bool) {
@@ -194,7 +162,9 @@ def _report(directory: string, manifest, outcome, dry_run: bool, git: bool) {
   var width = outcome.kept.is_empty() ? verb.length() : verb.length().max(4)
 
   echo ''
-  echo '  ${_heading("zuri init")}  ${_accent(manifest.project.name)} ${manifest.project.version}'
+  var project = manifest.project
+
+  echo '  ${ui.heading("zuri init")}  ${ui.accent(project.name)} ${project.version}'
   echo ''
 
   for path in outcome.created {
@@ -214,16 +184,16 @@ def _report(directory: string, manifest, outcome, dry_run: bool, git: bool) {
 
   if dry_run {
     echo ''
-    echo '  ${_muted("nothing was written")}'
+    echo '  ${ui.muted("nothing was written")}'
 
     return
   }
 
   echo ''
-  echo '  ${_heading("Your project is ready.")}'
+  echo '  ${ui.heading("Your project is ready.")}'
 
   for step in _next_steps(directory) {
-    echo '  ${_muted("$")} ${step}'
+    echo '  ${ui.muted("$")} ${step}'
   }
 
   echo ''
@@ -253,7 +223,7 @@ def main() {
   var manifest = plan.manifest(chosen)
 
   if interactive and !_confirm(directory, manifest) {
-    echo '  ${_muted("nothing was written")}'
+    echo '  ${ui.muted("nothing was written")}'
 
     exit(1)
   }

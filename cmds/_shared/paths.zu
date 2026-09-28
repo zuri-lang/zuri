@@ -1,0 +1,309 @@
+/**
+ * Where everything the commands read and write lives.
+ *
+ * Two places matter. A project is the nearest directory at or above
+ * where a command runs that holds a `project.toml`; it keeps its
+ * installed packages in `.zuri/libs` and its lockfile, `project.lock`,
+ * beside the manifest. `ZURI_HOME` (`.zuri` in the home directory
+ * unless the variable says otherwise) holds what belongs to the user
+ * rather than to a project: globally installed packages, the download
+ * cache, credentials, and the runtimes `bundle` builds with.
+ *
+ * The rules match the runtime's own, which is what makes a package
+ * installed here the one an `import` finds.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import os
+
+/** The file that makes a directory a project. */
+var MANIFEST = 'project.toml'
+
+/** The lockfile, beside the manifest. */
+var LOCKFILE = 'project.lock'
+
+/** A project's own state directory. */
+var STATE_DIR = '.zuri'
+
+/**
+ * The directory Zuri keeps the user's state in: `$ZURI_HOME`, or
+ * `.zuri` in the home directory.
+ *
+ * @returns string
+ */
+def home() {
+  var configured = os.get_env('ZURI_HOME', '')
+
+  if !configured.is_empty() {
+    return os.abs_path(configured)
+  }
+
+  return os.join_paths(os.home_dir(), STATE_DIR)
+}
+
+/**
+ * Where globally installed packages live: `$ZURI_HOME/libs`.
+ *
+ * @returns string
+ */
+def global_libs() {
+  return os.join_paths(home(), 'libs')
+}
+
+/**
+ * Where the launchers for globally installed commands go:
+ * `$ZURI_HOME/bin`.
+ *
+ * @returns string
+ */
+def global_bin() {
+  return os.join_paths(home(), 'bin')
+}
+
+/**
+ * The manifest that records what is installed globally.
+ *
+ * @returns string
+ */
+def global_manifest() {
+  return os.join_paths(home(), 'global.toml')
+}
+
+/**
+ * The lockfile for the global installation.
+ *
+ * @returns string
+ */
+def global_lockfile() {
+  return os.join_paths(home(), 'global.lock')
+}
+
+/**
+ * The download cache: `$ZURI_CACHE` when it is set, which lets a
+ * build server keep the cache somewhere it is saved between runs, or
+ * `$ZURI_HOME/cache`.
+ *
+ * @returns string
+ */
+def cache_dir() {
+  var configured = os.get_env('ZURI_CACHE', '')
+
+  if !configured.is_empty() {
+    return os.abs_path(configured)
+  }
+
+  return os.join_paths(home(), 'cache')
+}
+
+/**
+ * Where downloaded runtimes are kept for `bundle`:
+ * `$ZURI_HOME/runtimes`.
+ *
+ * @returns string
+ */
+def runtimes_dir() {
+  return os.join_paths(home(), 'runtimes')
+}
+
+/**
+ * Where hook output and other logs go: `$ZURI_HOME/logs`.
+ *
+ * @returns string
+ */
+def logs_dir() {
+  return os.join_paths(home(), 'logs')
+}
+
+/**
+ * The file registry tokens are kept in.
+ *
+ * @returns string
+ */
+def credentials_file() {
+  return os.join_paths(home(), 'credentials.toml')
+}
+
+/**
+ * The user's own configuration: registries and defaults.
+ *
+ * @returns string
+ */
+def config_file() {
+  return os.join_paths(home(), 'config.toml')
+}
+
+/**
+ * The nearest directory at or above `start` holding a `project.toml`.
+ *
+ * @param ?string start: where to start; the working directory when
+ *    left off.
+ * @returns ?string: the directory, absolute, or `nil` when there is
+ *    none.
+ */
+def find_root(start: ?string) {
+  var here = os.abs_path(start == nil ? os.cwd() : start)
+
+  while true {
+    if file(os.join_paths(here, MANIFEST)).exists() {
+      return here
+    }
+
+    var up = os.dir_name(here)
+
+    if up == here or up.is_empty() {
+      return nil
+    }
+
+    here = up
+  }
+}
+
+/**
+ * The runtime's own directory: `$ZURI_ROOT`, or the directory the
+ * executable sits in.
+ *
+ * @returns string
+ */
+def install_root() {
+  var configured = os.get_env('ZURI_ROOT', '')
+
+  if !configured.is_empty() {
+    return os.abs_path(configured)
+  }
+
+  return os.dir_name(os.real_path(os.exe_path))
+}
+
+/**
+ * The standard library the runtime reads.
+ *
+ * @returns string
+ */
+def stdlib_dir() {
+  return os.join_paths(install_root(), 'libs')
+}
+
+/**
+ * The layout one project keeps on disk, worked out from its root.
+ */
+class Project {
+
+  /**
+   * The project root, absolute.
+   * @type string
+   */
+  var root
+
+  /**
+   * `project.toml`.
+   * @type string
+   */
+  var manifest
+
+  /**
+   * `project.lock`.
+   * @type string
+   */
+  var lockfile
+
+  /**
+   * `.zuri`.
+   * @type string
+   */
+  var state
+
+  /**
+   * `.zuri/libs`, where installed packages live.
+   * @type string
+   */
+  var libs
+
+  /**
+   * Whether this is the user's global installation rather than a
+   * project.
+   * @type bool
+   */
+  var is_global = false
+
+  /**
+   * @param string root
+   * @param ?bool is_global
+   */
+  @new(root: string, is_global: ?bool) {
+    self.root = root
+    self.is_global = is_global == true
+
+    if self.is_global {
+      self.manifest = global_manifest()
+      self.lockfile = global_lockfile()
+      self.state = root
+      self.libs = global_libs()
+    } else {
+      self.manifest = os.join_paths(root, MANIFEST)
+      self.lockfile = os.join_paths(root, LOCKFILE)
+      self.state = os.join_paths(root, STATE_DIR)
+      self.libs = os.join_paths(self.state, 'libs')
+    }
+  }
+
+  /**
+   * The record of what the commands installed, so they never touch a
+   * directory they did not put there.
+   *
+   * @returns string
+   */
+  installed_record() {
+    return os.join_paths(self.state, 'installed.toml')
+  }
+
+  /**
+   * Where half-finished installs are staged before they are swapped
+   * into place.
+   *
+   * @returns string
+   */
+  staging_dir() {
+    return os.join_paths(self.state, '.staging')
+  }
+
+  /**
+   * The file held while a command changes this project.
+   *
+   * @returns string
+   */
+  lock_path() {
+    return os.join_paths(self.state, 'lock')
+  }
+
+  /**
+   * The directory one installed package lives in.
+   *
+   * @param string import_name
+   * @returns string
+   */
+  package_dir(import_name: string) {
+    return os.join_paths(self.libs, import_name)
+  }
+}
+
+/**
+ * The project a command running here works on.
+ *
+ * @param ?string start
+ * @returns ?Project: `nil` when there is no project.
+ */
+def project(start: ?string) {
+  var root = find_root(start)
+
+  return root == nil ? nil : Project(root)
+}
+
+/**
+ * The user's global installation, as a project of its own.
+ *
+ * @returns Project
+ */
+def global_project() {
+  return Project(home(), true)
+}

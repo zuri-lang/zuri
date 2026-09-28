@@ -123,6 +123,11 @@
  *   -c, --count <count>  Number of greetings (default: 1)
  * ```
  *
+ * Options declared on the parser itself are global: they are accepted
+ * before a command and after it alike, and a command's help lists them
+ * under GLOBAL OPTIONS. When a command declares an option of the same
+ * name, that option is the one its arguments reach.
+ *
  * ### Return value of `parse()` is in the format:
  *
  * ```
@@ -720,9 +725,16 @@ class Parser < _Optionable {
    * Without a `value`, a positional nobody supplied is simply missing
    * from `parse()`'s `indexes` rather than sitting there as nil.
    *
+   * A positional of type `LIST` takes every positional word from where
+   * it starts to the end of the command line, flags in between or not,
+   * and arrives in `indexes` as one list. It has to be the last
+   * positional declared, since nothing after it could ever receive a
+   * word.
+   *
    * @param string name
    * @param ?string help
    * @param ?dict opts
+   * @raises ArgsError when a positional is added after a `LIST` one.
    */
   add_index(name, help, opts) {
     if !is_string(name)
@@ -738,6 +750,13 @@ class Parser < _Optionable {
     var value    = opts.get('value', nil)
     var required = opts.get('required', false)
     var metavar  = opts.get('metavar', nil)
+
+    if !self.indexes.is_empty() and self.indexes.last().type == LIST {
+      raise ArgsError(
+        'positional "${name}" cannot follow "${self.indexes.last().name}", which takes every '
+          + 'remaining word'
+      )
+    }
 
     self.indexes.append(_Positional(name, help, type, choices, value, required, metavar))
   }
@@ -849,6 +868,13 @@ class Parser < _Optionable {
 
         # Attempt to resolve the flag
         var matched = self._resolve_option(source, lookup)
+
+        # The parser's own options stay in force after a command, which
+        # is what the help promises by listing them there as global. A
+        # command's option of the same name is the one it means.
+        if matched == nil and command_found {
+          matched = self._resolve_option(self.options, lookup)
+        }
 
         if matched == nil {
           # Unknown flag
@@ -1021,6 +1047,19 @@ class Parser < _Optionable {
 
       # --- positional / index argument ---
       var idx_pos = parsed_args.indexes.length()
+
+      # A trailing LIST positional keeps gathering every word after its
+      # first.
+      if idx_pos > 0 and idx_pos == self.indexes.length()
+        and self.indexes.last().type == LIST {
+        var gathering = self.indexes.last()
+
+        self._validate_choice(gathering, arg, gathering.name)
+        parsed_args.indexes.last().append(arg)
+        i++
+        continue
+      }
+
       if idx_pos < self.indexes.length() {
         var idx = self.indexes[idx_pos]
         var v
@@ -1338,6 +1377,11 @@ class Parser < _Optionable {
    */
   _positional_left(idx) {
     var word = idx.metavar ? idx.metavar : idx.name
+
+    if idx.type == LIST {
+      word += '...'
+    }
+
     var left = idx.required ? '<${word}>' : '[${word}]'
     if idx.type == INT or idx.type == NUMBER or idx.type == BOOL
       left += ' <${_type_name[idx.type]}>'

@@ -1,0 +1,197 @@
+# Choosing versions: the highest that works, backing out of choices
+# that lead nowhere, and saying why when nothing works.
+
+import test { * }
+
+import ..resolver { SolveError, solve }
+import ..semver
+
+# A registry in memory: name -> version -> dependencies.
+class Catalog {
+  @new(packages: dict, preferred: ?dict) {
+    self.packages = packages
+    self.preferred = preferred == nil ? {} : preferred
+    self.asked = []
+  }
+
+  versions(name: string) {
+    self.asked.append(name)
+
+    var known = self.packages.get(name, nil)
+
+    if known == nil {
+      return []
+    }
+
+    var ordered = semver.sorted(known.keys()).reverse()
+    var locked = self.preferred.get(name, nil)
+
+    if locked != nil and ordered.contains(locked) {
+      ordered = [locked] + ordered.filter(@(version) => version != locked)
+    }
+
+    return ordered
+  }
+
+  dependencies(name: string, version: string) {
+    var listed = []
+
+    for dependency, range in self.packages.get(name).get(version) {
+      listed.append({ name: dependency, range })
+    }
+
+    return listed
+  }
+}
+
+def needs(ranges: dict) {
+  var listed = []
+
+  for name, range in ranges {
+    listed.append({ name, range })
+  }
+
+  return listed
+}
+
+describe('solve', @{
+  it('picks the highest version of everything', @{
+    var catalog = Catalog({
+      web: { '1.0.0': {}, '1.2.0': { json: '^1.0' }, '2.0.0': {} },
+      json: { '1.0.0': {}, '1.4.0': {}, '2.0.0': {} },
+    })
+
+    var chosen = solve(catalog, '0.1.0', needs({ web: '^1.0' }))
+
+    expect(chosen).to_equal({ web: '1.2.0', json: '1.4.0' })
+  })
+
+  it('finds the version two dependents can share', @{
+    var catalog = Catalog({
+      a: { '1.0.0': { c: '>=1.2.0' } },
+      b: { '1.0.0': { c: '<1.5.0' } },
+      c: { '1.0.0': {}, '1.2.0': {}, '1.4.0': {}, '1.6.0': {} },
+    })
+
+    var chosen = solve(catalog, '0.1.0', needs({ a: '^1', b: '^1' }))
+
+    expect(chosen.c).to_equal('1.4.0')
+  })
+
+  it('backs out of a choice that leads nowhere', @{
+    var catalog = Catalog({
+      a: { '1.0.0': { c: '^1.0' }, '2.0.0': { c: '^2.0' } },
+      b: { '1.0.0': { c: '^1.0' } },
+      c: { '1.0.0': {}, '2.0.0': {} },
+    })
+
+    var chosen = solve(catalog, '0.1.0', needs({ a: '*', b: '^1' }))
+
+    expect(chosen).to_equal({ a: '1.0.0', b: '1.0.0', c: '1.0.0' })
+  })
+
+  it('keeps the version the lockfile already has, while it still fits', @{
+    var catalog = Catalog({
+      json: { '1.0.0': {}, '1.4.0': {}, '1.9.0': {} },
+    }, { json: '1.4.0' })
+
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.0' })).json).to_equal('1.4.0')
+    expect(solve(catalog, '0.1.0', needs({ json: '>=1.5' })).json).to_equal('1.9.0')
+  })
+
+  it('never picks a pre-release nobody asked for', @{
+    var catalog = Catalog({
+      json: { '1.0.0': {}, '1.1.0-rc.1': {} },
+    })
+
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.0' })).json).to_equal('1.0.0')
+    expect(solve(catalog, '0.1.0', needs({ json: '^1.1.0-rc.1' })).json).to_equal('1.1.0-rc.1')
+  })
+
+  it('does not look up packages nothing needs', @{
+    var catalog = Catalog({
+      a: { '1.0.0': {} },
+      unused: { '1.0.0': {} },
+    })
+
+    solve(catalog, '0.1.0', needs({ a: '^1' }))
+
+    expect(catalog.asked).not.to_contain('unused')
+  })
+
+  it('handles a chain that needs many steps of backing out', @{
+    # Only the oldest version of every link works with d 1.0.0.
+    var packages = {
+      d: { '1.0.0': {}, '2.0.0': {} },
+    }
+
+    for link in ['a', 'b', 'c'] {
+      packages.set(link, {
+        '1.0.0': { d: '^1.0' },
+        '2.0.0': { d: '^2.0' },
+        '3.0.0': { d: '^2.0' },
+      })
+    }
+
+    var chosen = solve(Catalog(packages), '0.1.0', needs({ a: '*', b: '*', c: '*', d: '^1' }))
+
+    expect(chosen).to_equal({ a: '1.0.0', b: '1.0.0', c: '1.0.0', d: '1.0.0' })
+  })
+})
+
+describe('explaining a failure', @{
+  it('names the requirements that cannot all hold', @{
+    var catalog = Catalog({
+      a: { '1.0.0': { c: '^1.0' } },
+      b: { '1.0.0': { c: '^2.0' } },
+      c: { '1.0.0': {}, '2.0.0': {} },
+    })
+
+    var message = nil
+
+    catch {
+      solve(catalog, '0.1.0', needs({ a: '^1', b: '^1' }), 'shop')
+    } as error {
+      expect(error).to_be_instance_of(SolveError)
+      message = error.message
+    }
+
+    expect(message).not.to_be_nil()
+    expect(message).to_contain('a 1.0.0 depends on c ^1.0')
+    expect(message).to_contain('b 1.0.0 depends on c ^2.0')
+    expect(message).to_contain('version solving failed')
+  })
+
+  it('says when no version of a package exists', @{
+    var catalog = Catalog({
+      a: { '1.0.0': { missing: '^1.0' } },
+    })
+
+    var message = nil
+
+    catch {
+      solve(catalog, '0.1.0', needs({ a: '^1' }))
+    } as error {
+      message = error.message
+    }
+
+    expect(message).to_contain('missing')
+    expect(message).to_contain('version solving failed')
+  })
+
+  it('says when a range matches nothing', @{
+    var catalog = Catalog({
+      json: { '1.0.0': {} },
+    })
+
+    var message = nil
+
+    catch {
+      solve(catalog, '0.1.0', needs({ json: '^3.0' }))
+    } as error {
+      message = error.message
+    }
+
+    expect(message).to_contain('json')
+  })
+})

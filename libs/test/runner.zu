@@ -22,7 +22,9 @@
  * `before_all` runs once, immediately before the first test in its
  * suite that is actually going to run, and not at all for a suite
  * whose tests were all filtered out. `after_all` runs after the last
- * one, and only if `before_all` ran. `before_each` runs outermost
+ * one, and only if `before_all` ran; it runs even when `before_all`
+ * failed, so whatever the setup acquired before failing is still let
+ * go. `before_each` runs outermost
  * first, `after_each` innermost first, and `after_each` runs even
  * when the test failed.
  *
@@ -784,6 +786,10 @@ def _run_suite(state, suite) {
 
     if failure != nil {
       _fail_whole_suite(state, suite, failure)
+
+      # A setup that failed part way may already hold a connection, a
+      # server or a directory, and only `after_all` knows to let it go.
+      _finish_suite(state, suite)
       state.reporter.suite_finished(suite)
 
       return
@@ -809,12 +815,7 @@ def _run_suite(state, suite) {
   }
 
   if runs {
-    var failure = _run_hooks(suite.after_all, 'after_all')
-
-    if failure != nil {
-      suite.failures.append(failure)
-      _record_suite_failure(state, suite, failure)
-    }
+    _finish_suite(state, suite)
   }
 
   if runs and suite.name != '' {
@@ -822,6 +823,18 @@ def _run_suite(state, suite) {
   }
 
   state.reporter.suite_finished(suite)
+}
+
+
+# Runs a suite's `after_all` hooks, recording a failure among them
+# against the suite.
+def _finish_suite(state, suite) {
+  var failure = _run_hooks(suite.after_all, 'after_all')
+
+  if failure != nil {
+    suite.failures.append(failure)
+    _record_suite_failure(state, suite, failure)
+  }
 }
 
 

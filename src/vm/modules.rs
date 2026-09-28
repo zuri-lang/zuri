@@ -9,12 +9,14 @@
 //! belong to.
 //!
 //! Resolution order for a NON-relative import (`import http.status`,
-//! `import math`) mirrors the documented precedence: a user's own
-//! `.zuri/libs` (relative to the current working directory) always
-//! wins, then an install-root `libs` directory, then finally a small
-//! set of builtin native modules. A RELATIVE import (`.`/`..` prefix)
-//! is always resolved against the directory of the file doing the
-//! importing, never searched for elsewhere.
+//! `import math`) mirrors the documented precedence: the project's own
+//! `.zuri/libs` (under the project root, see `crate::project`) always
+//! wins, then an install-root `libs` directory, then a small set of
+//! builtin native modules, and last the user's globally installed
+//! packages in `$ZURI_HOME/libs`. A global package therefore never
+//! shadows anything the runtime ships. A RELATIVE import (`.`/`..`
+//! prefix) is always resolved against the directory of the file doing
+//! the importing, never searched for elsewhere.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -59,13 +61,14 @@ fn import_relative(vm: &mut VM, importer_path: &str, raw_path: &str) -> ImportRe
 }
 
 /// Resolves a bare (non-relative) import in documented precedence
-/// order: user-local `.zuri/libs` (so user code always wins), then
-/// the install-root `libs`, then a builtin native module.
+/// order: the project's `.zuri/libs` (so project code always wins),
+/// then the install-root `libs`, then a builtin native module, then
+/// the global `$ZURI_HOME/libs`.
 fn import_search(vm: &mut VM, raw_path: &str) -> ImportResult {
-  if let Ok(cwd) = std::env::current_dir() {
-    let user_libs = cwd.join(".zuri").join("libs").join(raw_path);
-    if resolve_candidate(&user_libs).is_some() {
-      return load_from_candidate(vm, &user_libs, raw_path);
+  if let Some(libs) = crate::project::project_libs() {
+    let candidate = libs.join(raw_path);
+    if resolve_candidate(&candidate).is_some() {
+      return load_from_candidate(vm, &candidate, raw_path);
     }
   }
 
@@ -82,16 +85,27 @@ fn import_search(vm: &mut VM, raw_path: &str) -> ImportResult {
     }
   }
 
+  if let Some(libs) = crate::project::global_libs() {
+    let candidate = libs.join(raw_path);
+    if resolve_candidate(&candidate).is_some() {
+      return load_from_candidate(vm, &candidate, raw_path);
+    }
+  }
+
   Err(vm.raise(
     "ModuleNotFoundError",
     format!("module '{}' could not be found", raw_path),
   ))
 }
 
-/// `$ZURI_ROOT/libs`, falling back to a `libs` directory next to the
-/// running executable; this implementation's equivalent of the
-/// documented `%BLADE_INSTALL_ROOT%/libs`.
+/// The standard library: the bundle's own `libs` when this run is a
+/// bundled application, else `$ZURI_ROOT/libs`, falling back to a
+/// `libs` directory next to the running executable.
 pub fn install_root_libs() -> Option<PathBuf> {
+  if let Some(bundle) = crate::project::bundle_root() {
+    return Some(bundle.join("libs"));
+  }
+
   if let Ok(root) = std::env::var("ZURI_ROOT") {
     return Some(PathBuf::from(root).join("libs"));
   }

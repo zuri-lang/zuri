@@ -32,6 +32,7 @@ import .stream
 import base64
 import json
 import net.tls
+import os
 import url
 
 # Connections idle in the pool longer than this are dropped rather
@@ -156,6 +157,33 @@ class HttpClient {
    * @type bool
    */
   var http2 = true
+
+  /**
+   * The HTTP proxy every request goes through, as `http://host:port`,
+   * with `user:password@` in front of the host when the proxy asks for
+   * credentials. `nil` leaves the choice to the environment, when
+   * `trust_env` allows it.
+   *
+   * A request for an `https` address is tunnelled through the proxy
+   * with `CONNECT`, so the proxy carries the encrypted bytes and never
+   * sees what they say; a request for an `http` address is handed to
+   * the proxy whole. A proxy is itself reached over plain HTTP; an
+   * `https://` proxy address is refused.
+   * @type ?string
+   */
+  var proxy
+
+  /**
+   * Whether to take a proxy from the environment when `proxy` is not
+   * set: `HTTPS_PROXY` for `https` addresses, `HTTP_PROXY` for `http`
+   * ones, and `ALL_PROXY` for either, in upper or lower case, with
+   * `NO_PROXY` naming the hosts to reach directly. `NO_PROXY` is a
+   * comma-separated list of host names, which also cover every name
+   * under them, addresses, and `*` for everything. This machine's own
+   * loopback addresses are always reached directly.
+   * @type bool
+   */
+  var trust_env = true
 
   /**
    * The cookie jar, or `nil` to not track cookies at all. A client
@@ -373,6 +401,19 @@ class HttpClient {
       while true {
         var carrier = self._connection_for(parsed, options)
         var transport = carrier[0] == 'h2' ? carrier[2] : carrier[1]
+
+        # A plain request handed to a proxy names the whole address, so
+        # the proxy knows where to take it, and carries the proxy's own
+        # credentials.
+        var forward = carrier.length() > 4 ? carrier[4] : nil
+
+        if forward != nil {
+          request.set_target(_absolute_form(parsed, options.get('query', nil)))
+
+          if forward.get('authorization', nil) != nil {
+            request.headers.set('Proxy-Authorization', forward.authorization)
+          }
+        }
         var read_before = transport.bytes_read()
 
         catch {
@@ -656,8 +697,70 @@ class HttpClient {
   # Connection pooling
   # ----------------------------------------------------------------
 
+  # The proxy a request for `parsed` goes through, or `nil`.
+  _proxy_for(parsed) {
+    var address = self.proxy
+
+    if address == nil and self.trust_env {
+      var names = parsed.scheme == 'https'
+        ? ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy']
+        : ['HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy']
+
+      for name in names {
+        var value = os.get_env(name, '')
+
+        if !value.is_empty() {
+          address = value
+
+          break
+        }
+      }
+
+      if address != nil and _bypasses_proxy(parsed.host, _port_of(parsed)) {
+        return nil
+      }
+    }
+
+    if address == nil or address.is_empty() or _is_loopback(parsed.host) {
+      return nil
+    }
+
+    if !address.contains('://') {
+      address = 'http://' + address
+    }
+
+    var proxy = url.parse(address)
+
+    if proxy.scheme != 'http' {
+      raise UnsupportedProtocolError(
+        'a proxy is reached over plain http, and ${address} is ${proxy.scheme}'
+      )
+    }
+
+    if proxy.host == nil or proxy.host.is_empty() {
+      raise HttpError('the proxy address ${address} names no host')
+    }
+
+    var authorization = nil
+
+    if proxy.username != nil and !proxy.username.is_empty() {
+      var user = url.decode(proxy.username)
+      var password = proxy.password == nil ? '' : url.decode(proxy.password)
+
+      authorization = 'Basic ' + base64.encode('${user}:${password}'.to_bytes())
+    }
+
+    return {
+      host: proxy.host,
+      port: proxy.port != nil and proxy.port != 0 ? proxy.port : 80,
+      authorization,
+    }
+  }
+
   _connection_for(parsed, options) {
-    var key = '${parsed.scheme}://${_authority_of(parsed)}'
+    var proxy = self._proxy_for(parsed)
+    var via = proxy == nil ? '' : ' via ${proxy.host}:${proxy.port}'
+    var key = '${parsed.scheme}://${_authority_of(parsed)}${via}'
     var idle = self._pool.get(key, nil)
 
     while idle != nil and idle.length() > 0 {
@@ -677,14 +780,26 @@ class HttpClient {
 
     var secure = parsed.scheme == 'https'
 
-    var connection = stream.connect(parsed.host, _port_of(parsed), {
+    var settings = {
       secure,
       tls_config: secure ? self._client_tls_config() : nil,
       server_name: parsed.host,
       connect_timeout: options.get('connect_timeout', self.connect_timeout),
       read_timeout: options.get('timeout', self.read_timeout),
       write_timeout: options.get('write_timeout', self.write_timeout),
-    })
+    }
+
+    if proxy != nil and !secure {
+      settings.set('secure', false)
+
+      var forwarded = stream.connect(proxy.host, proxy.port, settings)
+
+      return ['h1', forwarded, nil, false, proxy]
+    }
+
+    var connection = proxy != nil
+      ? stream.tunnel(proxy, parsed.host, _port_of(parsed), settings)
+      : stream.connect(parsed.host, _port_of(parsed), settings)
 
     # ALPN settled this during the handshake, so there is nothing to
     # negotiate here and no extra round trip to pay for it.
@@ -701,7 +816,9 @@ class HttpClient {
   }
 
   _release(parsed, carrier) {
-    var key = '${parsed.scheme}://${_authority_of(parsed)}'
+    var proxy = self._proxy_for(parsed)
+    var via = proxy == nil ? '' : ' via ${proxy.host}:${proxy.port}'
+    var key = '${parsed.scheme}://${_authority_of(parsed)}${via}'
 
     if !self._pool.contains(key) {
       self._pool[key] = []
@@ -950,6 +1067,59 @@ def _origin_form(parsed, extra_query) {
   }
 
   return query.is_empty() ? path : '${path}?${query}'
+}
+
+# The absolute-form target a request handed to a proxy carries.
+def _absolute_form(parsed, extra_query) {
+  return '${parsed.scheme}://${_authority_of(parsed)}${_origin_form(parsed, extra_query)}'
+}
+
+# Whether `host` is this machine, which no proxy stands in front of.
+def _is_loopback(host) {
+  var name = host.lower().ltrim('[').rtrim(']')
+
+  return name == 'localhost' or name == '::1' or name.starts_with('127.')
+}
+
+# Whether `NO_PROXY` says to reach `host` directly.
+def _bypasses_proxy(host: string, port) {
+  var listed = os.get_env('NO_PROXY', os.get_env('no_proxy', ''))
+  var name = host.lower().ltrim('[').rtrim(']')
+
+  for raw in listed.split(',') {
+    var entry = raw.trim().lower()
+
+    if entry.is_empty() {
+      continue
+    }
+
+    if entry == '*' {
+      return true
+    }
+
+    # An entry may name a port, and then covers only that port.
+    var colon = entry.index_of(':')
+
+    if colon > 0 and entry.index_of(']') < 0 and entry.count(':') == 1 {
+      if entry[colon + 1,] != port.to_string() {
+        continue
+      }
+
+      entry = entry[0, colon]
+    }
+
+    entry = entry.ltrim('[').rtrim(']')
+
+    while entry.starts_with('.') or entry.starts_with('*') {
+      entry = entry[1,]
+    }
+
+    if name == entry or name.ends_with('.' + entry) {
+      return true
+    }
+  }
+
+  return false
 }
 
 def _authorization(auth) {

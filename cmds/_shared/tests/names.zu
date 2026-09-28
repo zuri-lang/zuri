@@ -1,0 +1,70 @@
+# What a package may be called, and what it is imported as.
+
+import test { * }
+
+import ..errors { UsageError }
+import ..names { check_name, import_name, is_identifier, is_valid, normalized, stdlib_names }
+
+describe('import_name', @{
+  it('turns hyphens into underscores', @{
+    expect(import_name('http-extra')).to_equal('http_extra')
+    expect(import_name('plain')).to_equal('plain')
+  })
+
+  it('treats the two spellings as one package', @{
+    expect(normalized('HTTP-Extra')).to_equal(normalized('http_extra'))
+  })
+})
+
+describe('check_name', @{
+  it('accepts ordinary names', @{
+    for name in ['w', 'web', 'http-extra', 'json_schema', 'a1', 'x-2-y'] {
+      expect(check_name(name, {})).to_equal(name)
+    }
+  })
+
+  it('takes the spaces off the ends and nothing else', @{
+    expect(check_name('  web  ', {})).to_equal('web')
+  })
+
+  it('refuses names that are not lowercase words joined up', @{
+    for name in ['', 'Web', '-web', 'web-', '2fa', 'a b', 'web.tools', ' ', 'a\nb'] {
+      expect(is_valid(name, {})).to_be_false()
+    }
+  })
+
+  it('refuses keywords, which import cannot name', @{
+    for name in ['class', 'def', 'var', 'import', 'return'] {
+      expect(@{
+        check_name(name, {})
+      }).to_raise_instance_of(UsageError)
+    }
+  })
+
+  it('refuses reserved names', @{
+    expect(is_valid('zuri', {})).to_be_false()
+    expect(is_valid('nyssa', {})).to_be_false()
+  })
+
+  it('refuses standard library module names, under either spelling', @{
+    var stdlib = stdlib_names()
+
+    expect(stdlib).to_have_key('http')
+    expect(stdlib).to_have_key('json')
+    expect(is_valid('http', stdlib)).to_be_false()
+    expect(is_valid('json', stdlib)).to_be_false()
+  })
+
+  it('refuses a name longer than the limit', @{
+    expect(is_valid('a' * 65, {})).to_be_false()
+    expect(is_valid('a' * 64, {})).to_be_true()
+  })
+})
+
+describe('is_identifier', @{
+  it('answers the way the lexer reads the text', @{
+    expect(is_identifier('http_extra')).to_be_true()
+    expect(is_identifier('if')).to_be_false()
+    expect(is_identifier('a-b')).to_be_false()
+  })
+})

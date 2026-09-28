@@ -1,0 +1,235 @@
+/**
+ * @command serve
+ * @description Runs Nyssa, the package repository that zuri install
+ *    and zuri publish talk to.
+ *
+ *   zuri serve [options]
+ *   zuri serve migrate | check | backup <file> | admin <action> <username>
+ *
+ * Started on its own, the repository serves its site and registry API
+ * until it is stopped. The subcommands look after it: `migrate` brings
+ * the database up to date, `check` confirms every archive still
+ * matches its checksum, `backup` copies the database while it is in
+ * use, and `admin` creates accounts and changes what they may do.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import crypto
+import http
+import io
+import os
+import os.process { exit, on_signal }
+
+import .._shared.archive
+import .._shared.errors { UsageError, run }
+import .._shared.fsx
+import .._shared.ui
+import .app
+import .auth
+import .db { Database }
+import .plan
+import .service
+import .context { Nyssa }
+
+# The secret session cookies are signed with, made once per storage
+# directory and kept readable by its owner alone.
+def _session_secret(storage: string) {
+  var path = os.join_paths(storage, 'session.secret')
+
+  if !file(path).exists() {
+    fsx.atomic_write(path, fsx.hex(crypto.random_bytes(32)), 0c600)
+  }
+
+  return fsx.read_text(path).trim()
+}
+
+def _check(settings: dict) {
+  var nyssa = Nyssa(settings)
+  var rows = nyssa.db.connection.fetch_all('
+    select packages.name, versions.version, versions.checksum
+    from versions join packages on packages.id = versions.package_id
+    order by packages.name_key, versions.id
+  ')
+
+  var problems = []
+
+  for row in rows {
+    var path = nyssa.blobs.path_of(row.checksum)
+
+    if path == nil or !file(path).exists() {
+      problems.append('${row.name} ${row.version}: its archive is missing')
+    } else if archive.checksum(path, true) != row.checksum {
+      problems.append('${row.name} ${row.version}: its archive does not match its checksum')
+    }
+  }
+
+  echo '${ui.count(rows.length(), "version")} checked, ${ui.count(problems.length(), "problem")}'
+
+  for problem in problems {
+    echo '  ${ui.failure(problem)}'
+  }
+
+  if !problems.is_empty() {
+    exit(1)
+  }
+}
+
+# Copies a SQLite database while it is in use. PostgreSQL and MySQL
+# are backed up by their own tools, which know how to do it without
+# stopping anyone.
+def _backup(settings: dict, target: string) {
+  var nyssa = Nyssa(settings)
+
+  if nyssa.db.engine != 'sqlite' {
+    raise UsageError(
+      'backup copies a SQLite database; back up ${nyssa.db.engine} with its own tools, '
+        + 'such as pg_dump or mysqldump'
+    )
+  }
+
+  var path = os.abs_path(target)
+
+  nyssa.db.connection.native().backup_to(path)
+  echo 'Backed up the database to ${path}'
+}
+
+def _admin(settings: dict, words: list) {
+  if words.length() != 2 {
+    raise UsageError('admin takes an action and a username, such as: admin promote ada')
+  }
+
+  var action = words[0]
+  var username = words[1]
+  var nyssa = Nyssa(settings)
+
+  if action == 'create' {
+    var email = ui.ask('Email')
+    var password = ui.ask_secret('Password')
+
+    if password != ui.ask_secret('Password again') {
+      raise UsageError('the two passwords are not the same')
+    }
+
+    catch {
+      var created = service.create_account(nyssa, { username, email, password }, 'command line',
+        true)
+
+      nyssa.db.revoke_token(created.token.id, created.publisher.id)
+
+      echo 'Created ${ui.accent(username)}. Their recovery key, shown only this once:'
+      echo ''
+      echo '  ${created.recovery_key}'
+      echo ''
+    } as error {
+      if instance_of(error, service.ServiceError) {
+        raise UsageError(error.message)
+      }
+
+      raise error
+    }
+
+    return
+  }
+
+  var publisher = nyssa.db.publisher_by_name(username)
+
+  if publisher == nil {
+    raise UsageError("there is no publisher called '${username}'")
+  }
+
+  using action {
+    when 'promote' nyssa.db.set_role(publisher.id, 'admin')
+    when 'demote' nyssa.db.set_role(publisher.id, 'publisher')
+    when 'suspend' {
+      nyssa.db.set_suspended(publisher.id, true)
+      nyssa.db.revoke_all_tokens(publisher.id)
+    }
+    when 'restore' nyssa.db.set_suspended(publisher.id, false)
+    default {
+      raise UsageError("'${action}' is not an admin action; use create, promote, demote, "
+        + 'suspend or restore')
+    }
+  }
+
+  nyssa.db.audit(nil, 'admin_' + action, username, nil, 'command line')
+  echo '${ui.accent(username)}: ${action} done'
+}
+
+def _serve(settings: dict) {
+  if plan.exposed_in_clear(settings) {
+    ui.complain(ui.warn(
+      'warning: listening on ${settings.host} without TLS; passwords and tokens will cross '
+        + 'the network in the clear. Give --tls-cert and --tls-key, or put a proxy that '
+        + 'terminates TLS in front and pass --trust-proxy.'
+    ))
+  }
+
+  var options = {
+    host: settings.host,
+    port: settings.port,
+    workers: settings.workers,
+    on_ready: @(address, stop) {
+      echo '${ui.heading(settings.name)} is serving ${settings.public_url}'
+      echo ui.muted('listening on ${address.to_string()}, storage in ${settings.storage}')
+
+      var stopping = @() {
+        echo ui.muted('stopping')
+        stop()
+
+        return true
+      }
+
+      on_signal('INT', stopping)
+      on_signal('TERM', stopping)
+    },
+  }
+
+  if settings.tls_cert != nil {
+    options.set('cert_chain', fsx.read_text(settings.tls_cert))
+    options.set('private_key', fsx.read_text(settings.tls_key))
+  }
+
+  os.set_env(plan.SETTINGS_VARIABLE, plan.encode(settings), true)
+  http.serve(app.setup, options)
+}
+
+def main() {
+  var parsed = plan.parser().parse()
+  var settings = plan.settings(parsed)
+
+  fsx.ensure_dir(settings.storage)
+  catch {
+    os.chmod(settings.storage, 0c700)
+  } as error {
+    # Not every filesystem keeps Unix permissions.
+  }
+
+  settings.set('session_secret', _session_secret(settings.storage))
+
+  var database = Database(settings.database)
+  var applied = database.migrate()
+
+  database.close()
+
+  var command = parsed.command
+
+  if command == nil {
+    _serve(settings)
+
+    return
+  }
+
+  using command.name {
+    when 'migrate' {
+      echo applied == 0
+        ? 'The database is up to date.'
+        : 'Applied ${ui.count(applied, "migration")}.'
+    }
+    when 'check' _check(settings)
+    when 'backup' _backup(settings, command.value)
+    when 'admin' _admin(settings, command.value)
+  }
+}
+
+run('serve', main)

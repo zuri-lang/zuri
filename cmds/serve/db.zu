@@ -1,0 +1,640 @@
+/**
+ * Nyssa's database: publishers, their tokens, packages and their
+ * versions, owners, download counts, and a record of every change.
+ *
+ * It runs on any engine the `sql` module speaks: SQLite, which needs
+ * nothing set up and is the default, PostgreSQL, MySQL and MariaDB,
+ * chosen by the connection string. The schema lives in
+ * `migrations/<engine>`, one numbered file per change, each applied
+ * once and recorded in `migrations`, so starting any version of the
+ * repository against any older database brings it up to date.
+ *
+ * Flat reads and writes go through the `sql` module's own helpers,
+ * which build the statement each engine wants. What they cannot say, a
+ * join, a search, a counter moving, is written as SQL every engine
+ * reads the same way. Every value is bound as a parameter; nothing a
+ * request carries is ever joined into a statement. Times are whole
+ * seconds since the epoch, and flags are `0` and `1`, which every
+ * engine stores alike.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import json
+import os
+import sql
+import sql.errors { UniqueViolation }
+
+import .._shared.fsx
+
+var _MIGRATIONS = os.join_paths(os.dir_name(__file__), 'migrations')
+
+# The engine a migration directory is named for. MariaDB reads MySQL's.
+var _SCHEMA_FOR = { sqlite: 'sqlite', postgres: 'postgres', mysql: 'mysql', mariadb: 'mysql' }
+
+/** The character `like_escape()` escapes with, which every engine accepts. */
+var LIKE_ESCAPE = '!'
+
+/**
+ * `%`, `_` and the escape character escaped for a `like` pattern, so
+ * what somebody searched for is matched as written. Use it with
+ * `escape '!'`.
+ *
+ * @param string text
+ * @returns string
+ */
+def like_escape(text: string) {
+  return text.replace('!', '!!', false).replace('%', '!%', false).replace('_', '!_', false)
+}
+
+/**
+ * The file a SQLite connection string points at, or `nil` for an
+ * in-memory database or another engine.
+ *
+ * @param string connection_string
+ * @returns ?string
+ */
+def sqlite_path(connection_string: string) {
+  if connection_string == ':memory:' {
+    return nil
+  }
+
+  if connection_string.starts_with('sqlite://') {
+    return connection_string[9,]
+  }
+
+  if !connection_string.contains('://') and !connection_string.contains('=') {
+    return connection_string
+  }
+
+  return nil
+}
+
+# The current time, as the database keeps it.
+def _now() {
+  return time().floor()
+}
+
+# A time as the database keeps it, in whole seconds.
+def _seconds(at) {
+  return at == nil ? nil : at.floor()
+}
+
+# A number from an aggregate, which PostgreSQL and MySQL answer with a
+# decimal.
+def _number(value) {
+  return is_number(value) ? value : value.to_number()
+}
+
+/**
+ * One open database.
+ */
+class Database {
+
+  /**
+   * @type sql.Connection
+   */
+  var connection
+
+  /**
+   * The engine it runs on: `sqlite`, `postgres`, `mysql` or `mariadb`.
+   * @type string
+   */
+  var engine
+
+  /**
+   * @param string connection_string
+   * @raises Error for an engine Nyssa has no schema for.
+   */
+  @new(connection_string: string) {
+    var path = sqlite_path(connection_string)
+
+    if path != nil {
+      fsx.ensure_dir(os.dir_name(os.abs_path(path)))
+
+      # Write-ahead logging lets every worker read while one writes, and
+      # a writer waits for another rather than failing at once.
+      self.connection = sql.open(connection_string, { journal_mode: 'wal', busy_timeout: 15000 })
+    } else {
+      self.connection = sql.open(connection_string)
+    }
+
+    self.engine = self.connection.driver_name()
+
+    if !_SCHEMA_FOR.contains(self.engine) {
+      raise Error('Nyssa has no schema for ${self.engine} databases')
+    }
+  }
+
+  /**
+   * The migrations there are for this engine, in the order they apply.
+   *
+   * @returns list[string]: file names.
+   */
+  available_migrations() {
+    var directory = os.join_paths(_MIGRATIONS, _SCHEMA_FOR.get(self.engine))
+    var found = []
+
+    for entry in os.read_dir(directory) {
+      if entry.ends_with('.sql') {
+        found.append(entry)
+      }
+    }
+
+    found.sort()
+
+    return found
+  }
+
+  /**
+   * The migrations the database has had.
+   *
+   * @returns list[string]
+   */
+  applied_migrations() {
+    self.connection.exec_script(
+      'CREATE TABLE IF NOT EXISTS migrations ('
+        + '  name VARCHAR(100) NOT NULL PRIMARY KEY,'
+        + '  applied_at BIGINT NOT NULL'
+        + ')'
+    )
+
+    return self.connection.find('migrations', nil, { columns: ['name'], order: ['name'] })
+      .column('name')
+  }
+
+  /**
+   * Applies every migration the database has not had, each one in a
+   * transaction of its own along with the record of it.
+   *
+   * MySQL and MariaDB commit at every schema change, so there each
+   * migration runs on its own and is recorded once it has finished. A
+   * migration that fails there part way leaves the statements before
+   * the failure applied, and is tried in full again next time.
+   *
+   * @returns number: how many were applied.
+   */
+  migrate() {
+    var applied = self.applied_migrations()
+    var directory = os.join_paths(_MIGRATIONS, _SCHEMA_FOR.get(self.engine))
+    var count = 0
+
+    for name in self.available_migrations() {
+      if applied.contains(name) {
+        continue
+      }
+
+      var script = fsx.read_text(os.join_paths(directory, name))
+
+      if self.connection.supports('transactional_ddl') {
+        self.connection.transaction(@(tx) {
+          tx.exec_script(script)
+          tx.insert('migrations', { name, applied_at: _now() })
+        })
+      } else {
+        self.connection.exec_script(script)
+        self.connection.insert('migrations', { name, applied_at: _now() })
+      }
+
+      count++
+    }
+
+    return count
+  }
+
+  /**
+   * Runs `body` in a transaction.
+   *
+   * @param function body
+   * @returns whatever `body` returns.
+   */
+  transaction(body: function) {
+    return self.connection.transaction(@(tx) {
+      return body()
+    })
+  }
+
+  /**
+   * Closes the database.
+   */
+  close() {
+    self.connection.close()
+  }
+
+  # Publishers
+
+  publisher_by_name(username: string) {
+    return self.connection.find_one('publishers', { username_key: username.lower() })
+  }
+
+  publisher_by_email(email: string) {
+    return self.connection.find_one('publishers', { email_key: email.lower() })
+  }
+
+  publisher_by_id(id) {
+    return self.connection.find_one('publishers', { id })
+  }
+
+  create_publisher(fields: dict) {
+    return self.connection.insert('publishers', {
+      username: fields.username,
+      username_key: fields.username.lower(),
+      email: fields.email,
+      email_key: fields.email.lower(),
+      password_hash: fields.password_hash,
+      recovery_digest: fields.recovery_digest,
+      role: fields.get('role', 'publisher'),
+      email_verified: fields.get('email_verified', false) ? 1 : 0,
+      created_at: _now(),
+    })
+  }
+
+  count_publishers() {
+    return self.connection.count('publishers', nil)
+  }
+
+  set_password(id, password_hash: string) {
+    self.connection.update('publishers', { password_hash }, { id })
+  }
+
+  set_recovery(id, digest: string) {
+    self.connection.update('publishers', { recovery_digest: digest }, { id })
+  }
+
+  set_role(id, role: string) {
+    self.connection.update('publishers', { role }, { id })
+  }
+
+  set_suspended(id, suspended: bool) {
+    self.connection.update('publishers', { suspended_at: suspended ? _now() : nil }, { id })
+  }
+
+  set_email_verified(id) {
+    self.connection.update('publishers', { email_verified: 1 }, { id })
+  }
+
+  # Tokens
+
+  create_token(fields: dict) {
+    self.connection.insert('tokens', {
+      id: fields.id,
+      publisher_id: fields.publisher_id,
+      name: fields.name,
+      digest: fields.digest,
+      scopes: fields.scopes,
+      created_at: _now(),
+      expires_at: _seconds(fields.get('expires_at', nil)),
+    }, { returning: 'id' })
+  }
+
+  token_by_digest(digest: string) {
+    return self.connection.fetch_one('
+      select tokens.*, publishers.username, publishers.suspended_at, publishers.role,
+        publishers.email_verified
+      from tokens join publishers on publishers.id = tokens.publisher_id
+      where tokens.digest = ?
+    ', [digest])
+  }
+
+  tokens_of(publisher_id) {
+    return self.connection.find('tokens', { publisher_id, revoked_at: nil }, {
+      columns: ['id', 'name', 'scopes', 'created_at', 'expires_at', 'last_used_at'],
+      order: ['created_at desc'],
+    }).rows
+  }
+
+  touch_token(id: string) {
+    self.connection.update('tokens', { last_used_at: _now() }, { id })
+  }
+
+  revoke_token(id: string, publisher_id) {
+    return self.connection.update('tokens', { revoked_at: _now() }, {
+      id,
+      publisher_id,
+      revoked_at: nil,
+    }) > 0
+  }
+
+  revoke_all_tokens(publisher_id) {
+    self.connection.update('tokens', { revoked_at: _now() }, { publisher_id, revoked_at: nil })
+  }
+
+  # Sign-in failures, counted per key across every worker.
+
+  failures(key: string, window: number) {
+    var row = self.connection.find_one('login_failures', { failure_key: key })
+
+    if row == nil or time() - row.first_at > window {
+      return 0
+    }
+
+    return row.failures
+  }
+
+  record_failure(key: string, window: number) {
+    var now = _now()
+
+    self._upsert(@{
+      var row = self.connection.find_one('login_failures', { failure_key: key })
+
+      if row == nil {
+        self.connection.insert('login_failures', {
+          failure_key: key,
+          failures: 1,
+          first_at: now,
+        }, { returning: 'failure_key' })
+      } else if now - row.first_at > window {
+        self.connection.update('login_failures', { failures: 1, first_at: now }, {
+          failure_key: key,
+        })
+      } else {
+        self.connection.exec(
+          'update login_failures set failures = failures + 1 where failure_key = ?', [key]
+        )
+      }
+    })
+  }
+
+  clear_failures(key: string) {
+    self.connection.delete('login_failures', { failure_key: key })
+  }
+
+  # Runs a read followed by an insert, trying once more when another
+  # worker inserted the same key in between.
+  _upsert(body: function) {
+    catch {
+      body()
+    } as error {
+      if !instance_of(error, UniqueViolation) {
+        raise error
+      }
+
+      body()
+    }
+  }
+
+  # One-time codes: password resets and email confirmations.
+
+  create_code(digest: string, publisher_id, purpose: string, expires_at: number) {
+    self.connection.insert('one_time_codes', {
+      digest,
+      publisher_id,
+      purpose,
+      expires_at: _seconds(expires_at),
+    }, { returning: 'digest' })
+  }
+
+  use_code(digest: string, purpose: string) {
+    var row = self.connection.find_one('one_time_codes', { digest, purpose, used_at: nil })
+
+    if row == nil or row.expires_at <= _now() {
+      return nil
+    }
+
+    # Spending it is a conditional write, so two requests racing with
+    # the same link cannot both succeed.
+    var spent = self.connection.update('one_time_codes', { used_at: _now() }, {
+      digest,
+      used_at: nil,
+    })
+
+    return spent > 0 ? row.publisher_id : nil
+  }
+
+  # Packages
+
+  package_by_name(name_key: string) {
+    return self.connection.find_one('packages', { name_key })
+  }
+
+  package_by_id(id) {
+    return self.connection.find_one('packages', { id })
+  }
+
+  create_package(fields: dict) {
+    var now = _now()
+
+    return self.connection.insert('packages', {
+      name: fields.name,
+      name_key: fields.name_key,
+      description: '',
+      keywords: '',
+      downloads: 0,
+      created_at: now,
+      updated_at: now,
+    })
+  }
+
+  update_package(id, fields: dict) {
+    self.connection.update('packages', {
+      description: fields.description == nil ? '' : fields.description,
+      homepage: fields.homepage,
+      repository: fields.repository,
+      license: fields.license,
+      keywords: fields.keywords == nil ? '' : fields.keywords,
+      latest: fields.latest,
+      updated_at: _now(),
+    }, { id })
+  }
+
+  versions_of(package_id) {
+    return self.connection.find('versions', { package_id }, { order: ['published_at', 'id'] })
+      .rows
+  }
+
+  version_of(package_id, version_key: string) {
+    return self.connection.find_one('versions', { package_id, version_key })
+  }
+
+  create_version(fields: dict) {
+    return self.connection.insert('versions', {
+      package_id: fields.package_id,
+      version: fields.version,
+      version_key: fields.version_key,
+      checksum: fields.checksum,
+      size: fields.size,
+      manifest: json.encode(fields.manifest),
+      dependencies: json.encode(fields.dependencies),
+      zuri: fields.zuri,
+      readme: fields.readme,
+      published_by: fields.published_by,
+      published_at: _now(),
+      downloads: 0,
+    })
+  }
+
+  set_yanked(version_id, yanked: bool) {
+    self.connection.update('versions', { yanked_at: yanked ? _now() : nil }, { id: version_id })
+  }
+
+  add_downloads(version_id, package_id, count: number, day: string) {
+    self.connection.exec('update versions set downloads = downloads + ? where id = ?', [
+      count, version_id,
+    ])
+    self.connection.exec('update packages set downloads = downloads + ? where id = ?', [
+      count, package_id,
+    ])
+
+    self._upsert(@{
+      var moved = self.connection.exec(
+        'update downloads_daily set downloads = downloads + ? where version_id = ? and day = ?',
+        [count, version_id, day]
+      )
+
+      if moved.rows_affected == 0 {
+        self.connection.insert('downloads_daily', {
+          version_id,
+          day,
+          downloads: count,
+        }, { returning: 'day' })
+      }
+    })
+  }
+
+  # Owners
+
+  owners_of(package_id) {
+    return self.connection.fetch_column('
+      select publishers.username from owners
+      join publishers on publishers.id = owners.publisher_id
+      where owners.package_id = ?
+      order by owners.added_at, publishers.username
+    ', [package_id], nil)
+  }
+
+  is_owner(package_id, publisher_id) {
+    return self.connection.count('owners', { package_id, publisher_id }) > 0
+  }
+
+  add_owner(package_id, publisher_id) {
+    if self.is_owner(package_id, publisher_id) {
+      return
+    }
+
+    self._upsert(@{
+      if !self.is_owner(package_id, publisher_id) {
+        self.connection.insert('owners', {
+          package_id,
+          publisher_id,
+          added_at: _now(),
+        }, { returning: 'package_id' })
+      }
+    })
+  }
+
+  remove_owner(package_id, publisher_id) {
+    self.connection.delete('owners', { package_id, publisher_id })
+  }
+
+  packages_of(publisher_id) {
+    return self.connection.fetch_all('
+      select packages.* from packages
+      join owners on owners.package_id = packages.id
+      where owners.publisher_id = ?
+      order by packages.name_key
+    ', [publisher_id])
+  }
+
+  # Listings
+
+  statistics() {
+    return {
+      packages: self.connection.count('packages', nil),
+      versions: self.connection.count('versions', nil),
+      publishers: self.count_publishers(),
+      downloads: _number(self.connection.fetch_value(
+        'select coalesce(sum(downloads), 0) from packages', [], 0
+      )),
+    }
+  }
+
+  popular(limit: number) {
+    return self.connection.fetch_all(
+      'select * from packages where latest is not null order by downloads desc, name_key'
+        + ' limit ${limit.floor()}',
+      []
+    )
+  }
+
+  recent(limit: number) {
+    return self.connection.fetch_all(
+      'select * from packages where latest is not null order by updated_at desc, name_key'
+        + ' limit ${limit.floor()}',
+      []
+    )
+  }
+
+  /**
+   * Packages matching `query` in their name, description or keywords.
+   *
+   * @param string query
+   * @param string sort: `relevance`, `downloads`, `updated` or `name`.
+   * @param number limit
+   * @param number offset
+   * @returns dict: `{ total, packages }`.
+   */
+  search(query: string, sort: string, limit: number, offset: number) {
+    var words = query.lower().replace('/\\s+/', ' ', true).trim()
+    var name_words = words.replace('-', '_', false)
+    var pattern = '%' + like_escape(words) + '%'
+    var name_pattern = '%' + like_escape(name_words) + '%'
+
+    # The only part of a statement a request ever picks, and it picks
+    # from a fixed set rather than supplying it.
+    var orders = {
+      relevance: "
+        case
+          when name_key = :exact then 0
+          when name_key like :prefix escape '!' then 1
+          when name_key like :name_pattern escape '!' then 2
+          when lower(keywords) like :pattern escape '!' then 3
+          else 4
+        end, downloads desc, name_key",
+      downloads: 'downloads desc, name_key',
+      updated: 'updated_at desc, name_key',
+      name: 'name_key',
+    }
+
+    var order = orders.get(sort, orders.relevance)
+    var where = "
+      latest is not null and (
+        name_key like :name_pattern escape '!'
+        or lower(description) like :pattern escape '!'
+        or lower(keywords) like :pattern escape '!'
+      )"
+
+    var params = {
+      pattern,
+      name_pattern,
+      exact: name_words,
+      prefix: like_escape(name_words) + '%',
+    }
+
+    var total = self.connection.fetch_value(
+      'select count(*) from packages where ${where}', params, 0
+    )
+
+    # A limit and an offset cannot be bound on every engine, so they go
+    # into the statement as the whole numbers they were checked to be.
+    var rows = self.connection.fetch_all(
+      'select * from packages where ${where} order by ${order}'
+        + ' limit ${limit.floor()} offset ${offset.floor()}',
+      params
+    )
+
+    return { total, packages: rows }
+  }
+
+  # The audit trail
+
+  audit(publisher_id, action: string, subject: string, detail, address) {
+    self.connection.insert('audit_log', {
+      at: _now(),
+      publisher_id,
+      action,
+      subject,
+      detail: detail == nil ? nil : json.encode(detail),
+      address,
+    })
+  }
+}

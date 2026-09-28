@@ -123,8 +123,9 @@
  *
  * `before_all` runs once, immediately before the first test in its
  * suite that is actually going to run, and not at all for a suite
- * everything was filtered out of. `after_all` runs after the last one.
- * `before_each` runs outermost first and `after_each` innermost
+ * everything was filtered out of. `after_all` runs after the last one,
+ * and runs even when `before_all` failed, so it must cope with a setup
+ * that got only part of the way. `before_each` runs outermost first and `after_each` innermost
  * first, and `after_each` runs even when the test failed.
  *
  * ## Asserting
@@ -499,7 +500,9 @@ def before_all(body: function) {
 
 /**
  * Runs once after the last test in the enclosing suite, and only if
- * `before_all` ran.
+ * `before_all` ran. It runs when `before_all` raised as well, since a
+ * setup that failed part way may already hold what needs releasing,
+ * so it must cope with whatever the setup got as far as.
  *
  * @param function body
  */

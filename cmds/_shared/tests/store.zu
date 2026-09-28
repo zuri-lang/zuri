@@ -1,0 +1,166 @@
+# Changing installed packages all at once or not at all, and putting
+# right what an interrupted change left behind.
+
+import json
+import os
+import test { * }
+
+import ..fsx
+import ..store { Transaction, commands_in, load_installed, recover }
+
+# A scratch directory of this run's own, outside any checkout.
+var ROOT = os.create_temp_dir('zuri-store-')
+var LIBS = os.join_paths(ROOT, 'libs')
+var STAGING = os.join_paths(ROOT, '.staging')
+
+def put(path: string, text: string) {
+  fsx.ensure_dir(os.dir_name(path))
+  file(path, 'w').write(text)
+}
+
+def read(path: string) {
+  return fsx.read_text(path)
+}
+
+describe('Transaction', @{
+  before_each(@{
+    fsx.remove(ROOT)
+    put(os.join_paths(LIBS, 'old', 'index.zu'), 'old v1')
+    put(os.join_paths(LIBS, 'gone', 'index.zu'), 'gone')
+  })
+
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('swaps in what was staged and takes out what was removed', @{
+    var source = os.join_paths(ROOT, 'source')
+
+    put(os.join_paths(source, 'index.zu'), 'old v2')
+    put(os.join_paths(source, 'fresh.zu'), 'fresh')
+
+    var tx = Transaction(LIBS, STAGING)
+
+    tx.stage_files('old', source, ['index.zu'])
+    tx.stage_files('new', source, ['fresh.zu'])
+    tx.remove('gone')
+    tx.commit()
+    tx.finish()
+
+    expect(read(os.join_paths(LIBS, 'old', 'index.zu'))).to_equal('old v2')
+    expect(read(os.join_paths(LIBS, 'new', 'fresh.zu'))).to_equal('fresh')
+    expect(os.dir_exists(os.join_paths(LIBS, 'gone'))).to_be_false()
+    var left = os.read_dir(STAGING).filter(@(name) => name != '.' and name != '..')
+
+    expect(left).to_be_empty()
+  })
+
+  it('puts everything back when told to roll back', @{
+    var source = os.join_paths(ROOT, 'source')
+
+    put(os.join_paths(source, 'index.zu'), 'old v2')
+
+    var tx = Transaction(LIBS, STAGING)
+
+    tx.stage_files('old', source, ['index.zu'])
+    tx.remove('gone')
+    tx.commit()
+    tx.rollback()
+    tx.finish()
+
+    expect(read(os.join_paths(LIBS, 'old', 'index.zu'))).to_equal('old v1')
+    expect(read(os.join_paths(LIBS, 'gone', 'index.zu'))).to_equal('gone')
+  })
+
+  it('leaves libs untouched when abandoned before committing', @{
+    var source = os.join_paths(ROOT, 'source')
+
+    put(os.join_paths(source, 'index.zu'), 'never used')
+
+    var tx = Transaction(LIBS, STAGING)
+
+    tx.stage_files('old', source, ['index.zu'])
+    tx.abandon()
+
+    expect(read(os.join_paths(LIBS, 'old', 'index.zu'))).to_equal('old v1')
+  })
+})
+
+describe('recover', @{
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('undoes the moves of a command killed while swapping', @{
+    fsx.remove(ROOT)
+    put(os.join_paths(LIBS, 'pkg', 'index.zu'), 'new, half swapped in')
+
+    # What a killed command leaves: the old copy set aside, the new one
+    # in place, and a journal saying so.
+    var root = os.join_paths(STAGING, 'killed')
+
+    put(os.join_paths(root, 'old', 'pkg', 'index.zu'), 'the original')
+    put(os.join_paths(root, 'journal.json'), json.encode({
+      state: 'swapping',
+      libs: LIBS,
+      done: [{ name: 'pkg', old: true, new: true }],
+    }))
+
+    expect(recover(STAGING)).to_equal(1)
+    expect(read(os.join_paths(LIBS, 'pkg', 'index.zu'))).to_equal('the original')
+    expect(os.dir_exists(root)).to_be_false()
+  })
+
+  it('only clears away what a finished command left', @{
+    fsx.remove(ROOT)
+    put(os.join_paths(LIBS, 'pkg', 'index.zu'), 'committed')
+
+    var root = os.join_paths(STAGING, 'finished')
+
+    put(os.join_paths(root, 'old', 'pkg', 'index.zu'), 'replaced')
+    put(os.join_paths(root, 'journal.json'), json.encode({
+      state: 'committed',
+      libs: LIBS,
+      done: [{ name: 'pkg', old: true, new: true }],
+    }))
+
+    recover(STAGING)
+
+    expect(read(os.join_paths(LIBS, 'pkg', 'index.zu'))).to_equal('committed')
+    expect(os.dir_exists(root)).to_be_false()
+  })
+})
+
+describe('the installed record', @{
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('writes and reads back', @{
+    fsx.remove(ROOT)
+
+    var record = load_installed(os.join_paths(ROOT, 'installed.toml'))
+
+    record.put('web', { name: 'web', version: '1.0.0', commands: ['serve-web'] })
+    record.save()
+
+    var again = load_installed(os.join_paths(ROOT, 'installed.toml'))
+
+    expect(again.manages('web')).to_be_true()
+    expect(again.get('web').version).to_equal('1.0.0')
+    expect(again.manages('other')).to_be_false()
+  })
+
+  it('finds the commands a package provides', @{
+    fsx.remove(ROOT)
+
+    var pkg = os.join_paths(ROOT, 'pkg')
+
+    put(os.join_paths(pkg, 'cmds', 'hello.zu'), 'echo 1')
+    put(os.join_paths(pkg, 'cmds', 'deploy', 'index.zu'), 'echo 2')
+    put(os.join_paths(pkg, 'cmds', 'empty', 'readme.md'), '')
+    put(os.join_paths(pkg, 'cmds', '_private.zu'), 'echo 3')
+
+    expect(commands_in(pkg)).to_equal(['deploy', 'hello'])
+  })
+})

@@ -1,0 +1,347 @@
+/**
+ * Released builds of Zuri: finding one, downloading it, and proving it
+ * is the build that was published.
+ *
+ * Releases are read from the public `zuri-lang/zuri` repository unless
+ * `ZURI_RELEASES_URL` names another listing in the same shape, which
+ * is how a mirror or a test serves them. `GITHUB_TOKEN`, when set, is
+ * sent with every request to GitHub itself, where it raises the rate
+ * limit and changes nothing else.
+ *
+ * A release offers one archive per platform, named
+ * `zuri-<version>-<target>.tar.gz`, or `.zip` for Windows, with a
+ * `.sha256` beside it. A release without an archive for the platform
+ * asked for does not exist as far as this module is concerned, which
+ * is also what keeps the releases of the original C runtime, whose
+ * archives were named another way, out of every answer. An archive is
+ * never used without its checksum, and never used when the checksum
+ * does not match.
+ *
+ * Downloaded runtimes are kept under `$ZURI_HOME/runtimes`, unpacked,
+ * one directory per version and platform.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import compress.tar
+import compress.zip
+import hash
+import http
+import os
+
+import .errors { CommandError }
+import .fsx
+import .paths
+import .semver
+
+/** Where releases are listed unless `ZURI_RELEASES_URL` says otherwise. */
+var DEFAULT_URL = 'https://api.github.com/repos/zuri-lang/zuri/releases'
+
+/** The most bytes a runtime archive may be: 512 MiB. */
+var MAX_ARCHIVE = 536870912
+
+/**
+ * Raised when a release cannot be found, downloaded or trusted.
+ */
+class ReleaseError < CommandError {}
+
+/**
+ * The address releases are listed at.
+ *
+ * @returns string
+ */
+def listing_url() {
+  var configured = os.get_env('ZURI_RELEASES_URL', '')
+
+  return configured.is_empty() ? DEFAULT_URL : configured
+}
+
+# A client for GitHub, or whatever mirror stands in for it.
+def _client() {
+  var headers = { Accept: 'application/vnd.github+json' }
+  var token = os.get_env('GITHUB_TOKEN', '')
+
+  if !token.is_empty() and listing_url().starts_with('https://api.github.com/') {
+    headers.set('Authorization', 'Bearer ' + token)
+  }
+
+  return http.HttpClient(nil, {
+    headers,
+    connect_timeout: 15000,
+    read_timeout: 300000,
+    max_body_size: MAX_ARCHIVE,
+    user_agent: 'zuri/${os.version}',
+  })
+}
+
+/**
+ * The name of the archive a release offers for `target`.
+ *
+ * @param string version
+ * @param string target
+ * @returns string
+ */
+def asset_name(version: string, target: string) {
+  var extension = target.contains('windows') ? 'zip' : 'tar.gz'
+
+  return 'zuri-${version}-${target}.${extension}'
+}
+
+/**
+ * Every release offering an archive for `target`, newest first.
+ *
+ * @param string target
+ * @param ?bool prereleases: include pre-releases. Default `false`.
+ * @returns list[dict]: `{ version, prerelease, archive, checksum }`,
+ *    the last two being download addresses.
+ * @raises ReleaseError
+ */
+def available(target: string, prereleases: ?bool) {
+  var response
+
+  catch {
+    response = _client().get(listing_url(), { query: { per_page: '100' } })
+  } as error {
+    raise ReleaseError('could not reach ${listing_url()}: ${error.message}')
+  }
+
+  if response.status == 403 or response.status == 429 {
+    raise ReleaseError(
+      'GitHub refused the request, most likely for its rate limit; set GITHUB_TOKEN to a '
+        + 'token of your own and try again'
+    )
+  }
+
+  if !response.is_ok() {
+    raise ReleaseError('${listing_url()} answered ${response.status}')
+  }
+
+  var listed
+
+  catch {
+    listed = response.as_dict()
+  } as error {
+    raise ReleaseError('${listing_url()} did not answer with a list of releases')
+  }
+
+  if !is_list(listed) {
+    raise ReleaseError('${listing_url()} did not answer with a list of releases')
+  }
+
+  var found = []
+
+  for release in listed {
+    if !is_dict(release) or release.get('draft', false) == true {
+      continue
+    }
+
+    var tag = release.get('tag_name', '')
+    var version = tag.starts_with('v') ? tag[1,] : tag
+
+    if !semver.is_valid(version) {
+      continue
+    }
+
+    version = semver.parse(version).to_string()
+
+    var is_pre = release.get('prerelease', false) == true or semver.parse(version).is_prerelease()
+
+    if is_pre and prereleases != true {
+      continue
+    }
+
+    var wanted = asset_name(version, target)
+    var archive = nil
+    var checksum = nil
+
+    for asset in release.get('assets', []) {
+      if asset.get('name', '') == wanted {
+        archive = asset.get('browser_download_url', nil)
+      } else if asset.get('name', '') == wanted + '.sha256' {
+        checksum = asset.get('browser_download_url', nil)
+      }
+    }
+
+    if archive != nil and checksum != nil {
+      found.append({ version, prerelease: is_pre, archive, checksum })
+    }
+  }
+
+  var ordered = semver.sorted(found.map(@(r) => r.version)).reverse()
+
+  return ordered.map(@(version) => found.find(@(r) => r.version == version))
+}
+
+/**
+ * The release `wanted` names, or the newest for `latest`.
+ *
+ * @param string wanted: a version, or `latest`.
+ * @param string target
+ * @param ?bool prereleases
+ * @returns dict
+ * @raises ReleaseError when there is no such release for `target`.
+ */
+def find(wanted: string, target: string, prereleases: ?bool) {
+  var listed = available(target, prereleases == true or (wanted != 'latest'
+    and semver.is_valid(wanted) and semver.parse(wanted).is_prerelease()))
+
+  if wanted == 'latest' {
+    if listed.is_empty() {
+      raise ReleaseError('there is no release of zuri for ${target} yet')
+    }
+
+    return listed[0]
+  }
+
+  if !semver.is_valid(wanted) {
+    raise ReleaseError("'${wanted}' is not a version")
+  }
+
+  var version = semver.parse(wanted).to_string()
+  var release = listed.find(@(r) => r.version == version)
+
+  if release == nil {
+    raise ReleaseError('there is no release of zuri ${version} for ${target}')
+  }
+
+  return release
+}
+
+# Downloads `url` into memory.
+def _fetch(client, url: string, what: string) {
+  var response
+
+  catch {
+    response = client.get(url, { timeout: 600000 })
+  } as error {
+    raise ReleaseError('could not download ${what}: ${error.message}')
+  }
+
+  if !response.is_ok() {
+    raise ReleaseError('could not download ${what}: ${url} answered ${response.status}')
+  }
+
+  return response.as_bytes()
+}
+
+/**
+ * Downloads a release's archive for `target` and checks it against its
+ * published checksum.
+ *
+ * @param dict release: as `find()` returns it.
+ * @param string target
+ * @param string destination: where the archive is written.
+ * @returns string: `destination`.
+ * @raises ReleaseError when it cannot be had, or does not match.
+ */
+def download(release: dict, target: string, destination: string) {
+  var client = _client()
+  var name = asset_name(release.version, target)
+  var listed = _fetch(client, release.checksum, name + '.sha256').to_string().trim()
+  var expected = listed.split(' ')[0].lower().trim()
+
+  if !is_dict(expected.match('/^[0-9a-f]{64}$/')) {
+    raise ReleaseError('the checksum published for ${name} is not a SHA-256 digest')
+  }
+
+  var data = _fetch(client, release.archive, name)
+  var actual = hash.sha256(data)
+
+  if actual != expected {
+    raise ReleaseError(
+      '${name} does not match its published checksum\n  expected ${expected}\n  received '
+        + '${actual}\nNothing was used. The download was damaged on the way, or the release '
+        + 'is not what it claims to be.'
+    )
+  }
+
+  fsx.atomic_write(destination, data)
+
+  return destination
+}
+
+/**
+ * Unpacks a runtime archive into `destination`, and returns the
+ * directory holding the runtime itself.
+ *
+ * @param string archive_path
+ * @param string destination: must not exist.
+ * @param string version
+ * @param string target
+ * @returns string
+ * @raises ReleaseError when the archive does not hold a runtime.
+ */
+def unpack(archive_path: string, destination: string, version: string, target: string) {
+  fsx.ensure_dir(destination)
+
+  catch {
+    if archive_path.ends_with('.zip') {
+      if !zip.extract(archive_path, destination) {
+        raise ReleaseError('${os.base_name(archive_path)} could not be unpacked')
+      }
+    } else {
+      tar.extract(archive_path, destination)
+    }
+  } as error {
+    fsx.remove(destination)
+
+    if instance_of(error, ReleaseError) {
+      raise error
+    }
+
+    raise ReleaseError('${os.base_name(archive_path)} could not be unpacked: ${error.message}')
+  }
+
+  var root = os.join_paths(destination, 'zuri-${version}-${target}')
+  var runtime = os.join_paths(root, target.contains('windows') ? 'zuri.exe' : 'zuri')
+
+  if !file(runtime).exists() or !os.dir_exists(os.join_paths(root, 'libs')) {
+    fsx.remove(destination)
+
+    raise ReleaseError('${os.base_name(archive_path)} does not hold a zuri runtime')
+  }
+
+  return root
+}
+
+/**
+ * The runtime of `version` for `target`, downloaded and unpacked into
+ * `$ZURI_HOME/runtimes` unless it is already there.
+ *
+ * @param string version
+ * @param string target
+ * @returns string: the directory holding the runtime, its `libs` and
+ *    its `cmds`.
+ * @raises ReleaseError
+ */
+def runtime(version: string, target: string) {
+  var home = os.join_paths(paths.runtimes_dir(), version, target)
+  var root = os.join_paths(home, 'zuri-${version}-${target}')
+
+  if os.dir_exists(os.join_paths(root, 'libs')) {
+    return root
+  }
+
+  var release = find(version, target, true)
+  var staging = os.join_paths(paths.runtimes_dir(), '.staging-${fsx.unique()}')
+  var archive_path = os.join_paths(staging, asset_name(release.version, target))
+
+  catch {
+    download(release, target, archive_path)
+
+    var unpacked = os.join_paths(staging, 'unpacked')
+
+    unpack(archive_path, unpacked, release.version, target)
+
+    fsx.remove(home)
+    fsx.ensure_dir(os.dir_name(home))
+    os.rename(unpacked, home)
+    fsx.remove(staging)
+  } as error {
+    fsx.remove(staging)
+
+    raise error
+  }
+
+  return root
+}

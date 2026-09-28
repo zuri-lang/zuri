@@ -1,0 +1,105 @@
+# Choosing which files make up a package.
+
+import os
+import test { * }
+
+import ..files { glob_regex, looks_secret, matches, select }
+import ..fsx
+
+# A scratch directory of this run's own, outside any checkout.
+var ROOT = os.create_temp_dir('zuri-files-')
+
+def make(paths: list) {
+  fsx.remove(ROOT)
+
+  for path in paths {
+    var full = os.join_paths(ROOT, path)
+
+    fsx.ensure_dir(os.dir_name(full))
+    file(full, 'w').write('x')
+  }
+}
+
+describe('matches', @{
+  it('reads *, ** and ?', @{
+    expect(matches('app/index.zu', 'app/*.zu')).to_be_true()
+    expect(matches('app/deep/index.zu', 'app/*.zu')).to_be_false()
+    expect(matches('app/deep/index.zu', 'app/**/*.zu')).to_be_true()
+    expect(matches('app/index.zu', 'app/**/*.zu')).to_be_true()
+    expect(matches('a1.zu', 'a?.zu')).to_be_true()
+  })
+
+  it('takes everything under a directory it names', @{
+    expect(matches('docs/guide/intro.md', 'docs')).to_be_true()
+    expect(matches('docsite/x', 'docs')).to_be_false()
+  })
+
+  it('escapes what a regular expression would read', @{
+    expect(glob_regex('a+b.zu')).to_contain('a\\+b\\.zu')
+    expect(matches('a+b.zu', 'a+b.zu')).to_be_true()
+  })
+})
+
+describe('select', @{
+  after_all(@{
+    fsx.remove(ROOT)
+  })
+
+  it('leaves out what never belongs in a package', @{
+    make([
+      'project.toml', 'index.zu', 'app/index.zu', '.zuri/libs/x/index.zu', '.git/HEAD',
+      'tmp/scratch.zu', 'debug.log', 'project.lock', 'app/tmp/kept.zu',
+    ])
+
+    var found = select(ROOT, { use_git: false })
+
+    expect(found.files).to_equal(['app/index.zu', 'app/tmp/kept.zu', 'index.zu', 'project.toml'])
+  })
+
+  it('holds back secrets unless include names them', @{
+    make(['project.toml', '.env', 'config/.env.production', 'keys/server.pem', 'index.zu'])
+
+    var found = select(ROOT, { use_git: false })
+
+    expect(found.secrets).to_equal(['.env', 'config/.env.production', 'keys/server.pem'])
+    expect(found.files).to_equal(['index.zu', 'project.toml'])
+
+    var named = select(ROOT, { use_git: false, include: ['index.zu', 'keys/server.pem'] })
+
+    expect(named.files).to_equal(['index.zu', 'keys/server.pem', 'project.toml'])
+  })
+
+  it('narrows to include, and takes out exclude, keeping project.toml', @{
+    make(['project.toml', 'app/a.zu', 'app/b.zu', 'docs/x.md', 'README.md'])
+
+    var found = select(ROOT, {
+      use_git: false,
+      include: ['app', 'README.md'],
+      exclude: ['app/b.zu', 'project.toml'],
+    })
+
+    expect(found.files).to_equal(['README.md', 'app/a.zu', 'project.toml'])
+  })
+
+  it('reports symbolic links rather than following them', @{
+    make(['project.toml', 'real.zu'])
+    file(os.join_paths(ROOT, 'real.zu')).symlink(os.join_paths(ROOT, 'link.zu'))
+
+    var found = select(ROOT, { use_git: false })
+
+    expect(found.links).to_equal(['link.zu'])
+    expect(found.files).not.to_contain('link.zu')
+  })
+})
+
+describe('looks_secret', @{
+  it('knows the usual names', @{
+    for name in ['.env', '.env.local', 'id_rsa', 'id_ed25519.pub', 'a/b/cert.key', '.netrc'] {
+      expect(looks_secret(name)).to_be_true()
+    }
+
+    for name in ['env.zu', 'README.md', 'keys.zu', 'environment/index.zu'] {
+      expect(looks_secret(name)).to_be_false()
+    }
+  })
+})

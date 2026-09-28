@@ -1,0 +1,217 @@
+/**
+ * Who is asking: passwords, tokens, recovery keys, and the brakes on
+ * guessing any of them.
+ *
+ * Passwords are hashed with Argon2id at the cost OWASP recommends, and
+ * nothing that can be checked against a hash is ever stored as it was
+ * given. A token and a recovery key are high-entropy random strings,
+ * so a plain SHA-256 of each is what is stored, and a token is found by
+ * that digest: whoever reads the database learns nothing they can sign
+ * in with.
+ *
+ * A token carries scopes, which bound what it may do:
+ *
+ * - `publish`: upload new versions;
+ * - `yank`: yank and restore versions;
+ * - `owners`: change who owns a package;
+ * - `account`: manage the account's tokens.
+ *
+ * Signing in with a password is limited per account and per address:
+ * after `MAX_FAILURES` failures within `FAILURE_WINDOW` seconds, that
+ * account, or that address, is refused until the window has passed,
+ * whether or not the next password is right.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import crypto
+import hash
+import http.util { secure_equals }
+
+import .._shared.fsx
+
+/** Every scope a token can carry. */
+var SCOPES = ['publish', 'yank', 'owners', 'account']
+
+/** Failures allowed within the window before sign-in is refused. */
+var MAX_FAILURES = 5
+
+/** The window failures are counted in, in seconds. */
+var FAILURE_WINDOW = 900
+
+/** The shortest password accepted. */
+var MIN_PASSWORD = 10
+
+/** The longest password accepted. */
+var MAX_PASSWORD = 1024
+
+/** What a token starts with, so a leaked one can be recognised. */
+var TOKEN_PREFIX = 'nys_'
+
+var _ARGON2 = { t_cost: 2, m_cost: 19456, threads: 1 }
+
+/**
+ * `password` hashed for storage.
+ *
+ * @param string password
+ * @returns string
+ */
+def hash_password(password: string) {
+  return crypto.argon2.hash(password, crypto.random_bytes(16), _ARGON2)
+}
+
+/**
+ * Whether `password` matches `stored`.
+ *
+ * @param string stored
+ * @param string password
+ * @returns bool
+ */
+def check_password(stored: string, password: string) {
+  catch {
+    return crypto.argon2.verify(stored, password)
+  } as error {
+    return false
+  }
+}
+
+# A hash to check a password against when there is no account, so a
+# missing account takes as long to refuse as a wrong password.
+var _decoy = nil
+
+/**
+ * Spends the time a password check would, for an account that does
+ * not exist.
+ *
+ * @param string password
+ */
+def burn(password: string) {
+  if _decoy == nil {
+    _decoy = hash_password('this is not anybody\'s password')
+  }
+
+  check_password(_decoy, password)
+}
+
+/**
+ * Why `password` cannot be used, or `nil`.
+ *
+ * @param string password
+ * @param string username
+ * @returns ?string
+ */
+def password_problem(password: string, username: string) {
+  if password.length() < MIN_PASSWORD {
+    return 'a password must be at least ${MIN_PASSWORD} characters long'
+  }
+
+  if password.length() > MAX_PASSWORD {
+    return 'a password can be at most ${MAX_PASSWORD} characters long'
+  }
+
+  if password.lower().contains(username.lower()) {
+    return 'a password must not contain the username'
+  }
+
+  return nil
+}
+
+/**
+ * A new token and the digest it is stored under.
+ *
+ * @returns dict: `{ id, token, digest }`.
+ */
+def new_token() {
+  var token = TOKEN_PREFIX + fsx.hex(crypto.random_bytes(32))
+
+  return { id: fsx.unique(64), token, digest: digest(token) }
+}
+
+/**
+ * The digest a secret is stored and looked up by.
+ *
+ * @param string secret
+ * @returns string
+ */
+def digest(secret: string) {
+  return hash.sha256(secret)
+}
+
+/**
+ * A new recovery key, in groups a person can copy, and its digest.
+ *
+ * @returns dict: `{ key, digest }`.
+ */
+def new_recovery_key() {
+  var hex = fsx.hex(crypto.random_bytes(15))
+  var groups = []
+
+  iter var i = 0; i < hex.length(); i += 5 {
+    groups.append(hex[i, i + 5])
+  }
+
+  var key = '-'.join(groups)
+
+  return { key, digest: recovery_digest(key) }
+}
+
+/**
+ * The digest of a recovery key, however it was typed: dashes, spaces
+ * and case make no difference.
+ *
+ * @param string key
+ * @returns string
+ */
+def recovery_digest(key: string) {
+  return digest(key.lower().replace('/[^0-9a-f]/', '', true))
+}
+
+/**
+ * Whether two digests are the same, compared in constant time.
+ *
+ * @param string a
+ * @param string b
+ * @returns bool
+ */
+def same(a: string, b: string) {
+  return secure_equals(a, b)
+}
+
+/**
+ * `requested` as a list of scopes, refusing any that do not exist.
+ *
+ * @param requested: a list, a space-separated string, or `nil` for
+ *    all of them.
+ * @returns list
+ * @raises Error naming an unknown scope.
+ */
+def scopes_of(requested) {
+  if requested == nil {
+    return SCOPES.clone()
+  }
+
+  var list = is_list(requested) ? requested : requested.to_string().split(' ')
+  var chosen = []
+
+  for scope in list {
+    var trimmed = scope.trim()
+
+    if trimmed.is_empty() {
+      continue
+    }
+
+    if !SCOPES.contains(trimmed) {
+      raise Error("'${trimmed}' is not a scope; a token can carry ${', '.join(SCOPES)}")
+    }
+
+    if !chosen.contains(trimmed) {
+      chosen.append(trimmed)
+    }
+  }
+
+  if chosen.is_empty() {
+    raise Error('a token needs at least one scope')
+  }
+
+  return chosen
+}

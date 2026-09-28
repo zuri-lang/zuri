@@ -1,0 +1,143 @@
+# Requests through an HTTP proxy: a plain request handed over whole in
+# absolute form with the proxy's credentials, a tunnel opened with
+# CONNECT, a tunnel the proxy refuses, and the hosts that never go
+# through a proxy at all.
+
+import base64
+import http
+import http.errors { ConnectionError }
+import http.stream
+import isolate
+import os
+
+import .http_proxy_helper as helper
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+# What a request that failed said about where it went.
+def failure_of(fn) {
+  catch {
+    fn()
+  } as error {
+    return error.message
+  }
+
+  return nil
+}
+
+var ready = isolate.channel(1)
+var seen = isolate.channel(8)
+var task = isolate.spawn(helper.serve, ready, seen, 4)
+var port = ready.recv()
+
+# A plain request goes to the proxy, naming the whole address, and the
+# credentials in the proxy address go with it, decoded.
+var client = http.HttpClient(nil, {
+  proxy: 'http://ada:s%20cret@127.0.0.1:${port}',
+  trust_env: false,
+})
+
+var forwarded = client.get('http://packages.example.test/api/v1/config?x=1')
+
+assert forwarded.status == 200, 'the proxy must have answered'
+var wanted = 'forwarded GET http://packages.example.test/api/v1/config?x=1 HTTP/1.1'
+
+assert forwarded.as_text() == wanted,
+  'a request to a proxy must carry the absolute address, got ${forwarded.as_text()}'
+
+var first = seen.recv()
+var expected = 'Basic ' + base64.encode('ada:s cret'.to_bytes())
+
+assert first.auth == expected, 'the proxy credentials must be sent decoded, got ${first.auth}'
+ok('a plain request goes to the proxy whole, with its credentials')
+
+# A tunnel: CONNECT to the target, then the request inside it.
+var tunnelled = stream.tunnel(
+  { host: '127.0.0.1', port, authorization: nil }, 'packages.example.test', 443,
+  { secure: false }
+)
+
+tunnelled.write('GET /inside HTTP/1.1\r\nHost: packages.example.test\r\n\r\n')
+tunnelled.flush()
+
+var status = tunnelled.read_line(8192)
+
+assert status.starts_with('HTTP/1.1 200'), 'the tunnel must carry the answer back, got ${status}'
+tunnelled.close()
+
+var second = seen.recv()
+
+assert second.line == 'CONNECT packages.example.test:443 HTTP/1.1',
+  'a tunnel must be opened to the target host and port, got ${second.line}'
+assert second.inner == 'GET /inside HTTP/1.1', 'what follows must travel inside the tunnel'
+ok('a tunnel is opened with CONNECT and carries the request inside it')
+
+# A proxy that refuses the tunnel is a connection error naming it.
+var refused = nil
+
+catch {
+  stream.tunnel({ host: '127.0.0.1', port, authorization: nil }, 'blocked.example.test', 9,
+    { secure: false })
+} as error {
+  refused = error
+}
+
+assert refused != nil and instance_of(refused, ConnectionError),
+  'a refused tunnel must raise ConnectionError'
+assert refused.message.contains('403'), 'the refusal must say what the proxy answered'
+seen.recv()
+ok('a refused tunnel raises, naming the answer')
+
+# The environment: HTTP_PROXY is used, except for the hosts NO_PROXY
+# names, and this machine is always reached directly.
+os.set_env('HTTP_PROXY', 'http://127.0.0.1:${port}', true)
+os.set_env('NO_PROXY', 'internal.test, .corp.test:8080', true)
+
+var from_env = http.HttpClient(nil, { connect_timeout: 2000 })
+var via_env = from_env.get('http://elsewhere.example.test/')
+
+assert via_env.as_text() == 'forwarded GET http://elsewhere.example.test/ HTTP/1.1',
+  'HTTP_PROXY must be used for a host NO_PROXY does not name'
+seen.recv()
+
+var direct = failure_of(@() {
+  from_env.get('http://api.internal.test/')
+})
+
+assert direct != nil and direct.contains('api.internal.test'),
+  'a host under a NO_PROXY name must be reached directly, got ${direct}'
+
+var with_port = failure_of(@() {
+  from_env.get('http://build.corp.test:8080/')
+})
+
+assert with_port != nil and with_port.contains('build.corp.test'),
+  'a NO_PROXY entry with a port must cover that port, got ${with_port}'
+
+var loopback = failure_of(@() {
+  from_env.get('http://127.0.0.1:9/')
+})
+
+assert loopback != nil and loopback.contains('127.0.0.1:9'),
+  'this machine must be reached directly, got ${loopback}'
+
+ok('HTTP_PROXY is used, and NO_PROXY and loopback addresses go direct')
+
+task.join()
+
+# An https proxy is refused rather than used halfway.
+var refused_scheme = failure_of(@() {
+  http.HttpClient(nil, { proxy: 'https://proxy.example.test:443' }).get('http://x.example.test/')
+})
+
+assert refused_scheme != nil and refused_scheme.contains('plain http'),
+  'an https proxy address must be refused, got ${refused_scheme}'
+ok('an https proxy address is refused')
+
+echo ''
+echo '  All ${_passed} checks passed.'

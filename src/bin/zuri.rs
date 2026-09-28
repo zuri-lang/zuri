@@ -266,6 +266,7 @@ fn print_help() {
 
   print_commands("COMMANDS", &commands.global, width, &palette);
   print_commands("PROJECT COMMANDS", &commands.local, width, &palette);
+  print_commands("PACKAGE COMMANDS", &commands.packaged, width, &palette);
 
   if !commands.is_empty() {
     println!();
@@ -289,9 +290,20 @@ fn print_commands(title: &str, commands: &[cli::Command], width: usize, palette:
   println!("{}", palette.heading.paint(format!("{title}:")));
 
   for command in commands {
+    let origin = match command.packages.len() {
+      0 => String::new(),
+      1 => format!(" (from {})", command.packages[0]),
+      _ => format!(" (claimed by {})", command.packages.join(", ")),
+    };
+
+    let origin = palette.muted.paint(origin);
+
     match command.description.is_empty() {
-      true => println!("  {}", command.name),
-      false => println!("  {:width$}  {}", command.name, command.description),
+      true => println!("  {}{origin}", command.name),
+      false => println!(
+        "  {:width$}  {}{origin}",
+        command.name, command.description
+      ),
     }
   }
 }
@@ -308,9 +320,19 @@ fn display_path_of(path: &Path) -> Rc<str> {
 fn main() {
   let argv = env::args().collect::<Vec<_>>();
 
-  let launch = match cli::resolve(argv.get(1..).unwrap_or_default()) {
-    Ok(launch) => launch,
-    Err(e) => abort_launch(&e.name, &e.reason),
+  clear_replaced_executable();
+
+  let bundle = match zuri::bundle::detect() {
+    Ok(bundle) => bundle,
+    Err(reason) => abort_launch(&program_name(&argv), &reason),
+  };
+
+  let launch = match bundle {
+    Some(bundle) => bundled_launch(bundle, &argv),
+    None => match cli::resolve(argv.get(1..).unwrap_or_default()) {
+      Ok(launch) => launch,
+      Err(e) => abort_launch(&e.name, &e.reason),
+    },
   };
 
   // Settled before the VM exists, because building it is already
@@ -324,8 +346,16 @@ fn main() {
       print_help();
       return;
     },
-    Launch::Repl => None,
+    Launch::Repl => {
+      if let Ok(cwd) = env::current_dir() {
+        zuri::project::set_anchor(cwd);
+      }
+
+      None
+    },
     Launch::Script(script) => {
+      zuri::project::set_anchor(script.anchor.clone());
+
       let display_path = display_path_of(&script.path);
       cli::set_script_args(os_args(&argv, &display_path, &script));
 
@@ -344,6 +374,64 @@ fn main() {
     None => run_repl(&mut vm),
   }
 }
+
+/// What this executable was invoked as, for a failure that happens
+/// before there is any script to name.
+fn program_name(argv: &[String]) -> String {
+  argv
+    .first()
+    .map(|arg0| {
+      Path::new(arg0)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| arg0.clone())
+    })
+    .unwrap_or_else(|| "zuri".to_string())
+}
+
+/// A bundled application: every argument belongs to it, and none of
+/// zuri's own dispatch applies. The standard library and the modules
+/// come from the bundle alone.
+fn bundled_launch(bundle: zuri::bundle::Bundle, argv: &[String]) -> Launch {
+  let entry = bundle.entry();
+  let name = program_name(argv);
+
+  if !entry.is_file() {
+    abort_launch(&name, "The bundle holds no application to run");
+  }
+
+  zuri::project::set_bundle_root(bundle.root.clone());
+
+  Launch::Script(Script {
+    path: entry,
+    anchor: bundle.app_dir(),
+    name,
+    args: argv.get(1..).unwrap_or_default().to_vec(),
+  })
+}
+
+/// Removes the executable an upgrade on Windows set aside. A running
+/// executable cannot be deleted there, only renamed, so `zuri upgrade`
+/// leaves it as `zuri.exe.old` and the next start clears it away.
+#[cfg(windows)]
+fn clear_replaced_executable() {
+  let Ok(exe) = env::current_exe() else {
+    return;
+  };
+
+  let Some(name) = exe.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+    return;
+  };
+
+  let old = exe.with_file_name(format!("{name}.old"));
+
+  if old.is_file() {
+    let _ = fs::remove_file(old);
+  }
+}
+
+#[cfg(not(windows))]
+fn clear_replaced_executable() {}
 
 /// The list `os.args` reports: the runtime, the script, then the
 /// script's own arguments. Nothing of zuri's own dispatch survives

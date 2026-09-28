@@ -1,0 +1,178 @@
+/**
+ * What `zuri install` was asked for, read into dependencies before
+ * anything is resolved.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import args
+import os
+
+import .._shared.cli
+import .._shared.errors { UsageError }
+import .._shared.manifest as manifest_module
+import .._shared.names
+import .._shared.semver
+
+/**
+ * The command's parser.
+ *
+ * @returns args.Parser
+ */
+def parser() {
+  var parser = args.Parser('install', false)
+
+  parser.description = 'Adds packages to the project, or installs everything it declares.'
+  parser.epilog = 'With no package named, every dependency in project.toml is installed at '
+    + 'the versions project.lock pins, and the lockfile is brought up to date when project.toml '
+    + 'has changed.'
+
+  parser.add_index('packages', 'name or name@range, as many as needed',
+    { type: args.LIST, metavar: 'package' })
+
+  cli.add_registry_option(parser)
+  parser.add_option('dev', 'Add them as development dependencies', { short_name: 'D' })
+  parser.add_option('global', 'Install for this user rather than the project', { short_name: 'g' })
+  parser.add_option('exact', 'Record the exact version chosen rather than a caret range',
+    { short_name: 'E' })
+  parser.add_option('git', 'Install from a git repository instead of a registry',
+    { type: args.STRING, metavar: 'url' })
+  parser.add_option('tag', 'The git tag to install', { type: args.STRING, metavar: 'tag' })
+  parser.add_option('branch', 'The git branch to follow', { type: args.STRING, metavar: 'branch' })
+  parser.add_option('rev', 'The git commit to install', { type: args.STRING, metavar: 'commit' })
+  parser.add_option('path', 'Install from a directory on this machine',
+    { type: args.STRING, metavar: 'dir' })
+  parser.add_option('offline', 'Use only what is already downloaded', nil)
+  parser.add_option('dry-run', 'Show what would change and change nothing', { short_name: 'n' })
+  parser.add_option('force', 'Replace directories in .zuri/libs that zuri did not install', nil)
+  parser.add_option('no-hooks', 'Run no install or uninstall scripts at all', nil)
+  parser.add_option('allow-hooks', 'Let these packages run their scripts this time',
+    { type: args.LIST, metavar: 'package' })
+  parser.add_option('quiet', 'Print only the result', { short_name: 'q' })
+
+  return parser
+}
+
+/**
+ * One `name` or `name@range` off the command line.
+ *
+ * @param string spec
+ * @returns dict: `{ name, range }`, `range` being `nil` when none was
+ *    given.
+ * @raises UsageError
+ */
+def split_spec(spec: string) {
+  var text = spec.trim()
+  var at = text.index_of('@')
+
+  var name = at < 0 ? text : text[0, at]
+  var range = at < 0 ? nil : text[at + 1,].trim()
+
+  if range != nil and range.is_empty() {
+    raise UsageError("'${spec}' names no version after the @")
+  }
+
+  names.check_name(name)
+
+  if range != nil and !semver.is_valid_range(range) {
+    raise UsageError("'${range}' is not a valid version range")
+  }
+
+  return { name, range }
+}
+
+/**
+ * The dependencies the command line asks for.
+ *
+ * @param dict parsed
+ * @param ?string root: the project root paths are written relative to;
+ *    the working directory when there is none.
+ * @returns list[manifest.Dependency]
+ * @raises UsageError
+ */
+def requested(parsed, root: ?string) {
+  var given = parsed.options
+  var specs = parsed.indexes.is_empty() ? [] : parsed.indexes[0]
+  var dev = given.get('dev', false) == true
+  var registry = given.get('registry', nil)
+  var git = given.get('git', nil)
+  var path = given.get('path', nil)
+
+  var pins = []
+
+  for kind in ['tag', 'branch', 'rev'] {
+    if given.get(kind, nil) != nil {
+      pins.append({ kind, value: given.get(kind) })
+    }
+  }
+
+  if git != nil and path != nil {
+    raise UsageError('install from git or from a path, not both')
+  }
+
+  if !pins.is_empty() and git == nil {
+    raise UsageError('a tag, branch or commit only means something with a git repository')
+  }
+
+  if pins.length() > 1 {
+    raise UsageError('pin a git dependency with one of tag, branch or commit')
+  }
+
+  if git != nil or path != nil {
+    if specs.length() > 1 {
+      raise UsageError('install one package at a time from git or from a path')
+    }
+
+    var named = specs.is_empty() ? nil : split_spec(specs[0])
+
+    if git != nil {
+      return [manifest_module.Dependency({
+        name: named == nil ? nil : named.name,
+        kind: 'git',
+        git,
+        ref: pins.is_empty() ? nil : pins[0],
+        range: named == nil ? nil : named.range,
+        dev,
+      })]
+    }
+
+    var absolute = os.abs_path(path)
+    var written = absolute
+
+    if root != nil {
+      written = os.relative_path(root, absolute).replace('\\', '/', false)
+    }
+
+    return [manifest_module.Dependency({
+      name: named == nil ? nil : named.name,
+      kind: 'path',
+      path: written,
+      range: named == nil ? nil : named.range,
+      dev,
+    })]
+  }
+
+  return specs.map(@(spec) {
+    var named = split_spec(spec)
+
+    return manifest_module.Dependency({
+      name: named.name,
+      kind: 'registry',
+      range: named.range,
+      registry,
+      dev,
+    })
+  })
+}
+
+/**
+ * The range a newly added dependency is recorded with, once the
+ * version it resolved to is known.
+ *
+ * @param string version
+ * @param bool exact
+ * @returns string
+ */
+def recorded_range(version: string, exact: bool) {
+  return (exact ? '=' : '^') + version
+}
