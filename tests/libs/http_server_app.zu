@@ -69,6 +69,13 @@ def api_server(port_channel, static_root) {
     server.close()
   })
 
+  # Slower to answer than the short timeout the client suite gives a
+  # request before it.
+  server.get('/slow', @(request, response) {
+    os.sleep(0.5)
+    response.text('eventually')
+  })
+
   server.get('/users/:id', @(request, response) {
     response.json({
       id: request.param('id'),

@@ -521,12 +521,12 @@ class HttpClient {
     # cannot go back in the pool yet - the caller owns it until they
     # have finished reading. `finish()` is how it comes back.
     if options.get('stream', false) {
-      response.set_carrier([carrier, '${parsed.scheme}://${_authority_of(parsed)}'])
+      response.set_carrier([carrier, self._pool_key(parsed, options)])
       return response
     }
 
     if h1.should_keep_alive(request, response) and response.version != '1.0' {
-      self._release(parsed, carrier)
+      self._release(parsed, options, carrier)
     } else {
       connection.close()
     }
@@ -556,7 +556,7 @@ class HttpClient {
     }
 
     if session.is_usable() {
-      self._release(parsed, carrier)
+      self._release(parsed, options, carrier)
     } else {
       session.close(nil)
     }
@@ -757,11 +757,38 @@ class HttpClient {
     }
   }
 
-  _connection_for(parsed, options) {
+  # The timeouts `options` asks for, falling back to the client's own.
+  _timeouts(options) {
+    return {
+      connect: options.get('connect_timeout', self.connect_timeout),
+      read: options.get('timeout', self.read_timeout),
+      write: options.get('write_timeout', self.write_timeout),
+    }
+  }
+
+  # Where a connection for `parsed` is pooled. A TLS connection's
+  # timeouts are fixed once it is open, so it is only shared between
+  # requests that ask for the same ones; a plaintext one takes each
+  # request's timeouts as it is handed out.
+  _pool_key(parsed, options) {
     var proxy = self._proxy_for(parsed)
     var via = proxy == nil ? '' : ' via ${proxy.host}:${proxy.port}'
     var key = '${parsed.scheme}://${_authority_of(parsed)}${via}'
+
+    if parsed.scheme == 'https' {
+      var timeouts = self._timeouts(options)
+
+      key += ' timeouts ${timeouts.read}/${timeouts.write}'
+    }
+
+    return key
+  }
+
+  _connection_for(parsed, options) {
+    var proxy = self._proxy_for(parsed)
+    var key = self._pool_key(parsed, options)
     var idle = self._pool.get(key, nil)
+    var timeouts = self._timeouts(options)
 
     while idle != nil and idle.length() > 0 {
       var entry = idle.pop()
@@ -771,6 +798,13 @@ class HttpClient {
           (carrier[0] == 'h2' ? carrier[1].is_usable() : !carrier[1].is_closed())
 
       if alive {
+        # The connection was opened for another request, which may
+        # have asked for different timeouts.
+        var transport = carrier[0] == 'h2' ? carrier[2] : carrier[1]
+
+        transport.set_read_timeout(timeouts.read)
+        transport.set_write_timeout(timeouts.write)
+
         carrier[3] = true
         return carrier
       }
@@ -784,9 +818,9 @@ class HttpClient {
       secure,
       tls_config: secure ? self._client_tls_config() : nil,
       server_name: parsed.host,
-      connect_timeout: options.get('connect_timeout', self.connect_timeout),
-      read_timeout: options.get('timeout', self.read_timeout),
-      write_timeout: options.get('write_timeout', self.write_timeout),
+      connect_timeout: timeouts.connect,
+      read_timeout: timeouts.read,
+      write_timeout: timeouts.write,
     }
 
     if proxy != nil and !secure {
@@ -815,10 +849,8 @@ class HttpClient {
     return ['h1', connection, nil, false]
   }
 
-  _release(parsed, carrier) {
-    var proxy = self._proxy_for(parsed)
-    var via = proxy == nil ? '' : ' via ${proxy.host}:${proxy.port}'
-    var key = '${parsed.scheme}://${_authority_of(parsed)}${via}'
+  _release(parsed, options, carrier) {
+    var key = self._pool_key(parsed, options)
 
     if !self._pool.contains(key) {
       self._pool[key] = []

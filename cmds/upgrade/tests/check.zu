@@ -60,19 +60,32 @@ before_all(@{
 
   list_releases([])
   server = spawn(os.exe_path, ['run', helper, ROOT, port.to_string()], {
-    stdin: 'null', stdout: 'null', stderr: 'null',
+    stdin: 'null', stdout: 'null', stderr: 'pipe',
   })
 
-  iter var tries = 0; tries < 100; tries++ {
-    catch {
-      var options = { timeout: 1000 }
+  # Generous, since a loaded machine running every suite at once can
+  # take a while to start one more process.
+  var deadline = time() + 60
+  var up = false
 
-      if http.get(base + '/releases', options).status == 200 {
-        break
-      }
+  while !up and time() < deadline {
+    if server.try_wait() != nil {
+      var said = server.read_stderr().to_string()
+
+      server = nil
+
+      raise Error('the release server exited before it answered:\n${said}')
+    }
+
+    catch {
+      up = http.get(base + '/releases', { timeout: 1000 }).status == 200
     } as error {
       os.sleep(0.1)
     }
+  }
+
+  if !up {
+    raise Error('the release server did not answer on ${base} within a minute')
   }
 })
 

@@ -251,9 +251,30 @@ fn run_linker(
     .arg("/DLL")
     .arg(format!("/OUT:{}", output.display()));
 
+  // Every object in the archives goes in, the way `/WHOLEARCHIVE` would
+  // put it, but as an object of its own. `/WHOLEARCHIVE` also forces in
+  // the short import members a Rust staticlib carries for the DLLs std
+  // links by name, and link.exe calls such an archive corrupt. The
+  // archive itself follows, so those members still resolve the imports
+  // that need them.
+  let objects_dir = output.with_extension("objects");
+  let _ = fs::remove_dir_all(&objects_dir);
+  fs::create_dir_all(&objects_dir)
+    .map_err(|e| format!("cannot create '{}': {e}", objects_dir.display()))?;
+
+  let mut inputs = String::new();
+
+  for (index, bytes) in contents.iter().enumerate() {
+    for (member, object) in archive_parts(bytes).objects.iter().enumerate() {
+      let path = objects_dir.join(format!("{index}-{member}.obj"));
+
+      fs::write(&path, object).map_err(|e| format!("cannot write '{}': {e}", path.display()))?;
+      inputs.push_str(&format!("\"{}\"\n", path.display()));
+    }
+  }
+
   for a in archives {
-    command.arg(format!("/WHOLEARCHIVE:{}", a.display()));
-    command.arg(a);
+    inputs.push_str(&format!("\"{}\"\n", a.display()));
   }
 
   for dir in &options.search_paths {
@@ -290,7 +311,12 @@ fn run_linker(
     None => {
       let mut all = Vec::new();
       for bytes in contents {
-        all.extend(archive_symbols(bytes).into_iter().filter(|s| exportable(s)));
+        all.extend(
+          archive_parts(bytes)
+            .symbols
+            .into_iter()
+            .filter(|s| exportable(s)),
+        );
       }
       all.sort();
       all.dedup();
@@ -304,17 +330,19 @@ fn run_linker(
     );
   }
 
-  // Thousands of exports overflow a command line, so they go in a
-  // response file.
-  let response = output.with_extension("exports.rsp");
+  // Thousands of objects and exports overflow a command line, so they
+  // go in a response file.
+  let response = output.with_extension("inputs.rsp");
   let text: String = exports.iter().map(|e| format!("/EXPORT:{e}\n")).collect();
-  fs::write(&response, text).map_err(|e| format!("cannot write '{}': {e}", response.display()))?;
+  fs::write(&response, inputs + &text)
+    .map_err(|e| format!("cannot write '{}': {e}", response.display()))?;
   command.arg(format!("@{}", response.display()));
 
   command.args(&options.flags);
 
   let result = run_output(command);
   let _ = fs::remove_file(&response);
+  let _ = fs::remove_dir_all(&objects_dir);
   let _ = fs::remove_file(output.with_extension("lib"));
   let _ = fs::remove_file(output.with_extension("exp"));
   result
@@ -333,45 +361,120 @@ fn exportable(symbol: &str) -> bool {
     || symbol.starts_with("__")
     || symbol.starts_with('.')
     || symbol.starts_with('$')
+    || symbol.contains(".llvm.")
     || symbol.contains('@'))
 }
 
-/// The symbols an archive's index says it defines. Reads the GNU and
-/// COFF index, which is the first member, named `/`.
+/// What linking needs from one archive.
 #[cfg(windows)]
-fn archive_symbols(bytes: &[u8]) -> Vec<String> {
-  let mut out = Vec::new();
+struct ArchiveParts<'a> {
+  /// The object files, in order.
+  objects: Vec<&'a [u8]>,
+  /// The symbols those objects define, by the archive's own index.
+  symbols: Vec<String>,
+}
+
+/// Reads a COFF or GNU archive. Import members, the short ones and the
+/// descriptor objects an import library is made of, belong to the DLLs
+/// they name: they are left in the archive for the linker to draw on
+/// and the symbols they define are not the archive's own.
+#[cfg(windows)]
+fn archive_parts(bytes: &[u8]) -> ArchiveParts<'_> {
+  let mut parts = ArchiveParts {
+    objects: Vec::new(),
+    symbols: Vec::new(),
+  };
+
+  if !bytes.starts_with(b"!<arch>\n") {
+    return parts;
+  }
+
+  let mut index: Option<&[u8]> = None;
+  let mut object_offsets = Vec::new();
   let mut at = 8;
 
-  if at + 60 > bytes.len() {
-    return out;
+  while at + 60 <= bytes.len() {
+    let offset = at;
+    let header = &bytes[at..at + 60];
+    let name = String::from_utf8_lossy(&header[..16])
+      .trim_end()
+      .to_string();
+    let Ok(size) = String::from_utf8_lossy(&header[48..58])
+      .trim()
+      .parse::<usize>()
+    else {
+      break;
+    };
+
+    at += 60;
+
+    if at + size > bytes.len() {
+      break;
+    }
+
+    let member = &bytes[at..at + size];
+
+    // `/`, `//` and `/<ECSYMBOLS>/` are bookkeeping; a real member
+    // stored under a long name is `/` and an offset. The first `/` is
+    // the index, big-endian in both formats.
+    if name == "/" {
+      index.get_or_insert(member);
+    } else if name != "//" && !name.starts_with("/<") && !member.is_empty() && !is_import(member) {
+      parts.objects.push(member);
+      object_offsets.push(offset);
+    }
+
+    // Members start on an even offset.
+    at += size + (size & 1);
   }
 
-  let header = &bytes[at..at + 60];
-  let name = String::from_utf8_lossy(&header[..16]).trim().to_string();
-  let size: usize = String::from_utf8_lossy(&header[48..58])
-    .trim()
-    .parse()
-    .unwrap_or(0);
-  at += 60;
+  let Some(index) = index.filter(|index| index.len() >= 4) else {
+    return parts;
+  };
 
-  if name != "/" || at + size > bytes.len() || size < 4 {
-    return out;
-  }
-
-  let member = &bytes[at..at + size];
-  let count = u32::from_be_bytes(member[..4].try_into().unwrap()) as usize;
+  let count = u32::from_be_bytes(index[..4].try_into().unwrap()) as usize;
   let names_at = 4 + count * 4;
 
-  if names_at > member.len() {
-    return out;
+  if names_at > index.len() {
+    return parts;
   }
 
-  for raw in member[names_at..].split(|b| *b == 0).take(count) {
-    if !raw.is_empty() {
-      out.push(String::from_utf8_lossy(raw).into_owned());
+  let names = index[names_at..].split(|b| *b == 0).take(count);
+
+  for (i, raw) in names.enumerate() {
+    let at = 4 + i * 4;
+    let member = u32::from_be_bytes(index[at..at + 4].try_into().unwrap()) as usize;
+
+    if !raw.is_empty() && object_offsets.binary_search(&member).is_ok() {
+      parts
+        .symbols
+        .push(String::from_utf8_lossy(raw).into_owned());
     }
   }
 
-  out
+  parts
+}
+
+/// Whether an archive member is part of an import library: a short
+/// import member, or an object whose sections are all import data.
+#[cfg(windows)]
+fn is_import(member: &[u8]) -> bool {
+  // A short import member starts with Sig1 0 and Sig2 0xFFFF.
+  if member.starts_with(&[0x00, 0x00, 0xff, 0xff]) {
+    return true;
+  }
+
+  if member.len() < 20 {
+    return false;
+  }
+
+  let sections = u16::from_le_bytes([member[2], member[3]]) as usize;
+  let optional = u16::from_le_bytes([member[16], member[17]]) as usize;
+  let table = 20 + optional;
+
+  if sections == 0 || table + sections * 40 > member.len() {
+    return false;
+  }
+
+  (0..sections).all(|i| member[table + i * 40..].starts_with(b".idata$"))
 }

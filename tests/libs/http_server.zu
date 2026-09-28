@@ -430,6 +430,35 @@ ok('byte ranges, including suffix and unsatisfiable ones')
 assert client.pooled_connections() > 0, 'the connection was kept alive and pooled'
 ok('keep-alive connections are reused')
 
+# A timeout belongs to the request that asked for it, not to whichever
+# request opened the pooled connection it goes out on. This server
+# serves one connection at a time, so the main client lets go of its
+# own first.
+client.close()
+
+var timing = http.HttpClient()
+var quick = timing.get(base + '/', { timeout: 200 })
+assert quick.status == 200, 'a request with a short timeout opens the connection'
+assert timing.pooled_connections() == 1, 'which goes back in the pool'
+
+var eventually = timing.get(base + '/slow')
+assert eventually.as_text() == 'eventually',
+  'the next request on it waits as long as the client allows'
+assert timing.pooled_connections() == 1, 'over that same connection'
+
+var hurried = nil
+
+catch {
+  timing.get(base + '/slow', { timeout: 200 })
+} as error {
+  hurried = error
+}
+
+assert instance_of(hurried, http.TimeoutError),
+  'and a later request with a short timeout is held to it'
+timing.close()
+ok('a pooled connection takes each request\'s own timeouts')
+
 # The server closes an idle connection after its keep-alive window.
 # The client still holds it, so the next request goes out over a
 # socket the far end has already dropped - which must not surface as

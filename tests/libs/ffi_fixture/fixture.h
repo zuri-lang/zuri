@@ -10,7 +10,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <wchar.h>
+/* The macOS C library ships no <uchar.h>, so the compiler there gets
+   char16_t as C11 defines it. Zuri's reader knows the header either way. */
+#if defined(__APPLE__) && !defined(__ZURI_FFI__)
+typedef uint_least16_t char16_t;
+#else
 #include <uchar.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
