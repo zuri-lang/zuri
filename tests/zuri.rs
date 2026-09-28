@@ -835,6 +835,80 @@ mod launch {
   }
 
   #[test]
+  fn a_script_imports_its_own_projects_packages_from_anywhere() {
+    let dir = case("anchor_script");
+    let home = dir.join("home");
+    let project = dir.join("project");
+    let elsewhere = dir.join("elsewhere");
+
+    write(
+      &project.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    write(
+      &project.join(".zuri/libs/greeting.zu"),
+      "var WORD = 'from the project'\n",
+    );
+    write(
+      &project.join("app/deep/main.zu"),
+      "import greeting\n\necho greeting.WORD\n",
+    );
+
+    // The working directory has packages of its own, which the script
+    // must not see.
+    write(
+      &elsewhere.join(".zuri/libs/greeting.zu"),
+      "var WORD = 'from elsewhere'\n",
+    );
+
+    let script = project.join("app/deep/main.zu");
+    let script = script.to_str().expect("a UTF-8 path");
+
+    assert_ran(
+      &zuri_with_home(&elsewhere, &home, &["run", script]),
+      "from the project",
+    );
+  }
+
+  #[test]
+  fn a_script_in_no_project_imports_from_the_working_directory() {
+    let dir = case("anchor_none");
+    let home = dir.join("home");
+
+    write(
+      &dir.join(".zuri/libs/greeting.zu"),
+      "var WORD = 'from here'\n",
+    );
+    write(
+      &dir.join("main.zu"),
+      "import greeting\n\necho greeting.WORD\n",
+    );
+
+    assert_ran(
+      &zuri_with_home(&dir, &home, &["run", "main.zu"]),
+      "from here",
+    );
+  }
+
+  #[test]
+  fn a_project_command_runs_from_a_subdirectory() {
+    let dir = case("anchor_command");
+    let home = dir.join("home");
+
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    write(&dir.join(".zuri/cmds/greet.zu"), REPORT_ARGS);
+    fs::create_dir_all(dir.join("app/deep")).expect("failed to create a subdirectory");
+
+    assert_ran(
+      &zuri_with_home(&dir.join("app/deep"), &home, &["greet", "world"]),
+      "ran [world]",
+    );
+  }
+
+  #[test]
   fn a_package_command_runs_from_anywhere_in_the_project() {
     let dir = case("package_command");
     let home = dir.join("home");
@@ -1492,5 +1566,251 @@ mod init_command {
       line.len() > "init".len(),
       "init was listed with no description: {line:?}"
     );
+  }
+}
+
+/// `zuri bundle` end to end: a project packaged with this runtime, run
+/// from somewhere else with nothing of the checkout in reach.
+mod bundles {
+  use std::fs;
+  use std::path::{Path, PathBuf};
+  use std::process::{Command, Output};
+
+  fn case(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+      .join("bundles")
+      .join(name);
+
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("failed to create the case directory");
+
+    dir
+  }
+
+  fn write(path: &Path, source: &str) {
+    if let Some(parent) = path.parent() {
+      fs::create_dir_all(parent).expect("failed to create a fixture directory");
+    }
+
+    fs::write(path, source).expect("failed to write a fixture");
+  }
+
+  /// The repository the tests run from, which is where the standard
+  /// library and the shipped commands are.
+  fn repository() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+  }
+
+  /// Every place a run could find user state is pointed inside `home`.
+  fn isolated(command: &mut Command, home: &Path) {
+    command
+      .env("ZURI_HOME", home.join("zuri"))
+      .env("XDG_CACHE_HOME", home.join("cache"))
+      .env("HOME", home)
+      .env("USERPROFILE", home)
+      .env("LOCALAPPDATA", home.join("local"))
+      .env("NO_COLOR", "1");
+  }
+
+  /// A project whose program prints its arguments and the file it runs
+  /// from, and imports a module of its own.
+  fn project(dir: &Path) {
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"greeter\"\nversion = \"1.2.0\"\ndescription = \"Greets\"\n",
+    );
+    write(
+      &dir.join("app/words.zu"),
+      "var GREETING = 'hello from a bundle'\n",
+    );
+    write(
+      &dir.join("index.zu"),
+      "import os\nimport .app.words\n\necho words.GREETING\necho 'args ${os.args[2,]}'\n",
+    );
+  }
+
+  fn bundle(dir: &Path, home: &Path, format: &str) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_zuri"));
+
+    command
+      .args(["bundle", "--format", format, "--output"])
+      .arg(dir.join("dist"))
+      .current_dir(dir)
+      .env("ZURI_ROOT", repository());
+
+    isolated(&mut command, home);
+
+    command.output().expect("failed to run zuri bundle")
+  }
+
+  fn combined(output: &Output) -> String {
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    text.replace("\r\n", "\n")
+  }
+
+  /// The one entry `dist` holds.
+  fn built(dir: &Path) -> PathBuf {
+    let mut entries: Vec<PathBuf> = fs::read_dir(dir.join("dist"))
+      .expect("dist was not written")
+      .flatten()
+      .map(|entry| entry.path())
+      .collect();
+
+    assert_eq!(entries.len(), 1, "dist holds {entries:?}");
+    entries.remove(0)
+  }
+
+  /// Runs `program` from a directory with nothing in it, with no
+  /// `ZURI_ROOT` to lean on.
+  fn launch(program: &Path, home: &Path, args: &[&str]) -> Output {
+    let elsewhere = home.join("elsewhere");
+
+    fs::create_dir_all(&elsewhere).expect("failed to create a directory to run from");
+
+    let mut command = Command::new(program);
+
+    command
+      .args(args)
+      .current_dir(&elsewhere)
+      .env_remove("ZURI_ROOT");
+
+    isolated(&mut command, home);
+
+    command.output().expect("failed to run the bundle")
+  }
+
+  #[test]
+  fn a_directory_bundle_runs_its_program_from_anywhere() {
+    let dir = case("directory");
+    let home = dir.join("home");
+
+    project(&dir);
+
+    let output = bundle(&dir, &home, "dir");
+
+    assert!(output.status.success(), "{}", combined(&output));
+
+    let root = built(&dir);
+    let name = if cfg!(windows) {
+      "greeter.exe"
+    } else {
+      "greeter"
+    };
+
+    assert!(root.join("bundle.toml").is_file());
+    assert!(root.join("libs").is_dir());
+    assert!(root.join("app/index.zu").is_file());
+
+    let ran = launch(&root.join(name), &home, &["one", "two"]);
+    let text = combined(&ran);
+
+    assert!(ran.status.success(), "{text}");
+    assert!(text.contains("hello from a bundle"), "{text}");
+    assert!(text.contains("args [one, two]"), "{text}");
+  }
+
+  #[test]
+  fn a_single_file_bundle_unpacks_once_and_runs() {
+    let dir = case("single_file");
+    let home = dir.join("home");
+
+    project(&dir);
+
+    let output = bundle(&dir, &home, "exe");
+
+    assert!(output.status.success(), "{}", combined(&output));
+
+    let program = built(&dir);
+
+    for _ in 0..2 {
+      let ran = launch(&program, &home, &["again"]);
+      let text = combined(&ran);
+
+      assert!(ran.status.success(), "{text}");
+      assert!(text.contains("hello from a bundle"), "{text}");
+      assert!(text.contains("args [again]"), "{text}");
+    }
+  }
+
+  #[test]
+  fn a_damaged_single_file_bundle_refuses_to_run() {
+    let dir = case("damaged");
+    let home = dir.join("home");
+
+    project(&dir);
+
+    let output = bundle(&dir, &home, "exe");
+
+    assert!(output.status.success(), "{}", combined(&output));
+
+    let program = built(&dir);
+    let mut data = fs::read(&program).expect("failed to read the bundle");
+
+    // A byte inside the payload, well clear of the trailer.
+    let at = data.len() - 48 - 16;
+    data[at] ^= 0xff;
+    fs::write(&program, &data).expect("failed to write the damaged bundle");
+
+    let ran = launch(&program, &home, &[]);
+    let text = combined(&ran);
+
+    assert!(!ran.status.success(), "a damaged bundle ran\n{text}");
+    assert!(!text.contains("hello from a bundle"), "{text}");
+  }
+}
+
+/// The suites the shipped commands carry, run the way a person runs
+/// them, so a change that breaks `zuri install` or `zuri serve` fails
+/// here as much as a change to the runtime does.
+mod command_suites {
+  use std::path::PathBuf;
+  use std::process::Command;
+
+  fn suite(name: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let tests = root.join("cmds").join(name).join("tests");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .arg("test")
+      .arg(&tests)
+      .current_dir(&root)
+      .env("ZURI_ROOT", &root)
+      .env("NO_COLOR", "1")
+      .output()
+      .expect("failed to run zuri test");
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+
+    assert!(
+      output.status.success(),
+      "the {name} command's suite failed\n--- output ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn shared() {
+    suite("_shared");
+  }
+
+  #[test]
+  fn init() {
+    suite("init");
+  }
+
+  #[test]
+  fn bundle() {
+    suite("bundle");
+  }
+
+  #[test]
+  fn upgrade() {
+    suite("upgrade");
+  }
+
+  #[test]
+  fn serve() {
+    suite("serve");
   }
 }

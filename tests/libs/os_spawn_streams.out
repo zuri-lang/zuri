@@ -1,3 +1,1 @@
-started a program that outlives this one
-nothing on stderr
-the pipes closed with the child
+(unused: this fixture is checked by exit code, not output match; see run_exit_code_fixture in tests/zuri.rs)

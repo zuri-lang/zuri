@@ -50,77 +50,6 @@ def _check_runs(runtime: string, version: string) {
   }
 }
 
-# Swaps the staged release into `root`. Every rename is recorded, so a
-# failure part way through puts back everything already moved.
-def _swap(root: string, executable: string, staged: string, stamp: string) {
-  var done = []
-  var windows = os.platform == 'windows'
-  var exe_name = os.base_name(executable)
-
-  catch {
-    for part in plan.PARTS {
-      var current = os.join_paths(root, part)
-      var aside = os.join_paths(root, '.${part}.old-${stamp}')
-
-      os.rename(current, aside)
-      done.append([aside, current])
-      os.rename(os.join_paths(staged, part), current)
-      done.append([current, nil])
-    }
-
-    # A running executable can be renamed everywhere, and replaced by a
-    # rename everywhere but Windows, which keeps it where it was set
-    # aside until the next start clears it away.
-    var aside = windows
-      ? executable + '.old'
-      : os.join_paths(root, '.${exe_name}.old-${stamp}')
-
-    fsx.remove(aside)
-    os.rename(executable, aside)
-    done.append([aside, executable])
-    os.rename(os.join_paths(staged, windows ? 'zuri.exe' : 'zuri'), executable)
-    done.append([executable, nil])
-
-    if !windows {
-      file(executable).chmod(0c755)
-    }
-
-    for extra in plan.EXTRAS {
-      var from = os.join_paths(staged, extra)
-
-      if file(from).exists() {
-        fsx.atomic_write(os.join_paths(root, extra), fsx.read_bytes(from))
-      }
-    }
-  } as error {
-    iter var i = done.length() - 1; i >= 0; i-- {
-      var move = done[i]
-
-      catch {
-        if move[1] == nil {
-          fsx.remove(move[0])
-        } else {
-          os.rename(move[0], move[1])
-        }
-      } as undo_error {
-        ui.complain(ui.failure('could not put back ${move[1]}: ${undo_error.message}'))
-      }
-    }
-
-    raise CommandError('the upgrade failed and the installation was put back: ${error.message}')
-  }
-
-  # What was replaced goes once the new installation is in place. On
-  # Windows the old executable stays set aside for the next start.
-  for part in plan.PARTS {
-    fsx.remove(os.join_paths(root, '.${part}.old-${stamp}'))
-  }
-
-  if !windows {
-    fsx.remove(os.join_paths(root, '.${exe_name}.old-${stamp}'))
-  }
-}
-
 def main() {
   var parsed = plan.parser().parse()
   var given = parsed.options
@@ -199,7 +128,7 @@ def main() {
       return
     }
 
-    _swap(root, installation.executable, staged, stamp)
+    plan.swap(root, installation.executable, staged, stamp, os.platform)
     fsx.remove(staging)
   } as error {
     fsx.remove(staging)

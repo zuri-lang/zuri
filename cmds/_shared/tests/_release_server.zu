@@ -1,0 +1,43 @@
+# A stand-in for the release listing GitHub serves, for the tests that
+# download runtimes. It answers `/releases` with `releases.json` from
+# the directory it is given, `{base}` in it made this server's own
+# address, and serves every other file there under `/assets`.
+#
+#   zuri run _release_server.zu <directory> <port>
+
+import http
+import os
+
+var directory = os.args[2]
+var port = os.args[3].to_number()
+var base = 'http://127.0.0.1:${port}'
+var server = http.HttpServer(port, '127.0.0.1')
+
+# One request at a time is all this serves, so every answer closes its
+# connection rather than holding the next client back behind it.
+server.use(@(request, response, next) {
+  response.headers.set('Connection', 'close')
+  next()
+})
+
+server.get('/releases', @(request, response) {
+  var listing = file(os.join_paths(directory, 'releases.json')).read()
+
+  response.content_type('application/json')
+  response.write(listing.replace('{base}', base, false))
+})
+
+server.get('/assets/:name', @(request, response) {
+  var path = os.join_paths(directory, request.param('name'))
+
+  if !file(path).exists() {
+    response.status = 404
+    response.text('missing')
+
+    return
+  }
+
+  response.file(path)
+})
+
+server.listen()

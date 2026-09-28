@@ -17,9 +17,12 @@ var child = spawn(os.exe_path, ['run', helper], {
 
 child.wait()
 
-echo child.read_stdout().to_string().lines()[0]
-echo child.read_stderr().to_string().trim() == '' ? 'nothing on stderr' : 'stderr had output'
+var said = child.read_stdout().to_string()
+var complained = child.read_stderr().to_string()
+
+assert said.contains('started a program that outlives this one'), 'the helper did not run: ${said}'
+assert complained.trim() == '', 'the helper wrote to stderr: ${complained}'
 
 # The grandchild sleeps for ten seconds, so a read that waited for it
 # would take at least that long.
-echo time() - started < 8 ? 'the pipes closed with the child' : 'a grandchild held the pipes open'
+assert time() - started < 8, 'a grandchild held the pipes open'

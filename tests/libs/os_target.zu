@@ -1,0 +1,22 @@
+# `os.target` names the platform the runtime was built for, the way
+# release archives are named, and agrees with `os.platform`.
+
+import os
+
+var parts = os.target.split('-')
+
+assert parts.length() >= 3, '${os.target} is not a target triple'
+assert ['x86_64', 'aarch64', 'arm', 'armv7', 'i686', 'riscv64'].contains(parts[0]),
+  '${os.target} names no architecture this runtime builds for'
+
+using os.platform {
+  when 'linux' {
+    assert os.target.contains('-linux-'), '${os.target} is not a Linux target'
+  }
+  when 'macos' {
+    assert os.target.ends_with('-apple-darwin'), '${os.target} is not macOS'
+  }
+  when 'windows' {
+    assert os.target.contains('-windows-'), '${os.target} is not Windows'
+  }
+}

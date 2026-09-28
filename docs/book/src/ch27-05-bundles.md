@@ -35,7 +35,8 @@ otherwise.
 The lockfile has to match `project.toml`, and every package it names,
 apart from development dependencies, has to be installed at its locked
 version, so a bundle never ships packages nobody resolved. `zuri
-restore` puts either right. The project's files are chosen the same way
+restore` puts either right. A project with no dependencies needs no
+lockfile at all. The project's files are chosen the same way
 publishing chooses them, so `include` and `exclude` apply here too.
 
 ## Other Platforms

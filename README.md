@@ -163,15 +163,19 @@ Already here:
       outside the language.
 - [x] **A test runner.**
 - [x] **C and Rust compatible FFI interop.**
+- [x] **Package management**, for the code that is genuinely
+      third-party: `zuri install`, `publish`, `update`, `restore` and the
+      rest ship with the runtime, with a lockfile and one version of
+      every package. A complete standard library is not an argument
+      against sharing.
+- [x] **Nyssa, a self-hosted repository server** in every installation,
+      `zuri serve`, so public and private organizations share Zuri
+      packages whichever way they like.
+- [x] **Bundles** that run a program where Zuri is not installed, as a
+      directory, an archive or a single executable.
 
 On the way, in the order it matters:
 
-- [ ] **Nyssa package manager**, for the code that is genuinely
-      third-party. A complete standard library is not an argument
-      against sharing.
-- [ ] **A self-hosted repository server** bundled with `Nyssa` that allows 
-      public and private organizations to share Zuri packages whichever way 
-      they like.
 - [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
 
 ## AI Involvement

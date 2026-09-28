@@ -1,0 +1,122 @@
+# Choosing what to build, naming it, and what a bundle says about
+# itself.
+
+import os
+import test { * }
+
+import ..plan
+
+var HOST = 'x86_64-unknown-linux-gnu'
+
+# The message a failed call raised, or `nil`.
+def failure(body: function) {
+  catch {
+    body()
+  } as error {
+    return error.message
+  }
+
+  return nil
+}
+
+describe('targets', @{
+  it('builds for this machine unless told otherwise', @{
+    expect(plan.targets(nil, HOST)).to_equal([HOST])
+    expect(plan.targets(['host'], HOST)).to_equal([HOST])
+  })
+
+  it('builds for every released platform with all, each once', @{
+    var every = plan.targets(['all', 'host'], HOST)
+
+    expect(every).to_equal(plan.TARGETS)
+  })
+
+  it('refuses a platform zuri is not released for', @{
+    expect(failure(@{
+      plan.targets(['riscv64-unknown-linux-gnu'], HOST)
+    })).to_contain('is not a platform zuri is released for')
+  })
+})
+
+describe('names', @{
+  it('names each format for its platform', @{
+    expect(plan.output_name('tool', '1.0.0', HOST, 'archive')).to_equal('tool-1.0.0-${HOST}.tar.gz')
+    expect(plan.output_name('tool', '1.0.0', 'x86_64-pc-windows-msvc', 'archive'))
+      .to_equal('tool-1.0.0-x86_64-pc-windows-msvc.zip')
+    expect(plan.output_name('tool', '1.0.0', 'x86_64-pc-windows-msvc', 'exe'))
+      .to_equal('tool-1.0.0-x86_64-pc-windows-msvc.exe')
+    expect(plan.output_name('tool', '1.0.0', HOST, 'exe')).to_equal('tool-1.0.0-${HOST}')
+    expect(plan.output_name('tool', '1.0.0', HOST, 'dir')).to_equal('tool-1.0.0-${HOST}')
+    expect(plan.output_name('tool', '1.0.0', 'aarch64-apple-darwin', 'app')).to_equal('tool.app')
+  })
+
+  it('knows which platforms are which', @{
+    expect(plan.is_windows('x86_64-pc-windows-msvc')).to_be_true()
+    expect(plan.is_windows(HOST)).to_be_false()
+    expect(plan.is_apple('aarch64-apple-darwin')).to_be_true()
+    expect(plan.is_apple(HOST)).to_be_false()
+  })
+})
+
+describe('formats', @{
+  it('makes a macOS application only for macOS', @{
+    expect(failure(@{
+      plan.check_format('app', HOST, 'linux')
+    })).to_contain('is not macOS')
+
+    expect(failure(@{
+      plan.check_format('app', 'aarch64-apple-darwin', 'linux')
+    })).to_be_nil()
+  })
+
+  it('makes a single-file macOS program only on a Mac, where it can be signed', @{
+    expect(failure(@{
+      plan.check_format('exe', 'aarch64-apple-darwin', 'linux')
+    })).not.to_be_nil()
+
+    expect(failure(@{
+      plan.check_format('exe', 'aarch64-apple-darwin', 'macos')
+    })).to_be_nil()
+  })
+
+  it('takes reverse domain identifiers only', @{
+    expect(plan.valid_identifier('com.example.tool')).to_be_true()
+    expect(plan.valid_identifier('tool')).to_be_false()
+    expect(plan.valid_identifier('com.example.tool; rm')).to_be_false()
+  })
+})
+
+describe('what a bundle says about itself', @{
+  it('marks a bundle with what it is', @{
+    var text = plan.marker({ name: 'tool', version: '1.0.0', target: HOST, zuri: '0.1.0' })
+
+    expect(text).to_contain('name = "tool"')
+    expect(text).to_contain('target = "${HOST}"')
+  })
+
+  it('escapes what an application declares', @{
+    var text = plan.info_plist({
+      name: 'tool',
+      display: 'Tools & <Things>',
+      identifier: 'com.example.tool',
+      version: '1.0.0',
+      icon: true,
+    })
+
+    expect(text).to_contain('<string>Tools &amp; &lt;Things&gt;</string>')
+    expect(text).to_contain('icon.icns')
+  })
+
+  it('ends a payload with its digest, its length and the magic', @{
+    var root = os.create_temp_dir('zuri-bundle-payload-')
+
+    file(os.join_paths(root, 'index.zu'), 'w').write('echo 1\n')
+
+    var data = plan.payload(root)
+    var trailer = data[data.length() - 48,]
+
+    expect(trailer[40,].to_string()).to_equal('ZURIBND1')
+
+    os.remove_dir(root, true)
+  })
+})

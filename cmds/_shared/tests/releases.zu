@@ -1,0 +1,236 @@
+# Finding, downloading and unpacking runtimes, against a stand-in for
+# the release listing: a good release, a pre-release, a draft, one whose
+# published checksum is wrong, one with no checksum at all, and one
+# whose archive holds no runtime.
+
+import hash
+import http
+import json
+import net
+import os
+import os.process { spawn }
+import test { * }
+
+import ..archive
+import ..fsx
+import ..releases
+
+# The platform every release here is for, whatever this machine is.
+var TARGET = 'x86_64-unknown-linux-gnu'
+
+var ROOT = os.create_temp_dir('zuri-releases-')
+var ASSETS = os.join_paths(ROOT, 'assets')
+var HOME = os.join_paths(ROOT, 'home')
+var server = nil
+
+# A runtime archive for `version`, holding a runtime when `complete`.
+def runtime_archive(version: string, complete: bool) {
+  var name = 'zuri-${version}-${TARGET}'
+  var stage = os.join_paths(ROOT, 'stage', name)
+  var files = ['${name}/libs/marker.zu']
+
+  fsx.ensure_dir(os.join_paths(stage, 'libs'))
+  fsx.atomic_write(os.join_paths(stage, 'libs', 'marker.zu'), 'echo "${version}"\n')
+
+  if complete {
+    fsx.atomic_write(os.join_paths(stage, 'zuri'), 'runtime ${version}\n')
+    files.append('${name}/zuri')
+  }
+
+  var path = os.join_paths(ASSETS, '${name}.tar.gz')
+
+  archive.pack(os.join_paths(ROOT, 'stage'), files, path)
+  fsx.remove(os.join_paths(ROOT, 'stage'))
+
+  return path
+}
+
+# One entry of the listing, with the assets that exist for it.
+def release(version: string, options: dict) {
+  var name = 'zuri-${version}-${TARGET}.tar.gz'
+  var path = runtime_archive(version, options.get('complete', true))
+  var assets = [{ name, browser_download_url: '{base}/assets/${name}' }]
+  var digest = options.get('checksum', hash.sha256(fsx.read_bytes(path)))
+
+  if digest != nil {
+    fsx.atomic_write(os.join_paths(ASSETS, name + '.sha256'), '${digest}  ${name}\n')
+    assets.append({ name: name + '.sha256', browser_download_url: '{base}/assets/${name}.sha256' })
+  }
+
+  return {
+    tag_name: 'v${version}',
+    draft: options.get('draft', false),
+    prerelease: options.get('prerelease', false),
+    assets,
+  }
+}
+
+# A free port on this machine, found by binding to one and letting go.
+def free_port() {
+  var probe = net.TcpStream()
+
+  probe.bind('127.0.0.1:0')
+
+  var port = probe.local_address().port()
+
+  probe.close()
+
+  return port
+}
+
+before_all(@{
+  fsx.ensure_dir(ASSETS)
+  fsx.ensure_dir(HOME)
+
+  var listing = [
+    release('9.0.0', {}),
+    release('9.1.0-rc.1', { prerelease: true }),
+    release('10.0.0', { draft: true }),
+    release('8.0.0', { checksum: '0' * 64 }),
+    release('7.0.0', { checksum: nil }),
+    release('6.0.0', { complete: false }),
+  ]
+
+  fsx.atomic_write(os.join_paths(ASSETS, 'releases.json'), json.encode(listing))
+
+  var port = free_port()
+  var base = 'http://127.0.0.1:${port}'
+  var helper = os.join_paths(os.dir_name(__file__), '_release_server.zu')
+
+  server = spawn(os.exe_path, ['run', helper, ASSETS, port.to_string()], {
+    stdin: 'null', stdout: 'null', stderr: 'null',
+  })
+
+  iter var tries = 0; tries < 100; tries++ {
+    catch {
+      var options = { timeout: 1000 }
+
+      if http.get(base + '/releases', options).status == 200 {
+        break
+      }
+    } as error {
+      os.sleep(0.1)
+    }
+  }
+
+  os.set_env('ZURI_RELEASES_URL', base + '/releases', true)
+  os.set_env('ZURI_HOME', HOME, true)
+})
+
+after_all(@{
+  if server != nil {
+    server.kill()
+    server.wait(5000)
+  }
+
+  os.unset_env('ZURI_RELEASES_URL')
+  fsx.remove(ROOT)
+})
+
+# The message a failed call raised, checking it is a ReleaseError.
+def refusal(body: function) {
+  catch {
+    body()
+  } as error {
+    expect(error).to_be_instance_of(releases.ReleaseError)
+
+    return error.message
+  }
+
+  return nil
+}
+
+describe('listing', @{
+  it('lists releases with a checksum, newest first, leaving out drafts', @{
+    var versions = releases.available(TARGET).map(@(r) => r.version)
+
+    expect(versions).to_equal(['9.0.0', '8.0.0', '6.0.0'])
+  })
+
+  it('lists pre-releases only when asked', @{
+    var versions = releases.available(TARGET, true).map(@(r) => r.version)
+
+    expect(versions).to_equal(['9.1.0-rc.1', '9.0.0', '8.0.0', '6.0.0'])
+  })
+
+  it('finds the newest, a named version, and a named pre-release', @{
+    expect(releases.find('latest', TARGET).version).to_equal('9.0.0')
+    expect(releases.find('8.0.0', TARGET).version).to_equal('8.0.0')
+    expect(releases.find('9.1.0-rc.1', TARGET).version).to_equal('9.1.0-rc.1')
+  })
+
+  it('refuses a release that publishes no checksum, or does not exist', @{
+    expect(refusal(@{
+      releases.find('7.0.0', TARGET)
+    })).to_contain('there is no release of zuri 7.0.0')
+
+    expect(refusal(@{
+      releases.find('1.2.3', 'riscv64-unknown-linux-gnu')
+    })).to_contain('there is no release of zuri 1.2.3')
+  })
+
+  it('names the archive a platform is offered', @{
+    expect(releases.asset_name('1.0.0', TARGET)).to_equal('zuri-1.0.0-${TARGET}.tar.gz')
+    expect(releases.asset_name('1.0.0', 'x86_64-pc-windows-msvc'))
+      .to_equal('zuri-1.0.0-x86_64-pc-windows-msvc.zip')
+  })
+})
+
+describe('downloading', @{
+  it('downloads a release that matches its checksum', @{
+    var destination = os.join_paths(ROOT, 'good.tar.gz')
+
+    releases.download(releases.find('9.0.0', TARGET), TARGET, destination)
+
+    var published = fsx.read_bytes(os.join_paths(ASSETS, 'zuri-9.0.0-${TARGET}.tar.gz'))
+
+    expect(fsx.read_bytes(destination)).to_equal(published)
+  })
+
+  it('refuses one that does not, and keeps nothing of it', @{
+    var destination = os.join_paths(ROOT, 'tampered.tar.gz')
+    var message = refusal(@{
+      releases.download(releases.find('8.0.0', TARGET), TARGET, destination)
+    })
+
+    expect(message).to_contain('does not match its published checksum')
+    expect(file(destination).exists()).to_be_false()
+  })
+})
+
+describe('unpacking', @{
+  it('unpacks a runtime and its standard library', @{
+    var archive_path = os.join_paths(ROOT, 'nine.tar.gz')
+    var destination = os.join_paths(ROOT, 'nine')
+
+    releases.download(releases.find('9.0.0', TARGET), TARGET, archive_path)
+
+    var root = releases.unpack(archive_path, destination, '9.0.0', TARGET)
+
+    expect(file(os.join_paths(root, 'zuri')).exists()).to_be_true()
+    expect(file(os.join_paths(root, 'libs', 'marker.zu')).exists()).to_be_true()
+  })
+
+  it('refuses an archive with no runtime in it, and leaves nothing behind', @{
+    var archive_path = os.join_paths(ROOT, 'six.tar.gz')
+    var destination = os.join_paths(ROOT, 'six')
+
+    releases.download(releases.find('6.0.0', TARGET), TARGET, archive_path)
+
+    expect(refusal(@{
+      releases.unpack(archive_path, destination, '6.0.0', TARGET)
+    })).to_contain('does not hold a zuri runtime')
+    expect(os.dir_exists(destination)).to_be_false()
+  })
+
+  it('keeps a runtime once downloaded, and needs nothing more for it', @{
+    var first = releases.runtime('9.0.0', TARGET)
+
+    expect(first).to_start_with(os.join_paths(HOME, 'runtimes'))
+
+    # The listing is gone; the runtime is still there.
+    os.set_env('ZURI_RELEASES_URL', 'http://127.0.0.1:9/releases', true)
+
+    expect(releases.runtime('9.0.0', TARGET)).to_equal(first)
+  })
+})

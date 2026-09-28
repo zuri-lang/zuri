@@ -1,0 +1,130 @@
+# `zuri upgrade --check` against a stand-in for the release listing.
+
+import json
+import net
+import os
+import os.process { spawn }
+import test { * }
+import http
+
+var ROOT = os.create_temp_dir('zuri-upgrade-check-')
+var server = nil
+var base = nil
+
+# Lists `versions` as releases for this machine, each with its archive
+# and its checksum.
+def list_releases(versions: list) {
+  var listing = versions.map(@(version) {
+    var name = 'zuri-${version}-${os.target}.${os.platform == "windows" ? "zip" : "tar.gz"}'
+
+    return {
+      tag_name: 'v${version}',
+      assets: [
+        { name, browser_download_url: '{base}/assets/${name}' },
+        { name: name + '.sha256', browser_download_url: '{base}/assets/${name}.sha256' },
+      ],
+    }
+  })
+
+  file(os.join_paths(ROOT, 'releases.json'), 'w').write(json.encode(listing))
+}
+
+# Runs `zuri upgrade` with `words` against the listing.
+def upgrade(words: list) {
+  var child = spawn(os.exe_path, ['upgrade'] + words, {
+    stdin: 'null',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ZURI_RELEASES_URL: base + '/releases', NO_COLOR: '1' },
+  })
+
+  var out = child.read_stdout().to_string()
+  var err = child.read_stderr().to_string()
+
+  return { status: child.wait(), out, all: out + err }
+}
+
+before_all(@{
+  var probe = net.TcpStream()
+
+  probe.bind('127.0.0.1:0')
+
+  var port = probe.local_address().port()
+
+  probe.close()
+  base = 'http://127.0.0.1:${port}'
+
+  var helper = os.join_paths(os.dir_name(os.dir_name(os.dir_name(__file__))), '_shared',
+    'tests', '_release_server.zu')
+
+  list_releases([])
+  server = spawn(os.exe_path, ['run', helper, ROOT, port.to_string()], {
+    stdin: 'null', stdout: 'null', stderr: 'null',
+  })
+
+  iter var tries = 0; tries < 100; tries++ {
+    catch {
+      var options = { timeout: 1000 }
+
+      if http.get(base + '/releases', options).status == 200 {
+        break
+      }
+    } as error {
+      os.sleep(0.1)
+    }
+  }
+})
+
+after_all(@{
+  if server != nil {
+    server.kill()
+    server.wait(5000)
+  }
+
+  os.remove_dir(ROOT, true)
+})
+
+describe('upgrade --check', @{
+  it('says a newer release is out, and exits 1', @{
+    list_releases(['99.0.0', os.version])
+
+    var checked = upgrade(['--check'])
+
+    expect(checked.status).to_equal(1)
+    expect(checked.out).to_contain('zuri 99.0.0 is out; this is ${os.version}')
+  })
+
+  it('says when this is the newest, and exits 0', @{
+    list_releases([os.version])
+
+    var checked = upgrade(['--check'])
+
+    expect(checked.status).to_equal(0)
+    expect(checked.out).to_contain('zuri ${os.version} is the newest release')
+  })
+
+  it('answers in JSON when asked', @{
+    list_releases(['99.0.0'])
+
+    var checked = upgrade(['--check', '--json'])
+    var answer = json.decode(checked.out)
+
+    expect(answer).to_equal({ current: os.version, latest: '99.0.0', newer: true })
+  })
+
+  it('leaves pre-releases out unless asked', @{
+    list_releases(['99.0.0-rc.1', os.version])
+
+    expect(upgrade(['--check']).status).to_equal(0)
+    expect(upgrade(['--check', '--prerelease']).status).to_equal(1)
+  })
+
+  it('names a release that does not exist', @{
+    list_releases([os.version])
+
+    var asked = upgrade(['--version', '42.0.0'])
+
+    expect(asked.status).not.to_equal(0)
+    expect(asked.all).to_contain('there is no release of zuri 42.0.0')
+  })
+})

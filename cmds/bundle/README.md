@@ -43,7 +43,7 @@ packages nobody resolved, and every package it names apart from
 development dependencies has to be installed at its locked version;
 `zuri restore` puts either right. Only those packages are copied in, so
 development dependencies and anything else in `.zuri/libs` stay
-behind.
+behind. A project with no dependencies needs no lockfile at all.
 
 ## Flags
 

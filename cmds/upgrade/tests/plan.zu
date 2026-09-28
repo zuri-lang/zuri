@@ -1,0 +1,167 @@
+# Deciding whether to upgrade, finding the installation, and swapping
+# a release in so that a failure part way puts everything back.
+
+import os
+import test { * }
+
+import ..plan
+
+var ROOT = os.create_temp_dir('zuri-upgrade-')
+
+# The message a failed call raised, or `nil`.
+def failure(body: function) {
+  catch {
+    body()
+  } as error {
+    return error.message
+  }
+
+  return nil
+}
+
+# The few file helpers this needs, kept here since the shared ones sit
+# out of reach of a relative import.
+def remove(path: string) {
+  if os.dir_exists(path) {
+    os.remove_dir(path, true)
+  } else if file(path).exists() {
+    file(path).delete()
+  }
+}
+
+def ensure_dir(path: string) {
+  if !os.dir_exists(path) {
+    os.create_dir(path, 0c755, true)
+  }
+}
+
+def put(path: string, text: string) {
+  ensure_dir(os.dir_name(path))
+  file(path, 'w').write(text)
+}
+
+# An installation at `dir` whose every file says `label`.
+def installation(dir: string, label: string) {
+  ensure_dir(os.join_paths(dir, 'libs'))
+  ensure_dir(os.join_paths(dir, 'cmds', 'fmt'))
+  put(os.join_paths(dir, 'zuri'), '${label} runtime\n')
+  put(os.join_paths(dir, 'libs', 'json.zu'), '${label} json\n')
+  put(os.join_paths(dir, 'cmds', 'fmt', 'index.zu'), '${label} fmt\n')
+}
+
+def read(dir: string, path: string) {
+  return file(os.join_paths(dir, path)).read()
+}
+
+before_each(@{
+  remove(ROOT)
+  ensure_dir(ROOT)
+})
+
+after_all(@{
+  remove(ROOT)
+})
+
+describe('direction', @{
+  it('says whether a release is newer, older or the same', @{
+    expect(plan.direction('1.2.0', '1.3.0')).to_equal('newer')
+    expect(plan.direction('1.2.0', '1.1.9')).to_equal('older')
+    expect(plan.direction('1.2.0', '1.2.0')).to_equal('same')
+    expect(plan.direction('1.2.0', '1.3.0-rc.1')).to_equal('newer')
+    expect(plan.direction('1.3.0-rc.1', '1.3.0')).to_equal('newer')
+  })
+})
+
+describe('installation', @{
+  it('finds a runtime laid out the way a release is', @{
+    var dir = os.join_paths(ROOT, 'installed')
+
+    installation(dir, 'old')
+
+    var found = plan.installation(os.join_paths(dir, 'zuri'), nil)
+
+    expect(found.root).to_equal(os.real_path(dir))
+  })
+
+  it('refuses one missing what a release carries', @{
+    var dir = os.join_paths(ROOT, 'partial')
+
+    installation(dir, 'old')
+    remove(os.join_paths(dir, 'cmds'))
+
+    expect(failure(@{
+      plan.installation(os.join_paths(dir, 'zuri'), nil)
+    })).to_contain('not laid out the way a release is')
+  })
+
+  it('refuses one ZURI_ROOT points somewhere else', @{
+    var dir = os.join_paths(ROOT, 'installed')
+
+    installation(dir, 'old')
+
+    expect(failure(@{
+      plan.installation(os.join_paths(dir, 'zuri'), os.join_paths(ROOT, 'elsewhere'))
+    })).to_contain('ZURI_ROOT points this runtime at')
+  })
+
+  it('says whether it can be written to', @{
+    expect(plan.writable(ROOT)).to_be_true()
+    expect(plan.writable(os.join_paths(ROOT, 'missing', 'deeper'))).to_be_false()
+  })
+})
+
+describe('swap', @{
+  it('puts every part of the new release in place and clears the old away', @{
+    var root = os.join_paths(ROOT, 'installed')
+    var staged = os.join_paths(ROOT, 'staged')
+
+    installation(root, 'old')
+    installation(staged, 'new')
+
+    plan.swap(root, os.join_paths(root, 'zuri'), staged, 'stamp', 'linux')
+
+    expect(read(root, 'zuri')).to_equal('new runtime\n')
+    expect(read(root, 'libs/json.zu')).to_equal('new json\n')
+    expect(read(root, 'cmds/fmt/index.zu')).to_equal('new fmt\n')
+
+    var left = os.read_dir(root).filter(@(name) => name.contains('.old-'))
+
+    expect(left).to_equal([])
+  })
+
+  it('puts the old installation back when a part is missing from the new one', @{
+    var root = os.join_paths(ROOT, 'installed')
+    var staged = os.join_paths(ROOT, 'staged')
+
+    installation(root, 'old')
+    installation(staged, 'new')
+    remove(os.join_paths(staged, 'zuri'))
+
+    expect(failure(@{
+      plan.swap(root, os.join_paths(root, 'zuri'), staged, 'stamp', 'linux')
+    })).to_contain('the installation was put back')
+
+    expect(read(root, 'zuri')).to_equal('old runtime\n')
+    expect(read(root, 'libs/json.zu')).to_equal('old json\n')
+    expect(read(root, 'cmds/fmt/index.zu')).to_equal('old fmt\n')
+
+    var left = os.read_dir(root).filter(@(name) => name.contains('.old-'))
+
+    expect(left).to_equal([])
+  })
+
+  it('keeps the old executable aside on Windows, for the next start to clear', @{
+    var root = os.join_paths(ROOT, 'installed')
+    var staged = os.join_paths(ROOT, 'staged')
+
+    installation(root, 'old')
+    installation(staged, 'new')
+    put(os.join_paths(root, 'zuri.exe'), 'old runtime\n')
+    put(os.join_paths(staged, 'zuri.exe'), 'new runtime\n')
+
+    plan.swap(root, os.join_paths(root, 'zuri.exe'), staged, 'stamp', 'windows')
+
+    expect(read(root, 'zuri.exe')).to_equal('new runtime\n')
+    expect(read(root, 'zuri.exe.old')).to_equal('old runtime\n')
+  })
+})

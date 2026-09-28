@@ -126,8 +126,21 @@ def resolve(address: string, ref: ?dict) {
     }
   }
 
-  var wanted = ref == nil ? 'HEAD' : ref.value
-  var listing = run(['-c', 'protocol.ext.allow=never', 'ls-remote', '--', address, wanted])
+  # A branch or a tag is asked for by its full name, so a branch and a
+  # tag that share one cannot be mistaken for each other. An annotated
+  # tag is also asked for peeled, `^{}`, which is the only way git lists
+  # the commit it points at rather than the tag object itself.
+  var patterns = ['HEAD']
+
+  if ref != nil {
+    using ref.kind {
+      when 'branch' patterns = ['refs/heads/${ref.value}']
+      when 'tag' patterns = ['refs/tags/${ref.value}', 'refs/tags/${ref.value}^{}']
+      default patterns = [ref.value]
+    }
+  }
+
+  var listing = run(['-c', 'protocol.ext.allow=never', 'ls-remote', '--', address] + patterns)
 
   var candidates = []
 

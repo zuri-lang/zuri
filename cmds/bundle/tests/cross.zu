@@ -1,0 +1,122 @@
+# Bundling for other platforms with a runtime named on the command
+# line, so nothing needs downloading.
+
+import os
+import os.process { spawn }
+import test { * }
+import compress.zip
+
+var ROOT = os.create_temp_dir('zuri-bundle-cross-')
+var PROJECT = os.join_paths(ROOT, 'greeter')
+
+def put(path: string, text: string) {
+  if !os.dir_exists(os.dir_name(path)) {
+    os.create_dir(os.dir_name(path), 0c755, true)
+  }
+
+  file(path, 'w').write(text)
+}
+
+# A runtime for another platform: stand-in files where the executable
+# and the standard library go.
+def runtime(target: string) {
+  var dir = os.join_paths(ROOT, 'runtimes', target)
+  var name = target.contains('windows') ? 'zuri.exe' : 'zuri'
+
+  put(os.join_paths(dir, name), 'a ${target} runtime\n')
+  put(os.join_paths(dir, 'libs', 'json.zu'), '# json\n')
+
+  return dir
+}
+
+def bundle(words: list) {
+  var child = spawn(os.exe_path, ['bundle', '--force'] + words, {
+    cwd: PROJECT,
+    stdin: 'null',
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { NO_COLOR: '1', ZURI_HOME: os.join_paths(ROOT, 'home') },
+  })
+
+  var out = child.read_stdout().to_string()
+  var err = child.read_stderr().to_string()
+
+  return { status: child.wait(), all: out + err }
+}
+
+before_all(@{
+  put(os.join_paths(PROJECT, 'project.toml'),
+    '[project]\nname = "greeter"\nversion = "1.2.0"\ndescription = "Greets"\n')
+  put(os.join_paths(PROJECT, 'project.lock'), 'version = 1\n')
+  put(os.join_paths(PROJECT, 'index.zu'), 'echo "hello"\n')
+  put(os.join_paths(PROJECT, 'app', 'words.zu'), 'var GREETING = "hello"\n')
+})
+
+after_all(@{
+  os.remove_dir(ROOT, true)
+})
+
+describe('another platform', @{
+  it('builds a Windows archive as a zip holding the renamed runtime', @{
+    var target = 'x86_64-pc-windows-msvc'
+    var built = bundle(['--target', target, '--runtime', runtime(target)])
+
+    expect(built.status).to_equal(0)
+
+    var archive = os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}.zip')
+    var out = os.join_paths(ROOT, 'unzipped')
+
+    expect(zip.extract(archive, out)).to_be_true()
+
+    var inside = os.join_paths(out, 'greeter-1.2.0-${target}')
+
+    for path in ['greeter.exe', 'bundle.toml', 'libs/json.zu', 'app/index.zu', 'app/app/words.zu'] {
+      expect(file(os.join_paths(inside, path)).exists()).to_be_true()
+    }
+  })
+
+  it('builds a directory for Linux on ARM with the marker saying so', @{
+    var target = 'aarch64-unknown-linux-gnu'
+    var built = bundle(['--format', 'dir', '--target', target, '--runtime', runtime(target)])
+
+    expect(built.status).to_equal(0)
+
+    var dir = os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}')
+    var marker = file(os.join_paths(dir, 'bundle.toml')).read()
+
+    expect(marker).to_contain('target = "${target}"')
+    expect(file(os.join_paths(dir, 'greeter')).read()).to_equal('a ${target} runtime\n')
+  })
+
+  it('appends the payload and its trailer to a single-file runtime', @{
+    var target = 'aarch64-unknown-linux-gnu'
+    var built = bundle(['--format', 'exe', '--target', target, '--runtime', runtime(target)])
+
+    expect(built.status).to_equal(0)
+
+    var data = file(os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'), 'rb').read()
+
+    var runtime_text = 'a ${target} runtime\n'
+
+    expect(data[0, runtime_text.length()].to_string()).to_equal(runtime_text)
+    expect(data[data.length() - 8,].to_string()).to_equal('ZURIBND1')
+  })
+
+  it('refuses a runtime directory that holds no runtime', @{
+    var empty = os.join_paths(ROOT, 'empty-runtime')
+
+    os.create_dir(empty, 0c755, true)
+
+    var built = bundle(['--target', 'aarch64-unknown-linux-gnu', '--runtime', empty])
+
+    expect(built.status).not.to_equal(0)
+    expect(built.all).to_contain('does not hold a aarch64-unknown-linux-gnu runtime')
+  })
+
+  it('refuses a platform zuri is not released for', @{
+    var built = bundle(['--target', 'riscv64-unknown-linux-gnu'])
+
+    expect(built.status).not.to_equal(0)
+    expect(built.all).to_contain('is not a platform zuri is released for')
+  })
+})

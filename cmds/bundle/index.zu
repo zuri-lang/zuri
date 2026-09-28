@@ -75,6 +75,13 @@ def _runtime(target: string, given: ?string) {
 # lockfile, which has to agree with project.toml.
 def _production_packages(project) {
   var workspace = sync.Workspace(project, sync.Options())
+
+  # A project that needs nothing to run has nothing for a lockfile to
+  # settle, whether or not one was ever written.
+  if workspace.manifest.dependencies(false, workspace.stdlib).is_empty() {
+    return []
+  }
+
   var differences = sync.lock_differences(workspace)
 
   if !differences.is_empty() {
@@ -225,13 +232,24 @@ def _build(target, format, runtime, content, destination, details) {
     return
   }
 
+  var files = fsx.walk(tree).filter(@(entry) => entry.kind == 'file')
+
+  # Either kind of archive holds one directory named after it, so
+  # unpacking one never scatters a bundle among whatever was there.
   if plan.is_windows(target) {
-    if !zip.compress(tree, destination) {
+    var packed = zip.ZipArchive(destination)
+
+    for entry in files {
+      var full = os.join_paths(tree, entry.path)
+
+      packed.create_file(base + '/' + entry.path, fsx.read_bytes(full), file(full).stats())
+    }
+
+    if !packed.save() {
       raise CommandError('could not write ${destination}')
     }
   } else {
-    var listed = fsx.walk(tree).filter(@(entry) => entry.kind == 'file')
-      .map(@(entry) => base + '/' + entry.path)
+    var listed = files.map(@(entry) => base + '/' + entry.path)
 
     archive.pack(os.dir_name(tree), listed, destination, plan.MAX_ARCHIVE)
   }
