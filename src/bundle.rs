@@ -128,7 +128,8 @@ fn unpack_payload(exe: &Path) -> Result<Option<PathBuf>, String> {
 
   let mut trailer = [0u8; TRAILER_LEN as usize];
 
-  if file.seek(SeekFrom::Start(size - TRAILER_LEN)).is_err() || file.read_exact(&mut trailer).is_err()
+  if file.seek(SeekFrom::Start(size - TRAILER_LEN)).is_err()
+    || file.read_exact(&mut trailer).is_err()
   {
     return Ok(None);
   }
@@ -182,11 +183,15 @@ fn install(stream: &[u8], target: &Path) -> Result<(), String> {
     .parent()
     .ok_or_else(|| "the bundle cache has no parent directory".to_string())?;
 
-  fs::create_dir_all(parent).map_err(|e| format!("could not create '{}': {e}", parent.display()))?;
+  fs::create_dir_all(parent)
+    .map_err(|e| format!("could not create '{}': {e}", parent.display()))?;
 
   let staging = parent.join(format!(
     ".{}.{}",
-    target.file_name().and_then(|n| n.to_str()).unwrap_or("bundle"),
+    target
+      .file_name()
+      .and_then(|n| n.to_str())
+      .unwrap_or("bundle"),
     std::process::id()
   ));
 
@@ -205,7 +210,10 @@ fn install(stream: &[u8], target: &Path) -> Result<(), String> {
     let _ = fs::remove_dir_all(&staging);
 
     if !target.join(MARKER).is_file() {
-      return Err(format!("could not unpack the bundle into '{}'", target.display()));
+      return Err(format!(
+        "could not unpack the bundle into '{}'",
+        target.display()
+      ));
     }
   }
 
@@ -234,11 +242,15 @@ impl<'a> Entries<'a> {
   }
 
   fn u32(&mut self) -> Result<u32, String> {
-    Ok(u32::from_le_bytes(self.take(4)?.try_into().expect("4 bytes")))
+    Ok(u32::from_le_bytes(
+      self.take(4)?.try_into().expect("4 bytes"),
+    ))
   }
 
   fn u64(&mut self) -> Result<u64, String> {
-    Ok(u64::from_le_bytes(self.take(8)?.try_into().expect("8 bytes")))
+    Ok(u64::from_le_bytes(
+      self.take(8)?.try_into().expect("8 bytes"),
+    ))
   }
 
   fn done(&self) -> bool {
@@ -261,14 +273,16 @@ fn unpack(stream: &[u8], root: &Path) -> Result<(), String> {
 
     match kind {
       KIND_DIR => {
-        fs::create_dir_all(&path).map_err(|e| format!("could not create '{}': {e}", path.display()))?;
+        fs::create_dir_all(&path)
+          .map_err(|e| format!("could not create '{}': {e}", path.display()))?;
       },
       KIND_FILE => {
         let size = entries.u64()? as usize;
         let data = entries.take(size)?;
 
         if let Some(dir) = path.parent() {
-          fs::create_dir_all(dir).map_err(|e| format!("could not create '{}': {e}", dir.display()))?;
+          fs::create_dir_all(dir)
+            .map_err(|e| format!("could not create '{}': {e}", dir.display()))?;
         }
 
         fs::write(&path, data).map_err(|e| format!("could not write '{}': {e}", path.display()))?;

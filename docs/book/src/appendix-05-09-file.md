@@ -59,7 +59,15 @@ Valid modes include:
 <file at sample.txt in mode w+>
 %> file('sample.txt', 'a+')
 <file at sample.txt in mode a+>
+%> file('sample.lock', 'x')
+<file at sample.lock in mode x>
 ```
+
+`x` and `x+` create the file and fail when anything already exists at
+the path. The check and the creation are one step, so of two programs
+creating the same path in `x` mode, exactly one succeeds. That makes it
+the mode for lock files. The failure comes on the first read, write or
+`open()`, since creating the handle touches nothing.
 
 **Parameters**
 

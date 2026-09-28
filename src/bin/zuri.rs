@@ -300,10 +300,7 @@ fn print_commands(title: &str, commands: &[cli::Command], width: usize, palette:
 
     match command.description.is_empty() {
       true => println!("  {}{origin}", command.name),
-      false => println!(
-        "  {:width$}  {}{origin}",
-        command.name, command.description
-      ),
+      false => println!("  {:width$}  {}{origin}", command.name, command.description),
     }
   }
 }

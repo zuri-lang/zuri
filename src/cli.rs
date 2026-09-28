@@ -228,10 +228,13 @@ fn working_dir() -> PathBuf {
 /// The directories installed packages live in, in the order their
 /// commands win: the project's own, then the user's.
 fn package_libs() -> Vec<PathBuf> {
-  [crate::project::project_libs(), crate::project::global_libs()]
-    .into_iter()
-    .flatten()
-    .collect()
+  [
+    crate::project::project_libs(),
+    crate::project::global_libs(),
+  ]
+  .into_iter()
+  .flatten()
+  .collect()
 }
 
 /// Every installed package under `libs` that carries a command called

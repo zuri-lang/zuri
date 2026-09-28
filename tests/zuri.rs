@@ -569,6 +569,15 @@ mod launch {
       .map(|line| line.trim_start())
   }
 
+  /// The description `name` is listed with, whatever the column width
+  /// the longest command name set for the whole listing.
+  fn described<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    listed(text, name)
+      .and_then(|line| line.strip_prefix(name))
+      .filter(|rest| rest.starts_with("  "))
+      .map(str::trim_start)
+  }
+
   /// A command that says what it is, the way a real one does.
   fn command_source(name: &str, description: &str) -> String {
     format!("/**\n * @command {name}\n * @description {description}\n */\n\necho 'ran {name}'\n")
@@ -643,15 +652,15 @@ mod launch {
       "\n--- actual ---\n{text}\n"
     );
     assert_eq!(
-      listed(&text, "lint"),
-      Some("lint    Check the project for the mistakes CI rejects."),
+      described(&text, "lint"),
+      Some("Check the project for the mistakes CI rejects."),
       "\n--- actual ---\n{text}\n"
     );
 
     // The wrapped continuation arrives joined onto one line.
     assert_eq!(
-      listed(&text, "deploy"),
-      Some("deploy  Ship the current build to staging, then wait for the health check."),
+      described(&text, "deploy"),
+      Some("Ship the current build to staging, then wait for the health check."),
       "\n--- actual ---\n{text}\n"
     );
   }

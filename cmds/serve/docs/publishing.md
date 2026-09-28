@@ -56,3 +56,37 @@ zuri yank http-extra@1.4.1 --undo
 
 A yanked version stays downloadable for projects that already locked
 it, and nothing new chooses it.
+
+## Owners
+
+```sh
+zuri owner list http-extra
+zuri owner add http-extra grace
+zuri owner remove http-extra ada
+```
+
+Every owner may publish, yank and change the owners. A package always
+keeps at least one.
+
+## Another registry
+
+`publish`, `yank` and `owner` work with the default registry unless
+told otherwise. To publish here when this is not your default
+registry, sign in to it and name it:
+
+```sh
+zuri account login --registry {{url}}
+zuri publish --registry {{url}}
+zuri yank http-extra@1.4.1 --registry {{url}}
+```
+
+A dependency from another registry must say which, in `project.toml`,
+so that whoever installs the package finds it:
+
+```toml
+[dependencies]
+internal-tools = { version = "^2", registry = "{{url}}" }
+```
+
+A dependency with no registry named comes from the registry the
+package itself is published on.

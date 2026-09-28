@@ -44,68 +44,33 @@ class Finding {
   }
 }
 
-# Finds the offset just past the `*/` that closes the block opened at
-# `start`, or `-1` when nothing closes it.
+# Every doc block in `source`, as `{ line, body }`, with `body` nil for
+# one that is never closed.
 #
-# Zuri block comments nest, so this counts depth rather than stopping at
-# the first `*/`: one of the string stubs documents a callback whose own
-# example contains `/* ... */`, and a naive scan ends the block there.
-def _block_end(source: string, start: number) {
-  var depth = 1
-  var i = start + 3
-
-  while depth > 0 {
-    var open = source.index_of('/*', i)
-    var close = source.index_of('*/', i)
-
-    if close < 0 {
-      return -1
-    }
-
-    if open >= 0 and open < close {
-      depth++
-      i = open + 2
-    } else {
-      depth--
-      i = close + 2
-    }
-  }
-
-  return i
-}
-
-# Every doc block in `source`, as `{ line, body }`.
+# The lexer finds them, so a `/**` inside a string, such as a glob, is
+# the string it is, and a block's own nested `/* ... */` stays inside it.
 def _doc_blocks(source: string) {
   var found = []
-  var i = 0
 
-  while true {
-    var start = source.index_of('/**', i)
+  for token in zuri.tokenize(source) {
+    var text = token.text
 
-    if start < 0 {
-      return found
+    if !is_string(text) or !text.starts_with('/**') {
+      continue
     }
 
-    var end = _block_end(source, start)
+    if token.kind == 'DocBlock' {
+      found.append({ line: token.line, body: text[3, text.length() - 2] })
+    } else if token.kind == 'Error' {
+      # Nothing after an unterminated block can be read, so it is the
+      # last one there is.
+      found.append({ line: token.line, body: nil })
 
-    if end < 0 {
-      # An unterminated block is itself worth reporting, and there is
-      # nothing after it to scan.
-      found.append({ line: _line_of(source, start), body: nil })
       return found
     }
-
-    found.append({
-      line: _line_of(source, start),
-      body: source[start + 3, end - 2],
-    })
-
-    i = end
   }
-}
 
-def _line_of(source: string, offset: number) {
-  return source[0, offset].count('\n') + 1
+  return found
 }
 
 # The comment furniture stripped from one line of a block body.
