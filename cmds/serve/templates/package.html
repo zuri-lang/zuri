@@ -1,62 +1,122 @@
 <extend base="layout.html">
   <define name="content">
-    <div class="package">
-      <article>
-        <h1>{{ package.name }} <span class="version">{{ version.version }}</span></h1>
-        <p class="lead">{{ package.description }}</p>
-        <p class="warning" x-if="version.yanked">This version is yanked. Projects that already locked it still install it; nothing new will choose it.</p>
-        <pre class="install"><code>zuri install {{ package.name }}</code></pre>
-        <pre class="install"><code>import {{ package.import_name }}</code></pre>
-        <div class="readme" x-if="readme">{{ readme }}</div>
-        <p class="empty" x-not="readme">This version has no README.</p>
-      </article>
-      <aside>
-        <dl>
-          <dt>License</dt><dd>{{ package.license ?? 'not stated' }}</dd>
-          <dt>Downloads</dt><dd>{{ package.downloads|number_format }}</dd>
-          <dt>Published</dt><dd>{{ version.published|date('j F Y') }}</dd>
-          <dt>Size</dt><dd>{{ version.size|filesize }}</dd>
-          <dt x-if="version.zuri">Needs zuri</dt><dd x-if="version.zuri">{{ version.zuri }}</dd>
-          <dt x-if="package.homepage">Homepage</dt><dd x-if="package.homepage"><a href="{{ package.homepage }}" rel="nofollow noopener">{{ package.homepage }}</a></dd>
-          <dt x-if="package.repository">Repository</dt><dd x-if="package.repository"><a href="{{ package.repository }}" rel="nofollow noopener">{{ package.repository }}</a></dd>
-          <dt>Checksum</dt><dd class="checksum">{{ version.checksum }}</dd>
-        </dl>
-        <h2>Keywords</h2>
-        <p class="tags"><a x-for="package.keywords" x-value="word" href="/search?q={{ word|url_encode }}">{{ word }}</a></p>
-        <p class="empty" x-not="package.keywords">None.</p>
-        <h2>Dependencies</h2>
-        <ul class="plain">
-          <li x-for="dependencies" x-value="dep"><a href="/packages/{{ dep.name }}">{{ dep.name }}</a> {{ dep.range }}<span x-if="dep.registry" class="meta"> from {{ dep.registry }}</span></li>
+    <section class="package-head">
+      <div class="inner">
+        <h1>{{ package.name }} <span class="badge version">{{ version.version }}</span><span class="badge yanked" x-if="version.yanked">yanked</span></h1>
+        <p class="lead" x-if="package.description">{{ package.description }}</p>
+        <ul class="facts">
+          <li x-if="package.license">{{ package.license }}</li>
+          <li>Published {{ version.published|date('j F Y') }}</li>
+          <li>{{ package.downloads|number_format }} downloads</li>
+          <li x-if="owners">by <a x-for="owners" x-value="owner" href="/publishers/{{ owner }}">{{ owner }}{{ loop.last ? '' : ', ' }}</a></li>
         </ul>
-        <p class="empty" x-not="dependencies">None.</p>
-        <h2>Owners</h2>
-        <ul class="plain">
-          <li x-for="owners" x-value="owner">
-            <a href="/publishers/{{ owner }}">{{ owner }}</a>
-            <form x-if="is_owner and owners|length > 1" class="inline" method="post" action="/packages/{{ package.name }}/owners/{{ owner }}/remove">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="link danger">remove</button>
-            </form>
-          </li>
+        <ul class="tags" x-if="package.keywords">
+          <li x-for="package.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode }}">{{ word }}</a></li>
         </ul>
-        <form x-if="is_owner" class="stacked" method="post" action="/packages/{{ package.name }}/owners">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <label>Add an owner <input name="username" required placeholder="username"></label>
-          <button>Add</button>
-        </form>
-        <h2>Versions</h2>
-        <ul class="plain versions">
-          <li x-for="versions" x-value="v" x-attr="{ 'class': v.current ? 'current' : nil }">
-            <a href="/packages/{{ package.name }}/{{ v.version }}">{{ v.version }}</a>
-            <span class="meta">{{ v.published|date('j M Y') }}</span>
-            <span class="badge" x-if="v.yanked">yanked</span>
-            <form x-if="is_owner" class="inline" method="post" action="/packages/{{ package.name }}/{{ v.version }}/{{ v.yanked ? 'unyank' : 'yank' }}">
-              <input type="hidden" name="_csrf" value="{{ csrf }}">
-              <button class="link">{{ v.yanked ? 'restore' : 'yank' }}</button>
-            </form>
-          </li>
-        </ul>
-      </aside>
+        <nav class="tabs" aria-label="Package">
+          <a href="{{ base }}" x-attr="{ 'aria-current': tab == 'readme' ? 'page' : nil }">Readme</a>
+          <a href="{{ base }}?tab=versions" x-attr="{ 'aria-current': tab == 'versions' ? 'page' : nil }">Versions<span class="count">{{ versions|length }}</span></a>
+          <a href="{{ base }}?tab=dependencies" x-attr="{ 'aria-current': tab == 'dependencies' ? 'page' : nil }">Dependencies<span class="count">{{ dependencies|length }}</span></a>
+        </nav>
+      </div>
+    </section>
+
+    <div class="inner">
+      <p class="warning" x-if="version.yanked">This version is yanked. Projects that already locked it still install it; nothing new will choose it.</p>
+      <p class="warning" x-elif="latest and latest != version.version">This is not the newest version. The newest is <a href="/packages/{{ package.name }}">{{ latest }}</a>.</p>
+
+      <div class="package-body">
+        <div>
+          <template x-if="tab == 'versions'">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Version</th><th>Published</th><th class="number">Downloads</th><th></th></tr>
+                </thead>
+                <tbody>
+                  <tr x-for="versions" x-value="v" x-attr="{ 'class': v.current ? 'current' : nil }">
+                    <td><a href="/packages/{{ package.name }}/{{ v.version }}">{{ v.version }}</a> <span class="badge yanked" x-if="v.yanked">yanked</span></td>
+                    <td>{{ v.published|date('j M Y') }}</td>
+                    <td class="number">{{ v.downloads|number_format }}</td>
+                    <td>
+                      <form x-if="is_owner" class="inline" method="post" action="/packages/{{ package.name }}/{{ v.version }}/{{ v.yanked ? 'unyank' : 'yank' }}">
+                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                        <button class="link">{{ v.yanked ? 'Restore' : 'Yank' }}</button>
+                      </form>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+          <template x-elif="tab == 'dependencies'">
+            <div class="table-wrap" x-if="dependencies">
+              <table>
+                <thead>
+                  <tr><th>Package</th><th>Requires</th><th>From</th></tr>
+                </thead>
+                <tbody>
+                  <tr x-for="dependencies" x-value="dep">
+                    <td><a href="/packages/{{ dep.name }}" x-if="!dep.registry">{{ dep.name }}</a><span x-else>{{ dep.name }}</span></td>
+                    <td><code>{{ dep.range }}</code></td>
+                    <td class="meta">{{ dep.registry ?? 'this registry' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="empty" x-not="dependencies">{{ package.name }} {{ version.version }} depends on nothing but Zuri itself.</p>
+          </template>
+          <template x-else>
+            <article class="prose" x-if="readme">{{ readme }}</article>
+            <p class="empty" x-not="readme">This version has no README.</p>
+          </template>
+        </div>
+
+        <aside class="sidebar">
+          <h2>Install</h2>
+          <pre><code>zuri install {{ package.name }}{{ registry_flag }}</code></pre>
+          <p class="caption">Or add it to <code>project.toml</code>:</p>
+          <pre><code>{{ manifest_line }}</code></pre>
+          <p class="caption">Then:</p>
+          <pre><code>import {{ package.import_name }}</code></pre>
+
+          <h2>Details</h2>
+          <dl class="details">
+            <dt>Version</dt><dd>{{ version.version }}</dd>
+            <dt>License</dt><dd>{{ package.license ?? 'Not stated' }}</dd>
+            <dt>Published</dt><dd>{{ version.published|date('j M Y') }}</dd>
+            <dt>Size</dt><dd>{{ version.size|filesize }}</dd>
+            <dt x-if="version.zuri">Zuri</dt><dd x-if="version.zuri">{{ version.zuri }}</dd>
+            <dt>Downloads</dt><dd>{{ version.downloads|number_format }} of this version</dd>
+            <dt>Checksum</dt><dd class="checksum">{{ version.checksum }}</dd>
+          </dl>
+
+          <template x-if="package.homepage or package.repository">
+            <h2>Links</h2>
+            <ul class="links">
+              <li x-if="package.homepage"><a href="{{ package.homepage }}" rel="nofollow noopener">Homepage</a></li>
+              <li x-if="package.repository"><a href="{{ package.repository }}" rel="nofollow noopener">Repository</a></li>
+            </ul>
+          </template>
+
+          <h2>Owners</h2>
+          <ul class="owners">
+            <li x-for="owners" x-value="owner">
+              <span class="avatar" aria-hidden="true">{{ owner|truncate(1, '') }}</span>
+              <a href="/publishers/{{ owner }}">{{ owner }}</a>
+              <form x-if="is_owner and owners|length > 1" class="inline" method="post" action="/packages/{{ package.name }}/owners/{{ owner }}/remove">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="link danger">Remove</button>
+              </form>
+            </li>
+          </ul>
+          <form x-if="is_owner" class="stacked" method="post" action="/packages/{{ package.name }}/owners">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <label>Add an owner <input name="username" required placeholder="username"></label>
+            <button>Add owner</button>
+          </form>
+        </aside>
+      </div>
     </div>
   </define>
 </extend>

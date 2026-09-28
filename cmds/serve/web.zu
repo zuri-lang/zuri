@@ -12,12 +12,15 @@
  */
 
 import crypto
+import date
+import hash
 import http.util { secure_equals }
 import json
 import os
 import wire
 
 import .._shared.fsx
+import .._shared.manifest { DEFAULT_REGISTRY }
 import .._shared.names
 import .._shared.semver
 import .context { fail, iso }
@@ -31,6 +34,10 @@ var _ROOT = os.dir_name(__file__)
 
 var _view = wire.wire()
 
+# The stylesheet is cached for a day, so its address carries a digest
+# of what is in it, and a changed file is fetched afresh straight away.
+var _STYLE_VERSION = hash.sha256(fsx.read_bytes(os.join_paths(_ROOT, 'public', 'nyssa.css')))[0, 12]
+
 _view.set_root(os.join_paths(_ROOT, 'templates'))
 
 /**
@@ -43,6 +50,27 @@ var DOCS = [
   { slug: 'accounts', title: 'Accounts and tokens' },
   { slug: 'hosting', title: 'Hosting a repository' },
 ]
+
+/**
+ * Where the site links to for Zuri itself: the project's own site, the
+ * book, the standard library reference, the source and its tracker.
+ */
+var LINKS = {
+  website: 'https://zurilang.org',
+  book: 'https://zurilang.org/book/',
+  reference: 'https://zurilang.org/reference/',
+  source: 'https://github.com/zuri-lang/zuri',
+  releases: 'https://github.com/zuri-lang/zuri/releases',
+  issues: 'https://github.com/zuri-lang/zuri/issues',
+  security: 'https://github.com/zuri-lang/zuri/security/policy',
+  license: 'https://github.com/zuri-lang/zuri/blob/main/LICENSE',
+}
+
+/** How many of the most used keywords the home page lists. */
+var TOP_KEYWORDS = 24
+
+/** The tabs a package page has, the first shown when none is asked for. */
+var TABS = ['readme', 'versions', 'dependencies']
 
 # The CSRF token of the visitor's session, made on first use.
 def _csrf(request) {
@@ -89,20 +117,40 @@ var _TITLES = {
   reset: 'Choose a new password',
 }
 
+# What a command addressed to this repository needs after it: nothing
+# when this is the default registry, and the address otherwise.
+def _registry_flag(nyssa) {
+  var url = nyssa.settings.public_url
+
+  return url == DEFAULT_REGISTRY ? '' : ' --registry ${url}'
+}
+
+# What every page shows that does not depend on who is looking, which
+# is all an error page can count on.
+def _site_values(nyssa) {
+  return {
+    site: nyssa.settings.name,
+    public_url: nyssa.settings.public_url,
+    signup_open: nyssa.settings.signup == 'open',
+    read_only: nyssa.settings.read_only == true,
+    registry_flag: _registry_flag(nyssa),
+    links: LINKS,
+    style_version: _STYLE_VERSION,
+    zuri_version: os.version,
+    year: date.gmtime().year,
+  }
+}
+
 # Renders a page with what every page needs. A page's title is
 # `page_title` when the caller gives one, the name `_TITLES` holds for
 # it, or its own `title`.
 def _page(nyssa, request, response, template: string, variables: ?dict, status: ?number) {
   var viewer = _viewer(nyssa, request)
-  var values = {
-    site: nyssa.settings.name,
-    public_url: nyssa.settings.public_url,
-    viewer: viewer == nil ? nil : viewer.username,
-    csrf: _csrf(request),
-    notice: request.session().take_flash('notice'),
-    signup_open: nyssa.settings.signup == 'open',
-    read_only: nyssa.settings.read_only == true,
-  }
+  var values = _site_values(nyssa)
+
+  values.set('viewer', viewer == nil ? nil : viewer.username)
+  values.set('csrf', _csrf(request))
+  values.set('notice', request.session().take_flash('notice'))
 
   if variables != nil {
     for key, value in variables {
@@ -121,7 +169,7 @@ def _page(nyssa, request, response, template: string, variables: ?dict, status: 
 
 # A page that says one thing.
 def _message(nyssa, request, response, title: string, text: string, status: ?number) {
-  _page(nyssa, request, response, 'message', { title, text }, status)
+  _page(nyssa, request, response, 'message', { title, text, status }, status)
 }
 
 # Sends the visitor to sign in, when they are not.
@@ -153,7 +201,52 @@ def _card(row: dict) {
     latest: row.latest,
     downloads: row.downloads,
     updated: iso(row.updated_at),
+    keywords: row.keywords.is_empty() ? [] : row.keywords.split(' '),
   }
+}
+
+# The keywords the most downloaded packages use most, each with how
+# many of them use it.
+def _top_keywords(rows: list) {
+  var counts = {}
+
+  for row in rows {
+    if row.keywords.is_empty() {
+      continue
+    }
+
+    for word in row.keywords.split(' ') {
+      counts.set(word, counts.get(word, 0) + 1)
+    }
+  }
+
+  var ranked = []
+
+  for word, count in counts {
+    ranked.append({ name: word, count })
+  }
+
+  ranked.sort(@(a, b) {
+    if a.count != b.count {
+      return b.count - a.count
+    }
+
+    return a.name.compare(b.name)
+  })
+
+  return ranked.length() > TOP_KEYWORDS ? ranked[0, TOP_KEYWORDS] : ranked
+}
+
+# The line that adds `name` at `version` to a project.toml, naming this
+# repository when it is not the default one.
+def _manifest_line(nyssa, name: string, version: string) {
+  var url = nyssa.settings.public_url
+
+  if url == DEFAULT_REGISTRY {
+    return '${name} = "^${version}"'
+  }
+
+  return '${name} = { version = "^${version}", registry = "${url}" }'
 }
 
 # The page numbers to link from page `page` of `pages`.
@@ -224,9 +317,13 @@ def csrf_guard(nyssa) {
 def routes(server, nyssa) {
   server.get('/', @(request, response) {
     _page(nyssa, request, response, 'home', {
+      flush: true,
+      hide_search: true,
       stats: nyssa.db.statistics(),
+      newest: nyssa.db.newest(8).map(_card),
       popular: nyssa.db.popular(8).map(_card),
       recent: nyssa.db.recent(8).map(_card),
+      keywords: _top_keywords(nyssa.db.popular(200)),
     })
   })
 
@@ -298,9 +395,20 @@ def routes(server, nyssa) {
     }
 
     var readme = shown.readme == nil ? nil : wire.safe(markdown.render(shown.readme))
+    var tab = request.query_param('tab', TABS[0])
+
+    if !TABS.contains(tab) {
+      tab = TABS[0]
+    }
 
     _page(nyssa, request, response, 'package', {
+      flush: true,
       page_title: '${package.name} ${shown.version}',
+      page_description: package.description.is_empty() ? nil : package.description,
+      tab,
+      base: '/packages/${package.name}' + (wanted == nil ? '' : '/${shown.version}'),
+      latest: package.latest,
+      manifest_line: _manifest_line(nyssa, package.name, shown.version),
       package: {
         name: package.name,
         description: package.description,
@@ -695,11 +803,13 @@ def routes(server, nyssa) {
 
     response.status = 500
     response.content_type('text/html; charset=utf-8')
-    response.write(_view.render('message', {
-      site: nyssa.settings.name,
-      page_title: 'Something went wrong',
-      title: 'Something went wrong',
-      text: 'Something went wrong on our side. Try again in a moment.',
-    }))
+    var values = _site_values(nyssa)
+
+    values.set('status', 500)
+    values.set('page_title', 'Something went wrong')
+    values.set('title', 'Something went wrong')
+    values.set('text', 'Something went wrong on our side. Try again in a moment.')
+
+    response.write(_view.render('message', values))
   })
 }

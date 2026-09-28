@@ -6,8 +6,8 @@
       <pre class="secret"><code>{{ recovery_key }}</code></pre>
       <p x-if="confirm">A link to confirm your email address is on its way. Packages can be published once it is confirmed.</p>
       <p>To publish from the command line, sign in there too:</p>
-      <pre><code>zuri account login --registry {{ public_url }}</code></pre>
-      <p><a href="/account">Go to your account</a></p>
+      <pre><code>zuri account login{{ registry_flag }}</code></pre>
+      <p><a class="btn" href="/account">Go to your account</a></p>
     </div>
   </define>
 </extend>

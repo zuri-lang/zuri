@@ -2,7 +2,7 @@
   <define name="content">
     <form class="panel" method="post" action="/signup">
       <h1>Create an account</h1>
-      <p>An account is what you publish packages with. Installing needs none.</p>
+      <p class="meta">An account is what you publish packages with. Installing needs none.</p>
       <p class="error" x-if="error">{{ error }}</p>
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <label>Username <input name="username" value="{{ username }}" autocomplete="username" required pattern="[a-z][a-z0-9_\-]{1,38}[a-z0-9]"></label>
@@ -11,6 +11,7 @@
       <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="10"></label>
       <label>Password again <input name="password_again" type="password" autocomplete="new-password" required minlength="10"></label>
       <button>Create account</button>
+      <p class="meta">Already have one? <a href="/login">Sign in</a></p>
     </form>
   </define>
 </extend>

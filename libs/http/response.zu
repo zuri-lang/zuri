@@ -144,6 +144,9 @@ class HttpResponse {
   # meaningless and should be caught rather than silently ignored.
   var _committed = false
 
+  # What on_finish() registered, run once by finish().
+  var _finish_callbacks
+
   /**
    * @param ?any body: `bytes` or a `string` to start the body with
    * @param ?number status: defaults to `200`
@@ -157,6 +160,7 @@ class HttpResponse {
     self.time_taken = 0
     self.redirects = 0
     self._committed = false
+    self._finish_callbacks = []
 
     if body == nil {
       self.body = bytes(0)
@@ -726,6 +730,44 @@ class HttpResponse {
    */
   commit() {
     self._committed = true
+  }
+
+  /**
+   * Registers `callback` to run once the response is final: after the
+   * handler, every middleware and any error handling have had their
+   * say, so `status`, the headers and the body are what the client
+   * receives.
+   *
+   * Middleware that reports on a response, such as an access log,
+   * registers here rather than reading the response when its `next()`
+   * returns. A failure further in never returns there, and the status
+   * the client is sent for it is only decided afterwards.
+   *
+   * Callbacks run once each, in the order they were registered. One
+   * that raises is skipped over, so a broken reporter never costs the
+   * client its response.
+   *
+   * @param function callback: called with no arguments.
+   */
+  on_finish(callback: function) {
+    self._finish_callbacks.append(callback)
+  }
+
+  /**
+   * Runs every callback `on_finish()` registered, once. Called by the
+   * server when the response is final; applications have no reason
+   * to.
+   */
+  finish() {
+    var callbacks = self._finish_callbacks
+
+    self._finish_callbacks = []
+
+    for callback in callbacks {
+      catch {
+        callback()
+      }
+    }
   }
 
   /**

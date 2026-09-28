@@ -1128,8 +1128,32 @@ server.use(@(request, response, next) {
 })
 ```
 
-Middleware run in the order they were added, outermost first — so a
-logger added first sees the final status of everything added after it.
+Middleware run in the order they were added, outermost first, so one
+added first wraps everything added after it.
+
+Code after `next()` runs only when the rest of the chain returned. A
+handler that raises never comes back there, and the `500` the visitor
+is sent is decided later, by the server's error handling. A middleware
+that reports on the response the client actually receives registers
+with `response.on_finish()` instead, which runs once the response is
+final, failures included:
+
+```zuri,ignore
+server.use(@(request, response, next) {
+  var started = time()
+
+  response.on_finish(@{
+    echo '${request.method} ${request.path} ${response.status} ' +
+      '${(time() - started) * 1000}ms'
+  })
+
+  next()
+})
+```
+
+Callbacks run once each, in the order they were registered, and one
+that raises is skipped rather than costing the client its response.
+`middleware.logger()` is built this way.
 
 Anything a middleware wants to hand to the handler goes on
 `request.context`, which is a plain dictionary that exists for exactly
@@ -1416,9 +1440,9 @@ server.use(middleware.logger({
 }))
 ```
 
-A request that raises is still logged, with the `500` its handler
-produced, and the failure then carries on to whatever handles it —
-swallowing it here would turn every error into a silent success.
+A request that raises is logged too, with the status the client was
+sent once the server had answered the failure: the `500` of the default
+handling, or whatever the error handler chose.
 
 ### `request_id()`
 

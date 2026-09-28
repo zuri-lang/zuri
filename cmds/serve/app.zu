@@ -9,6 +9,7 @@
  * @copyright 2026, Richard Ore and Zuri contributors
  */
 
+import io
 import http.middleware
 import http.session
 import http.session.sql { SqlStore }
@@ -73,6 +74,20 @@ def setup(server) {
   }))
 
   server.use(web.csrf_guard(nyssa))
+
+  # A visitor who hits a failure is told only that something went
+  # wrong; the whole of it goes to whoever runs the repository.
+  server.on_error(@(error, connection) {
+    var report = '${typeof(error)}: ${error.message}\n'
+
+    if hasprop(error, 'stacktrace') and is_list(error.stacktrace) {
+      for frame in error.stacktrace {
+        report += '  at ${frame}\n'
+      }
+    }
+
+    io.stderr.write(report)
+  })
 
   api.routes(server, nyssa)
   web.routes(server, nyssa)

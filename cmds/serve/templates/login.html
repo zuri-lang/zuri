@@ -2,13 +2,14 @@
   <define name="content">
     <form class="panel" method="post" action="/login">
       <h1>Sign in</h1>
+      <p class="meta">Sign in to publish packages and manage your tokens. Installing needs no account.</p>
       <p class="error" x-if="error">{{ error }}</p>
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <input type="hidden" name="next" value="{{ next }}">
       <label>Username <input name="username" autocomplete="username" required autofocus></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
       <button>Sign in</button>
-      <p class="meta"><a href="/recover">Lost your password?</a></p>
+      <p class="meta"><a href="/recover">Lost your password?</a><template x-if="signup_open"> · <a href="/signup">Create an account</a></template></p>
     </form>
   </define>
 </extend>

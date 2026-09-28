@@ -1,6 +1,6 @@
 <extend base="layout.html">
   <define name="content">
-    <div class="columns">
+    <div class="panel-row">
       <form class="panel" method="post" action="/recover">
         <h1>With your recovery key</h1>
         <p class="error" x-if="error">{{ error }}</p>
@@ -13,7 +13,8 @@
         <p class="hint">Every token the account holds is revoked, and a new recovery key replaces the one used.</p>
       </form>
       <form class="panel" method="post" action="/reset" x-if="mail">
-        <h2>By email</h2>
+        <h1>By email</h1>
+        <p class="meta">A link to choose a new password goes to the address on the account.</p>
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <label>Email <input name="email" type="email" required></label>
         <button>Send a reset link</button>

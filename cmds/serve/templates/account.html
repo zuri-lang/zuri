@@ -1,36 +1,44 @@
 <extend base="layout.html">
   <define name="content">
-    <h1>{{ account.username }}</h1>
-    <p class="meta">{{ account.email }}<span x-not="account.confirmed">, not confirmed yet</span>. Publishing since {{ account.joined|date('F Y') }}.</p>
-    <div class="columns">
+    <div class="profile">
+      <span class="avatar" aria-hidden="true">{{ account.username|truncate(1, '') }}</span>
+      <div>
+        <h1>{{ account.username }}</h1>
+        <p class="meta">{{ account.email }}<span x-not="account.confirmed">, not confirmed yet</span> · Publishing since {{ account.joined|date('F Y') }}</p>
+      </div>
+    </div>
+    <div class="account">
       <section>
         <h2>Your packages</h2>
-        <ul class="cards">
-          <template x-for="packages" x-value="item"><include path="card.html" /></template>
+        <ul class="results" x-if="packages">
+          <template x-for="packages" x-value="item"><include path="row.html" /></template>
         </ul>
-        <p class="empty" x-not="packages">None yet. Publish one with <code>zuri publish</code>.</p>
+        <p class="empty" x-not="packages">None yet. Publish one with <code>zuri publish</code>; <a href="/docs/publishing">publishing</a> covers what a package needs.</p>
       </section>
       <section>
         <h2>Tokens</h2>
-        <p>A token is what the command line signs in with. Revoke one the moment it may have been seen by anyone else.</p>
-        <table class="tokens" x-if="tokens">
-          <thead><tr><th>Name</th><th>Scopes</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
-          <tbody>
-            <tr x-for="tokens" x-value="token">
-              <td>{{ token.name }}</td>
-              <td>{{ token.scopes|join(', ') }}</td>
-              <td>{{ token.last_used_at ? (token.last_used_at|date('j M Y')) : 'never' }}</td>
-              <td>{{ token.expires_at|date('j M Y') }}</td>
-              <td>
-                <form class="inline" method="post" action="/account/tokens/{{ token.id }}/revoke">
-                  <input type="hidden" name="_csrf" value="{{ csrf }}">
-                  <button class="link danger">revoke</button>
-                </form>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <p class="meta">A token is what the command line signs in with. Revoke one the moment it may have been seen by anyone else.</p>
+        <div class="table-wrap" x-if="tokens">
+          <table>
+            <thead><tr><th>Name</th><th>Scopes</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+            <tbody>
+              <tr x-for="tokens" x-value="token">
+                <td>{{ token.name }}</td>
+                <td>{{ token.scopes|join(', ') }}</td>
+                <td>{{ token.last_used_at ? (token.last_used_at|date('j M Y')) : 'Never' }}</td>
+                <td>{{ token.expires_at|date('j M Y') }}</td>
+                <td>
+                  <form class="inline" method="post" action="/account/tokens/{{ token.id }}/revoke">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <button class="link danger">Revoke</button>
+                  </form>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <form class="stacked" method="post" action="/account/tokens">
+          <h3>New token</h3>
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <label>Name <input name="name" value="zuri" required maxlength="64"></label>
           <fieldset>
@@ -40,7 +48,7 @@
             <label><input type="checkbox" name="scopes" value="owners" checked> owners</label>
             <label><input type="checkbox" name="scopes" value="account"> account</label>
           </fieldset>
-          <label>Lasts for <input name="days" type="number" min="1" max="3650" value="365"> days</label>
+          <label>Lasts for, in days <input name="days" type="number" min="1" max="3650" value="365"></label>
           <button>Create a token</button>
         </form>
         <h2>Password</h2>

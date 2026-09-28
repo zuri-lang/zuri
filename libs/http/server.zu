@@ -1027,10 +1027,20 @@ class HttpServer {
     } as error
 
     if error {
-      self._handle_failure(request, result, error)
+      # A failure after the head went out cannot be answered any more,
+      # and carries on up; what was sent is still final.
+      catch {
+        self._handle_failure(request, result, error)
+      } as unanswerable
+
+      if unanswerable {
+        result.finish()
+        raise unanswerable
+      }
     }
 
     self._finish(request, result)
+    result.finish()
 
     return result
   }

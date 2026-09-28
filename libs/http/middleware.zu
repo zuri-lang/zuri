@@ -146,43 +146,44 @@ def logger(options: ?dict) {
   return @(request, response, next) {
     var started = time()
 
-    catch {
-      next()
-    } as error
+    # The line is written once the response is final, which for a
+    # request that failed further in is only after the server has
+    # answered the failure; reading the status straight after next()
+    # would log whatever it was before.
+    response.on_finish(@{
+      _log_line(request, response, (time() - started) * 1000, format, sink, trust_proxy)
+    })
 
-    var elapsed = (time() - started) * 1000
-    var line
+    next()
+  }
+}
 
-    if format != nil {
-      line = format(request, response, elapsed)
-    } else {
-      var who = request.client_ip(trust_proxy) or '-'
+# Writes the access log line for one finished response.
+def _log_line(request, response, elapsed, format, sink, trust_proxy) {
+  var line
 
-      # A file-backed or streamed response has nothing in `body`, so
-      # the size has to come from the header the protocol layer set;
-      # reading `body` alone would log every static file as 0 bytes.
-      var declared = response.headers.get('content-length', nil)
-      var length = declared != nil ?
-        declared :
-        (response.body == nil ? 0 : response.body.length())
+  if format != nil {
+    line = format(request, response, elapsed)
+  } else {
+    var who = request.client_ip(trust_proxy) or '-'
 
-      line = '${who} - [${util.format_date()}] ' +
-        '"${request.method} ${request.target} HTTP/${request.version}" ' +
-        '${response.status} ${length} ${_round(elapsed, 2)}ms'
-    }
+    # A file-backed or streamed response has nothing in `body`, so
+    # the size has to come from the header the protocol layer set;
+    # reading `body` alone would log every static file as 0 bytes.
+    var declared = response.headers.get('content-length', nil)
+    var length = declared != nil ?
+      declared :
+      (response.body == nil ? 0 : response.body.length())
 
-    if sink != nil {
-      sink(line)
-    } else {
-      echo line
-    }
+    line = '${who} - [${util.format_date()}] ' +
+      '"${request.method} ${request.target} HTTP/${request.version}" ' +
+      '${response.status} ${length} ${_round(elapsed, 2)}ms'
+  }
 
-    # The log line is written either way, and then the failure carries
-    # on to whoever handles it - swallowing it here would turn every
-    # error into a silent 200.
-    if error {
-      raise error
-    }
+  if sink != nil {
+    sink(line)
+  } else {
+    echo line
   }
 }
 

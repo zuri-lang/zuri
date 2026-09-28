@@ -556,6 +556,14 @@ class Database {
     )
   }
 
+  newest(limit: number) {
+    return self.connection.fetch_all(
+      'select * from packages where latest is not null order by created_at desc, name_key'
+        + ' limit ${limit.floor()}',
+      []
+    )
+  }
+
   recent(limit: number) {
     return self.connection.fetch_all(
       'select * from packages where latest is not null order by updated_at desc, name_key'

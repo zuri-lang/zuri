@@ -1,0 +1,6 @@
+/fine: sent 200, logged 200
+/missing: sent 404, logged 404
+/broken: sent 500, logged 500
+/broken with a handler: sent 503, logged 503
+one line per request: true
+finish callbacks: [first, third]

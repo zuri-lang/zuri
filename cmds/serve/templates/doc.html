@@ -1,12 +1,19 @@
 <extend base="layout.html">
   <define name="content">
     <div class="docs">
-      <nav>
-        <ul class="plain">
+      <nav aria-label="Documentation">
+        <h2>Using {{ site }}</h2>
+        <ul>
           <li x-for="docs" x-value="doc"><a href="/docs/{{ doc.slug }}" x-attr="{ 'class': doc.current ? 'current' : nil }">{{ doc.title }}</a></li>
         </ul>
+        <h2 class="more">Zuri</h2>
+        <ul>
+          <li><a href="{{ links.book }}">The Book</a></li>
+          <li><a href="{{ links.reference }}">Standard library</a></li>
+          <li><a href="{{ links.source }}">Source code</a></li>
+        </ul>
       </nav>
-      <article class="readme">{{ body }}</article>
+      <article class="prose">{{ body }}</article>
     </div>
   </define>
 </extend>

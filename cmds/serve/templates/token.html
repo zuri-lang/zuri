@@ -2,11 +2,12 @@
   <define name="content">
     <div class="panel">
       <h1>Your new token</h1>
-      <p>This is shown only this once. Give it to the command line with:</p>
-      <pre><code>zuri account login --registry {{ public_url }} --token-stdin</code></pre>
+      <p>This is shown only this once. Copy it now.</p>
       <pre class="secret"><code>{{ issued.token }}</code></pre>
       <p class="meta">Scopes: {{ issued.scopes|join(', ') }}. Expires {{ issued.expires_at|date('j F Y') }}.</p>
-      <p><a href="/account">Back to your account</a></p>
+      <p>Give it to the command line from standard input, so it never lands in your shell history:</p>
+      <pre><code>zuri account login{{ registry_flag }} --token-stdin</code></pre>
+      <p><a class="btn ghost" href="/account">Back to your account</a></p>
     </div>
   </define>
 </extend>

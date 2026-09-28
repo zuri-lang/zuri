@@ -1,0 +1,14 @@
+<li class="result">
+  <header>
+    <a class="name" href="/packages/{{ item.name }}">{{ item.name }}</a>
+    <span class="badge version" x-if="item.latest">{{ item.latest }}</span>
+  </header>
+  <p x-if="item.description">{{ item.description }}</p>
+  <footer>
+    <ul class="tags" x-if="item.keywords">
+      <li x-for="item.keywords" x-value="word"><a class="tag" href="/search?q={{ word|url_encode }}">{{ word }}</a></li>
+    </ul>
+    <span>{{ item.downloads|number_format }} downloads</span>
+    <span>Updated {{ item.updated|date('j M Y') }}</span>
+  </footer>
+</li>

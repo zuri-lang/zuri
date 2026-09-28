@@ -4,19 +4,31 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title ? page_title + ' · ' + site : site }}</title>
-    <link rel="stylesheet" href="/static/nyssa.css">
+    <meta name="description" content="{{ page_description ?? site + ' is the package repository for the Zuri programming language.' }}">
+    <link rel="icon" href="/static/zuri-butterfly.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/nyssa.css?v={{ style_version }}">
   </head>
   <body>
-    <header class="top">
-      <div class="bar">
-        <a class="brand" href="/">{{ site }}</a>
-        <form class="search" method="get" action="/search" role="search">
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="topbar">
+      <div class="inner">
+        <a class="wordmark" href="/">
+          <picture>
+            <source srcset="/static/zuri-butterfly-light.svg" media="(prefers-color-scheme: dark)">
+            <img src="/static/zuri-butterfly.svg" alt="" width="34" height="26">
+          </picture>
+          <span>{{ site }}</span>
+        </a>
+        <form class="search" method="get" action="/search" role="search" x-not="hide_search">
+          <svg class="icon" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
           <input type="search" name="q" value="{{ query }}" placeholder="Search packages" aria-label="Search packages">
         </form>
-        <nav>
+        <nav class="topnav" aria-label="Site">
+          <a href="/search" class="wide">Browse</a>
           <a href="/docs">Docs</a>
+          <a href="{{ links.book }}" class="wide">The Book</a>
           <template x-if="viewer">
-            <a href="/account">{{ viewer }}</a>
+            <a href="/account" class="me"><span class="avatar" aria-hidden="true">{{ viewer|truncate(1, '') }}</span>{{ viewer }}</a>
             <form class="inline" method="post" action="/logout">
               <input type="hidden" name="_csrf" value="{{ csrf }}">
               <button class="link">Sign out</button>
@@ -24,18 +36,57 @@
           </template>
           <template x-else>
             <a href="/login">Sign in</a>
-            <a x-if="signup_open" href="/signup">Sign up</a>
+            <a x-if="signup_open" class="btn small" href="/signup">Sign up</a>
           </template>
         </nav>
       </div>
     </header>
     <p class="notice" x-if="read_only">This repository is read-only at the moment. Everything can be browsed and installed; nothing can be published.</p>
     <p class="notice" x-if="notice">{{ notice }}</p>
-    <main>
+    <main id="main" x-attr="{ 'class': flush ? 'flush' : nil }">
       <declare name="content"></declare>
     </main>
-    <footer>
-      <p>{{ site }} runs on Nyssa, the Zuri package repository.</p>
+    <footer class="footer">
+      <div class="inner">
+        <div>
+          <a class="wordmark" href="/">
+            <img src="/static/zuri-butterfly-light.svg" alt="" width="30" height="23">
+            <span>{{ site }}</span>
+          </a>
+          <p>The package repository for the Zuri programming language. Anything published here installs with <code>zuri install</code>.</p>
+        </div>
+        <nav aria-label="Zuri">
+          <h2>Zuri</h2>
+          <ul>
+            <li><a href="{{ links.website }}">Website</a></li>
+            <li><a href="{{ links.book }}">The Book</a></li>
+            <li><a href="{{ links.reference }}">Standard library</a></li>
+            <li><a href="{{ links.releases }}">Download Zuri</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Packages">
+          <h2>Packages</h2>
+          <ul>
+            <li><a href="/search">Browse all</a></li>
+            <li><a href="/docs/getting-started">Getting started</a></li>
+            <li><a href="/docs/publishing">Publishing</a></li>
+            <li><a href="/docs/hosting">Host your own</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="Project">
+          <h2>Project</h2>
+          <ul>
+            <li><a href="{{ links.source }}">Source code</a></li>
+            <li><a href="{{ links.issues }}">Report an issue</a></li>
+            <li><a href="{{ links.security }}">Security</a></li>
+            <li><a href="{{ links.license }}">License</a></li>
+          </ul>
+        </nav>
+      </div>
+      <div class="inner base">
+        <span>Powered by Nyssa, shipped with Zuri {{ zuri_version }}</span>
+        <span>© {{ year }} Zuri contributors</span>
+      </div>
     </footer>
   </body>
 </html>

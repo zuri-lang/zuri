@@ -1,24 +1,32 @@
 <extend base="layout.html">
   <define name="content">
-    <h1 x-if="query">Packages matching “{{ query }}”</h1>
-    <h1 x-else>All packages</h1>
-    <form class="sort" method="get" action="/search">
-      <input type="hidden" name="q" value="{{ query }}">
-      <label>Sort by
-        <select name="sort">
-          <option value="relevance" x-attr="{ selected: sort == 'relevance' }">relevance</option>
-          <option value="downloads" x-attr="{ selected: sort == 'downloads' }">downloads</option>
-          <option value="updated" x-attr="{ selected: sort == 'updated' }">recently updated</option>
-          <option value="name" x-attr="{ selected: sort == 'name' }">name</option>
-        </select>
-      </label>
-      <button>Sort</button>
-    </form>
-    <p class="meta">{{ total|number_format }} {{ total == 1 ? 'package' : 'packages' }}</p>
-    <ul class="cards">
-      <template x-for="results" x-value="item"><include path="card.html" /></template>
+    <div class="results-head">
+      <div>
+        <h1 x-if="query">Results for “{{ query }}”</h1>
+        <h1 x-else>All packages</h1>
+        <p class="meta">{{ total|number_format }} {{ total == 1 ? 'package' : 'packages' }}</p>
+      </div>
+      <form class="sort" method="get" action="/search">
+        <input type="hidden" name="q" value="{{ query }}">
+        <label>Sort by
+          <select name="sort">
+            <option value="relevance" x-attr="{ selected: sort == 'relevance' }">Relevance</option>
+            <option value="downloads" x-attr="{ selected: sort == 'downloads' }">Downloads</option>
+            <option value="updated" x-attr="{ selected: sort == 'updated' }">Recently updated</option>
+            <option value="name" x-attr="{ selected: sort == 'name' }">Name</option>
+          </select>
+        </label>
+        <button class="btn ghost">Sort</button>
+      </form>
+    </div>
+    <ul class="results" x-if="results">
+      <template x-for="results" x-value="item"><include path="row.html" /></template>
     </ul>
-    <nav class="pages" x-if="pages|length > 1">
+    <div x-not="results">
+      <p class="empty" x-if="query">Nothing matches “{{ query }}”. Try fewer words, or a keyword.</p>
+      <p class="empty" x-else>Nothing has been published yet.</p>
+    </div>
+    <nav class="pages" aria-label="Pages" x-if="pages|length > 1">
       <a x-if="previous" href="/search?q={{ query|url_encode }}&amp;sort={{ sort }}&amp;page={{ previous }}">Previous</a>
       <template x-for="pages" x-value="p">
         <strong x-if="p.current">{{ p.number }}</strong>

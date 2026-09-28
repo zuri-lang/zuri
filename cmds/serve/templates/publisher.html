@@ -1,9 +1,14 @@
 <extend base="layout.html">
   <define name="content">
-    <h1>{{ publisher.username }}</h1>
-    <p class="meta">Publishing here since {{ publisher.joined|date('F Y') }}.</p>
-    <ul class="cards">
-      <template x-for="packages" x-value="item"><include path="card.html" /></template>
+    <div class="profile">
+      <span class="avatar" aria-hidden="true">{{ publisher.username|truncate(1, '') }}</span>
+      <div>
+        <h1>{{ publisher.username }}</h1>
+        <p class="meta">Publishing here since {{ publisher.joined|date('F Y') }} · {{ packages|length }} {{ packages|length == 1 ? 'package' : 'packages' }}</p>
+      </div>
+    </div>
+    <ul class="results" x-if="packages">
+      <template x-for="packages" x-value="item"><include path="row.html" /></template>
     </ul>
     <p class="empty" x-not="packages">No packages yet.</p>
   </define>

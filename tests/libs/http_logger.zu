@@ -1,0 +1,73 @@
+# The access log writes one line per request, once the response is
+# final, so a request that failed is logged with the status the client
+# was actually sent.
+
+import http
+import http.middleware
+import http.request { HttpRequest }
+import http.response { HttpResponse }
+
+var lines = []
+var server = http.HttpServer(0, '127.0.0.1')
+
+server.use(middleware.logger({
+  sink: @(line) {
+    lines.append(line)
+  },
+}))
+
+server.get('/fine', @(request, response) {
+  response.text('fine')
+})
+
+server.get('/missing', @(request, response) {
+  response.status = 404
+  response.text('missing')
+})
+
+server.get('/broken', @(request, response) {
+  raise Error('broken')
+})
+
+# The status in a Common Log Format line: the field after the quoted
+# request line.
+def status_of(line: string) {
+  return line.split('" ')[1].split(' ')[0]
+}
+
+for path in ['/fine', '/missing', '/broken'] {
+  var sent = server.handle_request(HttpRequest('GET', path), nil)
+
+  echo '${path}: sent ${sent.status}, logged ${status_of(lines.last())}'
+}
+
+# An error handler that answers with its own status is logged with it.
+server.error_handler(@(request, response, error) {
+  response.status = 503
+  response.text('later')
+})
+
+var later = server.handle_request(HttpRequest('GET', '/broken'), nil)
+
+echo '/broken with a handler: sent ${later.status}, logged ${status_of(lines.last())}'
+echo 'one line per request: ${lines.length() == 4}'
+
+# Callbacks run once each, in order, and one that raises does not stop
+# the rest.
+var order = []
+var response = HttpResponse()
+
+response.on_finish(@{
+  order.append('first')
+})
+response.on_finish(@{
+  raise Error('a broken reporter')
+})
+response.on_finish(@{
+  order.append('third')
+})
+
+response.finish()
+response.finish()
+
+echo 'finish callbacks: ${order}'

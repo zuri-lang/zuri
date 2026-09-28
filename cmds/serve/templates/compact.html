@@ -1,0 +1,7 @@
+<li>
+  <a href="/packages/{{ item.name }}">
+    <strong>{{ item.name }}</strong>
+    <span x-if="show == 'downloads'">{{ item.downloads|number_format }}</span>
+    <span x-else>{{ item.latest }}</span>
+  </a>
+</li>

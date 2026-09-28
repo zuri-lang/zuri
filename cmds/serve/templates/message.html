@@ -1,9 +1,10 @@
 <extend base="layout.html">
   <define name="content">
     <div class="panel">
+      <p class="status" x-if="status">{{ status }}</p>
       <h1>{{ title }}</h1>
       <p>{{ text }}</p>
-      <p><a href="/">Back to {{ site }}</a></p>
+      <p><a class="btn ghost" href="/">Back to {{ site }}</a> <a class="btn ghost" href="/search">Browse packages</a></p>
     </div>
   </define>
 </extend>

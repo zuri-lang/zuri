@@ -1,34 +1,81 @@
 <extend base="layout.html">
   <define name="content">
     <section class="hero">
-      <h1>{{ site }}</h1>
-      <p>Packages for Zuri, installed with <code>zuri install</code> and published with <code>zuri publish</code>.</p>
-      <form class="search big" method="get" action="/search" role="search">
-        <input type="search" name="q" placeholder="Search packages" aria-label="Search packages">
-        <button>Search</button>
-      </form>
-      <ul class="stats">
-        <li><strong>{{ stats.packages|number_format }}</strong> packages</li>
-        <li><strong>{{ stats.versions|number_format }}</strong> versions</li>
-        <li><strong>{{ stats.downloads|number_format }}</strong> downloads</li>
-        <li><strong>{{ stats.publishers|number_format }}</strong> publishers</li>
-      </ul>
+      <div class="inner">
+        <div>
+          <h1 x-if="site == 'Nyssa'">The Zuri package repository</h1>
+          <h1 x-else>{{ site }}</h1>
+          <p class="lead">Find, install and publish libraries and tools for Zuri. Every package installs with one command, pinned to the exact files that were published.</p>
+          <form class="search" method="get" action="/search" role="search">
+            <svg class="icon" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>
+            <input type="search" name="q" placeholder="Search {{ stats.packages|number_format }} packages" aria-label="Search packages" autofocus>
+          </form>
+          <p class="quick">
+            <code>zuri install http-extra</code>
+            <code>zuri publish</code>
+            <code>zuri search json</code>
+          </p>
+        </div>
+        <img class="mark" src="/static/zuri-butterfly-light.svg" alt="" width="372" height="281">
+      </div>
     </section>
-    <div class="columns">
-      <section>
-        <h2>Most downloaded</h2>
-        <ul class="cards">
-          <template x-for="popular" x-value="item"><include path="card.html" /></template>
-        </ul>
-        <p x-not="popular" class="empty">Nothing has been published yet.</p>
+
+    <div class="inner">
+      <ul class="stats">
+        <li><strong>{{ stats.packages|number_format }}</strong><span>packages</span></li>
+        <li><strong>{{ stats.versions|number_format }}</strong><span>versions published</span></li>
+        <li><strong>{{ stats.downloads|number_format }}</strong><span>downloads</span></li>
+        <li><strong>{{ stats.publishers|number_format }}</strong><span>publishers</span></li>
+      </ul>
+
+      <div class="lists">
+        <section>
+          <h2>New packages <a href="/search?sort=updated">All</a></h2>
+          <ul class="compact" x-if="newest">
+            <template x-for="newest" x-value="item"><include path="compact.html" x-with="{ show: 'version' }" /></template>
+          </ul>
+          <p class="empty" x-not="newest">Nothing has been published yet.</p>
+        </section>
+        <section>
+          <h2>Most downloaded <a href="/search?sort=downloads">All</a></h2>
+          <ul class="compact" x-if="popular">
+            <template x-for="popular" x-value="item"><include path="compact.html" x-with="{ show: 'downloads' }" /></template>
+          </ul>
+          <p class="empty" x-not="popular">Nothing has been published yet.</p>
+        </section>
+        <section>
+          <h2>Just updated <a href="/search?sort=updated">All</a></h2>
+          <ul class="compact" x-if="recent">
+            <template x-for="recent" x-value="item"><include path="compact.html" x-with="{ show: 'version' }" /></template>
+          </ul>
+          <p class="empty" x-not="recent">Nothing has been published yet.</p>
+        </section>
+      </div>
+
+      <section x-if="keywords">
+        <h2>Popular keywords</h2>
+        <p class="keywords-cloud">
+          <a x-for="keywords" x-value="word" class="tag" href="/search?q={{ word.name|url_encode }}">{{ word.name }}<small>{{ word.count }}</small></a>
+        </p>
       </section>
-      <section>
-        <h2>Recently updated</h2>
-        <ul class="cards">
-          <template x-for="recent" x-value="item"><include path="card.html" /></template>
-        </ul>
-        <p x-not="recent" class="empty">Nothing has been published yet.</p>
-      </section>
+
+      <div class="paths">
+        <a class="path tone-teal" href="/docs/installing">
+          <h3>Install a package</h3>
+          <p>Add a dependency, pin it in the lockfile, and restore the same files anywhere.</p>
+          <code>zuri install http-extra</code>
+        </a>
+        <a class="path tone-gold" href="/docs/publishing">
+          <h3>Publish your own</h3>
+          <p>Create an account, sign the command line in, and publish a version.</p>
+          <code>zuri publish</code>
+        </a>
+        <a class="path tone-purple" href="/docs/hosting">
+          <h3>Host a repository</h3>
+          <p>Run this same site for a team or a company, on SQLite, PostgreSQL or MySQL.</p>
+          <code>zuri serve</code>
+        </a>
+      </div>
     </div>
   </define>
 </extend>
