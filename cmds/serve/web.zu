@@ -431,7 +431,8 @@ def routes(server, nyssa) {
       dependencies,
       readme,
       owners,
-      is_owner: viewer != nil and owners.contains(viewer.username),
+      is_owner: viewer != nil
+        and (owners.contains(viewer.username) or service.is_admin(nyssa, viewer.id)),
       versions: ordered.map(@(version) {
         var row = by_version.get(version)
 

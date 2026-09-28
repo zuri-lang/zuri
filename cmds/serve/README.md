@@ -54,7 +54,7 @@ schema up to date. A password in a connection string belongs in
 | `check` | checks every stored archive against its checksum |
 | `backup <file>` | copies a SQLite database to a file while it is in use |
 | `admin create <username>` | creates an account, for a closed repository |
-| `admin promote`, `demote` `<username>` | makes or unmakes an administrator |
+| `admin promote`, `demote` `<username>` | makes or unmakes an administrator, who may yank any version and change any package's owners |
 | `admin suspend`, `restore` `<username>` | suspends an account, revoking its tokens, or restores it |
 
 ## Security

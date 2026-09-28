@@ -35,6 +35,7 @@ import os
 
 import .errors { CommandError }
 import .fsx
+import .ui
 
 /** The most entries one archive may hold. */
 var MAX_ENTRIES = 20000
@@ -207,6 +208,50 @@ def _padding(size: number) {
   return over == 0 ? bytes(0) : bytes(_BLOCK - over)
 }
 
+# Refuses a set of files that is too many or too large before any of
+# it is read, naming what takes the room so it can be left out.
+def _check_totals(root: string, files: list, directories: number, limit: number) {
+  var count = files.length() + directories
+
+  if count > MAX_ENTRIES {
+    raise ArchiveError(
+      'the package would hold ${count} files and directories, and holds at most ${MAX_ENTRIES}; '
+        + 'leave some out with exclude in [project]'
+    )
+  }
+
+  var sized = []
+  var total = 0
+
+  for path in files {
+    var full = os.join_paths(root, path)
+
+    if os.is_symlink(full) {
+      raise ArchiveError("'${path}' is a symbolic link, which a package cannot hold")
+    }
+
+    var bytes_in = file(full).stats().size
+
+    total += bytes_in
+    sized.append({ path, size: bytes_in })
+  }
+
+  if total <= limit {
+    return
+  }
+
+  sized.sort(@(a, b) => b.size - a.size)
+
+  var largest = sized[0, sized.length().min(3)].map(@(item) {
+    return '${item.path} (${ui.size(item.size)})'
+  })
+
+  raise ArchiveError(
+    'the files come to ${ui.size(total)}, more than the ${ui.size(limit)} allowed; the largest '
+      + 'are ${", ".join(largest)}. Leave them out with exclude in [project]'
+  )
+}
+
 /**
  * Packs `files` from under `root` into a gzip-compressed tar at
  * `destination`.
@@ -257,6 +302,8 @@ def pack(root: string, files: list, destination: string, limit: ?number) {
     entries.append({ path, is_dir: false })
   }
 
+  _check_totals(root, ordered, directories.length(), limit)
+
   # Directories first, each ahead of whatever it holds, then files,
   # each list in name order: the same set of files always lands in the
   # same order.
@@ -290,8 +337,11 @@ def pack(root: string, files: list, destination: string, limit: ?number) {
     unpacked += data.length()
     count++
 
-    if unpacked > limit or count > MAX_ENTRIES {
-      raise ArchiveError('the files come to more than ${limit} bytes, which is too large to pack')
+    # Checked up front already; a file that grew while it was being
+    # read is still caught.
+    if unpacked > limit {
+      raise ArchiveError('${entry.path} grew while it was packed, past the ${ui.size(limit)} '
+        + 'the files may come to')
     }
 
     encoder.write(_header(entry.path, executable ? 0c755 : 0c644, data.length(), false))

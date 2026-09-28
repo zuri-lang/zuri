@@ -130,6 +130,23 @@ describe('pack', @{
     expect(names).to_contain(files[4])
   })
 
+  it('names the largest files when they come to too much', @{
+    var root = os.join_paths(SCRATCH, 'tree')
+    var files = make_tree(root)
+    var message = nil
+
+    catch {
+      pack(root, files, os.join_paths(SCRATCH, 'big.tar.gz'), 5)
+    } as error {
+      expect(error).to_be_instance_of(ArchiveError)
+      message = error.message
+    }
+
+    expect(message).to_contain('more than the 5 B allowed')
+    expect(message).to_contain('the largest are index.zu (19 B)')
+    expect(file(os.join_paths(SCRATCH, 'big.tar.gz')).exists()).to_be_false()
+  })
+
   it('refuses a symbolic link', @{
     var root = os.join_paths(SCRATCH, 'linked')
 

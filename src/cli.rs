@@ -259,7 +259,7 @@ fn providers_of(libs: &Path, name: &str) -> Vec<(String, PathBuf)> {
     };
 
     if let Some(path) = command_in(&package.join(COMMAND_DIR), name) {
-      found.push((package_name.to_string(), path));
+      found.push((package_label(&package, package_name), path));
     }
   }
 
@@ -404,6 +404,23 @@ pub fn list_commands() -> Commands {
   }
 }
 
+/// What to call the installed package in `dir`: the name its own
+/// `project.toml` gives, which is how it was published and installed,
+/// or the directory's name, its import name, when that says nothing.
+fn package_label(dir: &Path, directory_name: &str) -> String {
+  fs::read_to_string(dir.join(crate::project::MANIFEST))
+    .ok()
+    .and_then(|text| text.parse::<toml::Table>().ok())
+    .and_then(|table| {
+      table
+        .get("project")
+        .and_then(|project| project.get("name"))
+        .and_then(|name| name.as_str())
+        .map(str::to_string)
+    })
+    .unwrap_or_else(|| directory_name.to_string())
+}
+
 /// The commands the packages under one `libs` directory provide,
 /// collapsed by name so a name two packages claim is listed once with
 /// both of them.
@@ -427,11 +444,13 @@ fn package_commands_in(libs: &Path) -> Vec<Command> {
       continue;
     };
 
+    let label = package_label(&package, package_name);
+
     for command in commands_in(&package.join(COMMAND_DIR)) {
       match merged.iter_mut().find(|seen| seen.name == command.name) {
-        Some(seen) => seen.packages.push(package_name.to_string()),
+        Some(seen) => seen.packages.push(label.clone()),
         None => merged.push(Command {
-          packages: vec![package_name.to_string()],
+          packages: vec![label.clone()],
           ..command
         }),
       }

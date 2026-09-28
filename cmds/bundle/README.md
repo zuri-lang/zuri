@@ -9,9 +9,9 @@ zuri bundle [--format <format>] [--target <target...>] [options]
 
 A bundle holds the runtime renamed after the program, the standard
 library it was built with, and the project with the packages it
-installed for production. Running it runs `app/index.zu`, whatever
-directory it is started from, and arguments reach the program as
-`os.args`.
+installed for production. Running it runs the project's `index.zu`,
+whatever directory it is started from, and arguments reach the program
+as `os.args`.
 
 ## Formats
 

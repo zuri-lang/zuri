@@ -22,6 +22,9 @@
  *   the version already locked, then the newest.
  * - `dependencies(name, version)`: what that version requires, as
  *   `{ name, range }`, `range` being version range text.
+ * - `display_name(name)`: the name to call a package by when explaining
+ *   a conflict, which is the name as it was published rather than the
+ *   key the solver compares.
  *
  * @copyright 2026, Richard Ore and Zuri contributors
  */
@@ -654,7 +657,7 @@ class Solver {
   # one for each step that led to it.
 
   _name(package: string) {
-    return package == ROOT ? self._root_name : package
+    return package == ROOT ? self._root_name : self._provider.display_name(package)
   }
 
   # A set of versions of `package` in words.
@@ -689,6 +692,8 @@ class Solver {
       return self._root_name
     }
 
+    var name = self._name(term.package)
+
     var states = term.states
     var label = term.label
 
@@ -699,10 +704,10 @@ class Solver {
     var described = self._describe_set(term.package, states, label)
 
     if described == 'any version' {
-      return term.package
+      return name
     }
 
-    return '${term.package} ${described}'
+    return '${name} ${described}'
   }
 
   _sentence(incompatibility) {
@@ -716,18 +721,19 @@ class Solver {
     if kind == 'dependency' {
       var who = data.package == ROOT
         ? self._root_name
-        : '${data.package} ${data.version}'
+        : '${self._name(data.package)} ${data.version}'
 
       if data.get('none', false) {
         if self._universe(data.dependency).is_empty() {
-          return '${who} depends on ${data.dependency} (which could not be found)'
+          return '${who} depends on ${self._name(data.dependency)} (which could not be found)'
         }
 
-        return '${who} depends on ${data.dependency} ${data.range} (which no version of '
-          + '${data.dependency} matches)'
+        var needed = self._name(data.dependency)
+
+        return '${who} depends on ${needed} ${data.range} (which no version of ${needed} matches)'
       }
 
-      return '${who} depends on ${data.dependency} ${data.range}'
+      return '${who} depends on ${self._name(data.dependency)} ${data.range}'
     }
 
     if kind == 'no_versions' {

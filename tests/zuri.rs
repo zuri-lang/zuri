@@ -803,6 +803,161 @@ mod launch {
     );
   }
 
+  /// Runs the built executable from `cwd` with `home` as `ZURI_HOME`,
+  /// so the only packages installed for the user are the ones the case
+  /// put there.
+  fn zuri_with_home(cwd: &Path, home: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .args(args)
+      .current_dir(cwd)
+      .env("ZURI_HOME", home)
+      .env("NO_COLOR", "1")
+      .output()
+      .expect("failed to run zuri")
+  }
+
+  /// Installs a package called `name` under `libs` by hand, the way
+  /// `zuri install` lays one out, with a command that says which
+  /// package ran it.
+  fn install_package_command(libs: &Path, name: &str, command: &str) {
+    let dir = libs.join(name.replace('-', "_"));
+
+    write(
+      &dir.join("project.toml"),
+      &format!("[project]\nname = \"{name}\"\nversion = \"1.0.0\"\n"),
+    );
+    write(
+      &dir.join("cmds").join(command).join("index.zu"),
+      &format!(
+        "/**\n * @command {command}\n * @description Lint the project.\n */\n\necho 'ran {command} from {name}'\n"
+      ),
+    );
+  }
+
+  #[test]
+  fn a_package_command_runs_from_anywhere_in_the_project() {
+    let dir = case("package_command");
+    let home = dir.join("home");
+
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    install_package_command(&dir.join(".zuri/libs"), "lint-tools", "lint");
+    fs::create_dir_all(dir.join("app/deep")).expect("failed to create a subdirectory");
+
+    assert_ran(
+      &zuri_with_home(&dir.join("app/deep"), &home, &["lint"]),
+      "ran lint from lint-tools",
+    );
+  }
+
+  #[test]
+  fn help_names_the_package_a_command_comes_from_as_it_was_published() {
+    let dir = case("package_command_help");
+    let home = dir.join("home");
+
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    install_package_command(&dir.join(".zuri/libs"), "lint-tools", "lint");
+
+    let text = combined(&zuri_with_home(&dir, &home, &["--help"]));
+
+    assert!(
+      text.contains("\nPACKAGE COMMANDS:\n"),
+      "\n--- actual ---\n{text}\n"
+    );
+    assert_eq!(
+      described(&text, "lint"),
+      Some("Lint the project. (from lint-tools)"),
+      "\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn two_packages_claiming_one_command_run_neither() {
+    let dir = case("package_command_clash");
+    let home = dir.join("home");
+    let libs = dir.join(".zuri/libs");
+
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    install_package_command(&libs, "a-tools", "lint");
+    install_package_command(&libs, "b-tools", "lint");
+
+    assert_aborted(
+      &zuri_with_home(&dir, &home, &["lint"]),
+      "lint",
+      "Provided by more than one installed package: a-tools, b-tools",
+    );
+
+    let text = combined(&zuri_with_home(&dir, &home, &["--help"]));
+
+    assert!(
+      text.contains("(claimed by a-tools, b-tools)"),
+      "\n--- actual ---\n{text}\n"
+    );
+  }
+
+  #[test]
+  fn a_projects_package_wins_over_one_installed_for_the_user() {
+    let dir = case("package_command_scope");
+    let home = dir.join("home");
+
+    write(
+      &dir.join("project.toml"),
+      "[project]\nname = \"app\"\nversion = \"0.1.0\"\n",
+    );
+    install_package_command(&dir.join(".zuri/libs"), "project-lint", "lint");
+    install_package_command(&home.join("libs"), "user-lint", "lint");
+
+    assert_ran(
+      &zuri_with_home(&dir, &home, &["lint"]),
+      "ran lint from project-lint",
+    );
+
+    let elsewhere = case("package_command_scope_elsewhere");
+
+    assert_ran(
+      &zuri_with_home(&elsewhere, &home, &["lint"]),
+      "ran lint from user-lint",
+    );
+  }
+
+  #[test]
+  fn a_name_starting_with_an_underscore_is_never_a_command() {
+    let dir = case("private_commands");
+    let home = dir.join("home");
+
+    write(
+      &dir.join(".zuri/cmds/_helper.zu"),
+      &command_source("_helper", "Shared code."),
+    );
+    write(
+      &dir.join(".zuri/cmds/_shared/index.zu"),
+      &command_source("_shared", "Shared code."),
+    );
+
+    for name in ["_helper", "_shared"] {
+      assert_aborted(
+        &zuri_with_home(&dir, &home, &[name]),
+        name,
+        "Unknown command",
+      );
+    }
+
+    let text = combined(&zuri_with_home(&dir, &home, &["--help"]));
+
+    assert!(
+      !text.contains("_helper") && !text.contains("_shared"),
+      "a private name was listed\n--- actual ---\n{text}\n"
+    );
+  }
+
   #[test]
   fn a_project_command_runs_from_a_directory() {
     let dir = case("command_directory");

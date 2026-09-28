@@ -226,6 +226,9 @@ def gitignore() {
     '*.log',
     'tmp/',
     '',
+    '# What zuri bundle builds',
+    'dist/',
+    '',
   ]
 
   return '\n'.join(lines)

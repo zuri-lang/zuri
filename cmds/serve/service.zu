@@ -404,7 +404,23 @@ def yank(nyssa, publisher_id: number, name: string, version: string, undo: bool,
   return { name: package.name, version: row.version, yanked: !undo }
 }
 
-# The package, when `publisher_id` owns it.
+/**
+ * Whether `publisher_id` is one of the repository's administrators,
+ * who may yank any version and change the owners of any package, the
+ * way an owner can. Publishing stays with a package's owners.
+ *
+ * @param nyssa
+ * @param number publisher_id
+ * @returns bool
+ */
+def is_admin(nyssa, publisher_id) {
+  var publisher = nyssa.db.publisher_by_id(publisher_id)
+
+  return publisher != nil and publisher.role == 'admin' and publisher.suspended_at == nil
+}
+
+# The package, when `publisher_id` owns it or administers the
+# repository.
 def _owned(nyssa, publisher_id: number, name: string) {
   var package = nyssa.db.package_by_name(names.normalized(name))
 
@@ -412,7 +428,7 @@ def _owned(nyssa, publisher_id: number, name: string) {
     raise ServiceError(404, 'not_found', "there is no package called '${name}' here")
   }
 
-  if !nyssa.db.is_owner(package.id, publisher_id) {
+  if !nyssa.db.is_owner(package.id, publisher_id) and !is_admin(nyssa, publisher_id) {
     raise ServiceError(403, 'not_owner', 'you are not an owner of ${package.name}')
   }
 

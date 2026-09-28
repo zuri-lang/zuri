@@ -15,19 +15,29 @@ arguments with the same `args` module as everything else.
 
 ## Where Commands Are Found
 
-`zuri <name>` looks in two places, in this order, and runs the first
+`zuri <name>` looks in these places, in this order, and runs the first
 match:
 
 | Where | What it holds |
 | --- | --- |
 | `$ZURI_ROOT/cmds`, or `cmds` beside the executable when `ZURI_ROOT` is unset | the commands the runtime ships |
-| `.zuri/cmds` in the working directory | the project's own commands |
+| `.zuri/cmds` in the project | the project's own commands |
+| `cmds` in each package in the project's `.zuri/libs` | commands the project's packages provide |
+| `cmds` in each package in `$ZURI_HOME/libs` | commands the packages installed for your user provide |
+
+The project is the nearest directory above the working directory that
+holds a `project.toml`, so a project's commands run from anywhere inside
+it. With no project, `.zuri` in the working directory is used.
 
 The shipped commands come first, so a project cannot replace one: a
 project command named `test` is never run, and `zuri --help` leaves it
-out of the listing. Only the working directory's `.zuri` is consulted,
-not those of the directories above it, so a project's commands are run
-from its root.
+out of the listing. A project's own commands come before anything a
+package provides, and a project's packages before your user's.
+
+Two packages in the same place providing the same command is refused
+rather than settled by chance. `zuri <name>` then names both packages
+and runs neither, and `zuri --help` marks the command as claimed twice.
+`zuri install` refuses to create the clash in the first place.
 
 `zuri init` writes a `.gitignore` that ignores everything under `.zuri`
 except `.zuri/cmds`, so a project's commands are committed with the

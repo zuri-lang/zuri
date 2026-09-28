@@ -80,6 +80,16 @@
 
 - [Foreign Functions: C and Rust](ch26-00-ffi.md)
 
+# Sharing and Shipping
+
+- [Packages and Nyssa](ch27-00-packages.md)
+  - [Projects and Versions](ch27-01-projects.md)
+  - [Installing Packages](ch27-02-installing.md)
+  - [Publishing Packages](ch27-03-publishing.md)
+  - [Commands From Packages](ch27-04-commands.md)
+  - [Bundles and Upgrades](ch27-05-bundles.md)
+  - [Running Nyssa](ch27-06-nyssa.md)
+
 # Appendices
 
 - [A - Keywords](appendix-01-keywords.md)

@@ -5,6 +5,7 @@
 import hash
 import http
 import json
+import os
 import test { * }
 import url
 import compress.tar { Tar, COMPRESS_GZIP }
@@ -45,6 +46,15 @@ def account(username: string) {
   })
 
   return created.as_dict().token.token
+}
+
+# A fresh token for an account that already exists, signed in with its
+# password.
+def api_token(username: string) {
+  return api('POST', '/api/v1/tokens', nil, {
+    username,
+    password: 'a long enough password',
+  }).as_dict().token
 }
 
 # A gzip-compressed tar holding `entries`, each `{ name, text }` or a
@@ -231,6 +241,39 @@ describe('names and versions', @{
 
     expect(refused.status).to_equal(422)
     expect(code(refused)).to_equal('bad_name')
+  })
+})
+
+describe('administrators', @{
+  it('yank and restore any package, and change its owners', @{
+    var mallory = account('mallory')
+
+    publish(ADA, package('guarded-kit', '1.0.0'), 'guarded-kit', '1.0.0', nil)
+
+    var refused = api('POST', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil)
+
+    expect(refused.status).to_equal(403)
+    expect(code(refused)).to_equal('not_owner')
+
+    var storage = os.join_paths(world.root, 'nyssa')
+    var promoted = world.zuri(['serve', '--storage', storage, 'admin', 'promote', 'mallory'],
+      world.root)
+
+    expect(promoted.status).to_equal(0)
+    expect(api('POST', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil).status)
+      .to_equal(200)
+    expect(api('DELETE', '/api/v1/packages/guarded-kit/1.0.0/yank', mallory, nil).status)
+      .to_equal(200)
+    expect(api('PUT', '/api/v1/packages/guarded-kit/owners', mallory, { username: 'eve' }).status)
+      .to_equal(200)
+  })
+
+  it('never publish into a package they do not own', @{
+    var refused = publish(api_token('mallory'), package('guarded-kit', '2.0.0'), 'guarded-kit',
+      '2.0.0', nil)
+
+    expect(refused.status).to_equal(403)
+    expect(code(refused)).to_equal('not_owner')
   })
 })
 

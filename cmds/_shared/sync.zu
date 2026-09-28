@@ -351,6 +351,10 @@ class Provider {
   }
 
   # Records where `key` comes from, refusing a second place for it.
+  display_name(key: string) {
+    return self.display.get(key, key)
+  }
+
   want(key: string, name: string, place: dict, who: string) {
     var known = self.places.get(key, nil)
 

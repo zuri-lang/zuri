@@ -172,15 +172,27 @@ makes a package runnable as well as importable.
 
 `import http`, with no leading dot, is searched for in this order:
 
-1. `./.zuri/libs/http` relative to the **current working directory**
-2. `$ZURI_ROOT/libs/http`, or `libs/http` beside the `zuri` executable
+1. `.zuri/libs/http` in the **project**
+2. `$ZURI_ROOT/libs/http`, or `libs/http` beside the `zuri` executable:
+   the standard library
 3. a built-in native module named `http`
+4. `$ZURI_HOME/libs/http`, the packages installed for your user, which
+   is `~/.zuri/libs` unless `ZURI_HOME` moves it
 
 At each step, `http.zu` is tried first and then `http/index.zu`.
 
-Step one is what makes vendoring work. Dropping a file into `.zuri/libs/`
-in your project directory shadows a standard library module of the same
-name:
+The project is the nearest directory holding a `project.toml`, looking
+upwards from the script `zuri run` was given, or from the working
+directory for a command or the REPL. A program run from anywhere inside
+a project imports that project's packages, and a program in no project
+uses `.zuri/libs` in the working directory. The project is found once,
+when the program starts, so changing directory part way through does
+not change where imports come from.
+
+`zuri install` fills `.zuri/libs`, and
+[Packages and Nyssa](ch27-00-packages.md) covers it in full. Step one is
+also what makes vendoring work. Dropping a file into `.zuri/libs/`
+shadows a standard library module of the same name:
 
 ```console
 $ cat .zuri/libs/mylib.zu

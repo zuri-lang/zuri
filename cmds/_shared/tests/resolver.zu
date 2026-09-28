@@ -8,9 +8,10 @@ import ..semver
 
 # A registry in memory: name -> version -> dependencies.
 class Catalog {
-  @new(packages: dict, preferred: ?dict) {
+  @new(packages: dict, preferred: ?dict, published: ?dict) {
     self.packages = packages
     self.preferred = preferred == nil ? {} : preferred
+    self.published = published == nil ? {} : published
     self.asked = []
   }
 
@@ -31,6 +32,10 @@ class Catalog {
     }
 
     return ordered
+  }
+
+  display_name(name: string) {
+    return self.published.get(name, name)
   }
 
   dependencies(name: string, version: string) {
@@ -160,6 +165,30 @@ describe('explaining a failure', @{
     expect(message).to_contain('a 1.0.0 depends on c ^1.0')
     expect(message).to_contain('b 1.0.0 depends on c ^2.0')
     expect(message).to_contain('version solving failed')
+  })
+
+  it('calls packages by the names they were published under', @{
+    var catalog = Catalog({
+      http_extra: { '1.0.0': { json_schema: '^1.0' } },
+      report_kit: { '1.0.0': { json_schema: '^2.0' } },
+      json_schema: { '1.0.0': {}, '2.0.0': {} },
+    }, nil, {
+      http_extra: 'http-extra',
+      report_kit: 'report-kit',
+      json_schema: 'json-schema',
+    })
+
+    var message = nil
+
+    catch {
+      solve(catalog, '0.1.0', needs({ http_extra: '^1', report_kit: '^1' }), 'shop')
+    } as error {
+      message = error.message
+    }
+
+    expect(message).to_contain('http-extra 1.0.0 depends on json-schema ^1.0')
+    expect(message).to_contain('report-kit 1.0.0 depends on json-schema ^2.0')
+    expect(message).not.to_contain('_')
   })
 
   it('says when no version of a package exists', @{

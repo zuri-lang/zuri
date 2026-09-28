@@ -112,10 +112,14 @@ almost everything the book has covered.
 **Interoperability**, Chapter 26. Calling C and Rust libraries, and being
 called back by them.
 
+**Sharing and shipping**, Chapter 27. Installing and publishing packages,
+the lockfile, packaging a program to run where Zuri is not installed, and
+running Nyssa, the package repository, for a team or the public.
+
 **Appendices.** Keywords, operators and precedence, decorated methods,
 built-in functions, every method on every built-in type, the standard
-library index, the error hierarchy, and the notes for readers arriving from
-another language. These are reference material; the rest of the book is
+library index, the error hierarchy, the notes for readers arriving from
+another language, and writing commands of your own. These are reference material; the rest of the book is
 prose.
 
 ## How to Read It
