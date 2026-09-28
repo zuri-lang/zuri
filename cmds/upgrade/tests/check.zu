@@ -38,10 +38,11 @@ def upgrade(words: list) {
     env: { ZURI_RELEASES_URL: base + '/releases', NO_COLOR: '1' },
   })
 
+  var status = child.wait()
   var out = child.read_stdout().to_string()
   var err = child.read_stderr().to_string()
 
-  return { status: child.wait(), out, all: out + err }
+  return { status, out, all: out + err }
 }
 
 before_all(@{

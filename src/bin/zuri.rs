@@ -318,6 +318,7 @@ fn main() {
   let argv = env::args().collect::<Vec<_>>();
 
   clear_replaced_executable();
+  keep_standard_handles_private();
 
   let bundle = match zuri::bundle::detect() {
     Ok(bundle) => bundle,
@@ -429,6 +430,40 @@ fn clear_replaced_executable() {
 
 #[cfg(not(windows))]
 fn clear_replaced_executable() {}
+
+/// Keeps the standard handles this process was started with out of the
+/// processes it starts.
+///
+/// Windows hands every inheritable handle a process holds to every
+/// child it creates, whatever that child's own streams are. The
+/// standard handles are inheritable, since that is how they arrived, so
+/// a program started with its output sent elsewhere would still hold
+/// this process's output pipe open for as long as it ran, and whoever
+/// reads that pipe would wait for it. A child told to inherit a stream
+/// is given its own inheritable copy when it is started, so clearing
+/// the flag on the originals takes nothing from it.
+#[cfg(windows)]
+fn keep_standard_handles_private() {
+  use windows_sys::Win32::Foundation::{
+    HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation,
+  };
+  use windows_sys::Win32::System::Console::{
+    GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+  };
+
+  for stream in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+    unsafe {
+      let handle = GetStdHandle(stream);
+
+      if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+        SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+      }
+    }
+  }
+}
+
+#[cfg(not(windows))]
+fn keep_standard_handles_private() {}
 
 /// The list `os.args` reports: the runtime, the script, then the
 /// script's own arguments. Nothing of zuri's own dispatch survives

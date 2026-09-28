@@ -57,9 +57,36 @@ names an unpacked runtime to use instead. The platforms are:
 - `aarch64-apple-darwin`
 - `x86_64-pc-windows-msvc`
 
-A single-file bundle for macOS has to be signed again once built, since
-appending to an executable breaks its signature, so it is only built on
-a Mac.
+A single-file bundle for macOS is built on any machine. Its payload
+goes inside the executable's image rather than after it, and the result
+is signed ad hoc, which is all an Apple silicon Mac needs to run it.
+
+## Signing for Distribution
+
+A program downloaded onto a Mac runs only when it is signed with a
+Developer ID and notarized, and notarization requires the hardened
+runtime. Under the hardened runtime, Zuri's JIT needs the
+`com.apple.security.cs.allow-jit` entitlement to create executable
+memory, so sign with an entitlements file that grants it:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>
+```
+
+```console
+$ codesign --force --options runtime --entitlements entitlements.plist \
+    --sign "Developer ID Application: Example Ltd" dist/weather-0.1.0-aarch64-apple-darwin
+```
+
+`--force` replaces the ad hoc signature. Sign an `app` bundle the same
+way, naming the `.app` directory in place of the executable.
 
 ## macOS Applications
 

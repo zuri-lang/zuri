@@ -26,7 +26,11 @@ describe('fsx', @{
 
     expect(fsx.read_text(path)).to_equal('second')
     expect(os.read_dir(os.dir_name(path)).filter(@(n) => n.ends_with('.tmp'))).to_be_empty()
-    expect(file(path).stats().mode & 0c777).to_equal(0c600)
+
+    # Windows has no permission bits beyond read-only.
+    if os.platform != 'windows' {
+      expect(file(path).stats().mode & 0c777).to_equal(0c600)
+    }
   })
 
   it('gives the same digest to the same tree, and another to a changed one', @{

@@ -103,6 +103,11 @@ def real_path(path: string) {
  * never resolves symbolic links; use `real_path()` when you need the
  * true canonical path of something that already exists.
  *
+ * On Windows, a path that starts at a root without naming a drive,
+ * such as `\\srv\\app` or `/srv/app`, is on the working directory's
+ * drive, and a UNC path such as `\\\\server\\share\\app` keeps
+ * `\\\\server\\share` as its root, which `..` never climbs out of.
+ *
  * @param string path
  * @param ?bool strict: Default `false`. When `true`, the resolved
  *    path is checked against the filesystem and an `Error` is raised
@@ -114,32 +119,29 @@ def abs_path(path: string, strict: ?bool) {
     strict = false
   }
 
-  var is_windows = _os.platform == 'windows'
-
-  # A leading separator is the whole test off Windows, and reading one
-  # character beats compiling and running a pattern for it.
-  var is_absolute = is_windows ?
-    path.match('~^[a-zA-Z]\\:~') :
-    path.starts_with('/')
-
   var root = ''
   var raw
 
-  if is_absolute {
-    if is_windows {
-      root = path[,2]
-      raw = path[2,]
+  if _os.platform == 'windows' {
+    var anchored = _windows_root(path)
+
+    if anchored == nil {
+      var base = _windows_root(cwd())
+
+      root = base.root
+      raw = base.rest + '\\' + path
+    } else if anchored.root == '' {
+      # Rooted but with no drive, so on the working directory's drive.
+      root = _windows_root(cwd()).root
+      raw = anchored.rest
     } else {
-      raw = path
+      root = anchored.root
+      raw = anchored.rest
     }
+  } else if path.starts_with('/') {
+    raw = path
   } else {
-    var base = cwd()
-    if is_windows {
-      root = base[,2]
-      raw = base[2,] + '\\' + path
-    } else {
-      raw = base + '/' + path
-    }
+    raw = cwd() + '/' + path
   }
 
   # Only worth rebuilding the string when there is actually something
@@ -183,12 +185,49 @@ def abs_path(path: string, strict: ?bool) {
   return result
 }
 
+# Splits a Windows path into the part that anchors it and the rest:
+# a drive (`C:`), a UNC share (`\\\\server\\share`), or an empty root
+# for a path that starts at the root of the current drive. A relative
+# path has no anchor and gives `nil`.
+def _windows_root(path: string) {
+  var slashed = path.replace('/', '\\', false)
+
+  if slashed.starts_with('\\\\') {
+    var parts = slashed[2,].split('\\')
+
+    if parts.length() >= 2 {
+      var root = '\\\\' + parts[0] + '\\' + parts[1]
+
+      return { root, rest: slashed[root.length(),] }
+    }
+
+    return { root: slashed, rest: '' }
+  }
+
+  if slashed.match('~^[a-zA-Z]:~') {
+    return { root: slashed[,2], rest: slashed[2,] }
+  }
+
+  if slashed.starts_with('\\') {
+    return { root: '', rest: slashed }
+  }
+
+  return nil
+}
+
 /**
  * Returns the parent directory of the pathname pointed to by
  * `path`. Any trailing `/` characters are not counted as part of
  * the directory name. If `path` is an empty string, or contains
  * no `/` characters, dir_name() returns the string ".",
  * signifying the current directory.
+ *
+ * On Windows, a drive (`C:`) or UNC share (`\\\\server\\share`) at the
+ * start of `path` stays whole: the parent of `C:\\` is `C:\\` itself,
+ * the parent of `C:\\work` is `C:\\`, and the parent of `C:work` is
+ * `C:`. The root's parent is the root, just as `/` is its own parent
+ * elsewhere, so a loop that walks up until the parent stops changing
+ * ends there.
  *
  * @param string path
  * @returns string

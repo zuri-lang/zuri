@@ -227,7 +227,7 @@ POSITIONAL ARGUMENTS:
 OPTIONS:
   -h, --help  Show this help message and exit
 PROJECT COMMANDS:
-  greet  Greets whoever is named.
+  greet      Greets whoever is named.
 ```
 
 ## Testing a Command

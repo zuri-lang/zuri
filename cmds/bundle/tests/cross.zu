@@ -6,6 +6,8 @@ import os.process { spawn }
 import test { * }
 import compress.zip
 
+import ._macho { commands, executable }
+
 var ROOT = os.create_temp_dir('zuri-bundle-cross-')
 var PROJECT = os.join_paths(ROOT, 'greeter')
 
@@ -38,10 +40,11 @@ def bundle(words: list) {
     env: { NO_COLOR: '1', ZURI_HOME: os.join_paths(ROOT, 'home') },
   })
 
+  var status = child.wait()
   var out = child.read_stdout().to_string()
   var err = child.read_stderr().to_string()
 
-  return { status: child.wait(), all: out + err }
+  return { status, all: out + err }
 }
 
 before_all(@{
@@ -100,6 +103,27 @@ describe('another platform', @{
 
     expect(data[0, runtime_text.length()].to_string()).to_equal(runtime_text)
     expect(data[data.length() - 8,].to_string()).to_equal('ZURIBND1')
+  })
+
+  it('signs a single-file macOS program with its payload inside the image', @{
+    var target = 'aarch64-apple-darwin'
+    var dir = runtime(target)
+    var runtime_file = file(os.join_paths(dir, 'zuri'), 'wb')
+
+    runtime_file.write(executable(true, 1024))
+    runtime_file.close()
+
+    var built = bundle(['--format', 'exe', '--target', target, '--runtime', dir])
+
+    expect(built.status).to_equal(0)
+
+    var data = file(os.join_paths(PROJECT, 'dist', 'greeter-1.2.0-${target}'), 'rb').read()
+    var found = commands(data)
+    var end = found.get('signature').dataoff
+    var linkedit = found.get('__LINKEDIT')
+
+    expect(data[end - 8, end].to_string()).to_equal('ZURIBND1')
+    expect(linkedit.fileoff + linkedit.filesize).to_equal(data.length())
   })
 
   it('refuses a runtime directory that holds no runtime', @{

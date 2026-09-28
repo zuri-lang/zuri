@@ -26,10 +26,11 @@ def git_in(dir: string, words: list) {
     },
   })
 
+  var status = child.wait()
   var out = child.read_stdout().to_string()
   var err = child.read_stderr().to_string()
 
-  if child.wait() != 0 {
+  if status != 0 {
     raise Error('git ${words[0]} failed: ${err}')
   }
 

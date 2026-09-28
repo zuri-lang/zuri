@@ -68,7 +68,7 @@ pub enum LongDoubleRepr {
 pub const LONG_DOUBLE: LongDoubleRepr = LongDoubleRepr::X87;
 #[cfg(all(target_arch = "aarch64", not(target_vendor = "apple"), not(windows)))]
 pub const LONG_DOUBLE: LongDoubleRepr = LongDoubleRepr::Quad;
-#[cfg(any(windows, target_vendor = "apple"))]
+#[cfg(any(windows, all(target_arch = "aarch64", target_vendor = "apple")))]
 pub const LONG_DOUBLE: LongDoubleRepr = LongDoubleRepr::Double;
 
 /// Whether the C compiler of this platform has `_Complex`. MSVC does not.

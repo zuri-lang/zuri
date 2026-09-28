@@ -1,0 +1,185 @@
+# Carrying a payload inside a macOS executable.
+
+import hash
+import struct
+import test { * }
+
+import ._macho { STRINGS, TEXT_SIZE, commands, executable }
+import ..macho
+
+# The message a failed call raised, or `nil`.
+def failure(body: function) {
+  catch {
+    body()
+  } as error {
+    return error.message
+  }
+
+  return nil
+}
+
+def payload() {
+  var data = bytes(10000)
+
+  iter var i = 0; i < data.length(); i++ {
+    data[i] = i % 251
+  }
+
+  data.extend(bytes(40))
+  data.extend('ZURIBND1'.to_bytes())
+
+  return data
+}
+
+# Checks the embedded signature the way the kernel does: every page up
+# to the signature hashes to its slot, and the requirements to theirs.
+def expect_signed(data: bytes, identifier: string) {
+  var signature = commands(data).get('signature')
+  var blob = data[signature.dataoff, data.length()]
+  var super = struct.unpack('N:magic/N:length/N:count', blob)
+
+  expect(super.magic).to_equal(0xfade0cc0)
+  expect(super.count).to_equal(3)
+
+  var slots = {}
+
+  iter var i = 0; i < super.count; i++ {
+    var entry = struct.unpack('N:type/N:offset', blob, 12 + i * 8)
+
+    slots.set(entry.type.to_string(), entry.offset)
+  }
+
+  var at = slots.get('0')
+  var directory = struct.unpack(
+    'N:magic/N:length/N:version/N:flags/N:hash_offset/N:ident_offset/N:special/N:code'
+      + '/N:limit/C:hash_size/C:hash_type/C:platform/C:page',
+    blob,
+    at
+  )
+
+  expect(directory.magic).to_equal(0xfade0c02)
+  expect(directory.flags).to_equal(2)
+  expect(directory.limit).to_equal(signature.dataoff)
+  expect(directory.hash_type).to_equal(2)
+  expect(directory.page).to_equal(12)
+  expect(directory.special).to_equal(2)
+
+  var name_at = at + directory.ident_offset
+
+  expect(blob[name_at, name_at + identifier.length()].to_string()).to_equal(identifier)
+  expect(blob[name_at + identifier.length()]).to_equal(0)
+
+  var pages = ((signature.dataoff + 4095) / 4096).floor()
+
+  expect(directory.code).to_equal(pages)
+
+  iter var page = 0; page < pages; page++ {
+    var start = page * 4096
+    var stop = start + 4096 < signature.dataoff ? start + 4096 : signature.dataoff
+    var slot = at + directory.hash_offset + page * 32
+
+    expect(blob[slot, slot + 32]).to_equal(hash.sha256(data[start, stop], true))
+  }
+
+  var requirements_at = slots.get('2')
+  var requirements = blob[requirements_at, requirements_at + 12]
+  var special = at + directory.hash_offset - 64
+
+  expect(struct.unpack('N:magic', requirements).magic).to_equal(0xfade0c01)
+  expect(blob[special, special + 32]).to_equal(hash.sha256(requirements, true))
+}
+
+# Where the trailer ends, and that the payload sits just before it.
+def expect_payload_before(data: bytes, end: number, carried: bytes) {
+  expect(data[end - 8, end].to_string()).to_equal('ZURIBND1')
+  expect(data[end - carried.length(), end]).to_equal(carried)
+}
+
+describe('embed', @{
+  it('carries the payload where the signature was, and signs it again', @{
+    var runtime = executable(true, 1024)
+    var carried = payload()
+    var data = macho.embed(runtime, carried, 'greeter')
+    var found = commands(data)
+    var linkedit = found.get('__LINKEDIT')
+    var end = found.get('signature').dataoff
+
+    expect(found.count).to_equal(4)
+    expect(end % 16).to_equal(0)
+    expect_payload_before(data, end, carried)
+
+    # Nothing in the file lies outside the image any more.
+    expect(linkedit.fileoff + linkedit.filesize).to_equal(data.length())
+    expect(linkedit.vmsize >= linkedit.filesize).to_be_true()
+    expect(found.get('symtab').stroff + found.get('symtab').strsize).to_equal(end)
+
+    expect_signed(data, 'greeter')
+  })
+
+  it('leaves the code and the string table as the linker wrote them', @{
+    var runtime = executable(true, 1024)
+    var data = macho.embed(runtime, payload(), 'greeter')
+    var stroff = commands(runtime).get('symtab').stroff
+
+    expect(data[1024, TEXT_SIZE]).to_equal(runtime[1024, TEXT_SIZE])
+    expect(data[stroff, stroff + STRINGS.length()].to_string()).to_equal(STRINGS)
+  })
+
+  it('adds a signature to an unsigned runtime with room for one', @{
+    var runtime = executable(false, 1024)
+    var data = macho.embed(runtime, payload(), 'greeter')
+    var found = commands(data)
+
+    expect(found.count).to_equal(4)
+    expect(found.get('signature')).not.to_be_nil()
+
+    expect_payload_before(data, found.get('signature').dataoff, payload())
+    expect_signed(data, 'greeter')
+  })
+
+  it('leaves an unsigned runtime with no room unsigned, its payload last', @{
+    var runtime = executable(false, 32 + 152 + 72 + 24 + 8)
+    var carried = payload()
+    var data = macho.embed(runtime, carried, 'greeter')
+    var found = commands(data)
+    var linkedit = found.get('__LINKEDIT')
+
+    expect(found.count).to_equal(3)
+    expect(found.get('signature')).to_be_nil()
+    expect_payload_before(data, data.length(), carried)
+    expect(linkedit.fileoff + linkedit.filesize).to_equal(data.length())
+
+    var symtab = found.get('symtab')
+
+    expect(symtab.stroff + symtab.strsize).to_equal(data.length())
+  })
+
+  it('names what it will not work with', @{
+    var universal = struct.pack('NN', 0xcafebabe, 2) + bytes(64)
+
+    expect(failure(@{
+      macho.embed(universal, payload(), 'greeter')
+    })).to_contain('universal binary')
+
+    expect(failure(@{
+      macho.embed(bytes(64), payload(), 'greeter')
+    })).to_contain('not a 64-bit macOS executable')
+
+    # Something after the string table, which the payload would cover.
+    var runtime = executable(false, 1024)
+
+    runtime.extend(bytes(64))
+    struct.pack_into('P', runtime, 32 + 152 + 8 + 40, runtime.length() - TEXT_SIZE)
+
+    expect(failure(@{
+      macho.embed(runtime, payload(), 'greeter')
+    })).to_contain('after its string table')
+  })
+
+  it('tells a Mach-O executable from anything else', @{
+    expect(macho.is_macho(executable(true, 1024))).to_be_true()
+    expect(macho.is_macho(struct.pack('N', 0xcafebabe))).to_be_true()
+    expect(macho.is_macho('\x7fELF'.to_bytes())).to_be_false()
+    expect(macho.is_macho(bytes(2))).to_be_false()
+  })
+})

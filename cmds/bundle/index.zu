@@ -34,6 +34,7 @@ import .._shared.store
 import .._shared.sync
 import .._shared.ui
 
+import .macho
 import .plan
 
 # The runtime to build `target` with: its executable and its `libs`.
@@ -162,10 +163,11 @@ def _sign(path: string) {
     stdout: 'pipe', stderr: 'pipe', stdin: 'null',
   })
 
-  var said = child.read_stderr().to_string()
+  var status = child.wait()
+  var said = child.read_stderr().to_string().trim('\n')
 
-  if child.wait() != 0 {
-    raise CommandError('codesign could not sign ${path}: ${said.trim()}')
+  if status != 0 {
+    raise CommandError('codesign could not sign ${path}: ${said}')
   }
 }
 
@@ -186,10 +188,13 @@ def _build(target, format, runtime, content, destination, details) {
   var exe_name = plan.is_windows(target) ? details.name + '.exe' : details.name
 
   if format == 'exe' {
-    var data = fsx.read_bytes(runtime.executable) + plan.payload(content)
+    var executable = fsx.read_bytes(runtime.executable)
+    var payload = plan.payload(content)
+    var data = plan.is_apple(target)
+      ? macho.embed(executable, payload, details.name)
+      : executable + payload
 
     fsx.atomic_write(destination, data, 0c755)
-    _sign(destination)
 
     return
   }
@@ -291,7 +296,7 @@ def main() {
   var targets = plan.targets(given.get('target', nil), os.target)
 
   for target in targets {
-    plan.check_format(format, target, os.platform)
+    plan.check_format(format, target)
   }
 
   var identifier = settings.get('identifier', nil)

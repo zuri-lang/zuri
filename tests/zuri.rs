@@ -1747,8 +1747,14 @@ mod bundles {
     let program = built(&dir);
     let mut data = fs::read(&program).expect("failed to read the bundle");
 
-    // A byte inside the payload, well clear of the trailer.
-    let at = data.len() - 48 - 16;
+    // A byte inside the payload, well clear of the trailer, which ends
+    // the file or, on macOS, the space before the code signature.
+    let trailer_end = data
+      .windows(8)
+      .rposition(|window| window == b"ZURIBND1")
+      .expect("the bundle has no trailer")
+      + 8;
+    let at = trailer_end - 48 - 16;
     data[at] ^= 0xff;
     fs::write(&program, &data).expect("failed to write the damaged bundle");
 
@@ -1802,6 +1808,11 @@ mod command_suites {
   #[test]
   fn bundle() {
     suite("bundle");
+  }
+
+  #[test]
+  fn publish() {
+    suite("publish");
   }
 
   #[test]

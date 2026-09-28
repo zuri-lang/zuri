@@ -58,6 +58,33 @@ assert raises(@() { os.abs_path('this/does/not/exist/anywhere', true) }),
   'abs_path(strict: true) on a path that does not exist must raise'
 ok('abs_path() strict mode raises only when the resolved path is missing')
 
+if os.platform == 'windows' {
+  var drive = os.cwd()[,2]
+
+  assert os.abs_path('/srv/app') == drive + '\\srv\\app',
+    'abs_path() must put a path rooted without a drive on the current drive'
+  assert os.abs_path('\\srv\\..\\app') == drive + '\\app',
+    'abs_path() must collapse ".." in a path rooted without a drive'
+  assert os.abs_path('\\\\server\\share\\a\\..\\b') == '\\\\server\\share\\b',
+    'abs_path() must keep a UNC share as the root'
+  assert os.abs_path('//server/share/../../x') == '\\\\server\\share\\x',
+    'abs_path() must never climb out of a UNC share'
+  ok('abs_path() resolves drive-less roots and UNC shares')
+
+  assert os.dir_name('C:\\') == 'C:\\', 'dir_name() of a drive root must be the root'
+  assert os.dir_name('C:\\work') == 'C:\\', 'dir_name() must stop at the drive root'
+  assert os.dir_name('C:\\work\\app') == 'C:\\work', 'dir_name() must drop the last segment'
+  assert os.dir_name('C:work') == 'C:', 'dir_name() of a drive-relative path must keep the drive'
+  assert os.dir_name('\\\\server\\share\\app') == '\\\\server\\share\\',
+    'dir_name() must stop at a UNC share'
+  assert os.dir_name('\\\\server\\share') == '\\\\server\\share',
+    'dir_name() of a UNC share must be the share'
+  ok('dir_name() never climbs above a drive or a UNC share')
+} else {
+  assert os.abs_path('/srv/../app') == '/app', 'abs_path() must resolve a rooted path from the root'
+  ok('abs_path() resolves a rooted path from the root')
+}
+
 # ---------------------------------------------------------------------------
 # dir_name() / base_name()
 # ---------------------------------------------------------------------------

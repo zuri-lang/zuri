@@ -93,10 +93,11 @@ def run(args: list, cwd: ?string) {
     stderr: 'pipe',
   })
 
+  var status = child.wait()
   var out = child.read_stdout().to_string()
   var err = child.read_stderr().to_string()
 
-  if child.wait() != 0 {
+  if status != 0 {
     var said = err.replace('/\\s+/', ' ', true).trim()
 
     raise GitError('git ${args[0]} failed: ${said.is_empty() ? "no reason given" : said}')

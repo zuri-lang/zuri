@@ -34,11 +34,18 @@ def _check_runs(runtime: string, version: string) {
       stdout: 'pipe', stderr: 'pipe', stdin: 'null', env: { NO_COLOR: '1' },
     })
 
-    said = child.read_stdout().to_string()
+    var status = child.wait(30000)
 
-    if child.wait(30000) != 0 {
+    if status == nil {
+      child.kill()
+      child.wait()
+    }
+
+    if status != 0 {
       raise CommandError('the downloaded runtime did not start')
     }
+
+    said = child.read_stdout().to_string()
   } as error {
     raise CommandError('the downloaded runtime did not start: ${error.message}')
   }

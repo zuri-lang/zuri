@@ -104,10 +104,22 @@ class World {
     }
 
     self.server = spawn(os.exe_path, flags, {
-      stdout: 'null', stderr: 'null', stdin: 'null', env: self.env(),
+      stdout: 'null', stderr: 'pipe', stdin: 'null', env: self.env(),
     })
 
-    iter var tries = 0; tries < 150; tries++ {
+    # Generous, since a loaded machine running every suite at once can
+    # take a while to start one more process.
+    var deadline = time() + 60
+
+    while time() < deadline {
+      if self.server.try_wait() != nil {
+        var said = self.server.read_stderr().to_string()
+
+        self.server = nil
+
+        raise Error('zuri serve exited before it answered on ${self.url}:\n${said}')
+      }
+
       catch {
         if http.get(self.url + '/healthz', { timeout: 1000 }).status == 200 {
           return
@@ -119,7 +131,7 @@ class World {
 
     self.stop()
 
-    raise Error('zuri serve did not come up on ${self.url}')
+    raise Error('zuri serve did not answer on ${self.url} within a minute')
   }
 
   /**
@@ -265,9 +277,10 @@ def commit(dir: string) {
       cwd: dir, env, stdin: 'null', stdout: 'null', stderr: 'pipe',
     })
 
+    var status = child.wait()
     var said = child.read_stderr().to_string()
 
-    if child.wait() != 0 {
+    if status != 0 {
       raise Error('git ${words[0]} failed in ${dir}: ${said}')
     }
   }

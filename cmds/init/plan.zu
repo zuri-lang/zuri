@@ -84,9 +84,10 @@ def _git_config(key: string) {
       { stdout: 'pipe', stderr: 'pipe' },
     )
 
+    var status = child.wait()
     var value = clean(child.read_stdout().to_string())
 
-    if child.wait() != 0 or value.is_empty() {
+    if status != 0 or value.is_empty() {
       return nil
     }
 

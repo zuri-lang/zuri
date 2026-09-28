@@ -222,8 +222,11 @@ describe('target_of', @{
       .to_equal(os.join_paths(os.abs_path(ROOT), 'sub'))
   })
 
-  it('takes an absolute path exactly as it stands', @{
-    expect(target_of(parse(['/srv/app']), ROOT)).to_equal('/srv/app')
+  it('takes an absolute path as it stands', @{
+    # On Windows a path rooted without a drive is on the current one.
+    var expected = os.platform == 'windows' ? os.cwd()[,2] + '\\srv\\app' : '/srv/app'
+
+    expect(target_of(parse(['/srv/app']), ROOT)).to_equal(expected)
   })
 
   it('reads a path through the parser, flags and all', @{

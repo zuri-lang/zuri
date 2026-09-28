@@ -137,26 +137,15 @@ def output_name(name: string, version: string, target: string, format: string) {
 }
 
 /**
- * Refuses a format that cannot be built for `target` from this
- * machine.
+ * Refuses a format that `target` has no use for.
  *
  * @param string format
  * @param string target
- * @param string host_platform: `os.platform`.
  * @raises UsageError
  */
-def check_format(format: string, target: string, host_platform: string) {
+def check_format(format: string, target: string) {
   if format == 'app' and !is_apple(target) {
     raise UsageError('an .app is a macOS application; ${target} is not macOS')
-  }
-
-  # Appending to a signed executable breaks its signature, and only a
-  # Mac can sign it again.
-  if format == 'exe' and is_apple(target) and host_platform != 'macos' {
-    raise UsageError(
-      'a single-file bundle for ${target} has to be signed again once it is built, which '
-        + 'only macOS can do; build it on a Mac, or use the app or archive format'
-    )
   }
 }
 

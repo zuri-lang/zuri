@@ -42,6 +42,19 @@ def parser() {
   return parser
 }
 
+# What git prints for `arguments` run in `root`, or `nil` when it fails.
+def _git_output(root: string, arguments: list) {
+  var child = spawn('git', ['-C', root] + arguments, {
+    stdout: 'pipe', stderr: 'pipe', stdin: 'null',
+  })
+
+  if child.wait() != 0 {
+    return nil
+  }
+
+  return child.read_stdout().to_string()
+}
+
 # The files git reports as changed and not committed, relative to
 # `root`, when `root` is in a work tree.
 def _uncommitted(root: string) {
@@ -49,48 +62,44 @@ def _uncommitted(root: string) {
     return []
   }
 
-  var arguments = ['-C', root, 'status', '--porcelain', '--untracked-files=all', '--', '.']
-  var child = spawn('git', arguments, { stdout: 'pipe', stderr: 'pipe', stdin: 'null' })
+  var listing = _git_output(root, [
+    'status', '--porcelain', '-z', '--untracked-files=all', '--', '.',
+  ])
 
-  var listing = child.read_stdout().to_string()
+  # git names paths from the top of the work tree. Where the project
+  # sits inside it comes from git too, rather than from comparing two
+  # absolute paths that can spell the same directory differently.
+  var prefix = _git_output(root, ['rev-parse', '--show-prefix'])
 
-  if child.wait() != 0 {
+  if listing == nil or prefix == nil {
     return []
   }
 
-  # git names paths from the top of the work tree; this names them
-  # from the project root, like everything else here.
-  var top_child = spawn('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
-    stdout: 'pipe', stderr: 'pipe', stdin: 'null',
-  })
+  prefix = prefix.rtrim('\n').rtrim('\r')
 
-  var top = top_child.read_stdout().to_string().rtrim('\n').rtrim('\r')
-
-  top_child.wait()
-
+  var entries = listing.split('\0')
   var changed = []
 
-  for line in listing.split('\n') {
-    if line.length() < 4 {
+  iter var i = 0; i < entries.length(); i++ {
+    var entry = entries[i]
+
+    if entry.length() < 4 {
       continue
     }
 
-    var path = line[3,]
+    var status = entry[,2]
 
-    # A rename is written `old -> new`; the new name is the one there.
-    var arrow = path.index_of(' -> ')
-
-    if arrow >= 0 {
-      path = path[arrow + 4,]
+    # A rename or copy is followed by the name it came from, which is
+    # not in the tree any more.
+    if status.contains('R') or status.contains('C') {
+      i++
     }
 
-    if path.starts_with('"') and path.ends_with('"') {
-      path = path[1, path.length() - 1]
+    var path = entry[3,]
+
+    if path.starts_with(prefix) {
+      changed.append(path[prefix.length(),])
     }
-
-    var full = os.join_paths(top, path)
-
-    changed.append(os.relative_path(root, full).replace('\\', '/', false))
   }
 
   return changed

@@ -156,9 +156,9 @@ def _git(root: string, arguments: list) {
   var child = spawn('git', ['-C', root] + arguments, {
     stdout: 'pipe', stderr: 'pipe', stdin: 'null',
   })
-  var said = child.read_stdout().to_string()
+  var status = child.wait()
 
-  return [child.wait(), said]
+  return [status, child.read_stdout().to_string()]
 }
 
 /**
@@ -195,10 +195,11 @@ def _git_candidates(root: string) {
     '-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.',
   ], { stdout: 'pipe', stderr: 'pipe', stdin: 'null' })
 
+  var status = child.wait()
   var listing = child.read_stdout().to_string()
   var problem = child.read_stderr().to_string()
 
-  if child.wait() != 0 {
+  if status != 0 {
     raise CommandError('could not list the files git knows under ${root}: ${problem}')
   }
 

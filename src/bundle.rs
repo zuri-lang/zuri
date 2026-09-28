@@ -35,6 +35,10 @@
 //!
 //! The trailer is the payload's SHA-256, its length as a little-endian
 //! `u64`, then the eight bytes `ZURIBND1`.
+//!
+//! A macOS executable has to stay signed, so there the payload sits
+//! inside `__LINKEDIT` with the code signature after it, and the
+//! trailer ends where the signature starts.
 
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -82,10 +86,11 @@ impl Bundle {
 
 /// The bundle this executable belongs to, if it belongs to one.
 ///
-/// A payload appended to the executable wins, then a `bundle.toml`
+/// A payload carried by the executable wins, then a `bundle.toml`
 /// beside it, then one in `../Resources` for a macOS application. A
-/// plain runtime has none of the three and gets `Ok(None)` after one
-/// short read of its own last bytes.
+/// plain runtime has none of the three and gets `Ok(None)` after a
+/// short read of its own last bytes, and on macOS of its load
+/// commands.
 pub fn detect() -> Result<Option<Bundle>, String> {
   let Ok(exe) = std::env::current_exe() else {
     return Ok(None);
@@ -122,26 +127,14 @@ fn unpack_payload(exe: &Path) -> Result<Option<PathBuf>, String> {
     return Ok(None);
   };
 
-  if size < TRAILER_LEN {
+  let Some((end, trailer)) = find_trailer(&mut file, size) else {
     return Ok(None);
-  }
-
-  let mut trailer = [0u8; TRAILER_LEN as usize];
-
-  if file.seek(SeekFrom::Start(size - TRAILER_LEN)).is_err()
-    || file.read_exact(&mut trailer).is_err()
-  {
-    return Ok(None);
-  }
-
-  if &trailer[40..48] != MAGIC {
-    return Ok(None);
-  }
+  };
 
   let digest: [u8; 32] = trailer[0..32].try_into().expect("32 bytes");
   let length = u64::from_le_bytes(trailer[32..40].try_into().expect("8 bytes"));
 
-  if length > size - TRAILER_LEN {
+  if length > end - TRAILER_LEN {
     return Err("the bundle is damaged: its payload is longer than the file".into());
   }
 
@@ -155,7 +148,7 @@ fn unpack_payload(exe: &Path) -> Result<Option<PathBuf>, String> {
   let mut payload = vec![0u8; length as usize];
 
   file
-    .seek(SeekFrom::Start(size - TRAILER_LEN - length))
+    .seek(SeekFrom::Start(end - TRAILER_LEN - length))
     .and_then(|_| file.read_exact(&mut payload))
     .map_err(|e| format!("could not read the bundle's payload: {e}"))?;
 
@@ -173,6 +166,97 @@ fn unpack_payload(exe: &Path) -> Result<Option<PathBuf>, String> {
   install(&stream, &target)?;
 
   Ok(Some(target))
+}
+
+/// The trailer of a single-file bundle, and the offset it ends at: the
+/// end of the file, or on macOS the start of the code signature.
+fn find_trailer(file: &mut fs::File, size: u64) -> Option<(u64, [u8; TRAILER_LEN as usize])> {
+  if let Some(trailer) = trailer_ending_at(file, size) {
+    return Some((size, trailer));
+  }
+
+  #[cfg(target_vendor = "apple")]
+  if let Some(end) = macho::signature_offset(file, size) {
+    return trailer_ending_at(file, end).map(|trailer| (end, trailer));
+  }
+
+  None
+}
+
+/// The trailer that ends at `end`, when there is one.
+fn trailer_ending_at(file: &mut fs::File, end: u64) -> Option<[u8; TRAILER_LEN as usize]> {
+  if end < TRAILER_LEN {
+    return None;
+  }
+
+  let mut trailer = [0u8; TRAILER_LEN as usize];
+
+  file.seek(SeekFrom::Start(end - TRAILER_LEN)).ok()?;
+  file.read_exact(&mut trailer).ok()?;
+
+  (&trailer[40..48] == MAGIC).then_some(trailer)
+}
+
+/// Just enough of the Mach-O format to find an executable's signature.
+#[cfg(target_vendor = "apple")]
+mod macho {
+  use std::fs;
+  use std::io::{Read, Seek, SeekFrom};
+
+  const MH_MAGIC_64: u32 = 0xfeed_facf;
+  const LC_CODE_SIGNATURE: u32 = 0x1d;
+  const HEADER_LEN: u64 = 32;
+
+  /// No linker writes a load command table anywhere near this big, so
+  /// a larger one means the file is not what it claims to be.
+  const MAX_COMMANDS_LEN: u32 = 1 << 20;
+
+  fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
+  }
+
+  /// Where the code signature of the thin 64-bit executable in `file`
+  /// starts, when it has one.
+  pub fn signature_offset(file: &mut fs::File, size: u64) -> Option<u64> {
+    let mut header = [0u8; HEADER_LEN as usize];
+
+    file.seek(SeekFrom::Start(0)).ok()?;
+    file.read_exact(&mut header).ok()?;
+
+    if u32_at(&header, 0)? != MH_MAGIC_64 {
+      return None;
+    }
+
+    let count = u32_at(&header, 16)?;
+    let length = u32_at(&header, 20)?;
+
+    if length > MAX_COMMANDS_LEN || HEADER_LEN + u64::from(length) > size {
+      return None;
+    }
+
+    let mut commands = vec![0u8; length as usize];
+    file.read_exact(&mut commands).ok()?;
+
+    let mut at = 0usize;
+
+    for _ in 0..count {
+      let command = u32_at(&commands, at)?;
+      let command_len = u32_at(&commands, at + 4)? as usize;
+
+      if command_len < 8 {
+        return None;
+      }
+
+      if command == LC_CODE_SIGNATURE {
+        let offset = u64::from(u32_at(&commands, at + 8)?);
+        return (offset <= size).then_some(offset);
+      }
+
+      at += command_len;
+    }
+
+    None
+  }
 }
 
 /// Unpacks `stream` into a private directory beside `target`, then

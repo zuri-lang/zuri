@@ -2,6 +2,14 @@
  * The C library the ffi suites call into. Every function is small and
  * deterministic, so a suite can state exactly what it expects back.
  */
+#ifdef _WIN32
+#define FX_EXPORT __declspec(dllexport)
+#else
+#define FX_EXPORT
+#endif
+
+#define FX_API FX_EXPORT
+
 #include "fixture.h"
 
 #include <errno.h>
@@ -12,10 +20,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#define FX_EXPORT __declspec(dllexport)
 #else
 #include <pthread.h>
-#define FX_EXPORT
 #endif
 
 #define LAYOUT(T) { #T, sizeof(T), _Alignof(T) }

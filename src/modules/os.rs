@@ -562,27 +562,67 @@ fn realpath_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
 
 /// Mirrors POSIX `dirname(3)`: no `/` in `path` (or an empty `path`)
 /// yields `"."`; an all-slash `path` yields `"/"`.
+///
+/// On Windows the drive or UNC share a path starts with stays whole,
+/// so the parent of `C:\` is `C:\` itself, the parent of `C:\work` is
+/// `C:\`, and the parent of `C:work` is `C:`.
 fn dirname_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_count!(ctx, 1);
   enforce_arg_type!(ctx, 0, ArgType::String);
   let path = ctx.args[0].as_str();
+  let (anchor, rest) = path.split_at(windows_anchor_len(path));
+  let separator = std::path::MAIN_SEPARATOR.to_string();
 
-  let result = if path.is_empty() {
-    ".".to_string()
+  let result = if rest.is_empty() {
+    if anchor.is_empty() {
+      ".".to_string()
+    } else {
+      anchor.to_string()
+    }
   } else {
-    let trimmed = path.trim_end_matches(is_sep);
+    let trimmed = rest.trim_end_matches(is_sep);
     if trimmed.is_empty() {
-      // path was made up entirely of separators
-      std::path::MAIN_SEPARATOR.to_string()
+      // Nothing but separators after the anchor: the root itself.
+      format!("{anchor}{separator}")
     } else {
       match trimmed.rfind(is_sep) {
-        Some(0) => std::path::MAIN_SEPARATOR.to_string(),
-        Some(idx) => trimmed[..idx].to_string(),
-        None => ".".to_string(),
+        Some(0) => format!("{anchor}{separator}"),
+        Some(idx) => format!("{anchor}{}", &trimmed[..idx]),
+        None if anchor.is_empty() => ".".to_string(),
+        None => anchor.to_string(),
       }
     }
   };
   Ok(ctx.vm.heap_mut().alloc_string(result))
+}
+
+/// How much of `path` is a Windows drive (`C:`) or UNC share
+/// (`\\server\share`), which no parent of the path climbs above.
+#[cfg(windows)]
+fn windows_anchor_len(path: &str) -> usize {
+  let bytes = path.as_bytes();
+
+  if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+    return 2;
+  }
+
+  if bytes.len() >= 2 && is_sep(bytes[0] as char) && is_sep(bytes[1] as char) {
+    let after_server = path[2..].find(is_sep).map(|at| at + 3);
+
+    return match after_server {
+      Some(share) => path[share..]
+        .find(is_sep)
+        .map_or(path.len(), |at| share + at),
+      None => path.len(),
+    };
+  }
+
+  0
+}
+
+#[cfg(not(windows))]
+fn windows_anchor_len(_path: &str) -> usize {
+  0
 }
 
 /// Mirrors POSIX `basename(3)`: an all-slash `path` yields `"/"`; an

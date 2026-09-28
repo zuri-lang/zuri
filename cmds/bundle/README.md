@@ -33,8 +33,11 @@ checksum, and kept under `ZURI_HOME/runtimes`. `--target all` builds
 for every platform zuri is released for. `--runtime` names an unpacked
 runtime to use in place of a release.
 
-A single-file bundle for macOS has to be signed again once built, so
-it is only made on a Mac.
+A single-file bundle for macOS carries its payload inside the
+executable's image and is signed ad hoc as it is built, on any
+machine, so it runs on Apple silicon as it comes. To distribute it,
+sign it again with a Developer ID; `codesign --force` replaces the ad
+hoc signature.
 
 ## What it checks
 

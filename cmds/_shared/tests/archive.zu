@@ -110,7 +110,11 @@ describe('pack', @{
     extract(archive, out)
 
     expect(fsx.tree_digest(out)).to_equal(fsx.tree_digest(root))
-    expect(file(os.join_paths(out, 'app', 'tool.zu')).stats().mode & 0c111).not.to_be_zero()
+
+    # Windows files carry no execute bits to restore.
+    if os.platform != 'windows' {
+      expect(file(os.join_paths(out, 'app', 'tool.zu')).stats().mode & 0c111).not.to_be_zero()
+    }
   })
 
   it('writes an archive the standard tar reader understands', @{

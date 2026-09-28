@@ -30,6 +30,14 @@ extern "C" {
 #define FX_PLATFORM "linux"
 #endif
 
+/* What the fixture's library exports. fixture.c sets it before it
+   includes this header, since MSVC wants a declaration and its
+   definition to agree; to anyone else reading the header it is
+   nothing. */
+#ifndef FX_API
+#define FX_API
+#endif
+
 #ifdef _MSC_VER
 #define FX_HAS_EXTENDED 0
 #else
@@ -49,8 +57,8 @@ struct fx_offset {
   size_t offset;
 };
 
-extern const struct fx_layout fx_layouts[];
-extern const struct fx_offset fx_offsets[];
+FX_API extern const struct fx_layout fx_layouts[];
+FX_API extern const struct fx_offset fx_offsets[];
 
 /* Records of every shape the calling conventions treat differently. */
 typedef struct { int a; int b; } fx_pair;
@@ -116,128 +124,128 @@ typedef enum { FX_SMALL = -1, FX_LARGE = 100 } fx_size;
 _Static_assert(sizeof(fx_pair) == 8, "fx_pair is two ints");
 
 /* Scalars. */
-int8_t fx_i8(int8_t x);
-uint8_t fx_u8(uint8_t x);
-int16_t fx_i16(int16_t x);
-uint16_t fx_u16(uint16_t x);
-int32_t fx_i32(int32_t x);
-uint32_t fx_u32(uint32_t x);
-int64_t fx_i64(int64_t x);
-uint64_t fx_u64(uint64_t x);
-float fx_f32(float x);
-double fx_f64(double x);
-long double fx_long_double(long double x);
-bool fx_not(bool x);
-char fx_upper(char c);
-wchar_t fx_wide_next(wchar_t c);
-long fx_long(long x);
-size_t fx_double_size(size_t x);
-int fx_many(int a, double b, int c, double d, int e, double f, int g, double h,
-            int i, double j, int k, double l, int m, double n, int o, double p);
+FX_API int8_t fx_i8(int8_t x);
+FX_API uint8_t fx_u8(uint8_t x);
+FX_API int16_t fx_i16(int16_t x);
+FX_API uint16_t fx_u16(uint16_t x);
+FX_API int32_t fx_i32(int32_t x);
+FX_API uint32_t fx_u32(uint32_t x);
+FX_API int64_t fx_i64(int64_t x);
+FX_API uint64_t fx_u64(uint64_t x);
+FX_API float fx_f32(float x);
+FX_API double fx_f64(double x);
+FX_API long double fx_long_double(long double x);
+FX_API bool fx_not(bool x);
+FX_API char fx_upper(char c);
+FX_API wchar_t fx_wide_next(wchar_t c);
+FX_API long fx_long(long x);
+FX_API size_t fx_double_size(size_t x);
+FX_API int fx_many(int a, double b, int c, double d, int e, double f, int g, double h,
+                   int i, double j, int k, double l, int m, double n, int o, double p);
 
 /* Records by value. */
-fx_pair fx_pair_make(int a, int b);
-int fx_pair_sum(fx_pair p);
-fx_small fx_small_make(char c, short s);
-int fx_small_sum(fx_small s);
-fx_three fx_three_make(char a, char b, char c);
-int fx_three_sum(fx_three t);
-fx_vec2 fx_vec2_scale(fx_vec2 v, float k);
-fx_vec3 fx_vec3_scale(fx_vec3 v, float k);
-fx_quad fx_quad_scale(fx_quad q, float k);
-fx_point fx_point_add(fx_point a, fx_point b);
-fx_mixed fx_mixed_make(int i, float f);
-double fx_mixed_sum(fx_mixed m);
-fx_tail fx_tail_make(double d, int i);
-double fx_tail_sum(fx_tail t);
-fx_large fx_large_make(long long base);
-long long fx_large_sum(fx_large l);
-fx_label fx_label_make(const char *text);
-size_t fx_label_length(fx_label l);
-fx_box fx_box_make(double x0, double y0, double x1, double y1);
-double fx_box_area(fx_box b);
-fx_packed fx_packed_make(char c, int i);
-int fx_packed_sum(fx_packed p);
-fx_attr_packed fx_attr_packed_make(char c, int i);
-int fx_attr_packed_sum(fx_attr_packed p);
-fx_overaligned fx_overaligned_make(uint8_t tag, uint32_t value);
-uint32_t fx_overaligned_sum(fx_overaligned o);
-uint64_t fx_pair16_after_int(int n, fx_pair16 p);
-fx_bits fx_bits_make(unsigned ready, unsigned mode, int delta, unsigned count, bool flag);
-long fx_bits_encode(fx_bits b);
-fx_int_or_float fx_union_from_int(int i);
-float fx_union_as_float(fx_int_or_float u);
-fx_wide_union fx_wide_from_double(double d);
-double fx_wide_as_double(fx_wide_union u);
-fx_tagged fx_tagged_real(double r);
-double fx_tagged_value(fx_tagged t);
-int fx_stack_pairs(int a, int b, int c, int d, int e, int f, fx_pair p, fx_pair q);
-double fx_stack_points(double a, double b, double c, double d, double e, double f,
-                       double g, fx_point p, fx_point q);
+FX_API fx_pair fx_pair_make(int a, int b);
+FX_API int fx_pair_sum(fx_pair p);
+FX_API fx_small fx_small_make(char c, short s);
+FX_API int fx_small_sum(fx_small s);
+FX_API fx_three fx_three_make(char a, char b, char c);
+FX_API int fx_three_sum(fx_three t);
+FX_API fx_vec2 fx_vec2_scale(fx_vec2 v, float k);
+FX_API fx_vec3 fx_vec3_scale(fx_vec3 v, float k);
+FX_API fx_quad fx_quad_scale(fx_quad q, float k);
+FX_API fx_point fx_point_add(fx_point a, fx_point b);
+FX_API fx_mixed fx_mixed_make(int i, float f);
+FX_API double fx_mixed_sum(fx_mixed m);
+FX_API fx_tail fx_tail_make(double d, int i);
+FX_API double fx_tail_sum(fx_tail t);
+FX_API fx_large fx_large_make(long long base);
+FX_API long long fx_large_sum(fx_large l);
+FX_API fx_label fx_label_make(const char *text);
+FX_API size_t fx_label_length(fx_label l);
+FX_API fx_box fx_box_make(double x0, double y0, double x1, double y1);
+FX_API double fx_box_area(fx_box b);
+FX_API fx_packed fx_packed_make(char c, int i);
+FX_API int fx_packed_sum(fx_packed p);
+FX_API fx_attr_packed fx_attr_packed_make(char c, int i);
+FX_API int fx_attr_packed_sum(fx_attr_packed p);
+FX_API fx_overaligned fx_overaligned_make(uint8_t tag, uint32_t value);
+FX_API uint32_t fx_overaligned_sum(fx_overaligned o);
+FX_API uint64_t fx_pair16_after_int(int n, fx_pair16 p);
+FX_API fx_bits fx_bits_make(unsigned ready, unsigned mode, int delta, unsigned count, bool flag);
+FX_API long fx_bits_encode(fx_bits b);
+FX_API fx_int_or_float fx_union_from_int(int i);
+FX_API float fx_union_as_float(fx_int_or_float u);
+FX_API fx_wide_union fx_wide_from_double(double d);
+FX_API double fx_wide_as_double(fx_wide_union u);
+FX_API fx_tagged fx_tagged_real(double r);
+FX_API double fx_tagged_value(fx_tagged t);
+FX_API int fx_stack_pairs(int a, int b, int c, int d, int e, int f, fx_pair p, fx_pair q);
+FX_API double fx_stack_points(double a, double b, double c, double d, double e, double f,
+                              double g, fx_point p, fx_point q);
 
 /* Pointers and memory. */
-void fx_fill(int *out, size_t n);
-long fx_sum(const int *values, size_t n);
-void fx_scale_point(fx_point *p, double k);
-double fx_point_length_squared(const fx_point *p);
-const char *fx_greeting(void);
-char *fx_concat(const char *a, const char *b);
-void fx_release(void *p);
-size_t fx_wide_length(const wchar_t *s);
-size_t fx_utf16_length(const char16_t *s);
-size_t fx_bytes_sum(const uint8_t *data, size_t n);
-void fx_bytes_invert(uint8_t *data, size_t n);
-int *fx_nothing(void);
-fx_flexible *fx_flexible_make(uint32_t length);
-void fx_flexible_free(fx_flexible *f);
-const char *fx_strings_join(const char **parts, size_t n);
+FX_API void fx_fill(int *out, size_t n);
+FX_API long fx_sum(const int *values, size_t n);
+FX_API void fx_scale_point(fx_point *p, double k);
+FX_API double fx_point_length_squared(const fx_point *p);
+FX_API const char *fx_greeting(void);
+FX_API char *fx_concat(const char *a, const char *b);
+FX_API void fx_release(void *p);
+FX_API size_t fx_wide_length(const wchar_t *s);
+FX_API size_t fx_utf16_length(const char16_t *s);
+FX_API size_t fx_bytes_sum(const uint8_t *data, size_t n);
+FX_API void fx_bytes_invert(uint8_t *data, size_t n);
+FX_API int *fx_nothing(void);
+FX_API fx_flexible *fx_flexible_make(uint32_t length);
+FX_API void fx_flexible_free(fx_flexible *f);
+FX_API const char *fx_strings_join(const char **parts, size_t n);
 
 /* Enums. */
-enum fx_color fx_next_color(enum fx_color c);
-fx_size fx_flip_size(fx_size s);
+FX_API enum fx_color fx_next_color(enum fx_color c);
+FX_API fx_size fx_flip_size(fx_size s);
 
 /* Callbacks. */
-int fx_apply(int (*f)(int), int x);
-double fx_reduce(const double *values, size_t n, double (*f)(double, double), double start);
-double fx_with_point(double (*f)(fx_point), fx_point p);
-fx_point fx_point_via(fx_point (*f)(double), double x);
-int fx_widened(signed char (*f)(void));
-void fx_set_handler(void (*handler)(int));
-int fx_fire(int value);
-void fx_release_firing(void *p);
-int fx_releases_fired(void);
-int fx_threaded_calls(void (*f)(int), int n);
-void fx_async_start(void (*f)(int), int n);
-void fx_async_join(void);
+FX_API int fx_apply(int (*f)(int), int x);
+FX_API double fx_reduce(const double *values, size_t n, double (*f)(double, double), double start);
+FX_API double fx_with_point(double (*f)(fx_point), fx_point p);
+FX_API fx_point fx_point_via(fx_point (*f)(double), double x);
+FX_API int fx_widened(signed char (*f)(void));
+FX_API void fx_set_handler(void (*handler)(int));
+FX_API int fx_fire(int value);
+FX_API void fx_release_firing(void *p);
+FX_API int fx_releases_fired(void);
+FX_API int fx_threaded_calls(void (*f)(int), int n);
+FX_API void fx_async_start(void (*f)(int), int n);
+FX_API void fx_async_join(void);
 
 /* Function pointers coming back. */
 typedef int (*fx_binary)(int, int);
-int fx_add(int a, int b);
-int fx_mul(int a, int b);
-fx_binary fx_operation(int which);
+FX_API int fx_add(int a, int b);
+FX_API int fx_mul(int a, int b);
+FX_API fx_binary fx_operation(int which);
 
 /* Variadic. */
-int fx_sum_ints(int count, ...);
-double fx_sum_doubles(int count, ...);
-int fx_format(char *buffer, size_t size, const char *format, ...);
+FX_API int fx_sum_ints(int count, ...);
+FX_API double fx_sum_doubles(int count, ...);
+FX_API int fx_format(char *buffer, size_t size, const char *format, ...);
 
 /* errno and friends. */
-int fx_fail_with(int code);
-void fx_set_last_error(unsigned int code);
+FX_API int fx_fail_with(int code);
+FX_API void fx_set_last_error(unsigned int code);
 
 /* Globals. */
-extern int fx_counter;
-extern const char *fx_label_text;
-int fx_bump(void);
+FX_API extern int fx_counter;
+FX_API extern const char *fx_label_text;
+FX_API int fx_bump(void);
 
 #if FX_HAS_EXTENDED
-__int128 fx_i128_add(__int128 a, __int128 b);
-unsigned __int128 fx_u128_mul(unsigned __int128 a, unsigned __int128 b);
-__int128 fx_i128_after_int(int n, __int128 v);
-__int128 fx_i128_late(int a, int b, int c, int d, int e, int f, int g, __int128 v);
-__int128 fx_i128_via(__int128 (*f)(int, __int128), int n, __int128 v);
-double _Complex fx_complex_mul(double _Complex a, double _Complex b);
-float _Complex fx_complex_conj(float _Complex a);
+FX_API __int128 fx_i128_add(__int128 a, __int128 b);
+FX_API unsigned __int128 fx_u128_mul(unsigned __int128 a, unsigned __int128 b);
+FX_API __int128 fx_i128_after_int(int n, __int128 v);
+FX_API __int128 fx_i128_late(int a, int b, int c, int d, int e, int f, int g, __int128 v);
+FX_API __int128 fx_i128_via(__int128 (*f)(int, __int128), int n, __int128 v);
+FX_API double _Complex fx_complex_mul(double _Complex a, double _Complex b);
+FX_API float _Complex fx_complex_conj(float _Complex a);
 #endif
 
 #if defined(__x86_64__) && !defined(_WIN32)

@@ -1,0 +1,398 @@
+/**
+ * Carrying a payload inside a macOS executable.
+ *
+ * A single-file bundle is the runtime with its payload after it. On
+ * macOS that alone is not enough: the kernel runs an Apple silicon
+ * program only when it is signed, and `codesign` refuses anything that
+ * trails past the end of the `__LINKEDIT` segment. So the payload is
+ * made part of the executable instead of being stuck on the end:
+ *
+ * 1. The runtime's own signature is cut off.
+ * 2. The payload goes where the signature was.
+ * 3. `__LINKEDIT`, and the string table that ends it, are stretched to
+ *    cover the payload, so nothing in the file lies outside the image.
+ * 4. The result is signed again, ad hoc, the way `codesign --sign -`
+ *    signs it.
+ *
+ * The runtime then finds its trailer just before the signature rather
+ * than at the end of the file. The layout survives signing again, so a
+ * developer can replace the ad hoc signature with their own identity
+ * before notarising the program.
+ *
+ * Signing happens here rather than through `codesign`, so a macOS
+ * bundle builds the same from any machine.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+import hash
+import struct
+
+import .._shared.errors { CommandError }
+
+var _MH_MAGIC_64 = 0xfeedfacf
+var _FAT_MAGIC = 0xcafebabe
+var _FAT_MAGIC_64 = 0xcafebabf
+var _MH_EXECUTE = 2
+
+var _LC_SYMTAB = 0x2
+var _LC_SEGMENT_64 = 0x19
+var _LC_CODE_SIGNATURE = 0x1d
+
+var _HEADER_SIZE = 32
+var _SECTION_SIZE = 80
+
+# The signature's own magic numbers, from the kernel's cs_blobs.h.
+var _CSMAGIC_EMBEDDED_SIGNATURE = 0xfade0cc0
+var _CSMAGIC_CODEDIRECTORY = 0xfade0c02
+var _CSMAGIC_REQUIREMENTS = 0xfade0c01
+var _CSMAGIC_BLOBWRAPPER = 0xfade0b01
+
+var _CSSLOT_CODEDIRECTORY = 0
+var _CSSLOT_REQUIREMENTS = 2
+var _CSSLOT_SIGNATURESLOT = 0x10000
+
+var _CS_ADHOC = 0x2
+var _CS_EXECSEG_MAIN_BINARY = 0x1
+var _CS_HASHTYPE_SHA256 = 2
+
+# The CodeDirectory version that carries the executable segment, and
+# the size of its fixed part.
+var _CD_VERSION = 0x20400
+var _CD_HEADER_SIZE = 88
+
+var _HASH_SIZE = 32
+var _PAGE_SHIFT = 12
+var _PAGE_SIZE = 4096
+
+# `__LINKEDIT` is mapped in whole pages, and 16 KiB pages suit both
+# Apple silicon and Intel Macs.
+var _SEGMENT_ALIGN = 16384
+
+/**
+ * Whether `data` starts like a Mach-O executable of either kind:
+ * a thin 64-bit one, or a universal one holding several.
+ *
+ * @param bytes data
+ * @returns bool
+ */
+def is_macho(data: bytes) {
+  if data.length() < 4 {
+    return false
+  }
+
+  var little = struct.unpack('V:magic', data).magic
+  var big = struct.unpack('N:magic', data).magic
+
+  return little == _MH_MAGIC_64 or big == _FAT_MAGIC or big == _FAT_MAGIC_64
+}
+
+/**
+ * The runtime `runtime` with `payload` carried inside it, signed ad
+ * hoc under `identifier` when the runtime was signed or has room for a
+ * signature.
+ *
+ * An Intel runtime linked without a signature and without spare room
+ * in its header comes back unsigned, which an Intel Mac runs as it
+ * is. Its `__LINKEDIT` still covers the payload, so `codesign` can
+ * sign it later wherever the linker left room.
+ *
+ * @param bytes runtime: a thin 64-bit Mach-O executable.
+ * @param bytes payload: the payload with its trailer.
+ * @param string identifier: what the signature names the program.
+ * @returns bytes: the whole executable.
+ * @raises CommandError when the runtime is not a thin 64-bit Mach-O
+ *   executable, or its `__LINKEDIT` is not laid out the way a linker
+ *   lays it out.
+ */
+def embed(runtime: bytes, payload: bytes, identifier: string) {
+  var image = _read(runtime)
+  var cut = image.signature != nil ? image.signature.dataoff : runtime.length()
+  var strings_end = image.symtab.stroff + image.symtab.strsize
+
+  # The string table is the last thing a linker puts in __LINKEDIT
+  # before the signature, give or take alignment. Anything else there
+  # would end up inside the payload's span.
+  if strings_end > cut or cut - strings_end >= 16 {
+    raise CommandError(
+      'the runtime has data after its string table, so it cannot carry a payload'
+    )
+  }
+
+  var linkedit_end = image.linkedit.fileoff + image.linkedit.filesize
+
+  if linkedit_end != runtime.length() {
+    raise CommandError(
+      'the runtime has data past its __LINKEDIT segment, so it cannot carry a payload'
+    )
+  }
+
+  # The payload ends on a 16-byte boundary, where a signature starts.
+  var data = runtime[0, cut]
+  var pad = (16 - (cut + payload.length()) % 16) % 16
+
+  data.extend(bytes(pad))
+  data.extend(payload)
+
+  var end = data.length()
+
+  if end >= 4294967296 {
+    raise CommandError('a macOS single-file bundle has to stay under 4 GiB')
+  }
+
+  var signable = image.signature != nil or image.room >= 16
+
+  if !signable {
+    _cover(data, image, end, end)
+
+    return data
+  }
+
+  var identity = identifier.to_bytes() + bytes(1)
+  var signature_size = _signature_size(identity.length(), end)
+
+  if image.signature == nil {
+    _add_signature_command(data, image)
+  }
+
+  struct.pack_into('VV', data, image.signature_at + 8, end, signature_size)
+  _cover(data, image, end + signature_size, end)
+
+  var signature = _sign(data, identity, image.text)
+
+  data.extend(signature)
+  data.extend(bytes(signature_size - signature.length()))
+
+  return data
+}
+
+# The load commands that matter here, and where they sit.
+def _read(data: bytes) {
+  if data.length() < _HEADER_SIZE {
+    raise CommandError('the runtime is too short to be a macOS executable')
+  }
+
+  var big = struct.unpack('N:magic', data).magic
+
+  if big == _FAT_MAGIC or big == _FAT_MAGIC_64 {
+    raise CommandError(
+      'the runtime is a universal binary; a single-file bundle is built from one architecture'
+    )
+  }
+
+  var header = struct.unpack(
+    'V:magic/V:cputype/V:subtype/V:filetype/V:ncmds/V:sizeofcmds',
+    data
+  )
+
+  if header.magic != _MH_MAGIC_64 or header.filetype != _MH_EXECUTE {
+    raise CommandError('the runtime is not a 64-bit macOS executable')
+  }
+
+  var commands_end = _HEADER_SIZE + header.sizeofcmds
+  var image = {
+    ncmds: header.ncmds,
+    commands_end,
+    linkedit: nil,
+    text: nil,
+    symtab: nil,
+    signature: nil,
+    signature_at: nil,
+    first_data: data.length(),
+  }
+
+  var at = _HEADER_SIZE
+
+  iter var i = 0; i < header.ncmds; i++ {
+    if at + 8 > commands_end {
+      raise CommandError('the runtime has a damaged load command table')
+    }
+
+    var command = struct.unpack('V:cmd/V:size', data, at)
+
+    if command.size < 8 or at + command.size > commands_end {
+      raise CommandError('the runtime has a damaged load command table')
+    }
+
+    using command.cmd {
+      when _LC_SEGMENT_64 {
+        _read_segment(data, at, image)
+      }
+      when _LC_SYMTAB {
+        var symtab = struct.unpack('V:stroff/V:strsize', data, at + 16)
+
+        image.symtab = { at, stroff: symtab.stroff, strsize: symtab.strsize }
+      }
+      when _LC_CODE_SIGNATURE {
+        var linked = struct.unpack('V:dataoff/V:datasize', data, at + 8)
+
+        image.signature = { dataoff: linked.dataoff, datasize: linked.datasize }
+        image.signature_at = at
+      }
+    }
+
+    at += command.size
+  }
+
+  if image.linkedit == nil or image.text == nil or image.symtab == nil {
+    raise CommandError('the runtime is missing __TEXT, __LINKEDIT or its symbol table')
+  }
+
+  image.room = image.first_data - commands_end
+
+  return image
+}
+
+# Notes __TEXT, __LINKEDIT, and where the first section's data starts,
+# which is as far as the load commands can grow.
+def _read_segment(data: bytes, at: number, image: dict) {
+  var segment = struct.unpack(
+    'Z16:name/P:vmaddr/P:vmsize/P:fileoff/P:filesize/V:maxprot/V:initprot/V:nsects',
+    data,
+    at + 8
+  )
+
+  var entry = {
+    at,
+    fileoff: segment.fileoff,
+    filesize: segment.filesize,
+    vmsize: segment.vmsize,
+  }
+
+  using segment.name {
+    when '__TEXT' image.text = entry
+    when '__LINKEDIT' image.linkedit = entry
+  }
+
+  var section = at + 72
+
+  iter var i = 0; i < segment.nsects; i++ {
+    var offset = struct.unpack('V:offset', data, section + 48).offset
+
+    if offset > 0 and offset < image.first_data {
+      image.first_data = offset
+    }
+
+    section += _SECTION_SIZE
+  }
+
+  if segment.fileoff > 0 and segment.filesize > 0 and segment.fileoff < image.first_data {
+    image.first_data = segment.fileoff
+  }
+}
+
+# Adds an LC_CODE_SIGNATURE at the end of the load commands, in the
+# header's spare room.
+def _add_signature_command(data: bytes, image: dict) {
+  var at = image.commands_end
+
+  iter var i = at; i < at + 16; i++ {
+    if data[i] != 0 {
+      raise CommandError('the runtime has no free room in its header for a signature')
+    }
+  }
+
+  struct.pack_into('VVVV', data, at, _LC_CODE_SIGNATURE, 16, 0, 0)
+  struct.pack_into('VV', data, 16, image.ncmds + 1, image.commands_end + 16 - _HEADER_SIZE)
+
+  image.signature_at = at
+}
+
+# Stretches __LINKEDIT to end at `end`, and the string table to end at
+# `strings_end`, which is where the payload ends.
+def _cover(data: bytes, image: dict, end: number, strings_end: number) {
+  var filesize = end - image.linkedit.fileoff
+  var vmsize = ((filesize + _SEGMENT_ALIGN - 1) / _SEGMENT_ALIGN).floor() * _SEGMENT_ALIGN
+
+  if vmsize < image.linkedit.vmsize {
+    vmsize = image.linkedit.vmsize
+  }
+
+  struct.pack_into('P', data, image.linkedit.at + 8 + 16 + 8, vmsize)
+  struct.pack_into('P', data, image.linkedit.at + 8 + 16 + 24, filesize)
+  struct.pack_into('V', data, image.symtab.at + 20, strings_end - image.symtab.stroff)
+}
+
+# How many bytes the signature takes for `code_length` bytes of code
+# and an identifier of `identity_length` bytes, rounded up to 16.
+def _signature_size(identity_length: number, code_length: number) {
+  var slots = ((code_length + _PAGE_SIZE - 1) / _PAGE_SIZE).floor()
+  var directory = _CD_HEADER_SIZE + identity_length + (2 + slots) * _HASH_SIZE
+  var total = 12 + 3 * 8 + directory + 12 + 8
+
+  return ((total + 15) / 16).floor() * 16
+}
+
+# The embedded signature for `data`: a CodeDirectory hashing every
+# page, an empty requirement set, and the empty wrapper where a CMS
+# signature goes, which is what `codesign --sign -` writes.
+def _sign(data: bytes, identity: bytes, text: dict) {
+  var end = data.length()
+  var slots = ((end + _PAGE_SIZE - 1) / _PAGE_SIZE).floor()
+  var requirements = struct.pack('NNN', _CSMAGIC_REQUIREMENTS, 12, 0)
+  var hash_offset = _CD_HEADER_SIZE + identity.length() + 2 * _HASH_SIZE
+  var directory_length = hash_offset + slots * _HASH_SIZE
+
+  var directory = struct.pack(
+    'NNNNNNNNNCCCCNNNNJJJJ',
+    _CSMAGIC_CODEDIRECTORY,
+    directory_length,
+    _CD_VERSION,
+    _CS_ADHOC,
+    hash_offset,
+    _CD_HEADER_SIZE,
+    2,
+    slots,
+    end,
+    _HASH_SIZE,
+    _CS_HASHTYPE_SHA256,
+    0,
+    _PAGE_SHIFT,
+    0,
+    0,
+    0,
+    0,
+    0,
+    text.fileoff,
+    text.filesize,
+    _CS_EXECSEG_MAIN_BINARY
+  )
+
+  directory.extend(identity)
+
+  # Special slots run backwards from the code hashes: the requirements
+  # at -2, then Info.plist at -1, which a bare executable has none of.
+  directory.extend(hash.sha256(requirements, true))
+  directory.extend(bytes(_HASH_SIZE))
+
+  iter var page = 0; page < end; page += _PAGE_SIZE {
+    var stop = page + _PAGE_SIZE < end ? page + _PAGE_SIZE : end
+
+    directory.extend(hash.sha256(data[page, stop], true))
+  }
+
+  var wrapper = struct.pack('NN', _CSMAGIC_BLOBWRAPPER, 8)
+  var index_end = 12 + 3 * 8
+  var requirements_at = index_end + directory.length()
+  var wrapper_at = requirements_at + requirements.length()
+  var total = wrapper_at + wrapper.length()
+
+  var blob = struct.pack(
+    'NNNNNNNNN',
+    _CSMAGIC_EMBEDDED_SIGNATURE,
+    total,
+    3,
+    _CSSLOT_CODEDIRECTORY,
+    index_end,
+    _CSSLOT_REQUIREMENTS,
+    requirements_at,
+    _CSSLOT_SIGNATURESLOT,
+    wrapper_at
+  )
+
+  blob.extend(directory)
+  blob.extend(requirements)
+  blob.extend(wrapper)
+
+  return blob
+}

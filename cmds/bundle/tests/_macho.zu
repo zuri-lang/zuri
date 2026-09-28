@@ -1,0 +1,106 @@
+# Stand-ins for a macOS runtime: an executable with just the load
+# commands that carrying a payload touches, and a reader for them.
+
+import struct
+
+var TEXT_SIZE = 4096
+var STRINGS = '\0_main\0__mh_execute_header\0dyld_stub\0'
+
+# A thin 64-bit executable: __TEXT with one section starting at
+# `first_section`, then __LINKEDIT holding a string table and, when
+# `signed`, a stand-in for the linker's signature.
+def executable(signed: bool, first_section: number) {
+  var commands = 152 + 72 + 24 + (signed ? 16 : 0)
+  var strings_at = TEXT_SIZE
+  var strings_end = strings_at + STRINGS.length()
+  var signature_at = ((strings_end + 15) / 16).floor() * 16
+  var end = signed ? signature_at + 64 : strings_end
+
+  var data = bytes(end)
+
+  var count = signed ? 4 : 3
+
+  struct.pack_into('VVVVVVVV', data, 0, 0xfeedfacf, 0x0100000c, 0, 2, count, commands, 0, 0)
+
+  var at = 32
+  var base = 0x100000000
+
+  # __TEXT and its one section.
+  struct.pack_into(
+    'VVa16PPPPVVVV', data, at,
+    0x19, 152, '__TEXT', base, TEXT_SIZE, 0, TEXT_SIZE, 5, 5, 1, 0
+  )
+  struct.pack_into(
+    'a16a16PPVV', data, at + 72,
+    '__text', '__TEXT', base + first_section, 16, first_section, 4
+  )
+  at += 152
+
+  struct.pack_into(
+    'VVa16PPPPVVVV', data, at,
+    0x19, 72, '__LINKEDIT', base + 0x4000, 16384, TEXT_SIZE, end - TEXT_SIZE, 1, 1, 0, 0
+  )
+  at += 72
+
+  struct.pack_into('VVVVVV', data, at, 0x2, 24, strings_at, 0, strings_at, STRINGS.length())
+  at += 24
+
+  if signed {
+    struct.pack_into('VVVV', data, at, 0x1d, 16, signature_at, 64)
+  }
+
+  # Something recognisable in the code, so hashing it means something.
+  iter var i = 0; i < 16; i++ {
+    data[first_section + i] = 0xc3
+  }
+
+  var text = STRINGS.to_bytes()
+
+  iter var i = 0; i < text.length(); i++ {
+    data[strings_at + i] = text[i]
+  }
+
+  if signed {
+    struct.pack_into('NNN', data, signature_at, 0xfade0cc0, 64, 0)
+  }
+
+  return data
+}
+
+# The load commands of `data` by type, the way the loader reads them.
+def commands(data: bytes) {
+  var header = struct.unpack(
+    'V:magic/V:cputype/V:subtype/V:filetype/V:ncmds/V:size',
+    data
+  )
+  var found = { count: header.ncmds }
+  var at = 32
+
+  iter var i = 0; i < header.ncmds; i++ {
+    var command = struct.unpack('V:cmd/V:size', data, at)
+
+    using command.cmd {
+      when 0x19 {
+        var segment = struct.unpack(
+          'Z16:name/P:vmaddr/P:vmsize/P:fileoff/P:filesize',
+          data,
+          at + 8
+        )
+
+        found.set(segment.name, segment)
+      }
+      when 0x2 {
+        var symtab = struct.unpack('V:symoff/V:nsyms/V:stroff/V:strsize', data, at + 8)
+
+        found.set('symtab', symtab)
+      }
+      when 0x1d {
+        found.set('signature', struct.unpack('V:dataoff/V:datasize', data, at + 8))
+      }
+    }
+
+    at += command.size
+  }
+
+  return found
+}

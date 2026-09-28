@@ -165,6 +165,13 @@ fn parse_kb_field(s: &str) -> Option<u64> {
 }
 
 #[cfg(target_os = "macos")]
+unsafe extern "C" {
+  // libc marks its binding deprecated in favour of the mach2 crate, and
+  // this is the only Mach call made here.
+  fn mach_host_self() -> libc::mach_port_t;
+}
+
+#[cfg(target_os = "macos")]
 pub fn memory() -> Result<(u64, u64), String> {
   let total = macos_sysctl_u64(&mut [libc::CTL_HW, libc::HW_MEMSIZE])?;
 
@@ -179,7 +186,7 @@ pub fn memory() -> Result<(u64, u64), String> {
     / std::mem::size_of::<libc::integer_t>()) as libc::mach_msg_type_number_t;
   let ret = unsafe {
     libc::host_statistics64(
-      libc::mach_host_self(),
+      mach_host_self(),
       libc::HOST_VM_INFO64,
       &mut info as *mut _ as libc::host_info64_t,
       &mut count,

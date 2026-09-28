@@ -61,22 +61,20 @@ describe('names', @{
 describe('formats', @{
   it('makes a macOS application only for macOS', @{
     expect(failure(@{
-      plan.check_format('app', HOST, 'linux')
+      plan.check_format('app', HOST)
     })).to_contain('is not macOS')
 
     expect(failure(@{
-      plan.check_format('app', 'aarch64-apple-darwin', 'linux')
+      plan.check_format('app', 'aarch64-apple-darwin')
     })).to_be_nil()
   })
 
-  it('makes a single-file macOS program only on a Mac, where it can be signed', @{
-    expect(failure(@{
-      plan.check_format('exe', 'aarch64-apple-darwin', 'linux')
-    })).not.to_be_nil()
-
-    expect(failure(@{
-      plan.check_format('exe', 'aarch64-apple-darwin', 'macos')
-    })).to_be_nil()
+  it('makes a single file for every platform', @{
+    for target in plan.TARGETS {
+      expect(failure(@{
+        plan.check_format('exe', target)
+      })).to_be_nil()
+    }
   })
 
   it('takes reverse domain identifiers only', @{

@@ -256,9 +256,10 @@ pub fn kill_pid(pid: i64, signal: i32) -> Result<(), String> {
 
   #[cfg(windows)]
   {
-    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Threading::{
-      OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess,
+      OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+      TerminateProcess, WaitForSingleObject,
     };
 
     let action = windows_action(signal)?;
@@ -267,7 +268,7 @@ pub fn kill_pid(pid: i64, signal: i32) -> Result<(), String> {
     // demanded `PROCESS_TERMINATE` would report "no such process" for
     // any process this one is merely not allowed to kill.
     let access = match action {
-      WindowsAction::Probe => PROCESS_QUERY_LIMITED_INFORMATION,
+      WindowsAction::Probe => PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
       WindowsAction::Terminate(_) => PROCESS_TERMINATE,
     };
 
@@ -283,7 +284,12 @@ pub fn kill_pid(pid: i64, signal: i32) -> Result<(), String> {
 
       // Formatted before `CloseHandle`, which would otherwise be the
       // last call to set the thread's error code.
+      // A process that has exited still opens for as long as anything
+      // holds a handle to it, so the probe asks whether it has ended.
       let result = match action {
+        WindowsAction::Probe if WaitForSingleObject(handle, 0) == WAIT_OBJECT_0 => {
+          Err(format!("could not signal process {}: it has exited", pid))
+        },
         WindowsAction::Probe => Ok(()),
         WindowsAction::Terminate(status) if TerminateProcess(handle, status) == 0 => Err(format!(
           "could not terminate process {}: {}",
