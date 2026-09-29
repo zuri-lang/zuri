@@ -1,0 +1,688 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>sql.driver - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="sqldriver"><a class="header" href="#sqldriver"><code>sql.driver</code></a></h1>
+<pre><code class="language-zuri ignore">import sql.driver
+</code></pre>
+<blockquote>
+<p><code>sql</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>sql.driver.*</code> needs <code>import sql.driver</code>.</p>
+</blockquote>
+<p>The contract every database adapter implements, and the capability flags
+that let one adapter differ from another without the code above them
+having to know which is in use.</p>
+<p>An adapter supplies four things: a <code>Driver</code> that knows how to read a
+connection string and open a connection, a <code>DriverConnection</code> that runs
+statements, a <code>DriverStatement</code> for a prepared one, and a <code>DriverCursor</code>
+for reading a result a batch at a time. Everything a program touches
+directly is built on top of these, so an adapter that implements them
+gets pooling, transactions, the CRUD helpers, placeholder translation
+and the error hierarchy without writing any of it.</p>
+<p>The methods here raise <code>NotImplementedError</code>. An adapter that forgets
+one fails where the gap is rather than somewhere further down, and an
+adapter for an engine that genuinely cannot do something raises
+<code>NotSupportedError</code> from its own override instead, which reads
+differently on purpose: the first is an unfinished adapter, the second
+is an honest limit of the engine.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="read_committed"><a class="header" href="#read_committed"><code>READ_COMMITTED</code></a></h3>
+<pre><code class="language-zuri ignore">sql.READ_COMMITTED = 'read committed'
+</code></pre>
+<p>Each transaction sees rows committed before its own statement started,
+and nothing a concurrent transaction commits afterwards within that
+statement.</p>
+<h3 id="repeatable_read"><a class="header" href="#repeatable_read"><code>REPEATABLE_READ</code></a></h3>
+<pre><code class="language-zuri ignore">sql.REPEATABLE_READ = 'repeatable read'
+</code></pre>
+<p>A transaction reads the same rows throughout, whatever anyone else
+commits while it runs.</p>
+<h3 id="serializable"><a class="header" href="#serializable"><code>SERIALIZABLE</code></a></h3>
+<pre><code class="language-zuri ignore">sql.SERIALIZABLE = 'serializable'
+</code></pre>
+<p>Concurrent transactions produce a result some serial order of them could
+also have produced. The engine may abort one to keep that promise, which
+surfaces as <code>SerializationError</code>.</p>
+<h3 id="read_uncommitted"><a class="header" href="#read_uncommitted"><code>READ_UNCOMMITTED</code></a></h3>
+<pre><code class="language-zuri ignore">sql.READ_UNCOMMITTED = 'read uncommitted'
+</code></pre>
+<p>A transaction can see rows another has written and not committed.
+PostgreSQL accepts the name and gives read committed anyway, which its
+own documentation is explicit about.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="default_capabilities"><a class="header" href="#default_capabilities"><code>default_capabilities()</code></a></h3>
+<pre><code class="language-zuri ignore">sql.default_capabilities() -&gt; dict
+</code></pre>
+<p>The capability flags a driver reports, with the value each takes when a
+driver does not say otherwise.</p>
+<p>A driver’s <code>capabilities()</code> starts from this and overrides what differs,
+so a flag added here later does not break an adapter written before it
+existed.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Flag</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>placeholder_style</code></td><td>How the engine spells a parameter.</td></tr>
+<tr><td><code>named_parameters</code></td><td>Whether the engine binds parameters by name.</td></tr>
+<tr><td><code>last_insert_id</code></td><td>Whether the engine reports the id of the row just inserted.</td></tr>
+<tr><td><code>returning</code></td><td>Whether <code>INSERT ... RETURNING</code> works.</td></tr>
+<tr><td><code>transactions</code></td><td>Whether BEGIN, COMMIT and ROLLBACK work.</td></tr>
+<tr><td><code>savepoints</code></td><td>Whether SAVEPOINT works, which is what nested transactions are built on.</td></tr>
+<tr><td><code>transactional_ddl</code></td><td>Whether CREATE, ALTER and DROP stay inside</td></tr>
+<tr><td>a transaction, rather than committing it.</td><td></td></tr>
+<tr><td><code>isolation_levels</code></td><td>The levels the engine will accept.</td></tr>
+<tr><td><code>server_side_cursors</code></td><td>Whether a result can be read without the whole of it arriving first.</td></tr>
+<tr><td><code>prepared_statements</code></td><td>Whether a statement can be compiled once and run repeatedly.</td></tr>
+<tr><td><code>multiple_statements</code></td><td>Whether one call may carry several</td></tr>
+<tr><td>statements separated by semicolons.</td><td></td></tr>
+<tr><td><code>arrays</code></td><td>Whether the engine has an array type.</td></tr>
+<tr><td><code>json</code></td><td>Whether the engine has a JSON type, as opposed to storing JSON in text.</td></tr>
+<tr><td><code>blobs</code></td><td>Whether the engine stores binary values.</td></tr>
+<tr><td><code>decimals</code></td><td>Whether the engine has an exact decimal type.</td></tr>
+<tr><td><code>booleans</code></td><td>Whether the engine has a real boolean type.</td></tr>
+<tr><td><code>upsert</code></td><td>Whether an insert can update the row it collided</td></tr>
+<tr><td>with, however the engine spells it.</td><td></td></tr>
+<tr><td><code>schemas</code></td><td>Whether tables live in named schemas.</td></tr>
+<tr><td><code>concurrent_writers</code></td><td>Whether two connections can write at once.</td></tr>
+<tr><td><code>max_parameters</code></td><td>Most parameters one statement may bind, or nil for no practical limit.</td></tr>
+<tr><td><code>identifier_quote</code></td><td>The character an identifier is quoted with.</td></tr>
+<tr><td><code>default_port</code></td><td>The port used when a connection string omits</td></tr>
+<tr><td>one, or nil for an engine with no port.</td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="driver"><a class="header" href="#driver"><code>Driver</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.Driver
+</code></pre>
+<p>Opens connections to one kind of database.</p>
+<p>A driver holds no connection of its own and no state worth sharing, so
+one instance per engine is registered with <code>sql.register()</code> and reused
+for every connection it opens.</p>
+<h4 id="drivername"><a class="header" href="#drivername"><code>Driver.name()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.name() -&gt; string
+</code></pre>
+<p>The name this driver is registered under, such as <code>'sqlite'</code>.</p>
+<p>Appears on every error the adapter raises, so it wants to be the name a
+reader would recognise.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="driverschemes"><a class="header" href="#driverschemes"><code>Driver.schemes()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.schemes() -&gt; list[string]
+</code></pre>
+<p>The URL schemes this driver claims, without the <code>://</code>.</p>
+<p><code>sql.open()</code> picks a driver by matching a connection string’s scheme
+against these, which is what lets the same call open any of the engines.
+Several are allowed: PostgreSQL answers to both <code>postgres</code> and
+<code>postgresql</code>.</p>
+<p><strong>Returns</strong> <code>list[string]</code></p>
+<h4 id="drivercapabilities"><a class="header" href="#drivercapabilities"><code>Driver.capabilities()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.capabilities() -&gt; dict
+</code></pre>
+<p>What this engine can and cannot do.</p>
+<p>Built from <code>default_capabilities()</code> with the differences applied.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="driverparse_dsn"><a class="header" href="#driverparse_dsn"><code>Driver.parse_dsn()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.parse_dsn(dsn) -&gt; dict
+</code></pre>
+<p>Turns a connection string or an options dictionary into the normalised
+options <code>connect()</code> takes.</p>
+<p>Each adapter reads the forms its own engine’s tooling uses, so a
+connection string copied from somewhere else works unchanged.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>dsn</code> (<code>string|dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="driverconnect"><a class="header" href="#driverconnect"><code>Driver.connect()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.connect(options: dict)
+</code></pre>
+<p>Opens a connection with options from <code>parse_dsn()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — DriverConnection</p>
+<h4 id="driverquote_identifier"><a class="header" href="#driverquote_identifier"><code>Driver.quote_identifier()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.quote_identifier(name: string) -&gt; string
+</code></pre>
+<p>Quotes <code>name</code> so the engine reads it as an identifier whatever it
+contains or collides with.</p>
+<p>The default doubles the engine’s own quote character, which is what the
+SQL standard says and what the built-in adapters do, MySQL included once
+its quote character is taken into account. An engine whose quoting
+differs overrides this.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="driversupports"><a class="header" href="#driversupports"><code>Driver.supports()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.Driver.supports(flag: string) -&gt; bool
+</code></pre>
+<p>Whether this driver supports <code>flag</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>flag</code> (<code>string</code>) — A key of <code>default_capabilities()</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="driverconnection"><a class="header" href="#driverconnection"><code>DriverConnection</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.DriverConnection
+</code></pre>
+<p>One open connection to a database, as the layer above it sees one.</p>
+<p>Adapters implement this; programs use <code>sql.Connection</code>, which wraps it
+and adds everything that is the same across engines.</p>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>driver</code></td><td><code>Driver</code></td><td>The <code>Driver</code> that opened this connection.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="driverconnectionexecute"><a class="header" href="#driverconnectionexecute"><code>DriverConnection.execute()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.execute(sql: string, values: list) -&gt; dict
+</code></pre>
+<p>Runs a statement for its effect and reports what it did.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>sql</code> (<code>string</code>) — Already translated into this engine’s own
+placeholder style.</li>
+<li><code>values</code> (<code>list</code>) — Bound in order.</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — <code>{ rows_affected, last_insert_id }</code>, the second nil
+on an engine that does not report one.</p>
+<h4 id="driverconnectionselect"><a class="header" href="#driverconnectionselect"><code>DriverConnection.select()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.select(sql: string, values: list) -&gt; dict
+</code></pre>
+<p>Runs a statement and reads its whole result.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>sql</code> (<code>string</code>)</li>
+<li><code>values</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — <code>{ columns, rows }</code>, where <code>columns</code> is a list of
+<code>{ name, type }</code> dictionaries and <code>rows</code> a list of value lists in the
+same order.</p>
+<h4 id="driverconnectionopen_cursor"><a class="header" href="#driverconnectionopen_cursor"><code>DriverConnection.open_cursor()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.open_cursor(sql: string, values: list, options: dict)
+</code></pre>
+<p>Runs a statement and returns a cursor over its result rather than
+reading all of it.</p>
+<p>On an engine without server side cursors this still avoids holding every
+row at once only as far as the engine allows; the capability flag says
+which.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>sql</code> (<code>string</code>)</li>
+<li><code>values</code> (<code>list</code>)</li>
+<li><code>options</code> (<code>dict</code>) — <code>{ batch }</code>, the rows to fetch at a time.</li>
+</ul>
+<p><strong>Returns</strong> — DriverCursor</p>
+<h4 id="driverconnectionprepare"><a class="header" href="#driverconnectionprepare"><code>DriverConnection.prepare()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.prepare(sql: string)
+</code></pre>
+<p>Compiles a statement for repeated use.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>sql</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — DriverStatement</p>
+<h4 id="driverconnectionbegin"><a class="header" href="#driverconnectionbegin"><code>DriverConnection.begin()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.begin(isolation)
+</code></pre>
+<p>Opens a transaction.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>isolation</code> (<code>string|nil</code>) — One of the level constants, or nil for
+the engine’s default.</li>
+</ul>
+<h4 id="driverconnectioncommit"><a class="header" href="#driverconnectioncommit"><code>DriverConnection.commit()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.commit()
+</code></pre>
+<p>Commits the open transaction.</p>
+<h4 id="driverconnectionrollback"><a class="header" href="#driverconnectionrollback"><code>DriverConnection.rollback()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.rollback()
+</code></pre>
+<p>Rolls the open transaction back.</p>
+<h4 id="driverconnectionsavepoint"><a class="header" href="#driverconnectionsavepoint"><code>DriverConnection.savepoint()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.savepoint(name: string)
+</code></pre>
+<p>Marks a point inside the open transaction that can be returned to.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="driverconnectionrelease_savepoint"><a class="header" href="#driverconnectionrelease_savepoint"><code>DriverConnection.release_savepoint()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.release_savepoint(name: string)
+</code></pre>
+<p>Discards a savepoint, keeping everything done since it was taken.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="driverconnectionrollback_to"><a class="header" href="#driverconnectionrollback_to"><code>DriverConnection.rollback_to()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.rollback_to(name: string)
+</code></pre>
+<p>Undoes everything done since <code>name</code> was taken, leaving the transaction
+open and the savepoint still in place.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="driverconnectionin_transaction"><a class="header" href="#driverconnectionin_transaction"><code>DriverConnection.in_transaction()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.in_transaction() -&gt; bool
+</code></pre>
+<p>Whether a transaction is currently open on this connection.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="driverconnectionlast_insert_id"><a class="header" href="#driverconnectionlast_insert_id"><code>DriverConnection.last_insert_id()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.last_insert_id() -&gt; number|bigint|nil
+</code></pre>
+<p>The id of the row most recently inserted on this connection.</p>
+<p>Only meaningful where <code>last_insert_id</code> is supported; elsewhere it raises
+<code>NotSupportedError</code>, and <code>Connection.insert()</code> uses <code>RETURNING</code> instead.</p>
+<p><strong>Returns</strong> <code>number|bigint|nil</code></p>
+<h4 id="driverconnectionping"><a class="header" href="#driverconnectionping"><code>DriverConnection.ping()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.ping() -&gt; bool
+</code></pre>
+<p>Checks the connection is still usable, cheaply.</p>
+<p>A pool calls this before handing a connection out, so it wants to be the
+smallest round trip the engine offers.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="driverconnectionserver_version"><a class="header" href="#driverconnectionserver_version"><code>DriverConnection.server_version()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.server_version() -&gt; string
+</code></pre>
+<p>The engine’s version, as the engine reports it.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="driverconnectionschema_adapter"><a class="header" href="#driverconnectionschema_adapter"><code>DriverConnection.schema_adapter()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.schema_adapter()
+</code></pre>
+<p>This engine’s introspection, which <code>Connection.schema</code> goes through.</p>
+<p>The default refuses, so an adapter that has not written the queries says
+so plainly rather than reporting an empty database.</p>
+<p><strong>Returns</strong> — SchemaAdapter</p>
+<p><strong>Raises</strong> <code>NotSupportedError</code> if the adapter has no introspection.</p>
+<h4 id="driverconnectionclose"><a class="header" href="#driverconnectionclose"><code>DriverConnection.close()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.close()
+</code></pre>
+<p>Closes the connection. Calling this more than once does nothing.</p>
+<h4 id="driverconnectionis_closed"><a class="header" href="#driverconnectionis_closed"><code>DriverConnection.is_closed()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverConnection.is_closed() -&gt; bool
+</code></pre>
+<p>Whether this connection has been closed.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="driverstatement"><a class="header" href="#driverstatement"><code>DriverStatement</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.DriverStatement
+</code></pre>
+<p>A statement compiled once and run many times.</p>
+<h4 id="driverstatementexecute"><a class="header" href="#driverstatementexecute"><code>DriverStatement.execute()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.execute(values: list) -&gt; dict
+</code></pre>
+<p>Runs the statement for its effect.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>values</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — <code>{ rows_affected, last_insert_id }</code></p>
+<h4 id="driverstatementselect"><a class="header" href="#driverstatementselect"><code>DriverStatement.select()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.select(values: list) -&gt; dict
+</code></pre>
+<p>Runs the statement and reads its whole result.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>values</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — <code>{ columns, rows }</code></p>
+<h4 id="driverstatementopen_cursor"><a class="header" href="#driverstatementopen_cursor"><code>DriverStatement.open_cursor()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.open_cursor(values: list, options: dict)
+</code></pre>
+<p>Runs the statement and returns a cursor over its result.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>values</code> (<code>list</code>)</li>
+<li><code>options</code> (<code>dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — DriverCursor</p>
+<h4 id="driverstatementcolumns"><a class="header" href="#driverstatementcolumns"><code>DriverStatement.columns()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.columns() -&gt; list[dict]
+</code></pre>
+<p>The columns this statement returns, as <code>{ name, type }</code> dictionaries.</p>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="driverstatementparameter_count"><a class="header" href="#driverstatementparameter_count"><code>DriverStatement.parameter_count()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.parameter_count() -&gt; number
+</code></pre>
+<p>How many parameters this statement binds.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="driverstatementclose"><a class="header" href="#driverstatementclose"><code>DriverStatement.close()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverStatement.close()
+</code></pre>
+<p>Releases the statement. Calling this more than once does nothing.</p>
+<h3 id="drivercursor"><a class="header" href="#drivercursor"><code>DriverCursor</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.DriverCursor
+</code></pre>
+<p>A result being read a batch at a time rather than all at once.</p>
+<h4 id="drivercursorcolumns"><a class="header" href="#drivercursorcolumns"><code>DriverCursor.columns()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverCursor.columns() -&gt; list[dict]
+</code></pre>
+<p>The columns of this result, as <code>{ name, type }</code> dictionaries.</p>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="drivercursornext_row"><a class="header" href="#drivercursornext_row"><code>DriverCursor.next_row()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverCursor.next_row() -&gt; list|nil
+</code></pre>
+<p>The next row as a list of values, or nil once the result is exhausted.</p>
+<p><strong>Returns</strong> <code>list|nil</code></p>
+<h4 id="drivercursorclose"><a class="header" href="#drivercursorclose"><code>DriverCursor.close()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.DriverCursor.close()
+</code></pre>
+<p>Releases the cursor. Calling this more than once does nothing.</p>
+<h3 id="schemaadapter"><a class="header" href="#schemaadapter"><code>SchemaAdapter</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.SchemaAdapter
+</code></pre>
+<p>The introspection queries for one engine.</p>
+<p>Every method returns the same shape whichever engine answered, which is
+the whole point of routing introspection through here rather than
+letting each program write its own <code>information_schema</code> query.</p>
+<h4 id="schemaadaptertables"><a class="header" href="#schemaadaptertables"><code>SchemaAdapter.tables()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.tables(schema) -&gt; list[string]
+</code></pre>
+<p>The names of the tables the application created, leaving out the ones
+the engine keeps for itself.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[string]</code></p>
+<h4 id="schemaadapterviews"><a class="header" href="#schemaadapterviews"><code>SchemaAdapter.views()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.views(schema) -&gt; list[string]
+</code></pre>
+<p>The names of the views.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[string]</code></p>
+<h4 id="schemaadaptercolumns"><a class="header" href="#schemaadaptercolumns"><code>SchemaAdapter.columns()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.columns(table, schema) -&gt; list[dict]
+</code></pre>
+<p>The columns of <code>table</code>, in order, each shaped as <code>schema.column_shape()</code>
+describes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>string</code>)</li>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="schemaadapterprimary_key_columns"><a class="header" href="#schemaadapterprimary_key_columns"><code>SchemaAdapter.primary_key_columns()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.primary_key_columns(table, schema) -&gt; list[string]
+</code></pre>
+<p>The columns making up <code>table</code>’s primary key, in key order, or an empty
+list for a table with none.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>string</code>)</li>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[string]</code></p>
+<h4 id="schemaadapterindexes"><a class="header" href="#schemaadapterindexes"><code>SchemaAdapter.indexes()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.indexes(table, schema) -&gt; list[dict]
+</code></pre>
+<p>The indexes on <code>table</code>, each <code>{ name, columns, unique }</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>string</code>)</li>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="schemaadapterforeign_keys"><a class="header" href="#schemaadapterforeign_keys"><code>SchemaAdapter.foreign_keys()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.SchemaAdapter.foreign_keys(table, schema) -&gt; list[dict]
+</code></pre>
+<p>The foreign keys on <code>table</code>, each <code>{ columns, references_table, references_columns, on_delete, on_update }</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>string</code>)</li>
+<li><code>schema</code> (<code>string|nil</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="sql-decimal.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="sql-errors.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="sql-decimal.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="sql-errors.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

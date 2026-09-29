@@ -1,0 +1,1265 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>imagine.image - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="imagineimage"><a class="header" href="#imagineimage"><code>imagine.image</code></a></h1>
+<pre><code class="language-zuri ignore">import imagine.image
+</code></pre>
+<blockquote>
+<p><code>imagine</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>imagine.image.*</code> needs <code>import imagine.image</code>.</p>
+</blockquote>
+<p><code>Image</code>: a raster image as an RGBA pixel buffer, and everything that
+transforms one.</p>
+<p>Resizing, cropping, rotation, compositing, colour adjustment and the
+named filters are all methods here. Every one produces a new image
+rather than altering the receiver, except where a method says otherwise.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="image"><a class="header" href="#image"><code>Image</code></a></h3>
+<pre><code class="language-zuri ignore">class imagine.Image &lt; Canvas
+</code></pre>
+<p>A raster image: a rectangle of 8-bit RGBA pixels, everything that draws
+onto one, and everything that reshapes, filters or writes one out.</p>
+<pre><code class="language-zuri ignore">import imagine { Image, Color, LANCZOS }
+
+Image.open('photo.jpg')
+  .thumbnail(400, 400, LANCZOS)
+  .save('thumb.webp')
+</code></pre>
+<h5 id="which-operations-copy-and-which-do-not"><a class="header" href="#which-operations-copy-and-which-do-not">Which operations copy and which do not</a></h5>
+<p>There is one rule, and it is worth learning because it is the only thing
+here that is not obvious:</p>
+<ul>
+<li><strong>Anything that changes the image’s size returns a new <code>Image</code>.</strong>
+<code>resize()</code>, <code>crop()</code>, <code>rotate()</code>, <code>flip()</code>, <code>pad()</code> and the rest
+leave the original untouched.</li>
+<li><strong>Everything else changes the image in place and returns it.</strong>
+Drawing, filters and compositing all work on the image you called
+them on, and return it so calls can be chained.</li>
+</ul>
+<p>That means a chain mixing the two kinds still reads correctly, and
+<code>clone()</code> is there for the times you want to keep the original before a
+filter.</p>
+<pre><code class="language-zuri ignore">var original = Image.open('photo.jpg')
+var small = original.thumbnail(200, 200)   # original untouched
+
+small.grayscale()                          # small is now grey
+</code></pre>
+<h5 id="memory"><a class="header" href="#memory">Memory</a></h5>
+<p>An image costs four bytes per pixel, so a 6000x4000 photograph is 96 MB
+in memory however small its file was. Reach for
+[[imagine.formats.probe]] before opening anything whose size you do not
+control.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">imagine.Image(width: number, height: number, fill)
+</code></pre>
+<p>Creates a new image.</p>
+<p>The image starts fully transparent unless a fill colour is given.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — At least 1.</li>
+<li><code>height</code> (<code>number</code>) — At least 1.</li>
+<li><code>?Color|string|number</code> — fill: A colour to fill with - Default:
+transparent.</li>
+</ul>
+<p><strong>Raises</strong> <code>BoundsError</code> When either dimension is below 1.</p>
+<h4 id="imageopen"><a class="header" href="#imageopen"><code>Image.open()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.open(source, options)
+</code></pre>
+<p>Opens an image file.</p>
+<p>The format is detected from the file’s contents, not its name, so a
+mislabelled file still opens correctly.</p>
+<p>JPEGs carrying an EXIF orientation tag are rotated upright, since that
+is what the photograph was meant to look like and almost never what the
+raw pixels are. Pass <code>{ orient: false }</code> to get the pixels exactly as
+stored.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string|file</code>) — A path, or an already-open file.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>orient</code> (bool, default true), <code>format</code>
+(string).</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<p><strong>Raises</strong> <code>DecodeError</code> When the file is not a readable image.</p>
+<h4 id="imagedecode"><a class="header" href="#imagedecode"><code>Image.decode()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.decode(data: bytes, options)
+</code></pre>
+<p>Decodes image data held in memory.</p>
+<p>The format is detected from the data unless <code>format</code> says otherwise, in
+which case a file that is not really that format fails loudly rather
+than being decoded as whatever it actually is.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — <code>orient</code> (bool, default true), <code>format</code>
+(string).</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<p><strong>Raises</strong> <code>DecodeError</code> When the data is not a readable image.</p>
+<h4 id="imagefrom_pixels"><a class="header" href="#imagefrom_pixels"><code>Image.from_pixels()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.from_pixels(width, height, pixels, format)
+</code></pre>
+<p>Wraps an existing RGBA pixel buffer as an image.</p>
+<p>The buffer is adopted, not copied, so whatever produced it must not keep
+writing to it. Pixels run red, green, blue, alpha with straight (not
+premultiplied) alpha and no row padding.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>pixels</code> (<code>bytes</code>) — Exactly <code>width * height * 4</code> bytes.</li>
+<li><code>format</code> (<code>?string</code>) — The format these pixels were decoded from,
+recorded as metadata - Default: nil.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagesize"><a class="header" href="#imagesize"><code>Image.size()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.size() -&gt; dict
+</code></pre>
+<p>The image’s dimensions as <code>{width, height}</code>.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="imageformat"><a class="header" href="#imageformat"><code>Image.format()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.format() -&gt; ?string
+</code></pre>
+<p>The format this image was decoded from, or <code>nil</code> for one created in
+memory.</p>
+<p>This records where the image came from and never constrains where it can
+go; a PNG can always be saved as a JPEG.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="imageset_format"><a class="header" href="#imageset_format"><code>Image.set_format()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.set_format(format)
+</code></pre>
+<p>Records which format this image should be considered to have come from.</p>
+<p>The only thing this changes is what <code>encode()</code> and <code>save()</code> write when
+no format is given. It is set for you when an image is decoded; setting
+it by hand is for pixels that arrived some other way and whose origin
+you happen to know.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>format</code> (<code>?string</code>) — A format name, or nil to clear it.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagebounds"><a class="header" href="#imagebounds"><code>Image.bounds()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.bounds() -&gt; dict
+</code></pre>
+<p>The rectangle covering the whole image, as <code>{x, y, width, height}</code>.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="imageis_opaque"><a class="header" href="#imageis_opaque"><code>Image.is_opaque()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.is_opaque() -&gt; bool
+</code></pre>
+<p><code>true</code> when every pixel is fully opaque.</p>
+<p>This walks the alpha channel, so it costs a pass over the image. Worth
+knowing before choosing an output format: an opaque image loses nothing
+as a JPEG.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="imageinfo"><a class="header" href="#imageinfo"><code>Image.info()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.info() -&gt; dict
+</code></pre>
+<p>A summary of the image as a dictionary holding <code>width</code>, <code>height</code>,
+<code>format</code>, <code>pixels</code> (the count, not the buffer) and <code>opaque</code>.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="imageclone"><a class="header" href="#imageclone"><code>Image.clone()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.clone()
+</code></pre>
+<p>An independent copy of the image, sharing nothing with it.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagelayer"><a class="header" href="#imagelayer"><code>Image.layer()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.layer(fill)
+</code></pre>
+<p>A new image of the same size, fully transparent.</p>
+<p>The usual way to build up a composite: draw onto the layer, then bring
+it back with <code>draw_image()</code> under whichever blend mode and opacity the
+effect calls for.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?Color|string|number</code> — fill: A colour to fill with - Default:
+transparent.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imageresize"><a class="header" href="#imageresize"><code>Image.resize()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.resize(width, height, filter)
+</code></pre>
+<p>Returns the image resampled to an exact size.</p>
+<p>The aspect ratio is not preserved; the result is exactly the size asked
+for. Use <code>thumbnail()</code> or <code>cover()</code> when the proportions matter.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>) — At least 1.</li>
+<li><code>height</code> (<code>number</code>) — At least 1.</li>
+<li><code>filter</code> (<code>?string</code>) — A resampling filter - Default: <code>LANCZOS</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<p><strong>Raises</strong> <code>BoundsError</code> When either dimension is below 1.</p>
+<h4 id="imagescale"><a class="header" href="#imagescale"><code>Image.scale()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.scale(factor: number, filter)
+</code></pre>
+<p>Returns the image resampled by a factor, keeping its proportions.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>factor</code> (<code>number</code>) — Greater than zero. 0.5 halves each side.</li>
+<li><code>filter</code> (<code>?string</code>) — A resampling filter - Default: <code>LANCZOS</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagethumbnail"><a class="header" href="#imagethumbnail"><code>Image.thumbnail()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.thumbnail(max_width, max_height, filter)
+</code></pre>
+<p>Returns the image shrunk to fit inside a box, keeping its proportions.</p>
+<p>The result is no larger than the box in either direction, and usually
+smaller in one. An image that already fits is returned at its original
+size rather than enlarged, which is what makes this the right call for
+thumbnails: enlarging a small image to fill a thumbnail box only makes
+it blurry.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>max_width</code> (<code>number</code>)</li>
+<li><code>max_height</code> (<code>number</code>)</li>
+<li><code>filter</code> (<code>?string</code>) — A resampling filter - Default: <code>LANCZOS</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagefit"><a class="header" href="#imagefit"><code>Image.fit()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.fit(width, height, filter)
+</code></pre>
+<p>Returns the image scaled to fit inside a box, keeping its proportions,
+enlarging it if it is smaller than the box.</p>
+<p>The difference from <code>thumbnail()</code> is exactly that: this one will scale
+up.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>filter</code> (<code>?string</code>) — A resampling filter - Default: <code>LANCZOS</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagecover"><a class="header" href="#imagecover"><code>Image.cover()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.cover(width, height, options)
+</code></pre>
+<p>Returns the image filling a box exactly, keeping its proportions by
+cropping whatever overflows.</p>
+<p>This is what a CSS <code>background-size: cover</code> does, and what almost every
+avatar or card thumbnail wants: the box is filled edge to edge with no
+distortion and no letterboxing, at the cost of losing some of the image.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — <code>anchor</code> (where the kept part comes from,
+default <code>CENTER</code>), <code>filter</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagecontain"><a class="header" href="#imagecontain"><code>Image.contain()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.contain(width, height, options)
+</code></pre>
+<p>Returns the image fitted inside a box exactly, keeping its proportions
+by padding whatever is left over.</p>
+<p>The counterpart to <code>cover()</code>: nothing is lost, but the result has bars
+on two sides.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — <code>background</code> (the padding colour, default
+transparent), <code>anchor</code> (default <code>CENTER</code>), <code>filter</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagecrop"><a class="header" href="#imagecrop"><code>Image.crop()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.crop(x, y, width, height)
+</code></pre>
+<p>Returns a rectangular region of the image.</p>
+<p>The rectangle must lie entirely inside the image. Clamping a crop that
+runs off the edge would hand back different dimensions than were asked
+for, which is a worse surprise than an error; use <code>pad()</code> first if the
+region really is meant to extend past the edge.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<p><strong>Raises</strong> <code>BoundsError</code> When the rectangle does not fit inside the
+image.</p>
+<h4 id="imagetrim"><a class="header" href="#imagetrim"><code>Image.trim()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.trim(options)
+</code></pre>
+<p>Returns the image with a uniform border trimmed away.</p>
+<p>The border colour is taken from the top-left pixel unless <code>background</code>
+names one. <code>tolerance</code> is how far a pixel may differ from it and still
+count as border, measured as the largest difference across the four
+channels.</p>
+<p>An image that is entirely border is returned as a 1x1 image rather than
+an empty one, since an image with no pixels is not a thing this module
+can represent.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>) — <code>background</code>, <code>tolerance</code> (default 0).</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagepad"><a class="header" href="#imagepad"><code>Image.pad()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.pad(top, right, bottom, left, background)
+</code></pre>
+<p>Returns the image with a border added on each side.</p>
+<p>Negative amounts are not accepted; use <code>crop()</code> to remove edges.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>top</code> (<code>number</code>)</li>
+<li><code>right</code> (<code>?number</code>) — Default: the same as <em>top</em>.</li>
+<li><code>bottom</code> (<code>?number</code>) — Default: the same as <em>top</em>.</li>
+<li><code>left</code> (<code>?number</code>) — Default: the same as <em>right</em>.</li>
+<li><code>?Color|string|number</code> — background: - Default: transparent.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagerotate"><a class="header" href="#imagerotate"><code>Image.rotate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.rotate(degrees: number, background)
+</code></pre>
+<p>Returns the image rotated by an angle in degrees, clockwise.</p>
+<p>Quarter turns are exact and lossless. Any other angle resamples the
+pixels and grows the canvas to hold the rotated corners, filling the
+gaps with <code>background</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>degrees</code> (<code>number</code>)</li>
+<li><code>?Color|string|number</code> — background: The colour behind the corners -
+Default: transparent.</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagerotate_90"><a class="header" href="#imagerotate_90"><code>Image.rotate_90()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.rotate_90()
+</code></pre>
+<p>Returns the image turned a quarter turn clockwise. Lossless.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagerotate_180"><a class="header" href="#imagerotate_180"><code>Image.rotate_180()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.rotate_180()
+</code></pre>
+<p>Returns the image turned upside down. Lossless.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagerotate_270"><a class="header" href="#imagerotate_270"><code>Image.rotate_270()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.rotate_270()
+</code></pre>
+<p>Returns the image turned a quarter turn anticlockwise. Lossless.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imageflip"><a class="header" href="#imageflip"><code>Image.flip()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.flip(mode)
+</code></pre>
+<p>Returns the image mirrored.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mode</code> (<code>?number</code>) — <code>FLIP_HORIZONTAL</code>, <code>FLIP_VERTICAL</code> or <code>FLIP_BOTH</code>
+<ul>
+<li>Default: <code>FLIP_HORIZONTAL</code>.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imageflip_horizontal"><a class="header" href="#imageflip_horizontal"><code>Image.flip_horizontal()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.flip_horizontal()
+</code></pre>
+<p>Returns the image mirrored left to right.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imageflip_vertical"><a class="header" href="#imageflip_vertical"><code>Image.flip_vertical()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.flip_vertical()
+</code></pre>
+<p>Returns the image mirrored top to bottom.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imagetranspose"><a class="header" href="#imagetranspose"><code>Image.transpose()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.transpose()
+</code></pre>
+<p>Returns the image reflected across its main diagonal, so a <code>w x h</code> image
+becomes <code>h x w</code>.</p>
+<p><strong>Returns</strong> — Image</p>
+<h4 id="imageapply_lut"><a class="header" href="#imageapply_lut"><code>Image.apply_lut()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.apply_lut(red, green, blue, alpha)
+</code></pre>
+<p>Rewrites every pixel through up to four 256-entry lookup tables, one per
+channel.</p>
+<p>This is the primitive behind most of the adjustments below, and it is
+the fastest way to apply any per-channel tone curve: the table is built
+once whatever the image’s size, and applying it is a single indexed load
+per channel.</p>
+<p>A <code>nil</code> table leaves that channel alone. Tables are built with the
+helpers in [[imagine.filters]], or with [[imagine.filters.build_lut]]
+for a curve of your own.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>red</code> (<code>?bytes</code>) — A 256-entry table, or nil.</li>
+<li><code>green</code> (<code>?bytes</code>)</li>
+<li><code>blue</code> (<code>?bytes</code>)</li>
+<li><code>alpha</code> (<code>?bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageapply_matrix"><a class="header" href="#imageapply_matrix"><code>Image.apply_matrix()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.apply_matrix(matrix)
+</code></pre>
+<p>Rewrites every pixel through a 4x5 colour matrix.</p>
+<p>The matrix is a flat list of 20 numbers, laid out row by row, and is the
+same shape SVG and CSS filters use. The last entry of each row is a
+constant added afterwards, in 0-255 units.</p>
+<pre><code class="language-text">r' = m0*r  + m1*g  + m2*b  + m3*a  + m4
+g' = m5*r  + m6*g  + m7*b  + m8*a  + m9
+b' = m10*r + m11*g + m12*b + m13*a + m14
+a' = m15*r + m16*g + m17*b + m18*a + m19
+</code></pre>
+<p>Applying several matrices in a row is both slower and less accurate than
+combining them with [[imagine.filters.combine_matrices]] and applying
+the result once.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>matrix</code> (<code>list</code>) — 20 numbers.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagebrightness"><a class="header" href="#imagebrightness"><code>Image.brightness()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.brightness(delta)
+</code></pre>
+<p>Adds a fixed amount to every colour channel.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>delta</code> (<code>number</code>) — -255 to 255. Positive brightens.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagecontrast"><a class="header" href="#imagecontrast"><code>Image.contrast()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.contrast(amount)
+</code></pre>
+<p>Pushes colours away from or toward mid-grey.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — -100 (flat grey) through 0 (unchanged) to 100
+(hard black and white).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagegamma"><a class="header" href="#imagegamma"><code>Image.gamma()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.gamma(gamma)
+</code></pre>
+<p>Applies a gamma curve, moving the midtones without touching black or
+white.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>gamma</code> (<code>number</code>) — Greater than zero. Below 1 darkens, above 1
+lightens.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagelevels"><a class="header" href="#imagelevels"><code>Image.levels()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.levels(black, white, gamma)
+</code></pre>
+<p>Stretches a range of input values across the full scale.</p>
+<p>The single most useful correction for a flat or washed-out photograph:
+everything at or below <code>black</code> becomes black, everything at or above
+<code>white</code> becomes white, and the rest is spread between them.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>black</code> (<code>number</code>) — The input value that becomes black, 0-255.</li>
+<li><code>white</code> (<code>number</code>) — The input value that becomes white, 0-255.</li>
+<li><code>gamma</code> (<code>?number</code>) — A midtone curve to apply along the way -
+Default: 1.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageinvert"><a class="header" href="#imageinvert"><code>Image.invert()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.invert()
+</code></pre>
+<p>Inverts the colour channels, producing a photographic negative.</p>
+<p>Alpha is untouched, so a transparent image stays transparent rather than
+becoming opaque.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagethreshold"><a class="header" href="#imagethreshold"><code>Image.threshold()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.threshold(level)
+</code></pre>
+<p>Forces every pixel to black or white by comparing its brightness against
+a threshold.</p>
+<p>The image is converted to grey first, so the split is made on perceived
+brightness rather than on each channel separately.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>level</code> (<code>?number</code>) — The cut, 0-255 - Default: 128.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageposterize"><a class="header" href="#imageposterize"><code>Image.posterize()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.posterize(levels)
+</code></pre>
+<p>Reduces each channel to a fixed number of evenly spaced steps.</p>
+<p>This flattens gradients into visible bands. For a reduction that picks
+the colours to keep rather than spacing them evenly, use <code>quantize()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>levels</code> (<code>number</code>) — 2 or more.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageopacity"><a class="header" href="#imageopacity"><code>Image.opacity()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.opacity(factor)
+</code></pre>
+<p>Scales the alpha channel, making the whole image more transparent.</p>
+<p>The scaling is relative: applying 0.5 twice leaves a quarter of the
+original opacity, not half.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>factor</code> (<code>number</code>) — 0 (invisible) to 1 (unchanged).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagegrayscale"><a class="header" href="#imagegrayscale"><code>Image.grayscale()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.grayscale()
+</code></pre>
+<p>Converts the image to shades of grey.</p>
+<p>Channels are weighted for perceived brightness, so a bright yellow comes
+out light and a deep blue comes out dark, which is what the eye expects.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagesepia"><a class="header" href="#imagesepia"><code>Image.sepia()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.sepia()
+</code></pre>
+<p>Gives the image the warm brown cast of an old photograph.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagesaturate"><a class="header" href="#imagesaturate"><code>Image.saturate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.saturate(amount)
+</code></pre>
+<p>Scales the image’s saturation.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>amount</code> (<code>number</code>) — 0 removes all colour, 1 leaves it alone, above 1
+intensifies.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagehue_rotate"><a class="header" href="#imagehue_rotate"><code>Image.hue_rotate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.hue_rotate(degrees)
+</code></pre>
+<p>Rotates every hue around the colour wheel, leaving brightness and
+saturation alone.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>degrees</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageduotone"><a class="header" href="#imageduotone"><code>Image.duotone()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.duotone(shadow, highlight)
+</code></pre>
+<p>Maps the image’s brightness onto a two-colour ramp.</p>
+<p>Dark pixels take <code>shadow</code>, light ones take <code>highlight</code>, and everything
+between is interpolated.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number</code> — shadow</li>
+<li><code>Color|string|number</code> — highlight</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagetint"><a class="header" href="#imagetint"><code>Image.tint()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.tint(color, amount)
+</code></pre>
+<p>Blends a flat colour into the image.</p>
+<p>At an amount of 1 the image becomes that colour entirely; at 0.2 it
+takes on a wash of it. Alpha is untouched, so transparent areas stay
+transparent.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number</code> — color</li>
+<li><code>amount</code> (<code>?number</code>) — 0 to 1 - Default: 0.5.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagecolorize"><a class="header" href="#imagecolorize"><code>Image.colorize()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.colorize(color)
+</code></pre>
+<p>Converts to grey and then tints, producing a monochrome image in a
+single colour.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Color|string|number</code> — color</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagequantize"><a class="header" href="#imagequantize"><code>Image.quantize()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.quantize(colors, dither)
+</code></pre>
+<p>Reduces the image to at most a given number of colours.</p>
+<p>Unlike <code>posterize()</code>, the colours kept are chosen to suit the image
+rather than spaced evenly, so a photograph survives far fewer of them.
+Dithering trades visible banding for a fine stipple, which almost always
+looks better at low colour counts.</p>
+<p>This is also a preview of what GIF export will do, since GIF cannot hold
+more than 256 colours per frame.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>colors</code> (<code>?number</code>) — 2 to 256 - Default: 256.</li>
+<li><code>dither</code> (<code>?bool</code>) — Default: false.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagepremultiply"><a class="header" href="#imagepremultiply"><code>Image.premultiply()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.premultiply()
+</code></pre>
+<p>Multiplies the colour channels by alpha.</p>
+<p><code>imagine</code> keeps straight alpha everywhere, so this is for handing pixels
+to something that expects them premultiplied. It loses precision in
+near-transparent pixels and cannot be perfectly undone.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageunpremultiply"><a class="header" href="#imageunpremultiply"><code>Image.unpremultiply()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.unpremultiply()
+</code></pre>
+<p>Undoes <code>premultiply()</code>, as far as 8 bits allow.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageconvolve"><a class="header" href="#imageconvolve"><code>Image.convolve()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.convolve(kernel, options)
+</code></pre>
+<p>Applies a convolution kernel to the image.</p>
+<p>The kernel is a flat list of <code>size * size</code> numbers with an odd <code>size</code>.
+The default divisor of 0 means “divide by the kernel’s own sum”, which
+is what nearly every published kernel expects; pass an explicit divisor
+for the ones whose weights sum to zero.</p>
+<p>Alpha goes through the kernel along with the colour channels unless
+<code>keep_alpha</code> says otherwise, so blurring a shape softens its edge rather
+than leaving a hard cutout. Turn that off for any kernel whose weights
+do not sum to one: a Laplacian over a uniformly opaque image sums to
+zero, and would make the whole result invisible.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>kernel</code> (<code>list</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — <code>divisor</code> (default 0), <code>offset</code> (default 0),
+<code>edge</code> (default <code>EDGE_CLAMP</code>), <code>keep_alpha</code> (default false).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageblur"><a class="header" href="#imageblur"><code>Image.blur()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.blur(radius)
+</code></pre>
+<p>Blurs the image with a true Gaussian.</p>
+<p>The radius is the blur’s standard deviation in pixels: about two thirds
+of each pixel’s contribution falls within that distance, and the visible
+spread is roughly three times it. Cost grows with the radius but only
+linearly, because the blur is separable.</p>
+<p>Alpha is premultiplied for the duration, so blurring a shape on a
+transparent background does not drag a dark halo into its edge.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>radius</code> (<code>?number</code>) — Greater than zero - Default: 2.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagesharpen"><a class="header" href="#imagesharpen"><code>Image.sharpen()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.sharpen(strength)
+</code></pre>
+<p>Sharpens the image.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>strength</code> (<code>?number</code>) — 1 is moderate; much above 3 starts producing
+halos - Default: 1.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagesmooth"><a class="header" href="#imagesmooth"><code>Image.smooth()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.smooth(weight)
+</code></pre>
+<p>Softens the image with a weighted 3x3 average.</p>
+<p>Cheaper and harsher than <code>blur()</code>, and fixed at one pixel of reach.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>weight</code> (<code>?number</code>) — How much of the original to keep - Default: 8.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageemboss"><a class="header" href="#imageemboss"><code>Image.emboss()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.emboss()
+</code></pre>
+<p>Turns the image into a grey relief, as if stamped into metal.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageedges"><a class="header" href="#imageedges"><code>Image.edges()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.edges()
+</code></pre>
+<p>Leaves only the image’s edges, everything flat going black.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagemean_removal"><a class="header" href="#imagemean_removal"><code>Image.mean_removal()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.mean_removal()
+</code></pre>
+<p>Exaggerates local detail by removing the local mean.</p>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagepixelate"><a class="header" href="#imagepixelate"><code>Image.pixelate()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.pixelate(size)
+</code></pre>
+<p>Replaces each block of pixels with its average, producing the familiar
+censoring mosaic.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>size</code> (<code>?number</code>) — The block’s side in pixels - Default: 8.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagedraw_image"><a class="header" href="#imagedraw_image"><code>Image.draw_image()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.draw_image(source: instance, x, y, options)
+</code></pre>
+<p>Draws another image onto this one.</p>
+<p>The source is clipped to this image’s edges, and its position may be
+negative, so a sprite hanging off the top-left corner draws correctly.</p>
+<pre><code class="language-zuri ignore">var badge = Image.open('badge.png')
+
+photo.draw_image(badge, 12, 12, { opacity: 0.8 })
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Image</code> — source</li>
+<li><code>x</code> (<code>?number</code>) — Default: 0.</li>
+<li><code>y</code> (<code>?number</code>) — Default: 0.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>opacity</code> (0-1, default 1), <code>blend</code> (default
+<code>BLEND_NORMAL</code>).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageplace"><a class="header" href="#imageplace"><code>Image.place()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.place(source: instance, anchor, options)
+</code></pre>
+<p>Draws another image onto this one, positioned by anchor rather than by
+coordinates.</p>
+<pre><code class="language-zuri ignore">photo.place(watermark, BOTTOM_RIGHT, { margin: 16, opacity: 0.5 })
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Image</code> — source</li>
+<li><code>anchor</code> (<code>?string</code>) — Default: <code>CENTER</code>.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>margin</code> (inset from the edges, default 0), plus
+everything <code>draw_image()</code> takes.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagemask"><a class="header" href="#imagemask"><code>Image.mask()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.mask(mask: instance)
+</code></pre>
+<p>Uses another image as an alpha mask.</p>
+<p>Each of this image’s pixels keeps its colour and takes its transparency
+from the mask: where the mask is opaque white this image shows through
+fully, where the mask is black or transparent this image disappears, and
+greys give partial transparency.</p>
+<p>The mask’s own alpha counts too, so a shape drawn on a transparent
+background works as a mask without being filled in first.</p>
+<p>The mask must be the same size as this image.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Image</code> — mask</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>BoundsError</code> When the mask is a different size.</p>
+<h4 id="imageflatten"><a class="header" href="#imageflatten"><code>Image.flatten()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.flatten(background)
+</code></pre>
+<p>Composites the image over a solid colour, leaving it fully opaque.</p>
+<p>This is what happens on export to a format without an alpha channel;
+doing it explicitly first lets you choose the colour and see the result.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?Color|string|number</code> — background: - Default: white.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagehistogram"><a class="header" href="#imagehistogram"><code>Image.histogram()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.histogram() -&gt; dict
+</code></pre>
+<p>Counts how many pixels hold each value, per channel.</p>
+<p>Returns a dictionary of four 256-entry lists: <code>red</code>, <code>green</code>, <code>blue</code> and
+<code>luma</code>, where luma is perceived brightness. Fully transparent pixels are
+skipped, since their colour is not visible and would otherwise pile up
+at whatever the buffer happens to hold there.</p>
+<p>A histogram is what tells you an image is underexposed (everything
+bunched at the low end), flat (bunched in the middle), or clipped (a
+spike at 0 or 255).</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="imageauto_levels"><a class="header" href="#imageauto_levels"><code>Image.auto_levels()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.auto_levels(options)
+</code></pre>
+<p>Stretches the image’s tones to fill the full range.</p>
+<p>The black and white points are found from the brightness histogram,
+ignoring a small fraction at each end so that a handful of stray pixels
+cannot decide the result. This is the automatic version of <code>levels()</code>,
+and it is the first thing to try on a flat or hazy photograph.</p>
+<p>An image that already spans the full range, or one with no visible
+pixels at all, is left alone.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>) — <code>clip</code> (the fraction to ignore at each end, 0 to
+0.2 - Default: 0.005), <code>gamma</code> (a midtone curve to apply as well -
+Default: 1).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageaverage_color"><a class="header" href="#imageaverage_color"><code>Image.average_color()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.average_color()
+</code></pre>
+<p>The average colour of the image.</p>
+<p>Pixels are weighted by their alpha, so a mostly transparent image
+reports the colour of the part you can actually see rather than having
+it washed out by whatever is behind the transparency. The returned
+colour’s own alpha is the mean alpha.</p>
+<p>An image with nothing visible in it returns transparent black.</p>
+<p><strong>Returns</strong> — Color</p>
+<h4 id="imagedominant_colors"><a class="header" href="#imagedominant_colors"><code>Image.dominant_colors()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.dominant_colors(count, options) -&gt; list
+</code></pre>
+<p>The colours that occupy the most of the image, most common first.</p>
+<p>The image is shrunk and reduced to a small palette first, so this costs
+about the same whatever the original size. Nearly transparent pixels are
+ignored.</p>
+<p>The usual use is picking a background or accent colour to show while a
+photograph is still loading.</p>
+<pre><code class="language-zuri ignore">var accent = photo.dominant_colors(1)[0]
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>count</code> (<code>?number</code>) — How many to return - Default: 5.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>sample</code> (the size the image is reduced to
+before counting - Default: 96), <code>palette</code> (how many colours to quantize
+to - Default: 32).</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="imagedifference"><a class="header" href="#imagedifference"><code>Image.difference()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.difference(other: instance) -&gt; number
+</code></pre>
+<p>How different two images are, from 0 (identical) to 1.</p>
+<p>The score is the mean difference across the colour channels, weighted by
+how opaque each pixel is in either image, so transparent regions do not
+count as agreement. Images of different sizes are never comparable and
+return 1.</p>
+<pre><code class="language-zuri ignore">if rendered.difference(expected) &gt; 0.01 {
+  raise Exception('the rendering changed')
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Image</code> — other</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="imagetext"><a class="header" href="#imagetext"><code>Image.text()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.text(x, y, text, font, color, options)
+</code></pre>
+<p>Draws a string.</p>
+<p><code>x</code> and <code>y</code> are the top-left corner of the text’s box, not its baseline,
+because that is what you know when placing text in a layout. Pass <code>{ baseline: true }</code>
+to treat <code>y</code> as the first line’s baseline instead.</p>
+<p>A <code>\n</code> starts a new line. Multi-line text is aligned by the <code>align</code>
+option, which positions the lines against each other, not against the
+image.</p>
+<pre><code class="language-zuri ignore">var font = Font.load('Inter.ttf').size(28)
+
+card.text(24, 24, 'Hello\nthere', font, '#111111', {
+  align: ALIGN_CENTER,
+  line_height: 1.4,
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>Font</code> — font</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>options</code> (<code>?dict</code>) — <code>align</code>, <code>line_height</code> (multiplier, default 1),
+<code>tracking</code> (extra pixels between characters, default 0), <code>baseline</code>
+(bool, default false), <code>width</code> (wrap to this many pixels).</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imagetext_size"><a class="header" href="#imagetext_size"><code>Image.text_size()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.text_size(text, font, options) -&gt; dict
+</code></pre>
+<p>Measures a string as <code>text()</code> would draw it, without drawing it.</p>
+<p>Returns a dictionary holding <code>width</code>, <code>height</code>, <code>baseline</code> and <code>lines</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>Font</code> — font</li>
+<li><code>options</code> (<code>?dict</code>) — The same options <code>text()</code> takes, <code>width</code>
+included, so a measurement of wrapped text matches what would actually
+be drawn.</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="imageplace_text"><a class="header" href="#imageplace_text"><code>Image.place_text()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.place_text(text, font, color, anchor, options)
+</code></pre>
+<p>Draws a string positioned by anchor rather than by coordinates.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>Font</code> — font</li>
+<li><code>Color|string|number</code> — color</li>
+<li><code>anchor</code> (<code>?string</code>) — Default: <code>CENTER</code>.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>margin</code>, plus everything <code>text()</code> takes.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="imageencode"><a class="header" href="#imageencode"><code>Image.encode()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.encode(format, options) -&gt; bytes
+</code></pre>
+<p>Encodes the image and returns the bytes.</p>
+<p>Options understood, by format:</p>
+<ul>
+<li><code>quality</code> (1-100) for JPEG and AVIF. Defaults to 85 for JPEG and
+80 for AVIF. It does not apply to WebP, which is written
+losslessly.</li>
+<li><code>compression</code> for PNG: <code>'fast'</code>, <code>'default'</code> or <code>'best'</code>. All
+three are lossless; they trade encoding time for file size.</li>
+<li><code>speed</code> for AVIF (1-10, lower is slower and smaller) and for
+GIF (1-30, lower is slower and picks better colours; 15 by
+default).</li>
+<li><code>background</code> for JPEG, the colour transparent pixels are
+flattened against. Defaults to white.</li>
+<li><code>threshold</code> (0-255) for WBMP, the brightness cut.</li>
+</ul>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>format</code> (<code>?string</code>) — Default: the format this image was decoded
+from, or <code>PNG</code>.</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<p><strong>Raises</strong> <code>EncodeError</code> When the format cannot be written.</p>
+<h4 id="imagesave"><a class="header" href="#imagesave"><code>Image.save()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.save(path: string, options)
+</code></pre>
+<p>Writes the image to a file.</p>
+<p>The format is taken from the path’s extension unless <code>format</code> overrides
+it, so <code>save('out.webp')</code> writes a WebP.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — <code>format</code>, plus everything <code>encode()</code> takes.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>FormatError</code> When the extension names no format this module
+knows and no <code>format</code> option is given.</p>
+<h4 id="imageto_data_url"><a class="header" href="#imageto_data_url"><code>Image.to_data_url()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_data_url(format, options) -&gt; string
+</code></pre>
+<p>Encodes the image as a <code>data:</code> URL, ready to drop into an <code>img</code> tag or a
+stylesheet.</p>
+<p>Base64 costs a third more bytes than the raw image, so this suits icons
+and small graphics rather than photographs.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>format</code> (<code>?string</code>) — Default: <code>PNG</code>.</li>
+<li><code>options</code> (<code>?dict</code>) — Everything <code>encode()</code> takes.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="imageto_png"><a class="header" href="#imageto_png"><code>Image.to_png()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_png(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a PNG. Lossless, with alpha.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>) — <code>compression</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_jpeg"><a class="header" href="#imageto_jpeg"><code>Image.to_jpeg()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_jpeg(quality, options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a JPEG. Lossy, no alpha.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>quality</code> (<code>?number</code>) — 1-100 - Default: 85.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>background</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_webp"><a class="header" href="#imageto_webp"><code>Image.to_webp()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_webp(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a WebP.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_avif"><a class="header" href="#imageto_avif"><code>Image.to_avif()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_avif(quality, options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as an AVIF.</p>
+<p>Small files, slow encoding. Lower <code>speed</code> values are slower and produce
+smaller files.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>quality</code> (<code>?number</code>) — 1-100 - Default: 80.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>speed</code> (1-10, default 6).</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_gif"><a class="header" href="#imageto_gif"><code>Image.to_gif()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_gif(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a single-frame GIF, quantized to 256 colours.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_bmp"><a class="header" href="#imageto_bmp"><code>Image.to_bmp()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_bmp(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a BMP.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_tiff"><a class="header" href="#imageto_tiff"><code>Image.to_tiff()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_tiff(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a TIFF.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_qoi"><a class="header" href="#imageto_qoi"><code>Image.to_qoi()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_qoi(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a QOI. Lossless with alpha, and several times
+faster than PNG to read and write.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_tga"><a class="header" href="#imageto_tga"><code>Image.to_tga()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_tga(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a Targa.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_ico"><a class="header" href="#imageto_ico"><code>Image.to_ico()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_ico(options) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a Windows icon.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_wbmp"><a class="header" href="#imageto_wbmp"><code>Image.to_wbmp()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_wbmp(threshold) -&gt; bytes
+</code></pre>
+<p>Encodes the image as a one-bit Wireless Bitmap.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>threshold</code> (<code>?number</code>) — The brightness cut, 0-255 - Default: 128.</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="imageto_string"><a class="header" href="#imageto_string"><code>Image.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">imagine.Image.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="imagine-formats.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="imagine-strokefont.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="imagine-formats.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="imagine-strokefont.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

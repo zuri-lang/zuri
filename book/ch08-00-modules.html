@@ -1,0 +1,562 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>The Module System - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch08-00-modules.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="the-module-system"><a class="header" href="#the-module-system">The Module System</a></h1>
+<p>A module is a <code>.zu</code> file. It runs at most once per program, it gets its own
+global namespace, and nothing it declares is visible anywhere else until
+someone imports it.</p>
+<p>That is the whole model. The rest of this chapter is the syntax and the
+resolution rules.</p>
+<h2 id="importing"><a class="header" href="#importing">Importing</a></h2>
+<pre><code class="language-zuri">import math
+import os
+
+echo math.PI
+echo os.cwd()
+</code></pre>
+<p><code>import name</code> binds the module under that name. Reach into it with a dot.</p>
+<h3 id="picking-out-members"><a class="header" href="#picking-out-members">Picking Out Members</a></h3>
+<pre><code class="language-zuri">import math { PI, E }
+
+echo PI
+</code></pre>
+<p>The named members are bound directly, and the module name itself is not.</p>
+<p><code>{ * }</code> brings in everything public:</p>
+<pre><code class="language-zuri">import math { * }
+
+echo PI
+echo ROOT_2
+</code></pre>
+<h3 id="renaming"><a class="header" href="#renaming">Renaming</a></h3>
+<pre><code class="language-zuri">import http.websocket as ws
+</code></pre>
+<p>Use this when the natural name is long, or when it would collide.</p>
+<p><code>as</code> renames the <strong>module</strong>, not a member. There is no way to rename an
+individual name in a member list — <code>import math { PI as pi }</code> does not
+parse. When you want a different name for one imported thing, bind it
+yourself:</p>
+<pre><code class="language-zuri">import math { PI }
+
+var pi = PI
+
+echo pi
+</code></pre>
+<pre><code class="language-console">3.141592653589793
+</code></pre>
+<h2 id="relative-imports"><a class="header" href="#relative-imports">Relative Imports</a></h2>
+<p>A path starting with <code>.</code> or <code>..</code> is resolved against the directory of the
+file doing the importing, and is never searched for anywhere else.</p>
+<pre><code class="language-zuri ignore">import .helpers          # next to this file
+import .models.user      # models/ next to this file, then user
+import ..shared.config   # up one directory, then shared/, then config
+</code></pre>
+<p>Each segment resolves the same way a bare name does: <code>name.zu</code> is tried
+first, then <code>name/index.zu</code>. So <code>import .helpers</code> finds either
+<code>helpers.zu</code> or <code>helpers/index.zu</code>, and <code>import .models.user</code> finds
+<code>models/user.zu</code> or <code>models/user/index.zu</code>, with <code>models</code> itself being a
+directory either way.</p>
+<p>Which one it finds is invisible at the import site, and that is what lets a
+module grow into a package: split <code>helpers.zu</code> into <code>helpers/index.zu</code> plus
+some siblings, and every <code>import .helpers</code> keeps working untouched.</p>
+<p>Inside a package, a sibling is always <code>import .sibling</code>, never the full
+path from the project root. Writing <code>import myapp.models.user</code> from inside
+<code>myapp/models/</code> sends the resolver out to the library search path and it
+will not find anything.</p>
+<h2 id="exporting"><a class="header" href="#exporting">Exporting</a></h2>
+<p><strong>Imports are local by default.</strong> If <code>a.zu</code> imports <code>b.zu</code>, a third file
+that imports <code>a</code> does not see <code>b</code>’s contents through it.</p>
+<p>Prefix the path with <code>@</code> to re-export:</p>
+<pre><code class="language-zuri ignore">import @.util { * }
+</code></pre>
+<p>Now everything <code>util.zu</code> exposed is part of this module’s public surface
+too. All three forms take the prefix:</p>
+<pre><code class="language-zuri ignore">import @.module            # the module itself is re-exported
+import @.module { item }   # just that item
+import @.module { * }      # everything
+</code></pre>
+<p>This is how a package’s <code>index.zu</code> assembles a public API out of several
+private files:</p>
+<p><span class="filename">Filename: pkg/index.zu</span></p>
+<pre><code class="language-zuri ignore">import @.util { * }
+import .sub.deep { deep_slug }
+
+def hello() {
+  return 'hello from pkg ' + VERSION
+}
+</code></pre>
+<p><code>util</code>’s members are re-exported. <code>deep_slug</code> is imported for this file’s
+own use and stays private.</p>
+<h2 id="privacy"><a class="header" href="#privacy">Privacy</a></h2>
+<p>A member whose name starts with <code>_</code> is private to its module and cannot be
+imported by name:</p>
+<pre><code class="language-zuri ignore">import .pkg.util { _secret }
+</code></pre>
+<pre><code class="language-console">SyntaxError: Cannot import private items from module
+  --&gt; /path/to/bad.zu:1:20
+  |
+1 | import .pkg.util { _secret }
+  |                    ^
+</code></pre>
+<p><code>{ * }</code> skips private members too. Prefix anything that is an
+implementation detail and the module system will keep it that way.</p>
+<h2 id="packages"><a class="header" href="#packages">Packages</a></h2>
+<p>A directory with an <code>index.zu</code> is a package, and importing the directory
+runs its <code>index.zu</code>:</p>
+<pre><code class="language-text">pkg/
+  index.zu
+  util.zu
+  sub/
+    deep.zu
+</code></pre>
+<pre><code class="language-zuri ignore">import .pkg            # runs pkg/index.zu
+import .pkg.util       # runs pkg/util.zu
+import .pkg.sub.deep   # runs pkg/sub/deep.zu
+</code></pre>
+<p>The same rule applies to <code>zuri run pkg</code> on the command line, which is what
+makes a package runnable as well as importable.</p>
+<h2 id="how-a-bare-name-is-resolved"><a class="header" href="#how-a-bare-name-is-resolved">How a Bare Name Is Resolved</a></h2>
+<p><code>import http</code>, with no leading dot, is searched for in this order:</p>
+<ol>
+<li><code>.zuri/libs/http</code> in the <strong>project</strong></li>
+<li><code>$ZURI_ROOT/libs/http</code>, or <code>libs/http</code> beside the <code>zuri</code> executable:
+the standard library</li>
+<li>a built-in native module named <code>http</code></li>
+<li><code>$ZURI_HOME/libs/http</code>, the packages installed for your user, which
+is <code>~/.zuri/libs</code> unless <code>ZURI_HOME</code> moves it</li>
+</ol>
+<p>At each step, <code>http.zu</code> is tried first and then <code>http/index.zu</code>.</p>
+<p>The project is the nearest directory holding a <code>project.toml</code>, looking
+upwards from the script <code>zuri run</code> was given, or from the working
+directory for a command or the REPL. A program run from anywhere inside
+a project imports that project’s packages, and a program in no project
+uses <code>.zuri/libs</code> in the working directory. The project is found once,
+when the program starts, so changing directory part way through does
+not change where imports come from.</p>
+<p><code>zuri install</code> fills <code>.zuri/libs</code>, and
+<a href="ch27-00-packages.html">Packages and Nyssa</a> covers it in full. Step one is
+also what makes vendoring work. Dropping a file into <code>.zuri/libs/</code>
+shadows a standard library module of the same name:</p>
+<pre><code class="language-console">$ cat .zuri/libs/mylib.zu
+def hi() { return 'from user libs' }
+
+$ cat uses.zu
+import mylib
+echo mylib.hi()
+
+$ zuri run uses.zu
+from user libs
+</code></pre>
+<h2 id="modules-run-once"><a class="header" href="#modules-run-once">Modules Run Once</a></h2>
+<p>A module’s top level executes the first time it is imported, and never
+again. Every later import of the same file gets the same module object:</p>
+<pre><code class="language-zuri ignore">import .once
+import .once as again
+import .once
+</code></pre>
+<pre><code class="language-console">side effect ran
+</code></pre>
+<p>One line of output, three imports. Identity is by canonical filesystem
+path, so two different relative paths to the same file are the same module.</p>
+<p>This makes a module’s top level the natural place for setup that must
+happen exactly once: opening a connection pool, reading a config file,
+registering handlers.</p>
+<h2 id="circular-imports"><a class="header" href="#circular-imports">Circular Imports</a></h2>
+<p>A circular import works. A module is registered before its body runs, so
+when <code>b.zu</code> imports <code>a.zu</code> while <code>a.zu</code> is still loading, it gets the
+partially built module rather than looping forever:</p>
+<p><span class="filename">Filename: a.zu</span></p>
+<pre><code class="language-zuri ignore">import .b
+
+def from_a() {
+  return 'a'
+}
+
+echo 'a loaded'
+</code></pre>
+<p><span class="filename">Filename: b.zu</span></p>
+<pre><code class="language-zuri ignore">import .a
+
+echo 'b loaded'
+</code></pre>
+<pre><code class="language-console">b loaded
+a loaded
+a
+</code></pre>
+<p>The catch is visible in that output: <code>b</code> finished loading before <code>a</code> did,
+so anything <code>b</code> reads from <code>a</code> <strong>at its top level</strong> is not there yet.
+Reading it from inside a function is fine, because by then <code>a</code> has
+finished.</p>
+<p>If a module fails while loading, it is dropped from the cache rather than
+left behind half built, so a later import genuinely retries.</p>
+<h2 id="module-variables"><a class="header" href="#module-variables">Module Variables</a></h2>
+<p>Every module gets two names for free:</p>
+<pre><code class="language-zuri">echo __file__
+echo __root__
+</code></pre>
+<p><code>__file__</code> is this module’s own canonical path. <code>__root__</code> is the entry
+file the program was started from, and it is the same in every module. Use
+them to locate files relative to your source rather than relative to
+whatever directory the user happened to run from:</p>
+<pre><code class="language-zuri">import os
+
+var templates = os.join_paths(os.dir_name(__file__), 'templates')
+</code></pre>
+<p>In the REPL both are defined, with placeholder values standing in for the
+file that does not exist:</p>
+<pre><code class="language-zuri">%&gt; __file__
+@.repl
+%&gt; __root__
+@.repl.root
+</code></pre>
+<p>They differ from each other there, so the <code>__root__ == __file__</code> check
+below is <code>false</code> at the prompt — a REPL session is never the entry point of
+a program.</p>
+<h3 id="running-as-a-program-importing-as-a-module"><a class="header" href="#running-as-a-program-importing-as-a-module">Running as a Program, Importing as a Module</a></h3>
+<p>Because <code>__root__</code> is the entry file and <code>__file__</code> is this one, comparing
+them tells a module whether it is the program being run or something being
+imported:</p>
+<p><span class="filename">Filename: tool.zu</span></p>
+<pre><code class="language-zuri">def add(a, b) {
+  return a + b
+}
+
+if __root__ == __file__ {
+  echo 'running as a program: ' + add(2, 3)
+}
+</code></pre>
+<pre><code class="language-console">$ zuri run tool.zu
+running as a program: 5
+</code></pre>
+<pre><code class="language-zuri ignore">import .tool
+echo tool.add(10, 20)
+</code></pre>
+<pre><code class="language-console">30
+</code></pre>
+<p>The same file is a clean, side-effect-free library when imported and a
+runnable command-line program when launched directly. Put the argument
+parsing and the entry point behind that check, and everything else above
+it.</p>
+<p>These two names describe <em>which file this is</em>, so they are not exports. A
+wildcard import copies every public name out of the module it names, and
+<code>__file__</code> and <code>__root__</code> are deliberately excluded from that:</p>
+<pre><code class="language-zuri">import math { * }
+
+echo __file__ == __root__
+</code></pre>
+<pre><code class="language-console">true
+</code></pre>
+<p>That guarantee is what makes the <code>__root__ == __file__</code> check above
+reliable in every file, including one that wildcard-imports a sibling.</p>
+<h2 id="structuring-a-project"><a class="header" href="#structuring-a-project">Structuring a Project</a></h2>
+<p>A small program is one file. Past that, the shape that works is a package
+per area of responsibility, each with an <code>index.zu</code> that re-exports what is
+public:</p>
+<pre><code class="language-text">myapp/
+  index.zu          # import @.routes, import @.models, then start
+  config.zu
+  models/
+    index.zu        # import @.user { * }, import @.task { * }
+    user.zu
+    task.zu
+  routes/
+    index.zu
+    api.zu
+    pages.zu
+  storage/
+    index.zu
+    _json_store.zu  # private: the leading underscore says so
+</code></pre>
+<p>Run it with <code>zuri run myapp</code>. The capstone in <a href="ch25-00-task-board.html">Chapter 25</a>
+is laid out exactly this way.</p>
+<h3 id="a-package-end-to-end"><a class="header" href="#a-package-end-to-end">A Package, End to End</a></h3>
+<p>Here is the smallest complete version of that shape. Three files, one
+package, one public entry point.</p>
+<p><span class="filename">Filename: greet/english.zu</span></p>
+<pre><code class="language-zuri ignore">def hello(name) {
+  return 'Hello, ${name}'
+}
+
+def _shout(text) {
+  return text.upper()
+}
+</code></pre>
+<p><span class="filename">Filename: greet/french.zu</span></p>
+<pre><code class="language-zuri ignore">def hello(name) {
+  return 'Bonjour, ${name}'
+}
+</code></pre>
+<p><span class="filename">Filename: greet/index.zu</span></p>
+<pre><code class="language-zuri ignore">import @.english
+import @.french
+
+def greet(name, language) {
+  return language == 'fr' ? french.hello(name) : english.hello(name)
+}
+</code></pre>
+<p><span class="filename">Filename: index.zu</span></p>
+<pre><code class="language-zuri ignore">import .greet
+
+echo greet.greet('Ada', 'en')
+echo greet.greet('Ada', 'fr')
+echo greet.english.hello('Grace')
+</code></pre>
+<pre><code class="language-console">$ zuri run
+Hello, Ada
+Bonjour, Ada
+Hello, Grace
+</code></pre>
+<p>Four things to take from it.</p>
+<p><strong><code>greet/index.zu</code> is what <code>import .greet</code> loads.</strong> A directory with an
+<code>index.zu</code> is a package, and importing the directory runs that file.</p>
+<p><strong>The <code>@</code> on <code>import @.english</code> is what re-exports it.</strong> Without it,
+<code>greet.english</code> would not be reachable from outside <code>greet/index.zu</code>, even
+though <code>greet()</code> itself would still work — which is often exactly what you
+want.</p>
+<p><strong>Both submodules define <code>hello</code>, and they do not collide.</strong> Each lives in
+its own namespace, reached through its own module name. That is the whole
+reason to use <code>import @.english</code> rather than <code>import @.english { * }</code> here.</p>
+<p><strong><code>_shout</code> is unreachable from outside.</strong> Writing <code>greet.english._shout(x)</code>
+anywhere else is a compile error, not a runtime one:</p>
+<pre><code class="language-console">SyntaxError: '_shout' is private and can only be accessed via 'self' or 'parent'
+</code></pre>
+<p>The leading underscore is the only declaration of privacy there is, and it
+is checked before the program runs.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch07-00-error-handling.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch09-00-files.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch07-00-error-handling.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch09-00-files.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

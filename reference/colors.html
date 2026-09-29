@@ -1,0 +1,853 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>colors - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="colors"><a class="header" href="#colors"><code>colors</code></a></h1>
+<pre><code class="language-zuri ignore">import colors
+</code></pre>
+<p>This module provides functionalities for color conversion and
+manipulation.</p>
+<p>This module also provides functionalities that enable cross-platform
+colored terminal outputs that will allow you create beautiful console
+apps that are user friendly.</p>
+<p>RGB conversion to other colors that return a floating point or a list of
+floating points do so to allow users get absolute precision since its
+really easy for callers to do a <code>num.round()</code> on the components of the
+resulting list.</p>
+<h2 id="example"><a class="header" href="#example">Example</a></h2>
+<p>The example below uses this module to create a success message that will
+print correctly on almost all terminals (Only Windows 10 version 1901+
+supported. All linux and OSX terminals are supported). Try it out!</p>
+<pre><code class="language-zuri ignore">import colors
+colors.text('Successful!', colors.text_color.green)
+</code></pre>
+<p>The <code>text()</code> function can be nested. For example,</p>
+<pre><code class="language-zuri ignore">colors.text(colors.text('Successful!', colors.style.bold), colors.text_color.green)
+</code></pre>
+<p>The module also features multiple functions for color conversion. For
+example,</p>
+<pre><code class="language-zuri-repl">%&gt; import colors
+%&gt; colors.rgb_to_cmyk(103, 13, 69)
+[0, 87.37864077669903, 33.009708737864095, 59.6078431372549]
+</code></pre>
+<p>The terminal colors also have simple wrappers that allow supplied colors
+to <code>text()</code> from various color formats. For example, we can specify the
+color from the HTML hexadecimal color.</p>
+<pre><code class="language-zuri ignore">import colors
+colors.text('Colored text!', colors.hex('#fc0'))
+</code></pre>
+<h2 id="the-colors-api"><a class="header" href="#the-colors-api">The <code>colors</code> API</a></h2>
+<p>Every public name in <code>colors</code>, wherever it is declared. Each links to
+the page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#named"><code>colors.NAMED</code></a></td><td>constant</td><td>The CSS Color Level 4 named colors, mapped to their hexadecimal values.</td></tr>
+<tr><td><a href="#ansi256_to_ansi"><code>colors.ansi256_to_ansi</code></a></td><td>function</td><td>Converts ANSI-256 color number to ANSI-16 color number.</td></tr>
+<tr><td><a href="#background"><code>colors.background</code></a></td><td>constant</td><td>Standard ANSI background colors available for console applications.</td></tr>
+<tr><td><a href="#cmyk"><code>colors.cmyk</code></a></td><td>function</td><td>Converts the given CMYK color to its terminal compatible color.</td></tr>
+<tr><td><a href="#cmyk_to_rgb"><code>colors.cmyk_to_rgb</code></a></td><td>function</td><td>Converts a CMYK color into its corresponding RGB color components.</td></tr>
+<tr><td><a href="#contrast_ratio"><code>colors.contrast_ratio</code></a></td><td>function</td><td>Returns the WCAG 2.x contrast ratio between two colors, from 1 (no contrast) to 21 (black on white).</td></tr>
+<tr><td><a href="#darken"><code>colors.darken</code></a></td><td>function</td><td>Returns <em>hex</em> darkened by <em>amount</em> percentage points in HSL space (clamped to 0-100).</td></tr>
+<tr><td><a href="#desaturate"><code>colors.desaturate</code></a></td><td>function</td><td>Returns <em>hex</em> with its saturation decreased by <em>amount</em> percentage points in HSL space (clamped to 0-100).</td></tr>
+<tr><td><a href="#grayscale"><code>colors.grayscale</code></a></td><td>function</td><td>Returns <em>hex</em> fully desaturated (HSL saturation set to 0), the same hue and lightness otherwise preserved.</td></tr>
+<tr><td><a href="#hex"><code>colors.hex</code></a></td><td>function</td><td>Converts the given hexadecimal color to its terminal compatible color.</td></tr>
+<tr><td><a href="#hex_to_ansi"><code>colors.hex_to_ansi</code></a></td><td>function</td><td>Converts the given hexadecimal color to its ANSI-16 number.</td></tr>
+<tr><td><a href="#hex_to_ansi256"><code>colors.hex_to_ansi256</code></a></td><td>function</td><td>Converts the given hexadecimal color to its ANSI-256 number.</td></tr>
+<tr><td><a href="#hex_to_rgb"><code>colors.hex_to_rgb</code></a></td><td>function</td><td>Converts the hexadecimal string <em>h</em> to its RGBA component.</td></tr>
+<tr><td><a href="#hsl"><code>colors.hsl</code></a></td><td>function</td><td>Converts the given HSL color to its terminal compatible color.</td></tr>
+<tr><td><a href="#hsl_to_hsv"><code>colors.hsl_to_hsv</code></a></td><td>function</td><td>Converts a HSL color into its corresponding HSV color components.</td></tr>
+<tr><td><a href="#hsl_to_rgb"><code>colors.hsl_to_rgb</code></a></td><td>function</td><td>Converts a HSL color into its corresponding RGB color components.</td></tr>
+<tr><td><a href="#hsv"><code>colors.hsv</code></a></td><td>function</td><td>Converts the given HSV color to its terminal compatible color.</td></tr>
+<tr><td><a href="#hsv_to_hsl"><code>colors.hsv_to_hsl</code></a></td><td>function</td><td>Converts a HSV color into its corresponding HSL color components.</td></tr>
+<tr><td><a href="#hsv_to_rgb"><code>colors.hsv_to_rgb</code></a></td><td>function</td><td>Converts a HSV color into its corresponding RGB color components.</td></tr>
+<tr><td><a href="#hwb"><code>colors.hwb</code></a></td><td>function</td><td>Converts the given HWB color to its terminal compatible color.</td></tr>
+<tr><td><a href="#hwb_to_rgb"><code>colors.hwb_to_rgb</code></a></td><td>function</td><td>Converts a HWB color into its corresponding RGB color components.</td></tr>
+<tr><td><a href="#invert"><code>colors.invert</code></a></td><td>function</td><td>Returns <em>hex</em> with each RGB channel inverted (<code>255 - channel</code>).</td></tr>
+<tr><td><a href="#is_hex"><code>colors.is_hex</code></a></td><td>function</td><td>Returns <code>true</code> if <em>color</em> is a hexadecimal color that [[colors.hex_to_rgb]] would accept, and <code>false</code>…</td></tr>
+<tr><td><a href="#is_named"><code>colors.is_named</code></a></td><td>function</td><td>Returns <code>true</code> if <em>name</em> is a CSS color name that [[colors.named]] would resolve, and <code>false</code> otherwise.</td></tr>
+<tr><td><a href="#lab_to_rgb"><code>colors.lab_to_rgb</code></a></td><td>function</td><td>Converts a LAB color into its corresponding RGB color components.</td></tr>
+<tr><td><a href="#lighten"><code>colors.lighten</code></a></td><td>function</td><td>Returns <em>hex</em> lightened by <em>amount</em> percentage points in HSL space (clamped to 0-100).</td></tr>
+<tr><td><a href="#mix"><code>colors.mix</code></a></td><td>function</td><td>Linearly interpolates between two colors, including their alpha channels.</td></tr>
+<tr><td><a href="#named"><code>colors.named</code></a></td><td>function</td><td>Returns the hexadecimal value of a CSS named color.</td></tr>
+<tr><td><a href="#relative_luminance"><code>colors.relative_luminance</code></a></td><td>function</td><td>Returns the relative luminance of an RGB color, from 0 (black) to 1 (white), as defined by WCAG 2.x.</td></tr>
+<tr><td><a href="#rgb"><code>colors.rgb</code></a></td><td>function</td><td>Converts the given RGB color to its terminal compatible color.</td></tr>
+<tr><td><a href="#rgb_to_ansi256"><code>colors.rgb_to_ansi256</code></a></td><td>function</td><td>Converts RGB color to ASI-256 color number.</td></tr>
+<tr><td><a href="#rgb_to_cmyk"><code>colors.rgb_to_cmyk</code></a></td><td>function</td><td>Converts a RGB color into its corresponding CMYK components.</td></tr>
+<tr><td><a href="#rgb_to_hex"><code>colors.rgb_to_hex</code></a></td><td>function</td><td>Converts a RGB components into its corresponding hexadecimal color.</td></tr>
+<tr><td><a href="#rgb_to_hsl"><code>colors.rgb_to_hsl</code></a></td><td>function</td><td>Converts a RGB color into its corresponding HSL components.</td></tr>
+<tr><td><a href="#rgb_to_hsv"><code>colors.rgb_to_hsv</code></a></td><td>function</td><td>Converts a RGB color into its corresponding HSV components.</td></tr>
+<tr><td><a href="#rgb_to_hwb"><code>colors.rgb_to_hwb</code></a></td><td>function</td><td>Converts a RGB color into its corresponding HWB components.</td></tr>
+<tr><td><a href="#rgb_to_lab"><code>colors.rgb_to_lab</code></a></td><td>function</td><td>Converts a RGB color into its corresponding LAB color components.</td></tr>
+<tr><td><a href="#rgb_to_xyz"><code>colors.rgb_to_xyz</code></a></td><td>function</td><td>Converts a RGB color into its corresponding XYZ color space components.</td></tr>
+<tr><td><a href="#saturate"><code>colors.saturate</code></a></td><td>function</td><td>Returns <em>hex</em> with its saturation increased by <em>amount</em> percentage points in HSL space (clamped to 0-100).</td></tr>
+<tr><td><a href="#style"><code>colors.style</code></a></td><td>constant</td><td>ANSI font styles available for console applications.</td></tr>
+<tr><td><a href="#text"><code>colors.text</code></a></td><td>function</td><td>Returns a terminal printable text with the given color (or style) and background if given.</td></tr>
+<tr><td><a href="#text_color"><code>colors.text_color</code></a></td><td>constant</td><td>Standard ANSI text colors available for console applications.</td></tr>
+<tr><td><a href="#xyz"><code>colors.xyz</code></a></td><td>function</td><td>Converts the given XYZ color to its terminal compatible color.</td></tr>
+<tr><td><a href="#xyz_to_rgb"><code>colors.xyz_to_rgb</code></a></td><td>function</td><td>Converts a XYZ color into its corresponding RGB color components.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="style"><a class="header" href="#style"><code>style</code></a></h3>
+<pre><code class="language-zuri ignore">colors.style = {...}
+</code></pre>
+<p>ANSI font styles available for console applications.</p>
+<h3 id="text_color"><a class="header" href="#text_color"><code>text_color</code></a></h3>
+<pre><code class="language-zuri ignore">colors.text_color = {...}
+</code></pre>
+<p>Standard ANSI text colors available for console applications.</p>
+<h3 id="background"><a class="header" href="#background"><code>background</code></a></h3>
+<pre><code class="language-zuri ignore">colors.background = {...}
+</code></pre>
+<p>Standard ANSI background colors available for console applications.</p>
+<h3 id="named"><a class="header" href="#named"><code>NAMED</code></a></h3>
+<pre><code class="language-zuri ignore">colors.NAMED: dict = {...}
+</code></pre>
+<p>The CSS Color Level 4 named colors, mapped to their hexadecimal values.</p>
+<p>Values carry no leading <code>#</code>, matching every other function in this
+module that produces a hexadecimal color. Both the American and British
+spellings of the greys are present, as are <code>rebeccapurple</code> and
+<code>transparent</code>, which is the only entry with an alpha component and
+therefore the only 8-digit one.</p>
+<p>Keys are lower case with no separators; use [[colors.named]] rather than
+indexing this directly if the name might arrive in mixed case or spaced
+out.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="text"><a class="header" href="#text"><code>text()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.text(value, color, bg) -&gt; string
+</code></pre>
+<p>Returns a terminal printable text with the given color (or style) and
+background if given.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+<li><code>color</code> (<code>?int</code>)</li>
+<li><code>bg</code> (<code>?int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<blockquote>
+<p><strong>Note:</strong> The color argument can be replace with a style.</p>
+</blockquote>
+<h3 id="rgb_to_ansi256"><a class="header" href="#rgb_to_ansi256"><code>rgb_to_ansi256()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_ansi256(r: int, g: int, b: int) -&gt; number
+</code></pre>
+<p>Converts RGB color to ASI-256 color number.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="ansi256_to_ansi"><a class="header" href="#ansi256_to_ansi"><code>ansi256_to_ansi()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.ansi256_to_ansi(code: int) -&gt; number
+</code></pre>
+<p>Converts ANSI-256 color number to ANSI-16 color number.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>code</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="is_hex"><a class="header" href="#is_hex"><code>is_hex()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.is_hex(color) -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> if <em>color</em> is a hexadecimal color that
+[[colors.hex_to_rgb]] would accept, and <code>false</code> otherwise.</p>
+<p>A leading <code>#</code> is optional and the digits may be in either case. This
+raises nothing, so it is the way to test a color before converting it
+rather than converting inside a <code>catch</code>.</p>
+<pre><code class="language-zuri-repl">%&gt; import colors
+%&gt; colors.is_hex('#4f46e5')
+true
+%&gt; colors.is_hex('rebeccapurple')
+false
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>color</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="hex_to_rgb"><a class="header" href="#hex_to_rgb"><code>hex_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hex_to_rgb(h: string) -&gt; list
+</code></pre>
+<p>Converts the hexadecimal string <em>h</em> to its RGBA component.</p>
+<p>Accepts an optional leading <code>#</code>, is case-insensitive, and accepts the
+3/4/6/8-digit forms (<code>#f0c</code>, <code>#f0c8</code>, <code>#ff00cc</code>, <code>#ff00ccbb</code>). Following
+the CSS Color 4 convention, alpha is the <em>last</em> component when present
+(<code>RRGGBBAA</code>/<code>RGBA</code>, not <code>AARRGGBB</code>/<code>ARGB</code>): an omitted alpha means fully
+opaque (<code>1</code>).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — <code>[r, g, b, a]</code></p>
+<p><strong>Raises</strong> <code>ValueError</code> When <em>h</em> is not a valid hexadecimal color.</p>
+<h3 id="hex_to_ansi256"><a class="header" href="#hex_to_ansi256"><code>hex_to_ansi256()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hex_to_ansi256(color: string) -&gt; number
+</code></pre>
+<p>Converts the given hexadecimal color to its ANSI-256 number.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>color</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="hex_to_ansi"><a class="header" href="#hex_to_ansi"><code>hex_to_ansi()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hex_to_ansi(color: string) -&gt; number
+</code></pre>
+<p>Converts the given hexadecimal color to its ANSI-16 number.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>color</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> For use with <code>text()</code>, this should be preferred over
+<code>hex_to_ansi256</code></p>
+</blockquote>
+<h3 id="hex"><a class="header" href="#hex"><code>hex()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hex(color: string) -&gt; number
+</code></pre>
+<p>Converts the given hexadecimal color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>color</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Note:</strong> For use with <code>text()</code>, this should be preferred over
+<code>hex_to_ansi256</code> and <code>hex_to_ansi</code></p>
+</blockquote>
+<blockquote>
+<p><strong>Note:</strong> <em>color</em> can include the ‘#’ character. E.g. <code>#ff0</code>.</p>
+</blockquote>
+<h3 id="rgb"><a class="header" href="#rgb"><code>rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb(r: int, g: int, b: int) -&gt; number
+</code></pre>
+<p>Converts the given RGB color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>number</code>)</li>
+<li><code>g</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="hsl"><a class="header" href="#hsl"><code>hsl()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsl(h: number, s: number, l: number) -&gt; number
+</code></pre>
+<p>Converts the given HSL color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>l</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="hsv"><a class="header" href="#hsv"><code>hsv()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsv(h: number, s: number, v: number) -&gt; number
+</code></pre>
+<p>Converts the given HSV color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>v</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="hwb"><a class="header" href="#hwb"><code>hwb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hwb(h: number, w: number, b: number) -&gt; number
+</code></pre>
+<p>Converts the given HWB color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>w</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="cmyk"><a class="header" href="#cmyk"><code>cmyk()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.cmyk(c: number, m: number, y: number, k: number) -&gt; number
+</code></pre>
+<p>Converts the given CMYK color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>c</code> (<code>number</code>)</li>
+<li><code>m</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>k</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="xyz"><a class="header" href="#xyz"><code>xyz()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.xyz(x: number, y: number, z: number) -&gt; number
+</code></pre>
+<p>Converts the given XYZ color to its terminal compatible color.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>z</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="rgb_to_hex"><a class="header" href="#rgb_to_hex"><code>rgb_to_hex()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_hex(r: int, g: int, b: int, a: ?int) -&gt; string
+</code></pre>
+<p>Converts a RGB components into its corresponding hexadecimal color.</p>
+<p>Following the CSS Color 4 convention, alpha (when given) is appended as
+the <em>last</em> component (<code>RRGGBBAA</code>), and every channel is zero-padded to
+two digits.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+<li><code>a</code> (<code>?int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="rgb_to_hsl"><a class="header" href="#rgb_to_hsl"><code>rgb_to_hsl()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_hsl(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding HSL components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="rgb_to_hsv"><a class="header" href="#rgb_to_hsv"><code>rgb_to_hsv()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_hsv(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding HSV components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="rgb_to_hwb"><a class="header" href="#rgb_to_hwb"><code>rgb_to_hwb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_hwb(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding HWB components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="rgb_to_cmyk"><a class="header" href="#rgb_to_cmyk"><code>rgb_to_cmyk()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_cmyk(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding CMYK components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="rgb_to_xyz"><a class="header" href="#rgb_to_xyz"><code>rgb_to_xyz()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_xyz(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding XYZ color space components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="rgb_to_lab"><a class="header" href="#rgb_to_lab"><code>rgb_to_lab()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.rgb_to_lab(r: int, g: int, b: int) -&gt; list[float]
+</code></pre>
+<p>Converts a RGB color into its corresponding LAB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="hsl_to_rgb"><a class="header" href="#hsl_to_rgb"><code>hsl_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsl_to_rgb(h: number, s: number, l: number) -&gt; list[float]
+</code></pre>
+<p>Converts a HSL color into its corresponding RGB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>l</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="hsl_to_hsv"><a class="header" href="#hsl_to_hsv"><code>hsl_to_hsv()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsl_to_hsv(h: number, s: number, l: number) -&gt; list[float]
+</code></pre>
+<p>Converts a HSL color into its corresponding HSV color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>l</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="hsv_to_rgb"><a class="header" href="#hsv_to_rgb"><code>hsv_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsv_to_rgb(h: number, s: number, v: number) -&gt; list[float]
+</code></pre>
+<p>Converts a HSV color into its corresponding RGB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>v</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="hsv_to_hsl"><a class="header" href="#hsv_to_hsl"><code>hsv_to_hsl()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hsv_to_hsl(h: number, s: number, v: number) -&gt; list[float]
+</code></pre>
+<p>Converts a HSV color into its corresponding HSL color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>s</code> (<code>number</code>)</li>
+<li><code>v</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="hwb_to_rgb"><a class="header" href="#hwb_to_rgb"><code>hwb_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.hwb_to_rgb(h: number, w: number, b: number) -&gt; list[float]
+</code></pre>
+<p>Converts a HWB color into its corresponding RGB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>h</code> (<code>number</code>)</li>
+<li><code>w</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="cmyk_to_rgb"><a class="header" href="#cmyk_to_rgb"><code>cmyk_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.cmyk_to_rgb(c: number, m: number, y: number, k: number) -&gt; list[float]
+</code></pre>
+<p>Converts a CMYK color into its corresponding RGB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>c</code> (<code>number</code>)</li>
+<li><code>m</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>k</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="xyz_to_rgb"><a class="header" href="#xyz_to_rgb"><code>xyz_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.xyz_to_rgb(x: number, y: number, z: number) -&gt; list[float]
+</code></pre>
+<p>Converts a XYZ color into its corresponding RGB color components.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>x</code> (<code>number</code>)</li>
+<li><code>y</code> (<code>number</code>)</li>
+<li><code>z</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="lab_to_rgb"><a class="header" href="#lab_to_rgb"><code>lab_to_rgb()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.lab_to_rgb(l: number, a: number, b: number) -&gt; list[float]
+</code></pre>
+<p>Converts a LAB color into its corresponding RGB color components. The
+inverse of <code>rgb_to_lab</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>l</code> (<code>number</code>)</li>
+<li><code>a</code> (<code>number</code>)</li>
+<li><code>b</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list[float]</code></p>
+<h3 id="lighten"><a class="header" href="#lighten"><code>lighten()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.lighten(hex: string, amount: number) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> lightened by <em>amount</em> percentage points in HSL space
+(clamped to 0-100).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+<li><code>amount</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="darken"><a class="header" href="#darken"><code>darken()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.darken(hex: string, amount: number) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> darkened by <em>amount</em> percentage points in HSL space
+(clamped to 0-100). The inverse of <code>lighten</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+<li><code>amount</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="saturate"><a class="header" href="#saturate"><code>saturate()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.saturate(hex: string, amount: number) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> with its saturation increased by <em>amount</em> percentage
+points in HSL space (clamped to 0-100).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+<li><code>amount</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="desaturate"><a class="header" href="#desaturate"><code>desaturate()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.desaturate(hex: string, amount: number) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> with its saturation decreased by <em>amount</em> percentage
+points in HSL space (clamped to 0-100). The inverse of <code>saturate</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+<li><code>amount</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="grayscale"><a class="header" href="#grayscale"><code>grayscale()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.grayscale(hex) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> fully desaturated (HSL saturation set to 0), the same hue
+and lightness otherwise preserved. This is an HSL desaturation, not a
+perceptual-luminance-weighted grayscale.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="invert"><a class="header" href="#invert"><code>invert()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.invert(hex: string) -&gt; string
+</code></pre>
+<p>Returns <em>hex</em> with each RGB channel inverted (<code>255 - channel</code>). Alpha,
+if present, is left unchanged.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="mix"><a class="header" href="#mix"><code>mix()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.mix(hex_a: string, hex_b: string, weight: ?number) -&gt; string
+</code></pre>
+<p>Linearly interpolates between two colors, including their alpha
+channels.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex_a</code> (<code>string</code>)</li>
+<li><code>hex_b</code> (<code>string</code>)</li>
+<li><code>weight</code> (<code>?number</code>) — How far from <em>hex_a</em> (0) to <em>hex_b</em> (1).
+Default: 0.5 (the midpoint).</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="relative_luminance"><a class="header" href="#relative_luminance"><code>relative_luminance()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.relative_luminance(r, g, b) -&gt; number
+</code></pre>
+<p>Returns the relative luminance of an RGB color, from 0 (black) to 1
+(white), as defined by WCAG 2.x.</p>
+<p>This is perceived brightness in linear light, not the <code>l</code> of HSL: pure
+green is far brighter to the eye than pure blue even though HSL gives
+both a lightness of 0.5. It is what <code>contrast_ratio()</code> is built on, and
+what to compare against a threshold when deciding whether light or dark
+text belongs on a background.</p>
+<pre><code class="language-zuri-repl">%&gt; import colors
+%&gt; colors.relative_luminance(255, 255, 255)
+1
+%&gt; colors.relative_luminance(0, 255, 0)
+0.7152
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>r</code> (<code>int</code>)</li>
+<li><code>g</code> (<code>int</code>)</li>
+<li><code>b</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="contrast_ratio"><a class="header" href="#contrast_ratio"><code>contrast_ratio()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.contrast_ratio(hex_a: string, hex_b: string) -&gt; number
+</code></pre>
+<p>Returns the WCAG 2.x contrast ratio between two colors, from 1 (no
+contrast) to 21 (black on white).</p>
+<p>A ratio of at least 4.5 meets WCAG AA for normal text (3 for large
+text); 7 meets AAA (4.5 for large text).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>hex_a</code> (<code>string</code>)</li>
+<li><code>hex_b</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="named-1"><a class="header" href="#named-1"><code>named()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.named(name: string) -&gt; string
+</code></pre>
+<p>Returns the hexadecimal value of a CSS named color.</p>
+<p>Matching ignores case, whitespace, hyphens and underscores, so
+<code>'Tomato'</code>, <code>'tomato'</code> and <code>' TOMATO '</code> all resolve, as do both
+<code>'darkseagreen'</code> and <code>'Dark Sea Green'</code>.</p>
+<p>The result carries no leading <code>#</code>, the same as [[colors.rgb_to_hex]] and
+[[colors.lighten]], so it can be handed straight to any function here
+that takes a hexadecimal color. Every name returns 6 digits except
+<code>transparent</code>, which returns the 8-digit <code>'00000000'</code>.</p>
+<pre><code class="language-zuri-repl">%&gt; import colors
+%&gt; colors.named('rebeccapurple')
+'663399'
+%&gt; colors.named('Dark Sea Green')
+'8fbc8f'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>ValueError</code> When <em>name</em> is not a CSS color name.</p>
+<blockquote>
+<p><strong>Note:</strong> Spaces inside the name are ignored, so both the CSS spelling
+and the spaced-out reading of a name resolve to the same color.</p>
+</blockquote>
+<h3 id="is_named"><a class="header" href="#is_named"><code>is_named()</code></a></h3>
+<pre><code class="language-zuri ignore">colors.is_named(name) -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> if <em>name</em> is a CSS color name that [[colors.named]] would
+resolve, and <code>false</code> otherwise.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<hr>
+<p><small>2022, Richard Ore and The Zuri Contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mime.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="json.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mime.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="json.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

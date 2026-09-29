@@ -1,0 +1,764 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>A Tour of the Standard Library - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch13-00-stdlib-tour.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="a-tour-of-the-standard-library"><a class="header" href="#a-tour-of-the-standard-library">A Tour of the Standard Library</a></h1>
+<p>The standard library is part of the installation. There is nothing to add
+to a manifest, no package manager to run, and no dependency to resolve;
+<code>import json</code> works in a file you created ten seconds ago.</p>
+<p>This chapter walks through what is there, grouped by the job you would
+reach for it to do, with a working example of each. It is a tour rather
+than a reference: <a href="appendix-06-stdlib-index.html">Appendix F</a> is the index,
+every module carries doc blocks in <code>libs/</code>, and the three largest modules
+have chapters of their own — <a href="ch14-00-wire.html">Wire</a>,
+<a href="ch15-00-http.html">HTTP</a> and <a href="ch16-00-imagine.html">Imagine</a>.</p>
+<p>Read it once to learn what exists. The value of a tour like this is not
+remembering the details; it is recognising, six months from now, that the
+thing you are about to write by hand is already here.</p>
+<h2 id="data-formats"><a class="header" href="#data-formats">Data Formats</a></h2>
+<h3 id="json"><a class="header" href="#json"><code>json</code></a></h3>
+<pre><code class="language-zuri">import json
+
+var data = { name: 'Ada', langs: ['zuri', 'rust'], active: true }
+
+echo json.encode(data)
+echo json.decode('{"a":1}').a
+echo json.encode({ name: 'Ada' }, false)
+</code></pre>
+<pre><code class="language-console">{"name":"Ada","langs":["zuri","rust"],"active":true}
+1
+{
+  "name": "Ada"
+}
+</code></pre>
+<p><code>encode(value, compact, max_depth)</code> defaults to compact. <code>parse(path)</code>
+reads and decodes a file; <code>dump(value, file)</code> writes one. A class that
+defines <code>@to_json()</code> controls its own encoding.</p>
+<h3 id="yaml"><a class="header" href="#yaml"><code>yaml</code></a></h3>
+<pre><code class="language-zuri">import yaml
+
+echo yaml.parse('name: zuri\ntags:\n  - fast\n  - small')
+</code></pre>
+<pre><code class="language-console">{name: zuri, tags: [fast, small]}
+</code></pre>
+<p>Anchors, aliases, tags, multi-document streams and block scalars are all
+supported.</p>
+<h3 id="toml"><a class="header" href="#toml"><code>toml</code></a></h3>
+<pre><code class="language-zuri">import toml
+
+echo toml.parse('[package]\nname = "zuri"\nversion = "1.0"\n')
+</code></pre>
+<pre><code class="language-console">{package: {name: zuri, version: 1.0}}
+</code></pre>
+<p><code>parse()</code> and <code>dump()</code> treat a document as data. <code>edit()</code> treats it as a
+file somebody wrote: the <code>Document</code> it returns renders back byte for byte
+until it is changed, and a change disturbs only the line it lands on.</p>
+<pre><code class="language-zuri">import toml
+
+var doc = toml.edit('# what we ship\n[package]\nversion = "0.9.0"  # bump me\n')
+doc.set('package.version', '1.0.0')
+
+echo doc.to_string()
+</code></pre>
+<pre><code class="language-console"># what we ship
+[package]
+version = "1.0.0"  # bump me
+
+</code></pre>
+<p>That is what a program editing somebody else’s configuration file needs:
+the comment stayed, and so did the spacing on the line that changed.</p>
+<h3 id="csv"><a class="header" href="#csv"><code>csv</code></a></h3>
+<pre><code class="language-zuri">import csv
+
+echo csv.parse('a,b\n1,2')
+</code></pre>
+<pre><code class="language-console">[[a, b], [1, 2]]
+</code></pre>
+<p><code>Reader</code> and <code>Writer</code> stream large files, <code>Dialect</code> configures separators
+and quoting, and <code>sniff_dialect()</code> guesses from a sample.</p>
+<h3 id="struct"><a class="header" href="#struct"><code>struct</code></a></h3>
+<p>Binary layouts. Covered in <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h3 id="base64-convert"><a class="header" href="#base64-convert"><code>base64</code>, <code>convert</code></a></h3>
+<pre><code class="language-zuri">import convert
+
+echo convert.bytes_to_hex(bytes([255, 0]))
+echo convert.to_base(255, 16)
+echo convert.from_base('ff', 16)
+</code></pre>
+<pre><code class="language-console">ff00
+ff
+255
+</code></pre>
+<p><code>convert</code> handles every base-to-base conversion you would otherwise write
+by hand, plus hex, binary, octal and unicode helpers.</p>
+<h2 id="text-and-markup"><a class="header" href="#text-and-markup">Text and Markup</a></h2>
+<h3 id="html"><a class="header" href="#html"><code>html</code></a></h3>
+<p>A WHATWG-conformant parser, a real DOM, and CSS selectors:</p>
+<pre><code class="language-zuri">import html
+
+var doc = html.parse('&lt;ul&gt;&lt;li class="a"&gt;one&lt;/li&gt;&lt;li&gt;two&lt;/li&gt;&lt;/ul&gt;')
+
+echo doc.query_selector('li.a').text_content()
+echo doc.query_selector_all('li').length()
+</code></pre>
+<pre><code class="language-console">one
+2
+</code></pre>
+<p>The DOM supports traversal, mutation and serialisation, which makes it a
+scraper, a templating backend and a sanitiser in one module.</p>
+<h3 id="wire"><a class="header" href="#wire"><code>wire</code></a></h3>
+<p>Templating, with directives expressed as HTML attributes rather than a
+second syntax layered over your markup:</p>
+<pre><code class="language-zuri">import wire
+
+echo wire.render_string('&lt;p x-text="msg"&gt;&lt;/p&gt;', { msg: 'hi' })
+</code></pre>
+<pre><code class="language-console">&lt;p&gt;hi&lt;/p&gt;
+</code></pre>
+<p>Everything is escaped by default, and escaped correctly for where it sits:
+a value in an attribute, in a URL and in a <code>&lt;script&gt;</code> block are three
+different escapes, and Wire knows which is which because it parses your
+template as structure rather than text.</p>
+<p><a href="ch14-00-wire.html">Chapter 14</a> is the full treatment.</p>
+<h3 id="url"><a class="header" href="#url"><code>url</code></a></h3>
+<pre><code class="language-zuri">import url
+
+var parsed = url.parse('https://user@example.com:8443/a/b?q=1#top')
+
+echo parsed.host
+echo parsed.port
+echo parsed.get_param('q')
+</code></pre>
+<pre><code class="language-console">example.com
+8443
+1
+</code></pre>
+<p><code>encode()</code>, <code>decode()</code> and <code>parse_query()</code> handle percent-encoding.</p>
+<h3 id="mime"><a class="header" href="#mime"><code>mime</code></a></h3>
+<pre><code class="language-zuri">import mime
+
+echo mime.detect_from_name('a.png')
+</code></pre>
+<pre><code class="language-console">image/png
+</code></pre>
+<p><code>detect(file)</code> sniffs content rather than trusting the extension, which is
+the check you want on an upload.</p>
+<h3 id="colors"><a class="header" href="#colors"><code>colors</code></a></h3>
+<p>ANSI colour for terminal output, and conversion between every colour space
+you are likely to have a value in:</p>
+<pre><code class="language-zuri">import colors
+
+echo colors.hex_to_rgb('#ff8800')
+echo colors.rgb_to_hex(255, 136, 0)
+echo colors.rgb_to_ansi256(255, 136, 0)
+</code></pre>
+<pre><code class="language-console">[255, 136, 0, 1]
+ff8800
+214
+</code></pre>
+<p><code>colors.text(value, color, background)</code> wraps a string in the escape codes:</p>
+<pre><code class="language-zuri ignore">import colors
+
+echo colors.text('warning', colors.text_color.yellow)
+</code></pre>
+<p>The conversions are what make the same code work on a terminal that cannot
+do what you asked: a true-colour value becomes the nearest of 256, and 256
+becomes the nearest of 16. <code>hex()</code>, <code>rgb()</code>, <code>hsl()</code>, <code>hsv()</code>, <code>hwb()</code>,
+<code>cmyk()</code> and <code>xyz()</code> each take a colour in that space and produce the
+escape sequence for it.</p>
+<h2 id="time"><a class="header" href="#time">Time</a></h2>
+<h3 id="date"><a class="header" href="#date"><code>date</code></a></h3>
+<pre><code class="language-zuri">import date
+
+var d = date.date(2026, 9, 11, 8, 30, 0)
+
+echo d.format('Y-m-d H:i:s')
+echo d.format('l, jS F Y')
+echo date.parse('2026-09-11').format('Y-m-d')
+</code></pre>
+<pre><code class="language-console">2026-09-11 08:30:00
+Friday, 11th September 2026
+2026-09-11
+</code></pre>
+<p>The format codes are single letters: <code>Y</code> four-digit year, <code>m</code> zero-padded
+month, <code>d</code> zero-padded day, <code>H</code> 24-hour, <code>i</code> minutes, <code>s</code> seconds, <code>l</code>
+weekday name, <code>F</code> month name, <code>jS</code> day with an ordinal suffix.</p>
+<p><code>localtime()</code> and <code>gmtime()</code> give the current time, <code>from_time(seconds)</code>
+converts a Unix timestamp, and the module carries a real IANA time zone
+database, so <code>from_timezone('Europe/London', ...)</code> does the right thing
+across a daylight-saving boundary.</p>
+<h2 id="cryptography-and-identity"><a class="header" href="#cryptography-and-identity">Cryptography and Identity</a></h2>
+<h3 id="hash"><a class="header" href="#hash"><code>hash</code></a></h3>
+<p>Digests and HMACs. Covered in <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h3 id="bcrypt"><a class="header" href="#bcrypt"><code>bcrypt</code></a></h3>
+<p>Password hashing, which is a different problem from digesting:</p>
+<pre><code class="language-zuri">import bcrypt
+
+var stored = bcrypt.hash('secret')
+
+echo bcrypt.compare('secret', stored)
+echo bcrypt.get_rounds(stored)
+</code></pre>
+<pre><code class="language-console">true
+10
+</code></pre>
+<p>Use this for passwords and <code>hash</code> for everything else. <code>needs_rehash()</code>
+tells you when a stored hash was made with a lower cost than you now
+require.</p>
+<h3 id="crypto"><a class="header" href="#crypto"><code>crypto</code></a></h3>
+<p>RSA signing and HKDF key derivation.</p>
+<h3 id="uuid"><a class="header" href="#uuid"><code>uuid</code></a></h3>
+<pre><code class="language-zuri">import uuid
+
+echo uuid.v4().length()
+echo uuid.is_valid(uuid.v7())
+</code></pre>
+<pre><code class="language-console">36
+true
+</code></pre>
+<p>Versions 1, 3, 4, 5, 6, 7 and 8 are all there. <code>v4</code> is the random one you
+usually want; <code>v7</code> is time-ordered, which makes it a better database key.</p>
+<h3 id="jwt"><a class="header" href="#jwt"><code>jwt</code></a></h3>
+<p>Signing, verifying and decoding JSON Web Tokens, with a JWKS client for
+rotating keys.</p>
+<h2 id="validation-and-structure"><a class="header" href="#validation-and-structure">Validation and Structure</a></h2>
+<h3 id="validate"><a class="header" href="#validate"><code>validate</code></a></h3>
+<p>A fluent schema builder:</p>
+<pre><code class="language-zuri">import validate
+
+var schema = validate.schema({
+  name: validate.required().string().max_length(10),
+  age: validate.required().integer().min(0),
+})
+
+echo schema.check({ name: 'Ada', age: 36 })
+echo schema.check({ name: 'a name that is far too long', age: 200.5 })
+</code></pre>
+<pre><code class="language-console">{valid: true, errors: []}
+{valid: false, errors: [{field: name, message: The name field must not exceed 10 characters.}, {field: age, message: The age field must be an integer.}]}
+</code></pre>
+<p><code>check_or_raise()</code> raises instead of returning. <code>extend()</code>, <code>only()</code> and
+<code>except()</code> build one schema from another, which is how a create schema and
+an update schema stay in sync.</p>
+<h3 id="types"><a class="header" href="#types"><code>types</code></a></h3>
+<p>Type predicates, one per type, as an alternative to the <code>is_*</code> built-ins:</p>
+<pre><code class="language-zuri">import types
+
+echo types.of(42)
+echo types.int(42)
+echo types.int(4.2)
+echo types.digit('7')
+echo types.alpha('a')
+echo types.iterable([1])
+echo types.instance(ValueError('x'), Error)
+</code></pre>
+<pre><code class="language-console">number
+true
+false
+true
+true
+true
+true
+</code></pre>
+<p>Each one <strong>answers a question</strong> and returns a boolean; none of them
+converts anything. <code>types.int(4.2)</code> is <code>false</code> because <code>4.2</code> is not an
+integer, not because it failed to become one.</p>
+<p><code>types.of()</code> is <code>typeof()</code>. <code>digit()</code>, <code>alpha()</code> and <code>char()</code> are the
+string-shape tests the built-ins do not cover, and <code>instance(value, Class)</code>
+walks the inheritance chain.</p>
+<p>When you want conversion rather than a question, the methods on the value
+do it: <code>to_number()</code>, <code>to_string()</code>, <code>to_bigint()</code>, <code>to_list()</code>,
+<code>to_bytes()</code>.</p>
+<h3 id="set"><a class="header" href="#set"><code>set</code></a></h3>
+<pre><code class="language-zuri">import set
+
+var s = set.set([1, 2, 2, 3])
+echo s.length()
+</code></pre>
+<pre><code class="language-console">3
+</code></pre>
+<p>Union, intersection, difference and subset tests, with insertion order
+preserved.</p>
+<h3 id="enum"><a class="header" href="#enum"><code>enum</code></a></h3>
+<pre><code class="language-zuri">import enum
+
+var Color = enum.enum(['RED', 'GREEN'])
+echo Color.RED
+</code></pre>
+<pre><code class="language-console">0
+</code></pre>
+<p>Pass a dictionary instead of a list to choose the values yourself.</p>
+<h3 id="array"><a class="header" href="#array"><code>array</code></a></h3>
+<p>Typed, fixed-width numeric arrays: <code>Int8Array</code> through <code>Uint64Array</code>, plus
+<code>FloatArray</code> and <code>DoubleArray</code>. They store values in their declared width
+rather than as doubles, which matters for memory and for talking to binary
+formats.</p>
+<pre><code class="language-zuri">import array
+
+var ints = array.Int32Array([1, 2, 3])
+echo ints.length()
+</code></pre>
+<pre><code class="language-console">3
+</code></pre>
+<h2 id="the-system"><a class="header" href="#the-system">The System</a></h2>
+<h3 id="os"><a class="header" href="#os"><code>os</code></a></h3>
+<p>Processes, the filesystem, paths and the environment. Covered in
+<a href="ch09-00-files.html">Chapter 9</a>.</p>
+<p><code>os.exec(command)</code> runs a shell command and gives you its output.
+<code>os.spawn(command, args, options)</code> starts a process you can talk to.
+<code>os.on_signal(name, handler)</code> installs a signal handler.
+<code>os.at_exit(handler)</code> registers cleanup that runs however the program
+ends, and <code>os.set_exit_code(code)</code> decides the status it ends with
+without ending it there and then.</p>
+<h3 id="env"><a class="header" href="#env"><code>env</code></a></h3>
+<p>Configuration: a <code>.env</code> file read into the process environment, and
+values read back out already converted. Covered in
+<a href="ch19-00-env.html">Chapter 19</a>.</p>
+<pre><code class="language-zuri ignore">import env
+
+env.load()
+
+var port = env.int('PORT', 8080)
+var debug = env.bool('DEBUG', false)
+var secret = env.require('SESSION_SECRET')
+</code></pre>
+<p>Names already set in the environment are left alone, so the file is a
+set of defaults and the deployment is what overrides them.</p>
+<h3 id="io"><a class="header" href="#io"><code>io</code></a></h3>
+<p>Standard streams, terminal control and in-memory files:</p>
+<pre><code class="language-zuri ignore">import io
+
+var name = io.readline('Your name: ')
+var secret = io.readline('Password: ', true)
+
+echo io.stdout.is_tty()
+</code></pre>
+<p><code>io.TTY</code> puts the terminal into raw mode, reads single keypresses and moves
+the cursor, which is what an interactive program needs. <code>io.BytesIO</code> is the
+in-memory file from <a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<p><code>io.capture(body)</code> collects everything <code>body</code> writes to standard output
+instead of printing it, <code>echo</code>, <code>print()</code> and <code>io.stdout</code> alike:</p>
+<pre><code class="language-zuri">import io
+
+def greet(name) {
+  echo 'Hello, ${name}!'
+}
+
+var out = io.capture(@{ greet('Ada') })
+
+echo 'captured ${out.length()} characters'
+</code></pre>
+<pre><code class="language-console">captured 12 characters
+</code></pre>
+<p>Captures nest, and <code>capture_begin()</code>/<code>capture_end()</code> are the manual pair
+for when the body might raise and you want its output anyway. This is
+what lets <a href="ch23-00-testing.html">Chapter 23</a> assert on what a function
+prints, and keep a passing test’s output out of the report.</p>
+<h3 id="test"><a class="header" href="#test"><code>test</code></a></h3>
+<p>Suites, matchers, mocks, snapshots and reports. Covered in
+<a href="ch23-00-testing.html">Chapter 23</a>.</p>
+<pre><code class="language-zuri ignore">import test { * }
+
+describe('slug', @{
+  it('lowercases and joins', @{
+    expect(slug('Hello World')).to_be('hello-world')
+  })
+})
+
+run()
+</code></pre>
+<h3 id="stat"><a class="header" href="#stat"><code>stat</code></a></h3>
+<p>The <code>S_IS*</code> predicates over the <code>mode</code> word from <code>file().stats()</code>, plus a
+renderer for it:</p>
+<pre><code class="language-zuri">import stat
+
+file('notes.txt', 'w').write('x')
+file('notes.txt').chmod(0c644)
+
+var info = file('notes.txt').stats()
+
+echo stat.S_ISREG(info.mode)
+echo stat.S_ISDIR(info.mode)
+echo stat.file_mode(info.mode)
+</code></pre>
+<pre><code class="language-console">true
+false
+-rw-r--r--
+</code></pre>
+<p><code>S_ISREG</code>, <code>S_ISDIR</code>, <code>S_ISLNK</code>, <code>S_ISCHR</code>, <code>S_ISBLK</code>, <code>S_ISFIFO</code> and
+<code>S_ISSOCK</code> each answer one question about the kind of entry.
+<code>S_IMODE(mode)</code> strips the type bits and leaves the permissions;
+<code>file_mode(mode)</code> renders the whole thing the way <code>ls -l</code> does.</p>
+<h3 id="args"><a class="header" href="#args"><code>args</code></a></h3>
+<p>A command-line parser with subcommands, typed options, automatic
+<code>--help</code> and wrapped terminal output. Covered in
+<a href="ch20-00-args.html">Chapter 20</a>.</p>
+<pre><code class="language-zuri ignore">import args
+
+var parser = args.Parser('greet')
+parser.add_option('name', 'Who to greet', { short_name: 'n', type: args.STRING })
+parser.add_command('history', 'Show past greetings')
+
+var parsed = parser.parse()
+</code></pre>
+<p>The help text is written from the same declarations that read the
+arguments, so the two cannot drift apart.</p>
+<h3 id="log"><a class="header" href="#log"><code>log</code></a></h3>
+<pre><code class="language-zuri">import log
+
+log.info('server started')
+log.error('connection refused')
+</code></pre>
+<p>A <code>Logger</code> binds structured fields, a <code>child()</code> logger inherits them, and
+transports send records to the console, a file or somewhere you write
+yourself.</p>
+<h3 id="isolate"><a class="header" href="#isolate"><code>isolate</code></a></h3>
+<p>Concurrency. Covered in <a href="ch11-00-isolates.html">Chapter 11</a>.</p>
+<h3 id="ffi"><a class="header" href="#ffi"><code>ffi</code></a></h3>
+<p>Calling C and Rust. <code>ffi</code> loads shared libraries, reads their C headers
+or Rust sources as declarations, calls their functions with checked
+conversions, and turns Zuri functions into callbacks; it links static
+libraries into loadable ones too.</p>
+<pre><code class="language-zuri">import ffi
+
+var c = ffi.open(ffi.LIBC).declare('size_t strlen(const char *s);')
+
+echo c.strlen('interop')
+</code></pre>
+<pre><code class="language-console">7
+</code></pre>
+<p>Covered in <a href="ch26-00-ffi.html">Chapter 26</a>.</p>
+<h2 id="the-network"><a class="header" href="#the-network">The Network</a></h2>
+<h3 id="net"><a class="header" href="#net"><code>net</code></a></h3>
+<p>TCP, UDP, unix domain sockets, TLS, DTLS, addresses and polling. Covered
+in <a href="ch12-00-networking.html">Chapter 12</a>.</p>
+<h3 id="http"><a class="header" href="#http"><code>http</code></a></h3>
+<p>Client and server, HTTP/1.1 and HTTP/2, with routing, middleware,
+WebSockets, server-sent events, multipart uploads, static files and a
+reverse proxy. Introduced in <a href="ch12-00-networking.html">Chapter 12</a>, covered
+fully in <a href="ch15-00-http.html">Chapter 15</a>, and used throughout
+<a href="ch25-00-task-board.html">Chapter 25</a>.</p>
+<h2 id="databases"><a class="header" href="#databases">Databases</a></h2>
+<h3 id="sql"><a class="header" href="#sql"><code>sql</code></a></h3>
+<p>One way to talk to a relational database, whichever one it is. <code>sql</code>
+defines what an adapter has to provide and supplies everything that is
+the same across engines: parameters, transactions and savepoints,
+cursors, pooling, introspection, and one error hierarchy. SQLite,
+PostgreSQL and MySQL adapters ship with it, and changing between them
+means changing the connection string.</p>
+<pre><code class="language-zuri ignore">import sql
+
+var db = sql.open('sqlite://./app.db')
+var id = db.insert('posts', { title: 'Hello' })
+
+for post in db.query('select * from posts where id = ?', [id]) {
+  echo post.title
+}
+</code></pre>
+<p>Covered in <a href="ch17-00-sql.html">Chapter 17</a>.</p>
+<h2 id="mail"><a class="header" href="#mail">Mail</a></h2>
+<h3 id="mail-1"><a class="header" href="#mail-1"><code>mail</code></a></h3>
+<p>Messages and the three protocols that move them, written in Zuri from
+the socket up. <code>mail.message()</code> builds a message out of text, HTML and
+files and works out the MIME tree from what went in; <code>mail.parse()</code>
+reads one back. <code>mail.smtp</code> sends, <code>mail.imap</code> reads mail where it is
+kept, and <code>mail.pop3</code> takes it away. Both server ends are here too: an
+SMTP server that decides what to accept through handlers of your own,
+and an IMAP server that answers out of a mail store, of which one keeps
+mail on disk in Maildir format and one keeps it in the process.
+<code>mail.dkim</code> signs outgoing mail and checks incoming mail.</p>
+<pre><code class="language-zuri ignore">import mail
+
+mail.send('smtp://mail.example.com', mail.message({
+  from: 'reports@example.com',
+  to: 'ann@example.com',
+  subject: 'Quarterly report',
+  text: 'The numbers are in.',
+}), { username: 'reports', password: secret })
+</code></pre>
+<p>Covered in <a href="ch18-00-mail.html">Chapter 18</a>.</p>
+<h2 id="compression"><a class="header" href="#compression">Compression</a></h2>
+<h3 id="compress"><a class="header" href="#compress"><code>compress</code></a></h3>
+<p><code>deflate</code>, <code>zlib</code>, <code>gzip</code>, <code>zstd</code>, <code>lz4</code>, <code>bzip2</code> and <code>brotli</code>, plus <code>tar</code>
+and <code>zip</code> archives and <code>checksum</code> for CRC32 and Adler-32. Covered in
+<a href="ch10-00-binary-data.html">Chapter 10</a>.</p>
+<h2 id="graphics"><a class="header" href="#graphics">Graphics</a></h2>
+<h3 id="imagine"><a class="header" href="#imagine"><code>imagine</code></a></h3>
+<p>Image creation and manipulation on an RGBA buffer: drawing primitives,
+text with a built-in stroke font, filters, colour-space conversion, and
+reading and writing the common formats.</p>
+<pre><code class="language-zuri">import imagine { Image }
+
+Image(400, 200, '#0f172a')
+  .fill_circle(200, 100, 70, '#38bdf8')
+  .circle(200, 100, 70, 'white', { thickness: 3 })
+  .save('badge.png')
+</code></pre>
+<p>Almost every method returns an image, so operations chain.
+<code>Image.open(path)</code> decodes an existing file, with the format taken from the
+contents rather than the extension:</p>
+<pre><code class="language-zuri ignore">Image.open('photo.jpg')
+  .thumbnail(400, 400)
+  .save('thumb.webp')
+</code></pre>
+<p>Decoding and encoding are native; everything between them — filters,
+drawing, colour conversion — is ordinary Zuri you can read in <code>libs/imagine</code>
+and extend. <a href="ch16-00-imagine.html">Chapter 16</a> is the full treatment.</p>
+<h2 id="the-language-itself"><a class="header" href="#the-language-itself">The Language Itself</a></h2>
+<h3 id="zuri"><a class="header" href="#zuri"><code>zuri</code></a></h3>
+<p>Lexing, parsing, compiling and reflection, all reachable from Zuri code:</p>
+<pre><code class="language-zuri">import zuri
+
+echo zuri.tokenize('var x = 1').length() &gt; 0
+echo zuri.reflect.kind([1])
+</code></pre>
+<pre><code class="language-console">true
+list
+</code></pre>
+<p><a href="ch21-00-metaprogramming.html">Chapter 21</a> is the full treatment.</p>
+<h3 id="math"><a class="header" href="#math"><code>math</code></a></h3>
+<p>The constants. Everything else is a method on <code>number</code>; see
+<a href="ch04-02-numbers.html">Chapter 4</a>.</p>
+<h2 id="finding-the-rest"><a class="header" href="#finding-the-rest">Finding the Rest</a></h2>
+<p>Every module’s source is in <code>libs/</code>, and every public function in it
+carries a doc block with its parameters, its defaults and its edge cases.
+Reading <code>libs/set.zu</code> is a faster way to learn <code>set</code> than any summary, and
+the standard library is written to be read.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch12-00-networking.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch14-00-wire.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch12-00-networking.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch14-00-wire.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

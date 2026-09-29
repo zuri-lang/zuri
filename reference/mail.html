@@ -1,0 +1,584 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>mail - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="mail"><a class="header" href="#mail"><code>mail</code></a></h1>
+<pre><code class="language-zuri ignore">import mail
+</code></pre>
+<p>Mail, from the message to the socket.</p>
+<p><code>mail</code> builds and reads messages, and speaks the three protocols that
+move them: SMTP to send, IMAP and POP3 to read. It also runs the other
+end, with an SMTP server that accepts mail and an IMAP server that
+serves it. All of it is written in Zuri.</p>
+<pre><code class="language-zuri ignore">import mail
+
+var note = mail.message()
+  .set_from('reports@example.com')
+  .add_to('ann@example.com')
+  .set_subject('Quarterly report')
+  .set_text('The numbers are in.')
+
+mail.send('smtp://mail.example.com', note, {
+  username: 'reports',
+  password: secret,
+})
+</code></pre>
+<h2 id="what-is-here"><a class="header" href="#what-is-here">What is here</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>message()</code></td><td>starts a message, built up one call at a time</td></tr>
+<tr><td><code>parse()</code></td><td>reads one back</td></tr>
+<tr><td><code>send()</code></td><td>sends one, opening and closing the connection</td></tr>
+<tr><td><code>Message</code></td><td>a message, or one part of one</td></tr>
+<tr><td><code>Address</code></td><td>one address and the name written with it</td></tr>
+<tr><td><code>Headers</code></td><td>the header block, in order and case-insensitive</td></tr>
+<tr><td><code>SmtpClient</code></td><td>a connection to a server that sends mail</td></tr>
+<tr><td><code>ImapClient</code></td><td>a connection to a server that stores it</td></tr>
+<tr><td><code>Pop3Client</code></td><td>the older way of collecting it</td></tr>
+<tr><td><code>SmtpServer</code></td><td>the receiving end of SMTP</td></tr>
+<tr><td><code>ImapServer</code></td><td>the serving end of IMAP</td></tr>
+<tr><td><code>MailStore</code></td><td>where an <code>ImapServer</code> keeps mail</td></tr>
+<tr><td><code>MailError</code></td><td>the root of every error raised here</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="reading-mail"><a class="header" href="#reading-mail">Reading mail</a></h2>
+<pre><code class="language-zuri ignore">import mail
+
+var inbox = mail.imap('imaps://mail.example.com', {
+  username: 'ann',
+  password: secret,
+})
+
+inbox.select('INBOX')
+
+for id in inbox.search('UNSEEN') {
+  echo inbox.fetch_message(id).subject()
+}
+
+inbox.logout()
+</code></pre>
+<h2 id="running-a-server"><a class="header" href="#running-a-server">Running a server</a></h2>
+<p>The servers are the same shape as <code>http.HttpServer</code>: bind, listen, and
+hand each connection to a worker. An <code>SmtpServer</code> decides what to accept
+through handlers, and an <code>ImapServer</code> answers from a <code>MailStore</code>, of
+which two ship: one on disk in Maildir format and one in memory.</p>
+<h2 id="security"><a class="header" href="#security">Security</a></h2>
+<p>Every client can start in TLS or negotiate it with <code>STARTTLS</code>, and
+refuses to send credentials over a connection that is neither.
+<code>mail.dkim</code> signs outgoing mail and verifies incoming mail.</p>
+<h2 id="the-mail-api"><a class="header" href="#the-mail-api">The <code>mail</code> API</a></h2>
+<p>Every public name in <code>mail</code>, wherever it is declared. Each links to the
+page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="mail-imap-server.html#allowed_flags"><code>mail.ALLOWED_FLAGS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-address.html#address"><code>mail.Address</code></a></td><td>class</td><td>One address, with the display name that was written alongside it.</td></tr>
+<tr><td><a href="mail-message.html#attachment"><code>mail.Attachment</code></a></td><td>class</td><td>Something a message carries alongside what it says: a file to offer, or an image the HTML shows.</td></tr>
+<tr><td><a href="mail-errors.html#authenticationerror"><code>mail.AuthenticationError</code></a></td><td>class</td><td>The credentials were not accepted, or no mechanism both ends understand was on offer.</td></tr>
+<tr><td><a href="mail-imap-server.html#base_capabilities"><code>mail.BASE_CAPABILITIES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-client.html#bodypart"><code>mail.BodyPart</code></a></td><td>class</td><td>What one message is made of, without fetching it: the type of each part, its size, and where in the message…</td></tr>
+<tr><td><a href="mail-errors.html#connectionclosed"><code>mail.ConnectionClosed</code></a></td><td>class</td><td>The connection closed while a conversation was still going on, or a command was issued on one that had…</td></tr>
+<tr><td><a href="mail-content.html#contentdisposition"><code>mail.ContentDisposition</code></a></td><td>class</td><td>What a part is for: shown where it sits, or offered as a file.</td></tr>
+<tr><td><a href="mail-content.html#contenttype"><code>mail.ContentType</code></a></td><td>class</td><td>A media type and the parameters that came with it.</td></tr>
+<tr><td><a href="mail-content.html#default_charset"><code>mail.DEFAULT_CHARSET</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-server.html#default_max_recipients"><code>mail.DEFAULT_MAX_RECIPIENTS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-server.html#default_max_size"><code>mail.DEFAULT_MAX_SIZE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-server.html#default_timeout"><code>mail.DEFAULT_TIMEOUT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-content.html#default_type"><code>mail.DEFAULT_TYPE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-store.html#delimiter"><code>mail.DELIMITER</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-pop3-client.html#entry"><code>mail.Entry</code></a></td><td>class</td><td>One message in the mailbox, as <code>list()</code> reports it.</td></tr>
+<tr><td><a href="mail-imap-client.html#envelope"><code>mail.Envelope</code></a></td><td>class</td><td>The addresses and dates out of a message’s headers, as the server parsed them, so a list of messages can be…</td></tr>
+<tr><td><a href="mail-address.html#group"><code>mail.Group</code></a></td><td>class</td><td>A named group of addresses, as <code>Managers: ann@example.com, bob@example.com;</code> writes one.</td></tr>
+<tr><td><a href="mail-headers.html#headers"><code>mail.Headers</code></a></td><td>class</td><td>The headers of a message or of one of its parts.</td></tr>
+<tr><td><a href="mail-imap-client.html#imap_schemes"><code>mail.IMAP_SCHEMES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-store.html#index_file"><code>mail.INDEX_FILE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-store.html#info_separator"><code>mail.INFO_SEPARATOR</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-client.html#imapclient"><code>mail.ImapClient</code></a></td><td>class</td><td>A connection to a server that stores mail.</td></tr>
+<tr><td><a href="mail-errors.html#imaperror"><code>mail.ImapError</code></a></td><td>class</td><td>The IMAP server answered a command with <code>NO</code> or <code>BAD</code>.</td></tr>
+<tr><td><a href="mail-imap-server.html#imapserver"><code>mail.ImapServer</code></a></td><td>class</td><td>A server that serves mail.</td></tr>
+<tr><td><a href="mail-imap-server.html#imapsession"><code>mail.ImapSession</code></a></td><td>class</td><td>One connection, and what it has got as far as doing.</td></tr>
+<tr><td><a href="mail-imap-store.html#maildir_flags"><code>mail.MAILDIR_FLAGS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-store.html#maildir_parts"><code>mail.MAILDIR_PARTS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-server.html#max_data_line"><code>mail.MAX_DATA_LINE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-server.html#max_errors"><code>mail.MAX_ERRORS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-client.html#max_reply_line"><code>mail.MAX_REPLY_LINE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-server.html#mechanisms"><code>mail.MECHANISMS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-errors.html#mailerror"><code>mail.MailError</code></a></td><td>class</td><td>Base class for every error this module raises.</td></tr>
+<tr><td><a href="mail-imap-store.html#mailstore"><code>mail.MailStore</code></a></td><td>class</td><td>What a store has to be able to do.</td></tr>
+<tr><td><a href="mail-imap-client.html#mailbox"><code>mail.Mailbox</code></a></td><td>class</td><td>An open mailbox, and what the server said about it when it opened.</td></tr>
+<tr><td><a href="mail-errors.html#mailboxerror"><code>mail.MailboxError</code></a></td><td>class</td><td>Something went wrong in a mail store: a mailbox that does not exist, one that cannot be created, a message…</td></tr>
+<tr><td><a href="mail-imap-client.html#mailboxinfo"><code>mail.MailboxInfo</code></a></td><td>class</td><td>One mailbox as <code>list()</code> reports it: its name, the character that separates the levels of it, and what the…</td></tr>
+<tr><td><a href="mail-imap-store.html#maildirstore"><code>mail.MaildirStore</code></a></td><td>class</td><td>A store that keeps mail on disk in the Maildir layout.</td></tr>
+<tr><td><a href="mail-imap-store.html#memorystore"><code>mail.MemoryStore</code></a></td><td>class</td><td>A store that keeps everything in the process and nothing on disk.</td></tr>
+<tr><td><a href="mail-message.html#message"><code>mail.Message</code></a></td><td>class</td><td>One message, or one part of one.</td></tr>
+<tr><td><a href="mail-errors.html#messageerror"><code>mail.MessageError</code></a></td><td>class</td><td>The bytes handed over are not a message, or are one that contradicts itself: a header with no colon in it, a…</td></tr>
+<tr><td><a href="mail-imap-client.html#messageinfo"><code>mail.MessageInfo</code></a></td><td>class</td><td>What a <code>FETCH</code> returned about one message.</td></tr>
+<tr><td><a href="mail-pop3-client.html#pop3_schemes"><code>mail.POP3_SCHEMES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-pop3-client.html#pop3client"><code>mail.Pop3Client</code></a></td><td>class</td><td>A connection to a server that hands mail over.</td></tr>
+<tr><td><a href="mail-errors.html#pop3error"><code>mail.Pop3Error</code></a></td><td>class</td><td>The POP3 server answered a command with <code>-ERR</code>.</td></tr>
+<tr><td><a href="mail-errors.html#protocolerror"><code>mail.ProtocolError</code></a></td><td>class</td><td>The server said something the protocol does not allow: a greeting that is not a greeting, a response with no…</td></tr>
+<tr><td><a href="mail-smtp-client.html#reply"><code>mail.Reply</code></a></td><td>class</td><td>One reply from the server: its code, and whatever it said with it.</td></tr>
+<tr><td><a href="mail-smtp-client.html#smtp_schemes"><code>mail.SMTP_SCHEMES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-client.html#states"><code>mail.STATES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-smtp-client.html#smtpclient"><code>mail.SmtpClient</code></a></td><td>class</td><td>A connection to a server that sends mail.</td></tr>
+<tr><td><a href="mail-errors.html#smtperror"><code>mail.SmtpError</code></a></td><td>class</td><td>The server rejected a command, and said so with a reply code.</td></tr>
+<tr><td><a href="mail-errors.html#smtppermanenterror"><code>mail.SmtpPermanentError</code></a></td><td>class</td><td>A 5xx reply: the server will not accept the message, and trying again changes nothing.</td></tr>
+<tr><td><a href="mail-smtp-server.html#smtpserver"><code>mail.SmtpServer</code></a></td><td>class</td><td>A server that accepts mail.</td></tr>
+<tr><td><a href="mail-smtp-server.html#smtpsession"><code>mail.SmtpSession</code></a></td><td>class</td><td>One connection, and everything known about it so far.</td></tr>
+<tr><td><a href="mail-errors.html#smtptransienterror"><code>mail.SmtpTransientError</code></a></td><td>class</td><td>A 4xx reply: the server could not accept the message now, and the sender should try again later.</td></tr>
+<tr><td><a href="mail-errors.html#stateerror"><code>mail.StateError</code></a></td><td>class</td><td>A command was issued that makes no sense in the state the connection is in: a fetch before a mailbox has been…</td></tr>
+<tr><td><a href="mail-imap-store.html#storedmessage"><code>mail.StoredMessage</code></a></td><td>class</td><td>One message in a store.</td></tr>
+<tr><td><a href="mail-address.html#address"><code>mail.address.address</code></a></td><td>function</td><td>Builds an address without parsing anything.</td></tr>
+<tr><td><a href="mail-address.html#format_list"><code>mail.address.format_list</code></a></td><td>function</td><td>Writes a list of addresses as a header value.</td></tr>
+<tr><td><a href="mail-address.html#parse"><code>mail.address.parse</code></a></td><td>function</td><td>Reads exactly one address.</td></tr>
+<tr><td><a href="mail-address.html#parse_groups"><code>mail.address.parse_groups</code></a></td><td>function</td><td>Reads every address in a header value, keeping the groups.</td></tr>
+<tr><td><a href="mail-address.html#parse_list"><code>mail.address.parse_list</code></a></td><td>function</td><td>Reads every address in a header value.</td></tr>
+<tr><td><a href="mail-message.html#attachment"><code>mail.attachment</code></a></td><td>function</td><td>Starts an attachment from what is in it.</td></tr>
+<tr><td><a href="mail-dkim.html#algorithms"><code>mail.dkim.ALGORITHMS</code></a></td><td>constant</td><td>The signing algorithms this implements.</td></tr>
+<tr><td><a href="mail-dkim.html#canonicalisations"><code>mail.dkim.CANONICALISATIONS</code></a></td><td>constant</td><td>The canonicalisations this implements, on either headers or body.</td></tr>
+<tr><td><a href="mail-dkim.html#default_headers"><code>mail.dkim.DEFAULT_HEADERS</code></a></td><td>constant</td><td>The headers signed when the signer is not told which to sign.</td></tr>
+<tr><td><a href="mail-dkim.html#dkimerror"><code>mail.dkim.DkimError</code></a></td><td>class</td><td>Raised when a signature cannot be built: an algorithm this does not implement, a key that will not parse, a…</td></tr>
+<tr><td><a href="mail-dkim.html#result"><code>mail.dkim.Result</code></a></td><td>class</td><td>What checking one signature came to.</td></tr>
+<tr><td><a href="mail-dkim.html#signature"><code>mail.dkim.Signature</code></a></td><td>class</td><td>One <code>DKIM-Signature</code> header, read into its parts.</td></tr>
+<tr><td><a href="mail-dkim.html#signer"><code>mail.dkim.Signer</code></a></td><td>class</td><td>Signs outgoing messages for one domain with one key.</td></tr>
+<tr><td><a href="mail-dkim.html#canonicalise_body"><code>mail.dkim.canonicalise_body</code></a></td><td>function</td><td>Canonicalises a body.</td></tr>
+<tr><td><a href="mail-dkim.html#canonicalise_header"><code>mail.dkim.canonicalise_header</code></a></td><td>function</td><td>Canonicalises one header.</td></tr>
+<tr><td><a href="mail-dkim.html#is_signed"><code>mail.dkim.is_signed</code></a></td><td>function</td><td>Whether a message carries at least one signature that checks out.</td></tr>
+<tr><td><a href="mail-dkim.html#public_key_pem"><code>mail.dkim.public_key_pem</code></a></td><td>function</td><td>Turns the <code>p=</code> value of a key record into a PEM the crypto module will accept.</td></tr>
+<tr><td><a href="mail-dkim.html#verify"><code>mail.dkim.verify</code></a></td><td>function</td><td>Checks every signature on a message.</td></tr>
+<tr><td><a href="mail-encoding.html#transfer_encodings"><code>mail.encoding.TRANSFER_ENCODINGS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-encoding.html#decode_base64"><code>mail.encoding.decode_base64</code></a></td><td>function</td><td>Decodes base64, ignoring the line breaks and stray whitespace a message carries it with.</td></tr>
+<tr><td><a href="mail-encoding.html#decode_body"><code>mail.encoding.decode_body</code></a></td><td>function</td><td>Decodes a part’s body the way its <code>Content-Transfer-Encoding</code> says.</td></tr>
+<tr><td><a href="mail-encoding.html#decode_parameters"><code>mail.encoding.decode_parameters</code></a></td><td>function</td><td>Puts the parameters of a header back together.</td></tr>
+<tr><td><a href="mail-encoding.html#decode_quoted_printable"><code>mail.encoding.decode_quoted_printable</code></a></td><td>function</td><td>Decodes quoted-printable.</td></tr>
+<tr><td><a href="mail-encoding.html#decode_text"><code>mail.encoding.decode_text</code></a></td><td>function</td><td>Turns bytes into text, reading them as the character set names.</td></tr>
+<tr><td><a href="mail-encoding.html#decode_words"><code>mail.encoding.decode_words</code></a></td><td>function</td><td>Reads the encoded words out of a header value and puts back the text they stand for.</td></tr>
+<tr><td><a href="mail-encoding.html#encode_base64"><code>mail.encoding.encode_base64</code></a></td><td>function</td><td>Encodes data as base64, wrapped into lines.</td></tr>
+<tr><td><a href="mail-encoding.html#encode_body"><code>mail.encoding.encode_body</code></a></td><td>function</td><td>Encodes a part’s body the way its <code>Content-Transfer-Encoding</code> says.</td></tr>
+<tr><td><a href="mail-encoding.html#encode_parameter"><code>mail.encoding.encode_parameter</code></a></td><td>function</td><td>Writes one parameter of a header, choosing the form its value needs.</td></tr>
+<tr><td><a href="mail-encoding.html#encode_quoted_printable"><code>mail.encoding.encode_quoted_printable</code></a></td><td>function</td><td>Encodes data as quoted-printable.</td></tr>
+<tr><td><a href="mail-encoding.html#encode_word"><code>mail.encoding.encode_word</code></a></td><td>function</td><td>Encodes text as one or more RFC 2047 encoded words, so that a header can carry characters a header is not…</td></tr>
+<tr><td><a href="mail-encoding.html#guess_encoding"><code>mail.encoding.guess_encoding</code></a></td><td>function</td><td>Picks the transfer encoding a body should use.</td></tr>
+<tr><td><a href="mail-encoding.html#is_ascii"><code>mail.encoding.is_ascii</code></a></td><td>function</td><td>Whether every byte is plain ASCII, which decides whether a header or a body needs encoding at all.</td></tr>
+<tr><td><a href="#format_addresses"><code>mail.format_addresses</code></a></td><td>function</td><td>Writes a list of addresses as a header value.</td></tr>
+<tr><td><a href="mail-headers.html#address_headers"><code>mail.headers.ADDRESS_HEADERS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-headers.html#line_width"><code>mail.headers.LINE_WIDTH</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-headers.html#fold"><code>mail.headers.fold</code></a></td><td>function</td><td>Writes one header, folded so that no line runs past the width.</td></tr>
+<tr><td><a href="mail-headers.html#unfold"><code>mail.headers.unfold</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="mail-imap.html#"><code>mail.imap</code></a></td><td>function</td><td>Opens a connection to a server that stores mail.</td></tr>
+<tr><td><a href="mail-message.html#message"><code>mail.message</code></a></td><td>function</td><td>Starts a message.</td></tr>
+<tr><td><a href="mail-message.html#multipart"><code>mail.multipart</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="mail-message.html#new_message_id"><code>mail.new_message_id</code></a></td><td>function</td><td>An identifier for a message, unique enough that no two ever collide.</td></tr>
+<tr><td><a href="mail-message.html#parse"><code>mail.parse</code></a></td><td>function</td><td>Reads a message.</td></tr>
+<tr><td><a href="#parse_address"><code>mail.parse_address</code></a></td><td>function</td><td>Reads one address out of text.</td></tr>
+<tr><td><a href="#parse_address_groups"><code>mail.parse_address_groups</code></a></td><td>function</td><td>Reads every address out of text, keeping the groups as groups.</td></tr>
+<tr><td><a href="#parse_address_list"><code>mail.parse_address_list</code></a></td><td>function</td><td>Reads every address out of text, with any groups flattened into their members.</td></tr>
+<tr><td><a href="mail-imap-parser.html#literal"><code>mail.parser.Literal</code></a></td><td>class</td><td>A run of bytes a server sent as a literal.</td></tr>
+<tr><td><a href="mail-imap-parser.html#reader"><code>mail.parser.Reader</code></a></td><td>class</td><td>Reads responses off a connection, one at a time.</td></tr>
+<tr><td><a href="mail-imap-parser.html#response"><code>mail.parser.Response</code></a></td><td>class</td><td>One response from the server.</td></tr>
+<tr><td><a href="mail-imap-parser.html#statuses"><code>mail.parser.STATUSES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-parser.html#system_flags"><code>mail.parser.SYSTEM_FLAGS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-imap-parser.html#quote"><code>mail.parser.quote</code></a></td><td>function</td><td>Writes a value the way a command has to carry it.</td></tr>
+<tr><td><a href="mail-imap-parser.html#tokenize"><code>mail.parser.tokenize</code></a></td><td>function</td><td>Reads a run of IMAP values out of text.</td></tr>
+<tr><td><a href="mail-pool.html#cluster"><code>mail.pool.Cluster</code></a></td><td>class</td><td>A running pool: the socket, the workers, and the loop feeding them.</td></tr>
+<tr><td><a href="mail-pool.html#serve"><code>mail.pool.serve</code></a></td><td>function</td><td>Starts a pool and runs it until something closes it.</td></tr>
+<tr><td><a href="mail-pool.html#start"><code>mail.pool.start</code></a></td><td>function</td><td>Starts a pool without running the accept loop, so the address is known before the first connection.</td></tr>
+<tr><td><a href="mail-pool.html#worker_main"><code>mail.pool.worker_main</code></a></td><td>function</td><td>What one worker isolate runs: build a server of its own, then serve whatever connections the acceptor hands…</td></tr>
+<tr><td><a href="mail-pop3.html#"><code>mail.pop3</code></a></td><td>function</td><td>Opens a connection to a server that hands mail over.</td></tr>
+<tr><td><a href="mail-sasl.html#anonymous"><code>mail.sasl.Anonymous</code></a></td><td>class</td><td><code>ANONYMOUS</code>: no identity at all, with an optional note saying who is knocking.</td></tr>
+<tr><td><a href="mail-sasl.html#crammd5"><code>mail.sasl.CramMd5</code></a></td><td>class</td><td><code>CRAM-MD5</code>: a keyed digest of the server’s challenge, so the password never travels.</td></tr>
+<tr><td><a href="mail-sasl.html#external"><code>mail.sasl.External</code></a></td><td>class</td><td><code>EXTERNAL</code>: the connection already established who this is, usually with a client certificate.</td></tr>
+<tr><td><a href="mail-sasl.html#login"><code>mail.sasl.Login</code></a></td><td>class</td><td><code>LOGIN</code>: the username and the password again, one prompt at a time.</td></tr>
+<tr><td><a href="mail-sasl.html#mechanism"><code>mail.sasl.Mechanism</code></a></td><td>class</td><td>What every mechanism looks like from the outside.</td></tr>
+<tr><td><a href="mail-sasl.html#needs_tls"><code>mail.sasl.NEEDS_TLS</code></a></td><td>constant</td><td>The mechanisms that put the password itself on the wire, and so must never be used without TLS.</td></tr>
+<tr><td><a href="mail-sasl.html#oauthbearer"><code>mail.sasl.OAuthBearer</code></a></td><td>class</td><td><code>OAUTHBEARER</code>: the standardised form of the same idea, from RFC 7628.</td></tr>
+<tr><td><a href="mail-sasl.html#preference"><code>mail.sasl.PREFERENCE</code></a></td><td>constant</td><td>The mechanisms this implements, strongest first, which is the order a client picks from what a server offers.</td></tr>
+<tr><td><a href="mail-sasl.html#plain"><code>mail.sasl.Plain</code></a></td><td>class</td><td><code>PLAIN</code>: the username and the password, separated by zero bytes.</td></tr>
+<tr><td><a href="mail-sasl.html#scram"><code>mail.sasl.Scram</code></a></td><td>class</td><td><code>SCRAM-SHA-1</code> and <code>SCRAM-SHA-256</code>: the password is never sent, the server never has to store it, and the…</td></tr>
+<tr><td><a href="mail-sasl.html#xoauth2"><code>mail.sasl.XOAuth2</code></a></td><td>class</td><td><code>XOAUTH2</code>: a bearer token rather than a password, which is what Google and Microsoft accept.</td></tr>
+<tr><td><a href="mail-sasl.html#choose"><code>mail.sasl.choose</code></a></td><td>function</td><td>Picks the mechanism to use.</td></tr>
+<tr><td><a href="mail-sasl.html#of"><code>mail.sasl.of</code></a></td><td>function</td><td>Builds a mechanism by name.</td></tr>
+<tr><td><a href="mail-sasl.html#prepare"><code>mail.sasl.prepare</code></a></td><td>function</td><td>Prepares a username or password the way RFC 4013 says to, so that two spellings of the same characters…</td></tr>
+<tr><td><a href="mail-sasl.html#response"><code>mail.sasl.response</code></a></td><td>function</td><td>The answer to a <code>CRAM-MD5</code> challenge.</td></tr>
+<tr><td><a href="#send"><code>mail.send</code></a></td><td>function</td><td>Sends one message, opening the connection and closing it again.</td></tr>
+<tr><td><a href="mail-smtp.html#"><code>mail.smtp</code></a></td><td>function</td><td>Opens a connection to a server that sends mail.</td></tr>
+<tr><td><a href="mail-stream.html#linestream"><code>mail.stream.LineStream</code></a></td><td>class</td><td>A connection that reads and writes lines.</td></tr>
+<tr><td><a href="mail-stream.html#max_line"><code>mail.stream.MAX_LINE</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="mail-stream.html#tls_modes"><code>mail.stream.TLS_MODES</code></a></td><td>constant</td><td>How TLS is treated on a connection that did not start encrypted: <code>require</code> refuses to go on without it,…</td></tr>
+<tr><td><a href="mail-stream.html#connect"><code>mail.stream.connect</code></a></td><td>function</td><td>Opens a connection to a host, in TLS or in the clear.</td></tr>
+<tr><td><a href="mail-stream.html#endpoint"><code>mail.stream.endpoint</code></a></td><td>function</td><td>Reads a connection string into the pieces needed to open it.</td></tr>
+<tr><td><a href="mail-stream.html#start_tls"><code>mail.stream.start_tls</code></a></td><td>function</td><td>Wraps a connection that started in the clear in TLS, which is what every <code>STARTTLS</code> comes down to.</td></tr>
+<tr><td><a href="mail-message.html#text_part"><code>mail.text_part</code></a></td><td>function</td><td>Builds one text part.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="mail-address.html"><code>mail.address</code></a></td><td><code>mail.address.*</code></td><td>Reading and writing the addresses in a mail header.</td></tr>
+<tr><td><a href="mail-content.html"><code>mail.content</code></a></td><td><code>mail.*</code></td><td>The two headers that say what a part holds and what to do with it.</td></tr>
+<tr><td><a href="mail-dkim.html"><code>mail.dkim</code></a></td><td><code>mail.dkim.*</code></td><td>DomainKeys Identified Mail: signing outgoing messages so a receiver can tell they came from the domain they…</td></tr>
+<tr><td><a href="mail-encoding.html"><code>mail.encoding</code></a></td><td><code>mail.encoding.*</code></td><td>The encodings a message uses to get eight bit data through a seven bit pipe.</td></tr>
+<tr><td><a href="mail-errors.html"><code>mail.errors</code></a></td><td><code>mail.*</code></td><td>Every error the mail stack raises, under one root.</td></tr>
+<tr><td><a href="mail-headers.html"><code>mail.headers</code></a></td><td><code>mail.headers.*</code></td><td>The header block of a message: what is in it, in what order, and how it is written back out.</td></tr>
+<tr><td><a href="mail-imap.html"><code>mail.imap</code></a></td><td><code>mail.*</code></td><td>IMAP: reading mail where it is kept, rather than taking it away.</td></tr>
+<tr><td><a href="mail-message.html"><code>mail.message</code></a></td><td><code>mail.*</code></td><td>A mail message: its headers, its body, and the tree of parts a body turns into once there is more than one…</td></tr>
+<tr><td><a href="mail-pool.html"><code>mail.pool</code></a></td><td><code>mail.pool.*</code></td><td>Running a mail server on more than one connection at a time.</td></tr>
+<tr><td><a href="mail-pop3.html"><code>mail.pop3</code></a></td><td><code>mail.*</code></td><td>POP3: the client end of collecting mail.</td></tr>
+<tr><td><a href="mail-sasl.html"><code>mail.sasl</code></a></td><td><code>mail.sasl.*</code></td><td>The authentication mechanisms all three mail protocols share.</td></tr>
+<tr><td><a href="mail-smtp.html"><code>mail.smtp</code></a></td><td><code>mail.*</code></td><td>SMTP: the protocol that moves mail from where it was written to where it is kept.</td></tr>
+<tr><td><a href="mail-stream.html"><code>mail.stream</code></a></td><td><code>mail.stream.*</code></td><td>A line-oriented connection, which is what all three mail protocols are underneath.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="parse_address"><a class="header" href="#parse_address"><code>parse_address()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.parse_address(text: string)
+</code></pre>
+<p>Reads one address out of text.</p>
+<pre><code class="language-zuri ignore">import mail
+
+echo mail.parse_address('Ann &lt;ann@example.com&gt;').address
+</code></pre>
+<pre><code class="language-console">ann@example.com
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Address</p>
+<p><strong>Raises</strong> <code>MessageError</code> if the text holds no address, or several.</p>
+<h3 id="parse_address_list"><a class="header" href="#parse_address_list"><code>parse_address_list()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.parse_address_list(text: string) -&gt; list
+</code></pre>
+<p>Reads every address out of text, with any groups flattened into their
+members.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h3 id="parse_address_groups"><a class="header" href="#parse_address_groups"><code>parse_address_groups()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.parse_address_groups(text: string) -&gt; list
+</code></pre>
+<p>Reads every address out of text, keeping the groups as groups.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code> and <code>Group</code></p>
+<h3 id="format_addresses"><a class="header" href="#format_addresses"><code>format_addresses()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.format_addresses(people: list) -&gt; string
+</code></pre>
+<p>Writes a list of addresses as a header value.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>list</code>) — <code>Address</code> values, <code>Group</code> values, or text to be
+parsed first.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="send"><a class="header" href="#send"><code>send()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.send(url: string, note, options: ?dict)
+</code></pre>
+<p>Sends one message, opening the connection and closing it again.</p>
+<p>This is the whole of sending mail for a program that sends one at a
+time. A program sending many wants an <code>SmtpClient</code> of its own, kept open
+across all of them.</p>
+<pre><code class="language-zuri ignore">import mail
+
+mail.send('smtp://mail.example.com', mail.message()
+  .set_from('reports@example.com')
+  .add_to('ann@example.com')
+  .set_subject('Quarterly report')
+  .set_text('The numbers are in.'),
+  { username: 'reports', password: secret })
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>url</code> (<code>string</code>) — <code>smtp://host</code> or <code>smtps://host</code>.</li>
+<li><code>Message</code> — note</li>
+<li><code>options</code> (<code>?dict</code>) — Everything <code>SmtpClient.connect()</code> takes, and
+<code>from</code> and <code>to</code> to override the envelope.</li>
+</ul>
+<p><strong>Returns</strong> — Reply the server’s verdict on the message.</p>
+<p><strong>Raises</strong> <code>SmtpError</code> if the server refuses any part of it.</p>
+<h3 id="smtp"><a class="header" href="#smtp"><code>smtp()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.smtp(url: string, options: ?dict)
+</code></pre>
+<p>Opens a connection to a server that sends mail.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>url</code> (<code>string</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — SmtpClient</p>
+<h3 id="imap"><a class="header" href="#imap"><code>imap()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.imap(url: string, options: ?dict)
+</code></pre>
+<p>Opens a connection to a server that stores mail.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>url</code> (<code>string</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient</p>
+<h3 id="pop3"><a class="header" href="#pop3"><code>pop3()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.pop3(url: string, options: ?dict)
+</code></pre>
+<p>Opens a connection to a server that hands mail over.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>url</code> (<code>string</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Pop3Client</p>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="sql-types.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="mail-address.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="sql-types.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="mail-address.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,1029 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>ffi - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="ffi"><a class="header" href="#ffi"><code>ffi</code></a></h1>
+<pre><code class="language-zuri ignore">import ffi
+</code></pre>
+<p>Calling C and Rust libraries, and being called by them.</p>
+<p><code>ffi</code> loads a shared library, describes the functions in it, and calls
+them with ordinary Zuri values. Every conversion across the boundary is
+checked against the C type, so a value that does not fit is an error at
+the call rather than a corrupted argument inside the library. The module
+reads C and Rust declarations as their headers and crates write them,
+links static libraries into loadable ones, and turns Zuri functions into
+C function pointers.</p>
+<pre><code class="language-zuri ignore">import ffi
+
+var c = ffi.open(ffi.LIBC).declare('
+  size_t strlen(const char *s);
+  int abs(int n);
+')
+
+echo c.strlen('hello')
+echo c.abs(-7)
+</code></pre>
+<h2 id="values-at-the-boundary"><a class="header" href="#values-at-the-boundary">Values at the boundary</a></h2>
+<p>Numbers become any C integer or floating-point type, with integers
+range-checked against their type. Integers too large for a number to
+hold exactly, 64- and 128-bit ones, travel as bigints both ways. A
+string passed to a <code>char *</code> becomes a NUL-terminated copy for the
+duration of the call; bytes pass their own storage with nothing copied;
+a list or dictionary passed to a pointer becomes a temporary array or
+struct, written back afterwards unless the pointer is to <code>const</code>.
+Structs and unions by value are dictionaries. <code>nil</code> is a null pointer,
+and a null pointer coming back is <code>nil</code>.</p>
+<h2 id="memory"><a class="header" href="#memory">Memory</a></h2>
+<p><code>alloc()</code> and its siblings hand out memory that knows its own size, and
+every access through a pointer into it is bounds-checked and refused
+once the memory is freed. Memory C returns can be taken over with
+<code>Pointer.own()</code>, which releases it with the right function when the
+pointer is collected.</p>
+<h2 id="callbacks"><a class="header" href="#callbacks">Callbacks</a></h2>
+<p>A Zuri function passed to a function-pointer parameter works as a
+callback for that call. <code>callback()</code> makes one that lasts, for a library
+that keeps the pointer. A callback can be called from any thread: from
+another thread, the call waits until the isolate that made the callback
+runs it.</p>
+<h2 id="the-ffi-api"><a class="header" href="#the-ffi-api">The <code>ffi</code> API</a></h2>
+<p>Every public name in <code>ffi</code>, wherever it is declared. Each links to the
+page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="ffi-callback.html#callback"><code>ffi.Callback</code></a></td><td>class</td><td>A Zuri function behind a C function pointer, made by <code>ffi.callback()</code>.</td></tr>
+<tr><td><a href="ffi-errors.html#callbackerror"><code>ffi.CallbackError</code></a></td><td>class</td><td>A callback could not be created, or was used after its release.</td></tr>
+<tr><td><a href="ffi-errors.html#declarationerror"><code>ffi.DeclarationError</code></a></td><td>class</td><td>C or Rust source handed to a declaration could not be read.</td></tr>
+<tr><td><a href="ffi-declare.html#declarations"><code>ffi.Declarations</code></a></td><td>class</td><td>A set of declarations: types, functions, variables and constants, read from any mix of C and Rust source.</td></tr>
+<tr><td><a href="ffi-types.html#enumtype"><code>ffi.EnumType</code></a></td><td>class</td><td>A C enum, or a Rust enum without fields.</td></tr>
+<tr><td><a href="ffi-errors.html#ffierror"><code>ffi.FfiError</code></a></td><td>class</td><td>Base class for every error this module raises.</td></tr>
+<tr><td><a href="#libc"><code>ffi.LIBC</code></a></td><td>constant</td><td>The C runtime library of this platform, as <code>open()</code> takes it: <code>libc.so.6</code> on Linux, the system library on…</td></tr>
+<tr><td><a href="#libm"><code>ffi.LIBM</code></a></td><td>constant</td><td>The C maths library, which on macOS and Windows is the same library as <code>LIBC</code>.</td></tr>
+<tr><td><a href="ffi-library.html#library"><code>ffi.Library</code></a></td><td>class</td><td>A shared library loaded into the process, or the process itself.</td></tr>
+<tr><td><a href="ffi-errors.html#linkerror"><code>ffi.LinkError</code></a></td><td>class</td><td>A static library could not be linked into a loadable one.</td></tr>
+<tr><td><a href="ffi-errors.html#loaderror"><code>ffi.LoadError</code></a></td><td>class</td><td>A library could not be found or loaded.</td></tr>
+<tr><td><a href="ffi-pointer.html#pointer"><code>ffi.Pointer</code></a></td><td>class</td><td>An address in native memory.</td></tr>
+<tr><td><a href="ffi-errors.html#pointererror"><code>ffi.PointerError</code></a></td><td>class</td><td>Memory was touched in a way that would have been undefined in C.</td></tr>
+<tr><td><a href="ffi-types.html#recordtype"><code>ffi.RecordType</code></a></td><td>class</td><td>A struct or a union, built member by member.</td></tr>
+<tr><td><a href="ffi-types.html#structtype"><code>ffi.StructType</code></a></td><td>class</td><td>A C struct, or a Rust <code>#[repr(C)]</code> struct or enum with fields.</td></tr>
+<tr><td><a href="ffi-errors.html#symbolerror"><code>ffi.SymbolError</code></a></td><td>class</td><td>A library does not export a symbol that was asked for.</td></tr>
+<tr><td><a href="ffi-types.html#type"><code>ffi.Type</code></a></td><td>class</td><td>A C type.</td></tr>
+<tr><td><a href="ffi-types.html#typed"><code>ffi.Typed</code></a></td><td>class</td><td>A value marked with the C type it should travel as.</td></tr>
+<tr><td><a href="ffi-types.html#uniontype"><code>ffi.UnionType</code></a></td><td>class</td><td>A C union.</td></tr>
+<tr><td><a href="#alloc"><code>ffi.alloc</code></a></td><td>function</td><td>Zeroed memory for <code>count</code> values of <code>type</code>, typed as <code>type</code>.</td></tr>
+<tr><td><a href="#alloc_bytes"><code>ffi.alloc_bytes</code></a></td><td>function</td><td><code>size</code> zeroed bytes, as an untyped pointer.</td></tr>
+<tr><td><a href="#alloc_string"><code>ffi.alloc_string</code></a></td><td>function</td><td>A NUL-terminated copy of <code>text</code> in memory that lasts, typed as its code unit: <code>char</code>, <code>char16_t</code>, <code>wchar_t</code>…</td></tr>
+<tr><td><a href="#array"><code>ffi.array</code></a></td><td>function</td><td>An array type.</td></tr>
+<tr><td><a href="#at"><code>ffi.at</code></a></td><td>function</td><td>A pointer to a known address.</td></tr>
+<tr><td><a href="#bool"><code>ffi.bool</code></a></td><td>constant</td><td><code>bool</code>: C’s <code>_Bool</code> and Rust’s <code>bool</code>, one byte; a Zuri bool.</td></tr>
+<tr><td><a href="ffi-callback.html#"><code>ffi.callback</code></a></td><td>function</td><td>A lasting C function pointer that calls <code>function</code>.</td></tr>
+<tr><td><a href="#char"><code>ffi.char</code></a></td><td>constant</td><td><code>char</code>: signed on x86-64 and on Apple’s Arm platforms, unsigned on Arm Linux, as the platform’s C compiler…</td></tr>
+<tr><td><a href="#char16_t"><code>ffi.char16_t</code></a></td><td>constant</td><td><code>char16_t</code>, a UTF-16 code unit.</td></tr>
+<tr><td><a href="#char32_t"><code>ffi.char32_t</code></a></td><td>constant</td><td><code>char32_t</code>, a UTF-32 code unit.</td></tr>
+<tr><td><a href="#complex_double"><code>ffi.complex_double</code></a></td><td>constant</td><td><code>double _Complex</code>, as <code>complex_float</code> with doubles.</td></tr>
+<tr><td><a href="#complex_float"><code>ffi.complex_float</code></a></td><td>constant</td><td><code>float _Complex</code>: a list of two numbers, <code>[real, imaginary]</code>.</td></tr>
+<tr><td><a href="#declarations"><code>ffi.declarations</code></a></td><td>function</td><td>An empty set of declarations to add C and Rust source to.</td></tr>
+<tr><td><a href="ffi-declare.html#"><code>ffi.declare</code></a></td><td>function</td><td>A set of declarations read from C source; the same as <code>declarations().declare(source)</code>.</td></tr>
+<tr><td><a href="#declare_rust"><code>ffi.declare_rust</code></a></td><td>function</td><td>A set of declarations read from Rust source; the same as <code>declarations().declare_rust(source)</code>.</td></tr>
+<tr><td><a href="#default_link_cache"><code>ffi.default_link_cache</code></a></td><td>function</td><td>The directory <code>link()</code> keeps linked libraries in by default: <code>$XDG_CACHE_HOME/zuri/ffi</code> (or…</td></tr>
+<tr><td><a href="#describe"><code>ffi.describe</code></a></td><td>function</td><td>What a foreign function is: <code>{ name, pointer, type, threaded, library }</code>, where <code>pointer</code> is its address as a…</td></tr>
+<tr><td><a href="#double"><code>ffi.double</code></a></td><td>constant</td><td><code>double</code>, 64 bits.</td></tr>
+<tr><td><a href="#enum"><code>ffi.enum</code></a></td><td>function</td><td>A new enum type to add constants to.</td></tr>
+<tr><td><a href="#errno"><code>ffi.errno</code></a></td><td>function</td><td><code>errno</code> as the most recent foreign call on this isolate left it.</td></tr>
+<tr><td><a href="#f32"><code>ffi.f32</code></a></td><td>constant</td><td>Rust’s <code>f32</code>.</td></tr>
+<tr><td><a href="#f64"><code>ffi.f64</code></a></td><td>constant</td><td>Rust’s <code>f64</code>.</td></tr>
+<tr><td><a href="#find"><code>ffi.find</code></a></td><td>function</td><td>Where <code>name</code> would be loaded from, without loading it, or <code>nil</code> when it cannot be found.</td></tr>
+<tr><td><a href="#float"><code>ffi.float</code></a></td><td>constant</td><td><code>float</code>, 32 bits.</td></tr>
+<tr><td><a href="#function"><code>ffi.function</code></a></td><td>function</td><td>A Zuri function that calls the C function at <code>pointer</code> with the signature of <code>type</code>.</td></tr>
+<tr><td><a href="#function_type"><code>ffi.function_type</code></a></td><td>function</td><td>A function type, for callbacks and for calling function pointers.</td></tr>
+<tr><td><a href="#i128"><code>ffi.i128</code></a></td><td>constant</td><td>Rust’s <code>i128</code>.</td></tr>
+<tr><td><a href="#i16"><code>ffi.i16</code></a></td><td>constant</td><td>Rust’s <code>i16</code>.</td></tr>
+<tr><td><a href="#i32"><code>ffi.i32</code></a></td><td>constant</td><td>Rust’s <code>i32</code>.</td></tr>
+<tr><td><a href="#i64"><code>ffi.i64</code></a></td><td>constant</td><td>Rust’s <code>i64</code>.</td></tr>
+<tr><td><a href="#i8"><code>ffi.i8</code></a></td><td>constant</td><td>Rust’s <code>i8</code>.</td></tr>
+<tr><td><a href="#int"><code>ffi.int</code></a></td><td>constant</td><td><code>int</code>, 32 bits.</td></tr>
+<tr><td><a href="#int128"><code>ffi.int128</code></a></td><td>constant</td><td><code>__int128</code>, a 128-bit integer; Rust’s <code>i128</code>.</td></tr>
+<tr><td><a href="#int16"><code>ffi.int16</code></a></td><td>constant</td><td><code>int16_t</code>.</td></tr>
+<tr><td><a href="#int32"><code>ffi.int32</code></a></td><td>constant</td><td><code>int32_t</code>.</td></tr>
+<tr><td><a href="#int64"><code>ffi.int64</code></a></td><td>constant</td><td><code>int64_t</code>.</td></tr>
+<tr><td><a href="#int8"><code>ffi.int8</code></a></td><td>constant</td><td><code>int8_t</code>.</td></tr>
+<tr><td><a href="#intptr_t"><code>ffi.intptr_t</code></a></td><td>constant</td><td><code>intptr_t</code>, 64 bits.</td></tr>
+<tr><td><a href="#is_foreign"><code>ffi.is_foreign</code></a></td><td>function</td><td>Whether <code>value</code> is a foreign function this module made.</td></tr>
+<tr><td><a href="#isize"><code>ffi.isize</code></a></td><td>constant</td><td>Rust’s <code>isize</code>.</td></tr>
+<tr><td><a href="#last_error"><code>ffi.last_error</code></a></td><td>function</td><td>On Windows, <code>GetLastError()</code> as the most recent foreign call on this isolate left it, cleared before the call…</td></tr>
+<tr><td><a href="#link"><code>ffi.link</code></a></td><td>function</td><td>Links static libraries into a shared one with the platform’s linker, and loads it.</td></tr>
+<tr><td><a href="#long"><code>ffi.long</code></a></td><td>constant</td><td><code>long</code>: 64 bits, except on Windows, where it is 32.</td></tr>
+<tr><td><a href="#longdouble"><code>ffi.longdouble</code></a></td><td>constant</td><td><code>long double</code>: 80-bit extended precision on x86-64 Linux and macOS, 128-bit quad precision on Arm Linux, and…</td></tr>
+<tr><td><a href="#longlong"><code>ffi.longlong</code></a></td><td>constant</td><td><code>long long</code>, 64 bits.</td></tr>
+<tr><td><a href="#malloc"><code>ffi.malloc</code></a></td><td>function</td><td><code>size</code> zeroed bytes from the C allocator, as an untyped pointer.</td></tr>
+<tr><td><a href="#open"><code>ffi.open</code></a></td><td>function</td><td>Loads a shared library.</td></tr>
+<tr><td><a href="#platform"><code>ffi.platform</code></a></td><td>function</td><td>The facts about this platform that decide how C types are laid out: `{ os, arch, pointer_size, long_size,…</td></tr>
+<tr><td><a href="ffi-pointer.html#"><code>ffi.pointer</code></a></td><td>function</td><td>A pointer type.</td></tr>
+<tr><td><a href="#ptr"><code>ffi.ptr</code></a></td><td>constant</td><td><code>void *</code>, the untyped pointer.</td></tr>
+<tr><td><a href="#ptrdiff_t"><code>ffi.ptrdiff_t</code></a></td><td>constant</td><td><code>ptrdiff_t</code>, 64 bits.</td></tr>
+<tr><td><a href="#rust_char"><code>ffi.rust_char</code></a></td><td>constant</td><td>Rust’s <code>char</code>: four bytes holding a Unicode scalar value, which is a one-character string on the Zuri side.</td></tr>
+<tr><td><a href="#schar"><code>ffi.schar</code></a></td><td>constant</td><td><code>signed char</code>.</td></tr>
+<tr><td><a href="#serve"><code>ffi.serve</code></a></td><td>function</td><td>Runs every callback called from another thread that is waiting for this isolate, returning how many ran.</td></tr>
+<tr><td><a href="#set_errno"><code>ffi.set_errno</code></a></td><td>function</td><td>Sets <code>errno</code>, for the rare API that reads it.</td></tr>
+<tr><td><a href="#short"><code>ffi.short</code></a></td><td>constant</td><td><code>short</code>, 16 bits.</td></tr>
+<tr><td><a href="#size_t"><code>ffi.size_t</code></a></td><td>constant</td><td><code>size_t</code>, 64 bits.</td></tr>
+<tr><td><a href="#slice"><code>ffi.slice</code></a></td><td>function</td><td>The <code>#[repr(C)]</code> struct of a pointer and a length that a Rust slice is passed across the C ABI as: `{ ptr,…</td></tr>
+<tr><td><a href="#ssize_t"><code>ffi.ssize_t</code></a></td><td>constant</td><td><code>ssize_t</code>, 64 bits.</td></tr>
+<tr><td><a href="#string"><code>ffi.string</code></a></td><td>constant</td><td><code>const char *</code> that converts to and from a string: a string passed in becomes a NUL-terminated UTF-8 copy for…</td></tr>
+<tr><td><a href="#struct"><code>ffi.struct</code></a></td><td>function</td><td>A new struct type to add members to.</td></tr>
+<tr><td><a href="#threaded"><code>ffi.threaded</code></a></td><td>function</td><td>The same foreign function, run on a helper thread while the calling isolate keeps answering callbacks called…</td></tr>
+<tr><td><a href="#type"><code>ffi.type</code></a></td><td>function</td><td>A type written as C writes it, using only built-in type names: <code>'unsigned long'</code>, <code>'const char *'</code>,…</td></tr>
+<tr><td><a href="#u128"><code>ffi.u128</code></a></td><td>constant</td><td>Rust’s <code>u128</code>.</td></tr>
+<tr><td><a href="#u16"><code>ffi.u16</code></a></td><td>constant</td><td>Rust’s <code>u16</code>.</td></tr>
+<tr><td><a href="#u32"><code>ffi.u32</code></a></td><td>constant</td><td>Rust’s <code>u32</code>.</td></tr>
+<tr><td><a href="#u64"><code>ffi.u64</code></a></td><td>constant</td><td>Rust’s <code>u64</code>.</td></tr>
+<tr><td><a href="#u8"><code>ffi.u8</code></a></td><td>constant</td><td>Rust’s <code>u8</code>.</td></tr>
+<tr><td><a href="#uchar"><code>ffi.uchar</code></a></td><td>constant</td><td><code>unsigned char</code>.</td></tr>
+<tr><td><a href="#uint"><code>ffi.uint</code></a></td><td>constant</td><td><code>unsigned int</code>, 32 bits.</td></tr>
+<tr><td><a href="#uint128"><code>ffi.uint128</code></a></td><td>constant</td><td><code>unsigned __int128</code>; Rust’s <code>u128</code>.</td></tr>
+<tr><td><a href="#uint16"><code>ffi.uint16</code></a></td><td>constant</td><td><code>uint16_t</code>.</td></tr>
+<tr><td><a href="#uint32"><code>ffi.uint32</code></a></td><td>constant</td><td><code>uint32_t</code>.</td></tr>
+<tr><td><a href="#uint64"><code>ffi.uint64</code></a></td><td>constant</td><td><code>uint64_t</code>.</td></tr>
+<tr><td><a href="#uint8"><code>ffi.uint8</code></a></td><td>constant</td><td><code>uint8_t</code>.</td></tr>
+<tr><td><a href="#uintptr_t"><code>ffi.uintptr_t</code></a></td><td>constant</td><td><code>uintptr_t</code>, 64 bits.</td></tr>
+<tr><td><a href="#ulong"><code>ffi.ulong</code></a></td><td>constant</td><td><code>unsigned long</code>: 64 bits, except on Windows, where it is 32.</td></tr>
+<tr><td><a href="#ulonglong"><code>ffi.ulonglong</code></a></td><td>constant</td><td><code>unsigned long long</code>, 64 bits.</td></tr>
+<tr><td><a href="#union"><code>ffi.union</code></a></td><td>function</td><td>A new union type to add members to.</td></tr>
+<tr><td><a href="#ushort"><code>ffi.ushort</code></a></td><td>constant</td><td><code>unsigned short</code>, 16 bits.</td></tr>
+<tr><td><a href="#usize"><code>ffi.usize</code></a></td><td>constant</td><td>Rust’s <code>usize</code>.</td></tr>
+<tr><td><a href="#void"><code>ffi.void</code></a></td><td>constant</td><td><code>void</code>: the return type of a function that returns nothing.</td></tr>
+<tr><td><a href="#wchar_t"><code>ffi.wchar_t</code></a></td><td>constant</td><td><code>wchar_t</code>: 16 bits and unsigned on Windows, 32 bits elsewhere.</td></tr>
+<tr><td><a href="#wstring"><code>ffi.wstring</code></a></td><td>constant</td><td><code>const wchar_t *</code> that converts to and from a string, as <code>string</code> does in <code>wchar_t</code>’s encoding: UTF-16 on…</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="ffi-callback.html"><code>ffi.callback</code></a></td><td><code>ffi.callback.*</code></td><td>Zuri functions that C can call.</td></tr>
+<tr><td><a href="ffi-declare.html"><code>ffi.declare</code></a></td><td><code>ffi.declare.*</code></td><td>Declarations read from C and Rust source.</td></tr>
+<tr><td><a href="ffi-errors.html"><code>ffi.errors</code></a></td><td><code>ffi.*</code></td><td>Every error the <code>ffi</code> module raises, under one root.</td></tr>
+<tr><td><a href="ffi-library.html"><code>ffi.library</code></a></td><td><code>ffi.library.*</code></td><td>A loaded shared library, and binding what it exports.</td></tr>
+<tr><td><a href="ffi-pointer.html"><code>ffi.pointer</code></a></td><td><code>ffi.pointer.*</code></td><td>Addresses in native memory, and reading and writing through them.</td></tr>
+<tr><td><a href="ffi-types.html"><code>ffi.types</code></a></td><td><code>ffi.types.*</code></td><td>C types as values.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="libc"><a class="header" href="#libc"><code>LIBC</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.LIBC: string
+</code></pre>
+<p>The C runtime library of this platform, as <code>open()</code> takes it:
+<code>libc.so.6</code> on Linux, the system library on macOS, and the Universal C
+Runtime, <code>ucrtbase.dll</code>, on Windows.</p>
+<h3 id="libm"><a class="header" href="#libm"><code>LIBM</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.LIBM: string
+</code></pre>
+<p>The C maths library, which on macOS and Windows is the same library as
+<code>LIBC</code>.</p>
+<h3 id="void"><a class="header" href="#void"><code>void</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.void: Type
+</code></pre>
+<p><code>void</code>: the return type of a function that returns nothing.</p>
+<h3 id="bool"><a class="header" href="#bool"><code>bool</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.bool: Type
+</code></pre>
+<p><code>bool</code>: C’s <code>_Bool</code> and Rust’s <code>bool</code>, one byte; a Zuri bool.</p>
+<h3 id="char"><a class="header" href="#char"><code>char</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.char: Type
+</code></pre>
+<p><code>char</code>: signed on x86-64 and on Apple’s Arm platforms, unsigned on Arm
+Linux, as the platform’s C compiler has it.</p>
+<h3 id="schar"><a class="header" href="#schar"><code>schar</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.schar: Type
+</code></pre>
+<p><code>signed char</code>.</p>
+<h3 id="uchar"><a class="header" href="#uchar"><code>uchar</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uchar: Type
+</code></pre>
+<p><code>unsigned char</code>.</p>
+<h3 id="short"><a class="header" href="#short"><code>short</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.short: Type
+</code></pre>
+<p><code>short</code>, 16 bits.</p>
+<h3 id="ushort"><a class="header" href="#ushort"><code>ushort</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ushort: Type
+</code></pre>
+<p><code>unsigned short</code>, 16 bits.</p>
+<h3 id="int"><a class="header" href="#int"><code>int</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int: Type
+</code></pre>
+<p><code>int</code>, 32 bits.</p>
+<h3 id="uint"><a class="header" href="#uint"><code>uint</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint: Type
+</code></pre>
+<p><code>unsigned int</code>, 32 bits.</p>
+<h3 id="long"><a class="header" href="#long"><code>long</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.long: Type
+</code></pre>
+<p><code>long</code>: 64 bits, except on Windows, where it is 32.</p>
+<h3 id="ulong"><a class="header" href="#ulong"><code>ulong</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ulong: Type
+</code></pre>
+<p><code>unsigned long</code>: 64 bits, except on Windows, where it is 32.</p>
+<h3 id="longlong"><a class="header" href="#longlong"><code>longlong</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.longlong: Type
+</code></pre>
+<p><code>long long</code>, 64 bits.</p>
+<h3 id="ulonglong"><a class="header" href="#ulonglong"><code>ulonglong</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ulonglong: Type
+</code></pre>
+<p><code>unsigned long long</code>, 64 bits.</p>
+<h3 id="int8"><a class="header" href="#int8"><code>int8</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int8: Type
+</code></pre>
+<p><code>int8_t</code>.</p>
+<h3 id="uint8"><a class="header" href="#uint8"><code>uint8</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint8: Type
+</code></pre>
+<p><code>uint8_t</code>.</p>
+<h3 id="int16"><a class="header" href="#int16"><code>int16</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int16: Type
+</code></pre>
+<p><code>int16_t</code>.</p>
+<h3 id="uint16"><a class="header" href="#uint16"><code>uint16</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint16: Type
+</code></pre>
+<p><code>uint16_t</code>.</p>
+<h3 id="int32"><a class="header" href="#int32"><code>int32</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int32: Type
+</code></pre>
+<p><code>int32_t</code>.</p>
+<h3 id="uint32"><a class="header" href="#uint32"><code>uint32</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint32: Type
+</code></pre>
+<p><code>uint32_t</code>.</p>
+<h3 id="int64"><a class="header" href="#int64"><code>int64</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int64: Type
+</code></pre>
+<p><code>int64_t</code>. Values beyond 2^53 in magnitude read back as bigints.</p>
+<h3 id="uint64"><a class="header" href="#uint64"><code>uint64</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint64: Type
+</code></pre>
+<p><code>uint64_t</code>. Values above 2^53 read back as bigints.</p>
+<h3 id="int128"><a class="header" href="#int128"><code>int128</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.int128: Type
+</code></pre>
+<p><code>__int128</code>, a 128-bit integer; Rust’s <code>i128</code>.</p>
+<h3 id="uint128"><a class="header" href="#uint128"><code>uint128</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uint128: Type
+</code></pre>
+<p><code>unsigned __int128</code>; Rust’s <code>u128</code>.</p>
+<h3 id="size_t"><a class="header" href="#size_t"><code>size_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.size_t: Type
+</code></pre>
+<p><code>size_t</code>, 64 bits.</p>
+<h3 id="ssize_t"><a class="header" href="#ssize_t"><code>ssize_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ssize_t: Type
+</code></pre>
+<p><code>ssize_t</code>, 64 bits.</p>
+<h3 id="ptrdiff_t"><a class="header" href="#ptrdiff_t"><code>ptrdiff_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ptrdiff_t: Type
+</code></pre>
+<p><code>ptrdiff_t</code>, 64 bits.</p>
+<h3 id="intptr_t"><a class="header" href="#intptr_t"><code>intptr_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.intptr_t: Type
+</code></pre>
+<p><code>intptr_t</code>, 64 bits.</p>
+<h3 id="uintptr_t"><a class="header" href="#uintptr_t"><code>uintptr_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.uintptr_t: Type
+</code></pre>
+<p><code>uintptr_t</code>, 64 bits.</p>
+<h3 id="wchar_t"><a class="header" href="#wchar_t"><code>wchar_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.wchar_t: Type
+</code></pre>
+<p><code>wchar_t</code>: 16 bits and unsigned on Windows, 32 bits elsewhere.</p>
+<h3 id="char16_t"><a class="header" href="#char16_t"><code>char16_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.char16_t: Type
+</code></pre>
+<p><code>char16_t</code>, a UTF-16 code unit.</p>
+<h3 id="char32_t"><a class="header" href="#char32_t"><code>char32_t</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.char32_t: Type
+</code></pre>
+<p><code>char32_t</code>, a UTF-32 code unit.</p>
+<h3 id="float"><a class="header" href="#float"><code>float</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.float: Type
+</code></pre>
+<p><code>float</code>, 32 bits.</p>
+<h3 id="double"><a class="header" href="#double"><code>double</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.double: Type
+</code></pre>
+<p><code>double</code>, 64 bits.</p>
+<h3 id="longdouble"><a class="header" href="#longdouble"><code>longdouble</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.longdouble: Type
+</code></pre>
+<p><code>long double</code>: 80-bit extended precision on x86-64 Linux and macOS,
+128-bit quad precision on Arm Linux, and the same as <code>double</code> on Windows
+and Apple’s Arm platforms. A Zuri number is a double, so a wider value
+is rounded to the nearest double when read.</p>
+<h3 id="complex_float"><a class="header" href="#complex_float"><code>complex_float</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.complex_float: Type
+</code></pre>
+<p><code>float _Complex</code>: a list of two numbers, <code>[real, imaginary]</code>. Passing
+one by value is not available on Windows, whose C compiler has no
+<code>_Complex</code>; in memory it works everywhere.</p>
+<h3 id="complex_double"><a class="header" href="#complex_double"><code>complex_double</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.complex_double: Type
+</code></pre>
+<p><code>double _Complex</code>, as <code>complex_float</code> with doubles.</p>
+<h3 id="ptr"><a class="header" href="#ptr"><code>ptr</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.ptr: Type
+</code></pre>
+<p><code>void *</code>, the untyped pointer.</p>
+<h3 id="string"><a class="header" href="#string"><code>string</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.string: Type
+</code></pre>
+<p><code>const char *</code> that converts to and from a string: a string passed in
+becomes a NUL-terminated UTF-8 copy for the call, and a pointer coming
+back is read up to its terminator into a string, or is <code>nil</code> when null.
+Use <code>pointer(char)</code> to receive the pointer itself.</p>
+<h3 id="wstring"><a class="header" href="#wstring"><code>wstring</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.wstring: Type
+</code></pre>
+<p><code>const wchar_t *</code> that converts to and from a string, as <code>string</code> does
+in <code>wchar_t</code>’s encoding: UTF-16 on Windows and UTF-32 elsewhere.</p>
+<h3 id="i8"><a class="header" href="#i8"><code>i8</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.i8: Type
+</code></pre>
+<p>Rust’s <code>i8</code>.</p>
+<h3 id="u8"><a class="header" href="#u8"><code>u8</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.u8: Type
+</code></pre>
+<p>Rust’s <code>u8</code>.</p>
+<h3 id="i16"><a class="header" href="#i16"><code>i16</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.i16: Type
+</code></pre>
+<p>Rust’s <code>i16</code>.</p>
+<h3 id="u16"><a class="header" href="#u16"><code>u16</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.u16: Type
+</code></pre>
+<p>Rust’s <code>u16</code>.</p>
+<h3 id="i32"><a class="header" href="#i32"><code>i32</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.i32: Type
+</code></pre>
+<p>Rust’s <code>i32</code>.</p>
+<h3 id="u32"><a class="header" href="#u32"><code>u32</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.u32: Type
+</code></pre>
+<p>Rust’s <code>u32</code>.</p>
+<h3 id="i64"><a class="header" href="#i64"><code>i64</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.i64: Type
+</code></pre>
+<p>Rust’s <code>i64</code>.</p>
+<h3 id="u64"><a class="header" href="#u64"><code>u64</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.u64: Type
+</code></pre>
+<p>Rust’s <code>u64</code>.</p>
+<h3 id="i128"><a class="header" href="#i128"><code>i128</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.i128: Type
+</code></pre>
+<p>Rust’s <code>i128</code>.</p>
+<h3 id="u128"><a class="header" href="#u128"><code>u128</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.u128: Type
+</code></pre>
+<p>Rust’s <code>u128</code>.</p>
+<h3 id="isize"><a class="header" href="#isize"><code>isize</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.isize: Type
+</code></pre>
+<p>Rust’s <code>isize</code>.</p>
+<h3 id="usize"><a class="header" href="#usize"><code>usize</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.usize: Type
+</code></pre>
+<p>Rust’s <code>usize</code>.</p>
+<h3 id="f32"><a class="header" href="#f32"><code>f32</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.f32: Type
+</code></pre>
+<p>Rust’s <code>f32</code>.</p>
+<h3 id="f64"><a class="header" href="#f64"><code>f64</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.f64: Type
+</code></pre>
+<p>Rust’s <code>f64</code>.</p>
+<h3 id="rust_char"><a class="header" href="#rust_char"><code>rust_char</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.rust_char: Type
+</code></pre>
+<p>Rust’s <code>char</code>: four bytes holding a Unicode scalar value, which is a
+one-character string on the Zuri side.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="open"><a class="header" href="#open"><code>open()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.open(name, options)
+</code></pre>
+<p>Loads a shared library.</p>
+<p><code>name</code> is a path, a file name, or a bare name the platform’s naming
+convention completes: <code>sqlite3</code> is tried as <code>libsqlite3.so</code> and then as
+the versioned file the loader’s cache lists on Linux, <code>libsqlite3.dylib</code>
+and <code>sqlite3.framework</code> on macOS, and <code>sqlite3.dll</code> on Windows. The
+directories in <code>paths</code> are searched first, then the platform’s own
+search order.</p>
+<p>With no name, the result is the running process itself, whose symbols
+include everything already loaded into it.</p>
+<pre><code class="language-zuri ignore">var libc = ffi.open(ffi.LIBC)
+var local = ffi.open('mylib', { paths: ['./build'] })
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string|nil</code>)</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>paths</code>, a list of directories searched
+first; <code>lazy</code>, resolve symbols as they are first used rather than at
+load (default <code>false</code>); <code>global</code>, make the library’s symbols visible to
+libraries loaded after it (default <code>false</code>). <code>lazy</code> and <code>global</code> have no
+effect on Windows.</li>
+</ul>
+<p><strong>Returns</strong> — Library</p>
+<p><strong>Raises</strong> <code>LoadError</code> when the library cannot be found or loaded.</p>
+<h3 id="find"><a class="header" href="#find"><code>find()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.find(name: string, paths) -&gt; string|nil
+</code></pre>
+<p>Where <code>name</code> would be loaded from, without loading it, or <code>nil</code> when it
+cannot be found. Resolves names the same way <code>open()</code> does.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>paths</code> (<code>list|nil</code>) — Directories searched first.</li>
+</ul>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h3 id="declarations"><a class="header" href="#declarations"><code>declarations()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.declarations()
+</code></pre>
+<p>An empty set of declarations to add C and Rust source to.</p>
+<p><strong>Returns</strong> — Declarations</p>
+<h3 id="declare"><a class="header" href="#declare"><code>declare()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.declare(source: string)
+</code></pre>
+<p>A set of declarations read from C source; the same as
+<code>declarations().declare(source)</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Declarations</p>
+<p><strong>Raises</strong> <code>DeclarationError</code> when the source cannot be read.</p>
+<h3 id="declare_rust"><a class="header" href="#declare_rust"><code>declare_rust()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.declare_rust(source: string)
+</code></pre>
+<p>A set of declarations read from Rust source; the same as
+<code>declarations().declare_rust(source)</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Declarations</p>
+<p><strong>Raises</strong> <code>DeclarationError</code> when the source cannot be read.</p>
+<h3 id="struct"><a class="header" href="#struct"><code>struct()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.struct(name)
+</code></pre>
+<p>A new struct type to add members to.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string|nil</code>) — The name it prints as.</li>
+</ul>
+<p><strong>Returns</strong> — StructType</p>
+<h3 id="union"><a class="header" href="#union"><code>union()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.union(name)
+</code></pre>
+<p>A new union type to add members to.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string|nil</code>) — The name it prints as.</li>
+</ul>
+<p><strong>Returns</strong> — UnionType</p>
+<h3 id="enum"><a class="header" href="#enum"><code>enum()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.enum(name, type)
+</code></pre>
+<p>A new enum type to add constants to.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string|nil</code>) — The name it prints as.</li>
+<li><code>Type|nil</code> — type The integer type values are stored as. Defaults to
+<code>int</code>, which is what C uses.</li>
+</ul>
+<p><strong>Returns</strong> — EnumType</p>
+<h3 id="pointer"><a class="header" href="#pointer"><code>pointer()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.pointer(type, options)
+</code></pre>
+<p>A pointer type.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — type What it points at; <code>void</code> for an untyped pointer.</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>nonnull</code>, <code>true</code> to refuse <code>nil</code> where one
+is passed, as a Rust reference does (default <code>false</code>); <code>text</code>, an
+encoding (<code>'utf-8'</code>, <code>'utf-16'</code>, <code>'utf-32'</code> or <code>'wide'</code>) that makes the
+pointer convert to and from a string the way <code>ffi.string</code> does.</li>
+</ul>
+<p><strong>Returns</strong> — Type</p>
+<h3 id="array"><a class="header" href="#array"><code>array()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.array(type, length)
+</code></pre>
+<p>An array type.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — type The element type.</li>
+<li><code>length</code> (<code>number|nil</code>) — Leave out for an array of unknown length.</li>
+</ul>
+<p><strong>Returns</strong> — Type</p>
+<h3 id="function_type"><a class="header" href="#function_type"><code>function_type()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.function_type(returns, params: list, options)
+</code></pre>
+<p>A function type, for callbacks and for calling function pointers.</p>
+<pre><code class="language-zuri ignore">var compare = ffi.function_type(ffi.int, [ffi.ptr, ffi.ptr])
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — returns</li>
+<li><code>params</code> (<code>list</code>) — The parameter types.</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>variadic</code> (default <code>false</code>) and <code>abi</code>, as
+for <code>Library.function()</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Type</p>
+<h3 id="slice"><a class="header" href="#slice"><code>slice()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.slice(type, mutable)
+</code></pre>
+<p>The <code>#[repr(C)]</code> struct of a pointer and a length that a Rust slice is
+passed across the C ABI as: <code>{ ptr, len }</code>, with <code>len</code> a <code>usize</code>
+counting elements.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — type The element type.</li>
+<li><code>mutable</code> (<code>bool|nil</code>) — Whether the pointer is <code>*mut</code>; defaults to a
+<code>*const</code> one.</li>
+</ul>
+<p><strong>Returns</strong> — StructType</p>
+<h3 id="type"><a class="header" href="#type"><code>type()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.type(spelling: string)
+</code></pre>
+<p>A type written as C writes it, using only built-in type names:
+<code>'unsigned long'</code>, <code>'const char *'</code>, <code>'int[4]'</code>, <code>'void (*)(int)'</code>.
+<code>Declarations.type()</code> resolves names declared there too.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>spelling</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Type</p>
+<p><strong>Raises</strong> <code>DeclarationError</code> when it does not name a type.</p>
+<h3 id="alloc"><a class="header" href="#alloc"><code>alloc()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.alloc(type, count) -&gt; Pointer
+</code></pre>
+<p>Zeroed memory for <code>count</code> values of <code>type</code>, typed as <code>type</code>.</p>
+<p>Freed when the last pointer into it is collected, or by
+<code>Pointer.free()</code>.</p>
+<pre><code class="language-zuri ignore">var numbers = ffi.alloc(ffi.int, 4)
+numbers.set(2, 99)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — type</li>
+<li><code>count</code> (<code>number|nil</code>) — Defaults to 1.</li>
+</ul>
+<p><strong>Returns</strong> <code>Pointer</code></p>
+<p><strong>Raises</strong> <code>FfiError</code> when the type has no size.</p>
+<h3 id="alloc_bytes"><a class="header" href="#alloc_bytes"><code>alloc_bytes()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.alloc_bytes(size, align) -&gt; Pointer
+</code></pre>
+<p><code>size</code> zeroed bytes, as an untyped pointer.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>size</code> (<code>number</code>)</li>
+<li><code>align</code> (<code>number|nil</code>) — A power of two. Defaults to 16, enough for
+any C type.</li>
+</ul>
+<p><strong>Returns</strong> <code>Pointer</code></p>
+<h3 id="malloc"><a class="header" href="#malloc"><code>malloc()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.malloc(size) -&gt; Pointer
+</code></pre>
+<p><code>size</code> zeroed bytes from the C allocator, as an untyped pointer.</p>
+<p>Unlike <code>alloc()</code>, this memory is never freed when the pointer is
+collected, because the usual reason to want it is to hand it to C code
+that frees it with <code>free()</code>. Free it with <code>Pointer.free()</code> otherwise.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>size</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Pointer</code></p>
+<h3 id="alloc_string"><a class="header" href="#alloc_string"><code>alloc_string()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.alloc_string(text: string, encoding) -&gt; Pointer
+</code></pre>
+<p>A NUL-terminated copy of <code>text</code> in memory that lasts, typed as its code
+unit: <code>char</code>, <code>char16_t</code>, <code>wchar_t</code> or <code>char32_t</code>.</p>
+<p>Needed where a string must outlive a call: stored in a struct, or kept
+by the library.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>encoding</code> (<code>string|nil</code>) — <code>'utf-8'</code> (the default), <code>'utf-16'</code>,
+<code>'utf-32'</code> or <code>'wide'</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>Pointer</code></p>
+<h3 id="at"><a class="header" href="#at"><code>at()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.at(address, type) -&gt; Pointer
+</code></pre>
+<p>A pointer to a known address. Nothing about the address is checked.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>address</code> (<code>number|bigint</code>)</li>
+<li><code>Type|nil</code> — type What it points at.</li>
+</ul>
+<p><strong>Returns</strong> <code>Pointer</code></p>
+<h3 id="function"><a class="header" href="#function"><code>function()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.function(pointer, type, name) -&gt; function
+</code></pre>
+<p>A Zuri function that calls the C function at <code>pointer</code> with the
+signature of <code>type</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>pointer</code> (<code>Pointer</code>)</li>
+<li><code>Type</code> — type A function type, or a pointer to one.</li>
+<li><code>name</code> (<code>string|nil</code>) — The name the function reports.</li>
+</ul>
+<p><strong>Returns</strong> <code>function</code></p>
+<p><strong>Raises</strong> <code>PointerError</code> when the pointer is null.</p>
+<h3 id="threaded"><a class="header" href="#threaded"><code>threaded()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.threaded(function) -&gt; function
+</code></pre>
+<p>The same foreign function, run on a helper thread while the calling
+isolate keeps answering callbacks called from other threads.</p>
+<p>This is for a function that waits on threads of its own which call back
+into Zuri. Called the ordinary way, such a function would wait forever,
+because the isolate that has to run the callbacks is the one waiting for
+it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>function</code> (<code>function</code>) — A foreign function.</li>
+</ul>
+<p><strong>Returns</strong> <code>function</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> when <code>function</code> is not a foreign function.</p>
+<h3 id="is_foreign"><a class="header" href="#is_foreign"><code>is_foreign()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.is_foreign(value) -&gt; bool
+</code></pre>
+<p>Whether <code>value</code> is a foreign function this module made.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="describe"><a class="header" href="#describe"><code>describe()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.describe(function) -&gt; dict
+</code></pre>
+<p>What a foreign function is: <code>{ name, pointer, type, threaded, library }</code>,
+where <code>pointer</code> is its address as a <code>Pointer</code>, <code>type</code> its function
+pointer type, and <code>library</code> the path of the library it came from, or
+<code>nil</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>function</code> (<code>function</code>) — A foreign function.</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h3 id="callback"><a class="header" href="#callback"><code>callback()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.callback(function, type, options)
+</code></pre>
+<p>A lasting C function pointer that calls <code>function</code>.</p>
+<pre><code class="language-zuri ignore">var on_event = ffi.callback(@(code) {
+  echo 'event ${code}'
+}, ffi.function_type(ffi.void, [ffi.int]))
+
+lib.set_handler(on_event)
+</code></pre>
+<p>The callback lives until <code>Callback.release()</code>. When the Zuri function
+raises, C gets <code>error_value</code> (or zero), and the error is raised again as
+soon as control returns to Zuri.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>function</code> (<code>function</code>)</li>
+<li><code>Type</code> — type A function type, or a pointer to one.</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>error_value</code>, returned to C when <code>function</code>
+raises. Defaults to zero, or nothing for a <code>void</code> callback.</li>
+</ul>
+<p><strong>Returns</strong> — Callback</p>
+<p><strong>Raises</strong> <code>TypeError</code> when <code>type</code> is not a function type or is
+variadic.</p>
+<p><strong>Raises</strong> <code>CallbackError</code> when 256 callbacks returning a 128-bit
+integer under the Microsoft x64 convention are alive already; each one
+released makes room for another.</p>
+<h3 id="serve"><a class="header" href="#serve"><code>serve()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.serve(timeout) -&gt; number
+</code></pre>
+<p>Runs every callback called from another thread that is waiting for this
+isolate, returning how many ran.</p>
+<p>Such calls also run at the isolate’s own safepoints, during foreign
+calls and in threaded calls, so this is for a program that wants them
+answered at a point of its choosing, or wants to wait for one.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>number|nil</code>) — Milliseconds to wait for a call when none
+is waiting. Returns at once when left out.</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="errno"><a class="header" href="#errno"><code>errno()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.errno() -&gt; number
+</code></pre>
+<p><code>errno</code> as the most recent foreign call on this isolate left it.</p>
+<p><code>errno</code> is cleared before every foreign call and read immediately after
+it, so this is always what that one call set, or 0.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="set_errno"><a class="header" href="#set_errno"><code>set_errno()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.set_errno(value)
+</code></pre>
+<p>Sets <code>errno</code>, for the rare API that reads it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>number</code>)</li>
+</ul>
+<h3 id="last_error"><a class="header" href="#last_error"><code>last_error()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.last_error() -&gt; number
+</code></pre>
+<p>On Windows, <code>GetLastError()</code> as the most recent foreign call on this
+isolate left it, cleared before the call and read after it as <code>errno</code>
+is. Always 0 on other platforms.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="link"><a class="header" href="#link"><code>link()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.link(archives, options)
+</code></pre>
+<p>Links static libraries into a shared one with the platform’s linker, and
+loads it.</p>
+<pre><code class="language-zuri ignore">var lib = ffi.link('target/release/libgeometry.a')
+</code></pre>
+<p>Every object in the archives is linked in. The result is cached under a
+name derived from the archives’ contents and the options, so the linker
+runs once for a given input. An archive holding Rust code is recognised
+and linked against the system libraries Rust’s standard library needs.</p>
+<p>The linker is the C compiler, <code>cc</code> or <code>$CC</code>, on Linux and macOS, and
+MSVC’s <code>link.exe</code> on Windows, found through the Visual Studio
+installation. On Windows a static library’s functions are not exported
+by default, so every symbol the archives define with an unmangled name
+is.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>archives</code> (<code>string|list</code>) — One path or a list of them.</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>libraries</code>, names to link against (<code>['m']</code>);
+<code>search_paths</code>, directories to find them in; <code>exports</code>, on Windows the
+exact symbols to export; <code>linker</code>, the program to run; <code>flags</code>, further
+arguments for it; <code>cache</code>, the directory results are kept in (default
+<code>default_link_cache()</code>); <code>rust</code>, whether the archives hold Rust code
+(detected when left out).</li>
+</ul>
+<p><strong>Returns</strong> — Library</p>
+<p><strong>Raises</strong> <code>LinkError</code> with the linker’s output when linking fails.</p>
+<p><strong>Raises</strong> <code>LoadError</code> when the linked library cannot be loaded.</p>
+<h3 id="default_link_cache"><a class="header" href="#default_link_cache"><code>default_link_cache()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.default_link_cache() -&gt; string
+</code></pre>
+<p>The directory <code>link()</code> keeps linked libraries in by default:
+<code>$XDG_CACHE_HOME/zuri/ffi</code> (or <code>~/.cache/zuri/ffi</code>) on Linux,
+<code>~/Library/Caches/zuri/ffi</code> on macOS, and <code>%LOCALAPPDATA%\zuri\ffi</code> on
+Windows.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="platform"><a class="header" href="#platform"><code>platform()</code></a></h3>
+<pre><code class="language-zuri ignore">ffi.platform() -&gt; dict
+</code></pre>
+<p>The facts about this platform that decide how C types are laid out: <code>{ os, arch, pointer_size, long_size, wchar_size, char_signed, long_double, complex, layout }</code>.</p>
+<p><code>long_double</code> is <code>'x87'</code>, <code>'binary128'</code> or <code>'double'</code>; <code>complex</code> says
+whether complex numbers can be passed by value; <code>layout</code> is <code>'msvc'</code> on
+Windows and <code>'itanium'</code> elsewhere, the rules records follow.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mail-stream.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ffi-callback.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mail-stream.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ffi-callback.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

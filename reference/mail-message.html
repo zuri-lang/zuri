@@ -1,0 +1,990 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>mail.message - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="mailmessage"><a class="header" href="#mailmessage"><code>mail.message</code></a></h1>
+<pre><code class="language-zuri ignore">import mail
+</code></pre>
+<blockquote>
+<p>Everything here is re-exported by <code>mail</code>, so <code>import mail</code> is enough and
+the names are called as <code>mail.*</code>. Importing <code>mail.message</code> on its own
+works too and reaches the same definitions.</p>
+</blockquote>
+<p>A mail message: its headers, its body, and the tree of parts a body
+turns into once there is more than one thing in it.</p>
+<p><code>Message</code> is both what comes off the wire and what goes onto it. Parsing
+one gives the whole MIME tree with every part decoded on demand;
+building one from text, HTML and files gives back a message any mail
+server will accept.</p>
+<pre><code class="language-zuri ignore">import mail
+
+var note = mail.message()
+  .set_from('Richard Ore &lt;richard@example.com&gt;')
+  .add_to('ann@example.com')
+  .set_subject('Quarterly report')
+  .set_text('The numbers are attached.')
+
+echo note.subject()
+echo note.content_type().mime_type()
+</code></pre>
+<pre><code class="language-console">Quarterly report
+text/plain
+</code></pre>
+<p>A message with both text and HTML in it becomes a
+<code>multipart/alternative</code>; add a file and the whole thing is wrapped in a
+<code>multipart/mixed</code>. None of that has to be spelled out: the shape follows
+from what was put in.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="text_part"><a class="header" href="#text_part"><code>text_part()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.text_part(text: string, charset: ?string, subtype: ?string)
+</code></pre>
+<p>Builds one text part.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>charset</code> (<code>?string</code>) — <code>utf-8</code>, or <code>us-ascii</code> when the text needs
+nothing more. No other set can be written.</li>
+<li><code>subtype</code> (<code>?string</code>) — <code>plain</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> — Message</p>
+<p><strong>Raises</strong> <code>MessageError</code> if <code>charset</code> names a set this cannot write.</p>
+<h3 id="attachment"><a class="header" href="#attachment"><code>attachment()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.attachment(data)
+</code></pre>
+<p>Starts an attachment from what is in it.</p>
+<pre><code class="language-zuri ignore">import mail
+
+echo mail.attachment('some bytes').set_filename('notes.txt').to_string()
+</code></pre>
+<pre><code class="language-console">&lt;Attachment notes.txt, 10 bytes&gt;
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Attachment</p>
+<h3 id="multipart"><a class="header" href="#multipart"><code>multipart()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.multipart(subtype: string, parts: list)
+</code></pre>
+<h3 id="new_message_id"><a class="header" href="#new_message_id"><code>new_message_id()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.new_message_id(domain: ?string) -&gt; string
+</code></pre>
+<p>An identifier for a message, unique enough that no two ever collide.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>domain</code> (<code>?string</code>) — The right hand side. The machine’s own name
+when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code> — including the angle brackets a header needs.</p>
+<h3 id="parse"><a class="header" href="#parse"><code>parse()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.parse(data)
+</code></pre>
+<p>Reads a message.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message</p>
+<h3 id="message"><a class="header" href="#message"><code>message()</code></a></h3>
+<pre><code class="language-zuri ignore">mail.message()
+</code></pre>
+<p>Starts a message.</p>
+<p>What goes in it is said one call at a time, and every call hands the
+message back so they read as one:</p>
+<pre><code class="language-zuri ignore">import mail
+
+var note = mail.message()
+  .set_from('Richard Ore &lt;richard@example.com&gt;')
+  .add_to('ann@example.com')
+  .set_subject('Quarterly report')
+  .set_text('The numbers are in.')
+
+echo note.subject()
+echo note.content_type().mime_type()
+</code></pre>
+<pre><code class="language-console">Quarterly report
+text/plain
+</code></pre>
+<p>The shape follows from what is said. Text alone is a <code>text/plain</code>
+message; adding HTML makes it a <code>multipart/alternative</code>; attaching a
+file wraps the whole thing in a <code>multipart/mixed</code>. None of that has to
+be arranged by hand.</p>
+<p>A message starts dated, since the time it was written is the time it was
+written. It gets its identifier when it is sent, because that is when
+the domain it belongs to is settled.</p>
+<p><strong>Returns</strong> — Message</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="message-1"><a class="header" href="#message-1"><code>Message</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.Message
+</code></pre>
+<p>One message, or one part of one.</p>
+<p>A part is a message too: it has headers and a body, and its body may be
+more parts. The same class covers both, so walking a message and reading
+a standalone one are the same code.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.Message(headers, source)
+</code></pre>
+<p>Builds a message.</p>
+<p>Most callers want <code>mail.message()</code>, which fills one in, or
+<code>mail.parse()</code>, which reads one off the wire.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?Headers</code> — headers: The headers to start with.</li>
+<li><code>source</code> (<code>?any</code>) — Bytes or text to read the message from, in which
+case <code>headers</code> is ignored.</li>
+</ul>
+<h4 id="messageparse"><a class="header" href="#messageparse"><code>Message.parse()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.parse(data)
+</code></pre>
+<p>Reads a message.</p>
+<p>Nothing is decoded up front. The tree is built, and each part decodes
+its own body the first time something asks for it, so reading the
+subject of a message with a large attachment in it costs nothing more
+than reading the headers.</p>
+<pre><code class="language-zuri ignore">import mail
+
+var note = mail.parse(
+  'From: a@example.com\r\n'
+  + 'Subject: Hi\r\n'
+  + '\r\n'
+  + 'Hello there.\r\n'
+)
+
+echo note.subject()
+echo note.text()
+</code></pre>
+<pre><code class="language-console">Hi
+Hello there.
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message</p>
+<p><strong>Raises</strong> <code>MessageError</code> if the headers cannot be read.</p>
+<h4 id="messagecontent_type"><a class="header" href="#messagecontent_type"><code>Message.content_type()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.content_type()
+</code></pre>
+<p>The <code>Content-Type</code> of this part.</p>
+<p><strong>Returns</strong> — ContentType</p>
+<h4 id="messageis_multipart"><a class="header" href="#messageis_multipart"><code>Message.is_multipart()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.is_multipart() -&gt; bool
+</code></pre>
+<p>Whether this part holds other parts.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="messageparts"><a class="header" href="#messageparts"><code>Message.parts()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.parts() -&gt; list
+</code></pre>
+<p>The parts directly inside this one, which is empty for a part that holds
+content rather than other parts.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Message</code></p>
+<h4 id="messagewalk"><a class="header" href="#messagewalk"><code>Message.walk()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.walk() -&gt; list
+</code></pre>
+<p>Every part of the message including this one, outermost first.</p>
+<pre><code class="language-zuri ignore">for part in note.walk() {
+  echo part.content_type().mime_type()
+}
+</code></pre>
+<p><strong>Returns</strong> <code>list</code> — of <code>Message</code></p>
+<h4 id="messagebody_bytes"><a class="header" href="#messagebody_bytes"><code>Message.body_bytes()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.body_bytes() -&gt; bytes
+</code></pre>
+<p>This part’s body, decoded from whatever transfer encoding it arrived in.</p>
+<p>A part that holds other parts has no body of its own and gives back
+nothing.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="messagetext"><a class="header" href="#messagetext"><code>Message.text()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.text() -&gt; string
+</code></pre>
+<p>This part’s body as text, decoded from its transfer encoding and then
+from its character set.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="messageraw_body"><a class="header" href="#messageraw_body"><code>Message.raw_body()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.raw_body() -&gt; bytes
+</code></pre>
+<p>The body still encoded, exactly as it sits in the message.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="messageset_raw_body"><a class="header" href="#messageset_raw_body"><code>Message.set_raw_body()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_raw_body(data)
+</code></pre>
+<p>Replaces the body with bytes that are already in the transfer encoding
+the headers name, and drops any parts this held.</p>
+<p>The encoding is not applied here and not checked. <code>set_text()</code> and
+<code>attach()</code> are the calls that do both.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_parts"><a class="header" href="#messageset_parts"><code>Message.set_parts()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_parts(parts: list)
+</code></pre>
+<p>Replaces the parts this one holds.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>parts</code> (<code>list</code>) — <code>Message</code> values.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageis_empty"><a class="header" href="#messageis_empty"><code>Message.is_empty()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.is_empty() -&gt; bool
+</code></pre>
+<p>Whether this part holds nothing at all: no body and no parts.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="messagesource_headers"><a class="header" href="#messagesource_headers"><code>Message.source_headers()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.source_headers() -&gt; string|nil
+</code></pre>
+<p>The bytes this part’s headers were read from, or <code>nil</code> for a part that
+was built rather than parsed.</p>
+<p>A signature covers the message as it was written, not as it would be
+written again, which is what this is for.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="messagesource_body"><a class="header" href="#messagesource_body"><code>Message.source_body()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.source_body() -&gt; bytes|nil
+</code></pre>
+<p>The bytes this part’s body was read from, or <code>nil</code> for a part that was
+built rather than parsed.</p>
+<p><strong>Returns</strong> <code>bytes|nil</code></p>
+<h4 id="messagesubject"><a class="header" href="#messagesubject"><code>Message.subject()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.subject() -&gt; string
+</code></pre>
+<p>The subject, with any encoded words in it decoded.</p>
+<p><strong>Returns</strong> <code>string</code> — empty when the message has no subject.</p>
+<h4 id="messageset_subject"><a class="header" href="#messageset_subject"><code>Message.set_subject()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_subject(text: string)
+</code></pre>
+<p>Sets the subject, encoding it if it holds characters a header cannot
+carry.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messagesender"><a class="header" href="#messagesender"><code>Message.sender()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.sender()
+</code></pre>
+<p>The sender, or <code>nil</code> when the message has no <code>From</code>.</p>
+<p><strong>Returns</strong> — Address|nil</p>
+<h4 id="messageto"><a class="header" href="#messageto"><code>Message.to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.to() -&gt; list
+</code></pre>
+<p>The addresses in <code>To</code>.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h4 id="messagecc"><a class="header" href="#messagecc"><code>Message.cc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.cc() -&gt; list
+</code></pre>
+<p>The addresses in <code>Cc</code>.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h4 id="messagebcc"><a class="header" href="#messagebcc"><code>Message.bcc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.bcc() -&gt; list
+</code></pre>
+<p>The addresses in <code>Bcc</code>.</p>
+<p>A message that has been sent should not have this header at all, since
+the whole point of a blind copy is that the other recipients cannot see
+it. <code>mail.send()</code> strips it before handing the message over, after
+taking the recipients from it.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h4 id="messagereply_to"><a class="header" href="#messagereply_to"><code>Message.reply_to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.reply_to() -&gt; list
+</code></pre>
+<p>The addresses in <code>Reply-To</code>, falling back to the sender when there is no
+such header, which is what a mail client does.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h4 id="messagerecipients"><a class="header" href="#messagerecipients"><code>Message.recipients()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.recipients() -&gt; list
+</code></pre>
+<p>Everyone the message is addressed to: <code>To</code>, <code>Cc</code> and <code>Bcc</code> together,
+with duplicates removed.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Address</code></p>
+<h4 id="messagesent_at"><a class="header" href="#messagesent_at"><code>Message.sent_at()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.sent_at()
+</code></pre>
+<p>The <code>Date</code> header as a date, or <code>nil</code> when it is absent or unreadable.</p>
+<p><strong>Returns</strong> — Date|nil</p>
+<h4 id="messagemessage_id"><a class="header" href="#messagemessage_id"><code>Message.message_id()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.message_id() -&gt; string|nil
+</code></pre>
+<p>The <code>Message-ID</code>, with the angle brackets left on, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="messagereferences"><a class="header" href="#messagereferences"><code>Message.references()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.references() -&gt; list
+</code></pre>
+<p>The message identifiers in <code>References</code>, oldest first, which is the
+chain of replies this message belongs to.</p>
+<p><strong>Returns</strong> <code>list</code> — of string</p>
+<h4 id="messagefilename"><a class="header" href="#messagefilename"><code>Message.filename()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.filename() -&gt; string|nil
+</code></pre>
+<p>The name this part suggests being saved under, from its disposition or,
+failing that, its type. <code>nil</code> when it suggests none.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="messageis_attachment"><a class="header" href="#messageis_attachment"><code>Message.is_attachment()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.is_attachment() -&gt; bool
+</code></pre>
+<p>Whether this part is meant to be offered as a file rather than shown in
+place.</p>
+<p>A part is an attachment when it says so, and also when it says nothing
+but carries a filename, which is what older mailers do.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="messagefind_part"><a class="header" href="#messagefind_part"><code>Message.find_part()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.find_part(mime_type: string)
+</code></pre>
+<p>The first part of a given type anywhere in the message, or <code>nil</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mime_type</code> (<code>string</code>) — As <code>text/html</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Message|nil</p>
+<h4 id="messagetext_body"><a class="header" href="#messagetext_body"><code>Message.text_body()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.text_body() -&gt; string|nil
+</code></pre>
+<p>The plain text of the message, wherever in the tree it is, or <code>nil</code> when
+there is none.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="messagehtml_body"><a class="header" href="#messagehtml_body"><code>Message.html_body()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.html_body() -&gt; string|nil
+</code></pre>
+<p>The HTML of the message, wherever in the tree it is, or <code>nil</code> when there
+is none.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="messageattachments"><a class="header" href="#messageattachments"><code>Message.attachments()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.attachments() -&gt; list
+</code></pre>
+<p>Every part of the message that is an attachment.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>Message</code></p>
+<h4 id="messagetake_content"><a class="header" href="#messagetake_content"><code>Message.take_content()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.take_content()
+</code></pre>
+<p>Moves this part’s content into a part of its own and hands it back,
+leaving this one holding the message-level headers and nothing else.</p>
+<p>This is what turns a message into the first child of the multipart that
+is about to replace it, which is why <code>attach()</code> can wrap a message
+without the caller rebuilding it.</p>
+<p><strong>Returns</strong> — Message</p>
+<h4 id="messagebecome_multipart"><a class="header" href="#messagebecome_multipart"><code>Message.become_multipart()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.become_multipart(subtype: string, parts: list)
+</code></pre>
+<p>Turns this part into a multipart holding the given parts, under a
+boundary nothing inside it can contain.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>subtype</code> (<code>string</code>) — <code>mixed</code>, <code>alternative</code>, <code>related</code> or <code>digest</code>.</li>
+<li><code>parts</code> (<code>list</code>) — The <code>Message</code> values to put in it.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_from"><a class="header" href="#messageset_from"><code>Message.set_from()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_from(person)
+</code></pre>
+<p>Sets who the message is from, replacing whoever was there.</p>
+<pre><code class="language-zuri ignore">note.set_from('Richard Ore &lt;richard@example.com&gt;')
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>person</code> (<code>string|Address</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_sender"><a class="header" href="#messageset_sender"><code>Message.set_sender()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_sender(person)
+</code></pre>
+<p>Sets the <code>Sender</code> header, which says who actually put the message on the
+wire when that is not who it is from.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>person</code> (<code>string|Address</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageadd_to"><a class="header" href="#messageadd_to"><code>Message.add_to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.add_to(people)
+</code></pre>
+<p>Adds recipients, keeping any already there.</p>
+<pre><code class="language-zuri ignore">note.add_to('ann@example.com').add_to('bob@example.com')
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageadd_cc"><a class="header" href="#messageadd_cc"><code>Message.add_cc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.add_cc(people)
+</code></pre>
+<p>Adds copied recipients, keeping any already there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageadd_bcc"><a class="header" href="#messageadd_bcc"><code>Message.add_bcc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.add_bcc(people)
+</code></pre>
+<p>Adds blind copied recipients.</p>
+<p>The header is removed before the message is handed to a server, after
+the recipients have been taken from it, which is the whole point of a
+blind copy.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_to"><a class="header" href="#messageset_to"><code>Message.set_to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_to(people)
+</code></pre>
+<p>Sets the recipients, replacing any already there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_cc"><a class="header" href="#messageset_cc"><code>Message.set_cc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_cc(people)
+</code></pre>
+<p>Sets the copied recipients, replacing any already there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_bcc"><a class="header" href="#messageset_bcc"><code>Message.set_bcc()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_bcc(people)
+</code></pre>
+<p>Sets the blind copied recipients, replacing any already there.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_reply_to"><a class="header" href="#messageset_reply_to"><code>Message.set_reply_to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_reply_to(people)
+</code></pre>
+<p>Sets where replies should go, when that is not the sender.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>people</code> (<code>string|Address|list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_header"><a class="header" href="#messageset_header"><code>Message.set_header()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_header(name: string, value)
+</code></pre>
+<p>Sets any header at all, replacing one already there.</p>
+<p>The value is written exactly as given, so a header that needs encoding
+needs it applied first. <code>set_subject()</code> and the address setters do that
+for the headers where it matters.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageadd_header"><a class="header" href="#messageadd_header"><code>Message.add_header()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.add_header(name: string, value)
+</code></pre>
+<p>Adds a header, keeping any already there. <code>Received</code> is the header this
+is for.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_date"><a class="header" href="#messageset_date"><code>Message.set_date()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_date(moment)
+</code></pre>
+<p>Sets when the message was written.</p>
+<p>A message built by <code>mail.message()</code> is dated for you, so this is for
+saying otherwise.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?Date</code> — moment: The current time when not given.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_message_id"><a class="header" href="#messageset_message_id"><code>Message.set_message_id()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_message_id(id: ?string)
+</code></pre>
+<p>Sets the message’s own identifier.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>id</code> (<code>?string</code>) — A fresh one, built from the sender’s domain, when
+not given.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_in_reply_to"><a class="header" href="#messageset_in_reply_to"><code>Message.set_in_reply_to()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_in_reply_to(id: string)
+</code></pre>
+<p>Marks the message as a reply to another, which is what puts the two in
+the same conversation in a mail client.</p>
+<pre><code class="language-zuri ignore">reply.set_in_reply_to(original.message_id())
+     .set_references(original.references() + [original.message_id()])
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>id</code> (<code>string</code>) — The identifier of the message being answered.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_references"><a class="header" href="#messageset_references"><code>Message.set_references()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_references(ids)
+</code></pre>
+<p>Sets the chain of identifiers this message belongs to, oldest first.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>list|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_text"><a class="header" href="#messageset_text"><code>Message.set_text()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_text(text: string, charset: ?string)
+</code></pre>
+<p>Sets the plain text of the message.</p>
+<p>Replaces the text that is already there, wherever in the tree it is. A
+message that has HTML but no text becomes a <code>multipart/alternative</code>
+holding both.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+<li><code>charset</code> (<code>?string</code>) — <code>utf-8</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageset_html"><a class="header" href="#messageset_html"><code>Message.set_html()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.set_html(html: string, charset: ?string)
+</code></pre>
+<p>Sets the HTML of the message.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>html</code> (<code>string</code>)</li>
+<li><code>charset</code> (<code>?string</code>) — <code>utf-8</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<h4 id="messageattach"><a class="header" href="#messageattach"><code>Message.attach()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.attach(part)
+</code></pre>
+<p>Adds an attachment to the message.</p>
+<p>The message becomes a <code>multipart/mixed</code> if it is not one already, with
+whatever it held before as the first part. That happens once, however
+many attachments are added.</p>
+<pre><code class="language-zuri ignore">note.attach(mail.attachment(figures).set_filename('figures.csv'))
+note.attach(mail.Attachment.from_file('reports/q3.pdf'))
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Attachment|Message</code> — part: An attachment, or a part that is already
+built.</li>
+</ul>
+<p><strong>Returns</strong> — Message itself.</p>
+<p><strong>Raises</strong> <code>MessageError</code> if handed anything else.</p>
+<h4 id="messageembed"><a class="header" href="#messageembed"><code>Message.embed()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.embed(part) -&gt; string
+</code></pre>
+<p>Adds something to be shown inside the HTML rather than offered
+separately, and returns the reference to point an <code>&lt;img&gt;</code> at.</p>
+<p>The message becomes a <code>multipart/related</code> around the content it already
+held, which is what tells a reader the two belong together.</p>
+<pre><code class="language-zuri ignore">var source = note.embed(mail.attachment(logo).set_filename('logo.png'))
+
+note.set_html('&lt;img src="${source}"&gt;')
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Attachment|Message</code> — part</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code> — the <code>cid:</code> URL that refers to it.</p>
+<p><strong>Raises</strong> <code>MessageError</code> if handed anything else.</p>
+<h4 id="messageto_bytes"><a class="header" href="#messageto_bytes"><code>Message.to_bytes()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.to_bytes() -&gt; bytes
+</code></pre>
+<p>The whole message, ready to be written to a socket or a file.</p>
+<p>Lines end with a carriage return and a newline, which is what the
+protocols require whatever the local convention is.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="messageto_string"><a class="header" href="#messageto_string"><code>Message.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Message.to_string() -&gt; string
+</code></pre>
+<p>The whole message as text.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h3 id="attachment-1"><a class="header" href="#attachment-1"><code>Attachment</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.Attachment
+</code></pre>
+<p>Something a message carries alongside what it says: a file to offer, or
+an image the HTML shows.</p>
+<p>Built one call at a time, the way a message is, and handed to
+<code>Message.attach()</code> or <code>Message.embed()</code>.</p>
+<pre><code class="language-zuri ignore">import mail
+
+var figures = mail.attachment('name,total\nengines,41')
+  .set_filename('figures.csv')
+
+echo figures.filename()
+echo figures.content_type()
+echo figures.size()
+</code></pre>
+<pre><code class="language-console">figures.csv
+text/csv
+24
+</code></pre>
+<p>The media type follows from the filename unless it is set. The transfer
+encoding follows from the contents, and a file is always encoded rather
+than sent as it is, because bytes that happen to look like text are
+still bytes.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment(data)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>) — The contents.</li>
+</ul>
+<h4 id="attachmentfrom_file"><a class="header" href="#attachmentfrom_file"><code>Attachment.from_file()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.from_file(path: string)
+</code></pre>
+<p>Reads the contents from a file on disk, taking the name from the path.</p>
+<pre><code class="language-zuri ignore">note.attach(Attachment.from_file('reports/q3.pdf'))
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Attachment</p>
+<p><strong>Raises</strong> <code>Error</code> if the file cannot be read.</p>
+<h4 id="attachmentset_filename"><a class="header" href="#attachmentset_filename"><code>Attachment.set_filename()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_filename(name: string)
+</code></pre>
+<p>Sets the name to offer the file under.</p>
+<p>A name with characters a header cannot carry is encoded, and a long one
+is split across continuations, on the way out.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentset_content_type"><a class="header" href="#attachmentset_content_type"><code>Attachment.set_content_type()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_content_type(type: string)
+</code></pre>
+<p>Sets the media type, for when the filename does not settle it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>type</code> (<code>string</code>) — As <code>application/pdf</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentset_disposition"><a class="header" href="#attachmentset_disposition"><code>Attachment.set_disposition()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_disposition(kind: string)
+</code></pre>
+<p>Sets whether the part is offered as a file or shown where it sits.</p>
+<p><code>embed()</code> sets this to <code>inline</code> itself, so it is only worth setting for
+a part that is neither quite.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>kind</code> (<code>string</code>) — <code>attachment</code> or <code>inline</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentset_cid"><a class="header" href="#attachmentset_cid"><code>Attachment.set_cid()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_cid(id: string)
+</code></pre>
+<p>Sets the identifier HTML refers to this part by.</p>
+<p><code>embed()</code> invents one when there is none, so this is for a reference
+that has to be predictable.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>id</code> (<code>string</code>) — With or without the angle brackets.</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentset_encoding"><a class="header" href="#attachmentset_encoding"><code>Attachment.set_encoding()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_encoding(name: string)
+</code></pre>
+<p>Sets the transfer encoding, overriding the one the contents would have
+chosen.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — One of <code>mail.encoding.TRANSFER_ENCODINGS</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentset_description"><a class="header" href="#attachmentset_description"><code>Attachment.set_description()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.set_description(text: string)
+</code></pre>
+<p>Sets a human-readable description, which some mail clients show beside
+the file.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Attachment itself.</p>
+<h4 id="attachmentfilename"><a class="header" href="#attachmentfilename"><code>Attachment.filename()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.filename() -&gt; string|nil
+</code></pre>
+<p>The name this will be offered under, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="attachmentcontent_type"><a class="header" href="#attachmentcontent_type"><code>Attachment.content_type()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.content_type() -&gt; string
+</code></pre>
+<p>The media type this will be sent as, worked out from the filename when
+it was not set.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="attachmentdisposition"><a class="header" href="#attachmentdisposition"><code>Attachment.disposition()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.disposition() -&gt; string
+</code></pre>
+<p>Whether the part is offered as a file or shown where it sits.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="attachmentcid"><a class="header" href="#attachmentcid"><code>Attachment.cid()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.cid() -&gt; string|nil
+</code></pre>
+<p>The identifier HTML refers to this part by, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="attachmentsize"><a class="header" href="#attachmentsize"><code>Attachment.size()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.size() -&gt; number
+</code></pre>
+<p>How many bytes the contents are.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="attachmentdata"><a class="header" href="#attachmentdata"><code>Attachment.data()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.data() -&gt; bytes
+</code></pre>
+<p>The contents.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="attachmentto_part"><a class="header" href="#attachmentto_part"><code>Attachment.to_part()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.to_part()
+</code></pre>
+<p>Turns this into the message part that goes on the wire.</p>
+<p><code>attach()</code> and <code>embed()</code> call it. It is here for a program building a
+tree by hand.</p>
+<p><strong>Returns</strong> — Message</p>
+<h4 id="attachmentto_string"><a class="header" href="#attachmentto_string"><code>Attachment.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Attachment.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mail-imap-store.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="mail-pool.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mail-imap-store.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="mail-pool.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

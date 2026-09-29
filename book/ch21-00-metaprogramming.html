@@ -1,0 +1,1037 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Metaprogramming and Reflection - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch21-00-metaprogramming.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="metaprogramming-and-reflection"><a class="header" href="#metaprogramming-and-reflection">Metaprogramming and Reflection</a></h1>
+<p>Zuri’s own compiler is available to Zuri programs. The <code>zuri</code> module hands
+you the lexer, the parser and the bytecode compiler as ordinary functions,
+alongside a reflection API over live functions, classes, modules and
+instances.</p>
+<p>That is an unusual amount of the language to expose, so it is worth being
+clear about what it is for. This is the machinery behind documentation
+generators, linters, plugin loaders, serialisers, debuggers and editor
+tooling — programs whose subject is other programs. It is not machinery for
+ordinary code, and the chapter ends with the one thing it deliberately
+cannot do.</p>
+<h2 id="two-halves-that-cannot-answer-for-each-other"><a class="header" href="#two-halves-that-cannot-answer-for-each-other">Two Halves That Cannot Answer for Each Other</a></h2>
+<p>The module divides cleanly, and confusing the halves is the most common
+mistake:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th>Reflection</th><th>The compiler API</th></tr>
+</thead>
+<tbody>
+<tr><td>Subject</td><td>objects that exist <strong>right now</strong></td><td><strong>source text</strong></td></tr>
+<tr><td>Entry points</td><td><code>zuri.reflect.*</code></td><td><code>tokenize()</code>, <code>parse()</code>, <code>compile()</code></td></tr>
+<tr><td>Can tell you</td><td>a function’s arity, a class’s fields, an instance’s values</td><td>a doc block, a comment, a line number, what the compiler emitted</td></tr>
+<tr><td>Cannot tell you</td><td>anything about the source it came from</td><td>anything about a running value</td></tr>
+</tbody>
+</table>
+</div>
+<p>A function’s <strong>arity</strong> is a runtime fact: the function object carries it,
+and reflection reads it. That same function’s <strong>doc block</strong> is a source
+fact: it exists only in the file, and only the parser can find it. There is
+no call that crosses the gap, which is why a documentation generator parses
+files rather than importing them.</p>
+<h2 id="one-shape-for-everything"><a class="header" href="#one-shape-for-everything">One Shape for Everything</a></h2>
+<p><code>tokenize()</code>, <code>parse()</code> and <code>compile()</code> all return the same <em>shape</em> of
+result: a flat list of small, uniformly tagged records.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Function</th><th>Returns</th><th>Tag</th><th>Payload</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tokenize(source)</code></td><td><code>Token</code> list</td><td><code>kind</code></td><td><code>value</code>, <code>text</code></td></tr>
+<tr><td><code>parse(source)</code></td><td><code>Node</code> list</td><td><code>kind</code></td><td><code>fields</code></td></tr>
+<tr><td><code>compile(source)</code></td><td><code>Instr</code> list</td><td><code>op</code></td><td><code>fields</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>There is one <code>Token</code> class, one <code>Node</code> class and one <code>Instr</code> class — not
+one class per token kind, grammar rule or opcode. The grammar has around
+fifty shapes and the instruction set around sixty opcodes; a class for each
+would be a hundred-odd near-identical classes to keep in step with the
+compiler forever.</p>
+<p>The cost of that choice is real: nothing tells you which fields a given
+<code>kind</code> carries. You cannot autocomplete your way to a <code>Binary</code> node’s
+<code>left</code>, <code>op</code> and <code>right</code>. So the module leans on a different habit — <strong>run
+it and look</strong>:</p>
+<pre><code class="language-zuri">import zuri
+
+echo zuri.parse('var total = a + 1')[0].dump()
+</code></pre>
+<pre><code class="language-console">Stmt@1:5
+  statement:
+    Var@1:5
+      name: 'total'
+      value:
+        Binary@1
+          left:
+            Identifier@1:13
+              name: 'a'
+          op: 'Plus'
+          right:
+            Integer
+              value: 1
+      type_hint: nil
+      is_constant: false
+</code></pre>
+<p>Everything about that node is in front of you: it is a <code>Stmt</code> wrapping a
+<code>Var</code>, the initialiser is a <code>Binary</code> whose <code>op</code> is the string <code>'Plus'</code>, and
+the literal <code>1</code> is an <code>Integer</code> node rather than a generic literal. Nothing
+had to be looked up.</p>
+<p><code>dump()</code> is the fastest way to learn any node’s shape, and it is the first
+thing to reach for whenever you are unsure. <code>zuri.dump_file(path)</code> does the
+same for a whole file.</p>
+<h2 id="runtime-reflection"><a class="header" href="#runtime-reflection">Runtime Reflection</a></h2>
+<p>Reflection answers questions about a value you are holding. Every entry
+point is under <code>zuri.reflect</code>.</p>
+<h3 id="what-kind-of-thing-is-this"><a class="header" href="#what-kind-of-thing-is-this">What Kind of Thing Is This?</a></h3>
+<pre><code class="language-zuri">import zuri
+
+def add(a, b) {
+  return a + b
+}
+
+class Marker {}
+
+echo zuri.reflect.kind(add)
+echo zuri.reflect.kind(Marker)
+echo zuri.reflect.kind(Marker())
+echo zuri.reflect.kind(42)
+echo zuri.reflect.kind(print)
+</code></pre>
+<pre><code class="language-console">function
+class
+instance
+number
+function
+</code></pre>
+<p><code>kind()</code> is <code>typeof()</code>’s more literal cousin. Note the last line: a
+built-in native function reports <code>'function'</code>, as does a closure and a
+bound method, because from the language’s point of view all three are
+interchangeably callable.</p>
+<h3 id="functions"><a class="header" href="#functions">Functions</a></h3>
+<pre><code class="language-zuri">import zuri
+
+def add(a, b) {
+  return a + b
+}
+
+var info = zuri.reflect.function_info(add)
+
+echo info.name
+echo info.arity
+echo info.variadic
+echo info.is_method
+echo info.owning_class_name
+</code></pre>
+<pre><code class="language-console">add
+2
+false
+false
+nil
+</code></pre>
+<p><code>function_info()</code> returns <code>{ name, arity, variadic, is_method, owning_class_name, source_path }</code>. The last one is the only field that
+reaches back toward the source, and it is a <em>path</em>, not content — to read
+the function’s doc block you still have to parse that file.</p>
+<h3 id="classes"><a class="header" href="#classes">Classes</a></h3>
+<pre><code class="language-zuri">import zuri
+
+class Shape {
+  static var sides = 0
+
+  @new(name) {
+    self.name = name
+  }
+
+  area() {
+    return 0
+  }
+
+  _secret() {
+    return 'hidden'
+  }
+
+  @to_json() {
+    return { name: self.name }
+  }
+}
+
+var info = zuri.reflect.class_info(Shape)
+
+echo info.name
+echo info.superclass_name
+echo info.fields
+echo info.statics
+echo info.methods.keys()
+</code></pre>
+<pre><code class="language-console">Shape
+nil
+[name]
+[sides]
+[@new, area, @to_json, _secret]
+</code></pre>
+<p>Four things in that output are worth pausing on.</p>
+<p><strong><code>fields</code> lists <code>name</code></strong>, which was never declared with <code>var</code> — it was
+created by <code>self.name = name</code> inside <code>@new</code>. Reflection reports the class’s
+real shape, not just what the <code>var</code> lines said.</p>
+<p><strong><code>statics</code> is separate from <code>fields</code></strong>, because a static belongs to the
+class and a field belongs to each instance.</p>
+<p><strong>Decorated methods appear under their <code>@</code> names.</strong> <code>@new</code> and <code>@to_json</code>
+are in <code>methods</code> alongside ordinary ones.</p>
+<p><strong><code>_secret</code> is listed.</strong> Reflection sees private members; more on that
+below.</p>
+<p>Each entry in <code>methods</code> is a full <code>function_info</code>, so
+<code>info.methods.area.arity</code> works without another call.</p>
+<p><code>superclass_name</code> is a <strong>string or <code>nil</code></strong>, not a class:</p>
+<pre><code class="language-zuri">import zuri
+
+class Base {}
+class Derived &lt; Base {}
+
+echo zuri.reflect.class_info(Derived).superclass_name
+echo zuri.reflect.class_info(Base).superclass_name
+</code></pre>
+<pre><code class="language-console">Base
+nil
+</code></pre>
+<h3 id="instances"><a class="header" href="#instances">Instances</a></h3>
+<pre><code class="language-zuri">import zuri
+
+class Point {
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  distance() {
+    return (self.x ** 2 + self.y ** 2).sqrt()
+  }
+}
+
+var p = Point(3, 4)
+
+echo zuri.reflect.get_props(p)
+echo zuri.reflect.has_prop(p, 'x')
+echo zuri.reflect.get_prop(p, 'x')
+
+zuri.reflect.set_prop(p, 'x', 10)
+echo p.x
+</code></pre>
+<pre><code class="language-console">[x, y]
+true
+3
+10
+</code></pre>
+<p><code>get_props()</code> lists the field names an instance actually has.
+<code>get_prop()</code>, <code>set_prop()</code>, <code>has_prop()</code> and <code>del_prop()</code> read and write
+them by computed name — the reflective equivalents of the <code>getprop</code> family
+of built-ins from <a href="ch06-04-encapsulation.html">Chapter 6</a>.</p>
+<p>They cannot create a field. A class is sealed, so <code>set_prop()</code> on a name
+the class never declared returns <code>false</code> and changes nothing.</p>
+<h3 id="methods-by-name"><a class="header" href="#methods-by-name">Methods by Name</a></h3>
+<p>Three calls turn a method name into something callable:</p>
+<pre><code class="language-zuri">import zuri
+
+class Greeter {
+
+  @new(name) {
+    self.name = name
+  }
+
+  greet() {
+    return 'hello ${self.name}'
+  }
+
+  @to_json() {
+    return { name: self.name }
+  }
+}
+
+var g = Greeter('ada')
+
+echo zuri.reflect.has_method(g, 'greet')
+echo zuri.reflect.has_decorator(g, 'to_json')
+echo typeof(zuri.reflect.get_method(g, 'greet'))
+echo zuri.reflect.bind_method(g, 'greet')()
+</code></pre>
+<pre><code class="language-console">true
+true
+function
+hello ada
+</code></pre>
+<p>The distinction between the last two matters. <strong><code>get_method()</code> returns the
+unbound function</strong>; calling it needs the instance supplied yourself.
+<strong><code>bind_method()</code> returns it already attached to the instance</strong>, so it can
+be stored, passed around and called with nothing extra — which is what
+makes a dispatch table of methods possible:</p>
+<pre><code class="language-zuri">import zuri
+
+class Counter {
+
+  @new() {
+    self.n = 0
+  }
+
+  up() {
+    self.n++
+    return self.n
+  }
+
+  down() {
+    self.n--
+    return self.n
+  }
+}
+
+var counter = Counter()
+
+var actions = {
+  up: zuri.reflect.bind_method(counter, 'up'),
+  down: zuri.reflect.bind_method(counter, 'down'),
+}
+
+echo actions['up']()
+echo actions['up']()
+echo actions['down']()
+echo counter.n
+</code></pre>
+<pre><code class="language-console">1
+2
+1
+1
+</code></pre>
+<p><code>has_decorator()</code> and <code>get_decorator()</code> do the same for <code>@</code>-prefixed
+methods, taking the name <strong>without</strong> the <code>@</code>.</p>
+<h3 id="reflection-sees-private-members"><a class="header" href="#reflection-sees-private-members">Reflection Sees Private Members</a></h3>
+<p>Everything above ignores the leading-underscore rule:</p>
+<pre><code class="language-zuri">import zuri
+
+class Vault {
+  var _combination = '1234'
+
+  @new() {}
+}
+
+echo zuri.reflect.get_props(Vault())
+echo zuri.reflect.get_prop(Vault(), '_combination')
+</code></pre>
+<pre><code class="language-console">[_combination]
+1234
+</code></pre>
+<p>This is deliberate, and it is the same decision <code>getprop()</code> makes. A
+serialiser has to see every field or it writes an incomplete record; a
+debugger has to see every field or it shows a lie. Hiding them would defeat
+the only purpose these functions have.</p>
+<p>The rule to take from it: <strong>reflection is infrastructure, not a way around
+encapsulation</strong>. Code that reaches for <code>get_prop()</code> to read a private field
+it could not otherwise read has not found a loophole; it has written
+something the next reader will not expect.</p>
+<h3 id="modules"><a class="header" href="#modules">Modules</a></h3>
+<pre><code class="language-zuri">import zuri
+import math
+
+var info = zuri.reflect.module_info(math)
+
+echo info.name
+echo info.members.contains('PI')
+</code></pre>
+<pre><code class="language-console">math
+true
+</code></pre>
+<p><code>module_info()</code> reports a module’s name, its path and the members it
+exports. That is enough for a plugin loader: import a directory of modules,
+ask each whether it has a known function, and call the ones that do.</p>
+<h3 id="the-collector"><a class="header" href="#the-collector">The Collector</a></h3>
+<p>The garbage collector runs on its own as a program allocates. <code>gc()</code> runs
+a full collection on the spot:</p>
+<pre><code class="language-zuri">import zuri
+
+var scratch = [1, 2, 3]
+scratch = nil
+
+zuri.reflect.gc()
+echo 'collected'
+</code></pre>
+<pre><code class="language-console">collected
+</code></pre>
+<p>Every object nothing reaches is freed before <code>gc()</code> returns, and anything
+that releases a resource when collected releases it then: an <code>ffi</code> pointer
+taken over with <code>own()</code> runs its destructor. No program needs <code>gc()</code> to
+stay correct. It is for the moments timing matters, such as releasing
+native resources at a known point, or a test checking what collection
+does. A full collection visits every live object, so calling it in a loop
+is slow.</p>
+<h2 id="tokens"><a class="header" href="#tokens">Tokens</a></h2>
+<p><code>tokenize()</code> is the first stage: text in, a flat list of lexical tokens
+out.</p>
+<pre><code class="language-zuri">import zuri
+
+for token in zuri.tokenize('var x = 1 # note') {
+  echo '${token.kind} at ${token.line}:${token.column} -&gt; ${token.text}'
+}
+</code></pre>
+<pre><code class="language-console">Var at 1:1 -&gt; var
+Identifier at 1:5 -&gt; x
+Equal at 1:7 -&gt; =
+Integer at 1:9 -&gt; 1
+Comment at 1:11 -&gt; # note
+Eof at 1:17 -&gt; 
+</code></pre>
+<p><strong>Nothing is filtered.</strong> Comments, doc blocks and newlines are all real
+tokens, and the list always ends with one <code>Eof</code>. The parser’s grammar skips
+trivia when it runs; <code>tokenize()</code> reports everything the lexer saw, which
+is exactly what a formatter or a syntax highlighter needs.</p>
+<p>Each <code>Token</code> carries:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>What it is</th></tr>
+</thead>
+<tbody>
+<tr><td><code>kind</code></td><td>the lexer’s own variant name — <code>'Identifier'</code>, <code>'Plus'</code>, <code>'Comment'</code></td></tr>
+<tr><td><code>line</code>, <code>column</code></td><td>1-indexed position; <code>column</code> counts characters, not bytes</td></tr>
+<tr><td><code>start</code>, <code>end</code></td><td>character offsets spanning the token’s exact text</td></tr>
+<tr><td><code>text</code></td><td>the exact source text, delimiters included</td></tr>
+<tr><td><code>value</code></td><td>the payload, where there is one — a literal’s value, an identifier’s name, a comment’s content</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>start</code> and <code>end</code> are what make edits possible: they let you recover or
+replace a token’s original text without re-lexing, which is how a rename
+tool or an automatic formatter works.</p>
+<p><code>is_trivia()</code> is true for comments and doc blocks, so filtering them is one
+call:</p>
+<pre><code class="language-zuri">import zuri
+
+var tokens = zuri.tokenize('var x = 1 # note')
+
+echo tokens.filter(@(t) =&gt; t.is_trivia()).map(@(t) =&gt; t.kind)
+echo tokens.filter(@(t) =&gt; !t.is_trivia()).length()
+</code></pre>
+<pre><code class="language-console">[Comment]
+5
+</code></pre>
+<h3 id="lexing-never-raises"><a class="header" href="#lexing-never-raises">Lexing Never Raises</a></h3>
+<p>A malformed input does not throw. It produces a token of kind <code>'Error'</code>
+carrying what went wrong:</p>
+<pre><code class="language-zuri">import zuri
+
+var tokens = zuri.tokenize("var s = 'unterminated")
+
+echo tokens.map(@(t) =&gt; t.kind)
+echo tokens.find(@(t) =&gt; t.kind == 'Error') != nil
+</code></pre>
+<pre><code class="language-console">[Var, Identifier, Equal, Error, Eof]
+true
+</code></pre>
+<p><code>tokenize()</code> is therefore <strong>total over any input at all</strong>, which is what
+makes it safe to point at a file you did not write, or at a half-typed
+buffer in an editor. Neither <code>parse()</code> nor <code>compile()</code> has that property —
+both raise on bad input, because neither can produce a meaningful result
+from it.</p>
+<h2 id="the-syntax-tree"><a class="header" href="#the-syntax-tree">The Syntax Tree</a></h2>
+<p><code>parse()</code> is the second stage: tokens become a tree.</p>
+<pre><code class="language-zuri">import zuri
+
+var tree = zuri.parse('def double(n) { return n * 2 }')
+
+echo tree[0].kind
+echo tree[0].fields.keys()
+echo tree[0].fields.name
+echo tree[0].line
+</code></pre>
+<pre><code class="language-console">Function
+[name, parameters, body, is_variadic]
+double
+1
+</code></pre>
+<p>A <code>Node</code> has a <code>kind</code>, a <code>line</code>, a <code>column</code> and a <code>fields</code> dictionary. The
+fields hold more nodes, plain lists, plain dictionaries or scalars — never
+anything else — so walking the tree is uniform no matter which node you are
+looking at.</p>
+<h3 id="walking-it"><a class="header" href="#walking-it">Walking It</a></h3>
+<p><code>walk_nodes(tree, visitor)</code> visits every node, depth first:</p>
+<pre><code class="language-zuri">import zuri
+
+var tree = zuri.parse('def double(n) { return n * 2 }')
+var kinds = []
+
+zuri.walk_nodes(tree, @(node) {
+  kinds.append(node.kind)
+})
+
+echo kinds
+</code></pre>
+<pre><code class="language-console">[Function, Argument, TypeHint, Any, Block, Return, Binary, Identifier, Integer]
+</code></pre>
+<p>That output repays a second look, because it shows how much the parser
+makes explicit. The single unannotated parameter <code>n</code> still produced an
+<code>Argument</code> wrapping a <code>TypeHint</code> wrapping an <code>Any</code> — the <em>absence</em> of an
+annotation is represented in the tree, not omitted from it. A tool walking
+this never has to special-case “no type was written”.</p>
+<p>The visitor may also be a <strong>dictionary from kind to handler</strong>, in which
+case only matching nodes are called:</p>
+<pre><code class="language-zuri">import zuri
+
+var tree = zuri.parse('def a() {}
+def b() {}
+var c = 1')
+var names = []
+
+zuri.walk_nodes(tree, {
+  Function: @(node) {
+    names.append(node.fields.name)
+  },
+})
+
+echo names
+</code></pre>
+<pre><code class="language-console">[a, b]
+</code></pre>
+<p><code>find_nodes(tree, kind)</code> is the shortcut when you want one kind and nothing
+else:</p>
+<pre><code class="language-zuri">import zuri
+
+var tree = zuri.parse('def double(n) { return n * 2 }')
+
+echo zuri.find_nodes(tree, 'Return').length()
+echo zuri.find_nodes(tree, 'Binary')[0].fields.op
+</code></pre>
+<pre><code class="language-console">1
+Multiply
+</code></pre>
+<h3 id="comments-survive"><a class="header" href="#comments-survive">Comments Survive</a></h3>
+<p>This is the property that makes documentation tooling possible. Comments
+and doc blocks are kept in the tree, in their original position, as their
+own nodes:</p>
+<pre><code class="language-zuri">import zuri
+
+var source = "# a note
+def add(a, b) {
+  return a + b
+}
+"
+
+echo zuri.parse(source).map(@(n) =&gt; n.kind)
+</code></pre>
+<pre><code class="language-console">[Comment, Function]
+</code></pre>
+<p>A doc block sits as a sibling immediately before whatever it documents, so
+pairing them is one pass with one variable of state — which is exactly what
+the worked example below does.</p>
+<p>Most parsers throw comments away. Keeping them is what separates a parser
+you can build a formatter or a documentation generator on from one you can
+only build an interpreter on.</p>
+<h2 id="bytecode"><a class="header" href="#bytecode">Bytecode</a></h2>
+<p><code>compile()</code> is the third stage: the tree becomes VM instructions.</p>
+<pre><code class="language-zuri">import zuri
+
+for instr in zuri.compile('var a = 1 + 2') {
+  echo '${instr.op} from line ${instr.line}'
+}
+</code></pre>
+<pre><code class="language-console">LoadConst from line 0
+AddImm from line 1
+SetGlobal from line 1
+LoadNil from line 1
+Return from line 1
+</code></pre>
+<p>An <code>Instr</code> has an <code>op</code>, a <code>line</code> and a <code>fields</code> dictionary — the same shape
+a <code>Node</code> has — and <code>walk_instrs()</code> and <code>find_instrs()</code> mirror the AST
+walkers exactly.</p>
+<p>Notice <code>AddImm</code>. The compiler folded the constant <code>2</code> into the add
+instruction rather than loading it separately. That is the sort of question
+only the bytecode can answer, and reading it is the most direct way to find
+out what the compiler actually made of something:</p>
+<pre><code class="language-zuri">import zuri
+
+echo zuri.compile('var a = 2 * 3 ** 2').map(@(i) =&gt; i.op)
+</code></pre>
+<pre><code class="language-console">[LoadConst, MulImm, LoadConst, Pow, SetGlobal, LoadNil, Return]
+</code></pre>
+<p>The multiply comes <strong>before</strong> the power, which is <code>**</code> sitting at the same
+precedence level as <code>*</code> and associating left. One line of bytecode settles
+an argument that reading the expression does not.</p>
+<h3 id="resolved-operands"><a class="header" href="#resolved-operands">Resolved Operands</a></h3>
+<p>Several opcodes carry only a raw index into the compiler’s constant pool,
+which on its own tells you nothing. Rather than make every caller fetch and
+correlate a constants table, each such field arrives with its resolved
+value alongside the index:</p>
+<pre><code class="language-zuri">import zuri
+
+var load = zuri.find_instrs(zuri.compile('var a = 42'), 'LoadConst')[0]
+
+echo load.fields.keys()
+echo load.fields.value
+</code></pre>
+<pre><code class="language-console">[dst, const_idx, value]
+42
+</code></pre>
+<p><code>const_idx</code> is the raw index, <code>value</code> is what it points at, and <code>dst</code> is
+the register the result lands in. The same
+pairing appears on <code>GetGlobal</code>, <code>GetField</code>, <code>Invoke</code> and the rest.</p>
+<p>A <code>Closure</code> instruction’s resolved value is a nested function prototype
+(<code>{ name, arity, variadic, instructions }</code>) whose own <code>instructions</code> are
+wrapped the same way, recursively — so compiling a file with functions in
+it exposes their bodies too, not only the code around them.</p>
+<h3 id="line-numbers-are-statement-grained"><a class="header" href="#line-numbers-are-statement-grained">Line Numbers Are Statement-Grained</a></h3>
+<p>Every instruction carries the source line it came from, but <strong>never a
+column</strong>. The compiler’s own tracking is line-only. A <code>Token</code> and a <code>Node</code>
+both have real column information from the lexer; an <code>Instr</code> does not.</p>
+<h2 id="reading-a-file"><a class="header" href="#reading-a-file">Reading a File</a></h2>
+<p>Each of the three has a <code>_file</code> counterpart that reads the path first:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Source string</th><th>File</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tokenize(source)</code></td><td><code>tokenize_file(path)</code></td></tr>
+<tr><td><code>parse(source)</code></td><td><code>parse_file(path)</code></td></tr>
+<tr><td><code>compile(source)</code></td><td><code>compile_file(path)</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>There is a fourth with no string equivalent: <strong><code>dump_file(path)</code></strong> reads,
+parses and returns the <code>dump()</code> of every top-level node. It is usually the
+fastest possible answer to “what is actually in this file”.</p>
+<h2 id="a-worked-example-a-documentation-extractor"><a class="header" href="#a-worked-example-a-documentation-extractor">A Worked Example: A Documentation Extractor</a></h2>
+<p>Here is the pattern the book’s own reference appendices are built on. It
+takes source text and returns every documented function in it, pairing each
+declaration with the doc block above it.</p>
+<p>The key fact is that <code>zuri.parse()</code> keeps comments in the tree. A doc block
+comes back as its own <code>DocBlock</code> node, sitting as a sibling immediately
+before whatever it documents, so pairing them is a single pass with one
+variable of state:</p>
+<pre><code class="language-zuri">import zuri
+
+def documented_functions(text) {
+  var found = []
+  var pending = nil
+
+  for node in zuri.parse(text) {
+    if node.kind == 'DocBlock' {
+      pending = node.fields.text
+      continue
+    }
+
+    if node.kind == 'Function' and pending != nil {
+      var params = node.fields.parameters.map(@(p) =&gt; p.fields.name)
+
+      found.append({ name: node.fields.name, params, doc: pending })
+    }
+
+    # Anything else between a block and a declaration breaks the pairing.
+    pending = nil
+  }
+
+  return found
+}
+
+var source = "/**\n * Adds two numbers.\n */\ndef add(a: number, b: number) {\n  return a + b\n}\n\ndef undocumented(x) {\n  return x\n}\n"
+
+for fn in documented_functions(source) {
+  echo '${fn.name}(${', '.join(fn.params)})'
+  echo '  ' + fn.doc.split('\n')[1].trim().replace('* ', '', false)
+}
+</code></pre>
+<pre><code class="language-console">add(a, b)
+  Adds two numbers.
+</code></pre>
+<p><code>undocumented</code> is absent from the output, because nothing set <code>pending</code>
+before it.</p>
+<p>Three things make this approach worth preferring over scanning the text
+yourself.</p>
+<p><strong>The parser knows what a declaration is.</strong> A function named <code>def_handler</code>,
+a <code>def</code> inside a string literal, a doc block inside a block comment — all of
+them fool a text scan and none of them fool the parser.</p>
+<p><strong>Parameter names and types come from the real nodes.</strong> A parameter’s
+<code>type_hint</code> node carries its types and whether it is nullable, so a
+generated signature matches what the runtime will actually enforce rather
+than what the source happened to look like.</p>
+<p><strong>It cannot drift.</strong> When the grammar gains something, the parser gains it
+too, and a tool built this way keeps working.</p>
+<p>What the parser does <em>not</em> do is interpret the doc block’s contents. The
+<code>@param</code> and <code>@returns</code> conventions are a convention, not grammar, so the
+text inside a <code>DocBlock</code> node is yours to parse. That is the one piece you
+write yourself — and the place to be careful, since a tag’s text may wrap
+onto the following line.</p>
+<h2 id="a-second-example-a-linter"><a class="header" href="#a-second-example-a-linter">A Second Example: A Linter</a></h2>
+<p>The other half of the module’s use is checking rather than generating.
+Here is a rule of the kind a team accumulates: flag every function whose
+parameter list is longer than some limit.</p>
+<pre><code class="language-zuri">import zuri
+
+def long_signatures(source, limit) {
+  var offenders = []
+
+  zuri.walk_nodes(zuri.parse(source), {
+    Function: @(node) {
+      var count = node.fields.parameters.length()
+
+      if count &gt; limit {
+        offenders.append({ name: node.fields.name, line: node.line, count })
+      }
+    },
+  })
+
+  return offenders
+}
+
+var source = "def small(a, b) {}\n" +
+  "def large(a, b, c, d, e) {}\n" +
+  "def also_large(a, b, c, d) {}\n"
+
+for problem in long_signatures(source, 3) {
+  echo 'line ${problem.line}: ${problem.name}() takes ${problem.count}'
+}
+</code></pre>
+<pre><code class="language-console">line 2: large() takes 5
+line 3: also_large() takes 4
+</code></pre>
+<p>Three properties make this worth doing with the parser rather than with a
+regular expression over the text.</p>
+<p><strong>It cannot be fooled by text that looks like code.</strong> A function named
+<code>def_handler</code>, the word <code>def</code> inside a string literal, a commented-out
+declaration — none of them are <code>Function</code> nodes, so none of them are
+counted.</p>
+<p><strong>It reports the real line.</strong> <code>node.line</code> comes from the lexer, so the
+message points at the declaration whatever the formatting around it.</p>
+<p><strong>It keeps working.</strong> When the grammar gains something, the parser gains it
+too, and a rule written this way does not quietly stop matching.</p>
+<p>The dictionary form of the visitor is doing real work here: only <code>Function</code>
+nodes reach the handler, so there is no <code>if node.kind == ...</code> and no chance
+of matching a kind you did not mean to.</p>
+<h2 id="serialising-without-a-to_json"><a class="header" href="#serialising-without-a-to_json">Serialising Without a <code>@to_json</code></a></h2>
+<p>Reflection covers the case where you would otherwise write the same method
+on every class:</p>
+<pre><code class="language-zuri">import zuri
+import json
+
+class User {
+
+  @new(name, age) {
+    self.name = name
+    self.age = age
+  }
+}
+
+class Product {
+
+  @new(title, price) {
+    self.title = title
+    self.price = price
+  }
+}
+
+def to_record(instance) {
+  var record = {}
+
+  for field in zuri.reflect.get_props(instance) {
+    record[field] = zuri.reflect.get_prop(instance, field)
+  }
+
+  return record
+}
+
+echo json.encode(to_record(User('ada', 36)))
+echo json.encode(to_record(Product('desk', 120)))
+</code></pre>
+<pre><code class="language-console">{"name":"ada","age":36}
+{"title":"desk","price":120}
+</code></pre>
+<p>One function, every class, no per-class method to keep in step with the
+fields. Note that this reads private fields too, which is right for a
+debugging dump and wrong for an API response — for the latter, filter on
+the leading underscore, or write a real <code>@to_json</code> and let the class decide
+what it exposes.</p>
+<h2 id="what-else-this-is-good-for"><a class="header" href="#what-else-this-is-good-for">What Else This Is Good For</a></h2>
+<p><strong>Plugin systems.</strong> Load modules from a directory, ask each whether it has
+the function your host expects, and call the ones that do. <code>module_info()</code>
+answers the question without importing blindly and hoping.</p>
+<p><strong>Editor tooling.</strong> <code>tokenize()</code> never raises, so it can run against a
+half-typed buffer. Every token carries <code>start</code> and <code>end</code>, so a rename or a
+reformat can rewrite exact spans.</p>
+<p><strong>Understanding the compiler.</strong> <code>zuri.compile()</code> on a snippet is faster
+than reading the compiler’s source, and it can never go out of date with
+the compiler you are actually running.</p>
+<p><strong>Answering questions about this book.</strong> Appendices D and E are generated
+from <code>libs/</code> with exactly the techniques above, and the audit that checks
+those stubs is written the same way.</p>
+<h2 id="what-this-is-not-good-for"><a class="header" href="#what-this-is-not-good-for">What This Is Not Good For</a></h2>
+<p>There is no <code>eval()</code>. You can compile source to bytecode and inspect it;
+you cannot execute a string as code.</p>
+<p>Zuri leaves it out for security. <code>eval()</code> erases the line between data and
+code, and every program that has one eventually runs a string it did not
+mean to: a form field, a query parameter, a config value, a webhook
+payload. The moment any of those reaches an <code>eval()</code>, whoever supplied it
+is running code with your program’s full permissions. It reads your files,
+opens your sockets and sends your secrets anywhere it likes. This is the
+single most damaging vulnerability class in dynamic languages, and it keeps
+happening because the dangerous call looks harmless in review: one
+function, three characters of input, and nothing in the language warns you.</p>
+<p>So Zuri does not provide one, and every job <code>eval()</code> is usually reached for
+has a better answer here:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Instead of</th><th>Use</th></tr>
+</thead>
+<tbody>
+<tr><td>evaluating a user-supplied expression</td><td>a dictionary of handlers keyed by the input</td></tr>
+<tr><td>calling a method whose name you computed</td><td><code>zuri.reflect.bind_method()</code></td></tr>
+<tr><td>varying behaviour at runtime</td><td>pass a function in</td></tr>
+<tr><td>turning text into data</td><td><code>json.decode()</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Each of those does the job with a fixed, auditable set of things that can
+happen. That is the difference between a program that handles input and a
+program that obeys it.</p>
+<p>Classes are sealed, so reflection cannot add a method to one at runtime.
+Patterns from other languages that rely on monkey-patching do not
+translate, and the alternative is the one the language wants: express the
+variation as a subclass, or as a function you pass in.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch20-00-args.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch22-00-performance.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch20-00-args.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch22-00-performance.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

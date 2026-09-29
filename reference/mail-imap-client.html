@@ -1,0 +1,898 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>mail.imap.client - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="mailimapclient"><a class="header" href="#mailimapclient"><code>mail.imap.client</code></a></h1>
+<pre><code class="language-zuri ignore">import mail
+</code></pre>
+<blockquote>
+<p>Everything here is re-exported by <code>mail</code>, so <code>import mail</code> is enough and
+the names are called as <code>mail.*</code>. Importing <code>mail.imap.client</code> on its
+own works too and reaches the same definitions.</p>
+</blockquote>
+<p>The reading end of IMAP.</p>
+<p><code>ImapClient</code> connects to a server, opens a mailbox, and reads what is in
+it. Unlike POP3, nothing is downloaded that was not asked for: a
+message’s headers, one part of it, or the whole of it, as needed.</p>
+<pre><code class="language-zuri ignore">import mail.imap { ImapClient }
+
+var inbox = ImapClient.connect('imaps://mail.example.com', {
+  username: 'ann',
+  password: secret,
+})
+
+inbox.select('INBOX')
+
+for id in inbox.search('UNSEEN') {
+  echo inbox.fetch_message(id).subject()
+}
+
+inbox.logout()
+</code></pre>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="imap_schemes"><a class="header" href="#imap_schemes"><code>IMAP_SCHEMES</code></a></h3>
+<pre><code class="language-zuri ignore">mail.IMAP_SCHEMES = {...}
+</code></pre>
+<h3 id="states"><a class="header" href="#states"><code>STATES</code></a></h3>
+<pre><code class="language-zuri ignore">mail.STATES = [...]
+</code></pre>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="mailbox"><a class="header" href="#mailbox"><code>Mailbox</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.Mailbox
+</code></pre>
+<p>An open mailbox, and what the server said about it when it opened.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.Mailbox(name: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="mailboxto_string"><a class="header" href="#mailboxto_string"><code>Mailbox.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Mailbox.to_string()
+</code></pre>
+<h3 id="mailboxinfo"><a class="header" href="#mailboxinfo"><code>MailboxInfo</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.MailboxInfo
+</code></pre>
+<p>One mailbox as <code>list()</code> reports it: its name, the character that
+separates the levels of it, and what the server says about it.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.MailboxInfo(name: string, flags: list, delimiter: ?string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>flags</code> (<code>list</code>) — The attributes, such as <code>\HasChildren</code>.</li>
+<li><code>delimiter</code> (<code>?string</code>) — The hierarchy separator, or <code>nil</code> for a
+server with no hierarchy at all.</li>
+</ul>
+<h4 id="mailboxinfois_selectable"><a class="header" href="#mailboxinfois_selectable"><code>MailboxInfo.is_selectable()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.MailboxInfo.is_selectable() -&gt; bool
+</code></pre>
+<p>Whether the server says this name cannot be selected, which is what a
+folder that only holds other folders looks like.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="mailboxinfoto_string"><a class="header" href="#mailboxinfoto_string"><code>MailboxInfo.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.MailboxInfo.to_string()
+</code></pre>
+<h3 id="envelope"><a class="header" href="#envelope"><code>Envelope</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.Envelope
+</code></pre>
+<p>The addresses and dates out of a message’s headers, as the server parsed
+them, so a list of messages can be shown without fetching any of them.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-2"><a class="header" href="#constructor-2">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.Envelope(values: list)
+</code></pre>
+<h4 id="envelopesent_at"><a class="header" href="#envelopesent_at"><code>Envelope.sent_at()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Envelope.sent_at()
+</code></pre>
+<p>The date as a <code>Date</code>, or <code>nil</code> when the server sent none or it cannot be
+read.</p>
+<p><strong>Returns</strong> — Date|nil</p>
+<h4 id="envelopeto_string"><a class="header" href="#envelopeto_string"><code>Envelope.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.Envelope.to_string()
+</code></pre>
+<h3 id="bodypart"><a class="header" href="#bodypart"><code>BodyPart</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.BodyPart
+</code></pre>
+<p>What one message is made of, without fetching it: the type of each part,
+its size, and where in the message it sits.</p>
+<p><code>section</code> is the number a <code>BODY[...]</code> fetch uses to ask for that part on
+its own.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-3"><a class="header" href="#constructor-3">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.BodyPart(type: string, subtype: string, parameters: dict, size: ?number, section: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>type</code> (<code>string</code>)</li>
+<li><code>subtype</code> (<code>string</code>)</li>
+<li><code>parameters</code> (<code>dict</code>)</li>
+<li><code>size</code> (<code>?number</code>)</li>
+<li><code>section</code> (<code>string</code>)</li>
+</ul>
+<h4 id="bodypartmime_type"><a class="header" href="#bodypartmime_type"><code>BodyPart.mime_type()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.BodyPart.mime_type() -&gt; string
+</code></pre>
+<p>The media type, as <code>text/plain</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="bodypartwalk"><a class="header" href="#bodypartwalk"><code>BodyPart.walk()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.BodyPart.walk() -&gt; list
+</code></pre>
+<p>Every part inside this one and itself, outermost first.</p>
+<p><strong>Returns</strong> <code>list</code> — of <code>BodyPart</code></p>
+<h4 id="bodypartto_string"><a class="header" href="#bodypartto_string"><code>BodyPart.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.BodyPart.to_string()
+</code></pre>
+<h3 id="messageinfo"><a class="header" href="#messageinfo"><code>MessageInfo</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.MessageInfo
+</code></pre>
+<p>What a <code>FETCH</code> returned about one message.</p>
+<p>Which fields are filled in depends on what was asked for. <code>parts</code> holds
+each <code>BODY[...]</code> section that came back, keyed by the section that was
+requested.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-4"><a class="header" href="#constructor-4">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.MessageInfo(sequence: number)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>sequence</code> (<code>number</code>) — The message’s position in the mailbox.</li>
+</ul>
+<h4 id="messageinfomessage"><a class="header" href="#messageinfomessage"><code>MessageInfo.message()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.MessageInfo.message()
+</code></pre>
+<p>The whole message, when the fetch asked for it.</p>
+<p><strong>Returns</strong> — Message|nil</p>
+<h4 id="messageinfois_seen"><a class="header" href="#messageinfois_seen"><code>MessageInfo.is_seen()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.MessageInfo.is_seen() -&gt; bool
+</code></pre>
+<p>Whether the message has been read.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="messageinfoto_string"><a class="header" href="#messageinfoto_string"><code>MessageInfo.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.MessageInfo.to_string()
+</code></pre>
+<h3 id="imapclient"><a class="header" href="#imapclient"><code>ImapClient</code></a></h3>
+<pre><code class="language-zuri ignore">class mail.ImapClient
+</code></pre>
+<p>A connection to a server that stores mail.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-5"><a class="header" href="#constructor-5">Constructor</a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient(connection, options: ?dict)
+</code></pre>
+<p>Builds a client around a connection that is already open.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>LineStream</code> — connection</li>
+<li><code>options</code> (<code>?dict</code>) — As <code>connect()</code>.</li>
+</ul>
+<h4 id="imapclientconnect"><a class="header" href="#imapclientconnect"><code>ImapClient.connect()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.connect(url: string, options: ?dict)
+</code></pre>
+<p>Opens a connection and gets as far as being able to select a mailbox.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>option</th><th>default</th><th>what it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>username</code>, <code>password</code></td><td>none</td><td>authenticate when both are given</td></tr>
+<tr><td><code>token</code></td><td>none</td><td>authenticate with a bearer token instead</td></tr>
+<tr><td><code>tls</code></td><td><code>require</code></td><td><code>require</code>, <code>prefer</code> or <code>disable</code>, when not already encrypted</td></tr>
+<tr><td><code>tls_config</code></td><td>a default one</td><td>the trust settings for TLS</td></tr>
+<tr><td><code>mechanisms</code></td><td>all of them</td><td>restricts which are acceptable</td></tr>
+<tr><td><code>timeout</code></td><td><code>60000</code></td><td>milliseconds to wait on the socket</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>url</code> (<code>string</code>) — <code>imaps://host</code>, <code>imap://host</code>, or a bare host.</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient</p>
+<p><strong>Raises</strong> <code>ImapError</code> if the server refuses.</p>
+<p><strong>Raises</strong> <code>AuthenticationError</code> if it refuses the credentials.</p>
+<h4 id="imapclientbegin"><a class="header" href="#imapclientbegin"><code>ImapClient.begin()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.begin()
+</code></pre>
+<p>Reads the greeting, negotiates TLS and authenticates.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>ImapError</code> if the greeting says the server is not available.</p>
+<h4 id="imapclientsupports"><a class="header" href="#imapclientsupports"><code>ImapClient.supports()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.supports(name: string) -&gt; bool
+</code></pre>
+<p>Whether the server offers a capability.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — Matched without regard to case.</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="imapclientis_secure"><a class="header" href="#imapclientis_secure"><code>ImapClient.is_secure()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.is_secure() -&gt; bool
+</code></pre>
+<p>Whether the connection is encrypted.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="imapclientrefresh_capabilities"><a class="header" href="#imapclientrefresh_capabilities"><code>ImapClient.refresh_capabilities()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.refresh_capabilities() -&gt; list
+</code></pre>
+<p>Asks the server what it can do, replacing what is known.</p>
+<p><strong>Returns</strong> <code>list</code> — of string</p>
+<h4 id="imapclientstart_tls"><a class="header" href="#imapclientstart_tls"><code>ImapClient.start_tls()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.start_tls()
+</code></pre>
+<p>Negotiates TLS over a connection that started in the clear, and asks
+what the server can do again, because nothing it said before the
+handshake was protected.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>ImapError</code> if the server refuses.</p>
+<h4 id="imapclientlogin"><a class="header" href="#imapclientlogin"><code>ImapClient.login()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.login(mechanism: ?string)
+</code></pre>
+<p>Authenticates, choosing the strongest mechanism both ends know.</p>
+<p>A server may forbid a mechanism outright by advertising <code>LOGINDISABLED</code>,
+which is how it says the connection is not private enough; this refuses
+to try in that case rather than sending the password anyway.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mechanism</code> (<code>?string</code>) — Forces one rather than choosing.</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>AuthenticationError</code> if there is no mechanism in common or
+the credentials are refused.</p>
+<h4 id="imapclientauthenticate"><a class="header" href="#imapclientauthenticate"><code>ImapClient.authenticate()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.authenticate(mechanism)
+</code></pre>
+<p>Runs one authentication exchange with a mechanism already built.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Mechanism</code> — mechanism</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>AuthenticationError</code> if the server refuses.</p>
+<h4 id="imapclientrun"><a class="header" href="#imapclientrun"><code>ImapClient.run()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.run(name: string, arguments: list) -&gt; list
+</code></pre>
+<p>Sends a command and reads everything it draws, up to and including the
+tagged answer.</p>
+<p>Arguments are written as they are: a plain string goes unquoted, so
+quote anything that needs it with <code>parser.quote()</code> first. A <code>Literal</code> is
+sent as a literal, waiting for the server’s permission unless it said
+permission is not needed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>arguments</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of the untagged responses the command produced.</p>
+<p><strong>Raises</strong> <code>ImapError</code> if the server answers <code>NO</code> or <code>BAD</code>.</p>
+<h4 id="imapclienton_event"><a class="header" href="#imapclienton_event"><code>ImapClient.on_event()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.on_event(listener)
+</code></pre>
+<p>Calls a function with every untagged response the server sends.</p>
+<p>This is how a program watches a mailbox: the server announces new mail
+and changed flags whenever it likes, and <code>idle()</code> exists so there is
+something to announce them during.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>?function(1)</code> — listener: <code>nil</code> stops listening.</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientselect"><a class="header" href="#imapclientselect"><code>ImapClient.select()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.select(name: string)
+</code></pre>
+<p>Opens a mailbox for reading and writing.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Mailbox</p>
+<p><strong>Raises</strong> <code>ImapError</code> if there is no such mailbox.</p>
+<h4 id="imapclientexamine"><a class="header" href="#imapclientexamine"><code>ImapClient.examine()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.examine(name: string)
+</code></pre>
+<p>Opens a mailbox without being able to change anything in it, which also
+means reading a message does not mark it read.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Mailbox</p>
+<p><strong>Raises</strong> <code>ImapError</code> if there is no such mailbox.</p>
+<h4 id="imapclientclose_mailbox"><a class="header" href="#imapclientclose_mailbox"><code>ImapClient.close_mailbox()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.close_mailbox()
+</code></pre>
+<p>Closes the open mailbox, removing the messages marked deleted on the way
+out.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientunselect"><a class="header" href="#imapclientunselect"><code>ImapClient.unselect()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.unselect()
+</code></pre>
+<p>Closes the open mailbox without removing anything, which is what <code>CLOSE</code>
+cannot do.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>StateError</code> if the server does not offer <code>UNSELECT</code>.</p>
+<h4 id="imapclientlist"><a class="header" href="#imapclientlist"><code>ImapClient.list()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.list(reference: ?string, pattern: ?string) -&gt; list
+</code></pre>
+<p>The mailboxes matching a pattern.</p>
+<p><code>*</code> matches anything including the hierarchy separator, and <code>%</code> matches
+anything except it, which is what lists one level.</p>
+<pre><code class="language-zuri ignore">for box in inbox.list('', '*') {
+  echo box.name
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>reference</code> (<code>?string</code>) — The prefix to search under. Empty when not
+given.</li>
+<li><code>pattern</code> (<code>?string</code>) — <code>*</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MailboxInfo</code></p>
+<h4 id="imapclientlsub"><a class="header" href="#imapclientlsub"><code>ImapClient.lsub()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.lsub(reference: ?string, pattern: ?string) -&gt; list
+</code></pre>
+<p>The mailboxes matching a pattern that this account is subscribed to.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>reference</code> (<code>?string</code>)</li>
+<li><code>pattern</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MailboxInfo</code></p>
+<h4 id="imapclientstatus"><a class="header" href="#imapclientstatus"><code>ImapClient.status()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.status(name: string, items: ?list) -&gt; dict
+</code></pre>
+<p>What is in a mailbox without opening it.</p>
+<pre><code class="language-zuri ignore">echo inbox.status('INBOX', ['MESSAGES', 'UNSEEN'])
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>items</code> (<code>?list</code>) — <code>MESSAGES</code>, <code>RECENT</code>, <code>UIDNEXT</code>, <code>UIDVALIDITY</code> and
+<code>UNSEEN</code>. All five when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — of the items asked for, by name.</p>
+<h4 id="imapclientcreate"><a class="header" href="#imapclientcreate"><code>ImapClient.create()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.create(name: string)
+</code></pre>
+<p>Creates a mailbox.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>ImapError</code> if it exists already or the name is not allowed.</p>
+<h4 id="imapclientdelete"><a class="header" href="#imapclientdelete"><code>ImapClient.delete()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.delete(name: string)
+</code></pre>
+<p>Deletes a mailbox and everything in it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>ImapError</code> if there is no such mailbox.</p>
+<h4 id="imapclientrename"><a class="header" href="#imapclientrename"><code>ImapClient.rename()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.rename(from: string, to: string)
+</code></pre>
+<p>Renames a mailbox.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>from</code> (<code>string</code>)</li>
+<li><code>to</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientsubscribe"><a class="header" href="#imapclientsubscribe"><code>ImapClient.subscribe()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.subscribe(name: string)
+</code></pre>
+<p>Marks a mailbox as one this account wants to see.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientunsubscribe"><a class="header" href="#imapclientunsubscribe"><code>ImapClient.unsubscribe()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.unsubscribe(name: string)
+</code></pre>
+<p>Undoes <code>subscribe()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientsearch"><a class="header" href="#imapclientsearch"><code>ImapClient.search()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.search(criteria: string, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>The messages in the open mailbox matching a search.</p>
+<p>The criteria are IMAP’s own, which read close to English: <code>'UNSEEN'</code>,
+<code>'FROM ann@example.com'</code>, <code>'SINCE 1-Jan-2026 SMALLER 10000'</code>.</p>
+<pre><code class="language-zuri ignore">for uid in inbox.search('UNSEEN SINCE 1-Jan-2026', true) {
+  echo uid
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>criteria</code> (<code>string</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>) — Return unique identifiers rather than positions,
+which is what anything that outlives the connection wants.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of number</p>
+<p><strong>Raises</strong> <code>StateError</code> if no mailbox is open.</p>
+<h4 id="imapclientfetch"><a class="header" href="#imapclientfetch"><code>ImapClient.fetch()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.fetch(ids, items: ?string, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Fetches what the server knows about some messages.</p>
+<pre><code class="language-zuri ignore">for info in inbox.fetch('1:10', 'ENVELOPE FLAGS', false) {
+  echo '${info.sequence} ${info.envelope.subject}'
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>) — A set, as <code>'1:10'</code> or <code>'1,3,5'</code>, or a
+list of numbers, or one number.</li>
+<li><code>items</code> (<code>?string</code>) — What to fetch, in IMAP’s own words. <code>ENVELOPE FLAGS INTERNALDATE RFC822.SIZE</code>
+when not given.</li>
+<li><code>by_uid</code> (<code>?bool</code>) — Whether <code>ids</code> are unique identifiers.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code></p>
+<p><strong>Raises</strong> <code>StateError</code> if no mailbox is open.</p>
+<h4 id="imapclientfetch_message"><a class="header" href="#imapclientfetch_message"><code>ImapClient.fetch_message()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.fetch_message(id: number, by_uid: ?bool, mark_seen: ?bool)
+</code></pre>
+<p>Fetches one message whole.</p>
+<p>Reading a message this way does not mark it read, because a program that
+goes through a mailbox should not change what a person sees when they
+next open it. Pass <code>mark_seen</code> to say otherwise, which is what a mail
+client showing a message wants.</p>
+<pre><code class="language-zuri ignore">echo inbox.fetch_message(uid, true, false).subject()
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>id</code> (<code>number</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+<li><code>mark_seen</code> (<code>?bool</code>) — Whether to set <code>\Seen</code> on the way.</li>
+</ul>
+<p><strong>Returns</strong> — Message</p>
+<p><strong>Raises</strong> <code>ImapError</code> if there is no such message.</p>
+<h4 id="imapclientfetch_headers"><a class="header" href="#imapclientfetch_headers"><code>ImapClient.fetch_headers()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.fetch_headers(ids, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Fetches only the headers of some messages, which is enough to show a
+list without pulling the bodies across.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code>, each with <code>parts</code> holding the
+header block.</p>
+<h4 id="imapclientstore"><a class="header" href="#imapclientstore"><code>ImapClient.store()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.store(ids, action: string, flags: list, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Changes the flags on some messages.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>action</code> (<code>string</code>) — <code>FLAGS</code> to replace, <code>+FLAGS</code> to add, <code>-FLAGS</code> to
+remove. Add <code>.SILENT</code> to any of them to stop the server reporting the
+result back.</li>
+<li><code>flags</code> (<code>list</code>) — The flags, as <code>['\\Seen']</code>.</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code> describing what changed.</p>
+<h4 id="imapclientadd_flags"><a class="header" href="#imapclientadd_flags"><code>ImapClient.add_flags()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.add_flags(ids, flags: list, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Adds flags to some messages, leaving the rest alone.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>flags</code> (<code>list</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code></p>
+<h4 id="imapclientremove_flags"><a class="header" href="#imapclientremove_flags"><code>ImapClient.remove_flags()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.remove_flags(ids, flags: list, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Removes flags from some messages.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>flags</code> (<code>list</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code></p>
+<h4 id="imapclientmark_seen"><a class="header" href="#imapclientmark_seen"><code>ImapClient.mark_seen()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.mark_seen(ids, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Marks messages read.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code></p>
+<h4 id="imapclientmark_deleted"><a class="header" href="#imapclientmark_deleted"><code>ImapClient.mark_deleted()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.mark_deleted(ids, by_uid: ?bool) -&gt; list
+</code></pre>
+<p>Marks messages for removal. Nothing goes until <code>expunge()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of <code>MessageInfo</code></p>
+<h4 id="imapclientcopy"><a class="header" href="#imapclientcopy"><code>ImapClient.copy()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.copy(ids, target: string, by_uid: ?bool)
+</code></pre>
+<p>Copies messages into another mailbox.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>target</code> (<code>string</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientmove"><a class="header" href="#imapclientmove"><code>ImapClient.move()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.move(ids, target: string, by_uid: ?bool)
+</code></pre>
+<p>Moves messages into another mailbox.</p>
+<p>Uses the server’s own <code>MOVE</code> where there is one, and otherwise does what
+<code>MOVE</code> was invented to replace: copy, mark deleted, expunge.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ids</code> (<code>string|list|number</code>)</li>
+<li><code>target</code> (<code>string</code>)</li>
+<li><code>by_uid</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientexpunge"><a class="header" href="#imapclientexpunge"><code>ImapClient.expunge()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.expunge() -&gt; list
+</code></pre>
+<p>Removes every message marked deleted in the open mailbox.</p>
+<p><strong>Returns</strong> <code>list</code> — of number: the positions that went, highest first,
+which is the order they have to be applied in.</p>
+<h4 id="imapclientappend"><a class="header" href="#imapclientappend"><code>ImapClient.append()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.append(mailbox: string, note, flags: ?list, received)
+</code></pre>
+<p>Adds a message to a mailbox without sending it anywhere, which is how a
+sent message gets into the Sent folder.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mailbox</code> (<code>string</code>)</li>
+<li><code>Message|string|bytes</code> — note</li>
+<li><code>flags</code> (<code>?list</code>) — <code>['\\Seen']</code> is the usual one for a sent message.</li>
+<li><code>?Date</code> — received: The internal date to file it under. The time of
+arrival when not given.</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientidle"><a class="header" href="#imapclientidle"><code>ImapClient.idle()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.idle(timeout: ?number) -&gt; list
+</code></pre>
+<p>Waits for the server to say something, which is how a program learns
+about new mail without asking over and over.</p>
+<p>Returns when the server reports anything, or when the wait runs out. A
+server may drop a connection that idles for too long, so even a program
+with nothing else to do should come back around every twenty minutes or
+so; RFC 2177 says as much.</p>
+<pre><code class="language-zuri ignore">inbox.on_event(@(response) {
+  echo 'server said ${response.name()}'
+})
+
+while true {
+  inbox.idle(1500000)
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>?number</code>) — Milliseconds to wait. <code>1500000</code>, which is
+twenty-five minutes, when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code> — of the untagged responses that arrived.</p>
+<p><strong>Raises</strong> <code>StateError</code> if the server does not offer <code>IDLE</code>.</p>
+<h4 id="imapclientnoop"><a class="header" href="#imapclientnoop"><code>ImapClient.noop()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.noop() -&gt; list
+</code></pre>
+<p>Asks the server for nothing, which both keeps the connection alive and
+gives it a chance to report anything that has changed.</p>
+<p><strong>Returns</strong> <code>list</code> — of the untagged responses that came with it.</p>
+<h4 id="imapclientnamespace"><a class="header" href="#imapclientnamespace"><code>ImapClient.namespace()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.namespace()
+</code></pre>
+<p>The namespaces this account has: its own, other people’s, and the shared
+ones.</p>
+<p><strong>Returns</strong> — list, as the server sent it.</p>
+<p><strong>Raises</strong> <code>StateError</code> if the server does not offer <code>NAMESPACE</code>.</p>
+<h4 id="imapclientenable"><a class="header" href="#imapclientenable"><code>ImapClient.enable()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.enable(names: list)
+</code></pre>
+<p>Turns on an extension the server offers but does not use until asked,
+such as <code>UTF8=ACCEPT</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>names</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<p><strong>Raises</strong> <code>StateError</code> if the server does not offer <code>ENABLE</code>.</p>
+<h4 id="imapclientid"><a class="header" href="#imapclientid"><code>ImapClient.id()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.id(fields: ?dict) -&gt; dict
+</code></pre>
+<p>Tells the server what this client is, and reads back what the server is.
+Both sides may say nothing at all.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>fields</code> (<code>?dict</code>) — <code>name</code>, <code>version</code> and whatever else is worth
+saying. A name of <code>Zuri</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code> — of what the server said about itself.</p>
+<h4 id="imapclientlogout"><a class="header" href="#imapclientlogout"><code>ImapClient.logout()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.logout()
+</code></pre>
+<p>Says goodbye and closes the connection.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientclose"><a class="header" href="#imapclientclose"><code>ImapClient.close()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.close()
+</code></pre>
+<p>Closes the connection without saying goodbye.</p>
+<p><strong>Returns</strong> — ImapClient itself.</p>
+<h4 id="imapclientto_string"><a class="header" href="#imapclientto_string"><code>ImapClient.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">mail.ImapClient.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="mail-imap.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="mail-imap-parser.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="mail-imap.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="mail-imap-parser.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

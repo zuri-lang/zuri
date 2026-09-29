@@ -1,0 +1,1311 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Strings - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch04-01-strings.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="strings"><a class="header" href="#strings">Strings</a></h1>
+<p>A Zuri string is UTF-8 text. Indexing, slicing and <code>length()</code> work in
+characters, not bytes, so a string of emoji behaves the way a reader
+expects.</p>
+<p>Text is the type you will write most, so this section starts with how you
+write one down — quoting, escapes and interpolation — before moving on to
+what you can do with it.</p>
+<h2 id="writing-a-string"><a class="header" href="#writing-a-string">Writing a String</a></h2>
+<p>A string literal is written between single or double quotes:</p>
+<pre><code class="language-zuri">echo 'single quotes'
+echo "double quotes"
+</code></pre>
+<pre><code class="language-console">single quotes
+double quotes
+</code></pre>
+<p><strong>The two styles are identical.</strong> They are not the two different things
+they are in some other languages. Both process escape sequences, both
+interpolate expressions, and both may span several lines. Nothing at all
+changes except which quote character ends the string:</p>
+<pre><code class="language-zuri">var name = 'Zuri'
+
+echo 'escape \t and interpolate ${name}'
+echo "escape \t and interpolate ${name}"
+</code></pre>
+<pre><code class="language-console">escape 	 and interpolate Zuri
+escape 	 and interpolate Zuri
+</code></pre>
+<p>Pick whichever avoids escaping. A string containing an apostrophe is
+easiest in double quotes; a string containing a quotation mark is easiest
+in single quotes:</p>
+<pre><code class="language-zuri">echo "it's clearer this way"
+echo 'she said "hello"'
+</code></pre>
+<pre><code class="language-console">it's clearer this way
+she said "hello"
+</code></pre>
+<p>Most Zuri code, and all of the standard library, uses single quotes by
+default and switches to double quotes when the content calls for it.</p>
+<h3 id="multi-line-strings"><a class="header" href="#multi-line-strings">Multi-line Strings</a></h3>
+<p>A literal may simply contain newlines. There is no separate triple-quoted
+form and no continuation character:</p>
+<pre><code class="language-zuri">var message = 'Dear reader,
+
+Thank you for the strings.'
+
+echo message
+</code></pre>
+<pre><code class="language-console">Dear reader,
+
+Thank you for the strings.
+</code></pre>
+<p>Everything between the quotes is part of the string, indentation included.
+When a long string is indented inside a function, the leading spaces on
+each line are in the string too, which is why it is advisable that code
+that builds indented text should assemble it with <code>join()</code> rather than
+writing one long literal.</p>
+<h2 id="escape-sequences"><a class="header" href="#escape-sequences">Escape Sequences</a></h2>
+<p>A backslash starts an escape. The full set is:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Escape</th><th>Produces</th></tr>
+</thead>
+<tbody>
+<tr><td><code>\0</code></td><td>the null character, U+0000</td></tr>
+<tr><td><code>\a</code></td><td>the alert (bell) character, U+0007</td></tr>
+<tr><td><code>\b</code></td><td>backspace, U+0008</td></tr>
+<tr><td><code>\t</code></td><td>horizontal tab, U+0009</td></tr>
+<tr><td><code>\n</code></td><td>line feed, U+000A</td></tr>
+<tr><td><code>\v</code></td><td>vertical tab, U+000B</td></tr>
+<tr><td><code>\f</code></td><td>form feed, U+000C</td></tr>
+<tr><td><code>\r</code></td><td>carriage return, U+000D</td></tr>
+<tr><td><code>\\</code></td><td>a single backslash</td></tr>
+<tr><td><code>\'</code></td><td>a single quote</td></tr>
+<tr><td><code>\"</code></td><td>a double quote</td></tr>
+<tr><td><code>\xNN</code></td><td>the byte with hexadecimal value <code>NN</code></td></tr>
+<tr><td><code>\uNNNN</code></td><td>the code point <code>U+NNNN</code></td></tr>
+<tr><td><code>\UNNNNNNNN</code></td><td>the code point <code>U+NNNNNNNN</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The three numeric forms take exactly the number of hex digits shown — two,
+four and eight — and the digits may be upper or lower case:</p>
+<pre><code class="language-zuri">echo 'hex byte: \x41'
+echo 'code point: \u00e9'
+echo 'astral: \U0001F600'
+</code></pre>
+<pre><code class="language-console">hex byte: A
+code point: é
+astral: 😀
+</code></pre>
+<p><code>\u</code> covers everything up to U+FFFF. Anything above that — emoji, most
+historic scripts, mathematical alphanumerics — needs <code>\U</code> and its eight
+digits. Zero-pad to fill them.</p>
+<h3 id="unknown-escapes-are-left-alone"><a class="header" href="#unknown-escapes-are-left-alone">Unknown Escapes Are Left Alone</a></h3>
+<p>A backslash followed by anything not in the table above is <strong>not</strong> an
+error, and it is not silently dropped either. The backslash and the
+character both survive:</p>
+<pre><code class="language-zuri">echo 'a regex: \d+ and \w+'
+echo 'a path: C:\temp\notes'
+</code></pre>
+<pre><code class="language-console">a regex: \d+ and \w+
+a path: C:	emp
+otes
+</code></pre>
+<p>The first line came through untouched: <code>\d</code> and <code>\w</code> are not escapes, so
+both backslashes survived, which is exactly why regular expressions can be
+written as plain strings.</p>
+<p>The second line did not. <code>\t</code> <em>is</em> an escape, so <code>C:\temp</code> became <code>C:</code>
+followed by a tab and then <code>emp</code>; <code>\n</code> is an escape too, so <code>\notes</code> became
+a newline followed by <code>otes</code>. One path, two silent substitutions. The rule
+is easy to state and easy to forget: unknown escapes pass through, known
+ones do not, and nothing in the way you write them tells you which is
+which.</p>
+<p>For Windows paths and regular expressions — the two places this bites —
+double the backslashes:</p>
+<pre><code class="language-zuri">echo 'a path: C:\\temp\\notes'
+</code></pre>
+<pre><code class="language-console">a path: C:\temp\notes
+</code></pre>
+<h3 id="escaping-the-quote-you-chose"><a class="header" href="#escaping-the-quote-you-chose">Escaping the Quote You Chose</a></h3>
+<p>You only need to escape the quote character that would end the string:</p>
+<pre><code class="language-zuri">echo 'it\'s escaped'
+echo "she said \"hi\""
+</code></pre>
+<pre><code class="language-console">it's escaped
+she said "hi"
+</code></pre>
+<p>Escaping the <em>other</em> quote is harmless but pointless, and because an
+unnecessary escape is an unknown escape, the backslash stays in the result:</p>
+<pre><code class="language-zuri">echo 'this \" keeps its backslash'
+</code></pre>
+<pre><code class="language-console">this \" keeps its backslash
+</code></pre>
+<p>That is a good reason to choose the quote style that lets you write the
+text plainly and escape nothing at all.</p>
+<h2 id="interpolation"><a class="header" href="#interpolation">Interpolation</a></h2>
+<p><code>${...}</code> inside a string evaluates the expression between the braces and
+splices its text into the result:</p>
+<pre><code class="language-zuri">var name = 'Ada'
+var year = 1843
+
+echo 'In ${year}, ${name} wrote the first program.'
+</code></pre>
+<pre><code class="language-console">In 1843, Ada wrote the first program.
+</code></pre>
+<p>This works in both quote styles, and it is the way most Zuri code builds a
+string. The section after next covers <code>+</code>, which does the same job with
+more punctuation.</p>
+<h3 id="any-expression-fits"><a class="header" href="#any-expression-fits">Any Expression Fits</a></h3>
+<p>The braces take a whole expression, not just a variable name. Arithmetic,
+method calls, indexing, comparisons and conditionals all work:</p>
+<pre><code class="language-zuri">var items = ['a', 'b', 'c']
+var user = { name: 'ada', admin: true }
+
+echo 'count: ${items.length()}'
+echo 'first: ${items[0].upper()}'
+echo 'math: ${(2 ** 10) - 24}'
+echo 'role: ${user.admin ? 'admin' : 'user'}'
+echo 'name: ${user.name.capitalize()}'
+</code></pre>
+<pre><code class="language-console">count: 3
+first: A
+math: 1000
+role: admin
+name: Ada
+</code></pre>
+<p>Notice the third line. The quotes inside <code>${...}</code> are the <strong>same</strong> quote
+character that opened the string, and it still parses correctly, because
+the expression inside the braces is lexed as its own piece of code rather
+than as text. You do not need to switch quote styles or escape anything to
+put a string literal inside an interpolation.</p>
+<h3 id="interpolations-nest"><a class="header" href="#interpolations-nest">Interpolations Nest</a></h3>
+<p>A string literal inside <code>${...}</code> is a string literal like any other, which
+means it may contain interpolations of its own, to any depth:</p>
+<pre><code class="language-zuri">var n = 1
+
+echo 'outer ${ 'inner ${n + 1}' }'
+echo '${ '${ '${2 ** 3}' }' }'
+</code></pre>
+<pre><code class="language-console">outer inner 2
+8
+</code></pre>
+<p>This is not a curiosity. It is what makes a conditional inside a string
+able to produce formatted text rather than a bare word, which comes up
+constantly in messages meant for a person to read:</p>
+<pre><code class="language-zuri">var user = { name: 'ada', unread: 3 }
+
+echo 'Hi ${user.name.capitalize()}, you have ${user.unread &gt; 0 ? '${user.unread} new ${user.unread == 1 ? 'message' : 'messages'}' : 'nothing new'}.'
+</code></pre>
+<pre><code class="language-console">Hi Ada, you have 3 new messages.
+</code></pre>
+<p>Three levels of interpolation are at work there: the outer message, the
+branch that chooses between a count and “nothing new”, and the branch that
+picks the singular or the plural. Each one is an ordinary string literal in
+an ordinary expression, and each one uses single quotes, because the
+expression inside <code>${...}</code> is lexed as code and its quotes never collide
+with the ones around it.</p>
+<p>Nesting is equally useful inside a callback, where the inner string is
+building one element of a larger result:</p>
+<pre><code class="language-zuri">var items = ['a', 'b']
+
+echo 'list: ${', '.join(items.map(@(i) =&gt; '&lt;${i}&gt;'))}'
+</code></pre>
+<pre><code class="language-console">list: &lt;a&gt;, &lt;b&gt;
+</code></pre>
+<p>Depth costs readability quickly. When a line like the message above stops
+being scannable, lift the inner pieces into local variables on the lines
+before it; the language is happy either way.</p>
+<h3 id="what-each-type-looks-like"><a class="header" href="#what-each-type-looks-like">What Each Type Looks Like</a></h3>
+<p>Interpolation renders a value the same way <code>echo</code> does:</p>
+<pre><code class="language-zuri">var settings = { a: 1 }
+
+echo 'number: ${1 / 3}'
+echo 'list: ${[1, 2]}'
+echo 'dict: ${settings}'
+echo 'nil: ${nil}'
+echo 'bool: ${true}'
+</code></pre>
+<pre><code class="language-console">number: 0.3333333333333333
+list: [1, 2]
+dict: {a: 1}
+nil: nil
+bool: true
+</code></pre>
+<p>A dictionary <strong>literal</strong> written directly inside <code>${...}</code> does not parse,
+because its closing brace runs into the interpolation’s closing brace:</p>
+<pre><code class="language-zuri ignore">echo 'dict: ${{ a: 1 }}'
+</code></pre>
+<pre><code class="language-console">SyntaxError: Expected '}' after dictionary
+</code></pre>
+<p>Put it in a variable first, as above. A list literal has no such problem,
+since <code>]</code> and <code>}</code> are different characters.</p>
+<p>There is one important exception, and it catches everyone once.
+<strong>Interpolating a class instance does not call its <code>to_string()</code> method:</strong></p>
+<pre><code class="language-zuri">class Point {
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  to_string() {
+    return '(${self.x}, ${self.y})'
+  }
+}
+
+var p = Point(3, 4)
+
+echo 'implicit: ${p}'
+echo 'explicit: ${p.to_string()}'
+</code></pre>
+<pre><code class="language-console">implicit: &lt;instance of Point&gt;
+explicit: (3, 4)
+</code></pre>
+<p>Call the method yourself. This applies to <code>echo p</code> too, and to
+<code>'text ' + p</code>. The rule is that Zuri never calls a method on your behalf to
+produce text; if you want <code>to_string()</code> to run, write it.</p>
+<h3 id="writing-a-literal-"><a class="header" href="#writing-a-literal-">Writing a Literal <code>${</code></a></h3>
+<p>A backslash does not escape an interpolation. <code>\${x}</code> is an unknown escape,
+so the backslash survives and the interpolation still does not happen —
+which is rarely what anyone wants:</p>
+<pre><code class="language-zuri">echo 'literal attempt: \${x}'
+</code></pre>
+<pre><code class="language-console">literal attempt: \${x}
+</code></pre>
+<p>To produce the two characters <code>${</code> followed by text, split the string so
+the <code>$</code> and the <code>{</code> are never adjacent inside one literal:</p>
+<pre><code class="language-zuri">echo 'shell syntax: $' + '{HOME}'
+</code></pre>
+<pre><code class="language-console">shell syntax: ${HOME}
+</code></pre>
+<p>A lone <code>$</code> is not special, so only the exact sequence <code>${</code> needs this
+treatment:</p>
+<pre><code class="language-zuri">echo 'price: $5.00'
+echo 'total: $${12 + 8}'
+</code></pre>
+<pre><code class="language-console">price: $5.00
+total: $20
+</code></pre>
+<h2 id="joining-strings-together"><a class="header" href="#joining-strings-together">Joining Strings Together</a></h2>
+<h3 id="concatenation-with-"><a class="header" href="#concatenation-with-">Concatenation with <code>+</code></a></h3>
+<p><code>+</code> joins two strings end to end:</p>
+<pre><code class="language-zuri">echo 'Hello, ' + 'world'
+echo 'a' + 'b' + 'c'
+</code></pre>
+<pre><code class="language-console">Hello, world
+abc
+</code></pre>
+<p>When one side is a string, the other side is converted to its text form
+first. This works in both directions, and for every built-in type:</p>
+<pre><code class="language-zuri">echo 'n=' + 5
+echo 5 + 'n'
+echo 'pi is about ' + 3.14
+echo 'flag: ' + true
+echo 'missing: ' + nil
+echo 'items: ' + [1, 2]
+</code></pre>
+<pre><code class="language-console">n=5
+5n
+pi is about 3.14
+flag: true
+missing: nil
+items: [1, 2]
+</code></pre>
+<p>Read the second line again: <code>5 + 'n'</code> gives <code>'5n'</code>, not an error and not
+arithmetic. A string on <em>either</em> side turns the whole expression into
+concatenation. That is worth knowing when a value arrives from somewhere
+you do not control:</p>
+<pre><code class="language-zuri">var quantity = '2'
+
+echo quantity + 3
+echo quantity.to_number() + 3
+</code></pre>
+<pre><code class="language-console">23
+5
+</code></pre>
+<p>The first line is text, the second is arithmetic, and nothing in the
+expression tells you which you are getting. When a number must be a number,
+convert it at the point it enters your program rather than hoping.</p>
+<p>The one type that does <strong>not</strong> convert usefully is a class instance:</p>
+<pre><code class="language-zuri">class Point {
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  to_string() {
+    return '(${self.x}, ${self.y})'
+  }
+}
+
+echo 'at ' + Point(1, 2).to_string()
+</code></pre>
+<pre><code class="language-console">at (1, 2)
+</code></pre>
+<p>Concatenating the instance directly would produce <code>&lt;instance of Point&gt;</code>,
+for the same reason interpolation does: Zuri does not call <code>to_string()</code>
+for you.</p>
+<h3 id="concatenation-versus-interpolation"><a class="header" href="#concatenation-versus-interpolation">Concatenation Versus Interpolation</a></h3>
+<p>Both produce the same string, so choose on readability:</p>
+<pre><code class="language-zuri">var host = 'localhost'
+var port = 8080
+
+echo 'connecting to ' + host + ':' + port + '/health'
+echo 'connecting to ${host}:${port}/health'
+</code></pre>
+<pre><code class="language-console">connecting to localhost:8080/health
+connecting to localhost:8080/health
+</code></pre>
+<p>Interpolation wins whenever there is more than one hole to fill: the
+literal text stays in one piece, the quotes do not multiply, and there is
+no chance of losing a separator between two <code>+</code> signs. Reach for <code>+</code> when
+you are gluing exactly two pieces together, or when one of them is already
+a variable holding a complete string.</p>
+<h3 id="repetition-with-"><a class="header" href="#repetition-with-">Repetition with <code>*</code></a></h3>
+<p><code>*</code> repeats a string a whole number of times:</p>
+<pre><code class="language-zuri">echo 'ab' * 3
+echo '-' * 20
+echo '  ' * 2 + 'indented'
+</code></pre>
+<pre><code class="language-console">ababab
+--------------------
+    indented
+</code></pre>
+<p>That second line is the reason this operator earns its place. Separators,
+rules, indentation and padding are all one short expression instead of a
+loop.</p>
+<p>The rules for the count are worth stating exactly:</p>
+<ul>
+<li>A count of <code>1</code> returns the string unchanged.</li>
+<li>A count of <code>0</code> returns the empty string.</li>
+<li>A <strong>negative</strong> count also returns the empty string, rather than raising.</li>
+<li>A <strong>fractional</strong> count is truncated toward zero, so <code>* 2.7</code> repeats
+twice.</li>
+</ul>
+<pre><code class="language-zuri">echo '[' + 'ab' * 1 + ']'
+echo '[' + 'ab' * 0 + ']'
+echo '[' + 'ab' * -1 + ']'
+echo '[' + 'ab' * 2.7 + ']'
+</code></pre>
+<pre><code class="language-console">[ab]
+[]
+[]
+[abab]
+</code></pre>
+<p>The negative case is the one to watch. <code>'-' * (width - label.length())</code>
+silently produces nothing when the label is longer than the width, and no
+error tells you so. When the count is computed, clamp it:</p>
+<pre><code class="language-zuri">def rule(width, label) {
+  var padding = (width - label.length()).max(0)
+
+  return label + '-' * padding
+}
+
+echo rule(10, 'ab')
+echo rule(10, 'a much longer label')
+</code></pre>
+<pre><code class="language-console">ab--------
+a much longer label
+</code></pre>
+<p>Unlike <code>+</code>, repetition does not commute. The string has to be on the left:</p>
+<pre><code class="language-zuri ignore">echo 3 * 'ab'
+</code></pre>
+<pre><code class="language-console">Unhandled TypeError: operator '*' not defined for call signature (number, string)
+</code></pre>
+<h3 id="building-a-string-from-many-pieces"><a class="header" href="#building-a-string-from-many-pieces">Building a String from Many Pieces</a></h3>
+<p>For more than a handful of pieces, neither operator is the right tool.
+Collect them in a list and <code>join()</code>:</p>
+<pre><code class="language-zuri">var names = ['ada', 'grace', 'alan']
+
+echo ', '.join(names)
+echo '\n'.join(names.map(@(n) =&gt; '- ' + n.capitalize()))
+</code></pre>
+<pre><code class="language-console">ada, grace, alan
+- Ada
+- Grace
+- Alan
+</code></pre>
+<p><code>join()</code> lives on the <strong>separator</strong>, not on the list, and it converts each
+element to text on the way — so a list of numbers joins as readily as a
+list of strings:</p>
+<pre><code class="language-zuri">echo '-'.join([1, 2, 3])
+</code></pre>
+<pre><code class="language-console">1-2-3
+</code></pre>
+<p>Note also that <code>join()</code> puts the separator <em>between</em> elements, never at
+either end, which is exactly the behaviour a hand-written loop usually gets
+wrong on the last item.</p>
+<h2 id="inspecting"><a class="header" href="#inspecting">Inspecting</a></h2>
+<pre><code class="language-zuri">var s = 'Hello, Zuri'
+
+echo s.length()
+echo s.is_empty()
+echo s.index_of('Zuri')
+echo s.count('l')
+echo s.starts_with('Hello')
+echo s.ends_with('Zuri')
+echo s.contains('Zuri')
+</code></pre>
+<pre><code class="language-console">11
+false
+7
+2
+true
+true
+true
+</code></pre>
+<p><code>index_of()</code> returns <code>-1</code> when there is no match, and takes an optional
+second argument to start the search from.</p>
+<p><code>last_index_of()</code> searches from the other end, which is what you want
+whenever the interesting separator is the final one:</p>
+<pre><code class="language-zuri">var path = 'src/vm/value.rs'
+
+echo path.index_of('/')
+echo path.last_index_of('/')
+echo path[path.last_index_of('/') + 1, path.length()]
+echo path.last_index_of('\\')
+</code></pre>
+<pre><code class="language-console">3
+6
+value.rs
+-1
+</code></pre>
+<p>Both take a second argument, and in both it bounds where a <em>match may
+begin</em>. That makes the pair split a string at one index: for any <code>n</code>,
+<code>index_of(str, n)</code> finds the first match at or after <code>n</code> and
+<code>last_index_of(str, n)</code> the last match at or before it.</p>
+<p>There is a family of character-class predicates, each true when <strong>every</strong>
+character in the string qualifies:</p>
+<pre><code class="language-zuri">echo 'abc'.is_alpha()
+echo '123'.is_number()
+echo 'ABC'.is_upper()
+echo '  '.is_space()
+</code></pre>
+<pre><code class="language-console">true
+true
+true
+true
+</code></pre>
+<p>The full set is <code>is_alpha</code>, <code>is_alnum</code>, <code>is_number</code>, <code>is_lower</code>,
+<code>is_upper</code>, <code>is_space</code>, plus <code>is_empty</code>.</p>
+<h2 id="changing-case"><a class="header" href="#changing-case">Changing Case</a></h2>
+<pre><code class="language-zuri">var s = 'Hello, Zuri'
+
+echo s.upper()
+echo s.lower()
+echo s.capitalize()
+echo s.title()
+</code></pre>
+<pre><code class="language-console">HELLO, ZURI
+hello, zuri
+Hello, zuri
+Hello, Zuri
+</code></pre>
+<p><code>capitalize()</code> uppercases the first character and lowercases the rest.
+<code>title()</code> does that to every word.</p>
+<p>For comparing text from users, reach for <code>case_fold()</code> rather than
+<code>lower()</code>. Case folding is the Unicode operation defined for
+case-insensitive matching, and it handles cases simple lowercasing gets
+wrong:</p>
+<pre><code class="language-zuri">echo 'Straße'.case_fold()
+</code></pre>
+<pre><code class="language-console">strasse
+</code></pre>
+<h2 id="trimming-and-padding"><a class="header" href="#trimming-and-padding">Trimming and Padding</a></h2>
+<pre><code class="language-zuri">echo '[' + '  pad  '.trim() + ']'
+echo '[' + '  pad  '.ltrim() + ']'
+echo '[' + '  pad  '.rtrim() + ']'
+echo 'xxhixx'.trim('x')
+</code></pre>
+<pre><code class="language-console">[pad]
+[pad  ]
+[  pad]
+hi
+</code></pre>
+<p>All three take an optional argument naming the characters to strip. With
+no argument they strip whitespace.</p>
+<pre><code class="language-zuri">echo 'x'.lpad(5, '.')
+echo 'x'.rpad(5, '.')
+</code></pre>
+<pre><code class="language-console">....x
+x....
+</code></pre>
+<p><code>lpad</code> and <code>rpad</code> take a target width and an optional fill character that
+defaults to a space. A string already at or over the width comes back
+unchanged.</p>
+<h2 id="splitting-and-joining"><a class="header" href="#splitting-and-joining">Splitting and Joining</a></h2>
+<pre><code class="language-zuri">echo 'Hello, Zuri'.split(', ')
+echo ', '.join(['a', 'b', 'c'])
+echo 'abc'.to_list()
+echo 'line1\nline2'.lines()
+</code></pre>
+<pre><code class="language-console">[Hello, Zuri]
+a, b, c
+[a, b, c]
+[line1, line2]
+</code></pre>
+<p><code>join</code> lives on the <strong>separator</strong>, not on the list. <code>to_list()</code> splits into
+single characters. <code>lines()</code> splits on newlines and handles both <code>\n</code> and
+<code>\r\n</code>.</p>
+<h2 id="replacing"><a class="header" href="#replacing">Replacing</a></h2>
+<pre><code class="language-zuri">echo 'Hello, Zuri'.replace('Zuri', 'World')
+</code></pre>
+<pre><code class="language-console">Hello, World
+</code></pre>
+<p>Every occurrence is replaced. The pattern may be a regular expression, and
+the replacement can refer back to capture groups with <code>$1</code>, <code>$2</code> or
+<code>${1}</code>:</p>
+<pre><code class="language-zuri">echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
+</code></pre>
+<pre><code class="language-console">Smith, John
+</code></pre>
+<p>The optional third argument turns regex handling off, so a pattern that
+would otherwise be read as a regex is matched literally, delimiters
+included:</p>
+<pre><code class="language-zuri">echo 'a/b/c'.replace('/b/', 'X')
+echo 'a/b/c'.replace('/b/', 'X', false)
+</code></pre>
+<pre><code class="language-console">a/X/c
+aXc
+</code></pre>
+<p>When the replacement depends on what was matched, use <code>replace_with()</code>,
+which calls a function for each match:</p>
+<pre><code class="language-zuri">echo 'a1b2'.replace_with('/[0-9]/', @(m) =&gt; '&lt;' + m + '&gt;')
+</code></pre>
+<pre><code class="language-console">a&lt;1&gt;b&lt;2&gt;
+</code></pre>
+<h2 id="regular-expressions"><a class="header" href="#regular-expressions">Regular Expressions</a></h2>
+<p>Zuri’s regular expressions are <strong>PCRE2</strong>, the same engine that powers
+regular expressions in PHP, R and a long list of other tools. It is the
+real library rather than a subset of it, so named groups, backreferences,
+lookahead, lookbehind, atomic groups, possessive quantifiers, conditionals
+and recursion all work exactly as PCRE2 documents them.</p>
+<p>This section covers how a pattern is written in Zuri, which methods accept
+one, what each modifier does, and the handful of places where Zuri’s
+surface differs from what you may expect. It does not teach regular
+expression syntax itself; any PCRE or Perl reference applies unchanged.</p>
+<h3 id="writing-a-pattern"><a class="header" href="#writing-a-pattern">Writing a Pattern</a></h3>
+<p>A pattern is an ordinary string whose <strong>first character is a non-word
+character, repeated to close the pattern</strong>, with any modifier letters
+after the closing delimiter:</p>
+<pre><code class="language-text">'/[a-z]+/'
+'/[a-z]+/i'
+'#\d{3}#'
+'!https?://\S+!i'
+</code></pre>
+<p>A “non-word character” is anything that is not a letter, a digit or an
+underscore. Forward slash is the conventional choice, and every example in
+this book uses it, but the delimiter is yours to pick — which is worth
+doing when the pattern itself is full of slashes:</p>
+<pre><code class="language-zuri">echo 'see https://example.com/docs now'.match('!https?://\S+!')
+</code></pre>
+<pre><code class="language-console">{0: https://example.com/docs}
+</code></pre>
+<p>Because the pattern is a string, the backslashes in it are subject to
+Zuri’s own escape rules first. This is almost never a problem, because
+<code>\d</code>, <code>\w</code>, <code>\s</code>, <code>\b</code> and <code>\S</code> are not escape sequences and therefore pass
+through untouched. The exceptions are the letters that <em>are</em> escapes —
+<code>\t</code>, <code>\n</code>, <code>\r</code>, <code>\f</code>, <code>\v</code>, <code>\a</code>, <code>\b</code>, <code>\0</code>, <code>\x</code> and <code>\u</code>. Of those,
+<code>\t</code> and <code>\n</code> mean the same thing to both, so they are harmless; <code>\b</code>
+(word boundary in a pattern, backspace in a string) is the one that will
+catch you:</p>
+<pre><code class="language-zuri">echo 'one two'.match('/\btwo\b/')
+echo 'one two'.match('/\\btwo\\b/')
+</code></pre>
+<pre><code class="language-console">false
+{0: two}
+</code></pre>
+<p>Double the backslash whenever the pattern needs <code>\b</code>.</p>
+<h3 id="a-plain-string-is-a-literal"><a class="header" href="#a-plain-string-is-a-literal">A Plain String Is a Literal</a></h3>
+<p>Every method in this section also accepts a plain string, and treats it as
+a <strong>literal substring</strong> rather than a pattern:</p>
+<pre><code class="language-zuri">echo 'a.b'.replace('.', 'X')
+echo 'a.b'.replace('/./', 'X')
+</code></pre>
+<pre><code class="language-console">aXb
+XXX
+</code></pre>
+<p>The first call replaced the single full stop. The second compiled <code>.</code> as a
+pattern, where it means “any character”, and replaced all three.</p>
+<p>That distinction is decided purely by whether the string looks like a
+delimited pattern. When you have text from elsewhere that might
+accidentally look like one, <code>replace()</code> takes a third argument that turns
+pattern handling off:</p>
+<pre><code class="language-zuri">echo 'a/b/c'.replace('/b/', 'X')
+echo 'a/b/c'.replace('/b/', 'X', false)
+</code></pre>
+<pre><code class="language-console">a/X/c
+aXc
+</code></pre>
+<p>With <code>false</code>, the delimiters are matched as characters like anything else.</p>
+<h3 id="which-methods-take-a-pattern"><a class="header" href="#which-methods-take-a-pattern">Which Methods Take a Pattern</a></h3>
+<p>Five, and only five:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>What it does with the pattern</th></tr>
+</thead>
+<tbody>
+<tr><td><code>match(pattern)</code></td><td>the first match, or <code>false</code></td></tr>
+<tr><td><code>matches(pattern)</code></td><td>every match, grouped by capture group</td></tr>
+<tr><td><code>replace(pattern, with, use_regex)</code></td><td>replaces every match</td></tr>
+<tr><td><code>replace_with(pattern, callback)</code></td><td>replaces every match with a call</td></tr>
+<tr><td><code>split(pattern)</code></td><td>splits on every match</td></tr>
+</tbody>
+</table>
+</div>
+<p>Everything else — <code>contains()</code>, <code>index_of()</code>, <code>count()</code>, <code>starts_with()</code>,
+<code>ends_with()</code>, <code>trim()</code> — takes a <strong>literal</strong> string only. A
+regex-looking argument passed to one of those is matched as the literal
+characters it contains:</p>
+<pre><code class="language-zuri">echo 'a1b'.contains('/[0-9]/')
+echo 'a1b'.index_of('/[0-9]/')
+echo 'a1b'.count('/[0-9]/')
+</code></pre>
+<pre><code class="language-console">false
+-1
+0
+</code></pre>
+<p>All three answered about the six-character string <code>/[0-9]/</code>, which is not
+in <code>a1b</code>. When you need a pattern there, reach for <code>match()</code> instead.</p>
+<h3 id="match-and-matches"><a class="header" href="#match-and-matches"><code>match()</code> and <code>matches()</code></a></h3>
+<p><code>match()</code> finds the <strong>first</strong> match and returns it as a dictionary under
+key <code>0</code>. It returns <code>false</code> — not <code>nil</code> — when nothing matches:</p>
+<pre><code class="language-zuri">echo 'one two'.match('/\w+/')
+echo 'nope'.match('/zzz/')
+echo typeof('nope'.match('/zzz/'))
+</code></pre>
+<pre><code class="language-console">{0: one}
+false
+bool
+</code></pre>
+<p>Both are falsy, so <code>if s.match(p) { ... }</code> reads correctly. An equality
+test against <code>nil</code> does not, and this is the single most common regex
+mistake in Zuri code.</p>
+<p><code>matches()</code> finds <strong>every</strong> match and groups the results by capture group.
+Key <code>0</code> holds the whole matches, key <code>1</code> the first group’s, and so on —
+each as a list, parallel across the keys:</p>
+<pre><code class="language-zuri">echo 'a1b2c3'.matches('/[0-9]/')
+echo 'a1b2'.matches('/([a-z])([0-9])/')
+</code></pre>
+<pre><code class="language-console">{0: [1, 2, 3]}
+{0: [a1, b2], 1: [a, b], 2: [1, 2]}
+</code></pre>
+<p>In the second result, match zero is <code>a1</code> with groups <code>a</code> and <code>1</code>, and
+match one is <code>b2</code> with groups <code>b</code> and <code>2</code>. Read down the lists, not
+across.</p>
+<p>When nothing matches, <code>matches()</code> returns <code>{0: []}</code> rather than <code>false</code>.
+The two methods differ here, so test <code>matches()</code> with <code>is_empty()</code> on key
+zero:</p>
+<pre><code class="language-zuri">var found = 'nope'.matches('/zzz/')
+
+echo found
+echo found[0].is_empty()
+</code></pre>
+<pre><code class="language-console">{0: []}
+true
+</code></pre>
+<h3 id="capture-groups-in-a-replacement"><a class="header" href="#capture-groups-in-a-replacement">Capture Groups in a Replacement</a></h3>
+<p><code>replace()</code> refers to a capture group with <code>$1</code>, <code>$2</code> and so on:</p>
+<pre><code class="language-zuri">echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')
+</code></pre>
+<pre><code class="language-console">Smith, John
+</code></pre>
+<p><strong>Do not write <code>${1}</code>.</strong> The braced form is Zuri’s own string
+interpolation, and it is consumed before <code>replace()</code> ever sees it. The
+expression <code>2</code> evaluates to the number two, so the replacement string is
+already <code>'2, 1'</code> by the time it arrives:</p>
+<pre><code class="language-zuri">echo 'John Smith'.replace('/(\w+) (\w+)/', '${2}, ${1}')
+</code></pre>
+<pre><code class="language-console">2, 1
+</code></pre>
+<p>Use the bare <code>$1</code> form throughout. This is one of the few places where
+Zuri’s interpolation and another language’s syntax collide, and it fails
+quietly rather than loudly.</p>
+<h3 id="named-groups"><a class="header" href="#named-groups">Named Groups</a></h3>
+<p>Named groups are supported in the <strong>pattern</strong>, because PCRE2 supports
+them:</p>
+<pre><code class="language-zuri">echo 'John Smith'.matches('/(?&lt;first&gt;\w+) (?&lt;last&gt;\w+)/')
+</code></pre>
+<pre><code class="language-console">{0: [John Smith], 1: [John], 2: [Smith]}
+</code></pre>
+<p>The results are keyed by <strong>position</strong>, not by name. A name in a pattern
+documents the group and lets a backreference such as <code>\k&lt;first&gt;</code> refer to
+it; it does not change how the result is keyed. Count the groups to find
+the one you want.</p>
+<h3 id="computing-the-replacement"><a class="header" href="#computing-the-replacement">Computing the Replacement</a></h3>
+<p>When the replacement depends on what matched, <code>replace_with()</code> calls a
+function for each match:</p>
+<pre><code class="language-zuri">echo 'a1b2'.replace_with('/[0-9]/', @(m) =&gt; '&lt;' + m + '&gt;')
+</code></pre>
+<pre><code class="language-console">a&lt;1&gt;b&lt;2&gt;
+</code></pre>
+<p>The callback receives the whole match first, then one argument per capture
+group, then the offset of the match, then the whole subject string. Take
+only the arguments you need, since extra arguments are dropped:</p>
+<pre><code class="language-zuri">echo 'aXbXc'.replace_with('/X/', @(match, offset) =&gt; '[${offset}]')
+</code></pre>
+<pre><code class="language-console">a[1]b[3]c
+</code></pre>
+<h3 id="splitting-on-a-pattern"><a class="header" href="#splitting-on-a-pattern">Splitting on a Pattern</a></h3>
+<p><code>split()</code> accepts a pattern, which is how you split on “one or more of
+something” rather than on an exact separator:</p>
+<pre><code class="language-zuri">echo 'a1b22c'.split('/[0-9]+/')
+echo 'a, b,c ,  d'.split('/\s*,\s*/')
+</code></pre>
+<pre><code class="language-console">[a, b, c]
+[a, b, c, d]
+</code></pre>
+<h3 id="the-modifiers"><a class="header" href="#the-modifiers">The Modifiers</a></h3>
+<p>Modifier letters go after the closing delimiter, in any order and any
+combination. <code>/[a-z]+/mi</code> is both multi-line and case-insensitive.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Modifier</th><th>Effect</th></tr>
+</thead>
+<tbody>
+<tr><td><code>i</code></td><td>Case-insensitive matching.</td></tr>
+<tr><td><code>m</code></td><td>Multi-line: <code>^</code> and <code>$</code> match at every line boundary, not only at the start and end of the subject.</td></tr>
+<tr><td><code>s</code></td><td>Dot-all: <code>.</code> matches a newline as well as everything else.</td></tr>
+<tr><td><code>x</code></td><td>Extended: unescaped whitespace in the pattern is ignored, and <code>#</code> starts a comment to end of line.</td></tr>
+<tr><td><code>u</code></td><td>Unicode properties: <code>\d</code>, <code>\w</code>, <code>\s</code> and friends become Unicode-aware instead of ASCII-only.</td></tr>
+<tr><td><code>U</code></td><td>Ungreedy: quantifiers become lazy by default, and <code>?</code> after one makes it greedy.</td></tr>
+<tr><td><code>A</code></td><td>Anchored: a match is only accepted if it begins exactly where the search started.</td></tr>
+<tr><td><code>J</code></td><td>Allow two capture groups in one pattern to share a name.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each one in use:</p>
+<pre><code class="language-zuri">echo 'HELLO'.match('/hello/i')
+echo 'a\nb'.matches('/^./m')
+echo 'a\nb'.match('/a.b/s')
+echo 'abc'.match('/ a b c /x')
+echo 'héllo'.matches('/\w/u')
+echo 'aaa'.match('/a+?/U')
+echo 'abc'.match('/abc/A')
+echo 'xabc'.match('/abc/A')
+</code></pre>
+<pre><code class="language-console">{0: HELLO}
+{0: [a, b]}
+{0: a
+b}
+{0: abc}
+{0: [h, é, l, l, o]}
+{0: aaa}
+{0: abc}
+false
+</code></pre>
+<p>Read the last two together: the pattern matched when it was at the start of
+the subject and failed when it was not, which is what <code>A</code> is for. Without
+it, the second would have matched at offset one.</p>
+<p><code>u</code> is worth a second look as well. Without it, <code>\w</code> is ASCII-only and
+<code>é</code> is not a word character; with it, the Unicode properties apply and it
+is. Matching itself is always per-character rather than per-byte, so
+indexes and offsets are correct on multi-byte text regardless of <code>u</code>.</p>
+<h3 id="the-one-exception-to-pcre2-compatibility"><a class="header" href="#the-one-exception-to-pcre2-compatibility">The One Exception to PCRE2 Compatibility</a></h3>
+<p><strong>PCRE2’s <code>D</code> (dollar-endonly) modifier has no effect in Zuri.</strong> <code>$</code>
+always matches before a trailing newline as well as at the absolute end of
+the subject, and there is no way to change that. The letter is accepted
+rather than rejected, so a pattern carrying it compiles and runs; it simply
+does not do anything.</p>
+<p>The same is true of any other unrecognised modifier letter: it is accepted
+and ignored rather than raising. A typo in a modifier is therefore silent,
+which is worth remembering when a pattern behaves as though a flag you
+wrote is not set.</p>
+<p>Everything else in the table above is supported and behaves exactly as
+PCRE2 documents it.</p>
+<h3 id="invalid-patterns"><a class="header" href="#invalid-patterns">Invalid Patterns</a></h3>
+<p>A pattern that PCRE2 cannot compile raises, naming the pattern and the
+engine’s own explanation:</p>
+<pre><code class="language-zuri">catch {
+  echo 'text'.match('/(unclosed/')
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">invalid regular expression '(unclosed': PCRE2: error compiling pattern at offset 9: missing closing parenthesis
+</code></pre>
+<p>Patterns are compiled once and reused, so repeating the same pattern in a
+loop costs nothing after the first time through.</p>
+<h2 id="conversion"><a class="header" href="#conversion">Conversion</a></h2>
+<pre><code class="language-zuri">echo '5'.to_number() + 1
+echo 'ff'.to_number(16)
+echo 'H'.ord()
+echo 72.chr()
+echo 'Hi'.to_bytes()
+</code></pre>
+<pre><code class="language-console">6
+255
+72
+H
+(48 69)
+</code></pre>
+<p><code>to_number()</code> takes an optional base. <code>ord()</code> requires a single-character
+string and gives its code point; <code>chr()</code> on a number goes the other way.</p>
+<h3 id="to_number-never-fails"><a class="header" href="#to_number-never-fails"><code>to_number()</code> Never Fails</a></h3>
+<p>This is the one conversion behaviour worth memorising. <code>to_number()</code> does
+not raise, and it does not produce <code>NaN</code>. It reads the first number
+written in the string, and text with no number in it at all becomes
+<strong>zero</strong>:</p>
+<pre><code class="language-zuri">echo '42'.to_number()
+echo '3.5'.to_number()
+echo '-5'.to_number()
+echo 'eighty'.to_number()
+echo ''.to_number()
+echo '12abc'.to_number()
+echo '  7  '.to_number()
+echo '96.3 of 31'.to_number()
+</code></pre>
+<pre><code class="language-console">42
+3.5
+-5
+0
+0
+12
+7
+96.3
+</code></pre>
+<p>Look at the last three. What surrounds the number is ignored, so <code>'12abc'</code>
+is <code>12</code>, the spaces around <code>'  7  '</code> are simply not part of it, and only
+the first number is read however many follow.</p>
+<p>That cuts both ways. <code>'3 apples'</code> giving <code>3</code> is usually what was meant;
+<code>'2026-09-16'</code> giving <code>2026</code> usually is not. A number is taken to start at
+a digit, or at a sign or decimal point directly in front of one, so <code>'-5'</code>
+is negative five and <code>'a - 42'</code>, where the sign stands apart, is <code>42</code>.</p>
+<p>There is no error to catch and no sentinel to test, so a form field a user
+left blank and a form field they filled with <code>'0'</code> produce the same number,
+and so do <code>'eighty'</code> and <code>'0'</code>. When the difference matters, check the text
+before converting it:</p>
+<pre><code class="language-zuri">def to_count(text) {
+  var trimmed = text.trim()
+
+  if !trimmed.match('/^\d+$/') {
+    raise ValueError('not a whole number: ${text}')
+  }
+
+  return trimmed.to_number()
+}
+
+echo to_count('  12  ')
+
+catch {
+  to_count('twelve')
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">12
+not a whole number: twelve
+</code></pre>
+<p><code>is_number()</code> is a narrower test than it looks — it is true only for a
+string of digits, so <code>'3.5'</code> and <code>'-5'</code> both fail it. A regular expression
+is the reliable check for anything beyond unsigned integers.</p>
+<h2 id="walking-a-string"><a class="header" href="#walking-a-string">Walking a String</a></h2>
+<p>A string is iterable, one character at a time, and the same four forms
+available for a list work here.</p>
+<h3 id="for-one-character-at-a-time"><a class="header" href="#for-one-character-at-a-time"><code>for</code>, One Character at a Time</a></h3>
+<pre><code class="language-zuri">for ch in 'hey' {
+  echo ch
+}
+</code></pre>
+<pre><code class="language-console">h
+e
+y
+</code></pre>
+<p>This is the form to reach for by default. Each <code>ch</code> is a one-character
+string, not a code point number — use <code>ord()</code> when you want the number.</p>
+<h3 id="for-with-two-variables-for-the-position"><a class="header" href="#for-with-two-variables-for-the-position"><code>for</code> With Two Variables, for the Position</a></h3>
+<pre><code class="language-zuri">for index, ch in 'hey' {
+  echo '${index}: ${ch}'
+}
+</code></pre>
+<pre><code class="language-console">0: h
+1: e
+2: y
+</code></pre>
+<p>The key comes first and the value second, and for a string the key is the
+character position.</p>
+<h3 id="iter-when-the-position-drives-the-walk"><a class="header" href="#iter-when-the-position-drives-the-walk"><code>iter</code>, When the Position Drives the Walk</a></h3>
+<pre><code class="language-zuri">var s = 'hey'
+
+iter var i = s.length() - 1; i &gt;= 0; i-- {
+  echo s[i]
+}
+</code></pre>
+<pre><code class="language-console">y
+e
+h
+</code></pre>
+<p><code>s[i]</code> indexes by character, not by byte, so this is correct on text that
+is not ASCII. Use <code>iter</code> when you need to skip, step backwards, or look at
+<code>s[i + 1]</code> from inside the body.</p>
+<h3 id="each-with-a-function"><a class="header" href="#each-with-a-function"><code>each()</code>, With a Function</a></h3>
+<pre><code class="language-zuri">'Hi'.each(@(ch, index) {
+  echo '${index}:${ch}'
+})
+</code></pre>
+<pre><code class="language-console">0:H
+1:i
+</code></pre>
+<p>As everywhere else, the callback receives the <strong>value first and the index
+second</strong> — the opposite order to <code>for</code>.</p>
+<h3 id="each_line-and-lines-for-text-in-lines"><a class="header" href="#each_line-and-lines-for-text-in-lines"><code>each_line()</code> and <code>lines()</code>, for Text in Lines</a></h3>
+<pre><code class="language-zuri">var doc = 'first\nsecond\nthird'
+
+doc.each_line(@(line, index) {
+  echo '${index}: ${line}'
+})
+
+echo doc.lines()
+</code></pre>
+<pre><code class="language-console">0: first
+1: second
+2: third
+[first, second, third]
+</code></pre>
+<p><code>each_line()</code> calls the function once per line; <code>lines()</code> hands you the
+whole list so you can <code>for</code> over it, filter it, or count it. Both split on
+<code>\n</code> and <code>\r\n</code>, so both read a file written on any platform.</p>
+<h2 id="ordering-and-comparison"><a class="header" href="#ordering-and-comparison">Ordering and Comparison</a></h2>
+<p><code>==</code> compares two strings by value, which is almost always what you want:</p>
+<pre><code class="language-zuri">echo 'abc' == 'abc'
+echo 'abc' == 'ABC'
+</code></pre>
+<pre><code class="language-console">true
+false
+</code></pre>
+<p>The ordering operators are a different story. <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code> and <code>&gt;=</code> are
+defined for numbers only, and comparing two strings with one raises a
+<code>TypeError</code>. Use <code>compare()</code>, which returns <code>-1</code>, <code>0</code> or <code>1</code>:</p>
+<pre><code class="language-zuri">echo 'abc'.compare('abd')
+echo 'abc'.compare('abc')
+echo 'abd'.compare('abc')
+</code></pre>
+<pre><code class="language-console">-1
+0
+1
+</code></pre>
+<p>That three-way result is exactly the shape a sort comparison wants, and it
+compares by code point, so it is stable and locale-independent.</p>
+<h2 id="strings-are-immutable"><a class="header" href="#strings-are-immutable">Strings Are Immutable</a></h2>
+<p>Every method in this section returns a new string. Nothing mutates in
+place:</p>
+<pre><code class="language-zuri">var original = 'hello'
+var shouted = original.upper()
+
+echo original
+echo shouted
+</code></pre>
+<pre><code class="language-console">hello
+HELLO
+</code></pre>
+<p>This is worth internalising, because it is the source of the single most
+common string mistake:</p>
+<pre><code class="language-zuri">var name = '  ada  '
+
+name.trim()
+echo '[${name}]'
+
+name = name.trim()
+echo '[${name}]'
+</code></pre>
+<pre><code class="language-console">[  ada  ]
+[ada]
+</code></pre>
+<p>The first <code>trim()</code> produced a trimmed string and threw it away. Assign the
+result, or chain onto it.</p>
+<p>Immutability also means you can pass a string anywhere without copying it
+defensively. Nothing you hand a string to can change the one you still
+hold.</p>
+<h2 id="a-worked-example"><a class="header" href="#a-worked-example">A Worked Example</a></h2>
+<p>Here is a small parser that puts most of this section together. It takes a
+block of <code>key = value</code> configuration text and produces a dictionary,
+skipping blank lines and comments, and tolerating whatever spacing the
+author used.</p>
+<pre><code class="language-zuri">def parse_config(text) {
+  var config = {}
+
+  for line in text.lines() {
+    var trimmed = line.trim()
+
+    if trimmed.is_empty() or trimmed.starts_with('#') {
+      continue
+    }
+
+    var split_at = trimmed.index_of('=')
+
+    if split_at == -1 {
+      continue
+    }
+
+    var key = trimmed[0, split_at].trim()
+    var value = trimmed[split_at + 1, trimmed.length()].trim()
+
+    config[key] = value
+  }
+
+  return config
+}
+
+var source = '# server settings
+host = localhost
+port   =   8080
+
+# empty lines and comments are skipped
+name = zuri app
+'
+
+var config = parse_config(source)
+
+echo config.host
+echo config.port.to_number() + 1
+echo config.name
+echo config.length()
+</code></pre>
+<pre><code class="language-console">localhost
+8081
+zuri app
+3
+</code></pre>
+<p>Three things in there are worth naming. <code>lines()</code> handles both <code>\n</code> and
+<code>\r\n</code>, so the same code reads a file written on Windows. <code>index_of()</code>
+returning <code>-1</code> is checked explicitly rather than relied on for truthiness,
+because <code>-1</code> is falsy and so is <code>0</code> — and <code>0</code> is a legitimate position.
+And every value arrives as a string, because that is what text is;
+<code>to_number()</code> is how you leave.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch04-00-collections.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch04-02-numbers.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch04-00-collections.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch04-02-numbers.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

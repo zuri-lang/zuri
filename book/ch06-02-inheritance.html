@@ -1,0 +1,611 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Inheritance - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch06-02-inheritance.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="inheritance"><a class="header" href="#inheritance">Inheritance</a></h1>
+<p>A class extends another with <code>&lt;</code>:</p>
+<pre><code class="language-zuri">class Shape {
+  @new(name) {
+    self.name = name
+  }
+
+  area() {
+    raise NotImplementedError('${self.name} must define area()')
+  }
+
+  describe() {
+    return '${self.name} with area ${self.area()}'
+  }
+}
+
+class Circle &lt; Shape {
+  @new(radius) {
+    parent('circle')
+    self.radius = radius
+  }
+
+  area() {
+    return 3.141592653589793 * (self.radius ** 2)
+  }
+}
+
+echo Circle(1).describe()
+</code></pre>
+<pre><code class="language-console">circle with area 3.141592653589793
+</code></pre>
+<p>A subclass inherits every field and method. Single inheritance only; a
+class has at most one parent.</p>
+<p>Note the direction of the arrow. <code>class Circle &lt; Shape</code> creates a <strong>new</strong>
+class that borrows from <code>Shape</code>. Turning it around —
+<code>class Anything &gt; Shape</code> — is a different declaration entirely: it adds
+methods to <code>Shape</code> itself and creates no class at all. See
+<a href="ch06-06-class-extensions.html">Class Extensions</a>.</p>
+<h2 id="naming-the-parent"><a class="header" href="#naming-the-parent">Naming the Parent</a></h2>
+<p>A class is a value like any other, so the parent does not have to be a
+bare name in the current file. Anything an expression starting with a
+name can reach works, which is what lets you build on a class another
+module owns:</p>
+<pre><code class="language-zuri">import log
+
+class MemoryTransport &lt; log.Transport {
+  @new() {
+    self.lines = []
+  }
+
+  handle(record) {
+    self.lines.append(record)
+  }
+}
+
+echo instance_of(MemoryTransport(), log.Transport)
+</code></pre>
+<pre><code class="language-console">true
+</code></pre>
+<p>Property access, indexing and calls all work the same way, so a parent
+picked out of a registry (<code>class Store &lt; backends['redis']</code>) or handed
+back by a function (<code>class Store &lt; chosen_backend()</code>) is as valid as a
+name. The expression is evaluated once, where the class is declared.</p>
+<p>The one rule is that it has to begin with a name. That is what keeps the
+<code>{</code> opening the body from ever being read as the start of a dictionary.</p>
+<h2 id="parent"><a class="header" href="#parent"><code>parent</code></a></h2>
+<p><code>parent</code> means two related things.</p>
+<p><strong><code>parent(args)</code></strong> calls the parent’s constructor. That is the
+<code>parent('circle')</code> line in <code>Circle</code> above, and it comes first in <code>@new</code>,
+before the subclass sets up anything of its own. Calling it late means the
+parent’s constructor overwrites what you just assigned; not calling it at
+all means the parent’s fields are never initialised.</p>
+<p><strong><code>parent.method(args)</code></strong> calls the parent’s version of a method that this
+class has overridden:</p>
+<pre><code class="language-zuri">class Square &lt; Shape {
+  @new(side) {
+    parent('square')
+    self.side = side
+  }
+
+  area() {
+    return self.side ** 2
+  }
+
+  describe() {
+    return 'a ' + parent.describe()
+  }
+}
+
+echo Square(2).describe()
+</code></pre>
+<pre><code class="language-console">a square with area 4
+</code></pre>
+<p>Note what happened there. <code>parent.describe()</code> ran <code>Shape</code>’s <code>describe</code>,
+which calls <code>self.area()</code>, which dispatched back to <code>Square</code>’s <code>area</code>. A
+method always dispatches on the actual object, not on the class the code
+was written in.</p>
+<h2 id="overriding"><a class="header" href="#overriding">Overriding</a></h2>
+<p>Redeclaring a method in a subclass replaces it. There is no keyword for it
+and no way to forbid it.</p>
+<p><code>describe()</code> above is the useful shape of this: a parent method written in
+terms of a method the child supplies. <code>Shape.area()</code> raises
+<code>NotImplementedError</code>, so a subclass that forgets to override it says so
+clearly:</p>
+<pre><code class="language-zuri">catch {
+  Shape('blob').area()
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">blob must define area()
+</code></pre>
+<p>That is Zuri’s abstract method. There is no <code>abstract</code> keyword because
+there does not need to be one.</p>
+<h2 id="a-subclass-without-a-constructor"><a class="header" href="#a-subclass-without-a-constructor">A Subclass Without a Constructor</a></h2>
+<p>If a subclass declares no <code>@new</code>, it uses its parent’s:</p>
+<pre><code class="language-zuri">class NoCtor &lt; Shape {}
+
+echo NoCtor('plain').name
+</code></pre>
+<pre><code class="language-console">plain
+</code></pre>
+<h2 id="testing-ancestry"><a class="header" href="#testing-ancestry">Testing Ancestry</a></h2>
+<p><code>instance_of()</code> walks the whole chain:</p>
+<pre><code class="language-zuri">echo instance_of(Circle(1), Shape)
+echo instance_of(Circle(1), Square)
+</code></pre>
+<pre><code class="language-console">true
+false
+</code></pre>
+<p><code>typeof()</code> gives the most specific class name, as a string:</p>
+<pre><code class="language-zuri">echo typeof(Circle(1))
+</code></pre>
+<pre><code class="language-console">Circle
+</code></pre>
+<h2 id="the-depth-is-free"><a class="header" href="#the-depth-is-free">The Depth Is Free</a></h2>
+<p>Inheritance chains cost nothing to walk at runtime. A method lookup on a
+class four levels deep is the same operation as one on a class with no
+parent, because every class’s method table is complete at declaration time.
+Write the hierarchy the design wants.</p>
+<h2 id="what-you-write-instead-of-an-interface"><a class="header" href="#what-you-write-instead-of-an-interface">What You Write Instead of an Interface</a></h2>
+<p>Zuri has single inheritance and no interfaces, so the two patterns below do
+the jobs an interface would do elsewhere.</p>
+<p><strong>A base class that raises.</strong> When a base class needs every subclass to
+supply a method, declare it and raise:</p>
+<pre><code class="language-zuri">class Shape {
+
+  @new(name: string) {
+    self.name = name
+  }
+
+  area() {
+    raise NotImplementedError('${self.name} must define area()')
+  }
+
+  describe() {
+    return '${self.name} has area ${self.area()}'
+  }
+}
+
+class Circle &lt; Shape {
+
+  @new(radius: number) {
+    parent('circle')
+    self.radius = radius
+  }
+
+  area() {
+    return 3.141592653589793 * (self.radius ** 2)
+  }
+}
+
+class Blob &lt; Shape {
+
+  @new() {
+    parent('blob')
+  }
+}
+
+echo Circle(2).describe()
+
+catch {
+  echo Blob().describe()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+</code></pre>
+<pre><code class="language-console">circle has area 12.566370614359172
+NotImplementedError: blob must define area()
+</code></pre>
+<p>Those parentheses around <code>self.radius ** 2</code> are load-bearing. <code>**</code> sits at
+the same precedence level as <code>*</code> and associates left, so
+<code>3.14 * self.radius ** 2</code> would be <code>(3.14 * self.radius) ** 2</code> — a
+plausible-looking number that is wrong. When <code>**</code> shares an expression with
+<code>*</code> or <code>/</code>, parenthesise.</p>
+<p><code>describe()</code> calls <code>self.area()</code>, and <code>self</code> is the actual instance, so the
+subclass’s version runs. That is the whole of dynamic dispatch in Zuri:
+there is nothing to declare and nothing to mark virtual.</p>
+<p><strong>A parameter typed by the base class.</strong> An annotation naming a class
+accepts any subclass of it, which is how you say “anything that is a
+Shape”:</p>
+<pre><code class="language-zuri ignore">def total_area(shapes: list) {
+  return shapes.reduce(@(sum, shape: Shape) =&gt; sum + shape.area(), 0)
+}
+</code></pre>
+<h2 id="checking-what-something-is"><a class="header" href="#checking-what-something-is">Checking What Something Is</a></h2>
+<p>Two built-ins answer questions about an instance’s type, and they answer
+<strong>different</strong> questions.</p>
+<h3 id="instance_ofvalue-class"><a class="header" href="#instance_ofvalue-class"><code>instance_of(value, Class)</code></a></h3>
+<p><code>instance_of()</code> asks “does this behave like a <code>Class</code>?”, and it walks the
+whole inheritance chain to answer:</p>
+<pre><code class="language-zuri">class Shape {}
+class Circle &lt; Shape {}
+class Square &lt; Shape {}
+class Ellipse &lt; Circle {}
+
+var c = Circle()
+
+echo instance_of(c, Circle)
+echo instance_of(c, Shape)
+echo instance_of(c, Square)
+echo instance_of(Ellipse(), Shape)
+</code></pre>
+<pre><code class="language-console">true
+true
+false
+true
+</code></pre>
+<p><code>Ellipse</code> is two levels below <code>Shape</code> and still answers <code>true</code>. There is no
+depth limit: the check follows parents until it finds a match or runs out.
+A sibling — <code>Circle</code> against <code>Square</code> — is <code>false</code>, because siblings share
+an ancestor rather than a lineage.</p>
+<p><strong>It never raises for the first argument.</strong> Anything that is not an
+instance of the class simply answers <code>false</code>, including values that are not
+instances at all:</p>
+<pre><code class="language-zuri">class Shape {}
+
+echo instance_of(42, Shape)
+echo instance_of('circle', Shape)
+echo instance_of(nil, Shape)
+echo instance_of([1, 2], Shape)
+</code></pre>
+<pre><code class="language-console">false
+false
+false
+false
+</code></pre>
+<p>That makes it safe to use as a guard on a value you know nothing about; no
+<code>is_instance()</code> check has to come first.</p>
+<p><strong>A class is not an instance of itself.</strong> Passing the class rather than an
+object gives <code>false</code>:</p>
+<pre><code class="language-zuri">class Shape {}
+class Circle &lt; Shape {}
+
+echo instance_of(Circle, Shape)
+echo instance_of(Circle(), Shape)
+</code></pre>
+<pre><code class="language-console">false
+true
+</code></pre>
+<p>This trips people up when a variable might hold either. <code>Circle</code> is a
+class; <code>Circle()</code> is an instance; only the second is “a Shape”.</p>
+<p><strong>The second argument must be a class</strong>, and here it does raise:</p>
+<pre><code class="language-zuri">class Shape {}
+
+catch {
+  instance_of(Shape(), 'Shape')
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">instance_of() expects argument 2 to be a class, got string
+</code></pre>
+<p>The class name as a <em>string</em> is the common version of this mistake. Pass
+the class itself.</p>
+<p>A class held in a variable works, because the check is on the value rather
+than on the spelling:</p>
+<pre><code class="language-zuri">class Base {}
+class Derived &lt; Base {}
+
+var Alias = Base
+
+echo instance_of(Derived(), Alias)
+</code></pre>
+<pre><code class="language-console">true
+</code></pre>
+<p>So does a class reached through a module:</p>
+<pre><code class="language-zuri">import set
+
+echo instance_of(set.set([1, 2]), set.Set)
+</code></pre>
+<pre><code class="language-console">true
+</code></pre>
+<h3 id="it-is-how-the-error-hierarchy-works"><a class="header" href="#it-is-how-the-error-hierarchy-works">It Is How the Error Hierarchy Works</a></h3>
+<p>Every built-in error inherits from <code>Error</code>, so <code>instance_of()</code> is what lets
+one handler sort them:</p>
+<pre><code class="language-zuri">echo instance_of(ValueError('bad'), Error)
+echo instance_of(ValueError('bad'), TypeError)
+</code></pre>
+<pre><code class="language-console">true
+false
+</code></pre>
+<p>That is the mechanism behind the “handle one kind, re-raise the rest”
+pattern in <a href="ch07-00-error-handling.html">Error Handling</a>, and behind mapping
+a domain error to an HTTP status in <a href="ch25-06-middleware.html">Chapter 25</a>.</p>
+<h3 id="typeofvalue"><a class="header" href="#typeofvalue"><code>typeof(value)</code></a></h3>
+<p><code>typeof()</code> asks a different question: “what exactly is this?”. On an
+instance it names the <strong>concrete</strong> class, and it never mentions ancestors:</p>
+<pre><code class="language-zuri">class Shape {}
+class Circle &lt; Shape {}
+
+echo typeof(Circle())
+echo typeof(Shape())
+echo typeof(Circle)
+echo typeof(42)
+echo typeof('text')
+</code></pre>
+<pre><code class="language-console">Circle
+Shape
+class
+number
+string
+</code></pre>
+<p>Note the third line. <code>typeof()</code> on the class itself answers <code>class</code>, not
+<code>Circle</code> — the class is a value of kind “class”, and its name is not what
+<code>typeof()</code> reports.</p>
+<h3 id="which-to-use"><a class="header" href="#which-to-use">Which to Use</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Question</th><th>Use</th></tr>
+</thead>
+<tbody>
+<tr><td>can I treat this as a <code>Shape</code>?</td><td><code>instance_of(x, Shape)</code></td></tr>
+<tr><td>which exact class is this?</td><td><code>typeof(x)</code></td></tr>
+<tr><td>is this any instance at all?</td><td><code>is_instance(x)</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Reach for <code>instance_of()</code> by default. It is the one that respects
+inheritance, and code written with <code>typeof(x) == 'Circle'</code> breaks the day
+someone subclasses <code>Circle</code> — the subclass is a perfectly good <code>Circle</code>,
+and the string comparison says otherwise.</p>
+<h3 id="a-type-annotation-is-the-same-check"><a class="header" href="#a-type-annotation-is-the-same-check">A Type Annotation Is the Same Check</a></h3>
+<p>Annotating a parameter with a class name performs exactly the
+<code>instance_of()</code> test, at every call, with a better error message:</p>
+<pre><code class="language-zuri">class Shape {}
+class Circle &lt; Shape {}
+
+def describe(shape: Shape) {
+  return 'a shape of type ${typeof(shape)}'
+}
+
+echo describe(Circle())
+echo describe(Shape())
+
+catch {
+  describe(42)
+} as e {
+  echo e.message
+}
+</code></pre>
+<pre><code class="language-console">a shape of type Circle
+a shape of type Shape
+describe() expects parameter 'shape' (argument 1) to be a Shape, got number
+</code></pre>
+<p>Prefer the annotation when the answer decides whether the function should
+run at all, and <code>instance_of()</code> when the answer decides which branch to
+take.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch06-01-defining-a-class.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch06-03-decorated-methods.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch06-01-defining-a-class.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch06-03-decorated-methods.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

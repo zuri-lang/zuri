@@ -1,0 +1,1022 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>date - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="date"><a class="header" href="#date"><code>date</code></a></h1>
+<pre><code class="language-zuri ignore">import date
+</code></pre>
+<p>This modules provides Zuri’s implementation of date and time
+manipulation methods. This module implements civil dates as well as
+julian dates.</p>
+<h2 id="definitions"><a class="header" href="#definitions">Definitions</a></h2>
+<ul>
+<li>
+<p>The calendar date (<code>class Date</code>) is a particular day of a
+calendar year, identified by its ordinal number within a calendar month
+within that year.</p>
+</li>
+<li>
+<p>The Julian date number (<code>jd</code>) is in elapsed days and time
+since noon (Greenwich Mean Time) on January 1, 4713 BCE (in the Julian
+calendar).</p>
+</li>
+</ul>
+<p><code>Date</code> instances support ordering (<code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>) and <code>equals()</code>
+by comparing the underlying instant in time: see [[date.Date.equals]]
+for how that interacts with <code>gmt_offset</code>. Arithmetic is done through
+named methods rather than <code>+</code>/<code>-</code> (<code>add_seconds</code>, <code>add_days</code>,
+<code>add_months</code>, …; see [[date.Date.add_seconds]] and
+[[date.Date.add_months]]) since a plain number added to a date is
+otherwise ambiguous about its unit.</p>
+<p>The module is callable. <code>date(...)</code> is the same call as
+<code>date.date(...)</code>, documented below.</p>
+<h2 id="the-date-api"><a class="header" href="#the-date-api">The <code>date</code> API</a></h2>
+<p>Every public name in <code>date</code>, wherever it is declared. Each links to the
+page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#date"><code>date.Date</code></a></td><td>class</td><td>Date and Time manipulation class</td></tr>
+<tr><td><a href="#max_day"><code>date.MAX_DAY</code></a></td><td>constant</td><td>Maximum day supported.</td></tr>
+<tr><td><a href="#max_hour"><code>date.MAX_HOUR</code></a></td><td>constant</td><td>Maximum hour supported.</td></tr>
+<tr><td><a href="#max_minute"><code>date.MAX_MINUTE</code></a></td><td>constant</td><td>Maximum minute supported.</td></tr>
+<tr><td><a href="#max_month"><code>date.MAX_MONTH</code></a></td><td>constant</td><td>Maximum year supported.</td></tr>
+<tr><td><a href="#max_seconds"><code>date.MAX_SECONDS</code></a></td><td>constant</td><td>Maximum seconds supported.</td></tr>
+<tr><td><a href="#max_year"><code>date.MAX_YEAR</code></a></td><td>constant</td><td>Maximum year supported.</td></tr>
+<tr><td><a href="#min_day"><code>date.MIN_DAY</code></a></td><td>constant</td><td>Minimum day supported.</td></tr>
+<tr><td><a href="#min_month"><code>date.MIN_MONTH</code></a></td><td>constant</td><td>Minimum month supported.</td></tr>
+<tr><td><a href="#min_year"><code>date.MIN_YEAR</code></a></td><td>constant</td><td>Minimum year supported.</td></tr>
+<tr><td><a href="#date"><code>date.date</code></a></td><td>function</td><td>Returns a new <code>Date</code> instance representing the given system date or the current date if no argument is…</td></tr>
+<tr><td><a href="#from_jd"><code>date.from_jd</code></a></td><td>function</td><td>Returns a date instance representing the julian date.</td></tr>
+<tr><td><a href="#from_time"><code>date.from_time</code></a></td><td>function</td><td>Returns a date object from a unix timestamp.</td></tr>
+<tr><td><a href="#from_timezone"><code>date.from_timezone</code></a></td><td>function</td><td>Returns a <code>Date</code> from wall-clock fields understood as a local time IN the real IANA timezone <code>name</code>, rather…</td></tr>
+<tr><td><a href="#gmtime"><code>date.gmtime</code></a></td><td>function</td><td>Returns a dictionary representing the current time without timezone adjustment.</td></tr>
+<tr><td><a href="#is_valid_timezone"><code>date.is_valid_timezone</code></a></td><td>function</td><td>Returns <code>true</code> when <code>name</code> is a real IANA timezone identifier (e.g. <code>'Africa/Lagos'</code>, <code>'America/New_York'</code>,…</td></tr>
+<tr><td><a href="#list_timezones"><code>date.list_timezones</code></a></td><td>function</td><td>Returns every IANA timezone identifier this build’s timezone database recognizes, e.g. <code>'Africa/Lagos'</code>,…</td></tr>
+<tr><td><a href="#localtime"><code>date.localtime</code></a></td><td>function</td><td>Returns a dictionary representing the current time after adjusting for the current timezone</td></tr>
+<tr><td><a href="#mktime"><code>date.mktime</code></a></td><td>function</td><td>Convert the broken-out time into a time value with the same encoding as that of the values returned by the…</td></tr>
+<tr><td><a href="#parse"><code>date.parse</code></a></td><td>function</td><td>Parses a date string into a <code>Date</code> instance, automatically detecting the format.</td></tr>
+<tr><td><a href="#parse_format"><code>date.parse_format</code></a></td><td>function</td><td>Parses a date string using an explicit format pattern and returns a <code>Date</code> instance.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="min_year"><a class="header" href="#min_year"><code>MIN_YEAR</code></a></h3>
+<pre><code class="language-zuri ignore">date.MIN_YEAR: number = 1
+</code></pre>
+<p>Minimum year supported.</p>
+<h3 id="max_year"><a class="header" href="#max_year"><code>MAX_YEAR</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_YEAR: number = 9999
+</code></pre>
+<p>Maximum year supported.</p>
+<h3 id="min_day"><a class="header" href="#min_day"><code>MIN_DAY</code></a></h3>
+<pre><code class="language-zuri ignore">date.MIN_DAY: number = 1
+</code></pre>
+<p>Minimum day supported.</p>
+<h3 id="max_day"><a class="header" href="#max_day"><code>MAX_DAY</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_DAY: number = 31
+</code></pre>
+<p>Maximum day supported.</p>
+<h3 id="min_month"><a class="header" href="#min_month"><code>MIN_MONTH</code></a></h3>
+<pre><code class="language-zuri ignore">date.MIN_MONTH: number = 1
+</code></pre>
+<p>Minimum month supported.</p>
+<h3 id="max_month"><a class="header" href="#max_month"><code>MAX_MONTH</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_MONTH: number = 12
+</code></pre>
+<p>Maximum year supported.</p>
+<h3 id="max_hour"><a class="header" href="#max_hour"><code>MAX_HOUR</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_HOUR: number = 23
+</code></pre>
+<p>Maximum hour supported.</p>
+<h3 id="max_minute"><a class="header" href="#max_minute"><code>MAX_MINUTE</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_MINUTE: number = 59
+</code></pre>
+<p>Maximum minute supported.</p>
+<h3 id="max_seconds"><a class="header" href="#max_seconds"><code>MAX_SECONDS</code></a></h3>
+<pre><code class="language-zuri ignore">date.MAX_SECONDS: number = 59
+</code></pre>
+<p>Maximum seconds supported.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="gmtime"><a class="header" href="#gmtime"><code>gmtime()</code></a></h3>
+<pre><code class="language-zuri ignore">date.gmtime()
+</code></pre>
+<p>Returns a dictionary representing the current time without timezone
+adjustment.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; echo date.gmtime()
+{year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 17, minute: 30, 
+seconds: 55, microseconds: 620290, is_dst: false, zone: UTC, gmt_offset: 0}
+</code></pre>
+<p><strong>Returns</strong> — dictionary</p>
+<blockquote>
+<p><strong>Note:</strong> <code>year_day</code> here is the platform’s own <code>tm_yday</code>, counting Jan
+1st as day 0. <code>Date.year_day</code> counts it as day 1; the two differ by one
+on purpose, since this dictionary is the raw reading and <code>Date</code> is the
+module’s own representation.</p>
+</blockquote>
+<h3 id="localtime"><a class="header" href="#localtime"><code>localtime()</code></a></h3>
+<pre><code class="language-zuri ignore">date.localtime()
+</code></pre>
+<p>Returns a dictionary representing the current time after adjusting for
+the current timezone</p>
+<p>Example:</p>
+<pre><code class="language-zuri-repl">%&gt; echo date.localtime()
+{year: 2022, month: 3, day: 5, week_day: 6, year_day: 63, hour: 18, minute: 18, 
+seconds: 35, microseconds: 598166, is_dst: false, zone: WAT, gmt_offset: 3600}
+</code></pre>
+<p><strong>Returns</strong> — dictionary</p>
+<h3 id="mktime"><a class="header" href="#mktime"><code>mktime()</code></a></h3>
+<pre><code class="language-zuri ignore">date.mktime(year, month, day, hour, minute, seconds, is_dst) -&gt; number
+</code></pre>
+<p>Convert the broken-out time into a time value with the same encoding as
+that of the values returned by the time() function (that is, seconds
+from the Epoch, UTC) according to the timezone settings.</p>
+<p><br> Example:</p>
+<pre><code class="language-zuri-repl">%&gt; import date
+%&gt; echo date.mktime(2021, 2, 12, 13, 43, 11, false)
+1613133791
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>year</code> (<code>number</code>)</li>
+<li><code>month</code> (<code>number</code>)</li>
+<li><code>day</code> (<code>number</code>)</li>
+<li><code>hour</code> (<code>number</code>)</li>
+<li><code>minute</code> (<code>number</code>)</li>
+<li><code>seconds</code> (<code>number</code>)</li>
+<li><code>is_dst</code> (<code>bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="is_valid_timezone"><a class="header" href="#is_valid_timezone"><code>is_valid_timezone()</code></a></h3>
+<pre><code class="language-zuri ignore">date.is_valid_timezone(name) -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> when <code>name</code> is a real IANA timezone identifier (e.g.
+<code>'Africa/Lagos'</code>, <code>'America/New_York'</code>, <code>'UTC'</code>), backed by the timezone
+database embedded in this build. This is a real, complete IANA database:
+unlike <code>parse()</code>’s own timezone handling, which only recognizes
+<code>UTC</code>/<code>GMT</code>/<code>Z</code>/numeric offsets and treats every other name as an
+unvalidated label: so this is the function to reach for whenever a
+timezone name actually needs checking.</p>
+<pre><code class="language-zuri-repl">%&gt; date.is_valid_timezone('Africa/Lagos')
+true
+%&gt; date.is_valid_timezone('Neverland/Nowhere')
+false
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<p><strong>Raises</strong> <code>TypeError</code> When <code>name</code> is not a string.</p>
+<h3 id="list_timezones"><a class="header" href="#list_timezones"><code>list_timezones()</code></a></h3>
+<pre><code class="language-zuri ignore">date.list_timezones() -&gt; list[string]
+</code></pre>
+<p>Returns every IANA timezone identifier this build’s timezone database
+recognizes, e.g. <code>'Africa/Lagos'</code>, <code>'America/New_York'</code>, <code>'UTC'</code>. There
+are several hundred of these; this is mainly useful for populating a
+picker or validating against the full set at once rather than one name
+at a time.</p>
+<p><strong>Returns</strong> <code>list[string]</code></p>
+<h3 id="from_time"><a class="header" href="#from_time"><code>from_time()</code></a></h3>
+<pre><code class="language-zuri ignore">date.from_time(time)
+</code></pre>
+<p>Returns a date object from a unix timestamp.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date.from_time(time()).to_string()
+'&lt;Date year: 2022, month: 3, day: 5, hour: 18, minute: 34, seconds: 1&gt;'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>time</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<blockquote>
+<p><strong>Note:</strong> Time must be in seconds.</p>
+</blockquote>
+<h3 id="from_timezone"><a class="header" href="#from_timezone"><code>from_timezone()</code></a></h3>
+<pre><code class="language-zuri ignore">date.from_timezone(name, year, month, day, hour, minute, seconds, is_dst)
+</code></pre>
+<p>Returns a <code>Date</code> from wall-clock fields understood as a local time IN
+the real IANA timezone <code>name</code>, rather than in UTC (the plain <code>Date(...)</code>
+constructor) or the process’s own system zone (<code>mktime()</code>). The offset,
+zone abbreviation, and DST state are all worked out from <code>name</code>’s real
+rules at that wall-clock moment.</p>
+<p>A wall-clock reading can be ambiguous once a year: the hour a clock
+falls back repeats, e.g. 1:30am happens twice on the day
+<code>America/New_York</code> leaves daylight saving: <code>is_dst</code> picks which
+occurrence is meant, the same way it does for <code>mktime()</code>. A reading a
+clock skips entirely (the hour a clock springs forward) has no valid
+answer at all and raises, rather than silently returning a nearby
+instant.</p>
+<pre><code class="language-zuri ignore">var d = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
+echo d.to_time()   # the UTC instant of 2024-07-01 00:00:00 EDT
+echo d.zone        # EDT
+echo d.gmt_offset  # -14400
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — An IANA timezone identifier.</li>
+<li><code>year</code> (<code>number</code>)</li>
+<li><code>month</code> (<code>number</code>)</li>
+<li><code>day</code> (<code>number</code>)</li>
+<li><code>hour</code> (<code>number</code>)</li>
+<li><code>minute</code> (<code>number</code>)</li>
+<li><code>seconds</code> (<code>number</code>)</li>
+<li><code>is_dst</code> (<code>?bool</code>) — Disambiguates a wall-clock reading that occurs
+twice; ignored otherwise. Defaults to the earlier occurrence when
+omitted.</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<p><strong>Raises</strong> <code>TypeError</code> When <code>name</code> is not a string, or a date/time field
+is not a number.</p>
+<p><strong>Raises</strong> <code>Error</code> When <code>name</code> is not a recognized timezone, the fields
+are out of range, or the wall-clock reading falls in a DST gap.</p>
+<h3 id="from_jd"><a class="header" href="#from_jd"><code>from_jd()</code></a></h3>
+<pre><code class="language-zuri ignore">date.from_jd(jdate) -&gt; number
+</code></pre>
+<p>Returns a date instance representing the julian date.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date.from_jd(22063).to_string()
+'&lt;Date year: 2022, month: 3, day: 5, hour: 18, minute: 35, seconds: 0&gt;'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>jdate</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="parse"><a class="header" href="#parse"><code>parse()</code></a></h3>
+<pre><code class="language-zuri ignore">date.parse(date_string)
+</code></pre>
+<p>Parses a date string into a <code>Date</code> instance, automatically detecting the
+format.</p>
+<p><code>parse</code> recognises a broad set of standard date and datetime formats
+without requiring the caller to specify the format string:</p>
+<h4 id="recognised-formats"><a class="header" href="#recognised-formats">Recognised formats</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Category</th><th>Examples</th></tr>
+</thead>
+<tbody>
+<tr><td>ISO 8601 extended</td><td><code>2024-06-15</code>, <code>2024-06-15T14:30:00Z</code></td></tr>
+<tr><td>ISO 8601 extended</td><td><code>2024-06-15 14:30:00+01:00</code></td></tr>
+<tr><td>ISO 8601 compact</td><td><code>20240615</code>, <code>20240615T143000Z</code></td></tr>
+<tr><td>RFC 2822</td><td><code>Thu, 21 Dec 2000 16:01:07 +0200</code></td></tr>
+<tr><td>HTTP date</td><td><code>Sat, 05 Mar 2022 06:23:32 GMT</code></td></tr>
+<tr><td>Full month name first</td><td><code>March 05, 2022 6:24 PM</code></td></tr>
+<tr><td>Full month name first</td><td><code>January 1 2000</code></td></tr>
+<tr><td>Day-month-year</td><td><code>21 Dec 2000 16:01:07 +0200</code></td></tr>
+<tr><td>US slash-separated</td><td><code>06/15/2024</code>, <code>6/15/2024 2:30 PM</code></td></tr>
+<tr><td>EU dot-separated</td><td><code>15.06.2024</code>, <code>15.06.2024 14:30:00</code></td></tr>
+<tr><td>Hyphen numeric</td><td><code>15-06-2024</code></td></tr>
+<tr><td>ISO order slash</td><td><code>2024/06/15</code></td></tr>
+<tr><td>Time only</td><td><code>14:30:00</code>, <code>2:30 PM</code>, <code>14:30:00.123456 UTC</code></td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="timezone-handling"><a class="header" href="#timezone-handling">Timezone handling</a></h4>
+<p>When a timezone offset is present in the string it is stored in
+<code>gmt_offset</code> (seconds) and <code>zone</code> (name string). When absent, <code>zone</code>
+defaults to <code>"UTC"</code> and <code>gmt_offset</code> to <code>0</code>.</p>
+<h4 id="ambiguity-policy"><a class="header" href="#ambiguity-policy">Ambiguity policy</a></h4>
+<p>For slash-separated numeric dates where both the first and second fields
+are ≤ 12 (e.g. <code>06/05/2024</code>), the US convention is assumed: month first
+(<code>MM/DD/YYYY</code>). When the input is known to be <code>DD/MM/YYYY</code>, use
+<code>parse_format</code> with <code>'%d/%m/%Y'</code> instead.</p>
+<h4 id="example"><a class="header" href="#example">Example</a></h4>
+<pre><code class="language-zuri ignore">import date
+
+var d = date.parse('2024-06-15T14:30:00Z')
+echo d.year    # 2024
+echo d.month   # 6
+echo d.hour    # 14
+echo d.zone    # UTC
+
+var d2 = date.parse('March 05, 2022 6:24 PM')
+echo d2.year   # 2022
+echo d2.hour   # 18   (PM applied)
+
+var d3 = date.parse('Thu, 21 Dec 2000 16:01:07 +0200')
+echo d3.year        # 2000
+echo d3.gmt_offset  # 7200
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>date_string</code> (<code>string</code>) — The date string to parse.</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<p><strong>Raises</strong> <code>TypeError</code> When <code>date_string</code> is not a string.</p>
+<p><strong>Raises</strong> <code>ValueError</code> When the string cannot be parsed as a date.</p>
+<h3 id="parse_format"><a class="header" href="#parse_format"><code>parse_format()</code></a></h3>
+<pre><code class="language-zuri ignore">date.parse_format(date_string, format)
+</code></pre>
+<p>Parses a date string using an explicit format pattern and returns a
+<code>Date</code> instance.</p>
+<p>The format pattern uses the same character codes as the <code>Date.format()</code>
+method, making it straightforward to round-trip a date through
+<code>format()</code> and back through <code>parse_format()</code>.</p>
+<h4 id="format-character-reference"><a class="header" href="#format-character-reference">Format character reference</a></h4>
+<p>The following characters are interpreted as directives in the format
+string. All other characters are treated as literals and must appear
+verbatim in the input. Prefix a character with a backslash (<code>\</code>) to
+force literal treatment even for directive characters.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Character</th><th>Consumes</th><th>Example input</th></tr>
+</thead>
+<tbody>
+<tr><td><code>Y</code></td><td>4-digit year</td><td><code>2024</code> <code>y</code></td></tr>
+<tr><td>→ 1970–1999)</td><td><code>24</code> <code>m</code></td><td>Month with leading zero (01–12)</td></tr>
+<tr><td>Month without leading zero (1–12)</td><td><code>6</code> <code>M</code></td><td>Abbreviated month name</td></tr>
+<tr><td>(case-insensitive)</td><td><code>Jun</code> <code>F</code></td><td>Full month name (case-insensitive)</td></tr>
+<tr><td><code>June</code> <code>d</code></td><td>Day with leading zero (01–31)</td><td><code>05</code> <code>j</code></td></tr>
+<tr><td>leading zero (1–31)</td><td><code>5</code> <code>D</code></td><td>Abbreviated weekday name (consumed and</td></tr>
+<tr><td>ignored)</td><td><code>Thu</code> <code>l</code></td><td>Full weekday name (consumed and ignored)</td></tr>
+<tr><td><code>Thursday</code> <code>H</code></td><td>24-hour hour with leading zero (00–23)</td><td><code>14</code> <code>G</code></td></tr>
+<tr><td>24-hour hour without leading zero (0–23)</td><td><code>14</code> <code>h</code></td><td>12-hour hour with</td></tr>
+<tr><td>leading zero (01–12)</td><td><code>02</code> <code>g</code></td><td>12-hour hour without leading zero</td></tr>
+<tr><td>(1–12)</td><td><code>2</code> <code>i</code></td><td>Minutes with leading zero (00–59)</td></tr>
+<tr><td>Seconds with leading zero (00–59)</td><td><code>00</code> <code>u</code></td><td>Microseconds (up to 6</td></tr>
+<tr><td>digits)</td><td><code>123456</code> <code>v</code></td><td>Milliseconds (up to 3 digits)</td></tr>
+<tr><td>Uppercase AM/PM</td><td><code>PM</code> <code>a</code></td><td>Lowercase am/pm</td></tr>
+<tr><td>name/identifier</td><td><code>UTC</code> <code>O</code></td><td>Timezone offset without colon</td></tr>
+<tr><td><code>P</code></td><td>Timezone offset with colon</td><td><code>+02:00</code> <code>Z</code></td></tr>
+<tr><td>seconds (signed integer)</td><td><code>7200</code> <code>c</code></td><td>ISO 8601 full datetime</td></tr>
+<tr><td>(delegated to <code>parse</code>)</td><td><code>2024-06-15T14:30:00+02:00</code> <code>r</code></td><td>RFC 2822 full</td></tr>
+<tr><td>datetime (delegated to <code>parse</code>)</td><td><code>Thu, 21 Dec 2000 16:01:07 +0200</code> <code>S</code></td><td></td></tr>
+<tr><td>Ordinal suffix (consumed and ignored)</td><td><code>th</code></td><td></td></tr>
+<tr><td><code>t</code>,<code>L</code>,<code>N</code>,<code>w</code>,<code>z</code>,<code>W</code>,<code>I</code></td><td>Output-only fields (skipped)</td><td>:</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="example-1"><a class="header" href="#example-1">Example</a></h4>
+<pre><code class="language-zuri ignore">import date
+
+# Basic date
+var d = date.parse_format('15/06/2024', 'd/m/Y')
+echo d.year    # 2024
+echo d.month   # 6
+echo d.day     # 15
+
+# DateTime with AM/PM
+var d2 = date.parse_format('March 05, 2022 6:24 PM', 'F d, Y g:i A')
+echo d2.hour   # 18
+
+# Round-trip through format()
+var original = date.Date(2024, 6, 15, 14, 30, 0)
+var fmt      = 'D, d M Y H:i:s O'
+var reparsed = date.parse_format(original.format(fmt), fmt)
+echo reparsed.day    # 15
+echo reparsed.month  # 6
+
+# European DD/MM/YYYY (ambiguous with auto-detect: use parse_format)
+var eu = date.parse_format('05/06/2024', 'd/m/Y')
+echo eu.month  # 6
+echo eu.day    # 5
+
+# Timezone-aware
+var tz = date.parse_format('2024-06-15T14:30:00+05:30', 'Y-m-d\\TH:i:sP')
+echo tz.gmt_offset  # 19800 (5.5 hours in seconds)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>date_string</code> (<code>string</code>) — The input string to parse.</li>
+<li><code>format</code> (<code>string</code>) — The format pattern describing <code>date_string</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<p><strong>Raises</strong> <code>TypeError</code> When either argument is not a string.</p>
+<p><strong>Raises</strong> <code>ValueError</code> When the string does not match the expected
+format.</p>
+<h3 id="date-1"><a class="header" href="#date-1"><code>date()</code></a></h3>
+<pre><code class="language-zuri ignore">date.date(year, month, day, hour, minute, seconds)
+</code></pre>
+<p>Returns a new <code>Date</code> instance representing the given system date or the
+current date if no argument is specified.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>year</code> (<code>?number</code>)</li>
+<li><code>month</code> (<code>?number</code>)</li>
+<li><code>day</code> (<code>?number</code>)</li>
+<li><code>hour</code> (<code>?number</code>)</li>
+<li><code>minute</code> (<code>?number</code>)</li>
+<li><code>seconds</code> (<code>?number</code>)</li>
+<li><code>is_dst</code> (<code>?bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="date-2"><a class="header" href="#date-2"><code>Date</code></a></h3>
+<pre><code class="language-zuri ignore">class date.Date
+</code></pre>
+<p>Date and Time manipulation class</p>
+<p>A date here refers to a calendar datetime consisting of year, month,
+day, hour, minute and seconds.</p>
+<p>The <code>Date</code> class manages both Date and DateTime and this module does not
+make any distinction between the two as Date is a subset of DateTime.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; import date
+%&gt; var d = date(2021)
+%&gt; d.to_string()
+'&lt;Date year: 2021, month: 1, day: 1, hour: 0, minute: 0, seconds: 0&gt;'
+%&gt; d = date()
+%&gt; d.to_string()
+'&lt;Date year: 2022, month: 3, day: 5, hour: 19, minute: 25, seconds: 58&gt;'
+</code></pre>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+<li><strong>serializable</strong> — has a <code>@to_json()</code>, so it can be handed straight to
+<code>json.encode()</code></li>
+<li><strong>numeric</strong> — converts to a number</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">date.Date(year, month, day, hour, minute, seconds, microseconds, gmt_offset, is_dst)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>year</code> (<code>?number</code>)</li>
+<li><code>month</code> (<code>?number</code>)</li>
+<li><code>day</code> (<code>?number</code>)</li>
+<li><code>hour</code> (<code>?number</code>)</li>
+<li><code>minute</code> (<code>?number</code>)</li>
+<li><code>seconds</code> (<code>?number</code>)</li>
+<li><code>microseconds</code> (<code>?number</code>)</li>
+<li><code>gmt_offset</code> (<code>?number</code>)</li>
+<li><code>is_dst</code> (<code>?bool</code>)</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> All arguments are optional</p>
+</blockquote>
+<blockquote>
+<p><strong>Note:</strong> When no argument is given, the date will be set to the current
+system date.</p>
+</blockquote>
+<blockquote>
+<p><strong>Note:</strong> when the date fields are given, the timezone is always in UTC
+irrespective of the system timezone or if a gmt_offset is given or not.</p>
+</blockquote>
+<blockquote>
+<p><strong>Note:</strong> <code>year_day</code> on the resulting instance counts Jan 1st as day 1,
+which is what <code>to_ordinal()</code> and <code>format('z')</code> expect. The raw
+dictionaries from <code>localtime()</code> and <code>gmtime()</code> are the one place that
+differs: those carry the platform’s own <code>tm_yday</code>, which counts Jan 1st
+as day 0.</p>
+</blockquote>
+<h4 id="dateis_leap"><a class="header" href="#dateis_leap"><code>Date.is_leap()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.is_leap() -&gt; bool
+</code></pre>
+<p>Returns true if the year is a leap year or false otherwise.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2018).is_leap()
+false
+%&gt; date(2020).is_leap()
+true
+</code></pre>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="dateto_ordinal"><a class="header" href="#dateto_ordinal"><code>Date.to_ordinal()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_ordinal() -&gt; number
+</code></pre>
+<p>Returns this date’s ordinal day number in the proleptic Gregorian
+calendar, where day 1 is <code>0001-01-01</code>. Two dates can be compared or
+subtracted via their ordinals to get an exact day count between them,
+regardless of leap years.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(1, 1, 1).to_ordinal()
+1
+%&gt; date(2021, 5, 11).to_ordinal()
+737921
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="datedays_before_month"><a class="header" href="#datedays_before_month"><code>Date.days_before_month()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.days_before_month(month) -&gt; number
+</code></pre>
+<p>Returns the number of days between the first day of <code>month</code> (in this
+date’s own year) and this date. Positive when <code>month</code> is later in the
+year than this date, negative when earlier, zero when <code>month</code> is this
+date’s own month and <code>day</code> is 1.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 5, 11).days_before_month(7)
+51
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="datedays_before_year"><a class="header" href="#datedays_before_year"><code>Date.days_before_year()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.days_before_year(year) -&gt; number
+</code></pre>
+<p>Returns the number of days between January 1st of <code>year</code> and this date.
+Positive when <code>year</code> is after this date’s own year, negative when before
+(or the same year but earlier in it).</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 5, 11).days_before_year(2024)
+965
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>year</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="datedays_in_month"><a class="header" href="#datedays_in_month"><code>Date.days_in_month()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.days_in_month() -&gt; number
+</code></pre>
+<p>Returns the number of days in month for the specified year.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 6).days_in_month()
+30
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateweekday"><a class="header" href="#dateweekday"><code>Date.weekday()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.weekday() -&gt; number
+</code></pre>
+<p>Returns the numbered day of the week.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 5, 11).weekday()
+2
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateweek_number"><a class="header" href="#dateweek_number"><code>Date.week_number()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.week_number() -&gt; number
+</code></pre>
+<p>Returns the number of the current week in the year.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 5, 11).week_number()
+19
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateformat"><a class="header" href="#dateformat"><code>Date.format()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.format(format) -&gt; string
+</code></pre>
+<p>Formats the current date based on the specified string</p>
+<p>Zuri’s Date formatting table</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Character</th><th>Description</th><th>Example</th></tr>
+</thead>
+<tbody>
+<tr><td>A</td><td>uppercase Ante meridian and Post meridian</td><td>AM or PM a</td></tr>
+<tr><td>Ante meridian and Post meridian</td><td>am or pm d</td><td>day of the month with</td></tr>
+<tr><td>leading zero</td><td>01 to 31 D</td><td>textual representation of a day, three</td></tr>
+<tr><td>letters</td><td>Mon - Sun j</td><td>day of the month without leading zero</td></tr>
+<tr><td>l</td><td>full textual representation of the day of the week</td><td>Monday - Sunday</td></tr>
+<tr><td>N</td><td>ISO-8601 numeric representation of the day of the week</td><td>1 - 7 S</td></tr>
+<tr><td>English ordinal suffix for the day of the month</td><td>st, nd, rd or th w</td><td></td></tr>
+<tr><td>numeric representation of the day of the week</td><td>0 - 6 z</td><td>the day of the</td></tr>
+<tr><td>year (starting from 0)</td><td>0 - 365 W</td><td>ISO-8601 week number of year, weeks</td></tr>
+<tr><td>starting on Monday</td><td>E.g. 33 (the 33rd week of the year) F</td><td>full</td></tr>
+<tr><td>textual representation of a month</td><td>January - December m</td><td>numeric</td></tr>
+<tr><td>representation of a month, with leading zeros</td><td>01 - 12 n</td><td>numeric</td></tr>
+<tr><td>representation of a month, without leading zeros</td><td>1 - 12 M</td><td>short</td></tr>
+<tr><td>textual representation of a month, three letters</td><td>Jan - Dec t</td><td>number</td></tr>
+<tr><td>of days in the given month</td><td>28 - 31 L</td><td>whether it’s a leap year</td></tr>
+<tr><td>true, 0 otherwise y</td><td>two digit representation of a year</td><td>e.g. 09 or 99</td></tr>
+<tr><td>Y</td><td>full numeric representation of a year using 4 digits</td><td>e.g. 2009 or</td></tr>
+<tr><td>1999 h</td><td>12 hour format of an hour with leading zeros</td><td>01 - 12 H</td></tr>
+<tr><td>hour format of an hour with leading zeros</td><td>01 - 24 g</td><td>12 hour format</td></tr>
+<tr><td>of an hour without leading zeros</td><td>1 - 12 G</td><td>24 hour format of an hour</td></tr>
+<tr><td>without leading zeros</td><td>1 - 24 i</td><td>minutes with leading zero</td></tr>
+<tr><td>seconds with leading zero</td><td>00 - 59 u</td><td>microseconds</td></tr>
+<tr><td>milliseconds</td><td>e.g. 987 e</td><td>timezone identifier</td></tr>
+<tr><td>whether or not the date is in daylight saving time</td><td>1 for true, 0</td><td></td></tr>
+<tr><td>otherwise O</td><td>difference to GMT without colon between hours and minutes</td><td></td></tr>
+<tr><td>e.g. +0100 P</td><td>difference to GMT with colon between hours and minutes</td><td></td></tr>
+<tr><td>e.g. +01:00 Z</td><td>timezone offset in seconds</td><td>-43200 - 50400 c</td></tr>
+<tr><td>8601 date</td><td>e.g. 2020-03-04T15:19:21+00:00 r</td><td>RFC 2822 formatted date</td></tr>
+<tr><td>e.g. Thu, 21 Dec 2000 16:01:07 +0200</td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date().format('F d, Y g:i A')
+'March 05, 2022 6:24 PM'
+</code></pre>
+<p>You can prevent a format character in the format string from being
+expanded by escaping it with a preceding backslash. If the character
+with a backslash is already a special sequence, you may need to also
+escape the backslash.</p>
+<p>For example:</p>
+<pre><code class="language-zuri-repl">%&gt; date().format('l jS \o\\f F Y h:i:s A')
+'Wednesday 17th of May 2021 01:39:08 PM'
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>format</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="datehttp"><a class="header" href="#datehttp"><code>Date.http()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.http() -&gt; string
+</code></pre>
+<p>Returns the HTTP date representation of the current date.</p>
+<p>For example,</p>
+<pre><code class="language-zuri-repl">%&gt; date().http()
+'Sat, 05 Mar 2022 06:23:32 GMT'
+</code></pre>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="datejd"><a class="header" href="#datejd"><code>Date.jd()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.jd() -&gt; number
+</code></pre>
+<p>Converts the current date to a julian day and time.</p>
+<p>Example,</p>
+<pre><code class="language-zuri-repl">%&gt; date(2021, 5, 11).jd()
+2459345
+</code></pre>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateunix_time"><a class="header" href="#dateunix_time"><code>Date.unix_time()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.unix_time() -&gt; number
+</code></pre>
+<p>Returns unix <code>mktime</code> equivalent of the current date.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<blockquote>
+<p><strong>Deprecated.</strong> Use <code>to_time()</code> instead as it offers more precision.</p>
+</blockquote>
+<h4 id="dateto_time"><a class="header" href="#dateto_time"><code>Date.to_time()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_time() -&gt; number
+</code></pre>
+<p>Returns the Epoch timestamp in seconds for the given date.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateclone"><a class="header" href="#dateclone"><code>Date.clone()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.clone()
+</code></pre>
+<p>Returns an independent copy of this date.</p>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateequals"><a class="header" href="#dateequals"><code>Date.equals()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.equals(other) -&gt; bool
+</code></pre>
+<p>Returns true when <code>other</code> is a <code>Date</code> representing the exact same
+instant in time as this one. Two dates with different
+<code>gmt_offset</code>/<code>zone</code> labels but the same underlying UTC instant are
+considered equal: the same convention Python’s timezone-aware <code>datetime</code>
+equality uses.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="datediff"><a class="header" href="#datediff"><code>Date.diff()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.diff(other) -&gt; number
+</code></pre>
+<p>Returns the signed difference, in seconds, between this date and <code>other</code>
+(<code>self.to_time() - other.to_time()</code>). Positive when this date is later
+than <code>other</code>, negative when earlier.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Date</code> — other</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="dateadd_seconds"><a class="header" href="#dateadd_seconds"><code>Date.add_seconds()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_seconds(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> seconds after this one (or before, if <code>n</code> is
+negative). The result keeps this date’s own
+<code>gmt_offset</code>/<code>zone</code>/<code>is_dst</code>. <code>self</code> is not modified.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateadd_minutes"><a class="header" href="#dateadd_minutes"><code>Date.add_minutes()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_minutes(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> minutes after this one. See <code>add_seconds()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateadd_hours"><a class="header" href="#dateadd_hours"><code>Date.add_hours()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_hours(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> hours after this one. See <code>add_seconds()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateadd_days"><a class="header" href="#dateadd_days"><code>Date.add_days()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_days(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> days after this one. See <code>add_seconds()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateadd_months"><a class="header" href="#dateadd_months"><code>Date.add_months()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_months(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> months after this one (or before, if <code>n</code> is
+negative), keeping the same time-of-day and
+<code>gmt_offset</code>/<code>zone</code>/<code>is_dst</code>. <code>self</code> is not modified.</p>
+<p>When the resulting month doesn’t have this date’s own day number (e.g.
+Jan 31 plus one month), the result is <strong>clamped</strong> to the last valid day
+of that month (Jan 31 + 1 month → Feb 28 or 29, never an overflow into
+March): the convention to know about, since date libraries genuinely
+differ on this.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateadd_years"><a class="header" href="#dateadd_years"><code>Date.add_years()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.add_years(n)
+</code></pre>
+<p>Returns a new <code>Date</code>, <code>n</code> years after this one. See <code>add_months()</code> for
+the day-clamping rule this also follows (relevant for Feb 29 plus a
+non-leap number of years).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>n</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateto_offset"><a class="header" href="#dateto_offset"><code>Date.to_offset()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_offset(gmt_offset, zone)
+</code></pre>
+<p>Returns a new <code>Date</code> representing the exact same instant as this one,
+re-expressed under a different <code>gmt_offset</code>. This is the way to convert
+a date from one timezone’s wall-clock reading to another’s: unlike
+<code>add_seconds()</code> and friends, which shift the underlying instant, this
+keeps the instant fixed and only changes how it’s displayed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>gmt_offset</code> (<code>number</code>) — Seconds east of UTC.</li>
+<li><code>zone</code> (<code>?string</code>) — Optional label for the new offset (e.g. <code>'EST'</code>);
+when omitted, this date’s own <code>zone</code> is kept as-is.</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<h4 id="dateto_timezone"><a class="header" href="#dateto_timezone"><code>Date.to_timezone()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_timezone(name)
+</code></pre>
+<p>Returns a new <code>Date</code> representing the exact same instant as this one,
+re-expressed under the real IANA timezone <code>name</code> (e.g.
+<code>'America/New_York'</code>, <code>'Africa/Lagos'</code>). Unlike <code>to_offset()</code>, which
+takes the numeric offset to shift to and leaves it to the caller to
+already know it, this looks up <code>name</code>’s actual offset: correctly
+accounting for daylight saving: at this date’s own instant, so
+<code>gmt_offset</code>, <code>zone</code>, and <code>is_dst</code> all come out right without the caller
+needing to work any of that out first.</p>
+<pre><code class="language-zuri ignore">var d = date.parse('2024-07-01T00:00:00Z')
+var ny = d.to_timezone('America/New_York')
+echo ny.hour        # 20 (the previous day, EDT is UTC-4)
+echo ny.zone        # EDT
+echo ny.is_dst      # true
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — An IANA timezone identifier.</li>
+</ul>
+<p><strong>Returns</strong> — Date</p>
+<p><strong>Raises</strong> <code>TypeError</code> When <code>name</code> is not a string.</p>
+<p><strong>Raises</strong> <code>Error</code> When <code>name</code> is not a recognized timezone (see
+<code>is_valid_timezone()</code>).</p>
+<h4 id="dateto_string"><a class="header" href="#dateto_string"><code>Date.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_string() -&gt; string
+</code></pre>
+<p>Returns a string representation of the date</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="dateto_dict"><a class="header" href="#dateto_dict"><code>Date.to_dict()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_dict() -&gt; dict
+</code></pre>
+<p>Returns the date object as a dictionary.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="dateto_number"><a class="header" href="#dateto_number"><code>Date.to_number()</code></a></h4>
+<pre><code class="language-zuri ignore">date.Date.to_number()
+</code></pre>
+<hr>
+<p><small>2021, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="set.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="os.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="set.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="os.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

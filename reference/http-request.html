@@ -1,0 +1,643 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>http.request - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="httprequest"><a class="header" href="#httprequest"><code>http.request</code></a></h1>
+<pre><code class="language-zuri ignore">import http.request
+</code></pre>
+<blockquote>
+<p><code>http</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>http.request.*</code> needs <code>import http.request</code>.</p>
+</blockquote>
+<p><code>HttpRequest</code>: one inbound request, with its method, target, headers and
+body, plus the query string and route parameters already parsed.</p>
+<p>The query-string functions are separate because they are useful on their
+own: <code>build_query_string()</code> is what constructs a URL to request, not
+only what reads one.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="parse_query_string"><a class="header" href="#parse_query_string"><code>parse_query_string()</code></a></h3>
+<pre><code class="language-zuri ignore">http.parse_query_string(text) -&gt; dict
+</code></pre>
+<p>Decodes an <code>application/x-www-form-urlencoded</code> string - a query string,
+or a form body - into <code>name -&gt; [value, ...]</code>.</p>
+<p><code>+</code> decodes to a space and <code>%xx</code> to the byte it names, both of which
+apply to names as well as values. A parameter with no <code>=</code> maps to an
+empty string rather than to <code>nil</code>, matching what every server-side form
+API does with <code>?debug</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>text</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h3 id="build_query_string"><a class="header" href="#build_query_string"><code>build_query_string()</code></a></h3>
+<pre><code class="language-zuri ignore">http.build_query_string(parameters: dict) -&gt; string
+</code></pre>
+<p>Encodes <code>parameters</code> as an <code>application/x-www-form-urlencoded</code> string.
+Values may be lists, in which case the name repeats.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>parameters</code> (<code>dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="httprequest-1"><a class="header" href="#httprequest-1"><code>HttpRequest</code></a></h3>
+<pre><code class="language-zuri ignore">class http.HttpRequest
+</code></pre>
+<p>An HTTP request, in both directions.</p>
+<p>On the server side an instance arrives fully parsed: <code>method</code>, <code>path</code>,
+<code>query</code>, <code>headers</code>, <code>cookies</code> and <code>body</code> are all populated, with
+<code>form()</code>, <code>json_body()</code> and <code>files()</code> decoding the body on first use
+according to its <code>Content-Type</code>.</p>
+<p>On the client side, <code>HttpClient</code> builds one of these for every request
+it sends, so anything you can inspect on the server you can also set
+before sending.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+<li><strong>serializable</strong> — has a <code>@to_json()</code>, so it can be handed straight to
+<code>json.encode()</code></li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>method</code></td><td><code>string</code></td><td>The request method, uppercased: <code>'GET'</code>, <code>'POST'</code>, and so on.</td></tr>
+<tr><td><code>target</code></td><td><code>string</code></td><td>The request target exactly as it appeared on the request line, before any decoding - <code>'/search?q=a%20b'</code>.</td></tr>
+<tr><td><code>path</code></td><td><code>string</code></td><td>The path, percent-decoded and with its <code>.</code> and <code>..</code> segments resolved.</td></tr>
+<tr><td><code>query_string</code></td><td><code>string</code></td><td>The query string, without the leading <code>?</code>, or <code>''</code>.</td></tr>
+<tr><td><code>query</code></td><td><code>dict</code></td><td>The decoded query parameters, as <code>name -&gt; [value, ...]</code>.</td></tr>
+<tr><td><code>version</code></td><td><code>string</code></td><td>The protocol version: <code>'1.0'</code>, <code>'1.1'</code>, <code>'2'</code> or <code>'3'</code>.</td></tr>
+<tr><td><code>headers</code></td><td><code>Headers</code></td><td>The request header fields.</td></tr>
+<tr><td><code>cookies</code></td><td><code>dict</code></td><td>The cookies the client sent, as <code>name -&gt; value</code>.</td></tr>
+<tr><td><code>params</code></td><td><code>dict</code></td><td>Path parameters captured by the route that matched, e.g. <code>id</code> for a route registered as <code>/users/:id</code>.</td></tr>
+<tr><td><code>body</code></td><td><code>bytes</code></td><td>The request body.</td></tr>
+<tr><td><code>remote_address</code></td><td><code>?string</code></td><td>The address of the peer at the other end of the socket.</td></tr>
+<tr><td><code>secure</code></td><td><code>bool</code></td><td>Whether the request arrived over TLS.</td></tr>
+<tr><td><code>scheme</code></td><td><code>string</code></td><td>The scheme the request was made with: <code>'http'</code> or <code>'https'</code>.</td></tr>
+<tr><td><code>authority</code></td><td><code>?string</code></td><td>The authority the request was addressed to, from HTTP/2’s <code>:authority</code> or HTTP/1.1’s <code>Host</code> header, port…</td></tr>
+<tr><td><code>context</code></td><td><code>dict</code></td><td>Free-form storage for whatever middleware wants to attach to a request - a resolved user, a request id, a…</td></tr>
+<tr><td><code>body_reader</code></td><td><code>?BodyReader</code></td><td>The reader for the body, when the route asked to stream it rather than have it materialised.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest(method, target, headers)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>method</code> (<code>?string</code>)</li>
+<li><code>target</code> (<code>?string</code>)</li>
+<li><code>?Headers</code> — headers</li>
+</ul>
+<h4 id="httprequestset_target"><a class="header" href="#httprequestset_target"><code>HttpRequest.set_target()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.set_target(target: string)
+</code></pre>
+<p>Sets the request target and re-derives <code>path</code>, <code>query_string</code> and
+<code>query</code> from it.</p>
+<p>The path is percent-decoded and then normalised, in that order. Doing it
+the other way round is the classic traversal hole: <code>%2e%2e%2f</code> looks
+like an ordinary segment until it is decoded.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>target</code> (<code>string</code>)</li>
+</ul>
+<h4 id="httprequestheader"><a class="header" href="#httprequestheader"><code>HttpRequest.header()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.header(name: string, fallback) -&gt; any
+</code></pre>
+<p>A request header value, or <code>fallback</code> when absent.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="httprequestquery_param"><a class="header" href="#httprequestquery_param"><code>HttpRequest.query_param()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.query_param(name: string, fallback) -&gt; any
+</code></pre>
+<p>The first value of the query parameter <code>name</code>, or <code>fallback</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="httprequestparam"><a class="header" href="#httprequestparam"><code>HttpRequest.param()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.param(name: string, fallback) -&gt; any
+</code></pre>
+<p>A path parameter captured by the matched route, or <code>fallback</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="httprequestcookie"><a class="header" href="#httprequestcookie"><code>HttpRequest.cookie()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.cookie(name: string, fallback) -&gt; any
+</code></pre>
+<p>A cookie value, or <code>fallback</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="httprequestsession"><a class="header" href="#httprequestsession"><code>HttpRequest.session()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.session()
+</code></pre>
+<p>This request’s session.</p>
+<p>The session is put here by <code>http.session.session()</code>, so a server that
+never registered that middleware has none, and asking for one says so
+rather than handing back <code>nil</code> for a handler to misread as an empty
+session.</p>
+<pre><code class="language-zuri ignore">request.session().set('account', account.id)
+</code></pre>
+<p><strong>Returns</strong> — Session</p>
+<p><strong>Raises</strong> <code>SessionError</code> if the session middleware is not registered</p>
+<h4 id="httprequestcontent_type"><a class="header" href="#httprequestcontent_type"><code>HttpRequest.content_type()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.content_type() -&gt; ?string
+</code></pre>
+<p>The media type of the body, without parameters, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httprequestcontent_length"><a class="header" href="#httprequestcontent_length"><code>HttpRequest.content_length()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.content_length() -&gt; number
+</code></pre>
+<p>The declared body length, or <code>-1</code> when the request carries no
+<code>Content-Length</code> (which for a chunked body it will not).</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="httprequesttext"><a class="header" href="#httprequesttext"><code>HttpRequest.text()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.text() -&gt; string
+</code></pre>
+<p>The body decoded as UTF-8 text.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="httprequestjson_body"><a class="header" href="#httprequestjson_body"><code>HttpRequest.json_body()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.json_body() -&gt; any
+</code></pre>
+<p>The body parsed as JSON.</p>
+<p>Parses once and caches, so calling this in both a middleware and a
+handler costs one parse.</p>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>HttpError</code> if the body is not valid JSON</p>
+<h4 id="httprequestform"><a class="header" href="#httprequestform"><code>HttpRequest.form()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.form() -&gt; dict
+</code></pre>
+<p>The submitted form fields, as <code>name -&gt; value</code>, from either an
+<code>application/x-www-form-urlencoded</code> or a <code>multipart/form-data</code> body. A
+body of neither type gives an empty dictionary rather than raising.</p>
+<p>Repeated names keep their first value here; use <code>form_all()</code> when a
+field can legitimately repeat.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="httprequestform_all"><a class="header" href="#httprequestform_all"><code>HttpRequest.form_all()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.form_all() -&gt; dict
+</code></pre>
+<p>The submitted form fields as <code>name -&gt; [value, ...]</code>, keeping every value
+of a repeated name.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="httprequestform_field"><a class="header" href="#httprequestform_field"><code>HttpRequest.form_field()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.form_field(name: string, fallback) -&gt; any
+</code></pre>
+<p>A single form field’s first value, or <code>fallback</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fallback</code> (<code>?any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="httprequestfiles"><a class="header" href="#httprequestfiles"><code>HttpRequest.files()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.files() -&gt; dict
+</code></pre>
+<p>The files uploaded in a <code>multipart/form-data</code> body, as <code>name -&gt; [UploadedFile, ...]</code>.
+Empty for any other body type.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="httprequestfile"><a class="header" href="#httprequestfile"><code>HttpRequest.file()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.file(name: string)
+</code></pre>
+<p>The first file uploaded under <code>name</code>, or <code>nil</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — ?UploadedFile</p>
+<h4 id="httprequestinput"><a class="header" href="#httprequestinput"><code>HttpRequest.input()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.input(source: ?string) -&gt; dict
+</code></pre>
+<p>The request’s input as one dictionary, ready to hand to a validator.</p>
+<p>With no argument, three sources are merged, each overriding the one
+before it:</p>
+<ol>
+<li>route parameters, from the pattern that matched 2. query string
+parameters 3. the body - a JSON object’s keys, or the submitted form
+fields</li>
+</ol>
+<p>Pass <code>source</code> to take exactly one of them instead: <code>'params'</code>, <code>'query'</code>
+or <code>'body'</code>.</p>
+<p>A query or form field is a list on the wire, since a name may legally
+repeat. A name carrying exactly one value is flattened to that value
+here, so a rule expecting a string sees a string; a name carrying
+several stays a list. A field that must <em>always</em> be a list, however many
+values arrived, is better read through <code>form_all()</code> or <code>query</code> directly.</p>
+<p>Uploaded files are not included - nothing a schema can say about a file
+is expressible as a rule over its bytes. Reach them with <code>file()</code> and
+check them by hand.</p>
+<p>A JSON body that is not an object (an array, a bare string) contributes
+nothing, since there are no names to merge; read it with <code>json_body()</code>
+instead.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>?string</code>) — <code>'params'</code>, <code>'query'</code>, <code>'body'</code>, or <code>'all'</code>
+(the default)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<p><strong>Raises</strong> <code>ValueError</code> if <code>source</code> names something else</p>
+<h4 id="httprequestvalidate"><a class="header" href="#httprequestvalidate"><code>HttpRequest.validate()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.validate(schema, source: ?string)
+</code></pre>
+<p>Validates the request’s input against <code>schema</code> and returns the data that
+was validated.</p>
+<p><code>schema</code> is anything with a <code>check_or_raise()</code> method - a
+<code>validate.Schema</code> in practice:</p>
+<pre><code class="language-zuri ignore">import validate
+
+var create_user = validate.schema({
+  name:  validate.required().string().max_length(100),
+  email: validate.required().string().email(),
+})
+
+server.post('/users', @(request, response) {
+  var data = request.validate(create_user)
+  response.json(create_account(data), 201)
+})
+</code></pre>
+<p>Failure raises the schema’s own error - <code>validate.ValidationError</code></p>
+<ul>
+<li>carrying an <code>errors</code> list of <code>{ field, message }</code>. Catch it to
+turn it into whatever your API answers with:</li>
+</ul>
+<pre><code class="language-zuri ignore">catch {
+  var data = request.validate(create_user)
+  response.json(create_account(data), 201)
+} as error {
+  response.json({ errors: create_user.group_errors(error.errors) }, 422)
+}
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Schema</code> — schema</li>
+<li><code>source</code> (<code>?string</code>) — as <code>input()</code>; defaults to <code>'all'</code></li>
+</ul>
+<p><strong>Returns</strong> — dict: the input that was validated</p>
+<p><strong>Raises</strong> <code>ValidationError</code> when the input does not satisfy the schema</p>
+<p><strong>Raises</strong> <code>TypeError</code> if <code>schema</code> is not an object that can validate</p>
+<blockquote>
+<p><strong>Note:</strong> This deliberately does not import the <code>validate</code> module. Any
+object exposing <code>check_or_raise(data)</code> works, and a server that never
+validates anything never pays to load it.</p>
+</blockquote>
+<h4 id="httprequesthost"><a class="header" href="#httprequesthost"><code>HttpRequest.host()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.host() -&gt; ?string
+</code></pre>
+<p>The host the request was addressed to, without any port.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httprequestport"><a class="header" href="#httprequestport"><code>HttpRequest.port()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.port() -&gt; number
+</code></pre>
+<p>The port the request was addressed to, from the authority, or the
+scheme’s default when the authority named none.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="httprequesturl"><a class="header" href="#httprequesturl"><code>HttpRequest.url()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.url() -&gt; string
+</code></pre>
+<p>The full absolute URL this request names.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="httprequestclient_ip"><a class="header" href="#httprequestclient_ip"><code>HttpRequest.client_ip()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.client_ip(trust_proxy: ?bool, trusted: ?list) -&gt; ?string
+</code></pre>
+<p>The originating client’s IP address.</p>
+<p>Directly served, that is simply the peer’s address. Behind a reverse
+proxy the peer is the proxy, and the real client is in <code>X-Forwarded-For</code>
+or RFC 7239’s <code>Forwarded</code> - but those are request headers, which is to
+say anyone can write anything in them.</p>
+<p>So they are only consulted when <code>trust_proxy</code> says to, and the value
+taken is the <em>rightmost</em> entry that is not itself one of <code>trusted</code>,
+walking in from the proxy end. Taking the leftmost entry - the common
+shortcut - hands an attacker whatever client IP they care to claim,
+which matters the moment an IP is used for rate limiting, allowlisting
+or audit.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>trust_proxy</code> (<code>?bool</code>) — whether to consult forwarding headers at
+all; defaults to <code>false</code></li>
+<li><code>trusted</code> (<code>?list</code>) — proxy addresses to skip over when walking the
+chain</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httprequestaccepts"><a class="header" href="#httprequestaccepts"><code>HttpRequest.accepts()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.accepts(type: string) -&gt; bool
+</code></pre>
+<p>Whether the client would accept a response of media type <code>type</code>, per its
+<code>Accept</code> header. A request with no <code>Accept</code> accepts anything.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>type</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestwants_json"><a class="header" href="#httprequestwants_json"><code>HttpRequest.wants_json()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.wants_json() -&gt; bool
+</code></pre>
+<p>Whether the client would rather have JSON than HTML - the usual way to
+decide whether an error should be rendered as a page or returned as an
+object.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestbearer_token"><a class="header" href="#httprequestbearer_token"><code>HttpRequest.bearer_token()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.bearer_token() -&gt; ?string
+</code></pre>
+<p>The token from an <code>Authorization: Bearer ...</code> header, or <code>nil</code> when
+there is no such header or it carries a different scheme.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httprequestis_ajax"><a class="header" href="#httprequestis_ajax"><code>HttpRequest.is_ajax()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.is_ajax() -&gt; bool
+</code></pre>
+<p>Whether the request was made by client-side script, as reported by the
+<code>X-Requested-With</code> header that the major JavaScript libraries set.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestis_upgrade"><a class="header" href="#httprequestis_upgrade"><code>HttpRequest.is_upgrade()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.is_upgrade(protocol: ?string) -&gt; bool
+</code></pre>
+<p>Whether the request asks to switch to another protocol - a WebSocket
+handshake, or an HTTP/2 upgrade.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>protocol</code> (<code>?string</code>) — check for one specific protocol</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestexpects_continue"><a class="header" href="#httprequestexpects_continue"><code>HttpRequest.expects_continue()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.expects_continue() -&gt; bool
+</code></pre>
+<p>Whether the client asked the server to acknowledge before it sends the
+body (<code>Expect: 100-continue</code>).</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestis_safe"><a class="header" href="#httprequestis_safe"><code>HttpRequest.is_safe()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.is_safe() -&gt; bool
+</code></pre>
+<p>Whether this method is defined to be safe: read-only, with no side
+effects the client is responsible for (RFC 9110 §9.2.1).</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestis_idempotent"><a class="header" href="#httprequestis_idempotent"><code>HttpRequest.is_idempotent()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.is_idempotent() -&gt; bool
+</code></pre>
+<p>Whether this method is idempotent - repeating it has the same effect as
+making it once (RFC 9110 §9.2.2). This is what decides whether a client
+may retry a request after a connection failure.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httprequestto_wire"><a class="header" href="#httprequestto_wire"><code>HttpRequest.to_wire()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.to_wire() -&gt; string
+</code></pre>
+<p>The full request head in wire format, as it would be sent on an HTTP/1.1
+connection. Useful for logging and for debugging what actually went out.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="httprequestto_string"><a class="header" href="#httprequestto_string"><code>HttpRequest.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.to_string()
+</code></pre>
+<h4 id="httprequestto_json"><a class="header" href="#httprequestto_json"><code>HttpRequest.to_json()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpRequest.to_json()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="http-proxy.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="http-response.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="http-proxy.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="http-response.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

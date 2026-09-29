@@ -1,0 +1,1774 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Databases - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch17-00-sql.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="databases"><a class="header" href="#databases">Databases</a></h1>
+<p>The <code>sql</code> module is how a Zuri program talks to a relational database.
+It is one module rather than one per engine, and that is the whole
+design: <code>sql</code> defines what a database adapter has to provide, supplies
+everything that is the same whichever engine answers, and picks the
+adapter from the connection string.</p>
+<p>Three adapters ship with it to support four major database engines
+— SQLite, PostgreSQL, MySQL and MariaDB. SQLite is a file-based
+database with no server to run and nothing to configure, which makes it
+the right choice for an application that ships with its data and for a
+test suite that wants a real database per run. PostgreSQL, MySQL, and
+MariaDB are servers, for everything that outgrows a file, and the MySQL
+adapter is the same adapter that drives MariaDB as well.</p>
+<p>Changing from one to another means changing the connection string, and
+whatever SQL they genuinely spell differently.</p>
+<ul>
+<li><a href="#following-along">Following Along</a></li>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#connecting">Connecting</a></li>
+<li><a href="#querying-and-fetching">Querying and Fetching</a></li>
+<li><a href="#parameters">Parameters</a></li>
+<li><a href="#rows-columns-and-types">Rows, Columns and Types</a></li>
+<li><a href="#the-crud-helpers">The CRUD Helpers</a></li>
+<li><a href="#transactions">Transactions</a></li>
+<li><a href="#streaming-large-results">Streaming Large Results</a></li>
+<li><a href="#prepared-statements">Prepared Statements</a></li>
+<li><a href="#connection-pools">Connection Pools</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#schema-introspection">Schema Introspection</a></li>
+<li><a href="#switching-databases">Switching Databases</a></li>
+<li><a href="#sqlite-specifics">SQLite Specifics</a></li>
+<li><a href="#postgresql-specifics">PostgreSQL Specifics</a></li>
+<li><a href="#mysql-specifics">MySQL Specifics</a></li>
+<li><a href="#writing-your-own-adapter">Writing Your Own Adapter</a></li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<blockquote>
+<p>Blocks on this page that list several calls together are <strong>reference
+listings</strong>, not programs: they show the shape of each call rather
+than a sequence to run. Anything presented as a complete program runs
+as written. The PostgreSQL and MySQL examples need a server, so they
+are shown rather than run.</p>
+</blockquote>
+<h2 id="following-along"><a class="header" href="#following-along">Following Along</a></h2>
+<p>Most examples below use a small database of posts and their authors.
+This builds it:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+db.exec_script("
+  drop table if exists posts;
+  drop table if exists authors;
+
+  create table authors (
+    id integer primary key,
+    name text not null unique
+  );
+
+  create table posts (
+    id integer primary key,
+    author_id integer not null references authors(id),
+    title text not null,
+    views integer not null default 0,
+    published boolean not null default 0
+  );
+")
+
+var ada = db.insert('authors', { name: 'Ada Lovelace' })
+var grace = db.insert('authors', { name: 'Grace Hopper' })
+
+db.insert_many('posts', [
+  { author_id: ada, title: 'On Engines', views: 412, published: true },
+  { author_id: ada, title: 'On Looms', views: 87, published: false },
+  { author_id: grace, title: 'On Bugs', views: 1290, published: true },
+  { author_id: grace, title: 'On Compilers', views: 640, published: true },
+])
+
+echo db.count('posts')
+db.close()
+</code></pre>
+<pre><code class="language-console">4
+</code></pre>
+<p>Everything from here on assumes that file exists in the working
+directory.</p>
+<h2 id="introduction"><a class="header" href="#introduction">Introduction</a></h2>
+<p>A database library usually ties a program to one engine. The calls are
+named after that engine, the placeholders are spelled its way, and the
+errors are its own numbers, so moving to another means rewriting every
+call site.</p>
+<p><code>sql</code> puts the parts that are the same in one place. A statement is
+written once:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+for post in db.query('select title, views from posts where published = ?', [true]) {
+  echo '${post.title}: ${post.views}'
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">On Engines: 412
+On Bugs: 1290
+On Compilers: 640
+</code></pre>
+<p>Point the first line at <code>postgres://localhost/app</code> or
+<code>mysql://localhost/app</code> and the rest runs unchanged. The <code>?</code> becomes
+<code>$1</code> on PostgreSQL because that is what PostgreSQL wants, and stays <code>?</code>
+on MySQL because that is what MySQL wants. An insert asking for its new
+id gets a <code>RETURNING</code> clause on PostgreSQL, because PostgreSQL has no
+last insert id and the other two do. A duplicate key arrives as
+<code>UniqueViolation</code> from all three.</p>
+<p>What it does not do is pretend the engines are the same. They disagree
+about auto-incrementing keys, about which functions exist, about a
+great deal of SQL. <code>sql</code> translates what can be translated and is
+explicit about the rest.</p>
+<h2 id="connecting"><a class="header" href="#connecting">Connecting</a></h2>
+<p><code>open()</code> takes a connection string and returns a <code>Connection</code>.</p>
+<pre><code class="language-zuri ignore">sql.open('sqlite://./app.db')          # a file
+sql.open(':memory:')                   # a private database in memory
+sql.open('./app.db')                   # a bare path is SQLite
+sql.open('postgres://localhost/app')
+sql.open('postgres://alice:secret@db.internal:5432/shop?sslmode=require')
+sql.open('host=localhost dbname=app user=alice')
+sql.open('mysql://localhost/app')
+sql.open('mysql://alice:secret@db.internal:3306/shop?sslmode=verify')
+sql.open('mariadb://localhost/app')
+</code></pre>
+<p>The scheme picks the adapter. A string with no scheme at all is taken
+as a SQLite path, since nothing else it could be.</p>
+<p>Options can also be given as a dictionary, which is how anything an
+adapter accepts beyond the connection string is passed:</p>
+<pre><code class="language-zuri ignore">sql.open({
+  driver: 'sqlite',
+  path: './app.db',
+  journal_mode: 'wal',
+  busy_timeout: 10000,
+})
+</code></pre>
+<p>or alongside a string, where they are merged over whatever it carried:</p>
+<pre><code class="language-zuri ignore">sql.open('sqlite://./app.db', { journal_mode: 'wal' })
+</code></pre>
+<p>A connection should be closed when it is finished with, and a <code>catch</code>
+block makes that certain even when the work between raises:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+
+catch {
+  db.exec('create table t (n integer)')
+  db.exec('insert into t values (?)', [1])
+
+  echo db.fetch_value('select n from t')
+} as error {
+  echo 'failed: ${error.message}'
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">1
+</code></pre>
+<p>A connection belongs to the isolate that opened it and cannot be handed
+to another. An isolate that needs the database opens its own connection
+or its own pool.</p>
+<h2 id="querying-and-fetching"><a class="header" href="#querying-and-fetching">Querying and Fetching</a></h2>
+<p><code>query()</code> runs a statement and reads its whole result:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+var result = db.query('select title, views from posts order by views desc')
+
+echo result.length()
+echo result.first().title
+echo result.column('title')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">4
+On Bugs
+[On Bugs, On Compilers, On Engines, On Looms]
+</code></pre>
+<p>A result is iterable, so the common case needs nothing else:</p>
+<pre><code class="language-zuri ignore">for post in db.query('select * from posts') {
+  echo post.title
+}
+</code></pre>
+<p>For the shapes that come up constantly there are shorter forms:</p>
+<pre><code class="language-zuri ignore">db.fetch_one(sql, params)             # the first row, or nil
+db.fetch_all(sql, params)             # every row, as dictionaries
+db.fetch_value(sql, params, fallback) # the first column of the first row
+db.fetch_column(sql, params, column)  # one column's values, as a list
+</code></pre>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.fetch_value('select count(*) from posts')
+echo db.fetch_one('select title from posts where views &gt; ?', [1000]).title
+echo db.fetch_column('select title from posts order by title limit 2')
+echo db.fetch_value('select title from posts where views &gt; ?', [99999], 'none')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">4
+On Bugs
+[On Bugs, On Compilers]
+none
+</code></pre>
+<p><code>exec()</code> is for a statement run for its effect rather than its rows:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+
+db.exec('create table t (id integer primary key, n integer)')
+var result = db.exec('insert into t (n) values (?)', [7])
+
+echo result.rows_affected
+echo result.last_insert_id
+
+db.close()
+</code></pre>
+<pre><code class="language-console">1
+1
+</code></pre>
+<p>And <code>exec_script()</code> runs several statements at once, which is what a
+schema file is:</p>
+<pre><code class="language-zuri ignore">db.exec_script(file('schema.sql').read())
+</code></pre>
+<h2 id="parameters"><a class="header" href="#parameters">Parameters</a></h2>
+<p>Values are bound by the engine, never pasted into the statement. That
+is what makes a value a value rather than a piece of SQL, and it is the
+whole of the defence against injection.</p>
+<p>Write <code>?</code> for positional parameters:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.fetch_column(
+  'select title from posts where author_id = ? and published = ?',
+  [1, true]
+)
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Engines]
+</code></pre>
+<p>or <code>:name</code> for named ones, where order stops mattering and a name may
+be used more than once:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.fetch_column(
+  'select title from posts where views &gt; :floor and views &lt; :ceiling',
+  { floor: 100, ceiling: 1000 }
+)
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Engines, On Compilers]
+</code></pre>
+<p><code>sql</code> rewrites these into whatever the adapter wants: <code>$1</code> and <code>$2</code> for
+PostgreSQL, <code>?1</code> and <code>?2</code> for SQLite, and <code>?</code> unchanged for MySQL, which
+already spells them that way. The scanner knows when a <code>?</code> or a <code>:</code> is
+not a placeholder, so none of these are touched:</p>
+<pre><code class="language-zuri ignore">"a ? inside a string"      -- a string
+"a ? in an identifier"     -- a quoted identifier
+-- a ? in a line comment
+/* a ? in a block comment */
+$tag$ a ? in a dollar-quoted body $tag$
+value::text                -- a PostgreSQL cast
+arr[1:3]                   -- an array slice
+</code></pre>
+<p>PostgreSQL uses <code>?</code> as a JSON operator, so a literal one is written
+<code>??</code>:</p>
+<pre><code class="language-zuri ignore">db.query('select * from docs where data ?? ?', ['key'])
+</code></pre>
+<blockquote>
+<p>Never build a statement by joining strings around a value, even when
+the value looks safe. The two forms above cover every case where a
+<strong>value</strong> varies. Where an <strong>identifier</strong> varies, quote it through
+the driver rather than interpolating it:</p>
+<pre><code class="language-zuri ignore">var column = db.driver().quote_identifier(name)
+db.query('select ${column} from posts')
+</code></pre>
+</blockquote>
+<h2 id="rows-columns-and-types"><a class="header" href="#rows-columns-and-types">Rows, Columns and Types</a></h2>
+<p>A row is a dictionary keyed by column name, which is what lets
+<code>post.title</code> read the way it does.</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+var result = db.query('select id, title, views from posts order by id limit 1')
+
+echo result.first()
+echo result.columns
+echo result.tuples()
+
+db.close()
+</code></pre>
+<pre><code class="language-console">{id: 1, title: On Engines, views: 412}
+[{name: id, type: integer}, {name: title, type: text}, {name: views, type: integer}]
+[[1, On Engines, 412]]
+</code></pre>
+<p>Two columns of the same name collapse in a dictionary, which is worth
+knowing before selecting <code>id</code> from both sides of a join. Aliasing one
+of them is the fix; <code>tuples()</code> is the escape hatch when it cannot be.</p>
+<p>Values correspond like this:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Zuri</th><th>Database</th></tr>
+</thead>
+<tbody>
+<tr><td><code>nil</code></td><td>NULL</td></tr>
+<tr><td><code>bool</code></td><td>a boolean where the engine has one, otherwise 0 and 1</td></tr>
+<tr><td><code>number</code></td><td>an integer where the value is whole, otherwise a float</td></tr>
+<tr><td><code>bigint</code></td><td>a 64 bit integer, for values past what a double holds</td></tr>
+<tr><td><code>string</code></td><td>text</td></tr>
+<tr><td><code>bytes</code></td><td>a blob</td></tr>
+<tr><td><code>date.Date</code></td><td>a timestamp</td></tr>
+<tr><td><code>sql.Time</code></td><td>a <code>TIME</code> interval, on an engine that has one</td></tr>
+<tr><td><code>list</code>, <code>dict</code></td><td>JSON</td></tr>
+</tbody>
+</table>
+</div>
+<p>Not every engine has every one of those. PostgreSQL has a real boolean
+and MySQL does not, so a <code>true</code> written to MySQL comes back as <code>1</code>.
+<code>db.supports()</code> answers that sort of question without guessing, and
+each engine’s own section below says where it differs.</p>
+<p>An integer too large for a double comes back as a <code>bigint</code> rather than
+silently rounded:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (n integer)')
+db.exec('insert into t values (9223372036854775807)')
+
+var n = db.fetch_value('select n from t')
+echo typeof(n)
+echo n
+
+db.close()
+</code></pre>
+<pre><code class="language-console">bigint
+9223372036854775807n
+</code></pre>
+<p>SQLite stores five things and remembers nothing about intent, so a
+boolean goes in as 1 and would come back as the number 1. What it does
+keep is the type each column was <em>declared</em> with, and that is what the
+adapter reads it back by:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (ok boolean, at datetime, doc json)')
+db.exec('insert into t values (?, ?, ?)', [
+  true, '2026-09-16T14:30:00.000000+00:00', '{"a":1}',
+])
+
+var row = db.fetch_one('select * from t')
+
+echo typeof(row.ok)
+echo typeof(row.at)
+echo row.doc
+
+db.close()
+</code></pre>
+<pre><code class="language-console">bool
+Date
+{a: 1}
+</code></pre>
+<p>A column with no declared type is an expression, and comes back exactly
+as it was stored.</p>
+<h3 id="exact-decimals"><a class="header" href="#exact-decimals">Exact decimals</a></h3>
+<p>A <code>number</code> is a double, which holds <code>0.1</code> only approximately. For money
+that is not good enough, so <code>sql.Decimal</code> holds a value exactly:</p>
+<pre><code class="language-zuri">import sql { Decimal }
+
+var price = Decimal('19.99')
+var tax = price.multiply(Decimal('0.20'))
+
+echo price.to_string()
+echo tax.to_string()
+echo price.add(tax).to_string()
+echo Decimal('0.1').add(Decimal('0.2')).to_string()
+</code></pre>
+<pre><code class="language-console">19.99
+3.9980
+23.9880
+0.3
+</code></pre>
+<p>PostgreSQL’s <code>numeric</code> and MySQL’s <code>DECIMAL</code> columns read and write as
+<code>Decimal</code> automatically. SQLite has no exact decimal type, so store one
+as text or as an integer count of the smallest unit.</p>
+<h2 id="the-crud-helpers"><a class="header" href="#the-crud-helpers">The CRUD Helpers</a></h2>
+<p>Four calls on a connection write no SQL at all. <code>insert()</code>, <code>update()</code>,
+<code>delete()</code> and <code>find()</code> take a table name and dictionaries, build the
+statement for whichever engine is on the other end, and bind every
+value as a parameter.</p>
+<p>They are here because the statements they replace are the ones least
+worth writing by hand. They are mechanical, they differ between
+dialects in small ways that only show up in production, and a string
+built by concatenation is where an injection gets in. Anything harder
+than a flat list of conditions is still written as SQL, and the two
+mix freely on the same connection.</p>
+<h3 id="inserting-and-ids"><a class="header" href="#inserting-and-ids">Inserting and ids</a></h3>
+<p><code>insert()</code> takes a table and a dictionary, and returns the new row’s
+id:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table posts (id integer primary key, title text)')
+
+echo db.insert('posts', { title: 'Hello' })
+echo db.insert('posts', { title: 'World' })
+
+db.close()
+</code></pre>
+<pre><code class="language-console">1
+2
+</code></pre>
+<p>This is the call that hides the largest difference between the engines.
+SQLite and MySQL report the id of the row just inserted; PostgreSQL does
+not, and an insert that wants one has to ask with a <code>RETURNING</code> clause
+naming the primary key. MariaDB has both and uses <code>RETURNING</code>.
+<code>insert()</code> does whichever applies, and finds the key by asking the
+schema rather than assuming it is called <code>id</code>.</p>
+<p>Where the key is not the column to return, name it:</p>
+<pre><code class="language-zuri ignore">db.insert('events', { name: 'started' }, { returning: 'uuid' })
+</code></pre>
+<h3 id="several-rows-at-once"><a class="header" href="#several-rows-at-once">Several rows at once</a></h3>
+<p>Several rows go in one statement, split so that no single statement
+binds more parameters than the engine allows:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table points (x integer, y integer)')
+
+echo db.insert_many('points', [
+  { x: 1, y: 2 },
+  { x: 3, y: 4 },
+])
+
+db.close()
+</code></pre>
+<pre><code class="language-console">2
+</code></pre>
+<p>Every row has to name the same columns. A row naming a different set
+raises rather than being padded with nulls, because a missing column
+and a null column mean different things.</p>
+<h3 id="finding-rows"><a class="header" href="#finding-rows">Finding rows</a></h3>
+<p><code>find()</code> answers with a <code>ResultSet</code>, <code>count()</code> with a number, and
+<code>find_one()</code> with the first row as a dictionary:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.count('posts')
+echo db.count('posts', { published: true })
+echo db.count('posts', { author_id: [1, 2] })
+echo db.count('posts', { author_id: [] })
+
+echo db.find('posts', { published: true }, {
+  columns: ['title'],
+  order: ['views desc'],
+  limit: 2,
+}).column('title')
+
+echo db.find_one('posts', { title: 'On Bugs' }).views
+
+db.close()
+</code></pre>
+<pre><code class="language-console">4
+3
+4
+0
+[On Bugs, On Compilers]
+1290
+</code></pre>
+<p>A <code>find_one()</code> that matches nothing answers <code>nil</code>. That is the answer,
+not a failure, so nothing is raised for it:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find_one('posts', { title: 'On Bugs' }).views
+echo db.find_one('posts', { title: 'Never Written' })
+
+db.close()
+</code></pre>
+<pre><code class="language-console">1290
+nil
+</code></pre>
+<h3 id="what-a-filter-can-say"><a class="header" href="#what-a-filter-can-say">What a filter can say</a></h3>
+<p>A condition’s value decides what it means. A plain value is equality, a
+list is <code>IN</code>, an empty list matches nothing, and <code>nil</code> is <code>IS NULL</code>
+rather than <code>= NULL</code>, which no row ever satisfies.</p>
+<p>Several conditions in one dictionary are joined with <code>AND</code>. There is no
+<code>OR</code>, which is the first thing to write as SQL:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.count('posts', { published: true, author_id: 1 })
+echo db.count('posts', { published: true, views: [87, 1290] })
+
+db.close()
+</code></pre>
+<pre><code class="language-console">1
+1
+</code></pre>
+<p>Passing <code>nil</code> as the whole filter matches every row. That has to be
+asked for rather than happening because a dictionary came out empty,
+which is what stands between a filter built from user input and an
+<code>UPDATE</code> with no <code>WHERE</code>.</p>
+<h3 id="ordering-limits-and-pages"><a class="header" href="#ordering-limits-and-pages">Ordering, limits and pages</a></h3>
+<p><code>order</code> is a list of column names, each optionally followed by <code> asc</code>
+or <code> desc</code>, applied in the order given:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find('posts', nil, { order: ['views desc'] }).column('title')
+echo db.find('posts', nil, { order: ['author_id asc', 'views desc'] }).column('title')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Bugs, On Compilers, On Engines, On Looms]
+[On Engines, On Looms, On Bugs, On Compilers]
+</code></pre>
+<p><code>limit</code> and <code>offset</code> are whole numbers of rows, and together they are a
+page. A page past the end is empty rather than an error:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+def page(number, size) {
+  return db.find('posts', nil, {
+    columns: ['title'],
+    order: ['views desc'],
+    limit: size,
+    offset: (number - 1) * size,
+  }).column('title')
+}
+
+echo page(1, 2)
+echo page(2, 2)
+echo page(3, 2)
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Bugs, On Compilers]
+[On Engines, On Looms]
+[]
+</code></pre>
+<p>A limit and an offset go into the statement text rather than being
+bound, because not every engine allows a parameter in either place.
+That leaves them as the one part of a built statement that is not a
+parameter, so each is checked before it goes in:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+catch {
+  db.find('posts', nil, { limit: 2.5 })
+} as error {
+  echo error.message
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">a limit is a whole number of rows, not 2.5
+</code></pre>
+<h3 id="updating-and-deleting"><a class="header" href="#updating-and-deleting">Updating and deleting</a></h3>
+<p><code>update()</code> and <code>delete()</code> return how many rows changed:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (id integer primary key, n integer)')
+db.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+
+echo db.update('t', { n: 0 }, { n: [1, 2] })
+echo db.delete('t', { n: 0 })
+echo db.count('t')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">2
+2
+1
+</code></pre>
+<p>They read a filter exactly as <code>find()</code> does, <code>nil</code> included: passing it
+changes or deletes every row.</p>
+<h3 id="values-that-are-not-values"><a class="header" href="#values-that-are-not-values">Values that are not values</a></h3>
+<p>Where a value is not a value, <code>sql.raw()</code> marks a fragment to be used
+as written:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (id integer primary key, views integer)')
+db.insert('t', { views: 10 })
+
+db.update('t', { views: sql.raw('views + 1') }, { id: 1 })
+echo db.fetch_value('select views from t')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">11
+</code></pre>
+<p>A <code>Raw</code> is accepted everywhere a column or a value is, which is what
+makes an aggregate or a subquery reachable without leaving the
+helpers:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.find('posts', nil, {
+  columns: [sql.raw('count(*) as n'), sql.raw('sum(views) as total')],
+}).first()
+
+echo db.count('posts', {
+  author_id: sql.raw("(select id from authors where name = 'Ada Lovelace')"),
+})
+
+db.close()
+</code></pre>
+<pre><code class="language-console">{n: 4, total: 2429}
+2
+</code></pre>
+<blockquote>
+<p><code>raw()</code> is exactly as dangerous as it sounds. A fragment built from
+anything a user supplied is a SQL injection. Build them from
+literals, and keep values in the parameters where they belong.</p>
+</blockquote>
+<h3 id="inside-a-transaction"><a class="header" href="#inside-a-transaction">Inside a transaction</a></h3>
+<p>A <code>Transaction</code> carries all of them, and they mean the same thing
+there. A read inside one sees what that transaction has written and
+nobody else has committed yet:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (id integer primary key, n integer)')
+
+db.transaction(@(tx) {
+  tx.insert_many('t', [{ n: 1 }, { n: 2 }, { n: 3 }])
+
+  echo tx.count('t')
+  echo tx.find('t', nil, { order: ['n desc'] }).column('n')
+
+  tx.update('t', { n: 9 }, { n: 1 })
+  tx.delete('t', { n: 3 })
+})
+
+echo db.find('t', nil, { order: ['n asc'] }).column('n')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">3
+[3, 2, 1]
+[2, 9]
+</code></pre>
+<p>A rollback takes those rows with it, the reads included, and a
+transaction that has already committed refuses them the way it refuses
+everything else.</p>
+<h3 id="where-they-stop"><a class="header" href="#where-they-stop">Where they stop</a></h3>
+<p>These calls cover a flat list of equality conditions and stop there.
+There is no join, no <code>OR</code> and no expression tree, because SQL is a
+better language for those than any chain of method calls. A query that
+wants one is a <code>query()</code> or a <code>fetch_all()</code> on the same connection,
+next to the helpers rather than instead of them.</p>
+<h2 id="transactions"><a class="header" href="#transactions">Transactions</a></h2>
+<p>The closure form commits when the body returns and rolls back when it
+raises, and there is no path through it that leaves a transaction open:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table accounts (id integer primary key, balance integer)')
+db.insert_many('accounts', [{ balance: 500 }, { balance: 0 }])
+
+db.transaction(@(tx) {
+  tx.update('accounts', { balance: sql.raw('balance - 100') }, { id: 1 })
+  tx.update('accounts', { balance: sql.raw('balance + 100') }, { id: 2 })
+})
+
+echo db.fetch_column('select balance from accounts order by id')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[400, 100]
+</code></pre>
+<p>A failure undoes the whole thing:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (n integer)')
+
+catch {
+  db.transaction(@(tx) {
+    tx.exec('insert into t values (1)')
+    raise Error('something went wrong')
+  })
+} as error {
+  echo 'rolled back: ${error.message}'
+}
+
+echo db.count('t')
+db.close()
+</code></pre>
+<pre><code class="language-console">rolled back: something went wrong
+0
+</code></pre>
+<p>A <code>transaction()</code> called inside another becomes a savepoint, so a
+helper that opens one works the same whether it was called on its own
+or from inside a larger piece of work. Only the outermost commits, and
+a failure inside undoes just that inner piece:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table t (name text)')
+
+db.transaction(@(outer) {
+  outer.insert('t', { name: 'outer' })
+
+  catch {
+    db.transaction(@(inner) {
+      inner.insert('t', { name: 'inner' })
+      raise Error('inner failed')
+    })
+  } as _error {
+    echo 'inner undone'
+  }
+})
+
+echo db.fetch_column('select name from t')
+db.close()
+</code></pre>
+<pre><code class="language-console">inner undone
+[outer]
+</code></pre>
+<p>Schema changes are part of the transaction on SQLite and PostgreSQL,
+so a set of <code>create table</code> statements that fails half way leaves
+nothing behind. MySQL and MariaDB commit the open transaction at every
+<code>create</code>, <code>alter</code> and <code>drop</code>, and a <code>transaction()</code> whose body changes
+the schema there raises <code>TransactionError</code> when it comes to commit.
+<code>db.supports('transactional_ddl')</code> tells the two apart, so a program
+that migrates its own schema can run each change inside a transaction
+where that holds and on its own where it does not.</p>
+<p>An isolation level can be asked for. Where an engine cannot provide one
+it says so rather than quietly giving something weaker:</p>
+<pre><code class="language-zuri ignore">db.transaction(@(tx) { ... }, sql.SERIALIZABLE)
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>sql.READ_UNCOMMITTED</code></td><td>MySQL honours it; PostgreSQL accepts it and gives read committed</td></tr>
+<tr><td><code>sql.READ_COMMITTED</code></td><td>everywhere</td></tr>
+<tr><td><code>sql.REPEATABLE_READ</code></td><td>everywhere, and MySQL’s default</td></tr>
+<tr><td><code>sql.SERIALIZABLE</code></td><td>everywhere</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>begin()</code> opens one to be committed or rolled back by hand, for a
+transaction whose lifetime is not a block. The closure form is safer
+and should be preferred.</p>
+<h2 id="streaming-large-results"><a class="header" href="#streaming-large-results">Streaming Large Results</a></h2>
+<p><code>query()</code> builds the whole result in memory, which is right for the
+hundreds of rows most queries return and wrong for the millions some
+do. <code>stream()</code> reads the same result a row at a time:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+var cursor = db.stream('select title from posts order by title')
+
+for post in cursor {
+  echo post.title
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">On Bugs
+On Compilers
+On Engines
+On Looms
+</code></pre>
+<p>Running to the end closes the cursor. A loop that stops early does not,
+so anything that might <code>break</code> has to close it:</p>
+<pre><code class="language-zuri ignore">var cursor = db.stream('select * from events')
+
+for event in cursor {
+  if done(event) {
+    break
+  }
+}
+
+cursor.close()
+</code></pre>
+<p><code>take(n)</code> reads a batch at a time, for work that batches naturally:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+var cursor = db.stream('select title from posts order by title')
+
+echo cursor.take(2).map(@(post) =&gt; post.title)
+echo cursor.take(2).map(@(post) =&gt; post.title)
+echo cursor.take(2)
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Bugs, On Compilers]
+[On Engines, On Looms]
+[]
+</code></pre>
+<p>On PostgreSQL this is a server-side portal and on MySQL a server-side
+cursor, both fetched in batches that <code>{ batch: n }</code> sizes. On SQLite it
+is the engine’s own behaviour: rows are computed as they are asked for,
+so nothing is held but the current one.</p>
+<p>A server-side cursor holds its connection while it is open, since the
+server is part way through answering. Running another statement on that
+connection before the cursor is read to the end or closed raises rather
+than letting the exchange fall out of step.</p>
+<h2 id="prepared-statements"><a class="header" href="#prepared-statements">Prepared Statements</a></h2>
+<p>Compiling a statement is the expensive half of running one, and a
+statement run in a loop should pay for it once:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table points (x integer, y integer)')
+
+var insert = db.prepare('insert into points (x, y) values (?, ?)')
+
+for i in 0..(1000) {
+  insert.exec([i, i * 2])
+}
+
+insert.close()
+
+echo db.count('points')
+db.close()
+</code></pre>
+<pre><code class="language-console">1000
+</code></pre>
+<p>The placeholders are translated once, when the statement is prepared,
+so the loop does no string work at all. A prepared statement carries
+the same query and fetch methods a connection does.</p>
+<h2 id="connection-pools"><a class="header" href="#connection-pools">Connection Pools</a></h2>
+<p>Opening a connection is expensive: for PostgreSQL and MySQL it is a TCP
+connection, a TLS handshake and an authentication exchange before the
+first statement runs. A server that opened one per request would spend
+most of its time connecting.</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.pool('sqlite://guide.db', { max: 4 })
+
+echo db.fetch_value('select count(*) from posts')
+echo db.stats()
+
+db.close()
+</code></pre>
+<pre><code class="language-console">4
+{size: 1, idle: 1, in_use: 0, max: 4}
+</code></pre>
+<p>Used that way the pool takes a connection, runs the statement and gives
+it back. Where several statements have to run on the same connection,
+which a transaction requires, <code>with_connection()</code> holds one and
+releases it whatever happens:</p>
+<pre><code class="language-zuri ignore">db.with_connection(@(connection) {
+  connection.transaction(@(tx) {
+    tx.exec('...')
+  })
+})
+</code></pre>
+<p><code>transaction()</code> on the pool does the same in one call.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Setting</th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>max</code></td><td>most connections to open. Ten by default</td></tr>
+<tr><td><code>min</code></td><td>how many to open up front. None by default</td></tr>
+<tr><td><code>idle_timeout</code></td><td>how long an idle connection is kept</td></tr>
+<tr><td><code>max_lifetime</code></td><td>how long any connection is kept before being replaced</td></tr>
+<tr><td><code>validate_on_acquire</code></td><td>check a connection is alive before lending it</td></tr>
+<tr><td><code>on_connect</code></td><td>run something on each new connection</td></tr>
+</tbody>
+</table>
+</div>
+<p>A pool wants to be as small as the work allows. Connections are not
+free at the other end either, and a pool larger than the database can
+usefully serve turns a queue in the application into a queue in the
+database, where it is harder to see.</p>
+<p>A pool belongs to the isolate that made it, which has two consequences.
+An isolate that needs database access makes its own. And there is no
+waiting when a pool is empty: nothing else can release a connection
+while the call is running, so running out is reported rather than
+waited on.</p>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>Every error is a <code>sql.SqlError</code>. Catch that to catch anything a
+database can do; the subclasses separate what is worth handling
+differently.</p>
+<pre><code class="language-text">Error
+└── SqlError
+    ├── ConnectionError
+    │   ├── AuthenticationError
+    │   ├── TimeoutError
+    │   └── ProtocolError
+    ├── QueryError
+    ├── IntegrityError
+    │   ├── UniqueViolation
+    │   ├── ForeignKeyViolation
+    │   ├── NotNullViolation
+    │   └── CheckViolation
+    ├── TransactionError
+    │   ├── SerializationError
+    │   └── DeadlockError
+    ├── PoolError
+    │   └── PoolExhaustedError
+    ├── NotSupportedError
+    └── ClosedError
+</code></pre>
+<p>The classes are the same on every engine, which is the point. A unique
+constraint is SQLSTATE <code>23505</code> on PostgreSQL, error number <code>1062</code> on
+MySQL, and extended result code <code>2067</code> on SQLite; no one of those means
+anything to the others, and code matching on any of them would stop
+working the moment the adapter changed.</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table users (id integer primary key, email text unique)')
+db.insert('users', { email: 'ada@example.com' })
+
+catch {
+  db.insert('users', { email: 'ada@example.com' })
+} as error {
+  echo instance_of(error, sql.UniqueViolation)
+  echo instance_of(error, sql.IntegrityError)
+  echo instance_of(error, sql.SqlError)
+  echo error.driver
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">true
+true
+true
+sqlite
+</code></pre>
+<p>The engine’s own account is kept rather than thrown away. <code>code</code> holds
+what the engine said, <code>sqlstate</code> the five character code where there is
+one, and <code>query</code> the statement that failed:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+db.exec('create table users (id integer primary key, email text unique)')
+db.insert('users', { email: 'ada@example.com' })
+
+catch {
+  db.insert('users', { email: 'ada@example.com' })
+} as error {
+  echo error.code
+  echo error.sqlstate
+  echo error.type
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">2067
+nil
+UniqueViolation
+</code></pre>
+<p><code>SerializationError</code> and <code>DeadlockError</code> are the two worth retrying:
+both mean the engine gave up on a transaction to keep its promises, and
+running the whole transaction again usually succeeds.</p>
+<h2 id="schema-introspection"><a class="header" href="#schema-introspection">Schema Introspection</a></h2>
+<p><code>db.schema</code> answers questions about what is in the database. The
+queries underneath are entirely different per engine, and the answers
+are the same shape.</p>
+<p>Every method takes an optional schema to look in. PostgreSQL has
+schemas inside a database and resolves the default through
+<code>search_path</code>; MySQL calls a database a schema and has no layer above
+it, so naming one there names a database; SQLite has neither and
+ignores the argument.</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.schema.tables()
+echo db.schema.column_names('posts')
+echo db.schema.primary_key('posts')
+echo db.schema.has_column('posts', 'views')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[authors, posts]
+[id, author_id, title, views, published]
+id
+true
+</code></pre>
+<p>Each column is described the same way whichever engine answered:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+for column in db.schema.columns('posts') {
+  echo '${column.name} ${column.type} ${column.nullable ? "null" : "not null"}'
+}
+
+db.close()
+</code></pre>
+<pre><code class="language-console">id integer null
+author_id integer not null
+title text not null
+views integer not null
+published boolean not null
+</code></pre>
+<p><code>indexes()</code> and <code>foreign_keys()</code> describe the rest:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+echo db.schema.foreign_keys('posts')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[{columns: [author_id], references_table: authors, references_columns: [id], on_update: NO ACTION, on_delete: NO ACTION}]
+</code></pre>
+<p>This is also what makes <code>insert()</code> portable: on an engine with no last
+insert id the insert needs a <code>RETURNING</code> clause, and the column to
+return is the table’s primary key, which is asked for here.</p>
+<p>One caution when moving a schema between engines: MySQL parses a
+column level <code>references</code> clause and then ignores it, so a foreign key
+declared that way exists on the other two and not there. Declared at
+table level it exists on all three.</p>
+<h2 id="switching-databases"><a class="header" href="#switching-databases">Switching Databases</a></h2>
+<p>The claim this module makes is that a program moves between engines by
+changing its connection string. Here is that claim, as a program:</p>
+<pre><code class="language-zuri">import sql
+
+def report(db) {
+  db.exec_script('drop table if exists tally')
+  db.exec_script(
+    'create table tally (id ' + key_type(db) + ' primary key, word text not null)'
+  )
+
+  db.insert_many('tally', [{ word: 'alpha' }, { word: 'beta' }])
+
+  var id = db.insert('tally', { word: 'gamma' })
+  var found = db.fetch_column('select word from tally order by word')
+
+  db.exec_script('drop table tally')
+
+  return '${db.driver_name()}: ${found} (last id ${id})'
+}
+
+def key_type(db) {
+  using db.driver_name() {
+    when 'postgres' return 'serial'
+    when 'mysql' return 'integer auto_increment'
+    when 'mariadb' return 'integer auto_increment'
+  }
+
+  return 'integer'
+}
+
+var sqlite = sql.open(':memory:')
+
+echo report(sqlite)
+sqlite.close()
+</code></pre>
+<pre><code class="language-console">sqlite: [alpha, beta, gamma] (last id 3)
+</code></pre>
+<p>The same <code>report()</code> runs against PostgreSQL or MySQL by opening a
+different connection, and prints the same list.</p>
+<p>Three things did have to be written twice, and they are the three that
+are genuinely different:</p>
+<ul>
+<li><strong>The connection string</strong>, which is the point.</li>
+<li><strong>An auto-incrementing key</strong>, which is not standard SQL. PostgreSQL
+spells it <code>serial</code>, MySQL <code>auto_increment</code>, SQLite <code>integer primary key</code>.</li>
+<li><strong>Any SQL only one of them has.</strong> <code>sql</code> does not parse or rewrite
+statements beyond their placeholders, so a PostgreSQL array operator,
+a MySQL <code>on duplicate key update</code> or a SQLite <code>json_extract</code> stays
+what it is.</li>
+</ul>
+<p><code>db.supports()</code> is how a program asks rather than assumes:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open(':memory:')
+
+echo db.driver_name()
+echo db.supports('returning')
+echo db.supports('arrays')
+echo db.supports('concurrent_writers')
+echo db.capabilities().placeholder_style
+
+db.close()
+</code></pre>
+<pre><code class="language-console">sqlite
+true
+false
+false
+indexed
+</code></pre>
+<h2 id="sqlite-specifics"><a class="header" href="#sqlite-specifics">SQLite Specifics</a></h2>
+<p><code>db.native()</code> reaches the adapter underneath, where the engine’s own
+features live.</p>
+<p>A SQLite database is a file, and <code>:memory:</code> is one that is not. An
+in-memory database belongs to the connection that opened it, so a
+second connection to <code>:memory:</code> is a second, empty database rather than
+another handle on the same data.</p>
+<p>Foreign keys are enforced. SQLite leaves them unenforced by default,
+per connection, for compatibility with databases written before it had
+them; a database that declares them almost certainly means them, so the
+adapter turns them on. Pass <code>foreign_keys: false</code> to turn them back
+off.</p>
+<h3 id="functions-written-in-zuri"><a class="header" href="#functions-written-in-zuri">Functions written in Zuri</a></h3>
+<p>A function registered on a connection runs inside the engine, once per
+row, and can be used anywhere an expression can:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+db.native().create_function('initials', 1, @(name) {
+  return ''.join(name.split(' ').map(@(part) =&gt; part[0, 1]))
+})
+
+echo db.fetch_column('select initials(name) from authors order by name')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[AL, GH]
+</code></pre>
+<p>An aggregate is written as a fold: <code>step</code> is called once per row with
+the accumulator and the row’s arguments and returns the next
+accumulator, and <code>finish</code> turns the last accumulator into the group’s
+value.</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+db.native().create_aggregate('longest', 1, @(longest, title) {
+  if longest == nil or title.length() &gt; longest.length() {
+    return title
+  }
+
+  return longest
+}, @(longest) =&gt; longest)
+
+echo db.fetch_value('select longest(title) from posts')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">On Compilers
+</code></pre>
+<p>A collation is an ordering for text, reached with <code>collate</code>:</p>
+<pre><code class="language-zuri">import sql
+
+var db = sql.open('sqlite://guide.db')
+
+db.native().create_collation('bylength', @(a, b) =&gt; a.length() - b.length())
+
+echo db.fetch_column('select title from posts order by title collate bylength')
+
+db.close()
+</code></pre>
+<pre><code class="language-console">[On Bugs, On Looms, On Engines, On Compilers]
+</code></pre>
+<blockquote>
+<p>A function must not touch the connection it was registered on.
+SQLite is in the middle of a statement when it calls, and reentering
+would deadlock. An error raised inside one is carried out and
+re-raised with its own class intact once the statement has finished.</p>
+</blockquote>
+<h3 id="blobs-backups-and-hooks"><a class="header" href="#blobs-backups-and-hooks">Blobs, backups and hooks</a></h3>
+<p>A large value read with a <code>select</code> arrives all at once. A blob handle
+opens one cell and reads windows of it:</p>
+<pre><code class="language-zuri ignore">var blob = db.native().blob('main', 'files', 'content', id, false)
+
+var at = 0
+while at &lt; blob.length() {
+  out.write(blob.read(at, 65536.min(blob.length() - at)))
+  at += 65536
+}
+
+blob.close()
+</code></pre>
+<p>The cell has to exist and already be the right size: SQLite cannot grow
+a blob this way, which is what inserting <code>zeroblob(n)</code> is for.</p>
+<p>Copying the file with the filesystem is only safe when nothing is
+writing. SQLite’s own backup copies page by page and notices when the
+source changes underneath:</p>
+<pre><code class="language-zuri ignore">db.native().backup_to('./snapshot.db')
+</code></pre>
+<p>And the hooks report what the engine is doing:</p>
+<pre><code class="language-zuri ignore">db.native().on_change(@(operation, database, table, rowid) { ... })
+db.native().on_commit(@() =&gt; true)
+db.native().on_rollback(@() { ... })
+db.native().set_authorizer(@(action, first, second, database, trigger) { ... })
+db.native().on_progress(1000, @() =&gt; keep_going())
+</code></pre>
+<h2 id="postgresql-specifics"><a class="header" href="#postgresql-specifics">PostgreSQL Specifics</a></h2>
+<p>The adapter speaks version 3 of the wire protocol, over TCP or over a
+unix domain socket, optionally under TLS.</p>
+<p>A <code>host</code> beginning with a slash is a socket directory, which is how
+libpq spells it, and the socket inside is named after the port:
+<code>/var/run/postgresql</code> with port 5432 means
+<code>/var/run/postgresql/.s.PGSQL.5432</code>. A path that already names the
+socket is taken as given. TLS is neither offered nor wanted over a
+socket, since nothing sits in between, so <code>sslmode</code> is ignored there.</p>
+<pre><code class="language-zuri ignore">sql.open('postgres:///app?host=/var/run/postgresql')
+sql.open({ driver: 'postgres', host: '/var/run/postgresql', database: 'app' })
+</code></pre>
+<p><code>sslmode</code> chooses how TLS is used: <code>disable</code> never, <code>prefer</code> when the
+server offers it, and <code>require</code> always, failing when the server
+refuses. Only <code>require</code> verifies who is on the other end.</p>
+<p>Statements go through the extended protocol, which compiles them on the
+server and binds values rather than substituting them. Values travel in
+the server’s own binary form wherever the adapter has a codec for the
+type, and as text otherwise, so a type it has never heard of still
+arrives readable rather than as bytes.</p>
+<p><code>numeric</code> columns arrive as <code>sql.Decimal</code>, arrays as lists, <code>jsonb</code> as
+dictionaries, and timestamps as <code>date.Date</code>.</p>
+<h3 id="listening-for-notifications"><a class="header" href="#listening-for-notifications">Listening for notifications</a></h3>
+<p><code>LISTEN</code> and <code>NOTIFY</code> are PostgreSQL’s own publish and subscribe. A
+connection that has run <code>LISTEN channel</code> receives a message whenever
+anything anywhere runs <code>NOTIFY channel</code>.</p>
+<pre><code class="language-zuri ignore">var listener = db.native().listener()
+
+listener.listen('jobs')
+
+while true {
+  for message in listener.wait(nil) {
+    handle(message.channel, message.payload)
+  }
+}
+</code></pre>
+<p>Notifications arrive between other messages, so a connection busy
+running statements collects them as it goes and <code>poll()</code> hands over
+whatever has accumulated.</p>
+<h3 id="teaching-it-a-type"><a class="header" href="#teaching-it-a-type">Teaching it a type</a></h3>
+<p>A database that defines its own types can teach the adapter about them:</p>
+<pre><code class="language-zuri ignore">import sql.postgres { DEFAULT_REGISTRY }
+
+DEFAULT_REGISTRY.register(oid, decoder, encoder)
+</code></pre>
+<p>Until it is taught, such a column arrives as text, which is correct if
+unexciting.</p>
+<h2 id="mysql-specifics"><a class="header" href="#mysql-specifics">MySQL Specifics</a></h2>
+<p>The adapter speaks the client/server protocol directly, over TCP or
+over a unix domain socket, optionally under TLS, with no client library
+underneath it. MariaDB speaks the same protocol and the same adapter
+drives it.</p>
+<p>A <code>socket</code> option names a socket, and so does a <code>host</code> beginning with a
+slash. Unlike PostgreSQL the path names the socket itself rather than
+the directory holding it:</p>
+<pre><code class="language-zuri ignore">sql.open({ driver: 'mysql', socket: '/var/run/mysqld/mysqld.sock', user: 'app' })
+sql.open('socket=/var/run/mysqld/mysqld.sock user=app database=shop')
+sql.open('mysql://app@localhost/shop?socket=/var/run/mysqld/mysqld.sock')
+</code></pre>
+<p>TLS is neither offered nor wanted there, since nothing sits in between.
+The connection does count as private, which is what lets
+<code>caching_sha2_password</code> and <code>sha256_password</code> send the password itself
+rather than encrypting it to the server’s public key.</p>
+<p>A statement with no values is sent as text, which is one round trip. A
+statement with values is prepared, so the values travel in the server’s
+binary encoding instead of being written into the SQL, and the question
+of quoting never arises. Compiled statements are kept and reused, so a
+query run in a loop is compiled once.</p>
+<pre><code class="language-zuri">import sql
+
+var mysql = sql.driver('mysql')
+
+echo mysql.capabilities().placeholder_style
+echo mysql.capabilities().last_insert_id
+echo mysql.capabilities().returning
+echo mysql.quote_identifier('order by')
+echo sql.driver('mariadb').capabilities().returning
+</code></pre>
+<pre><code class="language-console">question
+true
+false
+`order by`
+true
+</code></pre>
+<p>MySQL keeps <code>?</code> as it is written, and reports the id of an inserted row
+rather than returning it, so <code>insert()</code> reads the reported id instead of
+adding a <code>RETURNING</code> clause. MariaDB differs in two ways that change
+what the layer above generates, which is why <code>mariadb://</code> is a scheme
+of its own: it has <code>RETURNING</code>, and it has no JSON type.</p>
+<h3 id="what-arrives-from-where"><a class="header" href="#what-arrives-from-where">What arrives from where</a></h3>
+<p><code>DECIMAL</code> columns arrive as <code>sql.Decimal</code>, <code>JSON</code> as lists and
+dictionaries, <code>DATE</code> and <code>DATETIME</code> and <code>TIMESTAMP</code> as <code>date.Date</code>, and
+<code>TIME</code> as <code>sql.Time</code>.</p>
+<p>MySQL has no boolean. <code>BOOLEAN</code> is another name for <code>TINYINT(1)</code>, so a
+value written as <code>true</code> comes back as <code>1</code>, and <code>db.supports('booleans')</code>
+is false to say so.</p>
+<p><code>BLOB</code> and <code>TEXT</code> share a type on the wire and are told apart only by
+the column’s collation, which the adapter reads: a binary column
+arrives as <code>bytes</code> and a text one as a string. <code>BIT</code> and <code>GEOMETRY</code>
+arrive as <code>bytes</code>, having no shape Zuri could represent without
+inventing one. <code>SET</code> arrives as the comma separated text the server
+stores rather than as a list, because a list written back would be
+encoded as JSON and the column would quietly stop matching.</p>
+<p>A date MySQL considers absent is written as zeros, and <code>0000-00-00</code> is
+not a date any calendar has. It arrives as <code>nil</code>.</p>
+<h3 id="a-time-is-a-span-not-a-clock"><a class="header" href="#a-time-is-a-span-not-a-clock">A TIME is a span, not a clock</a></h3>
+<p>A <code>TIME</code> column runs from <code>-838:59:59.999999</code> to <code>838:59:59.999999</code>. It
+is a duration rather than a point in the day, so it can be negative and
+can exceed twenty four hours, and neither of those would survive being
+read into a <code>date.Date</code>. <code>sql.Time</code> holds it:</p>
+<pre><code class="language-zuri">import sql
+
+var shift = sql.time(9, 30, 0)
+var late = sql.time(0, 0, 30, 0, true)
+
+echo shift.to_string()
+echo shift.total_seconds()
+echo late.to_string()
+echo late.total_seconds()
+
+# Two spans of the same length are equal however each was built.
+echo sql.time(1, 30).equals(sql.time(0, 90))
+
+# And the parts are kept as they were written.
+echo sql.time(0, 90).minutes
+
+echo sql.parse_time('-838:59:59.999999').to_string()
+echo sql.time_from_seconds(-5400).to_string()
+</code></pre>
+<pre><code class="language-console">09:30:00
+34200
+-00:00:30
+-30
+true
+90
+-838:59:59.999999
+-01:30:00
+</code></pre>
+<h3 id="time-zones"><a class="header" href="#time-zones">Time zones</a></h3>
+<p>A <code>DATETIME</code> carries no zone, and a <code>TIMESTAMP</code> is converted to and
+from whatever zone the session is in. So the session’s zone decides
+what a timestamp means, and leaving it to the server’s configuration
+would make the same database read differently from two machines.</p>
+<p>The adapter sets the session to UTC when it connects. Every timestamp
+then arrives as UTC, and a <code>date.Date</code> written back is converted from
+whatever offset it carries. To leave the server’s own setting alone,
+pass <code>time_zone</code> as <code>nil</code>, or name a zone to use instead:</p>
+<pre><code class="language-zuri ignore">sql.open('mysql://localhost/app', { time_zone: nil })
+sql.open('mysql://localhost/app', { time_zone: '+01:00' })
+</code></pre>
+<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
+<p><code>caching_sha2_password</code>, which is the default from MySQL 8.0 onwards,
+<code>mysql_native_password</code>, <code>sha256_password</code>, <code>mysql_clear_password</code>, and
+MariaDB’s <code>client_ed25519</code>.</p>
+<p>Two of those need the password itself rather than a proof of it, the
+first time an account authenticates. Over TLS the password is sent as
+it is. Over a plain connection it is encrypted to a public key the
+server hands over first, so it is never readable in transit.
+<code>mysql_clear_password</code> has no such fallback and is refused outright on
+a connection that is not private, since it sends the password with
+nothing protecting it.</p>
+<h3 id="tls"><a class="header" href="#tls">TLS</a></h3>
+<p><code>sslmode</code> chooses how TLS is used:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Mode</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>disable</code></td><td>Never.</td></tr>
+<tr><td><code>prefer</code></td><td>When the server offers it, without checking who the server is. The default.</td></tr>
+<tr><td><code>require</code></td><td>Always, without checking who the server is.</td></tr>
+<tr><td><code>verify</code></td><td>Always, checking the server’s certificate and host name.</td></tr>
+</tbody>
+</table>
+</div>
+<p>MySQL’s own spellings are accepted too. <code>DISABLED</code>, <code>PREFERRED</code> and
+<code>REQUIRED</code> mean what they say, and both <code>VERIFY_CA</code> and
+<code>VERIFY_IDENTITY</code> become <code>verify</code>. That makes <code>VERIFY_CA</code> stricter here
+than on the command line, where it checks the certificate but not the
+name: the difference can only cause a connection to be refused, never
+one to be wrongly trusted.</p>
+<p><code>ssl_ca</code> names a certificate authority to trust, and <code>ssl_cert</code> with
+<code>ssl_key</code> present a client certificate.</p>
+<h3 id="compression"><a class="header" href="#compression">Compression</a></h3>
+<p>The protocol can compress everything after the handshake:</p>
+<pre><code class="language-zuri ignore">sql.open('mysql://localhost/app', { compression: 'zlib' })
+sql.open('mysql://localhost/app', { compression: 'zstd' })
+</code></pre>
+<p>It is worth it for large results over a slow link and costs more than
+it saves on a local socket, so it is off unless asked for. A packet too
+small to benefit is sent uncompressed regardless, which the protocol
+allows for.</p>
+<h3 id="sending-a-file"><a class="header" href="#sending-a-file">Sending a file</a></h3>
+<p><code>LOAD DATA LOCAL INFILE</code> has the server name a file and the client send
+it. The file is read from the machine the program runs on, chosen by
+the server, so a hostile or compromised server could ask for anything
+the process can read. It is refused unless a reader is supplied:</p>
+<pre><code class="language-zuri ignore">import os
+
+var db = sql.open('mysql://localhost/app', {
+  local_infile: @(name) {
+    return os.file(name).read()
+  },
+})
+</code></pre>
+<p>The reader decides what may be sent, which is where that decision
+belongs. Refusing still answers the server, so the connection stays
+usable afterwards rather than waiting for a file that will never come.</p>
+<h3 id="statements-that-answer-more-than-once"><a class="header" href="#statements-that-answer-more-than-once">Statements that answer more than once</a></h3>
+<p>A stored procedure sends one result set per <code>select</code> inside it, then an
+OK packet. <code>query()</code> hands back the first and reads the rest, because
+leaving them unread would not lose them: it would give them to the next
+statement, which would then answer with this one’s rows.</p>
+<pre><code class="language-zuri ignore">var first = db.query('call two_results()')
+</code></pre>
+<p>A routine’s body has semicolons in it, and <code>exec_script()</code> splits a
+script on semicolons. So a <code>create procedure</code> goes through <code>exec()</code> as
+a single statement rather than through <code>exec_script()</code>.</p>
+<h3 id="reaching-the-adapter"><a class="header" href="#reaching-the-adapter">Reaching the adapter</a></h3>
+<pre><code class="language-zuri ignore">db.native().flavor()          # 'mysql' or 'mariadb'
+db.native().connection_id()   # what KILL names
+db.native().parameters()      # what the server said about itself
+db.native().reset()           # back to a fresh session
+</code></pre>
+<h2 id="writing-your-own-adapter"><a class="header" href="#writing-your-own-adapter">Writing Your Own Adapter</a></h2>
+<p>An adapter for another engine implements four things: a <code>Driver</code> that
+reads a connection string and opens a connection, a <code>DriverConnection</code>
+that runs statements, a <code>DriverStatement</code>, and a <code>DriverCursor</code>.</p>
+<pre><code class="language-zuri ignore">import sql
+
+class DuckDbDriver &lt; sql.Driver {
+  name() { return 'duckdb' }
+  schemes() { return ['duckdb'] }
+
+  capabilities() {
+    var caps = sql.default_capabilities()
+    caps.set('placeholder_style', sql.QUESTION)
+    caps.set('returning', true)
+
+    return caps
+  }
+
+  parse_dsn(dsn) { ... }
+  connect(options) { ... }
+}
+
+sql.register(DuckDbDriver())
+
+var db = sql.open('duckdb://./app.duckdb')
+</code></pre>
+<p>Everything above the adapter comes for free: pooling, transactions and
+savepoints, the CRUD helpers, placeholder translation, cursors, and the
+error hierarchy. What the adapter supplies is the engine.</p>
+<p>The base classes raise <code>NotImplementedError</code> for anything left out, so
+an unfinished adapter fails where the gap is. An engine that genuinely
+cannot do something raises <code>NotSupportedError</code> instead, which reads
+differently on purpose: the first is an unfinished adapter, the second
+is an honest limit.</p>
+<h2 id="what-the-module-refuses"><a class="header" href="#what-the-module-refuses">What the Module Refuses</a></h2>
+<p><strong>It is not an ORM.</strong> There is no model class, no lazy loading and no
+identity map. Rows are dictionaries.</p>
+<p><strong>It does not write your joins.</strong> The CRUD helpers cover a flat list of
+equality conditions. Anything past that is SQL.</p>
+<p><strong>It does not migrate schemas.</strong> <code>exec_script()</code> runs a schema file and
+<code>db.schema</code> reports what is there; deciding what to change and in what
+order is a separate problem.</p>
+<p><strong>It does not translate SQL.</strong> Placeholders are rewritten. Statements
+are not parsed, and a function only one engine has stays a function
+only one engine has.</p>
+<p><strong>It does not hide a difference by guessing.</strong> Where an engine cannot
+do what was asked, the answer is <code>NotSupportedError</code> naming the adapter
+and the feature, rather than an approximation nobody asked for.</p>
+<h2 id="module-reference"><a class="header" href="#module-reference">Module Reference</a></h2>
+<p>The standard library reference documents every class and method. The
+shape of the module:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>sql.open(dsn, options)</code></td><td>opens a connection</td></tr>
+<tr><td><code>sql.pool(dsn, options)</code></td><td>opens a pool of them</td></tr>
+<tr><td><code>sql.register(driver)</code></td><td>adds an adapter</td></tr>
+<tr><td><code>sql.drivers()</code></td><td>what is registered</td></tr>
+<tr><td><code>sql.raw(fragment)</code></td><td>marks SQL to be used as written</td></tr>
+<tr><td><code>sql.Decimal(text)</code></td><td>an exact decimal</td></tr>
+<tr><td><code>sql.time(h, m, s)</code></td><td>a signed span, as a <code>TIME</code> column holds one</td></tr>
+<tr><td><code>sql.parse_time(text)</code></td><td>the same, read from text</td></tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Connection</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>query</code>, <code>exec</code>, <code>exec_script</code></td><td>run a statement</td></tr>
+<tr><td><code>fetch_one</code>, <code>fetch_all</code>, <code>fetch_value</code>, <code>fetch_column</code></td><td>read a result</td></tr>
+<tr><td><code>stream</code>, <code>prepare</code></td><td>a cursor, and a compiled statement</td></tr>
+<tr><td><code>insert</code>, <code>insert_many</code>, <code>update</code>, <code>delete</code>, <code>find</code>, <code>find_one</code>, <code>count</code></td><td>the four statements that are always the same</td></tr>
+<tr><td><code>transaction</code>, <code>begin</code>, <code>in_transaction</code></td><td>transactions</td></tr>
+<tr><td><code>schema</code></td><td>introspection</td></tr>
+<tr><td><code>driver</code>, <code>driver_name</code>, <code>capabilities</code>, <code>supports</code></td><td>what this engine is</td></tr>
+<tr><td><code>native</code></td><td>the adapter underneath</td></tr>
+<tr><td><code>ping</code>, <code>close</code>, <code>is_closed</code></td><td>the connection itself</td></tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Transaction</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>query</code>, <code>exec</code></td><td>run a statement</td></tr>
+<tr><td><code>fetch_one</code>, <code>fetch_all</code>, <code>fetch_value</code></td><td>read a result</td></tr>
+<tr><td><code>insert</code>, <code>insert_many</code>, <code>update</code>, <code>delete</code>, <code>find</code>, <code>find_one</code>, <code>count</code></td><td>the same helpers a connection has</td></tr>
+<tr><td><code>commit</code>, <code>rollback</code>, <code>is_finished</code></td><td>ending it</td></tr>
+<tr><td><code>connection</code>, <code>nested</code></td><td>what it is running on, and whether it is a savepoint</td></tr>
+</tbody>
+</table>
+</div>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch16-00-imagine.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch18-00-mail.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch16-00-imagine.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch18-00-mail.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

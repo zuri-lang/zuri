@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zuri &mdash; one language, one binary, the entire development lifecycle</title>
+  <meta name="description"
+    content="Zuri is a dynamic language whose runtime, server, data layer and toolchain were designed together. One binary, a standard library covering the whole stack, and a JIT compiler built on Cranelift.">
+  <link rel="icon" href="zuri-butterfly.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html">
+        <img src="zuri-butterfly.svg" alt="" width="34" height="26">
+        <span>Zuri</span>
+      </a>
+
+      <nav class="topnav" aria-label="Documentation">
+        <a href="book/index.html">The Book</a>
+        <a href="reference/index.html">Reference</a>
+        <a href="#roadmap">Roadmap</a>
+        <a class="out" href="https://github.com/zuri-lang/zuri-rs">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <h1>One language, one binary, the entire development lifecycle.</h1>
+
+          <p class="lede">
+            Stop learning an entire constellation of third-party tools
+            just to build on the web.
+          </p>
+
+          <div class="actions">
+            <a class="btn primary" href="book/index.html">Read the book</a>
+            <a class="btn" href="reference/index.html">Standard library reference</a>
+          </div>
+
+          <p class="hero-note">
+            Dynamically typed, compiled to bytecode, and run by a
+            JIT built on Cranelift.
+          </p>
+        </div>
+
+        <div class="hero-mark" aria-hidden="true">
+          <img src="zuri-butterfly.svg" alt="" width="372" height="281">
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="philosophy">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">01</span> Philosophy</p>
+
+        <div class="band-body">
+          <p class="statement">
+            Software creation has become buried beneath endless layers
+            of glue code, external configs and shifting package
+            ecosystems. Zuri brings the focus back to writing
+            software: one cohesive platform, one documentation site,
+            and zero framework fatigue.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="tax">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">02</span> The ecosystem tax</p>
+
+        <div class="band-body cols">
+          <div>
+            <p>
+              When you pick up a modern language, you do not just
+              learn that language.
+            </p>
+
+            <p>
+              To serve a single web page or persist a record, you must
+              research, evaluate and configure dozens of disconnected
+              third-party libraries. You learn a package manager. You
+              choose an HTTP framework, select an ORM, find a
+              validation library, wire up a template engine, pick a
+              test runner.
+            </p>
+
+            <p>
+              Every piece comes from a different author, follows
+              conflicting conventions, and keeps its own documentation
+              in its own shape.
+            </p>
+          </div>
+
+          <div>
+            <p class="pull">
+              You spend twenty percent of your time learning core
+              concepts and eighty percent wrestling with arbitrary
+              tool churn.
+            </p>
+
+            <p>
+              <strong>Zuri removes that tax.</strong> The runtime, the
+              server, the data layer and the utility toolchain were
+              designed together and speak the same conceptual
+              dialect. When you learn Zuri, you already know the
+              stack.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="dialect">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">03</span> Everything speaks the same dialect</p>
+
+        <div class="band-body">
+          <p class="wide-intro">
+            This is a whole application. Every import below is in the
+            box: nothing was installed, nothing was resolved, nothing
+            was configured.
+          </p>
+        </div>
+      </div>
+
+      <div class="slab">
+        <pre><code><span class="k">import</span> http
+<span class="k">import</span> validate
+<span class="k">import</span> log
+
+<span class="k">var</span> signups = validate.<span class="f">schema</span>({
+  name: validate.<span class="f">required</span>().<span class="f">string</span>().<span class="f">max_length</span>(<span class="n">60</span>),
+  email: validate.<span class="f">required</span>().<span class="f">string</span>().<span class="f">email</span>(),
+})
+
+<span class="k">var</span> server = http.<span class="f">server</span>(<span class="n">3000</span>)
+
+server.<span class="f">post</span>(<span class="s">'/signup'</span>, <span class="k">@</span>(request, response) {
+  <span class="k">var</span> body = request.<span class="f">json_body</span>() <span class="k">or</span> {}
+  <span class="k">var</span> checked = signups.<span class="f">check</span>(body)
+
+  <span class="k">if</span> !checked.valid {
+    <span class="k">return</span> response.<span class="f">json</span>({ errors: checked.errors }, <span class="n">422</span>)
+  }
+
+  log.<span class="f">info</span>(<span class="s">'signed up ${body.email}'</span>)
+  response.<span class="f">json</span>({ ok: <span class="k">true</span> }, <span class="n">201</span>)
+})
+
+server.<span class="f">listen</span>()</code></pre>
+      </div>
+
+      <div class="band-inner">
+        <div class="band-body cols">
+          <p>There is one binary and the library that ships beside it.</p>
+
+          <p>
+            Zuri has first-class language-level support for package
+            management and vendoring, so the code you bring in from
+            outside needs no third-party tooling either.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="library">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">04</span> Crafted by the same hands</p>
+
+        <div class="band-body">
+          <dl class="modules">
+            <div class="mod a">
+              <dt>The web</dt>
+              <dd><code>http</code> <span>server, client, HTTP/2, WebSocket</span> <code>wire</code>
+                <span>templates</span> <code>html</code> <code>url</code> <code>mime</code>
+              </dd>
+            </div>
+            <div class="mod b">
+              <dt>Networking</dt>
+              <dd><code>net</code> <span>TCP, UDP, TLS, DTLS, addresses, polling</span></dd>
+            </div>
+            <div class="mod c">
+              <dt>Data</dt>
+              <dd><code>json</code> <code>yaml</code> <code>csv</code> <code>struct</code> <code>base64</code>
+                <code>convert</code>
+              </dd>
+            </div>
+            <div class="mod d">
+              <dt>Correctness</dt>
+              <dd><code>validate</code> <code>types</code> <code>enum</code></dd>
+            </div>
+            <div class="mod a">
+              <dt>Security</dt>
+              <dd><code>crypto</code> <code>hash</code> <code>bcrypt</code> <code>jwt</code> <code>uuid</code></dd>
+            </div>
+            <div class="mod b">
+              <dt>The machine</dt>
+              <dd><code>os</code> <code>io</code> <code>args</code> <code>log</code> <code>date</code></dd>
+            </div>
+            <div class="mod c">
+              <dt>Concurrency</dt>
+              <dd><code>isolate</code> <span>real OS threads, separate heaps, message passing</span></dd>
+            </div>
+            <div class="mod d">
+              <dt>Numbers</dt>
+              <dd><code>math</code> <code>stat</code> <code>array</code> <code>set</code></dd>
+            </div>
+            <div class="mod a">
+              <dt>Archives</dt>
+              <dd><code>compress</code> <span>gzip, zlib, deflate, bzip2, brotli, zstd, lz4, tar, zip</span></dd>
+            </div>
+            <div class="mod b">
+              <dt>Images</dt>
+              <dd><code>imagine</code> <span>decode, draw, filter, encode</span></dd>
+            </div>
+            <div class="mod c">
+              <dt>Databases</dt>
+              <dd><code>sql</code> <span>SQLite, PostgreSQL, MySQL, pooling, transactions</span></dd>
+            </div>
+            <div class="mod d">
+              <dt>Interop</dt>
+              <dd><code>ffi</code> <span>C and Rust libraries, callbacks</span></dd>
+            </div>
+          </dl>
+
+          <p class="wide-intro">
+            Because every one of them was designed together, moving
+            between a database query, a hash and an HTTP response
+            costs you no mental friction. The naming is the same. The
+            error types are the same. The documentation is one book.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="design">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">05</span> Language design</p>
+
+        <div class="band-body cols">
+          <div>
+            <p>
+              Zuri takes the expressive, familiar syntax of modern
+              dynamic languages and adds deliberate structural
+              controls. It is dynamically typed, and it declines to be
+              vague.
+            </p>
+
+            <p>
+              Zuri features true access controls with sealed classes,
+              function parameter type guards, private methods and
+              modules, all enforced by the compiler. The point of each
+              is the same. The things that are hard to see when
+              reading code are the things the language refuses to let
+              you get wrong.
+            </p>
+          </div>
+
+          <div>
+            <p class="pull alt">
+              A fast Just-In-Time compiler driven underneath by
+              Cranelift, the same engine that drives
+              <code>wasmtime</code>, with cutting edge specialization
+              and optimized to production workloads.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="docs" id="docs">
+      <div class="docs-inner">
+        <p class="band-label light"><span class="num">06</span> Documentation</p>
+
+        <div class="shelf">
+          <a class="doc" href="book/index.html">
+            <span class="rule gold"></span>
+            <h2>The Zuri Programming Language</h2>
+            <p>
+              The main text covers everything from installing to
+              publishing, plus appendices covering the keywords, the
+              operators and every method on every built-in type.
+            </p>
+            <span class="go">Read the book</span>
+          </a>
+
+          <a class="doc" href="reference/index.html">
+            <span class="rule teal"></span>
+            <h2>The Zuri Standard Library</h2>
+            <p>
+              The reference: every module, every public name,
+              generated from the library's own doc blocks so a page
+              and the code it describes can never disagree.
+            </p>
+            <span class="go">Look something up</span>
+          </a>
+        </div>
+
+        <p class="docs-note">
+          Or render either locally, if you have <code>cargo</code>
+          installed:
+          <code class="cmd">cargo run-docs</code> for the book,
+          <code class="cmd">cargo run-docs -- reference</code> for the
+          standard library.
+        </p>
+      </div>
+    </section>
+
+    <section class="band" id="roadmap">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">07</span> Roadmap</p>
+
+        <div class="band-body cols">
+          <div>
+            <h3 class="sub">Already here</h3>
+            <ul class="ticks done">
+              <li>The language, complete and self-hosting enough to parse, compile and reflect on itself</li>
+              <li>A Just-In-Time compiler</li>
+              <li>A standard library covering the whole stack</li>
+              <li>Databases: SQLite, PostgreSQL and MySQL behind one interface</li>
+              <li>Package management built into the runtime, with a lockfile and one version of every package</li>
+              <li>Nyssa, a self-hosted repository server in every installation</li>
+              <li>Bundles that run a program where Zuri is not installed</li>
+              <li>A test runner</li>
+              <li>C and Rust compatible FFI interop</li>
+              <li>Two books, one of them generated from the library itself</li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="sub">On the way, in the order it matters</h3>
+            <ul class="ticks">
+              <li><strong>An ORM</strong>, so that persisting a model never means reaching outside the
+                language.</li>
+              <li><strong>HTTP/3.</strong> The <code>http</code> module speaks HTTP/1.1 and HTTP/2 today.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="editors">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">08</span> Editor support</p>
+
+        <div class="band-body">
+          <p class="wide-intro">
+            Syntax highlighting, from the same hands as everything
+            else.
+          </p>
+
+          <div class="links">
+            <a class="link-card" href="https://open-vsx.org/extension/zuri-lang/zuri-vscode">
+              <strong>Open VSX</strong>
+              <span>The current build, and the one to install. VS Codium, Cursor, Windsurf, Gitpod and Eclipse Theia all
+                pull from here.</span>
+            </a>
+
+            <a class="link-card" href="https://marketplace.visualstudio.com/items?itemName=zuri-lang.zuri-vscode">
+              <strong>VS Code Marketplace</strong>
+              <span>The same extension for VS Code itself. It trails the Open VSX build.</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band last" id="ai">
+      <div class="band-inner">
+        <p class="band-label"><span class="num">09</span> AI involvement</p>
+
+        <div class="band-body">
+          <p class="wide-intro">
+            AI wrote code in this repository, and how much, where, and
+            how well it went are documented rather than glossed over.
+            <a href="https://github.com/zuri-lang/zuri-rs/blob/main/AI.md">AI.md</a>
+            is that account, and it ends in a rule that contributors
+            are held to.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <a class="wordmark" href="index.html">
+        <img src="zuri-butterfly.svg" alt="" width="30" height="23">
+        <span>Zuri</span>
+      </a>
+
+      <nav class="footnav" aria-label="Site">
+        <a href="book/index.html">The Book</a>
+        <a href="reference/index.html">Standard Library</a>
+        <a href="https://github.com/zuri-lang/zuri-rs">Source</a>
+        <a href="https://github.com/zuri-lang/zuri-rs/blob/main/AI.md">AI.md</a>
+        <a href="https://github.com/zuri-lang/zuri-rs/blob/main/LICENSE">BSD 2-Clause</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+
+</html>

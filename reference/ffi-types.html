@@ -1,0 +1,600 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>ffi.types - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="ffitypes"><a class="header" href="#ffitypes"><code>ffi.types</code></a></h1>
+<pre><code class="language-zuri ignore">import ffi.types
+</code></pre>
+<blockquote>
+<p><code>ffi</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>ffi.types.*</code> needs <code>import ffi.types</code>.</p>
+</blockquote>
+<p>C types as values.</p>
+<p>Every type the module works with is a <code>Type</code>: the built-in ones the
+module exports (<code>ffi.int</code>, <code>ffi.double</code>, <code>ffi.size_t</code>), the ones built
+from them (<code>ffi.pointer(ffi.char)</code>, <code>ffi.array(ffi.int, 4)</code>), records
+built member by member, and every type a declaration names. A type knows
+its size and alignment on this platform, and it is what every conversion
+between a Zuri value and C memory is driven by.</p>
+<p>Records are built with chained calls and are laid out the first time
+anything needs their size, after which they can no longer change:</p>
+<pre><code class="language-zuri ignore">var Point = ffi.struct('Point')
+  .add_field('x', ffi.double)
+  .add_field('y', ffi.double)
+
+echo Point.size()
+</code></pre>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="type"><a class="header" href="#type"><code>Type</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.Type
+</code></pre>
+<p>A C type.</p>
+<p>Types are never constructed directly. They come from the module’s
+constants and builders, and from declarations.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">ffi.Type()
+</code></pre>
+<h4 id="typename"><a class="header" href="#typename"><code>Type.name()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.name() -&gt; string
+</code></pre>
+<p>The type as C spells it: <code>int</code>, <code>const char *</code>, <code>struct point</code>, or the
+name a typedef or a Rust declaration gave it.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="typekind"><a class="header" href="#typekind"><code>Type.kind()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.kind() -&gt; string
+</code></pre>
+<p>What sort of type this is.</p>
+<p>One of <code>'void'</code>, <code>'bool'</code>, <code>'int'</code> (every integer and character type),
+<code>'float'</code> (<code>float</code>, <code>double</code> and <code>long double</code>), <code>'complex'</code>, <code>'char'</code>
+(a Rust <code>char</code>), <code>'pointer'</code>, <code>'string'</code> (a pointer that converts to and
+from a string), <code>'function pointer'</code>, <code>'array'</code>, <code>'struct'</code>, <code>'union'</code>,
+<code>'enum'</code> (C enums and Rust enums alike) and <code>'function'</code>.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="typesize"><a class="header" href="#typesize"><code>Type.size()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.size() -&gt; number
+</code></pre>
+<p>Size in bytes on this platform, as C’s <code>sizeof</code> gives it.</p>
+<p>Asking for a record’s size lays the record out, after which no member
+can be added to it.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>FfiError</code> when the type has no size: <code>void</code>, a function, an
+array without a length, or a record that was declared and never defined.</p>
+<h4 id="typealign"><a class="header" href="#typealign"><code>Type.align()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.align() -&gt; number
+</code></pre>
+<p>Alignment in bytes on this platform, as C’s <code>_Alignof</code> gives it.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>FfiError</code> when the type has no alignment, for the same types
+that have no size.</p>
+<h4 id="typeis_const"><a class="header" href="#typeis_const"><code>Type.is_const()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.is_const() -&gt; bool
+</code></pre>
+<p>Whether the type is <code>const</code>-qualified.</p>
+<p>A pointer to a <code>const</code> type is never written through, so a list or
+dictionary passed for one is not updated after the call.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="typetarget"><a class="header" href="#typetarget"><code>Type.target()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.target()
+</code></pre>
+<p>The type this one is made from: what a pointer points at, what an array
+holds, or the integer type an enum is stored as. <code>nil</code> for every other
+type.</p>
+<p><strong>Returns</strong> — Type|nil</p>
+<h4 id="typelength"><a class="header" href="#typelength"><code>Type.length()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.length() -&gt; number|nil
+</code></pre>
+<p>An array type’s number of elements, or <code>nil</code> for any other type and for
+an array declared without a length.</p>
+<p><strong>Returns</strong> <code>number|nil</code></p>
+<h4 id="typesignature"><a class="header" href="#typesignature"><code>Type.signature()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.signature() -&gt; dict|nil
+</code></pre>
+<p>The signature of a function type or a function pointer type, as <code>{ returns, params, variadic, abi }</code>,
+or <code>nil</code> for any other type.</p>
+<p><code>returns</code> is a <code>Type</code>, <code>params</code> a list of them, <code>variadic</code> whether
+arguments may follow the fixed ones, and <code>abi</code> the calling convention’s
+name: <code>'default'</code>, <code>'win64'</code> or <code>'sysv64'</code>.</p>
+<p><strong>Returns</strong> <code>dict|nil</code></p>
+<h4 id="typepointer"><a class="header" href="#typepointer"><code>Type.pointer()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.pointer()
+</code></pre>
+<p>A pointer to this type; the same as <code>ffi.pointer(type)</code>.</p>
+<p><strong>Returns</strong> — Type</p>
+<h4 id="typearray"><a class="header" href="#typearray"><code>Type.array()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.array(length)
+</code></pre>
+<p>An array of <code>length</code> values of this type; the same as <code>ffi.array(type, length)</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number|nil</code>) — Leave out for an array of unknown length, as
+a flexible array member is declared.</li>
+</ul>
+<p><strong>Returns</strong> — Type</p>
+<h4 id="typeas_const"><a class="header" href="#typeas_const"><code>Type.as_const()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.as_const()
+</code></pre>
+<p>This type with <code>const</code> added.</p>
+<p><strong>Returns</strong> — Type</p>
+<h4 id="typeof"><a class="header" href="#typeof"><code>Type.of()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.of(value)
+</code></pre>
+<p><code>value</code> marked as this type, for passing to a variadic function.</p>
+<p>A variadic function’s extra arguments have no declared types, so each
+one otherwise travels as the type its value suggests (see
+<code>Library.function()</code>). This fixes it instead:</p>
+<pre><code class="language-zuri ignore">c.printf('%f %ld\n', ffi.double.of(1), ffi.long.of(7))
+</code></pre>
+<p>C’s default promotions still apply on top: a <code>float</code> travels as a
+<code>double</code>, and an integer narrower than <code>int</code> as an <code>int</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Typed</p>
+<h4 id="typeequals"><a class="header" href="#typeequals"><code>Type.equals()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.equals(other) -&gt; bool
+</code></pre>
+<p>Whether <code>other</code> is the same type.</p>
+<p>Scalars, pointers and arrays compare by shape, so <code>ffi.int32</code> equals
+<code>ffi.int</code>, and a typedef equals what it names. Records and enums compare
+by identity: two structs built separately are different types even with
+the same members, as they are in C.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>other</code> (<code>any</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="typeto_string"><a class="header" href="#typeto_string"><code>Type.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Type.to_string()
+</code></pre>
+<h3 id="recordtype"><a class="header" href="#recordtype"><code>RecordType</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.RecordType &lt; Type
+</code></pre>
+<p>A struct or a union, built member by member.</p>
+<p>Members go in declaration order, each at the offset the platform’s C
+compiler would give it: GCC and Clang’s rules on Linux and macOS, MSVC’s
+on Windows. The two differ only for bitfields. The record is laid out
+the first time anything needs its size, including passing a value of it,
+and from then on it cannot change.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="recordtypeadd_field"><a class="header" href="#recordtypeadd_field"><code>RecordType.add_field()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.add_field(name: string, type, align)
+</code></pre>
+<p>Adds a member, returning the record for chaining.</p>
+<pre><code class="language-zuri ignore">var Header = ffi.struct('Header')
+  .add_field('magic', ffi.uint32)
+  .add_field('payload', ffi.uint8.array(16))
+  .add_field('checksum', ffi.uint64, 16)
+</code></pre>
+<p>An array type without a length is a flexible array member and must come
+last. A struct or union added with an empty name is an anonymous member,
+whose own members are reached as this record’s.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>Type</code> — type</li>
+<li><code>align</code> (<code>number|nil</code>) — A minimum alignment in bytes, as <code>_Alignas</code>
+gives a member. A power of two. Defaults to the type’s own.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>FfiError</code> when the record has already been laid out, the
+name is taken, or a member follows a flexible array member.</p>
+<h4 id="recordtypeadd_bitfield"><a class="header" href="#recordtypeadd_bitfield"><code>RecordType.add_bitfield()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.add_bitfield(name: string, type, bits: number)
+</code></pre>
+<p>Adds a bitfield, returning the record for chaining.</p>
+<pre><code class="language-zuri ignore">var Flags = ffi.struct('Flags')
+  .add_bitfield('ready', ffi.uint, 1)
+  .add_bitfield('mode', ffi.uint, 3)
+  .add_bitfield('', ffi.uint, 0)
+  .add_bitfield('count', ffi.uint, 12)
+</code></pre>
+<p>An empty name is an unnamed bitfield, which only takes up space; one of
+width zero ends the current storage unit, as in C.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>Type</code> — type An integer, <code>bool</code> or enum type.</li>
+<li><code>bits</code> (<code>number</code>) — The width, at most the type’s own.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>FfiError</code> when the type is not an integer type or the width
+does not fit it.</p>
+<h4 id="recordtypeset_packed"><a class="header" href="#recordtypeset_packed"><code>RecordType.set_packed()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.set_packed(bytes)
+</code></pre>
+<p>Packs the members to at most <code>bytes</code> alignment, as <code>#pragma pack(n)</code>
+does, or tightly when <code>bytes</code> is left out, as <code>__attribute__((packed))</code>
+does.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>bytes</code> (<code>number|nil</code>) — 1, 2, 4, 8 or 16. Defaults to 1.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="recordtypeset_align"><a class="header" href="#recordtypeset_align"><code>RecordType.set_align()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.set_align(bytes: number)
+</code></pre>
+<p>Raises the record’s own alignment to at least <code>bytes</code>, as
+<code>__attribute__((aligned(n)))</code> on the record does. Its size grows to a
+multiple of the new alignment.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>bytes</code> (<code>number</code>) — A power of two.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<h4 id="recordtypefields"><a class="header" href="#recordtypefields"><code>RecordType.fields()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.fields() -&gt; list
+</code></pre>
+<p>Every member in declaration order, with the members of anonymous members
+listed in their place.</p>
+<p>Each is <code>{ name, type, offset, bits, bit_offset }</code>. <code>offset</code> is in bytes
+from the start of the record. For a bitfield, <code>bits</code> is its width and
+<code>bit_offset</code> the position of its first bit from the start of the record;
+both are <code>nil</code> for every other member.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="recordtypeoffset_of"><a class="header" href="#recordtypeoffset_of"><code>RecordType.offset_of()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.offset_of(name: string) -&gt; number
+</code></pre>
+<p>A member’s offset in bytes, as C’s <code>offsetof</code> gives it. For a bitfield,
+the byte its first bit is in.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>ValueError</code> when there is no such member.</p>
+<h4 id="recordtypehas_field"><a class="header" href="#recordtypehas_field"><code>RecordType.has_field()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.has_field(name: string) -&gt; bool
+</code></pre>
+<p>Whether the record has a member called <code>name</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="recordtypevariants"><a class="header" href="#recordtypevariants"><code>RecordType.variants()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.RecordType.variants() -&gt; dict|nil
+</code></pre>
+<p>For a Rust enum with fields, each variant’s name and discriminant; <code>nil</code>
+for an ordinary record.</p>
+<p><strong>Returns</strong> <code>dict|nil</code></p>
+<h3 id="structtype"><a class="header" href="#structtype"><code>StructType</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.StructType &lt; RecordType
+</code></pre>
+<p>A C struct, or a Rust <code>#[repr(C)]</code> struct or enum with fields.</p>
+<p>A struct value passes into C as a dictionary of its members and comes
+back out as one. A member left out of the dictionary is zero. A Rust
+enum with fields is a dictionary too, with a <code>variant</code> key naming the
+variant, and a variant without fields may be passed as just its name.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h3 id="uniontype"><a class="header" href="#uniontype"><code>UnionType</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.UnionType &lt; RecordType
+</code></pre>
+<p>A C union.</p>
+<p>A union value passes into C as a dictionary holding exactly one of its
+members, the one to store. Read back, it is a dictionary of every
+member, each read from the same bytes, since which one is meaningful is
+something only the program knows.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h3 id="enumtype"><a class="header" href="#enumtype"><code>EnumType</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.EnumType &lt; Type
+</code></pre>
+<p>A C enum, or a Rust enum without fields.</p>
+<p>A value of an enum type is a number, and anywhere one is passed in, the
+name of a constant can be passed instead:</p>
+<pre><code class="language-zuri ignore">var Color = ffi.enum('Color').add_constant('RED', 0).add_constant('GREEN', 1)
+set_color('GREEN')
+</code></pre>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="enumtypeadd_constant"><a class="header" href="#enumtypeadd_constant"><code>EnumType.add_constant()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.EnumType.add_constant(name: string, value)
+</code></pre>
+<p>Adds a named constant, returning the enum for chaining.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>number</code>) — An integer that fits the enum’s storage type.</li>
+</ul>
+<p><strong>Returns</strong> — self</p>
+<p><strong>Raises</strong> <code>ValueError</code> when the enum already has a constant of that
+name.</p>
+<p><strong>Raises</strong> <code>RangeError</code> when the value does not fit.</p>
+<h4 id="enumtypeconstants"><a class="header" href="#enumtypeconstants"><code>EnumType.constants()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.EnumType.constants() -&gt; dict
+</code></pre>
+<p>Every constant, by name, in the order they were declared.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="enumtypevalue"><a class="header" href="#enumtypevalue"><code>EnumType.value()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.EnumType.value(name: string) -&gt; number
+</code></pre>
+<p>The value of the constant called <code>name</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<p><strong>Raises</strong> <code>ValueError</code> when there is no such constant.</p>
+<h3 id="typed"><a class="header" href="#typed"><code>Typed</code></a></h3>
+<pre><code class="language-zuri ignore">class ffi.Typed
+</code></pre>
+<p>A value marked with the C type it should travel as. Made by <code>Type.of()</code>,
+and only meaningful as an argument to a variadic function.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">ffi.Typed(type, value)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Type</code> — type</li>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<h4 id="typedtype"><a class="header" href="#typedtype"><code>Typed.type()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Typed.type()
+</code></pre>
+<p>The type the value travels as.</p>
+<p><strong>Returns</strong> — Type</p>
+<h4 id="typedvalue"><a class="header" href="#typedvalue"><code>Typed.value()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Typed.value() -&gt; any
+</code></pre>
+<p>The value itself.</p>
+<p><strong>Returns</strong> <code>any</code></p>
+<h4 id="typedto_string"><a class="header" href="#typedto_string"><code>Typed.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">ffi.Typed.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ffi-pointer.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="types.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ffi-pointer.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="types.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,864 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>test - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="test"><a class="header" href="#test"><code>test</code></a></h1>
+<pre><code class="language-zuri ignore">import test
+</code></pre>
+<p>A testing framework: suites, assertions, mocks, snapshots, lifecycle
+hooks, and reports worth reading.</p>
+<pre><code class="language-zuri ignore">import test { * }
+
+describe('Calculator', @{
+
+  it('adds', @{
+    expect(2 + 2).to_be(4)
+  })
+
+  it('divides', @{
+    expect(10 / 4).to_be_close_to(2.5)
+  })
+
+})
+</code></pre>
+<p>Run it like any other script:</p>
+<pre><code class="language-console">$ zuri run tests/calculator.zu
+
+Calculator
+  ✓ adds
+  ✓ divides
+
+  PASS
+
+  2 passed  •  2 total
+  suites 1   time 1ms
+</code></pre>
+<h2 id="importing"><a class="header" href="#importing">Importing</a></h2>
+<p><code>import test { * }</code> is the form to use in a test file. It brings
+<code>describe</code>, <code>it</code>, <code>expect</code>, <code>mock</code>, the hooks and <code>run</code> into scope,
+which is what makes a test read as a test rather than as a series of
+calls into a module.</p>
+<p><code>import test</code> is there for anything that is not a test file, and
+qualifies the same names: <code>test.conduct('tests')</code>, <code>test.run()</code>. The two
+can be combined when a test file wants both.</p>
+<h2 id="declaring"><a class="header" href="#declaring">Declaring</a></h2>
+<p><code>describe(name, body)</code> groups tests and may be nested as deeply as the
+subject calls for. <code>it(name, body)</code> declares one. Neither runs anything:
+they build a tree, and the tree is run once the file has finished
+declaring everything in it. That is what makes focusing, filtering and
+counting possible at all.</p>
+<p>The run happens on its own, through <code>os.at_exit()</code>. Call <code>run()</code>
+explicitly when you want to pass options or read the <code>Summary</code> back;
+doing so takes over, and nothing runs a second time.</p>
+<h3 id="focusing-and-skipping"><a class="header" href="#focusing-and-skipping">Focusing and skipping</a></h3>
+<pre><code class="language-zuri ignore">describe_only('the one I am working on', @{ ... })
+describe_skip('not now', @{ ... })
+
+it_only('just this', @{ ... })
+it_skip('known broken', @{ ... })
+it_todo('handle an empty payload')
+</code></pre>
+<p>As soon as anything is marked <code>only</code>, everything not marked <code>only</code> and
+not inside something marked <code>only</code> is skipped. <code>skip</code> always wins over
+<code>only</code>.</p>
+<p><code>it('name')</code> with no body is a todo as well: it is reported as one and
+counts towards nothing.</p>
+<h3 id="table-driven-tests"><a class="header" href="#table-driven-tests">Table-driven tests</a></h3>
+<pre><code class="language-zuri ignore">it_each([
+  [1, 1, 2],
+  [2, 3, 5],
+  [10, -4, 6],
+], 'adds $0 and $1 to make $2', @(left, right, total) {
+  expect(left + right).to_be(total)
+})
+</code></pre>
+<p>Each row becomes one test. <code>$0</code>, <code>$1</code> and so on in the name are replaced
+with that row’s values, and <code>$#</code> with the row number. <code>describe_each()</code>
+does the same for whole suites.</p>
+<h3 id="per-test-options"><a class="header" href="#per-test-options">Per-test options</a></h3>
+<pre><code class="language-zuri ignore">it('reaches the network', @{ ... }, { retries: 2, tags: ['slow'] })
+it('reproduces issue 412', @{ ... }, { failing: true })
+it('stays fast', @{ ... }, { timeout: 50 })
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>retries</code></td><td>run the body again on failure, up to this many times; passing after a retry is reported as flaky</td></tr>
+<tr><td><code>failing</code></td><td>the test passes when the body fails, and fails when it passes</td></tr>
+<tr><td><code>timeout</code></td><td>fail the test if it took longer than this many milliseconds</td></tr>
+<tr><td><code>tags</code></td><td>a list of labels to filter on</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="hooks"><a class="header" href="#hooks">Hooks</a></h2>
+<pre><code class="language-zuri ignore">describe('Database', @{
+  before_all(@{ db.connect() })
+  after_all(@{ db.close() })
+
+  before_each(@{ db.begin() })
+  after_each(@{ db.rollback() })
+
+  it('inserts a row', @{ ... })
+})
+</code></pre>
+<p><code>before_all</code> runs once, immediately before the first test in its suite
+that is actually going to run, and not at all for a suite everything was
+filtered out of. <code>after_all</code> runs after the last one, and runs even when
+<code>before_all</code> failed, so it must cope with a setup that got only part of
+the way. <code>before_each</code> runs outermost first and <code>after_each</code> innermost
+first, and <code>after_each</code> runs even when the test failed.</p>
+<h2 id="asserting"><a class="header" href="#asserting">Asserting</a></h2>
+<p><code>expect(value)</code> gives an object carrying every matcher, each of which
+negates through <code>.not</code> and returns itself so several read as one:</p>
+<pre><code class="language-zuri ignore">expect(port).to_be_int().to_be_between(1024, 65535)
+expect(items).not.to_be_empty()
+</code></pre>
+<p>The full list is in <a href="test-expect.html#expect"><code>test.expect</code></a>. In short:</p>
+<ul>
+<li><strong>equality</strong>: <code>to_be</code>, <code>to_equal</code>, <code>to_be_same_as</code>,
+<code>to_be_close_to</code>, <code>to_be_within</code>, <code>to_match_object</code></li>
+<li><strong>truthiness</strong>: <code>to_be_true</code>, <code>to_be_false</code>, <code>to_be_truthy</code>,
+<code>to_be_falsy</code>, <code>to_be_nil</code>, <code>to_be_defined</code></li>
+<li><strong>types</strong>: <code>to_be_a</code>, <code>to_be_string</code>, <code>to_be_number</code>, <code>to_be_int</code>,
+<code>to_be_float</code>, <code>to_be_bigint</code>, <code>to_be_bool</code>, <code>to_be_list</code>,
+<code>to_be_dict</code>, <code>to_be_bytes</code>, <code>to_be_function</code>, <code>to_be_callable</code>,
+<code>to_be_iterable</code>, <code>to_be_class</code>, <code>to_be_instance</code>,
+<code>to_be_instance_of</code></li>
+<li><strong>numbers</strong>: <code>to_be_greater_than</code>, <code>to_be_greater_than_or_equal</code>,
+<code>to_be_less_than</code>, <code>to_be_less_than_or_equal</code>, <code>to_be_between</code>,
+<code>to_be_positive</code>, <code>to_be_negative</code>, <code>to_be_zero</code>,
+<code>to_be_divisible_by</code>, <code>to_be_even</code>, <code>to_be_odd</code>, <code>to_be_nan</code>,
+<code>to_be_finite</code>, <code>to_be_infinite</code></li>
+<li><strong>text</strong>: <code>to_contain</code>, <code>to_contain_ignoring_case</code>,
+<code>to_equal_ignoring_case</code>, <code>to_start_with</code>, <code>to_end_with</code>,
+<code>to_match</code>, <code>to_be_blank</code></li>
+<li><strong>collections</strong>: <code>to_have_length</code>, <code>to_be_empty</code>,
+<code>to_contain_equal</code>, <code>to_contain_all</code>, <code>to_contain_any</code>,
+<code>to_contain_none</code>, <code>to_contain_exactly</code>, <code>to_have_key</code>,
+<code>to_have_keys</code>, <code>to_have_value</code>, <code>to_have_property</code>,
+<code>to_be_sorted</code>, <code>to_have_unique_items</code></li>
+<li><strong>errors</strong>: <code>to_raise</code>, <code>to_raise_instance_of</code>,
+<code>to_raise_with_message</code>, <code>to_not_raise</code></li>
+<li><strong>mocks</strong>: <code>to_have_been_called</code>, <code>to_have_been_called_times</code>,
+<code>to_have_been_called_with</code>, <code>to_have_been_last_called_with</code>,
+<code>to_have_been_nth_called_with</code>, <code>to_have_returned</code>,
+<code>to_have_returned_with</code>, <code>to_have_raised</code></li>
+<li><strong>output</strong>: <code>to_print</code>, <code>to_print_exactly</code>, <code>to_print_nothing</code></li>
+<li><strong>snapshots</strong>: <code>to_match_snapshot</code></li>
+<li><strong>anything else</strong>: <code>to_satisfy</code></li>
+</ul>
+<p><code>fail(message)</code> fails outright, for the branch that should never be
+reached. <code>assertions(n)</code> and <code>has_assertions()</code> fail a test that did not
+assert what it said it would, which is how a test proves that the
+callback it put its assertions in actually ran.</p>
+<h2 id="mocking"><a class="header" href="#mocking">Mocking</a></h2>
+<pre><code class="language-zuri ignore">var send = mock()
+notify(send.fn)
+
+expect(send).to_have_been_called_times(1)
+expect(send).to_have_been_called_with('hello')
+</code></pre>
+<p><code>spy_on(object, 'key')</code> replaces a function in place and restores it
+after the test, whether the test passed or not. See
+<a href="test-mock.html#mock"><code>test.mock</code></a> for what can and cannot be spied on.</p>
+<h2 id="snapshots"><a class="header" href="#snapshots">Snapshots</a></h2>
+<pre><code class="language-zuri ignore">expect(render(invoice)).to_match_snapshot()
+</code></pre>
+<p>The first run records the value beside the test file and passes; later
+runs compare against it. See <a href="test-snapshot.html"><code>test.snapshot</code></a> for the
+file format, how to update them, and why a brand new snapshot fails on
+CI.</p>
+<h2 id="running"><a class="header" href="#running">Running</a></h2>
+<p><code>run()</code> takes an options dictionary:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>reporter</code></td><td><code>'spec'</code></td><td><code>spec</code>, <code>dot</code>, <code>tap</code>, <code>junit</code>, <code>json</code>, <code>ndjson</code>, <code>silent</code>, or a <code>Reporter</code> of your own</td></tr>
+<tr><td><code>filter</code></td><td><code>nil</code></td><td>run only tests whose full name contains this, or matches it when it is a regular expression</td></tr>
+<tr><td><code>tags</code></td><td><code>nil</code></td><td>run only tests carrying one of these tags</td></tr>
+<tr><td><code>exclude_tags</code></td><td><code>nil</code></td><td>skip tests carrying one of these tags</td></tr>
+<tr><td><code>bail</code></td><td><code>0</code></td><td>stop after this many failures; <code>0</code> never stops</td></tr>
+<tr><td><code>shuffle</code></td><td><code>false</code></td><td>run in a random order, to catch tests that depend on each other</td></tr>
+<tr><td><code>seed</code></td><td><code>nil</code></td><td>the seed to shuffle with; one is chosen and reported when not given</td></tr>
+<tr><td><code>slow</code></td><td><code>300</code></td><td>milliseconds past which a test’s time is highlighted</td></tr>
+<tr><td><code>timeout</code></td><td><code>0</code></td><td>a budget applied to every test; <code>0</code> means none</td></tr>
+<tr><td><code>retries</code></td><td><code>0</code></td><td>retries applied to every test</td></tr>
+<tr><td><code>capture</code></td><td><code>true</code></td><td>collect each test’s output and show it only when it fails</td></tr>
+<tr><td><code>verbose</code></td><td><code>false</code></td><td>show a passing test’s output as well</td></tr>
+<tr><td><code>update_snapshots</code></td><td><code>ZURI_UPDATE_SNAPSHOTS</code></td><td>rewrite snapshots instead of checking them</td></tr>
+<tr><td><code>ci</code></td><td><code>CI</code></td><td>treat a brand new snapshot as a failure</td></tr>
+<tr><td><code>exit</code></td><td><code>false</code></td><td>exit the process with the run’s status when it finishes</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>filter</code> and <code>reporter</code> can also come from <code>ZURI_TEST_FILTER</code> and
+<code>ZURI_TEST_REPORTER</code>, which is what lets one command be pointed at one
+test without editing the file.</p>
+<p><code>run()</code> returns a <code>Summary</code>; <code>summary.exit_code()</code> is <code>0</code> when
+everything passed. A file that never calls <code>run()</code> gets the same status:
+the automatic run sets it through <code>os.set_exit_code()</code> when anything
+failed, so CI needs nothing added.</p>
+<h2 id="more-than-one-file"><a class="header" href="#more-than-one-file">More than one file</a></h2>
+<p><code>conduct(directory)</code> finds every test file under a directory, runs each
+in a process of its own, and reports them together. A file that hangs or
+crashes takes nothing else down with it. See
+<a href="test-conduct.html"><code>test.conduct</code></a>.</p>
+<p><code>zuri test</code> is that call behind a command line, and is all a project
+needs to run its <code>tests</code> directory:</p>
+<pre><code class="language-console">$ zuri test
+$ zuri test pricing      # just tests/pricing.zu
+</code></pre>
+<p>Call <code>conduct()</code> yourself when the run wants to be under the project’s
+own control:</p>
+<pre><code class="language-zuri ignore"># tests/index.zu
+import os
+import test
+
+test.conduct(os.dir_name(__file__))
+</code></pre>
+<h2 id="the-test-api"><a class="header" href="#the-test-api">The <code>test</code> API</a></h2>
+<p>Every public name in <code>test</code>, wherever it is declared. Each links to the
+page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="test-error.html#assertionerror"><code>test.AssertionError</code></a></td><td>class</td><td>A matcher that did not hold.</td></tr>
+<tr><td><a href="test-result.html#case"><code>test.Case</code></a></td><td>class</td><td>One declared test, and what became of it.</td></tr>
+<tr><td><a href="test-expect.html#expect"><code>test.Expect</code></a></td><td>class</td><td>The subject of an assertion, and every matcher that can be applied to it.</td></tr>
+<tr><td><a href="test-result.html#failure"><code>test.Failure</code></a></td><td>class</td><td>One thing that went wrong.</td></tr>
+<tr><td><a href="test-mock.html#mock"><code>test.Mock</code></a></td><td>class</td><td>A recording stand-in for a function.</td></tr>
+<tr><td><a href="test-reporter.html#reporter"><code>test.Reporter</code></a></td><td>class</td><td>The interface the runner talks to, with every method doing nothing.</td></tr>
+<tr><td><a href="test-result.html#suite"><code>test.Suite</code></a></td><td>class</td><td>A <code>describe()</code> block: its tests, its nested suites, and its hooks.</td></tr>
+<tr><td><a href="test-result.html#summary"><code>test.Summary</code></a></td><td>class</td><td>What a whole run came to.</td></tr>
+<tr><td><a href="test-error.html#testsetuperror"><code>test.TestSetupError</code></a></td><td>class</td><td>The framework was asked to do something that does not make sense: a matcher given the wrong kind of argument,…</td></tr>
+<tr><td><a href="#after_all"><code>test.after_all</code></a></td><td>function</td><td>Runs once after the last test in the enclosing suite, and only if <code>before_all</code> ran.</td></tr>
+<tr><td><a href="#after_each"><code>test.after_each</code></a></td><td>function</td><td>Runs after every test in the enclosing suite and everything nested inside it, innermost suite first, whether…</td></tr>
+<tr><td><a href="test-expect.html#assertions"><code>test.assertions</code></a></td><td>function</td><td>Declares that this test makes exactly <code>count</code> assertions, and fails it if the number turns out to be…</td></tr>
+<tr><td><a href="#before_all"><code>test.before_all</code></a></td><td>function</td><td>Runs once before the first test in the enclosing suite that is going to run.</td></tr>
+<tr><td><a href="#before_each"><code>test.before_each</code></a></td><td>function</td><td>Runs before every test in the enclosing suite and everything nested inside it, outermost suite first.</td></tr>
+<tr><td><a href="test-expect.html#capture_output"><code>test.capture_output</code></a></td><td>function</td><td>Runs <code>body</code> and returns everything it printed to standard output.</td></tr>
+<tr><td><a href="test-conduct.html#"><code>test.conduct</code></a></td><td>function</td><td>Discovers test files under <code>directory</code> and runs each in a process of its own.</td></tr>
+<tr><td><a href="test-conduct.html#conducted"><code>test.conduct.CONDUCTED</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-conduct.html#fileresult"><code>test.conduct.FileResult</code></a></td><td>class</td><td>What became of one file.</td></tr>
+<tr><td><a href="test-conduct.html#conduct"><code>test.conduct.conduct</code></a></td><td>function</td><td>Runs every test file under <code>directory</code>, each in its own process, and reports them together.</td></tr>
+<tr><td><a href="test-conduct.html#discover"><code>test.conduct.discover</code></a></td><td>function</td><td>Every test file under <code>directory</code>, in the order they will run.</td></tr>
+<tr><td><a href="test-conduct.html#is_conducted"><code>test.conduct.is_conducted</code></a></td><td>function</td><td>Whether this process was started by the conductor.</td></tr>
+<tr><td><a href="test-context.html#frame"><code>test.context.Frame</code></a></td><td>class</td><td>The test the runner currently has open, as far as anything outside the runner needs to know about it.</td></tr>
+<tr><td><a href="test-context.html#active"><code>test.context.active</code></a></td><td>function</td><td>Whether a test is running right now.</td></tr>
+<tr><td><a href="test-context.html#assertion_count"><code>test.context.assertion_count</code></a></td><td>function</td><td>How many matchers have run in the current test.</td></tr>
+<tr><td><a href="test-context.html#begin"><code>test.context.begin</code></a></td><td>function</td><td>Opens a frame for a test about to run.</td></tr>
+<tr><td><a href="test-context.html#check"><code>test.context.check</code></a></td><td>function</td><td>Checks a finished test’s assertion promises against what it actually did.</td></tr>
+<tr><td><a href="test-context.html#current"><code>test.context.current</code></a></td><td>function</td><td>The frame for the test currently running, or <code>nil</code> outside one.</td></tr>
+<tr><td><a href="test-context.html#end"><code>test.context.end</code></a></td><td>function</td><td>Closes the current frame and returns it, so the runner can read the final assertion count off it.</td></tr>
+<tr><td><a href="test-context.html#expect_assertions"><code>test.context.expect_assertions</code></a></td><td>function</td><td>Declares that the current test makes exactly <code>count</code> assertions.</td></tr>
+<tr><td><a href="test-context.html#expect_some_assertions"><code>test.context.expect_some_assertions</code></a></td><td>function</td><td>Declares that the current test makes at least one assertion.</td></tr>
+<tr><td><a href="test-context.html#record_assertion"><code>test.context.record_assertion</code></a></td><td>function</td><td>Counts one matcher against the current test.</td></tr>
+<tr><td><a href="test-context.html#snapshot_key"><code>test.context.snapshot_key</code></a></td><td>function</td><td>Claims the next snapshot key for the current test.</td></tr>
+<tr><td><a href="#declared"><code>test.declared</code></a></td><td>function</td><td>The tests declared so far, as a tree, without running any of them.</td></tr>
+<tr><td><a href="#describe"><code>test.describe</code></a></td><td>function</td><td>Groups tests, and may be nested.</td></tr>
+<tr><td><a href="#describe_each"><code>test.describe_each</code></a></td><td>function</td><td>Declares one suite per row of a table.</td></tr>
+<tr><td><a href="#describe_only"><code>test.describe_only</code></a></td><td>function</td><td>Runs only this suite, and anything else marked <code>only</code>.</td></tr>
+<tr><td><a href="#describe_skip"><code>test.describe_skip</code></a></td><td>function</td><td>Skips this suite.</td></tr>
+<tr><td><a href="test-diff.html#max_diff_depth"><code>test.diff.MAX_DIFF_DEPTH</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-diff.html#max_diff_lines"><code>test.diff.MAX_DIFF_LINES</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-diff.html#equal"><code>test.diff.equal</code></a></td><td>function</td><td>Whether <code>left</code> and <code>right</code> are structurally equal.</td></tr>
+<tr><td><a href="test-diff.html#render"><code>test.diff.render</code></a></td><td>function</td><td>The lines to print underneath a failure message, showing what the two values disagree about.</td></tr>
+<tr><td><a href="test-diff.html#subset"><code>test.diff.subset</code></a></td><td>function</td><td>Whether every key in <code>subset</code> is present in <code>value</code> with a structurally equal value, ignoring any key <code>value</code>…</td></tr>
+<tr><td><a href="test-expect.html#expect"><code>test.expect</code></a></td><td>function</td><td>Starts an assertion about <code>value</code>.</td></tr>
+<tr><td><a href="test-expect.html#fail"><code>test.fail</code></a></td><td>function</td><td>Fails the current test outright.</td></tr>
+<tr><td><a href="test-format.html#default_max_depth"><code>test.format.DEFAULT_MAX_DEPTH</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-format.html#default_max_items"><code>test.format.DEFAULT_MAX_ITEMS</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-format.html#default_max_string"><code>test.format.DEFAULT_MAX_STRING</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-format.html#block"><code>test.format.block</code></a></td><td>function</td><td><code>value</code> rendered over as many lines as it takes, with nothing abbreviated away.</td></tr>
+<tr><td><a href="test-format.html#class_name"><code>test.format.class_name</code></a></td><td>function</td><td>The name of the class <code>value</code> was built from, or <code>nil</code> when it is not an instance.</td></tr>
+<tr><td><a href="test-format.html#duration"><code>test.format.duration</code></a></td><td>function</td><td>A duration in milliseconds, rendered the way a reader wants to see it: whole milliseconds below a second, and…</td></tr>
+<tr><td><a href="test-format.html#inline"><code>test.format.inline</code></a></td><td>function</td><td><code>value</code> rendered as a single line, abbreviated to stay readable inside a sentence.</td></tr>
+<tr><td><a href="test-format.html#inline_plain"><code>test.format.inline_plain</code></a></td><td>function</td><td><code>inline()</code> with colour suppressed, whatever the terminal supports.</td></tr>
+<tr><td><a href="test-format.html#plural"><code>test.format.plural</code></a></td><td>function</td><td><code>count</code> followed by <code>singular</code> or <code>plural</code>, whichever the count calls for.</td></tr>
+<tr><td><a href="test-format.html#properties_of"><code>test.format.properties_of</code></a></td><td>function</td><td>The names of an instance’s own properties, in declaration order.</td></tr>
+<tr><td><a href="test-format.html#property_of"><code>test.format.property_of</code></a></td><td>function</td><td>Reads one of an instance’s own properties by name.</td></tr>
+<tr><td><a href="test-format.html#serialize"><code>test.format.serialize</code></a></td><td>function</td><td><code>block()</code> with colour suppressed and dictionary keys sorted, which together make the output stable enough to…</td></tr>
+<tr><td><a href="test-format.html#type_label"><code>test.format.type_label</code></a></td><td>function</td><td>How to name <code>value</code>’s type in a sentence a person reads.</td></tr>
+<tr><td><a href="test-format.html#type_name"><code>test.format.type_name</code></a></td><td>function</td><td>The name of <code>value</code>’s type: <code>'nil'</code>, <code>'bool'</code>, <code>'int'</code>, <code>'float'</code>, <code>'bigint'</code>, <code>'string'</code>, <code>'bytes'</code>,…</td></tr>
+<tr><td><a href="test-format.html#with_article"><code>test.format.with_article</code></a></td><td>function</td><td><code>word</code> with the article that belongs in front of it.</td></tr>
+<tr><td><a href="test-expect.html#has_assertions"><code>test.has_assertions</code></a></td><td>function</td><td>Declares that this test makes at least one assertion, and fails it if none did.</td></tr>
+<tr><td><a href="#it"><code>test.it</code></a></td><td>function</td><td>Declares one test.</td></tr>
+<tr><td><a href="#it_each"><code>test.it_each</code></a></td><td>function</td><td>Declares one test per row of a table.</td></tr>
+<tr><td><a href="#it_only"><code>test.it_only</code></a></td><td>function</td><td>Runs only this test, and anything else marked <code>only</code>.</td></tr>
+<tr><td><a href="#it_skip"><code>test.it_skip</code></a></td><td>function</td><td>Skips this test, while still listing it in the report.</td></tr>
+<tr><td><a href="#it_todo"><code>test.it_todo</code></a></td><td>function</td><td>Notes a test that has not been written yet.</td></tr>
+<tr><td><a href="test-mock.html#mock"><code>test.mock</code></a></td><td>function</td><td>A new recording function.</td></tr>
+<tr><td><a href="test-mock.html#call"><code>test.mock.Call</code></a></td><td>class</td><td>One recorded call.</td></tr>
+<tr><td><a href="test-mock.html#mock_of"><code>test.mock.mock_of</code></a></td><td>function</td><td>The <code>Mock</code> behind <code>value</code>, which may be a <code>Mock</code> already or the plain function one handed out.</td></tr>
+<tr><td><a href="test-mock.html#reset_all"><code>test.mock.reset_all</code></a></td><td>function</td><td>Forgets the calls recorded by every live mock, leaving the mocks themselves and their behaviours in place.</td></tr>
+<tr><td><a href="test-mock.html#restore_all"><code>test.mock.restore_all</code></a></td><td>function</td><td>Undoes every spy and forgets every mock built so far.</td></tr>
+<tr><td><a href="test-reporter.html#dot"><code>test.reporter.Dot</code></a></td><td>class</td><td>One character per test, wrapped to the terminal, then the same failure detail and summary the spec reporter…</td></tr>
+<tr><td><a href="test-reporter.html#json"><code>test.reporter.Json</code></a></td><td>class</td><td>One JSON document at the end, holding the summary and every test.</td></tr>
+<tr><td><a href="test-reporter.html#junit"><code>test.reporter.Junit</code></a></td><td>class</td><td>JUnit XML, which is the format nearly every CI system knows how to turn into a test report page.</td></tr>
+<tr><td><a href="test-reporter.html#ndjson"><code>test.reporter.Ndjson</code></a></td><td>class</td><td>One JSON object per line, emitted as each thing happens.</td></tr>
+<tr><td><a href="test-reporter.html#prefix"><code>test.reporter.PREFIX</code></a></td><td>constant</td><td>What marks a line of <code>ndjson</code> output as protocol rather than as something the test file happened to print.</td></tr>
+<tr><td><a href="test-reporter.html#silent"><code>test.reporter.Silent</code></a></td><td>class</td><td>No output at all, for a caller reading the returned <code>Summary</code> instead.</td></tr>
+<tr><td><a href="test-reporter.html#spec"><code>test.reporter.Spec</code></a></td><td>class</td><td>The default: the suite tree, one line per test, and every failure written out in full at the end.</td></tr>
+<tr><td><a href="test-reporter.html#tap"><code>test.reporter.Tap</code></a></td><td>class</td><td>TAP version 14: one <code>ok</code>/<code>not ok</code> line per test, with failure detail in a YAML block underneath.</td></tr>
+<tr><td><a href="test-reporter.html#create"><code>test.reporter.create</code></a></td><td>function</td><td>Builds a reporter by name.</td></tr>
+<tr><td><a href="#reset"><code>test.reset</code></a></td><td>function</td><td>Forgets every declaration and every loaded snapshot file.</td></tr>
+<tr><td><a href="test-result.html#failed"><code>test.result.FAILED</code></a></td><td>constant</td><td>It ran and something did not hold.</td></tr>
+<tr><td><a href="test-result.html#flaky"><code>test.result.FLAKY</code></a></td><td>constant</td><td>It failed, was retried, and then passed.</td></tr>
+<tr><td><a href="test-result.html#passed"><code>test.result.PASSED</code></a></td><td>constant</td><td>It ran and every assertion held.</td></tr>
+<tr><td><a href="test-result.html#pending"><code>test.result.PENDING</code></a></td><td>constant</td><td>A test was declared and not yet run.</td></tr>
+<tr><td><a href="test-result.html#skipped"><code>test.result.SKIPPED</code></a></td><td>constant</td><td>It was not run: <code>skip</code>, a filter, or another test’s <code>only</code>.</td></tr>
+<tr><td><a href="test-result.html#todo"><code>test.result.TODO</code></a></td><td>constant</td><td>It was declared with no body, as a note to write it later.</td></tr>
+<tr><td><a href="#run"><code>test.run</code></a></td><td>function</td><td>Runs everything declared so far, and reports it.</td></tr>
+<tr><td><a href="test-runner.html#after_all"><code>test.runner.after_all</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="test-runner.html#after_each"><code>test.runner.after_each</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="test-runner.html#before_all"><code>test.runner.before_all</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="test-runner.html#before_each"><code>test.runner.before_each</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="test-runner.html#describe"><code>test.runner.describe</code></a></td><td>function</td><td>Opens a suite, runs <code>body</code> to collect what is inside it, and closes it again.</td></tr>
+<tr><td><a href="test-runner.html#it"><code>test.runner.it</code></a></td><td>function</td><td>Declares one test.</td></tr>
+<tr><td><a href="test-runner.html#reset"><code>test.runner.reset</code></a></td><td>function</td><td>Throws away every declaration and every snapshot store, so a second run in the same process starts from…</td></tr>
+<tr><td><a href="test-runner.html#root"><code>test.runner.root</code></a></td><td>function</td><td>The tree as it stands, for a caller that wants to look at what was declared without running it.</td></tr>
+<tr><td><a href="test-runner.html#run"><code>test.runner.run</code></a></td><td>function</td><td>Runs everything declared so far and reports it.</td></tr>
+<tr><td><a href="test-snapshot.html#body_indent"><code>test.snapshot.BODY_INDENT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-snapshot.html#header"><code>test.snapshot.HEADER</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="test-snapshot.html#store"><code>test.snapshot.Store</code></a></td><td>class</td><td>Every snapshot recorded for one test file, and the file they live in.</td></tr>
+<tr><td><a href="test-snapshot.html#check"><code>test.snapshot.check</code></a></td><td>function</td><td>Compares one value against what the snapshot file holds for <code>key</code>, writing it down when there is nothing…</td></tr>
+<tr><td><a href="test-snapshot.html#flush"><code>test.snapshot.flush</code></a></td><td>function</td><td>Writes every changed store back to disk, and in update mode drops entries the run never asked about.</td></tr>
+<tr><td><a href="test-snapshot.html#path_for"><code>test.snapshot.path_for</code></a></td><td>function</td><td>The <code>.snap</code> file that belongs to a given test file.</td></tr>
+<tr><td><a href="test-snapshot.html#recorded_lines"><code>test.snapshot.recorded_lines</code></a></td><td>function</td><td>The lines of the snapshot at <code>key</code>, as a list, for a reporter that wants to show what was recorded.</td></tr>
+<tr><td><a href="test-snapshot.html#reset"><code>test.snapshot.reset</code></a></td><td>function</td><td>Forgets every loaded store and zeroes the counters, so a second run in the same process starts clean.</td></tr>
+<tr><td><a href="test-snapshot.html#set_strict"><code>test.snapshot.set_strict</code></a></td><td>function</td><td>Turns the strict, new-snapshots-fail behaviour on or off.</td></tr>
+<tr><td><a href="test-snapshot.html#set_updating"><code>test.snapshot.set_updating</code></a></td><td>function</td><td>Turns snapshot rewriting on or off.</td></tr>
+<tr><td><a href="test-snapshot.html#store_for"><code>test.snapshot.store_for</code></a></td><td>function</td><td>The store for a test file, read from disk the first time it is asked for and kept afterwards.</td></tr>
+<tr><td><a href="test-snapshot.html#strict"><code>test.snapshot.strict</code></a></td><td>function</td><td>Whether a brand new snapshot counts as a failure, which is what it should be anywhere nobody is going to look…</td></tr>
+<tr><td><a href="test-snapshot.html#summary"><code>test.snapshot.summary</code></a></td><td>function</td><td>What happened to snapshots over the whole run.</td></tr>
+<tr><td><a href="test-snapshot.html#updating"><code>test.snapshot.updating</code></a></td><td>function</td><td>Whether snapshots are being rewritten rather than checked.</td></tr>
+<tr><td><a href="test-source.html#frame"><code>test.source.Frame</code></a></td><td>class</td><td>One frame of a stack trace, pulled apart.</td></tr>
+<tr><td><a href="test-source.html#clear_cache"><code>test.source.clear_cache</code></a></td><td>function</td><td>Forgets every file read for a code frame.</td></tr>
+<tr><td><a href="test-source.html#code_frame"><code>test.source.code_frame</code></a></td><td>function</td><td>The source around a failure, with the offending line marked.</td></tr>
+<tr><td><a href="test-source.html#origin"><code>test.source.origin</code></a></td><td>function</td><td>The innermost frame of <code>stacktrace</code> outside the test module: where the failing line actually is.</td></tr>
+<tr><td><a href="test-source.html#parse_frame"><code>test.source.parse_frame</code></a></td><td>function</td><td>Splits one stack trace line into a <code>Frame</code>.</td></tr>
+<tr><td><a href="test-source.html#short_path"><code>test.source.short_path</code></a></td><td>function</td><td>A path written relative to the working directory when it is under it, and left alone when it is not.</td></tr>
+<tr><td><a href="test-source.html#user_frames"><code>test.source.user_frames</code></a></td><td>function</td><td>Every frame of <code>stacktrace</code> that belongs to the code under test, innermost first.</td></tr>
+<tr><td><a href="test-mock.html#spy_on"><code>test.spy_on</code></a></td><td>function</td><td>Replaces <code>target[key]</code> with a recording stand-in that calls through to the original, and returns the <code>Mock</code>…</td></tr>
+<tr><td><a href="test-style.html#badge"><code>test.style.badge</code></a></td><td>function</td><td>A filled, inverted label, the way a status banner reads in a CI log.</td></tr>
+<tr><td><a href="test-style.html#blue"><code>test.style.blue</code></a></td><td>function</td><td>Todo entries and other informational notes.</td></tr>
+<tr><td><a href="test-style.html#bold"><code>test.style.bold</code></a></td><td>function</td><td>Emphasis.</td></tr>
+<tr><td><a href="test-style.html#cyan"><code>test.style.cyan</code></a></td><td>function</td><td>Structure: suite names, headings.</td></tr>
+<tr><td><a href="test-style.html#dim"><code>test.style.dim</code></a></td><td>function</td><td>De-emphasis, for detail that should recede: timings, counts, the suite path above a failure.</td></tr>
+<tr><td><a href="test-style.html#enabled"><code>test.style.enabled</code></a></td><td>function</td><td>Whether colour is currently being emitted.</td></tr>
+<tr><td><a href="test-style.html#green"><code>test.style.green</code></a></td><td>function</td><td>Success.</td></tr>
+<tr><td><a href="test-style.html#grey"><code>test.style.grey</code></a></td><td>function</td><td>Punctuation and separators.</td></tr>
+<tr><td><a href="test-style.html#indent"><code>test.style.indent</code></a></td><td>function</td><td>Two spaces per level, the indent every nested suite and test line in the report is built from.</td></tr>
+<tr><td><a href="test-style.html#inverse"><code>test.style.inverse</code></a></td><td>function</td><td>Reserved for text that has to be found instantly on a busy screen.</td></tr>
+<tr><td><a href="test-style.html#magenta"><code>test.style.magenta</code></a></td><td>function</td><td>Values in a rendered diff or failure message.</td></tr>
+<tr><td><a href="test-style.html#pad_left"><code>test.style.pad_left</code></a></td><td>function</td><td>Pads <code>text</code> on the left to <code>width</code> visible columns, leaving it alone when it is already that wide or wider.</td></tr>
+<tr><td><a href="test-style.html#pad_right"><code>test.style.pad_right</code></a></td><td>function</td><td>Pads <code>text</code> on the right to <code>width</code> visible columns, leaving it alone when it is already that wide or wider.</td></tr>
+<tr><td><a href="test-style.html#red"><code>test.style.red</code></a></td><td>function</td><td>Failure.</td></tr>
+<tr><td><a href="test-style.html#rule"><code>test.style.rule</code></a></td><td>function</td><td><code>count</code> copies of <code>character</code>.</td></tr>
+<tr><td><a href="test-style.html#set_enabled"><code>test.style.set_enabled</code></a></td><td>function</td><td>Forces colour on or off, overriding what the environment said.</td></tr>
+<tr><td><a href="test-style.html#set_unicode"><code>test.style.set_unicode</code></a></td><td>function</td><td>Forces the Unicode symbol set on or off.</td></tr>
+<tr><td><a href="test-style.html#strip"><code>test.style.strip</code></a></td><td>function</td><td><code>text</code> with every ANSI escape sequence removed.</td></tr>
+<tr><td><a href="test-style.html#symbols"><code>test.style.symbols</code></a></td><td>function</td><td>The symbol set in use, keyed by role.</td></tr>
+<tr><td><a href="test-style.html#truncate"><code>test.style.truncate</code></a></td><td>function</td><td>Shortens <code>text</code> to at most <code>width</code> visible columns, marking the cut with an ellipsis.</td></tr>
+<tr><td><a href="test-style.html#unicode"><code>test.style.unicode</code></a></td><td>function</td><td>Whether the Unicode symbol set is in use, as opposed to the ASCII fallbacks.</td></tr>
+<tr><td><a href="test-style.html#visible_length"><code>test.style.visible_length</code></a></td><td>function</td><td>How many columns <code>text</code> occupies once its escape sequences are discounted.</td></tr>
+<tr><td><a href="test-style.html#white"><code>test.style.white</code></a></td><td>function</td><td>Plain foreground, used to lift a key out of dimmed surroundings.</td></tr>
+<tr><td><a href="test-style.html#width"><code>test.style.width</code></a></td><td>function</td><td>The width to lay the report out to.</td></tr>
+<tr><td><a href="test-style.html#yellow"><code>test.style.yellow</code></a></td><td>function</td><td>Skipped and other deliberate non-results.</td></tr>
+<tr><td><a href="#use_color"><code>test.use_color</code></a></td><td>function</td><td>Forces colour in the report on or off, overriding what the environment said.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="test-conduct.html"><code>test.conduct</code></a></td><td><code>import test.conduct</code></td><td>Running a directory of test files, each in a process of its own.</td></tr>
+<tr><td><a href="test-context.html"><code>test.context</code></a></td><td><code>import test.context</code></td><td>What is true right now, while one particular test is running.</td></tr>
+<tr><td><a href="test-diff.html"><code>test.diff</code></a></td><td><code>import test.diff</code></td><td>Structural equality, and the rendering of what two unequal values disagree about.</td></tr>
+<tr><td><a href="test-error.html"><code>test.error</code></a></td><td><code>test.error.*</code></td><td>The errors the test module raises, kept in a module of their own so that the assertion side and the runner…</td></tr>
+<tr><td><a href="test-expect.html"><code>test.expect</code></a></td><td><code>test.expect.*</code></td><td><code>expect(value)</code> and everything that can be said about a value once you have one.</td></tr>
+<tr><td><a href="test-format.html"><code>test.format</code></a></td><td><code>import test.format</code></td><td>Turning any Zuri value into text a person can read in a failure message.</td></tr>
+<tr><td><a href="test-mock.html"><code>test.mock</code></a></td><td><code>test.mock.*</code></td><td>Test doubles: functions that record how they were called, and stand-ins that replace a real one for the…</td></tr>
+<tr><td><a href="test-reporter.html"><code>test.reporter</code></a></td><td><code>test.reporter.*</code></td><td>How a run is shown.</td></tr>
+<tr><td><a href="test-result.html"><code>test.result</code></a></td><td><code>test.result.*</code></td><td>The shapes a test run is made of: the tree the declarations build, and what running it produced.</td></tr>
+<tr><td><a href="test-runner.html"><code>test.runner</code></a></td><td><code>import test.runner</code></td><td>Collecting the tests a file declares, deciding which of them to run, and running them.</td></tr>
+<tr><td><a href="test-snapshot.html"><code>test.snapshot</code></a></td><td><code>import test.snapshot</code></td><td>Snapshot testing: recording what a value looked like the first time and failing when it stops looking like…</td></tr>
+<tr><td><a href="test-source.html"><code>test.source</code></a></td><td><code>import test.source</code></td><td>Working out where a failure came from, and showing the code that was there.</td></tr>
+<tr><td><a href="test-style.html"><code>test.style</code></a></td><td><code>import test.style</code></td><td>Terminal presentation for the test module: colour, symbols, width, and the padding helpers that keep a…</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="describe"><a class="header" href="#describe"><code>describe()</code></a></h3>
+<pre><code class="language-zuri ignore">test.describe(name: string, body: function)
+</code></pre>
+<p>Groups tests, and may be nested.</p>
+<pre><code class="language-zuri ignore">describe('Stack', @{
+  describe('push()', @{
+    it('grows the stack', @{ ... })
+  })
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Suite</p>
+<h3 id="describe_only"><a class="header" href="#describe_only"><code>describe_only()</code></a></h3>
+<pre><code class="language-zuri ignore">test.describe_only(name: string, body: function)
+</code></pre>
+<p>Runs only this suite, and anything else marked <code>only</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Suite</p>
+<h3 id="describe_skip"><a class="header" href="#describe_skip"><code>describe_skip()</code></a></h3>
+<pre><code class="language-zuri ignore">test.describe_skip(name: string, body: function)
+</code></pre>
+<p>Skips this suite. Its tests are still declared, still counted, and still
+listed; they simply do not run.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Suite</p>
+<h3 id="it"><a class="header" href="#it"><code>it()</code></a></h3>
+<pre><code class="language-zuri ignore">test.it(name: string, body: ?function, options: ?dict)
+</code></pre>
+<p>Declares one test.</p>
+<pre><code class="language-zuri ignore">it('returns the total', @{
+  expect(total(cart)).to_be(42)
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>?function</code>) — left out, this is a todo.</li>
+<li><code>options</code> (<code>?dict</code>) — <code>retries</code>, <code>failing</code>, <code>timeout</code>, <code>tags</code>. See the
+module documentation for what each does.</li>
+</ul>
+<p><strong>Returns</strong> — Case</p>
+<h3 id="it_only"><a class="header" href="#it_only"><code>it_only()</code></a></h3>
+<pre><code class="language-zuri ignore">test.it_only(name: string, body: function, options: ?dict)
+</code></pre>
+<p>Runs only this test, and anything else marked <code>only</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Case</p>
+<h3 id="it_skip"><a class="header" href="#it_skip"><code>it_skip()</code></a></h3>
+<pre><code class="language-zuri ignore">test.it_skip(name: string, body: ?function, options: ?dict)
+</code></pre>
+<p>Skips this test, while still listing it in the report.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>?function</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Case</p>
+<h3 id="it_todo"><a class="header" href="#it_todo"><code>it_todo()</code></a></h3>
+<pre><code class="language-zuri ignore">test.it_todo(name: string)
+</code></pre>
+<p>Notes a test that has not been written yet.</p>
+<p>It is listed in the report and counts towards nothing, which is the
+point: a todo is a reminder that survives being committed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Case</p>
+<h3 id="it_each"><a class="header" href="#it_each"><code>it_each()</code></a></h3>
+<pre><code class="language-zuri ignore">test.it_each(table: list, name: string, body: function, options: ?dict)
+</code></pre>
+<p>Declares one test per row of a table.</p>
+<pre><code class="language-zuri ignore">it_each([
+  ['', 0],
+  ['a', 1],
+  ['hello', 5],
+], 'says $0 is $1 characters long', @(text, length) {
+  expect(text.length()).to_be(length)
+})
+</code></pre>
+<p>Each row is spread across <code>body</code>’s parameters, so a three-column table
+calls a three-parameter function. A row that is not a list counts as a
+single-column row.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>list</code>) — the rows.</li>
+<li><code>name</code> (<code>string</code>) — <code>$0</code>, <code>$1</code>, … are replaced with that row’s
+values, and <code>$#</code> with the row number, counting from one.</li>
+<li><code>body</code> (<code>function</code>)</li>
+<li><code>options</code> (<code>?dict</code>) — applied to every test the table declares.</li>
+</ul>
+<p><strong>Returns</strong> — list: the declared tests.</p>
+<h3 id="describe_each"><a class="header" href="#describe_each"><code>describe_each()</code></a></h3>
+<pre><code class="language-zuri ignore">test.describe_each(table: list, name: string, body: function)
+</code></pre>
+<p>Declares one suite per row of a table.</p>
+<p>The row is spread across <code>body</code>’s parameters exactly as <code>it_each()</code>
+does, so the whole suite is written once against whatever the row holds.</p>
+<pre><code class="language-zuri ignore">describe_each([
+  ['json', json_codec],
+  ['yaml', yaml_codec],
+], '$0 codec', @(name, codec) {
+  it('round-trips a dictionary', @{
+    expect(codec.decode(codec.encode({ a: 1 }))).to_equal({ a: 1 })
+  })
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>table</code> (<code>list</code>)</li>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<p><strong>Returns</strong> — list: the declared suites.</p>
+<h3 id="before_all"><a class="header" href="#before_all"><code>before_all()</code></a></h3>
+<pre><code class="language-zuri ignore">test.before_all(body: function)
+</code></pre>
+<p>Runs once before the first test in the enclosing suite that is going to
+run.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<h3 id="after_all"><a class="header" href="#after_all"><code>after_all()</code></a></h3>
+<pre><code class="language-zuri ignore">test.after_all(body: function)
+</code></pre>
+<p>Runs once after the last test in the enclosing suite, and only if
+<code>before_all</code> ran. It runs when <code>before_all</code> raised as well, since a
+setup that failed part way may already hold what needs releasing, so it
+must cope with whatever the setup got as far as.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<h3 id="before_each"><a class="header" href="#before_each"><code>before_each()</code></a></h3>
+<pre><code class="language-zuri ignore">test.before_each(body: function)
+</code></pre>
+<p>Runs before every test in the enclosing suite and everything nested
+inside it, outermost suite first.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<h3 id="after_each"><a class="header" href="#after_each"><code>after_each()</code></a></h3>
+<pre><code class="language-zuri ignore">test.after_each(body: function)
+</code></pre>
+<p>Runs after every test in the enclosing suite and everything nested
+inside it, innermost suite first, whether the test passed or not.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>function</code>)</li>
+</ul>
+<h3 id="run"><a class="header" href="#run"><code>run()</code></a></h3>
+<pre><code class="language-zuri ignore">test.run(options: ?dict)
+</code></pre>
+<p>Runs everything declared so far, and reports it.</p>
+<p>Calling this is optional. A file that declares tests and never says
+anything else runs them as it ends, and fails the process when they
+fail. Call it when you want to pass options or read the result:</p>
+<pre><code class="language-zuri ignore">run({ reporter: 'dot', bail: 1 })
+
+var summary = run({ filter: 'parser' })
+echo summary.passed
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>?dict</code>) — see the module documentation for every option
+and its default.</li>
+</ul>
+<p><strong>Returns</strong> — Summary</p>
+<blockquote>
+<p><strong>Note:</strong> calling it takes over from the automatic run, so nothing is
+reported twice. Calling it twice does run everything twice.</p>
+</blockquote>
+<h3 id="conduct"><a class="header" href="#conduct"><code>conduct()</code></a></h3>
+<pre><code class="language-zuri ignore">test.conduct(directory: ?string, options: ?dict)
+</code></pre>
+<p>Discovers test files under <code>directory</code> and runs each in a process of its
+own.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>directory</code> (<code>?string</code>) — <code>'tests'</code> by default.</li>
+<li><code>options</code> (<code>?dict</code>) — see {test.conduct}.</li>
+</ul>
+<p><strong>Returns</strong> — dict: the combined result.</p>
+<h3 id="declared"><a class="header" href="#declared"><code>declared()</code></a></h3>
+<pre><code class="language-zuri ignore">test.declared()
+</code></pre>
+<p>The tests declared so far, as a tree, without running any of them.</p>
+<p><strong>Returns</strong> — Suite</p>
+<h3 id="reset"><a class="header" href="#reset"><code>reset()</code></a></h3>
+<pre><code class="language-zuri ignore">test.reset()
+</code></pre>
+<p>Forgets every declaration and every loaded snapshot file.</p>
+<p>For a process that runs more than one suite, and for the tests of this
+framework itself.</p>
+<h3 id="use_color"><a class="header" href="#use_color"><code>use_color()</code></a></h3>
+<pre><code class="language-zuri ignore">test.use_color(on: bool)
+</code></pre>
+<p>Forces colour in the report on or off, overriding what the environment
+said.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>on</code> (<code>bool</code>)</li>
+</ul>
+<hr>
+<p><small>2021, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="log-transport.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="test-conduct.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="log-transport.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="test-conduct.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

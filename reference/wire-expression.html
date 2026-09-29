@@ -1,0 +1,1002 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>wire.expression - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="wireexpression"><a class="header" href="#wireexpression"><code>wire.expression</code></a></h1>
+<pre><code class="language-zuri ignore">import wire
+</code></pre>
+<blockquote>
+<p><code>wire</code> exposes this as <code>wire.expression</code>, so <code>import wire</code> is enough and
+the names are called as <code>wire.expression.*</code>. <code>import wire.expression</code>
+reaches the same definitions directly.</p>
+</blockquote>
+<p>Wire’s expression language: the thing that sits between <code>{{</code> and <code>}}</code>,
+and the thing an <code>x-if</code> or an <code>x-for</code> is given.</p>
+<p>It is deliberately a small language rather than an embedded Zuri. There
+is no assignment, no statement, no way to define anything and no way to
+reach a global, because a template is a description of a page and
+everything else belongs in the code that renders it. What is here is
+what reading a value out of a dictionary and deciding whether to show a
+section actually needs:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Kind</th><th>Written as</th></tr>
+</thead>
+<tbody>
+<tr><td>literals</td><td><code>12</code>, <code>1.5</code>, <code>'text'</code>, <code>"text"</code>, <code>true</code>, <code>false</code>, <code>nil</code></td></tr>
+<tr><td>collections</td><td><code>[1, 2]</code>, <code>{ id: 1, name }</code></td></tr>
+<tr><td>lookup</td><td><code>user.address.city</code>, <code>items.0</code>, <code>items[index]</code></td></tr>
+<tr><td>calls</td><td><code>route('home')</code>, <code>user.display_name()</code></td></tr>
+<tr><td>arithmetic</td><td><code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code></td></tr>
+<tr><td>comparison</td><td><code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>in</code>, <code>not in</code></td></tr>
+<tr><td>logic</td><td><code>and</code>, <code>or</code>, <code>not</code> (also <code>&amp;&amp;</code>, `</td></tr>
+<tr><td>choice</td><td><code>stock &gt; 0 ? 'in stock' : 'sold out'</code></td></tr>
+<tr><td>default</td><td><code>nickname ?? name</code></td></tr>
+<tr><td>ranges</td><td><code>0..pages</code>, <code>1..10</code></td></tr>
+<tr><td>filters</td><td>`name</td></tr>
+</tbody>
+</table>
+</div>
+<p>Truthiness is Wire’s, not Zuri’s: an empty list is false and a negative
+number is true. <code>wire.values</code> explains why, and it matters for every
+<code>and</code>, <code>or</code>, <code>not</code> and <code>?</code> here.</p>
+<h2 id="missing-values"><a class="header" href="#missing-values">Missing values</a></h2>
+<p>Reading a name that was never supplied gives <code>nil</code> rather than raising,
+and so does reading a key off it. <code>{{ user.address.city }}</code> on a request
+with no user renders as nothing at all instead of failing three levels
+down, which is what makes an optional section readable. Ask with <code>x-if</code>
+when the difference matters.</p>
+<p>Names beginning with an underscore cannot be read. Those are private in
+Zuri, and a template has no business reaching into them.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="keywords"><a class="header" href="#keywords"><code>KEYWORDS</code></a></h3>
+<pre><code class="language-zuri ignore">wire.expression.KEYWORDS = [...]
+</code></pre>
+<p>The words that are part of the language rather than names a template can
+bind.</p>
+<h3 id="long_operators"><a class="header" href="#long_operators"><code>LONG_OPERATORS</code></a></h3>
+<pre><code class="language-zuri ignore">wire.expression.LONG_OPERATORS = [...]
+</code></pre>
+<p>Operators made of more than one character, longest first so that <code>&lt;=</code> is
+never read as <code>&lt;</code> followed by <code>=</code>.</p>
+<h3 id="short_operators"><a class="header" href="#short_operators"><code>SHORT_OPERATORS</code></a></h3>
+<pre><code class="language-zuri ignore">wire.expression.SHORT_OPERATORS = [...]
+</code></pre>
+<p>Operators made of a single character.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="tokenize"><a class="header" href="#tokenize"><code>tokenize()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.expression.tokenize(source: string, path: string, line: number, column: number) -&gt; list
+</code></pre>
+<p>Splits <em>source</em> into tokens.</p>
+<p><em>path</em>, <em>line</em> and <em>column</em> are only used to place the error when the
+source does not lex, and name the tag the expression was written on
+rather than anything inside the expression.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>line</code> (<code>number</code>)</li>
+<li><code>column</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>TemplateSyntaxError</code></p>
+<h3 id="parse"><a class="header" href="#parse"><code>parse()</code></a></h3>
+<pre><code class="language-zuri ignore">wire.expression.parse(source: string, path: string, line: number, column: number)
+</code></pre>
+<p>Compiles <em>source</em> into a syntax tree.</p>
+<p><em>path</em>, <em>line</em> and <em>column</em> describe the tag the expression was written
+on and are only used to place a syntax error.</p>
+<pre><code class="language-zuri ignore">import wire
+
+var tree = wire.expression.parse('price * quantity', '&lt;source&gt;', 0, 0)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>line</code> (<code>number</code>)</li>
+<li><code>column</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Expression</p>
+<p><strong>Raises</strong> <code>TemplateSyntaxError</code> when <em>source</em> is not a valid
+expression.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="expression"><a class="header" href="#expression"><code>Expression</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Expression
+</code></pre>
+<p>The base of every node in a parsed expression.</p>
+<p>Nodes are built once, when a template is compiled, and evaluated once
+per render. They hold no state of their own, so the same compiled
+template can be rendered from several places at once.</p>
+<h4 id="expressionevaluate"><a class="header" href="#expressionevaluate"><code>Expression.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Expression.evaluate(scope) -&gt; any
+</code></pre>
+<p>Works out this node’s value.</p>
+<p><em>scope</em> is supplied by the renderer and answers the three questions an
+expression cannot answer for itself: what a name is bound to, what a
+filter does, and how to report a failure with the position of the tag
+the expression came from.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="literal"><a class="header" href="#literal"><code>Literal</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Literal &lt; Expression
+</code></pre>
+<p>A number, a string, or one of <code>true</code>, <code>false</code> and <code>nil</code>.</p>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>value</code></td><td></td><td>The value, ready to use.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Literal(value)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>any</code>)</li>
+</ul>
+<h4 id="literalevaluate"><a class="header" href="#literalevaluate"><code>Literal.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Literal.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="variable"><a class="header" href="#variable"><code>Variable</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Variable &lt; Expression
+</code></pre>
+<p>A bare name, looked up in the variables the template was rendered with.</p>
+<h4 id="fields-1"><a class="header" href="#fields-1">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td></td><td>The name being read.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Variable(name: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="variableevaluate"><a class="header" href="#variableevaluate"><code>Variable.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Variable.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="member"><a class="header" href="#member"><code>Member</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Member &lt; Expression
+</code></pre>
+<p>A dotted lookup, as in <code>user.name</code>.</p>
+<h4 id="fields-2"><a class="header" href="#fields-2">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>target</code></td><td></td><td>The expression being read from.</td></tr>
+<tr><td><code>name</code></td><td></td><td>The key, field or method name.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-2"><a class="header" href="#constructor-2">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Member(target, name: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — target</li>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="memberevaluate"><a class="header" href="#memberevaluate"><code>Member.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Member.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="index"><a class="header" href="#index"><code>Index</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Index &lt; Expression
+</code></pre>
+<p>A bracketed lookup, as in <code>items[index]</code>, where the key is itself an
+expression.</p>
+<h4 id="fields-3"><a class="header" href="#fields-3">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>target</code></td><td></td><td>The expression being read from.</td></tr>
+<tr><td><code>key</code></td><td></td><td>The expression giving the key.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-3"><a class="header" href="#constructor-3">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Index(target, key)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — target</li>
+<li><code>Expression</code> — key</li>
+</ul>
+<h4 id="indexevaluate"><a class="header" href="#indexevaluate"><code>Index.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Index.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="call"><a class="header" href="#call"><code>Call</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Call &lt; Expression
+</code></pre>
+<p>A call, as in <code>route('home')</code> or <code>user.display_name()</code>.</p>
+<h4 id="fields-4"><a class="header" href="#fields-4">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>callee</code></td><td></td><td>The expression giving the thing to call.</td></tr>
+<tr><td><code>arguments</code></td><td></td><td>The argument expressions, in order.</td></tr>
+<tr><td><code>label</code></td><td></td><td>How the callee was written, for the error message when it turns out not to be callable.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-4"><a class="header" href="#constructor-4">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Call(callee, arguments: list, label: string)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — callee</li>
+<li><code>arguments</code> (<code>list</code>)</li>
+<li><code>label</code> (<code>string</code>)</li>
+</ul>
+<h4 id="callevaluate"><a class="header" href="#callevaluate"><code>Call.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Call.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="listliteral"><a class="header" href="#listliteral"><code>ListLiteral</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.ListLiteral &lt; Expression
+</code></pre>
+<p>A list literal.</p>
+<h4 id="fields-5"><a class="header" href="#fields-5">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>items</code></td><td></td><td>The item expressions, in order.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-5"><a class="header" href="#constructor-5">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.ListLiteral(items: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>items</code> (<code>list</code>)</li>
+</ul>
+<h4 id="listliteralevaluate"><a class="header" href="#listliteralevaluate"><code>ListLiteral.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.ListLiteral.evaluate(scope) -&gt; list
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<h3 id="dictliteral"><a class="header" href="#dictliteral"><code>DictLiteral</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.DictLiteral &lt; Expression
+</code></pre>
+<p>A dictionary literal.</p>
+<h4 id="fields-6"><a class="header" href="#fields-6">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>entries</code></td><td></td><td>The entries, as a list of <code>[key, value]</code> expression pairs.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-6"><a class="header" href="#constructor-6">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.DictLiteral(entries: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>entries</code> (<code>list</code>)</li>
+</ul>
+<h4 id="dictliteralevaluate"><a class="header" href="#dictliteralevaluate"><code>DictLiteral.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.DictLiteral.evaluate(scope) -&gt; dict
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h3 id="unary"><a class="header" href="#unary"><code>Unary</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Unary &lt; Expression
+</code></pre>
+<p><code>not x</code>, <code>!x</code> or <code>-x</code>.</p>
+<h4 id="fields-7"><a class="header" href="#fields-7">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>operator</code></td><td></td><td>The operator: <code>not</code> or <code>-</code>.</td></tr>
+<tr><td><code>operand</code></td><td></td><td>The expression it applies to.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-7"><a class="header" href="#constructor-7">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Unary(operator: string, operand)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>operator</code> (<code>string</code>)</li>
+<li><code>Expression</code> — operand</li>
+</ul>
+<h4 id="unaryevaluate"><a class="header" href="#unaryevaluate"><code>Unary.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Unary.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="binary"><a class="header" href="#binary"><code>Binary</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Binary &lt; Expression
+</code></pre>
+<p>An arithmetic or comparison operator.</p>
+<h4 id="fields-8"><a class="header" href="#fields-8">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>operator</code></td><td></td><td>The operator.</td></tr>
+<tr><td><code>left</code></td><td></td><td>The left operand.</td></tr>
+<tr><td><code>right</code></td><td></td><td>The right operand.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-8"><a class="header" href="#constructor-8">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Binary(operator: string, left, right)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>operator</code> (<code>string</code>)</li>
+<li><code>Expression</code> — left</li>
+<li><code>Expression</code> — right</li>
+</ul>
+<h4 id="binaryevaluate"><a class="header" href="#binaryevaluate"><code>Binary.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Binary.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="logical"><a class="header" href="#logical"><code>Logical</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Logical &lt; Expression
+</code></pre>
+<p><code>and</code>, <code>or</code> or <code>??</code>, each of which decides whether to evaluate its right
+side after looking at its left.</p>
+<h4 id="fields-9"><a class="header" href="#fields-9">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>operator</code></td><td></td><td>The operator: <code>and</code>, <code>or</code> or <code>??</code>.</td></tr>
+<tr><td><code>left</code></td><td></td><td>The left operand.</td></tr>
+<tr><td><code>right</code></td><td></td><td>The right operand.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-9"><a class="header" href="#constructor-9">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Logical(operator: string, left, right)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>operator</code> (<code>string</code>)</li>
+<li><code>Expression</code> — left</li>
+<li><code>Expression</code> — right</li>
+</ul>
+<h4 id="logicalevaluate"><a class="header" href="#logicalevaluate"><code>Logical.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Logical.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="conditional"><a class="header" href="#conditional"><code>Conditional</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Conditional &lt; Expression
+</code></pre>
+<p><code>condition ? consequence : alternative</code>.</p>
+<h4 id="fields-10"><a class="header" href="#fields-10">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>condition</code></td><td></td><td>The expression being tested.</td></tr>
+<tr><td><code>consequence</code></td><td></td><td>The value when the test passes.</td></tr>
+<tr><td><code>alternative</code></td><td></td><td>The value when it does not.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-10"><a class="header" href="#constructor-10">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Conditional(condition, consequence, alternative)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — condition</li>
+<li><code>Expression</code> — consequence</li>
+<li><code>Expression</code> — alternative</li>
+</ul>
+<h4 id="conditionalevaluate"><a class="header" href="#conditionalevaluate"><code>Conditional.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Conditional.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="filter"><a class="header" href="#filter"><code>Filter</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Filter &lt; Expression
+</code></pre>
+<p>A value passed through a filter, as in <code>name|upper</code>.</p>
+<h4 id="fields-11"><a class="header" href="#fields-11">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>target</code></td><td></td><td>The expression giving the value being filtered.</td></tr>
+<tr><td><code>name</code></td><td></td><td>The filter’s name.</td></tr>
+<tr><td><code>arguments</code></td><td></td><td>The argument expressions, in order, after the value itself.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-11"><a class="header" href="#constructor-11">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Filter(target, name: string, arguments: list)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — target</li>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>arguments</code> (<code>list</code>)</li>
+</ul>
+<h4 id="filterevaluate"><a class="header" href="#filterevaluate"><code>Filter.evaluate()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Filter.evaluate(scope) -&gt; any
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Scope</code> — scope</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<h3 id="token"><a class="header" href="#token"><code>Token</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Token
+</code></pre>
+<p>One piece of an expression’s source: its kind, its value, and where in
+the expression it started.</p>
+<h4 id="fields-12"><a class="header" href="#fields-12">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>type</code></td><td></td><td><code>'name'</code>, <code>'number'</code>, <code>'string'</code>, <code>'operator'</code> or <code>'end'</code>.</td></tr>
+<tr><td><code>value</code></td><td></td><td>The token’s text, or for a string or number its decoded value.</td></tr>
+<tr><td><code>offset</code></td><td></td><td>How far into the expression the token started, counting from 0.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-12"><a class="header" href="#constructor-12">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Token(type: string, value, offset: number)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>type</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>any</code>)</li>
+<li><code>offset</code> (<code>number</code>)</li>
+</ul>
+<h3 id="parser"><a class="header" href="#parser"><code>Parser</code></a></h3>
+<pre><code class="language-zuri ignore">class wire.expression.Parser
+</code></pre>
+<p>Builds a syntax tree from an expression’s tokens.</p>
+<p>There is one of these per expression compiled, and it is thrown away
+once the tree is built.</p>
+<h4 id="fields-13"><a class="header" href="#fields-13">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tokens</code></td><td></td><td>The tokens left to read.</td></tr>
+<tr><td><code>at</code></td><td></td><td>How far through them the parser is.</td></tr>
+<tr><td><code>source</code></td><td></td><td>The expression’s source, for error messages.</td></tr>
+<tr><td><code>path</code></td><td></td><td>The template the expression came from.</td></tr>
+<tr><td><code>line</code></td><td></td><td>The line of the tag the expression was written on.</td></tr>
+<tr><td><code>column</code></td><td></td><td>The column of that tag.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-13"><a class="header" href="#constructor-13">Constructor</a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser(source: string, path: string, line: number, column: number)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string</code>)</li>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>line</code> (<code>number</code>)</li>
+<li><code>column</code> (<code>number</code>)</li>
+</ul>
+<h4 id="parserparse"><a class="header" href="#parserparse"><code>Parser.parse()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse()
+</code></pre>
+<p>Parses the whole expression and insists that nothing is left over.</p>
+<p><strong>Returns</strong> — Expression</p>
+<p><strong>Raises</strong> <code>TemplateSyntaxError</code></p>
+<h4 id="parserparse_ternary"><a class="header" href="#parserparse_ternary"><code>Parser.parse_ternary()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_ternary()
+</code></pre>
+<p><code>condition ? consequence : alternative</code>, which is the loosest binding
+thing in the language.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_coalesce"><a class="header" href="#parserparse_coalesce"><code>Parser.parse_coalesce()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_coalesce()
+</code></pre>
+<p><code>a ?? b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_range"><a class="header" href="#parserparse_range"><code>Parser.parse_range()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_range()
+</code></pre>
+<p><code>a..b</code>, the same range Zuri writes the same way.</p>
+<p>Ranges do not chain, since <code>1..2..3</code> means nothing.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_or"><a class="header" href="#parserparse_or"><code>Parser.parse_or()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_or()
+</code></pre>
+<p><code>a or b</code>, also spelled <code>a || b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_and"><a class="header" href="#parserparse_and"><code>Parser.parse_and()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_and()
+</code></pre>
+<p><code>a and b</code>, also spelled <code>a &amp;&amp; b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_equality"><a class="header" href="#parserparse_equality"><code>Parser.parse_equality()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_equality()
+</code></pre>
+<p><code>a == b</code> and <code>a != b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_comparison"><a class="header" href="#parserparse_comparison"><code>Parser.parse_comparison()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_comparison()
+</code></pre>
+<p>The ordering operators, plus <code>in</code> and <code>not in</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_additive"><a class="header" href="#parserparse_additive"><code>Parser.parse_additive()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_additive()
+</code></pre>
+<p><code>a + b</code> and <code>a - b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_multiplicative"><a class="header" href="#parserparse_multiplicative"><code>Parser.parse_multiplicative()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_multiplicative()
+</code></pre>
+<p><code>a * b</code>, <code>a / b</code> and <code>a % b</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_unary"><a class="header" href="#parserparse_unary"><code>Parser.parse_unary()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_unary()
+</code></pre>
+<p><code>not a</code>, <code>!a</code> and <code>-a</code>.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_filtered"><a class="header" href="#parserparse_filtered"><code>Parser.parse_filtered()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_filtered()
+</code></pre>
+<p>A value with any filters applied to it.</p>
+<p>Filters bind tighter than every operator, so <code>items|length &gt; 3</code> compares
+the length rather than filtering the comparison.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_filter"><a class="header" href="#parserparse_filter"><code>Parser.parse_filter()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_filter(target)
+</code></pre>
+<p>One filter application, in either of the two forms it can take.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Expression</code> — target</li>
+</ul>
+<p><strong>Returns</strong> — Filter</p>
+<h4 id="parserparse_postfix"><a class="header" href="#parserparse_postfix"><code>Parser.parse_postfix()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_postfix()
+</code></pre>
+<p>A value with any lookups and calls applied to it.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_arguments"><a class="header" href="#parserparse_arguments"><code>Parser.parse_arguments()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_arguments() -&gt; list
+</code></pre>
+<p>A comma separated argument list, up to and including its closing
+parenthesis.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="parserparse_primary"><a class="header" href="#parserparse_primary"><code>Parser.parse_primary()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_primary()
+</code></pre>
+<p>A literal, a name, a bracketed expression, or a list or dictionary
+literal.</p>
+<p><strong>Returns</strong> — Expression</p>
+<h4 id="parserparse_list"><a class="header" href="#parserparse_list"><code>Parser.parse_list()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_list()
+</code></pre>
+<p>A list literal, with the opening bracket already consumed.</p>
+<p><strong>Returns</strong> — ListLiteral</p>
+<h4 id="parserparse_dict"><a class="header" href="#parserparse_dict"><code>Parser.parse_dict()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_dict()
+</code></pre>
+<p>A dictionary literal, with the opening brace already consumed.</p>
+<p>A key may be a bare name, a quoted string or a bracketed expression. An
+entry written as a bare name on its own is the shorthand Zuri uses: <code>{ user }</code>
+means <code>{ user: user }</code>.</p>
+<p><strong>Returns</strong> — DictLiteral</p>
+<h4 id="parserparse_dict_entry"><a class="header" href="#parserparse_dict_entry"><code>Parser.parse_dict_entry()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.parse_dict_entry() -&gt; list
+</code></pre>
+<p>One <code>key: value</code> pair, or the bare name shorthand.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="parserpeek"><a class="header" href="#parserpeek"><code>Parser.peek()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.peek()
+</code></pre>
+<p>The token the parser is looking at.</p>
+<p><strong>Returns</strong> — Token</p>
+<h4 id="parsertake_operator"><a class="header" href="#parsertake_operator"><code>Parser.take_operator()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.take_operator(value: string) -&gt; bool
+</code></pre>
+<p>Consumes the current token when it is the operator <em>value</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="parsertake_any_operator"><a class="header" href="#parsertake_any_operator"><code>Parser.take_any_operator()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.take_any_operator(values: list) -&gt; ?string
+</code></pre>
+<p>Consumes the current token when it is any of <em>values</em>, returning which
+one it was or <code>nil</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>values</code> (<code>list</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="parsertake_keyword"><a class="header" href="#parsertake_keyword"><code>Parser.take_keyword()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.take_keyword(word: string) -&gt; bool
+</code></pre>
+<p>Consumes the current token when it is the keyword <em>word</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>word</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="parserpeek_keyword"><a class="header" href="#parserpeek_keyword"><code>Parser.peek_keyword()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.peek_keyword(word: string) -&gt; bool
+</code></pre>
+<p>Whether the current token is the keyword <em>word</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>word</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="parserpeek_keyword_at"><a class="header" href="#parserpeek_keyword_at"><code>Parser.peek_keyword_at()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.peek_keyword_at(ahead: number, word: string) -&gt; bool
+</code></pre>
+<p>Whether the token <em>ahead</em> places further on is the keyword <em>word</em>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ahead</code> (<code>number</code>)</li>
+<li><code>word</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="parserexpect_operator"><a class="header" href="#parserexpect_operator"><code>Parser.expect_operator()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.expect_operator(value: string)
+</code></pre>
+<p>Consumes the operator <em>value</em> or reports what was there instead.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>value</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Raises</strong> <code>TemplateSyntaxError</code></p>
+<h4 id="parserdescribe_span"><a class="header" href="#parserdescribe_span"><code>Parser.describe_span()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.describe_span() -&gt; string
+</code></pre>
+<p>How the source read from the start of the value just parsed, used to
+name a callee that turned out not to be callable.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="parserdescribe"><a class="header" href="#parserdescribe"><code>Parser.describe()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.describe(token) -&gt; string
+</code></pre>
+<p>A readable rendering of <em>token</em> for an error message.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Token</code> — token</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="parserfail"><a class="header" href="#parserfail"><code>Parser.fail()</code></a></h4>
+<pre><code class="language-zuri ignore">wire.expression.Parser.fail(reason: string)
+</code></pre>
+<p>Raises a syntax error naming the expression it happened in.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>reason</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Raises</strong> <code>TemplateSyntaxError</code></p>
+<hr>
+<p><small>2026, Richard Ore and The Zuri Contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="wire-escape.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="wire-filters.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="wire-escape.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="wire-filters.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,911 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>isolate - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="isolate"><a class="header" href="#isolate"><code>isolate</code></a></h1>
+<pre><code class="language-zuri ignore">import isolate
+</code></pre>
+<p>High-throughput parallel concurrency backed by a pool of
+operating-system isolate threads.</p>
+<h2 id="architectural-model-shared-nothing-isolates"><a class="header" href="#architectural-model-shared-nothing-isolates">Architectural Model: Shared-Nothing Isolates</a></h2>
+<p>Modern multi-core computing demands concurrency models that scale
+linearly with CPU core count while safeguarding applications against
+data races and memory corruption. Zuri addresses this by adopting a
+<strong>Shared-Nothing Isolate</strong> architecture (similar to the Actor model and
+Dart/Erlang isolates) rather than shared-memory green threads.</p>
+<p>In Zuri, every isolate thread executes within its own self-contained
+Virtual Machine (<code>VM</code>) instance. Each isolate possesses an independent
+generational garbage-collected heap, nursery allocator, call frame
+stack, register array, and global module namespace. Isolates run
+concurrently across physical CPU cores without sharing heap pointers or
+mutable structures with other isolates or the main thread.</p>
+<p>Inter-isolate communication is accomplished strictly across defined
+boundary barriers. When values, closures, or data structures are
+transmitted via <code>spawn()</code>, <code>join()</code>, or <code>Channel</code> queues, Zuri traverses
+the object graph and constructs an isomorphic copy on the destination
+isolate’s heap. This transfer barrier faithfully preserves cyclic
+graphs, shared object identity within the payload, and class prototypes
+without sharing mutable memory across thread boundaries.</p>
+<h2 id="memory-footprint--task-density"><a class="header" href="#memory-footprint--task-density">Memory Footprint &amp; Task Density</a></h2>
+<p>High-concurrency systems frequently face a dilemma between heavy
+operating system threads and complex coroutine runtimes. Zuri reconciles
+high task density with OS-level multi-core execution through a two-tier
+scheduling design:</p>
+<p>Instead of allocating a dedicated OS thread or a dedicated runtime stack
+for every dispatched task, calling <code>isolate.spawn()</code> creates a
+lightweight <code>Task</code> descriptor (the callee and its arguments, already
+captured into a heap-independent snapshot) and pushes it onto a shared,
+mutex-guarded queue.</p>
+<ul>
+<li><strong>Isolate Pooling &amp; Reuse</strong>: A fixed pool of isolate OS
+threads, configured via <code>configure()</code> and defaulting to the system’s
+available CPU core count is pre-warmed at startup. These isolate threads
+continuously drain the task queue, executing tasks sequentially within
+their long-lived isolate contexts. - <strong>Small, Fixed-Size Task
+Descriptors</strong>: Because a queued task is a captured value snapshot rather
+than a suspended OS thread, applications can enqueue large task bursts
+(e.g. 100,000+ jobs) without paying for a dedicated stack or heap per
+task. The fixed part of a task (its queue slot plus its join handle) is
+a few hundred bytes; a task’s actual total footprint on top of that
+scales with whatever the callee’s own arguments and captured state need
+to carry across the boundary, same as any other value transfer described
+above.</li>
+</ul>
+<h2 id="garbage-collection--scalability-under-load"><a class="header" href="#garbage-collection--scalability-under-load">Garbage Collection &amp; Scalability Under Load</a></h2>
+<p>A frequent performance bottleneck in multi-threaded runtimes is garbage
+collection cross-talk. When multiple threads share a single global heap,
+an allocation spike in one thread can trigger global Stop-The-World
+(STW) pauses, lock contention on shared allocation arenas, or heavy
+write-barrier synchronization that degrades throughput across all CPU
+cores.</p>
+<p>Zuri eliminates GC interference through complete heap segregation:</p>
+<ul>
+<li><strong>Local Generational Collections</strong>: Every isolate isolate
+manages its own nursery and old-generation heaps. Young-generation minor
+collections and major mark-sweep cycles execute entirely on the local
+isolate thread. - <strong>Zero Stop-The-World Pauses Across Threads</strong>: A
+garbage collection cycle on Isolate A never halts, pauses, or
+synchronizes with Isolate B or the main thread. Compute-heavy,
+allocation-intensive workloads (such as parallel tree building, matrix
+algebra, and image rendering) achieve near-linear multi-core speedup
+without GC contention.</li>
+</ul>
+<h2 id="data-safety--race-conditions"><a class="header" href="#data-safety--race-conditions">Data Safety &amp; Race Conditions</a></h2>
+<p>Concurrency bugs in shared-memory architectures such as data races, torn
+reads, and lock inversion deadlocks often arise from uncontrolled
+concurrent access to mutable heap memory.</p>
+<ul>
+<li><strong>Data-Race Free by Construction</strong>: Because memory is
+physically partitioned into isolated heaps, two isolates can never
+concurrently mutate the same object in memory. Data races on heap
+objects are fundamentally impossible, eliminating the need for mutex
+locks or synchronized wrappers around user data structures. - <strong>Snapshot
+Closure Semantics</strong>: When a closure is passed to an isolate, its
+captured local variables and referenced global definitions are snapshot
+at dispatch time. The isolate receives an isolated clone of the captured
+state; subsequent mutations performed by the caller never affect the
+isolate, and isolate mutations never leak back to the caller.</li>
+</ul>
+<h2 id="comparison-with-go-goroutines"><a class="header" href="#comparison-with-go-goroutines">Comparison with Go Goroutines</a></h2>
+<p>Both Go and Zuri provide lightweight concurrency abstractions, but they
+optimize for different runtime trade-offs:</p>
+<p>Go utilizes Communicating Sequential Processes (CSP) built on M:N green
+threads multiplexed across OS threads with a single shared global heap.
+Zuri utilizes Thread-Pooled Shared-Nothing Isolates with deep-copy
+transfer barriers.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Feature</th><th style="text-align: left">Go Goroutines</th><th style="text-align: left">Zuri Isolates</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><strong>Concurrency Paradigm</strong></td><td style="text-align: left">M:N green threads on a single shared heap</td><td style="text-align: left">Thread-pooled shared-nothing isolates / actors</td></tr>
+<tr><td style="text-align: left"><strong>Memory Safety</strong></td><td style="text-align: left">Shared memory; data races possible without mutexes</td><td style="text-align: left">Data-race free by design via physical isolation</td></tr>
+<tr><td style="text-align: left"><strong>GC Impact</strong></td><td style="text-align: left">Shared global GC cycles and allocator write barriers</td><td style="text-align: left">Independent per-isolate GC; zero STW cross-talk</td></tr>
+<tr><td style="text-align: left"><strong>Task Density</strong></td><td style="text-align: left">~2 KB per goroutine stack</td><td style="text-align: left">a few hundred bytes of fixed queue/handle overhead per task; pooled thread reuse</td></tr>
+<tr><td style="text-align: left"><strong>Communication</strong></td><td style="text-align: left">Shared-memory pointer channels or locks</td><td style="text-align: left">Deep-copied value graphs or moved native resources</td></tr>
+<tr><td style="text-align: left"><strong>Primary Strengths</strong></td><td style="text-align: left">Ultra-high-concurrency non-blocking I/O multiplexing</td><td style="text-align: left">Compute-heavy parallel processing &amp; task pipelines</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="values-that-can-cross-isolate-boundaries"><a class="header" href="#values-that-can-cross-isolate-boundaries">Values That Can Cross Isolate Boundaries</a></h2>
+<p>Zuri’s value transfer engine supports virtually all language data types
+across isolate boundaries, including:</p>
+<ul>
+<li><strong>Primitives</strong>: <code>nil</code>, <code>bool</code>, <code>number</code>, <code>bigint</code>, <code>string</code>,
+<code>bytes</code>, and <code>range</code>. - <strong>Collections</strong>: <code>list</code> and <code>dict</code> (including
+nested, multidimensional, and cyclic structures). - <strong>Object-Oriented
+Structures</strong>: Class instances, class declarations (preserving static
+fields, superclasses, and method tables), and bound methods. -
+<strong>Executable Code</strong>: Functions, closures (capturing upvalues), anonymous
+lambdas, and top-level scripts.</li>
+<li><strong>Modules</strong>: imported modules and module bindings, including
+one a closure captured.</li>
+<li><strong>Native Handles</strong>: <code>Ptr</code> handles (moved linearly),
+<code>Channel</code> handles, and <code>Isolate</code> handles.</li>
+</ul>
+<p>A module is reloaded on the receiving isolate rather than copied, so the
+recipient gets that isolate’s own instance of it, with its own top-level
+state.</p>
+<h3 id="non-transferable-types"><a class="header" href="#non-transferable-types">Non-Transferable Types</a></h3>
+<p>Attempting to transmit an active operating system file handle
+(<code>file(...)</code>) across a isolate boundary raises an <code>IsolateError</code>.</p>
+<h2 id="native-resources--ownership-transfer"><a class="header" href="#native-resources--ownership-transfer">Native Resources &amp; Ownership Transfer</a></h2>
+<p>Operating system resources encapsulated within native pointers
+(<code>Ptr</code>)—such as database connections, network sockets, or compression
+streams—cannot be safely duplicated across threads.</p>
+<p>Zuri enforces <strong>linear ownership transfer (move semantics)</strong> for <code>Ptr</code>
+values: - When a <code>Ptr</code> is sent through <code>spawn()</code>, <code>join()</code>, or a
+<code>Channel</code>, ownership is transferred to the recipient, and the sender’s
+handle is permanently invalidated.</p>
+<ul>
+<li>Subsequent attempts to read or use an invalidated <code>Ptr</code> will
+raise an error. - In contrast, synchronization primitives like <code>Channel</code>
+and <code>Isolate</code> handles are thread-safe and may be freely shared among
+multiple isolates.</li>
+</ul>
+<h2 id="failure-isolation--fault-tolerance"><a class="header" href="#failure-isolation--fault-tolerance">Failure Isolation &amp; Fault Tolerance</a></h2>
+<p>A software defect or unhandled exception within one isolate is strictly
+contained and will never terminate peer isolates, corrupt the pool, or
+crash the host process.</p>
+<ul>
+<li><strong>Structured Error Propagation</strong>: Raised exceptions in a
+isolate task are captured and re-raised as <code>IsolateError</code> (complete with
+original source file and line stack traces) when <code>join()</code> or
+<code>try_join()</code> is invoked. - <strong>Automatic Isolate Recycling</strong>: In the rare
+event of an unrecoverable isolate panic, the affected isolate thread is
+safely retired and replaced with a fresh isolate, maintaining full pool
+capacity. - <strong>Un-Joined Failure Diagnostics</strong>: If an isolate fails and
+its handle is dropped without being joined, a diagnostic warning is
+emitted to ensure errors are never silently swallowed.</li>
+</ul>
+<h2 id="cancellation-semantics"><a class="header" href="#cancellation-semantics">Cancellation Semantics</a></h2>
+<p>Applications can cancel running or queued isolates via
+<code>Isolate.cancel()</code>.</p>
+<ul>
+<li><strong>Preemptive Blocking Interruption</strong>: If an isolate is
+blocked on a channel operation (<code>Channel.send()</code>, <code>Channel.recv()</code>), an
+isolate join (<code>Isolate.join()</code>), or a multiplexer (<code>select()</code>,
+<code>wait_any()</code>, <code>wait_all()</code>), <code>cancel()</code> interrupts the blocking call
+promptly with a <code>IsolateCancelledError</code>. - <strong>Cooperative Compute
+Polling</strong>: During active computational loops, code can cooperatively
+poll <code>isolate.is_cancelled()</code> to gracefully terminate execution.</li>
+</ul>
+<h2 id="structured-concurrency-isolatescope"><a class="header" href="#structured-concurrency-isolatescope">Structured Concurrency (<code>isolate.scope()</code>)</a></h2>
+<p>Unbounded background concurrency can lead to orphan tasks, leaked
+resources, and missed errors if spawned isolates outlive their intended
+context. Zuri provides <strong>Structured Concurrency</strong> through
+<code>isolate.scope(body)</code> and the <code>Scope</code> handle.</p>
+<ul>
+<li><strong>Lifetime Bounded to Lexical Scope</strong>: Any isolate spawned
+via <code>s.spawn()</code> within a <code>scope()</code> block is guaranteed to complete
+before <code>scope()</code> returns. - <strong>Fail-Fast Automatic Cancellation</strong>: If the
+scope’s <code>body</code> raises an exception or if any child isolate fails, all
+other sibling isolates in that scope are automatically sent a
+cancellation signal (<code>cancel()</code>), preventing wasted computation. -
+<strong>Clean Teardown &amp; Error Prioritization</strong>: <code>scope()</code> waits for all
+cancelled siblings to finish shutting down before propagating the root
+failure to the caller.</li>
+</ul>
+<h2 id="examples"><a class="header" href="#examples">Examples</a></h2>
+<h3 id="basic-task-spawning"><a class="header" href="#basic-task-spawning">Basic Task Spawning</a></h3>
+<pre><code class="language-zuri ignore">import isolate
+
+def calculate_primes(limit) {
+  var count = 0
+  iter var n = 2; n &lt;= limit; n++ {
+    var is_prime = true
+    iter var d = 2; d * d &lt;= n; d++ {
+      if n % d == 0 {
+        is_prime = false
+        break
+      }
+    }
+    if is_prime count++
+  }
+  return count
+}
+
+var task = isolate.spawn(calculate_primes, 100_000)
+echo "Primes found: ${task.join()}"
+</code></pre>
+<h3 id="parallel-batch-mapping"><a class="header" href="#parallel-batch-mapping">Parallel Batch Mapping</a></h3>
+<pre><code class="language-zuri ignore">import isolate
+
+def square(n) {
+  return n * n
+}
+
+var numbers = [1, 2, 3, 4, 5, 6, 7, 8]
+var results = isolate.map(square, numbers)
+echo "Squares: ${results}"
+</code></pre>
+<h3 id="structured-concurrency-scope"><a class="header" href="#structured-concurrency-scope">Structured Concurrency (<code>scope</code>)</a></h3>
+<pre><code class="language-zuri ignore">import isolate
+
+var total = isolate.scope(def(s) {
+  var w1 = s.spawn(def() { return 10 * 2 })
+  var w2 = s.spawn(def() { return 20 * 2 })
+  return w1.join() + w2.join()
+})
+echo "Total: ${total}"
+</code></pre>
+<h3 id="publish-subscribe-broadcast"><a class="header" href="#publish-subscribe-broadcast">Publish-Subscribe (<code>Broadcast</code>)</a></h3>
+<pre><code class="language-zuri ignore">import isolate
+
+var hub = isolate.broadcast()
+var sub1 = hub.subscribe()
+var sub2 = hub.subscribe()
+
+isolate.spawn(def(c) { echo "Isolate 1: ${c.recv()}" }, sub1)
+isolate.spawn(def(c) { echo "Isolate 2: ${c.recv()}" }, sub2)
+
+hub.send("Hello Subscribers!")
+hub.close()
+</code></pre>
+<h2 id="the-isolate-api"><a class="header" href="#the-isolate-api">The <code>isolate</code> API</a></h2>
+<p>Every public name in <code>isolate</code>, wherever it is declared. Each links to
+the page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="isolate-broadcast.html#broadcast"><code>isolate.Broadcast</code></a></td><td>class</td><td>A one-to-many publish-subscribe message distribution hub.</td></tr>
+<tr><td><a href="isolate-channel.html#channel"><code>isolate.Channel</code></a></td><td>class</td><td>A thread-safe, multi-producer multi-consumer (MPMC) message queue.</td></tr>
+<tr><td><a href="#isolate"><code>isolate.Isolate</code></a></td><td>class</td><td>A handle to an isolate, returned by <code>spawn()</code>.</td></tr>
+<tr><td><a href="isolate-error.html#isolatecancellederror"><code>isolate.IsolateCancelledError</code></a></td><td>class</td><td>Raised from <code>Isolate.join()</code>, <code>Channel.send()</code>, <code>Channel.recv()</code>, <code>isolate.wait_any()</code>, <code>isolate.wait_all()</code>,…</td></tr>
+<tr><td><a href="isolate-error.html#isolateerror"><code>isolate.IsolateError</code></a></td><td>class</td><td>Raised when an isolate’s function raises an uncaught error, a <code>Channel</code> operation fails, or a value cannot…</td></tr>
+<tr><td><a href="isolate-error.html#isolatetimeouterror"><code>isolate.IsolateTimeoutError</code></a></td><td>class</td><td>Raised when <code>Isolate.join()</code>, <code>Channel.send()</code>, or <code>Channel.recv()</code> is given a <code>timeout</code> and it elapses…</td></tr>
+<tr><td><a href="#scope"><code>isolate.Scope</code></a></td><td>class</td><td>A structured concurrency supervisor and task nursery.</td></tr>
+<tr><td><a href="#active_count"><code>isolate.active_count</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="isolate-broadcast.html#broadcast"><code>isolate.broadcast</code></a></td><td>function</td><td>Creates a new one-to-many <code>Broadcast</code> distribution hub.</td></tr>
+<tr><td><a href="isolate-channel.html#channel"><code>isolate.channel</code></a></td><td>function</td><td>Creates a new thread-safe <code>Channel</code>.</td></tr>
+<tr><td><a href="#configure"><code>isolate.configure</code></a></td><td>function</td><td>Sets how many isolate threads the pool may run at once.</td></tr>
+<tr><td><a href="#cpu_count"><code>isolate.cpu_count</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="#is_cancelled"><code>isolate.is_cancelled</code></a></td><td>function</td><td>Checks whether the currently running isolate has been asked to stop via its handle’s <code>cancel()</code>.</td></tr>
+<tr><td><a href="#is_shutdown"><code>isolate.is_shutdown</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="#map"><code>isolate.map</code></a></td><td>function</td><td>Runs <code>fn</code> once per item in <code>items</code>, in parallel across the isolate pool, and returns the results in the same…</td></tr>
+<tr><td><a href="#pool_size"><code>isolate.pool_size</code></a></td><td>function</td><td>How many isolate threads the pool may run at once.</td></tr>
+<tr><td><a href="#queued_count"><code>isolate.queued_count</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="#scope"><code>isolate.scope</code></a></td><td>function</td><td>Executes <code>body(s)</code> within a structured concurrency scope.</td></tr>
+<tr><td><a href="isolate-channel.html#select"><code>isolate.select</code></a></td><td>function</td><td>Multiplexes across multiple channels, blocking until at least one channel is ready to deliver a value or is…</td></tr>
+<tr><td><a href="#shutdown"><code>isolate.shutdown</code></a></td><td>function</td><td>Stops the pool from accepting any further <code>spawn()</code> calls, then blocks until every isolate already spawned;…</td></tr>
+<tr><td><a href="#spawn"><code>isolate.spawn</code></a></td><td>function</td><td></td></tr>
+<tr><td><a href="#spawn_named"><code>isolate.spawn_named</code></a></td><td>function</td><td>Same as <code>spawn()</code>, but gives the isolate a <code>name</code>; purely a debugging label, read back via <code>Isolate.name()</code>…</td></tr>
+<tr><td><a href="#started_count"><code>isolate.started_count</code></a></td><td>function</td><td>How many isolate threads the pool has started so far.</td></tr>
+<tr><td><a href="#wait_all"><code>isolate.wait_all</code></a></td><td>function</td><td>Blocks until every one of <code>isolates</code> has finished, then returns their results in the same order as <code>isolates</code>.</td></tr>
+<tr><td><a href="#wait_any"><code>isolate.wait_any</code></a></td><td>function</td><td>Blocks until at least one of <code>isolates</code> finishes, and returns that one.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="isolate-broadcast.html"><code>isolate.broadcast</code></a></td><td><code>isolate.broadcast.*</code></td><td>One-to-many (fan-out) publish-subscribe message distribution for isolate isolates.</td></tr>
+<tr><td><a href="isolate-channel.html"><code>isolate.channel</code></a></td><td><code>isolate.channel.*</code></td><td>Thread-safe, multi-producer multi-consumer (MPMC) communication queues for passing values and messages across…</td></tr>
+<tr><td><a href="isolate-error.html"><code>isolate.error</code></a></td><td><code>isolate.error.*</code></td><td><code>IsolateError</code>, kept in its own leaf module (no imports of its own) so both <code>index</code> and <code>channel</code> can depend…</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="spawn"><a class="header" href="#spawn"><code>spawn()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.spawn(fn: function, ...args: list)
+</code></pre>
+<h3 id="spawn_named"><a class="header" href="#spawn_named"><code>spawn_named()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.spawn_named(name: string, fn: function, ...args: list)
+</code></pre>
+<p>Same as <code>spawn()</code>, but gives the isolate a <code>name</code>; purely a debugging
+label, read back via <code>Isolate.name()</code> and included in the “unobserved
+failure” warning (see the module docs’ “Failure isolation” section) if
+this one fails and is never <code>join()</code>ed or <code>try_join()</code>ed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>fn</code> (<code>function</code>) — a closure, bound method, or class method.</li>
+<li><code>args</code> (<code>...any</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Isolate</p>
+<p><strong>Raises</strong> <code>TypeError</code> if <code>fn</code> is not callable</p>
+<p><strong>Raises</strong> <code>IsolateError</code> if <code>fn</code> is a native function or class,
+<code>fn</code>/<code>args</code> cannot cross an isolate boundary, or the pool has been
+<code>shutdown()</code></p>
+<h3 id="scope"><a class="header" href="#scope"><code>scope()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.scope(body: function)
+</code></pre>
+<p>Executes <code>body(s)</code> within a structured concurrency scope.</p>
+<p><code>isolate.scope()</code> establishes a structured task boundary, guaranteeing
+that all isolates spawned via <code>s.spawn()</code> or <code>s.spawn_named()</code> finish
+before <code>scope()</code> returns.</p>
+<h4 id="lifecycle--error-semantics"><a class="header" href="#lifecycle--error-semantics">Lifecycle &amp; Error Semantics</a></h4>
+<ol>
+<li><strong>Completion Guarantee</strong>: <code>scope()</code> blocks until <code>body(s)</code> returns
+and all child isolates have terminated. 2. <strong>Automatic Cancellation</strong>:
+If <code>body</code> raises an exception or if any child isolate fails, all other
+still-running children in the scope are automatically sent a
+cancellation signal (<code>cancel()</code>). 3. <strong>Graceful Teardown</strong>: <code>scope()</code>
+waits for all cancelled isolates to cleanly finish their teardown before
+returning or re-raising. 4. <strong>Error Priority</strong>: If <code>body</code> raised an
+exception, <code>body</code>’s exception is re-raised. Otherwise, the earliest
+child failure (excluding secondary <code>IsolateCancelledError</code> cascades) is
+re-raised.</li>
+</ol>
+<pre><code class="language-zuri ignore">import isolate
+
+var result = isolate.scope(def(s) {
+  var task1 = s.spawn(def() { return 100 })
+  var task2 = s.spawn(def() { return 200 })
+  return task1.join() + task2.join()
+})
+echo "Total: ${result}" # 300
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>function</code>) — A callback function <code>def(s)</code> that receives a
+fresh <code>Scope</code>.</li>
+</ul>
+<p><strong>Returns</strong> — any: The return value of <code>body(s)</code>.</p>
+<p><strong>Raises</strong> <code>IsolateError</code> if a child isolate failed and <code>body</code> did not
+raise.</p>
+<p><strong>Raises</strong> any: Any exception raised by <code>body(s)</code>.</p>
+<h3 id="configure"><a class="header" href="#configure"><code>configure()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.configure(threads: int)
+</code></pre>
+<p>Sets how many isolate threads the pool may run at once. Has no effect if
+the pool has already started; its size is fixed once the first isolate
+runs.</p>
+<p>The size is a ceiling. A thread is started only when an isolate is
+waiting and every thread already started is busy, so a pool sized for
+peak load costs only the threads the load actually needed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>threads</code> (<code>int</code>)</li>
+</ul>
+<p><strong>Returns</strong> — bool: <code>true</code> if applied, <code>false</code> if the pool had already
+started.</p>
+<p><strong>Raises</strong> <code>ValueError</code> if <code>threads</code> is less than 1</p>
+<h3 id="pool_size"><a class="header" href="#pool_size"><code>pool_size()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.pool_size() -&gt; int
+</code></pre>
+<p>How many isolate threads the pool may run at once. Starts the pool, with
+whatever size <code>configure()</code> set or the machine’s CPU count otherwise, if
+it has not started yet.</p>
+<p><strong>Returns</strong> <code>int</code></p>
+<h3 id="started_count"><a class="header" href="#started_count"><code>started_count()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.started_count() -&gt; int
+</code></pre>
+<p>How many isolate threads the pool has started so far. Threads start as
+isolates need them, so this grows with the most isolates ever waiting at
+once and never passes <code>pool_size()</code>.</p>
+<p><strong>Returns</strong> <code>int</code></p>
+<h3 id="cpu_count"><a class="header" href="#cpu_count"><code>cpu_count()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.cpu_count()
+</code></pre>
+<p><strong>Returns</strong> — int: the number of logical CPUs this machine reports.</p>
+<h3 id="shutdown"><a class="header" href="#shutdown"><code>shutdown()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.shutdown(timeout: ?number)
+</code></pre>
+<p>Stops the pool from accepting any further <code>spawn()</code> calls, then blocks
+until every isolate already spawned; queued or already running; has
+finished. Nothing in flight is abandoned.</p>
+<p>Permanent: once called, every <code>spawn()</code> for the rest of the process
+raises <code>IsolateError</code>, even if this call itself later times out.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>number</code>) — seconds to wait before giving up. Waits
+indefinitely if omitted.</li>
+</ul>
+<p><strong>Raises</strong> <code>IsolateTimeoutError</code> if <code>timeout</code> elapses with isolates
+still in flight</p>
+<h3 id="active_count"><a class="header" href="#active_count"><code>active_count()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.active_count()
+</code></pre>
+<p><strong>Returns</strong> — int: isolates an isolate is actively running right now.
+Does not include ones still <code>queued_count()</code>.</p>
+<h3 id="queued_count"><a class="header" href="#queued_count"><code>queued_count()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.queued_count()
+</code></pre>
+<p><strong>Returns</strong> — int: isolates spawned but not yet picked up by a isolate.</p>
+<h3 id="is_shutdown"><a class="header" href="#is_shutdown"><code>is_shutdown()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.is_shutdown()
+</code></pre>
+<p><strong>Returns</strong> — bool: <code>true</code> if <code>shutdown()</code> has been called.</p>
+<h3 id="wait_any"><a class="header" href="#wait_any"><code>wait_any()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.wait_any(isolates: list, timeout: ?number)
+</code></pre>
+<p>Blocks until at least one of <code>isolates</code> finishes, and returns that one.
+Useful for reacting to whichever of several tasks completes first,
+rather than joining them one at a time in a fixed order.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>[Isolate]</code> — isolates: must not be empty.</li>
+<li><code>timeout</code> (<code>number</code>) — seconds to wait before giving up. Waits
+indefinitely if omitted.</li>
+</ul>
+<p><strong>Returns</strong> — Isolate: whichever one finished first.</p>
+<p><strong>Raises</strong> <code>ValueError</code> if <code>isolates</code> is empty</p>
+<p><strong>Raises</strong> <code>IsolateTimeoutError</code> if <code>timeout</code> elapses before any of them
+finish</p>
+<p><strong>Raises</strong> <code>IsolateCancelledError</code> if the CALLING isolate is cancelled
+while blocked here</p>
+<h3 id="wait_all"><a class="header" href="#wait_all"><code>wait_all()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.wait_all(isolates: list, timeout: ?number) -&gt; list
+</code></pre>
+<p>Blocks until every one of <code>isolates</code> has finished, then returns their
+results in the same order as <code>isolates</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>[Isolate]</code> — isolates: may be empty (returns <code>[]</code>).</li>
+<li><code>timeout</code> (<code>number</code>) — seconds to wait for all of them combined, not
+per isolate. Waits indefinitely if omitted.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>IsolateError</code> from the first one (in <code>isolates</code> order) whose
+function raised, once every one of them has finished</p>
+<p><strong>Raises</strong> <code>IsolateTimeoutError</code> if <code>timeout</code> elapses before all of them
+finish</p>
+<p><strong>Raises</strong> <code>IsolateCancelledError</code> if the CALLING isolate is cancelled
+while blocked here</p>
+<h3 id="map"><a class="header" href="#map"><code>map()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.map(fn: function, items: list, timeout: ?number) -&gt; list
+</code></pre>
+<p>Runs <code>fn</code> once per item in <code>items</code>, in parallel across the isolate pool,
+and returns the results in the same order as <code>items</code>. Equivalent to
+spawning an isolate per item and passing the handles to <code>wait_all()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>fn</code> (<code>function</code>) — a closure, bound method, or class method.</li>
+<li><code>items</code> (<code>list</code>)</li>
+<li><code>timeout</code> (<code>number</code>) — seconds to wait for the whole batch combined.
+Waits indefinitely if omitted.</li>
+</ul>
+<p><strong>Returns</strong> <code>list</code></p>
+<p><strong>Raises</strong> <code>IsolateError</code> from the first item (in <code>items</code> order) whose
+call raised, once every call has finished</p>
+<p><strong>Raises</strong> <code>IsolateTimeoutError</code> if <code>timeout</code> elapses before every call
+finishes</p>
+<p><strong>Raises</strong> <code>IsolateCancelledError</code> if the CALLING isolate is cancelled
+while blocked here</p>
+<h3 id="is_cancelled"><a class="header" href="#is_cancelled"><code>is_cancelled()</code></a></h3>
+<pre><code class="language-zuri ignore">isolate.is_cancelled() -&gt; bool
+</code></pre>
+<p>Checks whether the currently running isolate has been asked to stop via
+its handle’s <code>cancel()</code>. Meant to be polled periodically by long-running
+or looping isolate code so it can return early.</p>
+<p>Calling this outside an isolate (from the main script, or from another
+thread) always returns <code>false</code>.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="isolate-1"><a class="header" href="#isolate-1"><code>Isolate</code></a></h3>
+<pre><code class="language-zuri ignore">class isolate.Isolate
+</code></pre>
+<p>A handle to an isolate, returned by <code>spawn()</code>.</p>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate(ptr)
+</code></pre>
+<h4 id="isolatejoin"><a class="header" href="#isolatejoin"><code>Isolate.join()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.join(timeout: ?number) -&gt; any
+</code></pre>
+<p>Blocks until the isolate finishes and returns its result. May be called
+more than once; later calls return immediately with the same result.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>number</code>) — seconds to wait before giving up. Waits
+indefinitely if omitted.</li>
+</ul>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>IsolateError</code> if the isolate’s function raised an uncaught
+error</p>
+<p><strong>Raises</strong> <code>IsolateTimeoutError</code> if <code>timeout</code> elapses first</p>
+<p><strong>Raises</strong> <code>IsolateCancelledError</code> if the CALLING isolate (not this one)
+is cancelled while blocked here</p>
+<h4 id="isolatecancel"><a class="header" href="#isolatecancel"><code>Isolate.cancel()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.cancel()
+</code></pre>
+<p>Requests that the isolate stop. Has no effect on an isolate that has
+already finished.</p>
+<p>If the isolate is currently blocked in <code>Channel.send()</code>/ <code>recv()</code>,
+<code>Isolate.join()</code>, <code>wait_any()</code>, <code>wait_all()</code>, or <code>select()</code>, that call
+is interrupted within roughly 50ms and raises <code>IsolateCancelledError</code>.</p>
+<p>Otherwise; plain, non-blocking code; cancellation is cooperative: it
+does not interrupt code that’s already running. The isolate’s own
+function must check <code>isolate.is_cancelled()</code> and return on its own.</p>
+<h4 id="isolateis_cancelled"><a class="header" href="#isolateis_cancelled"><code>Isolate.is_cancelled()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.is_cancelled()
+</code></pre>
+<p><strong>Returns</strong> — bool: <code>true</code> if <code>cancel()</code> has been called on this
+isolate.</p>
+<h4 id="isolatename"><a class="header" href="#isolatename"><code>Isolate.name()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.name()
+</code></pre>
+<p><strong>Returns</strong> — ?string: the name given via <code>spawn_named()</code>, or <code>nil</code> if
+this isolate was started with plain <code>spawn()</code>.</p>
+<h4 id="isolatetry_join"><a class="header" href="#isolatetry_join"><code>Isolate.try_join()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.try_join() -&gt; any
+</code></pre>
+<p>Returns the isolate’s result, or <code>nil</code> if it has not finished yet. Does
+not block.</p>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>IsolateError</code> if the isolate’s function raised an uncaught
+error</p>
+<blockquote>
+<p><strong>Note:</strong> an isolate that returns <code>nil</code> is indistinguishable from one
+still running. Use <code>is_done()</code> to tell them apart.</p>
+</blockquote>
+<h4 id="isolateis_done"><a class="header" href="#isolateis_done"><code>Isolate.is_done()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.is_done()
+</code></pre>
+<p><strong>Returns</strong> — bool: <code>true</code> if the isolate has finished.</p>
+<h4 id="isolatestatus"><a class="header" href="#isolatestatus"><code>Isolate.status()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.status()
+</code></pre>
+<p>Unlike <code>try_join()</code>, never marks a failure as “observed”; safe to poll
+purely to check progress without silencing the warning a failure that’s
+never actually <code>join()</code>ed/<code>try_join()</code>ed would otherwise get (see the
+module docs’ “Failure isolation” section).</p>
+<p><strong>Returns</strong> — string: <code>'pending'</code> while still running, <code>'done'</code> once
+finished successfully, or <code>'error'</code> once finished with an uncaught
+error.</p>
+<h4 id="isolatehandle"><a class="header" href="#isolatehandle"><code>Isolate.handle()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Isolate.handle()
+</code></pre>
+<p>This isolate’s underlying native handle, needed by <code>wait_any()</code> to
+operate on a plain list of <code>Isolate</code>s from outside the class. Not meant
+for direct use.</p>
+<h3 id="scope-1"><a class="header" href="#scope-1"><code>Scope</code></a></h3>
+<pre><code class="language-zuri ignore">class isolate.Scope
+</code></pre>
+<p>A structured concurrency supervisor and task nursery.</p>
+<p><code>Scope</code> manages the lifecycle of a set of concurrent child isolates
+spawned within a <code>isolate.scope()</code> block. It guarantees that:</p>
+<ol>
+<li><strong>Lifetime Bounding</strong>: All isolates spawned via <code>s.spawn()</code> or
+<code>s.spawn_named()</code> are tracked by the scope and cannot outlive the
+enclosing <code>scope(body)</code> block. 2. <strong>Fail-Fast Error Handling</strong>: If any
+child isolate raises an unhandled error (or if the <code>scope</code> body itself
+fails), all remaining sibling isolates are automatically cancelled
+(<code>cancel()</code>), preventing wasted computation. 3. <strong>Deterministic
+Teardown</strong>: <code>scope()</code> waits for all active and cancelled children to
+complete execution before re-raising the root failure or returning the
+body’s result.</li>
+</ol>
+<p><code>Scope</code> instances cannot be constructed directly; they are created and
+passed to the callback function by <code>isolate.scope(body)</code>.</p>
+<h5 id="examples-1"><a class="header" href="#examples-1">Examples</a></h5>
+<h6 id="parallel-task-aggregation"><a class="header" href="#parallel-task-aggregation">Parallel Task Aggregation</a></h6>
+<pre><code class="language-zuri ignore">import isolate
+
+var summary = isolate.scope(@(s) {
+  var task_a = s.spawn(@() { return "Task A complete" })
+  var task_b = s.spawn(@() { return "Task B complete" })
+  return "${task_a.join()} &amp; ${task_b.join()}"
+})
+echo summary # "Task A complete &amp; Task B complete"
+</code></pre>
+<h6 id="fail-fast-child-cancellation"><a class="header" href="#fail-fast-child-cancellation">Fail-Fast Child Cancellation</a></h6>
+<pre><code class="language-zuri ignore">import isolate
+
+catch {
+  isolate.scope(def(s) {
+    # Spawn an isolate that fails quickly
+    s.spawn(def() {
+      raise "critical error in child"
+    })
+    # Sibling isolate is automatically cancelled as soon as child 1 fails
+    s.spawn(def() {
+      iter var i = 0; i &lt; 1_000_000; i++ {
+        if isolate.is_cancelled() break
+      }
+    })
+  })
+} as err {
+  echo "Scope caught child failure: ${err.message}"
+}
+</code></pre>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">isolate.Scope()
+</code></pre>
+<h4 id="scopespawn"><a class="header" href="#scopespawn"><code>Scope.spawn()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Scope.spawn(fn: function, ...args: list)
+</code></pre>
+<p>Spawns a concurrent isolate task tracked by this scope.</p>
+<p>The spawned isolate is bound to this scope’s lifecycle:
+<code>isolate.scope()</code> will not return until this isolate has completed. If
+this isolate fails, all sibling isolates in the scope are automatically
+cancelled.</p>
+<pre><code class="language-zuri ignore">isolate.scope(def(s) {
+  var w = s.spawn(def(x, y) { return x + y }, 10, 20)
+  echo "Result: ${w.join()}" # 30
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>fn</code> (<code>function</code>) — A callable function, closure, or method to
+execute.</li>
+<li><code>args</code> (<code>...any</code>) — Arguments to pass to <code>fn</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Isolate: A handle to the spawned isolate.</p>
+<p><strong>Raises</strong> <code>TypeError</code> if <code>fn</code> is not callable.</p>
+<p><strong>Raises</strong> <code>IsolateError</code> if <code>fn</code> is a native function or class, if
+<code>fn</code>/<code>args</code> cannot cross isolate boundaries, or if the isolate pool has
+shut down.</p>
+<h4 id="scopespawn_named"><a class="header" href="#scopespawn_named"><code>Scope.spawn_named()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Scope.spawn_named(name: string, fn: function, ...args: list)
+</code></pre>
+<p>Spawns a named concurrent isolate task tracked by this scope.</p>
+<p>Operates identically to <code>Scope.spawn()</code>, but assigns an identifier
+<code>name</code> used in diagnostic error messages and debugging traces.</p>
+<pre><code class="language-zuri ignore">isolate.scope(def(s) {
+  var w = s.spawn_named("fetch-user", fetch_user, user_id)
+  return w.join()
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — A human-readable identifier for the isolate.</li>
+<li><code>fn</code> (<code>function</code>) — A callable function, closure, or method to
+execute.</li>
+<li><code>args</code> (<code>...any</code>) — Arguments to pass to <code>fn</code>.</li>
+</ul>
+<p><strong>Returns</strong> — Isolate: A handle to the spawned isolate.</p>
+<p><strong>Raises</strong> <code>TypeError</code> if <code>fn</code> is not callable.</p>
+<p><strong>Raises</strong> <code>IsolateError</code> if <code>fn</code> is a native function or class, if
+<code>fn</code>/<code>args</code> cannot cross isolate boundaries, or if the isolate pool has
+shut down.</p>
+<h4 id="scopechildren"><a class="header" href="#scopechildren"><code>Scope.children()</code></a></h4>
+<pre><code class="language-zuri ignore">isolate.Scope.children()
+</code></pre>
+<p>Returns all <code>Isolate</code> handles spawned within this scope.</p>
+<pre><code class="language-zuri ignore">isolate.scope(def(s) {
+  s.spawn(task1)
+  s.spawn(task2)
+
+  for child in s.children() {
+    echo "Child isolate active"
+  }
+})
+</code></pre>
+<p><strong>Returns</strong> — list: A list of <code>Isolate</code> instances in the order they were
+spawned.</p>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="compress-zstd.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="isolate-broadcast.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="compress-zstd.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="isolate-broadcast.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

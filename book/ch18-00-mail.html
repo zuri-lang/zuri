@@ -1,0 +1,1554 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Mail - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch18-00-mail.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="mail"><a class="header" href="#mail">Mail</a></h1>
+<p>The <code>mail</code> module is Zuri’s mail stack: the message format, the three
+protocols that move messages around, and the servers at the far end of
+two of them. It is written in Zuri from the socket up, and it speaks to
+real mail servers.</p>
+<p>Mail is older than almost everything it runs on, and it shows. A
+message is text with a header block, defined in 1982 and extended ever
+since to carry anything that is not ASCII, which by now is most of what
+people send. Sending one is SMTP. Reading one where it is kept is IMAP.
+Taking one away is POP3. Three protocols, one format, and a great deal
+of accumulated history, almost all of which a program should not have
+to know about.</p>
+<p>That is the design. A message is described by what is in it and the
+module works out the rest: which parts it needs, how they nest, which
+encoding each header and each body wants, and what has to be escaped so
+that a line of a single dot in the body does not end the message early.
+A program says who a message is from and what it says; it does not say
+<code>Content-Transfer-Encoding</code>.</p>
+<ul>
+<li><a href="#following-along">Following Along</a></li>
+<li><a href="#introduction">Introduction</a></li>
+<li><a href="#building-a-message">Building a Message</a>
+<ul>
+<li><a href="#addresses">Addresses</a></li>
+<li><a href="#text-html-or-both">Text, HTML, or Both</a></li>
+<li><a href="#attachments">Attachments</a></li>
+<li><a href="#images-inside-the-html">Images Inside the HTML</a></li>
+<li><a href="#headers-of-your-own">Headers of Your Own</a></li>
+<li><a href="#replies-and-threads">Replies and Threads</a></li>
+</ul>
+</li>
+<li><a href="#reading-a-message">Reading a Message</a>
+<ul>
+<li><a href="#the-tree">The Tree</a></li>
+<li><a href="#finding-the-body">Finding the Body</a></li>
+<li><a href="#attachments-coming-in">Attachments Coming In</a></li>
+<li><a href="#character-sets">Character Sets</a></li>
+</ul>
+</li>
+<li><a href="#sending">Sending</a>
+<ul>
+<li><a href="#a-client-of-your-own">A Client of Your Own</a></li>
+<li><a href="#the-envelope">The Envelope</a></li>
+<li><a href="#tls">TLS</a></li>
+<li><a href="#authenticating">Authenticating</a></li>
+<li><a href="#what-the-server-can-do">What the Server Can Do</a></li>
+<li><a href="#when-sending-fails">When Sending Fails</a></li>
+</ul>
+</li>
+<li><a href="#reading-mail-with-imap">Reading Mail with IMAP</a>
+<ul>
+<li><a href="#opening-a-mailbox">Opening a Mailbox</a></li>
+<li><a href="#searching">Searching</a></li>
+<li><a href="#fetching-less-than-everything">Fetching Less Than Everything</a></li>
+<li><a href="#flags">Flags</a></li>
+<li><a href="#moving-copying-and-removing">Moving, Copying and Removing</a></li>
+<li><a href="#putting-a-message-back">Putting a Message Back</a></li>
+<li><a href="#waiting-for-new-mail">Waiting for New Mail</a></li>
+</ul>
+</li>
+<li><a href="#collecting-mail-with-pop3">Collecting Mail with POP3</a></li>
+<li><a href="#running-an-smtp-server">Running an SMTP Server</a>
+<ul>
+<li><a href="#the-handlers">The Handlers</a></li>
+<li><a href="#refusing-properly">Refusing Properly</a></li>
+<li><a href="#tls-and-authentication">TLS and Authentication</a></li>
+<li><a href="#limits">Limits</a></li>
+</ul>
+</li>
+<li><a href="#running-an-imap-server">Running an IMAP Server</a>
+<ul>
+<li><a href="#where-the-mail-lives">Where the Mail Lives</a></li>
+<li><a href="#maildir">Maildir</a></li>
+<li><a href="#a-store-of-your-own">A Store of Your Own</a></li>
+</ul>
+</li>
+<li><a href="#serving-more-than-one-connection">Serving More Than One Connection</a></li>
+<li><a href="#proving-where-mail-came-from">Proving Where Mail Came From</a>
+<ul>
+<li><a href="#signing">Signing</a></li>
+<li><a href="#checking">Checking</a></li>
+<li><a href="#what-a-signature-does-not-say">What a Signature Does Not Say</a></li>
+</ul>
+</li>
+<li><a href="#authentication-mechanisms">Authentication Mechanisms</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="following-along"><a class="header" href="#following-along">Following Along</a></h2>
+<p>Most examples below build on one message. This is it:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('Ada Lovelace &lt;ada@example.com&gt;')
+  .add_to('Grace Hopper &lt;grace@example.com&gt;')
+  .set_subject('On Engines')
+  .set_text('The analytical engine weaves algebraic patterns.')
+
+echo note.subject()
+echo note.sender().name
+echo note.to()[0].address
+</code></pre>
+<pre><code class="language-console">On Engines
+Ada Lovelace
+grace@example.com
+</code></pre>
+<p>Nothing there touches a network. Building and reading messages is
+entirely separate from moving them, and a program that only needs to
+produce or parse one never opens a socket.</p>
+<h2 id="introduction"><a class="header" href="#introduction">Introduction</a></h2>
+<p>There are three protocols and they do genuinely different things.</p>
+<p><strong>SMTP</strong> moves a message from wherever it was written to a server that
+will take responsibility for it. That is all it does. It has no notion
+of a folder, a read message, or a search; a message goes in and either
+is accepted or is not.</p>
+<p><strong>IMAP</strong> is for reading mail where it is kept. The mail stays on the
+server, the client works with it in place, and two devices looking at
+the same mailbox see the same thing. Almost everything a mail client
+does is IMAP.</p>
+<p><strong>POP3</strong> is for taking mail away. There is a numbered list and there is
+removing things from it. It is the wrong protocol for reading mail on
+more than one device and the right one for a program whose job is to
+drain a mailbox into somewhere else.</p>
+<p>The module covers the client end of all three and the server end of the
+two that have one worth having. There is no POP3 server here and there
+is not meant to be: a POP3 server is an IMAP server with almost
+everything taken away, and <code>mail.imap</code> is the one to run.</p>
+<h2 id="building-a-message"><a class="header" href="#building-a-message">Building a Message</a></h2>
+<p><code>mail.message()</code> starts one. What goes in it is said one call at a
+time, and each call hands the message back, so they read as one:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_subject('On Engines')
+  .set_text('The analytical engine weaves algebraic patterns.')
+
+echo note.content_type().mime_type()
+</code></pre>
+<pre><code class="language-console">text/plain
+</code></pre>
+<p>A message starts with a <code>Date</code>, because the time it was written is the
+time it was written, and with <code>MIME-Version</code>. It gets its <code>Message-ID</code>
+when it is sent, because that is when the domain it belongs to is
+settled.</p>
+<h3 id="addresses"><a class="header" href="#addresses">Addresses</a></h3>
+<p>Every address setter takes text, an <code>Address</code>, or a list of either:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('Ada Lovelace &lt;ada@example.com&gt;')
+  .add_to(['grace@example.com', 'Charles Babbage &lt;charles@example.com&gt;'])
+  .add_cc('archive@example.com')
+
+echo note.to().map(@(person) =&gt; person.address)
+echo note.to()[1].name
+echo note.cc().length()
+</code></pre>
+<pre><code class="language-console">[grace@example.com, charles@example.com]
+Charles Babbage
+1
+</code></pre>
+<p><code>add_to()</code> keeps whoever is already there, so it can be called in a
+loop. <code>set_to()</code> replaces them. The same pair exists for <code>Cc</code> and
+<code>Bcc</code>.</p>
+<p><code>Bcc</code> is removed from the message before it is handed to a server,
+after the recipients have been taken out of it. That is the whole point
+of a blind copy, and it is easy to get wrong by hand.</p>
+<p>A display name with characters a header cannot carry is encoded, and
+one containing a comma is quoted, without being asked:</p>
+<pre><code class="language-zuri">import mail
+
+echo mail.Address('gruss@example.com', 'Grüße').to_string()
+echo mail.Address('ada@example.com', 'Lovelace, Ada').to_string()
+</code></pre>
+<pre><code class="language-console">=?utf-8?B?R3LDvMOfZQ==?= &lt;gruss@example.com&gt;
+"Lovelace, Ada" &lt;ada@example.com&gt;
+</code></pre>
+<p>Reading them back gives the name, not the encoding:</p>
+<pre><code class="language-zuri">import mail
+
+echo mail.parse_address('=?utf-8?B?R3LDvMOfZQ==?= &lt;gruss@example.com&gt;').name
+echo mail.parse_address('"Lovelace, Ada" &lt;ada@example.com&gt;').name
+</code></pre>
+<pre><code class="language-console">Grüße
+Lovelace, Ada
+</code></pre>
+<p><code>mail.parse_address_list()</code> reads a whole header, including the
+comments and groups that RFC 5322 allows and nobody remembers:</p>
+<pre><code class="language-zuri">import mail
+
+var people = mail.parse_address_list(
+  'Ada &lt;ada@example.com&gt; (the author), Engineers: grace@example.com, charles@example.com;'
+)
+
+echo people.map(@(person) =&gt; person.address)
+</code></pre>
+<pre><code class="language-console">[ada@example.com, grace@example.com, charles@example.com]
+</code></pre>
+<p>The group’s members come back alongside the rest, since a program
+sending mail cares who the recipients are and not how they were
+gathered. <code>mail.parse_address_groups()</code> keeps the grouping when that
+matters.</p>
+<h3 id="text-html-or-both"><a class="header" href="#text-html-or-both">Text, HTML, or Both</a></h3>
+<p>Text alone is a plain message. HTML alone is an HTML message. Both
+together become a <code>multipart/alternative</code>, with the plain text first,
+because a reader that understands both is meant to take the last one it
+can display:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_subject('On Engines')
+  .set_text('The engine weaves algebraic patterns.')
+  .set_html('&lt;p&gt;The engine weaves &lt;em&gt;algebraic patterns&lt;/em&gt;.&lt;/p&gt;')
+
+echo note.content_type().mime_type()
+echo note.parts().map(@(part) =&gt; part.content_type().mime_type())
+</code></pre>
+<pre><code class="language-console">multipart/alternative
+[text/plain, text/html]
+</code></pre>
+<p>Setting the text again replaces it wherever in the tree it is, rather
+than adding a second copy. The shape is a consequence of the content,
+so it stays correct as the content changes.</p>
+<p>Outgoing text is written as UTF-8, or as US-ASCII when that is all it
+needs. Naming any other character set raises, because the module cannot
+encode into one and a header claiming otherwise would be a lie.</p>
+<h3 id="attachments"><a class="header" href="#attachments">Attachments</a></h3>
+<p>An attachment is a thing in its own right, built the way a message is
+and handed to <code>attach()</code>:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_subject('The figures')
+  .set_text('Attached.')
+  .attach(mail.attachment('name,total\nengines,41\n')
+    .set_filename('figures.csv'))
+
+echo note.content_type().mime_type()
+echo note.attachments().map(@(part) =&gt; part.filename())
+echo note.attachments()[0].content_type().mime_type()
+</code></pre>
+<pre><code class="language-console">multipart/mixed
+[figures.csv]
+text/csv
+</code></pre>
+<p>The media type came from the filename. The message became a
+<code>multipart/mixed</code> with whatever it held before as the first part; that
+happens once however many files are attached.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>set_filename(name)</code></td><td>the name to offer the file under</td></tr>
+<tr><td><code>set_content_type(type)</code></td><td>the media type, when the filename is not enough</td></tr>
+<tr><td><code>set_disposition(kind)</code></td><td><code>attachment</code> by default, or <code>inline</code></td></tr>
+<tr><td><code>set_cid(id)</code></td><td>the identifier HTML refers to it by</td></tr>
+<tr><td><code>set_encoding(name)</code></td><td>the transfer encoding, chosen from the data when absent</td></tr>
+<tr><td><code>set_description(text)</code></td><td>what some clients show beside the file</td></tr>
+</tbody>
+</table>
+</div>
+<p>A file on disk is one call:</p>
+<pre><code class="language-zuri ignore">note.attach(mail.Attachment.from_file('reports/q3.pdf'))
+</code></pre>
+<p>The name and the media type both come from the path unless something
+says otherwise. A filename with characters a header cannot carry is
+encoded the way RFC 2231 says, split across continuations if it is
+long, and read back whole at the far end.</p>
+<h3 id="images-inside-the-html"><a class="header" href="#images-inside-the-html">Images Inside the HTML</a></h3>
+<p>An image the message shows rather than offers is attached like any
+other file and referred to by an identifier:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_subject('The logo')
+
+var source = note.embed(
+  mail.attachment(bytes([137, 80, 78, 71])).set_filename('logo.png')
+)
+
+note.set_html('&lt;p&gt;Our mark: &lt;img src="${source}"&gt;&lt;/p&gt;')
+
+echo source.starts_with('cid:')
+echo note.content_type().mime_type()
+echo note.parts().map(@(part) =&gt; part.content_type().mime_type())
+</code></pre>
+<pre><code class="language-console">true
+multipart/related
+[text/html, image/png]
+</code></pre>
+<p><code>embed()</code> returns the reference to point an <code>&lt;img&gt;</code> at and rearranges
+the message into the <code>multipart/related</code> that tells a reader the two
+belong together. The HTML ends up as the first part, which is what
+marks it as the one to display.</p>
+<h3 id="headers-of-your-own"><a class="header" href="#headers-of-your-own">Headers of Your Own</a></h3>
+<p>Anything the setters do not cover goes through <code>set_header()</code>:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_header('X-Priority', '1')
+  .set_header('List-Unsubscribe', '&lt;https://example.com/unsubscribe&gt;')
+
+echo note.headers.get('X-Priority', nil)
+</code></pre>
+<pre><code class="language-console">1
+</code></pre>
+<p>The value is written exactly as given. A header that needs encoding
+needs it applied first; the setters that cover addresses and the
+subject do that for you, because those are the headers where getting it
+wrong is common.</p>
+<p><code>add_header()</code> keeps any header already there rather than replacing it,
+which is what <code>Received</code> needs.</p>
+<h3 id="replies-and-threads"><a class="header" href="#replies-and-threads">Replies and Threads</a></h3>
+<p>A reply is an ordinary message with two more headers, and getting them
+right is what puts it in the same conversation in a mail client:</p>
+<pre><code class="language-zuri">import mail
+
+var original = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_subject('On Engines')
+  .set_message_id('&lt;first@example.com&gt;')
+
+var reply = mail.message()
+  .set_from('grace@example.com')
+  .add_to(original.sender())
+  .set_subject('Re: ${original.subject()}')
+  .set_in_reply_to(original.message_id())
+  .set_references(original.references() + [original.message_id()])
+  .set_text('Quite so.')
+
+echo reply.headers.get('In-Reply-To', nil)
+echo reply.references()
+</code></pre>
+<pre><code class="language-console">&lt;first@example.com&gt;
+[&lt;first@example.com&gt;]
+</code></pre>
+<p><code>references()</code> on the original gives whatever chain it already belonged
+to, so appending its own identifier extends the thread rather than
+starting a new one.</p>
+<h2 id="reading-a-message"><a class="header" href="#reading-a-message">Reading a Message</a></h2>
+<p><code>mail.parse()</code> takes the bytes and gives back the tree:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.parse(
+  'From: Ada Lovelace &lt;ada@example.com&gt;\r\n'
+  + 'To: grace@example.com\r\n'
+  + 'Subject: =?utf-8?Q?On_Engines_and_Gr=C3=BC=C3=9Fe?=\r\n'
+  + 'Content-Type: text/plain; charset=utf-8\r\n'
+  + '\r\n'
+  + 'The engine weaves algebraic patterns.'
+)
+
+echo note.sender().name
+echo note.subject()
+echo note.text()
+</code></pre>
+<pre><code class="language-console">Ada Lovelace
+On Engines and Grüße
+The engine weaves algebraic patterns.
+</code></pre>
+<p>Nothing is decoded until something asks for it. Reading the subject of
+a message with a twenty megabyte attachment in it costs no more than
+reading the headers, which is what makes it reasonable to parse
+everything in a mailbox and look at only some of it.</p>
+<h3 id="the-tree"><a class="header" href="#the-tree">The Tree</a></h3>
+<p>A part is a message too: it has headers and a body, and its body may be
+more parts. The same class covers both, so walking a message and
+reading a standalone one are the same code.</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_text('plain')
+  .set_html('&lt;p&gt;html&lt;/p&gt;')
+  .attach(mail.attachment('some,data\n').set_filename('figures.csv'))
+
+for part in note.walk() {
+  echo part.content_type().mime_type()
+}
+</code></pre>
+<pre><code class="language-console">multipart/mixed
+multipart/alternative
+text/plain
+text/html
+text/csv
+</code></pre>
+<p><code>walk()</code> is the whole tree, outermost first. <code>parts()</code> is one level.
+<code>find_part()</code> is the first part of a given type anywhere in it.</p>
+<h3 id="finding-the-body"><a class="header" href="#finding-the-body">Finding the Body</a></h3>
+<p>Most programs want the text, wherever it happens to be:</p>
+<pre><code class="language-zuri">import mail
+
+var note = mail.parse(mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_text('the plain version')
+  .set_html('&lt;p&gt;the html version&lt;/p&gt;')
+  .to_bytes())
+
+echo note.text_body()
+echo note.html_body()
+</code></pre>
+<pre><code class="language-console">the plain version
+&lt;p&gt;the html version&lt;/p&gt;
+</code></pre>
+<p>Both return <code>nil</code> when the message has no such part, which is not the
+same as an empty one. An attachment that happens to be <code>text/plain</code> is
+not mistaken for the body: a part that says it is an attachment, or
+that carries a filename without saying either way, is left out.</p>
+<h3 id="attachments-coming-in"><a class="header" href="#attachments-coming-in">Attachments Coming In</a></h3>
+<pre><code class="language-zuri">import mail
+
+var note = mail.parse(mail.message()
+  .set_from('ada@example.com')
+  .add_to('grace@example.com')
+  .set_text('Attached.')
+  .attach(mail.attachment('name,total\nengines,41')
+    .set_filename('figures.csv'))
+  .to_bytes())
+
+for part in note.attachments() {
+  echo '${part.filename()} (${part.content_type().mime_type()})'
+  echo part.body_bytes().to_string()
+}
+</code></pre>
+<pre><code class="language-console">figures.csv (text/csv)
+name,total
+engines,41
+</code></pre>
+<p><code>body_bytes()</code> decodes the transfer encoding, so base64 and
+quoted-printable both come back as the bytes that went in. <code>text()</code>
+goes one step further and applies the character set.</p>
+<h3 id="character-sets"><a class="header" href="#character-sets">Character Sets</a></h3>
+<p>A header carrying anything outside ASCII carries it encoded, and there
+are two encodings it might have used. Reading a header through the
+module decodes both:</p>
+<pre><code class="language-zuri">import mail.encoding
+
+echo encoding.decode_words('=?utf-8?B?SGVsbG8=?= =?utf-8?B?IHdvcmxk?=')
+echo encoding.decode_words('=?iso-8859-1?Q?caf=E9?=')
+echo encoding.decode_words('this is not =?encoded? at all')
+</code></pre>
+<pre><code class="language-console">Hello world
+café
+this is not =?encoded? at all
+</code></pre>
+<p>Whitespace between two adjacent encoded words is dropped, which is what
+lets a long subject be split across several of them without a space
+appearing where none was written. Anything that is not a well-formed
+encoded word is left exactly as it is, including text that merely
+begins with <code>=?</code>.</p>
+<p>Bodies say their character set in the <code>Content-Type</code>. The sets a
+message is likely to name are understood: UTF-8, US-ASCII, the ISO 8859
+Latin sets 1 and 15, windows-1252, and UTF-16 in either byte order. One
+this does not know is read as UTF-8, which leaves whatever ASCII is in
+it intact rather than discarding the part that would have been
+readable.</p>
+<pre><code class="language-zuri">import mail.encoding
+
+echo encoding.decode_text(bytes([0x63, 0x61, 0x66, 0xe9]), 'iso-8859-1')
+echo encoding.decode_text(bytes([0x93, 0x41, 0x94]), 'windows-1252')
+</code></pre>
+<pre><code class="language-console">café
+“A”
+</code></pre>
+<h2 id="sending"><a class="header" href="#sending">Sending</a></h2>
+<p><code>mail.send()</code> opens a connection, sends one message and closes it
+again:</p>
+<pre><code class="language-zuri ignore">import mail
+
+mail.send('smtp://mail.example.com', mail.message()
+  .set_from('reports@example.com')
+  .add_to('ada@example.com')
+  .set_subject('Quarterly report')
+  .set_text('The numbers are in.'),
+  { username: 'reports', password: secret })
+</code></pre>
+<p>That is the whole of sending mail for a program that sends one at a
+time.</p>
+<h3 id="a-client-of-your-own"><a class="header" href="#a-client-of-your-own">A Client of Your Own</a></h3>
+<p>A program sending many wants a connection kept open across all of them,
+because opening one costs a handshake and an authentication exchange:</p>
+<pre><code class="language-zuri ignore">import mail.smtp { SmtpClient }
+
+var server = SmtpClient.connect('smtp://mail.example.com', {
+  username: 'reports',
+  password: secret,
+})
+
+for note in queue {
+  server.send(note, nil)
+}
+
+server.quit()
+</code></pre>
+<p><code>quit()</code> says goodbye and closes. <code>close()</code> just closes, which is what
+to do when something has gone wrong and the conversation is no longer
+in a state the server would recognise.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>scheme</th><th>port</th><th>what it means</th></tr>
+</thead>
+<tbody>
+<tr><td><code>smtp://</code></td><td>587</td><td>submission, with TLS negotiated over it</td></tr>
+<tr><td><code>smtps://</code></td><td>465</td><td>TLS from the first byte</td></tr>
+</tbody>
+</table>
+</div>
+<p>Port 25 is for one server relaying to another, not for a program
+submitting mail, and it is not a default here. Give it explicitly when
+that is genuinely what you are doing.</p>
+<h3 id="the-envelope"><a class="header" href="#the-envelope">The Envelope</a></h3>
+<p>What the server is told and what the message says are two different
+things. The envelope comes from the message unless the options say
+otherwise: the sender from <code>From</code>, the recipients from <code>To</code>, <code>Cc</code> and
+<code>Bcc</code> together, with duplicates removed.</p>
+<pre><code class="language-zuri ignore">server.send(note, { from: 'bounces@example.com' })
+server.send(note, { to: ['someone@example.com'] })
+</code></pre>
+<p>The first is what a mailing list does: the message says who wrote it,
+the envelope says where a bounce should go. The second delivers to
+somewhere the headers do not mention at all, which is how a blind copy
+actually works underneath.</p>
+<p>An empty sender is the null path, which is what a bounce is sent from
+so that it cannot be bounced in turn:</p>
+<pre><code class="language-zuri ignore">server.send(bounce, { from: '' })
+</code></pre>
+<h3 id="tls"><a class="header" href="#tls">TLS</a></h3>
+<p>A client connects, reads what the server can do, negotiates TLS, and
+only then sends anything worth protecting. That is the default:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>tls</code></th><th>what happens</th></tr>
+</thead>
+<tbody>
+<tr><td><code>require</code></td><td>negotiate TLS, and refuse to go on without it. The default.</td></tr>
+<tr><td><code>prefer</code></td><td>negotiate it when the server offers it</td></tr>
+<tr><td><code>disable</code></td><td>do not ask</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>smtps://</code>, <code>imaps://</code> and <code>pop3s://</code> handshake before the first byte
+instead, and then <code>tls</code> has nothing left to decide.</p>
+<p>Whatever <code>tls</code> says, a mechanism that puts the password on the wire is
+never used on a connection that is not encrypted. A client offered
+nothing else raises rather than sending it. That is not configurable,
+and it is the one place the module refuses to do what it is told.</p>
+<p>To trust a certificate the system does not, hand it a configuration:</p>
+<pre><code class="language-zuri ignore">import net.tls
+
+var config = tls.TlsConfig()
+
+config.add_ca_pem(file('internal-ca.pem').read())
+
+var server = SmtpClient.connect('smtp://mail.internal', {
+  username: 'reports',
+  password: secret,
+  tls_config: config,
+})
+</code></pre>
+<h3 id="authenticating"><a class="header" href="#authenticating">Authenticating</a></h3>
+<p>Credentials go in the options, and the client picks the strongest
+mechanism both ends know:</p>
+<pre><code class="language-zuri ignore">SmtpClient.connect('smtp://mail.example.com', {
+  username: 'reports',
+  password: secret,
+})
+
+SmtpClient.connect('smtp://smtp.gmail.com', {
+  username: 'reports@example.com',
+  token: access_token,
+})
+</code></pre>
+<p>A token picks a token mechanism. To force one rather than choosing,
+pass <code>mechanisms</code>; the choice is described under <a href="#authentication-mechanisms">Authentication
+Mechanisms</a>.</p>
+<p>A username and password in the connection string work too, which is
+convenient for a string that came from configuration:</p>
+<pre><code class="language-zuri ignore">mail.send('smtp://reports:secret@mail.example.com', note, nil)
+</code></pre>
+<h3 id="what-the-server-can-do"><a class="header" href="#what-the-server-can-do">What the Server Can Do</a></h3>
+<pre><code class="language-zuri ignore">echo server.capabilities().keys()
+echo server.max_size()
+</code></pre>
+<p>A message larger than the server said it would take is refused before
+it is sent rather than after uploading it, which matters when the
+message is the reason the connection is slow.</p>
+<p>Where the server offers <code>CHUNKING</code>, <code>send()</code> can hand the message over
+in pieces with nothing escaped:</p>
+<pre><code class="language-zuri ignore">server.send(note, { chunking: true })
+</code></pre>
+<p>Where it offers <code>SIZE</code>, <code>8BITMIME</code> or <code>DSN</code>, those are used without
+being asked for. Where it does not, the message still goes.</p>
+<h3 id="when-sending-fails"><a class="header" href="#when-sending-fails">When Sending Fails</a></h3>
+<p>A refusal partway through a transaction leaves the server holding half
+of one. <code>send()</code> abandons it before raising, so the connection is still
+usable for the next message rather than answering <code>503</code> to everything
+afterwards. That is worth knowing because doing it by hand is easy to
+forget:</p>
+<pre><code class="language-zuri ignore">for note in queue {
+  catch {
+    server.send(note, nil)
+  } as error {
+    failures.append([note, error])
+  }
+}
+
+server.quit()
+</code></pre>
+<p>Every message after a failure still goes.</p>
+<h2 id="reading-mail-with-imap"><a class="header" href="#reading-mail-with-imap">Reading Mail with IMAP</a></h2>
+<p>IMAP leaves the mail on the server. A client opens a mailbox, searches
+it, and fetches what it needs:</p>
+<pre><code class="language-zuri ignore">import mail.imap { ImapClient }
+
+var inbox = ImapClient.connect('imaps://mail.example.com', {
+  username: 'ada',
+  password: secret,
+})
+
+inbox.select('INBOX')
+
+for uid in inbox.search('UNSEEN', true) {
+  var note = inbox.fetch_message(uid, true, false)
+
+  echo '${note.sender().address}: ${note.subject()}'
+}
+
+inbox.logout()
+</code></pre>
+<h3 id="opening-a-mailbox"><a class="header" href="#opening-a-mailbox">Opening a Mailbox</a></h3>
+<pre><code class="language-zuri ignore">var box = inbox.select('INBOX')
+
+echo box.exists
+echo box.uidvalidity
+echo box.permanent_flags
+</code></pre>
+<p><code>select()</code> opens a mailbox for reading and writing. <code>examine()</code> opens
+it read-only, which also means that reading a message does not mark it
+read. <code>close_mailbox()</code> closes it and removes anything marked deleted
+on the way out; <code>unselect()</code> closes it without doing that.</p>
+<p><code>uidvalidity</code> is how a server says its numbering has been reset. A
+client that remembers identifiers between sessions has to check it: if
+it has changed, every identifier it remembers means something else now.</p>
+<p>To see what is there:</p>
+<pre><code class="language-zuri ignore">for box in inbox.list('', '*') {
+  echo '${box.name} ${box.is_selectable() ? '' : '(container only)'}'
+}
+</code></pre>
+<p><code>*</code> matches anything including the separator between levels; <code>%</code>
+matches anything except it, which is what lists one level. <code>status()</code>
+asks what is in a mailbox without opening it, which is how a client
+shows unread counts for a dozen folders without selecting each one:</p>
+<pre><code class="language-zuri ignore">echo inbox.status('Archive', ['MESSAGES', 'UNSEEN'])
+</code></pre>
+<h3 id="searching"><a class="header" href="#searching">Searching</a></h3>
+<p>The criteria are IMAP’s own, and they read close to English:</p>
+<pre><code class="language-zuri ignore">inbox.search('UNSEEN', true)
+inbox.search('FROM ada@example.com SINCE 1-Jan-2026', true)
+inbox.search('SUBJECT engines LARGER 10000', true)
+inbox.search('FLAGGED UNDELETED', true)
+</code></pre>
+<p>The second argument asks for unique identifiers rather than positions.
+A position is only good until something is removed from the mailbox and
+everything after it renumbers; an identifier outlives the connection
+and is what a program that runs twice should remember. Prefer <code>true</code>
+unless the numbers are being used immediately.</p>
+<h3 id="fetching-less-than-everything"><a class="header" href="#fetching-less-than-everything">Fetching Less Than Everything</a></h3>
+<p>Fetching every message to show a list of them is the mistake IMAP
+exists to prevent:</p>
+<pre><code class="language-zuri ignore">for info in inbox.fetch('1:50', 'ENVELOPE FLAGS RFC822.SIZE', false) {
+  echo '${info.envelope.subject} (${info.size} bytes)'
+}
+</code></pre>
+<p>The envelope is the addresses and the date, parsed by the server. No
+body crossed the network at all.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>what to ask for</th><th>what comes back</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ENVELOPE</code></td><td>the addresses, subject and date</td></tr>
+<tr><td><code>FLAGS</code></td><td>what has been done to the message</td></tr>
+<tr><td><code>RFC822.SIZE</code></td><td>how large it is</td></tr>
+<tr><td><code>INTERNALDATE</code></td><td>when the server took it</td></tr>
+<tr><td><code>BODYSTRUCTURE</code></td><td>the shape of the message, part by part</td></tr>
+<tr><td><code>BODY.PEEK[HEADER]</code></td><td>the header block</td></tr>
+<tr><td><code>BODY.PEEK[]</code></td><td>the whole message</td></tr>
+<tr><td><code>BODY.PEEK[2]</code></td><td>one part of it</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>BODYSTRUCTURE</code> is the one worth knowing about. It reports what the
+message is made of without sending any of it, so a client can decide to
+fetch the text and leave a large attachment on the server:</p>
+<pre><code class="language-zuri ignore">var structure = inbox.fetch(uid, 'BODYSTRUCTURE', true)[0].structure
+
+for part in structure.walk() {
+  echo '${part.section} ${part.mime_type()} ${part.size}'
+}
+</code></pre>
+<p><code>section</code> is the number to ask for that part on its own.</p>
+<p><code>fetch_headers()</code> is the common case of asking for the header block,
+and <code>fetch_message()</code> the common case of asking for all of it:</p>
+<pre><code class="language-zuri ignore">inbox.fetch_message(uid, true, false)   # leaves it unread
+inbox.fetch_message(uid, true, true)    # marks it read
+</code></pre>
+<p>Reading a message does not mark it read unless you say so. A program
+going through a mailbox should not change what a person sees when they
+next open it.</p>
+<h3 id="flags"><a class="header" href="#flags">Flags</a></h3>
+<p>A flag is what has been done to a message:</p>
+<pre><code class="language-zuri ignore">inbox.add_flags(uid, ['\\Seen'], true)
+inbox.remove_flags(uid, ['\\Flagged'], true)
+inbox.mark_seen(uid, true)
+inbox.mark_deleted(uid, true)
+</code></pre>
+<p><code>\Seen</code>, <code>\Answered</code>, <code>\Flagged</code>, <code>\Deleted</code> and <code>\Draft</code> are the ones
+with a defined meaning. A server may allow others, and says which in
+the mailbox’s <code>permanent_flags</code>.</p>
+<p><code>mark_deleted()</code> only marks. Nothing goes until <code>expunge()</code>:</p>
+<pre><code class="language-zuri ignore">inbox.mark_deleted(uid, true)
+echo inbox.expunge()
+</code></pre>
+<p><code>expunge()</code> returns the positions that went, highest first, because
+each removal renumbers everything after it and that is the order they
+have to be applied in.</p>
+<h3 id="moving-copying-and-removing"><a class="header" href="#moving-copying-and-removing">Moving, Copying and Removing</a></h3>
+<pre><code class="language-zuri ignore">inbox.copy(uid, 'Archive', true)
+inbox.move(uid, 'Archive', true)
+</code></pre>
+<p><code>move()</code> uses the server’s own <code>MOVE</code> where there is one, and otherwise
+does what <code>MOVE</code> was invented to replace: copy, mark deleted, expunge.
+Either way the message ends up in one place.</p>
+<p><code>create()</code>, <code>delete()</code>, <code>rename()</code>, <code>subscribe()</code> and <code>unsubscribe()</code>
+do what they say.</p>
+<h3 id="putting-a-message-back"><a class="header" href="#putting-a-message-back">Putting a Message Back</a></h3>
+<p><code>append()</code> adds a message to a mailbox without sending it anywhere,
+which is how a sent message gets into the Sent folder:</p>
+<pre><code class="language-zuri ignore">inbox.append('Sent', note, ['\\Seen'], nil)
+</code></pre>
+<p>The flags are the ones to file it under, and <code>\Seen</code> is the usual one
+for something the account itself wrote. The last argument is the
+internal date; the time of arrival is used when it is not given.</p>
+<h3 id="waiting-for-new-mail"><a class="header" href="#waiting-for-new-mail">Waiting for New Mail</a></h3>
+<p><code>idle()</code> waits for the server to say something rather than asking over
+and over:</p>
+<pre><code class="language-zuri ignore">inbox.on_event(@(response) {
+  echo 'the server said ${response.name()}'
+})
+
+while true {
+  inbox.idle(1500000)
+}
+</code></pre>
+<p>A server may drop a connection that idles for too long, which is why
+the wait is bounded and the loop comes back around. Twenty-five minutes
+is the default and is what RFC 2177 recommends.</p>
+<p><code>noop()</code> does the same thing without waiting: it gives the server a
+chance to report anything that has changed, and keeps the connection
+from going idle at all.</p>
+<h2 id="collecting-mail-with-pop3"><a class="header" href="#collecting-mail-with-pop3">Collecting Mail with POP3</a></h2>
+<p>POP3 hands the mail over and forgets it. There is no searching and no
+folders; there is a numbered list, and there is taking things off it:</p>
+<pre><code class="language-zuri ignore">import mail.pop3 { Pop3Client }
+
+var mailbox = Pop3Client.connect('pop3s://mail.example.com', {
+  username: 'ada',
+  password: secret,
+})
+
+for entry in mailbox.list() {
+  archive(mailbox.retrieve(entry.number))
+  mailbox.delete(entry.number)
+}
+
+mailbox.quit()
+</code></pre>
+<p><code>list()</code> gives every message with its size and, where the server offers
+one, an identifier that outlives the session. The number does not: it
+is only good until something is removed and the rest renumber.</p>
+<p>Nothing is actually removed until <code>quit()</code>. <code>delete()</code> only marks and
+<code>reset()</code> unmarks everything. A connection that drops halfway leaves
+the mailbox exactly as it was, which is the protocol protecting you
+from a program that fails in the middle. It also means that closing
+without <code>quit()</code> is how to abandon a run.</p>
+<p><code>top()</code> fetches the headers and the first few lines of the body, which
+is enough to decide whether the rest is worth fetching:</p>
+<pre><code class="language-zuri ignore">var preview = mailbox.top(entry.number, 5)
+</code></pre>
+<p>Where the server’s greeting offers it, <code>APOP</code> is used in preference to
+sending the password, and where it offers SASL those mechanisms are
+preferred again. <code>USER</code>/<code>PASS</code> is the last resort and is only used over
+TLS.</p>
+<h2 id="running-an-smtp-server"><a class="header" href="#running-an-smtp-server">Running an SMTP Server</a></h2>
+<p><code>SmtpServer</code> knows the protocol and nothing about policy. What to
+accept is decided by handlers:</p>
+<pre><code class="language-zuri ignore">import mail.smtp { SmtpServer }
+
+var server = SmtpServer({ port: 2525, hostname: 'mail.example.com' })
+
+server.on_rcpt(@(session, recipient) {
+  if !accounts.contains(recipient.local) {
+    return { code: 550, message: 'no such user here', enhanced: '5.1.1' }
+  }
+})
+
+server.on_data(@(session, raw) {
+  for recipient in session.recipients {
+    store.append(recipient.local, 'INBOX', raw, nil, nil)
+  }
+})
+
+server.listen()
+</code></pre>
+<h3 id="the-handlers"><a class="header" href="#the-handlers">The Handlers</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>handler</th><th>called with</th><th>when</th></tr>
+</thead>
+<tbody>
+<tr><td><code>on_connect</code></td><td>the session</td><td>a connection opens, before the greeting</td></tr>
+<tr><td><code>on_auth</code></td><td>the session and the credentials</td><td>a client authenticates</td></tr>
+<tr><td><code>on_mail</code></td><td>the session and the sender</td><td>a transaction starts</td></tr>
+<tr><td><code>on_rcpt</code></td><td>the session and a recipient</td><td>for each recipient</td></tr>
+<tr><td><code>on_data</code></td><td>the session and the message</td><td>the whole message has arrived</td></tr>
+<tr><td><code>on_close</code></td><td>the session</td><td>the connection closes, however it closed</td></tr>
+<tr><td><code>on_error</code></td><td>the error and the session</td><td>something inside the server failed</td></tr>
+</tbody>
+</table>
+</div>
+<p>The session carries what is known so far: who connected, whether the
+connection is encrypted, who authenticated, the sender, and the
+recipients accepted up to now. <code>session.state</code> is an empty dictionary
+your handlers can put anything in, and it lives as long as the
+connection.</p>
+<h3 id="refusing-properly"><a class="header" href="#refusing-properly">Refusing Properly</a></h3>
+<p>A handler that returns nothing accepts. One that returns a code and a
+message refuses with those:</p>
+<pre><code class="language-zuri ignore">server.on_mail(@(session, sender) {
+  if blocklist.contains(sender.domain) {
+    return { code: 550, message: 'not accepted from there', enhanced: '5.7.1' }
+  }
+})
+</code></pre>
+<p>A handler that raises is a failure on the server’s side, not a bad
+message, and the sender is told <code>451</code> and to try again later. That
+distinction matters: a database that is down should not turn into a
+bounce.</p>
+<p>Refusing at <code>on_rcpt</code> is the useful one. It tells the sender
+immediately which address is wrong, while it is still connected and can
+do something about it, rather than accepting the message and generating
+a bounce to an address that may not exist either.</p>
+<p>The null sender, which is what a bounce comes from, arrives at
+<code>on_mail</code> as an empty string rather than an address. Refusing to accept
+mail from it is how a server ends up unable to receive bounces, so
+handle it deliberately.</p>
+<h3 id="tls-and-authentication"><a class="header" href="#tls-and-authentication">TLS and Authentication</a></h3>
+<pre><code class="language-zuri ignore">server.use_tls(file('cert.pem').read(), file('key.pem').read())
+</code></pre>
+<p>That is what lets the server offer <code>STARTTLS</code>. Everything a client said
+before the handshake is discarded afterwards, including who it claimed
+to be, because none of it was protected.</p>
+<p>Authentication needs one handler and, for the mechanisms that prove a
+password without sending it, a second:</p>
+<pre><code class="language-zuri ignore">server.on_auth(@(session, credentials) {
+  if !accounts.verify(credentials.username, credentials.password) {
+    return { code: 535, message: 'no' }
+  }
+})
+
+server.on_password(@(username) {
+  return accounts.password_of(username)
+})
+</code></pre>
+<p><code>on_password</code> is what makes <code>CRAM-MD5</code> possible: checking that proof
+means working out the same one, which means knowing the password. A
+server that cannot produce one does not advertise the mechanism.
+Without <code>on_auth</code> the server advertises no authentication at all.</p>
+<p><code>PLAIN</code> and <code>LOGIN</code> are advertised only once the connection is
+encrypted. <code>require_auth</code> refuses mail from a client that has not
+authenticated, and <code>require_tls</code> refuses it on a connection that is not
+encrypted.</p>
+<h3 id="limits"><a class="header" href="#limits">Limits</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>option</th><th>default</th><th>what it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>max_size</code></td><td>35 MB</td><td>the largest message to take</td></tr>
+<tr><td><code>max_recipients</code></td><td>100</td><td>recipients one message may have</td></tr>
+<tr><td><code>timeout</code></td><td>300000</td><td>milliseconds a client may go quiet</td></tr>
+</tbody>
+</table>
+</div>
+<p>A client that declares a size past the limit is refused at <code>MAIL</code>,
+before it uploads anything. One that does not declare it is refused
+when it goes past. Ten malformed commands in a row and the connection
+is dropped.</p>
+<h2 id="running-an-imap-server"><a class="header" href="#running-an-imap-server">Running an IMAP Server</a></h2>
+<p><code>ImapServer</code> runs the session state machine and answers every command
+out of a <code>MailStore</code>. What mail there is and where it lives is the
+store’s business:</p>
+<pre><code class="language-zuri ignore">import mail.imap { ImapServer, MaildirStore }
+
+var store = MaildirStore('/var/mail')
+
+store.add_account('ada', secret)
+
+ImapServer({ port: 143 }, store).listen()
+</code></pre>
+<p>The server implements IMAP4rev1 along with <code>UNSELECT</code>, <code>MOVE</code>, <code>IDLE</code>,
+<code>LITERAL+</code>, <code>SASL-IR</code> and <code>ID</code>. It advertises exactly what it
+implements, so a client that reads the capability list and trusts it
+will not go wrong.</p>
+<h3 id="where-the-mail-lives"><a class="header" href="#where-the-mail-lives">Where the Mail Lives</a></h3>
+<p>Two stores ship. <code>MemoryStore</code> keeps everything in the process and
+forgets it on exit, which is what a test wants and what a server
+embedded in something larger wants when the mail it holds is not the
+point:</p>
+<pre><code class="language-zuri">import mail
+import mail.imap { MemoryStore }
+
+var store = MemoryStore(['INBOX', 'Archive'])
+
+store.add_account('ada', 'secret')
+store.append('ada', 'INBOX', mail.message()
+  .set_from('grace@example.com')
+  .add_to('ada@example.com')
+  .set_subject('On Bugs')
+  .set_text('Found one.')
+  .to_bytes(), nil, nil)
+
+echo store.mailboxes('ada')
+echo store.messages('ada', 'INBOX').length()
+echo store.messages('ada', 'INBOX')[0].uid
+</code></pre>
+<pre><code class="language-console">[Archive, INBOX]
+1
+1
+</code></pre>
+<p><code>MaildirStore</code> is the same contract on disk.</p>
+<h3 id="maildir"><a class="header" href="#maildir">Maildir</a></h3>
+<p>Each account is a directory, holding its INBOX directly and every other
+mailbox beside it under a leading dot, which is the Maildir++ arrangement
+every other mail tool understands. A mailbox written by this server can be
+read by anything else, and mail delivered by anything else turns up here.</p>
+<p>Every mailbox is the three directories Maildir defines. A message is
+written into <code>tmp</code>, where nothing reads from, and only moved into place
+once it is whole, so a reader never sees half of one. <code>new</code> is where a
+delivery agent leaves mail nobody has looked at yet, and <code>cur</code> is where a
+message lives once a client has seen the mailbox, with its flags recorded
+in the filename after <code>:2,</code>. Windows does not allow a colon in a filename,
+so there the flags follow <code>;2,</code> instead, as they do for mbsync. So an
+account on disk looks like this:</p>
+<pre><code class="language-text">ada/
+  cur/   new/   tmp/   zuri-uidlist
+  .Archive/
+    cur/   new/   tmp/   zuri-uidlist
+</code></pre>
+<p>That interoperability is the reason to choose it. A delivery agent can
+drop a message in and the server finds it on the next look, with no
+shared database and no protocol between them.</p>
+<p>IMAP needs a message number that survives a rename and Maildir has no
+such thing, so each mailbox keeps a small index file beside its
+directories recording which file is which number. A message whose file
+has gone keeps its number retired rather than reused, so a client that
+remembered one is told the message is missing rather than handed a
+different one.</p>
+<p>Mail is on disk; accounts are not:</p>
+<pre><code class="language-zuri ignore">store.add_account('ada', secret)
+
+store.set_authenticator(@(username, password) {
+  return accounts.verify(username, password)
+})
+</code></pre>
+<p>Where an application keeps its passwords is the application’s business
+and not a mail library’s. A store with an authenticator can no longer
+produce a password, so the server stops advertising the mechanisms that
+need one.</p>
+<h3 id="a-store-of-your-own"><a class="header" href="#a-store-of-your-own">A Store of Your Own</a></h3>
+<p>A store only has to answer the same calls. Nothing in the contract
+requires a file:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>authenticate(username, password)</code></td><td>are these the right credentials</td></tr>
+<tr><td><code>password_of(username)</code></td><td>the password, for the mechanisms that need it</td></tr>
+<tr><td><code>has_passwords()</code></td><td>whether it can produce one at all</td></tr>
+<tr><td><code>mailboxes(username)</code></td><td>what mailboxes there are</td></tr>
+<tr><td><code>exists</code>, <code>create</code>, <code>remove</code>, <code>rename</code></td><td>the mailboxes themselves</td></tr>
+<tr><td><code>messages(username, mailbox)</code></td><td>everything in one, oldest first</td></tr>
+<tr><td><code>append(username, mailbox, raw, flags, received)</code></td><td>add a message</td></tr>
+<tr><td><code>set_flags(username, mailbox, uid, flags)</code></td><td>change one’s flags</td></tr>
+<tr><td><code>expunge(username, mailbox)</code></td><td>remove what is marked deleted</td></tr>
+<tr><td><code>counters(username, mailbox)</code></td><td><code>uidnext</code> and <code>uidvalidity</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Subclass <code>MailStore</code> and implement them, and an <code>ImapServer</code> will serve
+whatever is behind it.</p>
+<h2 id="serving-more-than-one-connection"><a class="header" href="#serving-more-than-one-connection">Serving More Than One Connection</a></h2>
+<p>Both servers serve one connection to the end before taking the next.
+That is the right shape for the protocols and the wrong shape for more
+than one client at a time. <code>mail.pool</code> puts a pool of isolates behind
+one listening socket:</p>
+<pre><code class="language-zuri ignore">import mail.pool
+import .my_server
+
+pool.serve(my_server.build, { host: '0.0.0.0', port: 143, workers: 8 })
+</code></pre>
+<p><code>build</code> runs inside each worker to construct that worker’s own server,
+since isolates share nothing and each needs its own. It can be any
+function; keeping it in a module of its own is just a tidy place for a
+worker’s setup to live:</p>
+<pre><code class="language-zuri ignore"># my_server.zu
+import mail.imap { ImapServer, MaildirStore }
+
+def build() {
+  var store = MaildirStore('/var/mail')
+
+  store.set_authenticator(accounts.verify)
+
+  return ImapServer({}, store)
+}
+</code></pre>
+<p>An IMAP connection can be open for hours, so the pool is a ceiling on
+how many clients can be served at once rather than on how fast they are
+served. Size it for the number of clients, not the rate of requests.</p>
+<p><code>pool.start()</code> does everything except run the accept loop, which is
+what to use when the address has to be known before the first
+connection, as it does in a test.</p>
+<h2 id="proving-where-mail-came-from"><a class="header" href="#proving-where-mail-came-from">Proving Where Mail Came From</a></h2>
+<p>A receiving server has no reason to believe a <code>From</code> header. DKIM is
+the domain signing the message on the way out, and the receiver
+checking the signature against a key published in that domain’s own
+DNS.</p>
+<h3 id="signing"><a class="header" href="#signing">Signing</a></h3>
+<pre><code class="language-zuri ignore">import mail.dkim { Signer }
+
+var signer = Signer('example.com', 'default', private_key)
+
+signer.sign(note)
+</code></pre>
+<p>The signature covers the body and the headers worth covering, and the
+header it adds goes at the top. It goes on last, once everything else
+about the message is settled: changing a signed header afterwards
+breaks it, and <code>mail.send()</code> sets the <code>Message-ID</code> and <code>Date</code> if they
+are absent, so let it or set them yourself before signing.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>option</th><th>default</th><th>what it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>algorithm</code></td><td><code>rsa-sha256</code></td><td>or <code>ed25519-sha256</code></td></tr>
+<tr><td><code>canonicalisation</code></td><td><code>relaxed/relaxed</code></td><td>headers then body</td></tr>
+<tr><td><code>headers</code></td><td>a sensible set</td><td>which headers to cover</td></tr>
+<tr><td><code>expires_in</code></td><td>none</td><td>seconds until the signature stops counting</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>relaxed</code> forgives the whitespace and folding changes a mail server may
+make in passing. <code>simple</code> covers the bytes exactly, which means any
+change at all on the way breaks the signature. Both are implemented;
+<code>relaxed/relaxed</code> is what almost everything uses and is the default for
+that reason.</p>
+<p>The public half goes in DNS under the selector:</p>
+<pre><code class="language-console">default._domainkey.example.com  TXT  "v=DKIM1; k=rsa; p=MIIBIjANBg..."
+</code></pre>
+<h3 id="checking"><a class="header" href="#checking">Checking</a></h3>
+<pre><code class="language-zuri ignore">import mail.dkim
+
+for result in dkim.verify(incoming) {
+  if result.valid {
+    echo '${result.domain} takes responsibility for this'
+  } else {
+    echo '${result.domain}: ${result.reason}'
+  }
+}
+</code></pre>
+<p>One result per signature, in the order they appear. A message with no
+signatures gives an empty list, which is not a failure: it is a message
+nobody signed.</p>
+<p>The key is looked up through <code>net.resolver</code> unless <code>verify()</code> is handed
+something else to look it up with, which is what a program with its own
+resolver or its own cache wants:</p>
+<pre><code class="language-zuri ignore">dkim.verify(incoming, @(name) {
+  return my_dns.text_records(name)
+})
+</code></pre>
+<p>A message that was parsed is checked against the bytes it was parsed
+from, which is the only thing a signature can be checked against.
+Changing a parsed message and checking it again reports on the message
+that arrived, not the one now in hand.</p>
+<h3 id="what-a-signature-does-not-say"><a class="header" href="#what-a-signature-does-not-say">What a Signature Does Not Say</a></h3>
+<p>A valid signature says the domain vouches for the message. It does not
+say the message is wanted, that the <code>From</code> header matches the signing
+domain, or that the sender is who they claim to be to a human reader.
+Deciding what a signature from a given domain is worth is a separate
+question with a separate answer, and that answer is usually DMARC.</p>
+<p>DNSSEC is not validated. Signatures are carried through when a server
+sends them and the <code>dnssec</code> option asks for them, but nothing here
+checks one. A program that needs a validated answer wants a validating
+resolver and a trusted path to it, which is what <code>net.resolver</code>’s <code>tls</code>
+option gives.</p>
+<h2 id="authentication-mechanisms"><a class="header" href="#authentication-mechanisms">Authentication Mechanisms</a></h2>
+<p>All three protocols carry the same mechanisms, and <code>mail.sasl</code> holds
+them once rather than three times. A client is given credentials and
+picks the strongest thing both ends know:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>SCRAM-SHA-256</code>, <code>SCRAM-SHA-1</code></td><td>proves the password without sending it, and proves the server knew it too</td></tr>
+<tr><td><code>CRAM-MD5</code></td><td>proves it without sending it, and proves nothing about the server</td></tr>
+<tr><td><code>XOAUTH2</code>, <code>OAUTHBEARER</code></td><td>a bearer token, which is what the large providers want</td></tr>
+<tr><td><code>PLAIN</code>, <code>LOGIN</code></td><td>the password itself, so never without TLS</td></tr>
+<tr><td><code>EXTERNAL</code></td><td>nothing: the client certificate already said who this is</td></tr>
+</tbody>
+</table>
+</div>
+<p>The order is the order of that table. SCRAM is the one to use where a
+server offers it: the server stores something derived from the password
+rather than the password, the client never sends it, and the exchange
+ends with the server proving it knew it too, which is what stops a
+server that simply says yes to everything.</p>
+<p>Channel binding, the <code>-PLUS</code> form of SCRAM, is not offered. It needs a
+value out of the TLS session that <code>net.tls</code> does not expose.</p>
+<p>To force a mechanism rather than choosing:</p>
+<pre><code class="language-zuri ignore">SmtpClient.connect(url, {
+  username: 'reports',
+  password: secret,
+  mechanisms: ['SCRAM-SHA-256'],
+})
+</code></pre>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>Every error is a <code>MailError</code>. Catching that catches everything the
+module raises on its own.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>MessageError</code></td><td>the bytes are not a message, or are one that contradicts itself</td></tr>
+<tr><td><code>ProtocolError</code></td><td>the server said something the protocol does not allow</td></tr>
+<tr><td><code>ConnectionClosed</code></td><td>the connection went away mid-conversation</td></tr>
+<tr><td><code>AuthenticationError</code></td><td>the credentials were refused, or nothing usable was offered</td></tr>
+<tr><td><code>StateError</code></td><td>a command that makes no sense where it was issued</td></tr>
+<tr><td><code>MailboxError</code></td><td>a mailbox that does not exist, or cannot be created</td></tr>
+<tr><td><code>SmtpError</code></td><td>the SMTP server refused, with a code</td></tr>
+<tr><td><code>ImapError</code></td><td>the IMAP server answered <code>NO</code> or <code>BAD</code></td></tr>
+<tr><td><code>Pop3Error</code></td><td>the POP3 server answered <code>-ERR</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The one distinction worth building a mail program around is SMTP’s:</p>
+<pre><code class="language-zuri ignore">catch {
+  mail.send(url, note, credentials)
+} as error {
+  if instance_of(error, mail.SmtpTransientError) {
+    queue.retry(note)
+  } else if instance_of(error, mail.SmtpPermanentError) {
+    queue.bounce(note, error.code)
+  } else {
+    raise error
+  }
+}
+</code></pre>
+<p>A 4xx reply means the server could not take the message now and the
+sender should try again later. A 5xx means it will not take the
+message and trying again changes nothing. Queue the first and bounce
+the second; treating them alike is how a mail queue either loses mail
+or sends it forty times.</p>
+<p><code>SmtpError</code> carries <code>code</code>, the three digit reply, and <code>enhanced</code>, the
+finer grained code from RFC 3463 when the server sends one. Neither is
+meant to be matched on beyond its first digit.</p>
+<p><code>ImapError</code> carries <code>status</code>, which is <code>NO</code> when the server understood
+the command and refused it, and <code>BAD</code> when it did not understand it at
+all. <code>BAD</code> points at the client rather than at the request.</p>
+<h2 id="what-the-module-refuses"><a class="header" href="#what-the-module-refuses">What the Module Refuses</a></h2>
+<p><strong>It will not send a password over an unencrypted connection.</strong> Not
+with an option, not with a flag. A client offered only mechanisms that
+would do that raises instead. <code>tls: 'disable'</code> turns off negotiating
+TLS; it does not turn off this.</p>
+<p><strong>It will not write a character set it cannot encode.</strong> Asking for a
+body in ISO 8859-1 raises rather than writing UTF-8 bytes under a
+header that claims otherwise.</p>
+<p><strong>It does not validate DNSSEC.</strong> See <a href="#what-a-signature-does-not-say">What a Signature Does Not
+Say</a>.</p>
+<p><strong>It does not implement a POP3 server.</strong> A POP3 server is an IMAP
+server with almost everything removed, and running <code>mail.imap</code> is the
+better answer.</p>
+<p><strong>It does not decide whether mail is wanted.</strong> There is no spam
+filtering, no reputation, and no policy. DKIM tells you who signed
+something; what to do about that is yours.</p>
+<h2 id="module-reference"><a class="header" href="#module-reference">Module Reference</a></h2>
+<p>The standard library reference documents every class and method. The
+shape of the module:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>mail.message()</code></td><td>starts a message</td></tr>
+<tr><td><code>mail.parse(data)</code></td><td>reads one</td></tr>
+<tr><td><code>mail.send(url, note, options)</code></td><td>sends one, connection and all</td></tr>
+<tr><td><code>mail.smtp(url, options)</code></td><td>a connection to a server that sends mail</td></tr>
+<tr><td><code>mail.imap(url, options)</code></td><td>a connection to a server that stores it</td></tr>
+<tr><td><code>mail.pop3(url, options)</code></td><td>a connection to a server that hands it over</td></tr>
+<tr><td><code>mail.parse_address(text)</code></td><td>one address</td></tr>
+<tr><td><code>mail.parse_address_list(text)</code></td><td>every address in a header</td></tr>
+<tr><td><code>mail.format_addresses(people)</code></td><td>the other direction</td></tr>
+<tr><td><code>mail.attachment(data)</code></td><td>starts an attachment</td></tr>
+<tr><td><code>mail.Attachment.from_file(path)</code></td><td>one read from disk</td></tr>
+</tbody>
+</table>
+</div>
+<p>On an <code>Attachment</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>set_filename</code>, <code>set_content_type</code>, <code>set_encoding</code></td><td>what it is</td></tr>
+<tr><td><code>set_disposition</code>, <code>set_cid</code>, <code>set_description</code></td><td>how it is presented</td></tr>
+<tr><td><code>filename</code>, <code>content_type</code>, <code>disposition</code>, <code>cid</code>, <code>size</code>, <code>data</code></td><td>reading them back</td></tr>
+<tr><td><code>to_part</code></td><td>the message part it becomes</td></tr>
+</tbody>
+</table>
+</div>
+<p>On a <code>Message</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>set_from</code>, <code>set_sender</code>, <code>set_reply_to</code></td><td>who it is from</td></tr>
+<tr><td><code>add_to</code>, <code>add_cc</code>, <code>add_bcc</code>, <code>set_to</code>, <code>set_cc</code>, <code>set_bcc</code></td><td>who it is for</td></tr>
+<tr><td><code>set_subject</code>, <code>set_text</code>, <code>set_html</code></td><td>what it says</td></tr>
+<tr><td><code>attach</code>, <code>embed</code></td><td>what it carries, as an <code>Attachment</code></td></tr>
+<tr><td><code>set_header</code>, <code>add_header</code>, <code>set_date</code>, <code>set_message_id</code></td><td>anything else</td></tr>
+<tr><td><code>set_in_reply_to</code>, <code>set_references</code></td><td>which conversation it belongs to</td></tr>
+<tr><td><code>sender</code>, <code>to</code>, <code>cc</code>, <code>bcc</code>, <code>reply_to</code>, <code>recipients</code></td><td>reading them back</td></tr>
+<tr><td><code>subject</code>, <code>text</code>, <code>text_body</code>, <code>html_body</code></td><td>reading what it says</td></tr>
+<tr><td><code>parts</code>, <code>walk</code>, <code>find_part</code>, <code>attachments</code></td><td>the tree</td></tr>
+<tr><td><code>to_bytes</code>, <code>to_string</code></td><td>writing it out</td></tr>
+</tbody>
+</table>
+</div>
+<p>The protocol modules:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>mail.smtp</code></td><td><code>SmtpClient</code>, <code>SmtpServer</code>, <code>SmtpSession</code>, <code>Reply</code></td></tr>
+<tr><td><code>mail.imap</code></td><td><code>ImapClient</code>, <code>ImapServer</code>, <code>Mailbox</code>, <code>Envelope</code>, <code>BodyPart</code>, <code>MessageInfo</code></td></tr>
+<tr><td><code>mail.imap</code></td><td><code>MailStore</code>, <code>MaildirStore</code>, <code>MemoryStore</code>, <code>StoredMessage</code></td></tr>
+<tr><td><code>mail.pop3</code></td><td><code>Pop3Client</code>, <code>Entry</code></td></tr>
+<tr><td><code>mail.dkim</code></td><td><code>Signer</code>, <code>Signature</code>, <code>Result</code>, <code>verify</code>, <code>is_signed</code></td></tr>
+<tr><td><code>mail.sasl</code></td><td><code>of</code>, <code>choose</code>, and a class per mechanism</td></tr>
+<tr><td><code>mail.pool</code></td><td><code>serve</code>, <code>start</code>, <code>Cluster</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>And the pieces underneath, for a program that needs them directly:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>mail.address</code></td><td><code>parse</code>, <code>parse_list</code>, <code>parse_groups</code>, <code>format_list</code></td></tr>
+<tr><td><code>mail.headers</code></td><td><code>Headers</code>, <code>fold</code>, <code>unfold</code></td></tr>
+<tr><td><code>mail.encoding</code></td><td>the transfer encodings, encoded words and parameters</td></tr>
+<tr><td><code>mail.content</code></td><td><code>ContentType</code>, <code>ContentDisposition</code></td></tr>
+<tr><td><code>mail.stream</code></td><td><code>LineStream</code>, <code>connect</code>, <code>start_tls</code>, <code>endpoint</code></td></tr>
+<tr><td><code>mail.imap.parser</code></td><td>the IMAP grammar, for reading a response by hand</td></tr>
+</tbody>
+</table>
+</div>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch17-00-sql.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch19-00-env.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch17-00-sql.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch19-00-env.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

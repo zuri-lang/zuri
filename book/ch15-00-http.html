@@ -1,0 +1,2350 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>HTTP - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch15-00-http.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="http"><a class="header" href="#http">HTTP</a></h1>
+<p>The <code>http</code> module is Zuri’s HTTP stack: a client, a server, and the
+pieces both are built from. It speaks HTTP/1.1 and HTTP/2, over
+cleartext or TLS, and it is meant to face the internet directly.</p>
+<p>That last part is a design decision rather than a boast. Most
+language runtimes ship an HTTP server that is fine for development and
+then expect a reverse proxy in front of it in production — something
+else terminates TLS, serves the static files, compresses the
+responses, enforces the request limits, and speaks HTTP/2 to the
+browser. Everything on that list is in this module, done properly,
+because a standard library that leaves them out is not really shipping
+a server.</p>
+<ul>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#a-first-request">A First Request</a></li>
+<li><a href="#a-first-server">A First Server</a></li>
+</ul>
+</li>
+<li><a href="#making-requests">Making Requests</a>
+<ul>
+<li><a href="#the-shared-client">The Shared Client</a></li>
+<li><a href="#building-a-client">Building a Client</a></li>
+<li><a href="#request-methods">Request Methods</a></li>
+<li><a href="#request-bodies">Request Bodies</a></li>
+<li><a href="#uploading-files">Uploading Files</a></li>
+<li><a href="#reading-a-response">Reading a Response</a></li>
+<li><a href="#query-parameters-and-headers">Query Parameters and Headers</a></li>
+<li><a href="#authentication">Authentication</a></li>
+<li><a href="#redirects">Redirects</a></li>
+<li><a href="#cookies">Cookies</a></li>
+<li><a href="#timeouts-and-retries">Timeouts and Retries</a></li>
+<li><a href="#streaming-a-response">Streaming a Response</a></li>
+<li><a href="#tls-and-certificates">TLS and Certificates</a></li>
+<li><a href="#proxies">Proxies</a></li>
+</ul>
+</li>
+<li><a href="#serving-requests">Serving Requests</a>
+<ul>
+<li><a href="#routing">Routing</a></li>
+<li><a href="#the-request-object">The Request Object</a></li>
+<li><a href="#forms-and-file-uploads">Forms and File Uploads</a></li>
+<li><a href="#request-validation">Request Validation</a></li>
+<li><a href="#the-response-object">The Response Object</a></li>
+<li><a href="#middleware">Middleware</a></li>
+<li><a href="#errors">Errors</a></li>
+<li><a href="#static-files">Static Files</a></li>
+<li><a href="#compression">Compression</a></li>
+<li><a href="#streaming-a-response-body">Streaming a Response Body</a></li>
+<li><a href="#setting-cookies">Setting Cookies</a></li>
+<li><a href="#content-negotiation">Content Negotiation</a></li>
+</ul>
+</li>
+<li><a href="#built-in-middleware">Built-in Middleware</a>
+<ul>
+<li><a href="#logger"><code>logger()</code></a></li>
+<li><a href="#request_id"><code>request_id()</code></a></li>
+<li><a href="#security_headers"><code>security_headers()</code></a></li>
+<li><a href="#cors"><code>cors()</code></a></li>
+<li><a href="#basic_auth"><code>basic_auth()</code></a></li>
+<li><a href="#bearer_auth"><code>bearer_auth()</code></a></li>
+<li><a href="#jwt_auth"><code>jwt_auth()</code></a></li>
+<li><a href="#rate_limit"><code>rate_limit()</code></a></li>
+<li><a href="#etag"><code>etag()</code></a></li>
+<li><a href="#force_https"><code>force_https()</code></a></li>
+<li><a href="#ordering">Ordering</a></li>
+</ul>
+</li>
+<li><a href="#sessions">Sessions</a>
+<ul>
+<li><a href="#nothing-happens-until-something-uses-it">Nothing Happens Until Something Uses It</a></li>
+<li><a href="#signing-in">Signing In</a></li>
+<li><a href="#flash-messages">Flash Messages</a></li>
+<li><a href="#where-sessions-are-kept">Where Sessions Are Kept</a></li>
+<li><a href="#when-a-session-ends">When a Session Ends</a></li>
+<li><a href="#the-cookie">The Cookie</a></li>
+<li><a href="#signing-the-cookie">Signing the Cookie</a></li>
+<li><a href="#what-a-session-may-hold">What a Session May Hold</a></li>
+<li><a href="#across-workers">Across Workers</a></li>
+<li><a href="#what-sessions-do-not-do">What Sessions Do Not Do</a></li>
+</ul>
+</li>
+<li><a href="#tls">TLS</a></li>
+<li><a href="#http2">HTTP/2</a></li>
+<li><a href="#websockets">WebSockets</a></li>
+<li><a href="#server-sent-events">Server-Sent Events</a></li>
+<li><a href="#reverse-proxying">Reverse Proxying</a></li>
+<li><a href="#running-in-production">Running in Production</a>
+<ul>
+<li><a href="#using-more-than-one-core">Using More Than One Core</a></li>
+<li><a href="#limits">Limits</a></li>
+<li><a href="#graceful-shutdown">Graceful Shutdown</a></li>
+<li><a href="#behind-another-proxy">Behind Another Proxy</a></li>
+</ul>
+</li>
+<li><a href="#what-the-module-refuses">What the Module Refuses</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="introduction"><a class="header" href="#introduction">Introduction</a></h2>
+<h3 id="a-first-request"><a class="header" href="#a-first-request">A First Request</a></h3>
+<pre><code class="language-zuri">import http
+
+echo http.get('https://example.com').as_text()
+</code></pre>
+<p><code>get()</code>, <code>post()</code>, <code>put()</code>, <code>patch()</code>, <code>delete()</code>, <code>head()</code>,
+<code>options()</code> and <code>trace()</code> all exist at module level and all go through
+one shared client, which keeps its connections open between calls.
+<a href="#request-methods">Request Methods</a> covers each of them.</p>
+<h3 id="a-first-server"><a class="header" href="#a-first-server">A First Server</a></h3>
+<pre><code class="language-zuri ignore">import http
+
+var server = http.server(3000)
+
+server.get('/', @(request, response) {
+  response.html('&lt;h1&gt;Hello&lt;/h1&gt;')
+})
+
+server.get('/users/:id', @(request, response) {
+  response.json({ id: request.param('id') })
+})
+
+server.listen()
+</code></pre>
+<p>Two things are already true of that server that are worth noticing:
+<code>GET /users/42</code> matches the second route and hands the handler
+<code>'42'</code>, and a <code>HEAD /</code> request is answered by the first route with the
+headers a <code>GET</code> would have produced and no body, because that is what
+HEAD means.</p>
+<blockquote>
+<p>Blocks in this chapter that list several calls together — three ways to
+save, four filters, a family of methods — are <strong>reference listings</strong>, not
+programs. They show the shape of each call rather than a sequence you
+could run, and several would conflict if pasted into one file. Anything
+presented as a complete program on this page runs as written.</p>
+</blockquote>
+<h2 id="a-round-trip-you-can-run"><a class="header" href="#a-round-trip-you-can-run">A Round Trip You Can Run</a></h2>
+<p>Most examples in this chapter call a host that does not exist, or start a
+server that never returns — neither of which you can paste into a terminal
+and watch. This one you can. It runs a real server on a real port and makes
+real requests against it, in two files.</p>
+<p>The server goes in its own file, because a function that references an
+imported module cannot be spawned from the file that imported it. See
+<a href="ch11-00-isolates.html">Concurrency with Isolates</a> for the rule.</p>
+<p><span class="filename">Filename: service.zu</span></p>
+<pre><code class="language-zuri ignore">import http
+
+def serve(port_channel) {
+  var server = http.server(0, '127.0.0.1')
+
+  server.get('/health', @(request, response) {
+    response.json({ status: 'ok' })
+  })
+
+  server.post('/echo', @(request, response) {
+    response.json({ heard: request.json_body().message }, 201)
+  })
+
+  # Bind first so the port is known, hand it back, then serve.
+  server.bind()
+  port_channel.send(server.socket.local_address().port())
+  server.listen()
+}
+</code></pre>
+<p><span class="filename">Filename: main.zu</span></p>
+<pre><code class="language-zuri ignore">import http
+import isolate
+import .service
+
+var channel = isolate.channel(1)
+var task = isolate.spawn(service.serve, channel)
+var port = channel.recv()
+
+var api = http.client('http://127.0.0.1:${port}')
+
+echo api.get('/health').as_dict()
+echo api.post('/echo', { message: 'hello' }).status
+
+task.cancel()
+</code></pre>
+<pre><code class="language-console">$ zuri run main.zu
+{status: ok}
+201
+</code></pre>
+<p>Four details in there are worth carrying into your own code.</p>
+<p><strong>Port <code>0</code> asks the operating system for a free port.</strong> <code>listen()</code> would
+bind for you, but then nobody could ask which port it got, so the example
+calls <code>bind()</code> explicitly, reads the bound address, and only then starts
+accepting. That is the pattern for any test or any process running more
+than one server.</p>
+<p><strong>The port travels over a channel.</strong> The client cannot know it in advance,
+and the two halves are in different isolates with separate heaps, so a
+shared variable is not an option.</p>
+<p><strong><code>request.json_body()</code> parses the request body</strong>, and
+<code>response.json(value, status)</code> writes the response. The names are not
+symmetrical because they are doing different jobs: one decodes what
+arrived, the other encodes and sets a status.</p>
+<p><strong><code>task.cancel()</code> ends it.</strong> <code>listen()</code> runs until the server is closed, so
+without that the program would never exit.</p>
+<h2 id="making-requests"><a class="header" href="#making-requests">Making Requests</a></h2>
+<h3 id="the-shared-client"><a class="header" href="#the-shared-client">The Shared Client</a></h3>
+<p>The module-level functions use a single <code>HttpClient</code> that lives for
+the life of the program. It pools connections, so a second request to
+a host it has already talked to skips the TCP handshake and, over
+HTTPS, the TLS handshake as well.</p>
+<pre><code class="language-zuri">import http
+
+var page = http.get('https://example.com')
+
+echo page.status          # 200
+echo page.headers.get('content-type')
+echo page.as_text()
+</code></pre>
+<p>Reach that client with <code>http.shared_client()</code> when you want a setting
+to apply to every casual call in a program, and build your own for
+anything more specific.</p>
+<h3 id="building-a-client"><a class="header" href="#building-a-client">Building a Client</a></h3>
+<pre><code class="language-zuri ignore">var api = http.client('https://api.example.com', {
+  headers: { 'Authorization': 'Bearer ' + token },
+  read_timeout: 5000,
+})
+
+var me = api.get('/users/me').raise_for_status().as_dict()
+</code></pre>
+<p>A client built with a base URL prefixes it onto any target that is not
+already absolute, so the rest of the program addresses the service by
+path. Everything in the options dictionary is a field of <code>HttpClient</code>,
+plus <code>headers</code>, and every one of them can also be set afterwards:</p>
+<pre><code class="language-zuri ignore">api.user_agent = 'my-service/2.1'
+api.max_redirects = 3
+api.set_header('X-Client-Version', '2.1')
+</code></pre>
+<blockquote>
+<p><strong>Note</strong>
+Build a client once and keep it. A fresh client per request throws
+away the connection pool, the cookie jar and the TLS configuration —
+which is to say, it throws away most of what a client is for.</p>
+</blockquote>
+<h3 id="request-methods"><a class="header" href="#request-methods">Request Methods</a></h3>
+<p>Every method has a function of its own. They exist twice over, with
+identical signatures: on the module, where they go through the shared
+client, and on any <code>HttpClient</code> you build yourself.</p>
+<p>The three methods that carry a body take it as their second argument;
+the rest take the options dictionary in that position.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Call</th><th>Sends a body</th></tr>
+</thead>
+<tbody>
+<tr><td><code>get(url, options)</code></td><td>no</td></tr>
+<tr><td><code>post(url, data, options)</code></td><td>yes</td></tr>
+<tr><td><code>put(url, data, options)</code></td><td>yes</td></tr>
+<tr><td><code>patch(url, data, options)</code></td><td>yes</td></tr>
+<tr><td><code>delete(url, options)</code></td><td>no</td></tr>
+<tr><td><code>head(url, options)</code></td><td>no</td></tr>
+<tr><td><code>options(url, options)</code></td><td>no</td></tr>
+<tr><td><code>trace(url, options)</code></td><td>no</td></tr>
+<tr><td><code>request(method, url, options)</code></td><td>if <code>options</code> says so</td></tr>
+</tbody>
+</table>
+</div>
+<p>Every argument after the first is optional, so the short forms all
+work:</p>
+<pre><code class="language-zuri ignore">import http
+
+# Reading
+http.get('https://example.com/items')
+http.get('https://example.com/items', { query: { page: 2 } })
+
+# Creating and updating
+http.post('https://example.com/items', { name: 'Widget' })
+http.put('https://example.com/items/1', { name: 'Widget', price: 9 })
+http.patch('https://example.com/items/1', { price: 11 })
+
+# Removing
+http.delete('https://example.com/items/1')
+
+# Asking about a resource without fetching it
+var probe = http.head('https://example.com/large.iso')
+echo probe.headers.get('content-length')
+
+# Asking what a resource supports
+echo http.options('https://example.com/items').headers.get('allow')
+</code></pre>
+<p>The same calls on a client of your own, which is what you want for
+anything that runs more than once:</p>
+<pre><code class="language-zuri ignore">var api = http.client('https://api.example.com')
+
+api.get('/items')
+api.post('/items', { name: 'Widget' })
+api.delete('/items/1')
+</code></pre>
+<p><code>request()</code> takes the method as an argument, which is how you send one
+that has no function of its own — a WebDAV <code>PROPFIND</code>, or anything
+else a service has invented:</p>
+<pre><code class="language-zuri ignore">api.request('PROPFIND', '/files/', {
+  headers: { 'Depth': '1' },
+  body: '&lt;propfind xmlns="DAV:"&gt;&lt;allprop/&gt;&lt;/propfind&gt;',
+  content_type: 'application/xml',
+})
+</code></pre>
+<p>Method names are case-sensitive on the wire, and every registered one
+is uppercase; a lowercase name is uppercased for you.</p>
+<blockquote>
+<p><strong>Note</strong>
+<code>head()</code> does not follow redirects by default, and <code>delete()</code>,
+<code>options()</code> and <code>trace()</code> send no body. A <code>DELETE</code> that genuinely
+needs one — some APIs want a reason in the body — can use
+<code>request('DELETE', url, { json: ... })</code>.</p>
+</blockquote>
+<h3 id="request-bodies"><a class="header" href="#request-bodies">Request Bodies</a></h3>
+<p>The second argument to <code>post()</code>, <code>put()</code> and <code>patch()</code> is the body,
+and what it is decides how it is sent:</p>
+<pre><code class="language-zuri ignore">api.post('/items', { name: 'Widget', price: 9 })   # JSON
+api.post('/items', ['a', 'b'])                     # JSON
+api.post('/items', 'raw text')                     # sent as-is
+api.post('/items', file('photo.jpg', 'rb').read()) # sent as-is
+api.post('/items', form_builder)                   # multipart
+</code></pre>
+<p>A dictionary or list becomes JSON with a matching <code>Content-Type</code>; a
+string or bytes is sent exactly as given, with no content type unless
+you name one.</p>
+<p>For anything else, or to be explicit, name it in the options
+dictionary:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Sends</th><th>Content-Type</th></tr>
+</thead>
+<tbody>
+<tr><td><code>body</code></td><td>a string or bytes, exactly as given</td><td>none, unless <code>content_type</code> is set</td></tr>
+<tr><td><code>json</code></td><td>any value, JSON-encoded</td><td><code>application/json</code></td></tr>
+<tr><td><code>form</code></td><td>a dictionary</td><td><code>application/x-www-form-urlencoded</code></td></tr>
+<tr><td><code>multipart</code></td><td>a <code>MultipartBuilder</code></td><td><code>multipart/form-data</code>, boundary included</td></tr>
+<tr><td><code>content_type</code></td><td>—</td><td>overrides whichever of the above applied</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri ignore"># A login form
+api.post('/login', nil, {
+  form: { username: 'ada', password: secret },
+})
+
+# An explicit content type over a raw body
+api.put('/documents/1', nil, {
+  body: markdown_source,
+  content_type: 'text/markdown; charset=utf-8',
+})
+
+# A form whose field repeats
+api.post('/search', nil, {
+  form: { tag: ['new', 'featured'], q: 'zuri' },
+})
+</code></pre>
+<p><code>Content-Length</code> is set for you from the body, and cannot be
+overridden — two parties disagreeing about how long a body is, is a
+request-smuggling bug rather than a formatting choice.</p>
+<h3 id="uploading-files"><a class="header" href="#uploading-files">Uploading Files</a></h3>
+<p>A file upload is a <code>multipart/form-data</code> body, which
+<code>MultipartBuilder</code> assembles:</p>
+<pre><code class="language-zuri ignore">import http
+
+var form = http.MultipartBuilder()
+
+form.add_field('title', 'Holiday')
+form.add_field('album', '2026')
+form.add_file('photo', 'beach.jpg', file('beach.jpg', 'rb').read(), 'image/jpeg')
+
+var response = http.post('https://example.com/photos', form)
+</code></pre>
+<p>Passing the builder as the body is enough — the <code>Content-Type</code>, the
+boundary parameter and the <code>Content-Length</code> all follow from it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>add_field(name, value)</code></td><td>adds a plain form field; numbers and booleans are stringified</td></tr>
+<tr><td><code>add_file(name, filename, content, content_type)</code></td><td>adds a file part; <code>content</code> is bytes or a string, <code>content_type</code> defaults to <code>application/octet-stream</code></td></tr>
+<tr><td><code>content_type()</code></td><td>the <code>Content-Type</code> header value, boundary included</td></tr>
+<tr><td><code>boundary()</code></td><td>the boundary string</td></tr>
+<tr><td><code>build()</code></td><td>the assembled body, as bytes</td></tr>
+<tr><td><code>length()</code></td><td>how many parts have been added</td></tr>
+</tbody>
+</table>
+</div>
+<p>Several files under one field name is just several calls — that is
+what an <code>&lt;input type="file" multiple&gt;</code> sends:</p>
+<pre><code class="language-zuri ignore">for path in paths {
+  form.add_file('attachments', os.base_name(path), file(path, 'rb').read())
+}
+</code></pre>
+<p>A filename that is not plain ASCII is sent twice: once as a
+transliterated <code>filename</code>, and once as an RFC 5987 <code>filename*</code>, which
+is what lets the real name survive a recipient that only understands
+one of the two.</p>
+<p>If you need the body separately — to sign it, to log its size, to send
+it somewhere this client is not going — build it yourself:</p>
+<pre><code class="language-zuri ignore">var body = form.build()
+
+api.post('/photos', nil, {
+  body,
+  content_type: form.content_type(),
+})
+</code></pre>
+<blockquote>
+<p><strong>Note</strong>
+<code>build()</code> assembles the whole body in memory. For an upload large
+enough that this matters, send the file as a raw body with its own
+content type instead — <code>multipart/form-data</code> only earns its overhead
+when there are fields alongside the file.</p>
+</blockquote>
+<p>The boundary is generated from the platform’s secure random source,
+not from a timestamp or a counter — a boundary a peer can predict is a
+boundary a peer can write into a field value to forge extra parts.</p>
+<h3 id="reading-a-response"><a class="header" href="#reading-a-response">Reading a Response</a></h3>
+<pre><code class="language-zuri ignore">var response = api.get('/items/1')
+
+response.status              # 200
+response.reason_phrase()     # 'OK'
+response.version             # '1.1' or '2'
+response.headers.get('etag')
+
+response.as_text()           # the body, decoded as UTF-8
+response.as_dict()           # the body, parsed as JSON
+response.as_bytes()          # the body, untouched
+
+response.is_ok()             # 2xx
+response.is_redirect()       # 3xx
+response.is_error()          # 4xx or 5xx
+</code></pre>
+<p><code>raise_for_status()</code> turns a 4xx or 5xx into a <code>StatusError</code> and
+returns the response otherwise, so it can be used inline. The response
+stays reachable on the raised error, which matters because that is
+where an API usually explains what went wrong:</p>
+<pre><code class="language-zuri ignore">catch {
+  var data = api.get('/items/1').raise_for_status().as_dict()
+} as error {
+  echo error.response.status
+  echo error.response.as_text()
+}
+</code></pre>
+<p>A compressed response body is decompressed automatically — gzip,
+deflate, brotli and zstd — and the <code>Content-Encoding</code> header is
+removed once it has been, so nothing downstream tries to decode it a
+second time.</p>
+<h3 id="query-parameters-and-headers"><a class="header" href="#query-parameters-and-headers">Query Parameters and Headers</a></h3>
+<pre><code class="language-zuri ignore">api.get('/search', {
+  query: { q: 'zuri', page: 2, tag: ['new', 'featured'] },
+  headers: { 'Accept-Language': 'en-GB' },
+})
+</code></pre>
+<p>A list value repeats the parameter, which is how a query string
+carries more than one value under one name. Per-request headers are
+merged over the client’s own.</p>
+<h3 id="authentication"><a class="header" href="#authentication">Authentication</a></h3>
+<pre><code class="language-zuri ignore">api.get('/me', { auth: ['bearer', token] })
+api.get('/me', { auth: ['basic', 'ada', 'lovelace'] })
+</code></pre>
+<p>Credentials passed this way are scoped to the origin you addressed. If
+the response is a redirect to a different scheme, host or port, they
+are dropped rather than followed — a redirect to a host of someone
+else’s choosing is otherwise a way to collect whatever <code>Authorization</code>
+header was in flight.</p>
+<h3 id="redirects"><a class="header" href="#redirects">Redirects</a></h3>
+<p>Redirects are followed by default, up to <code>max_redirects</code> (10), and the
+number followed is on the response:</p>
+<pre><code class="language-zuri">var final = http.get('https://example.com/old')
+
+final.redirects    # how many were followed
+final.responder    # the URL that finally answered
+</code></pre>
+<p>A <code>303</code>, and in practice a <code>301</code> or <code>302</code>, becomes a <code>GET</code> with no
+body when followed — that is what every browser and every other client
+does, and a server that meant otherwise should have sent <code>307</code> or
+<code>308</code>, both of which preserve the method and body here.</p>
+<p>Turn following off per request or per client:</p>
+<pre><code class="language-zuri ignore">http.get(url, { follow_redirects: false })
+</code></pre>
+<p><code>head()</code> does not follow redirects by default, since the point of a
+HEAD is usually to inspect the very response a redirect would hide.</p>
+<h3 id="cookies"><a class="header" href="#cookies">Cookies</a></h3>
+<p>A client with a cookie jar carries cookies between requests, so a
+login and the requests after it behave the way a browser would:</p>
+<pre><code class="language-zuri ignore">var session = http.client('https://example.com')
+session.enable_cookies()
+
+session.post('/login', nil, { form: { user: 'ada', password: secret } })
+session.get('/dashboard')     # sends the session cookie
+</code></pre>
+<p>The jar applies RFC 6265’s matching rules: a cookie without a <code>Domain</code>
+is host-only, one with a <code>Domain</code> reaches subdomains, a path prefix
+matches below itself, and a <code>Secure</code> cookie is never sent over
+cleartext. A server trying to set a cookie for a domain it does not
+control is refused.</p>
+<h3 id="timeouts-and-retries"><a class="header" href="#timeouts-and-retries">Timeouts and Retries</a></h3>
+<pre><code class="language-zuri ignore">var api = http.client('https://api.example.com', {
+  connect_timeout: 5000,
+  read_timeout: 10000,
+  write_timeout: 10000,
+})
+
+api.get('/slow', { timeout: 30000 })   # this one request
+</code></pre>
+<p>All timeouts are milliseconds. <code>max_retries</code> retries a failed request,
+but only when the method is idempotent — replaying a <code>POST</code> can mean
+charging a card twice, so <code>GET</code>, <code>HEAD</code>, <code>PUT</code>, <code>DELETE</code>, <code>OPTIONS</code>
+and <code>TRACE</code> are retried and nothing else is.</p>
+<p>A pooled connection the far end closed while it was idle fails on the
+next write and looks exactly like a network failure. That specific
+case is retried once for an idempotent request even at the default
+<code>max_retries</code> of zero, because otherwise every connection a server
+reaps would surface as a spurious error.</p>
+<h3 id="streaming-a-response"><a class="header" href="#streaming-a-response">Streaming a Response</a></h3>
+<p>A large response does not have to be held in memory:</p>
+<pre><code class="language-zuri ignore">var response = api.get('/exports/large.csv', { stream: true })
+var out = file('large.csv', 'wb')
+
+while true {
+  var chunk = response.body_reader.read(65536)
+  if chunk.length() == 0 {
+    break
+  }
+  out.write(chunk)
+}
+
+out.close()
+api.finish(response)
+</code></pre>
+<p><code>finish()</code> hands the connection back to the pool once you are done
+with the body. Until then the connection is yours, since there is no
+way for the client to know when you have finished reading.</p>
+<h3 id="tls-and-certificates"><a class="header" href="#tls-and-certificates">TLS and Certificates</a></h3>
+<p>Certificates are verified against the platform’s trust store by
+default. To talk to a service with an internal or self-signed
+certificate, trust its authority:</p>
+<pre><code class="language-zuri ignore">api.add_ca(file('/etc/ssl/internal-ca.pem').read())
+</code></pre>
+<p>There is also <code>verify = false</code>, which turns verification off
+completely. It exists for local development, and it makes the
+connection encrypted but unauthenticated — which is to say, trivially
+interceptable. <code>add_ca()</code> is the right answer everywhere else.</p>
+<h3 id="proxies"><a class="header" href="#proxies">Proxies</a></h3>
+<p>A client goes through the proxy the environment names, the way command
+line tools do: <code>HTTPS_PROXY</code> for <code>https</code> addresses, <code>HTTP_PROXY</code> for
+<code>http</code> ones, and <code>ALL_PROXY</code> for either, each in upper or lower case.
+<code>NO_PROXY</code> lists the hosts reached directly, separated by commas: a
+name covers every name under it, an entry with a port covers only that
+port, and <code>*</code> covers everything. This machine’s own loopback addresses
+never go through a proxy.</p>
+<p>A client of your own can name its proxy instead, or ignore the
+environment altogether:</p>
+<pre><code class="language-zuri ignore">var api = http.client('https://api.example.com', {
+  proxy: 'http://ada:secret@proxy.internal:3128',
+})
+
+var direct = http.client('https://api.example.com', { trust_env: false })
+</code></pre>
+<p>An <code>https</code> request is tunnelled through the proxy with <code>CONNECT</code>, so the
+proxy carries the encrypted bytes and never sees what they say, and the
+certificate checked is the destination’s own. An <code>http</code> request is
+handed to the proxy whole. Credentials in the proxy address are sent to
+the proxy alone, as <code>Proxy-Authorization</code>. The proxy itself is reached
+over plain HTTP; an <code>https://</code> proxy address is refused.</p>
+<h2 id="serving-requests"><a class="header" href="#serving-requests">Serving Requests</a></h2>
+<h3 id="routing"><a class="header" href="#routing">Routing</a></h3>
+<p>A route pattern is made of literal segments, <code>:name</code> parameters, and
+an optional trailing catch-all:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Pattern</th><th>Matches</th><th>Captures</th></tr>
+</thead>
+<tbody>
+<tr><td><code>/users</code></td><td><code>/users</code></td><td></td></tr>
+<tr><td><code>/users/:id</code></td><td><code>/users/42</code></td><td><code>id</code> = <code>'42'</code></td></tr>
+<tr><td><code>/users/:id/posts/:post</code></td><td><code>/users/4/posts/7</code></td><td><code>id</code>, <code>post</code></td></tr>
+<tr><td><code>/files/</code> + <code>*path</code></td><td><code>/files/css/site.css</code></td><td><code>path</code> = <code>'css/site.css'</code></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri ignore">server.get('/users/:id', @(request, response) {
+  response.json({ id: request.param('id') })
+})
+</code></pre>
+<p>A literal segment always beats a parameter, and a parameter always
+beats a catch-all, so <code>/users/new</code> and <code>/users/:id</code> can both exist and
+the specific one wins — regardless of which was registered first.
+Matching runs over a trie, so a router with a thousand routes costs
+the same per request as one with ten.</p>
+<p><code>get()</code>, <code>post()</code>, <code>put()</code>, <code>patch()</code>, <code>delete()</code>, <code>head()</code> and
+<code>options()</code> register for one method. <code>any()</code> registers <code>GET</code>, <code>POST</code>,
+<code>PUT</code>, <code>PATCH</code>, <code>DELETE</code> and <code>OPTIONS</code> at once. <code>handle()</code> takes the
+method as an argument, which is how a method with no function of its
+own — <code>PROPFIND</code>, or anything a service has invented — gets a route:</p>
+<pre><code class="language-zuri ignore">server.handle('PROPFIND', '/files/' + '*path', list_properties)
+</code></pre>
+<p>Three things are answered without a handler:</p>
+<ul>
+<li><code>HEAD</code> falls back to the <code>GET</code> route for the same path, and the body
+is dropped on the way out.</li>
+<li><code>OPTIONS</code> answers <code>204</code> with an <code>Allow</code> header listing what the path
+actually accepts.</li>
+<li>A path that exists for other methods answers <code>405</code>, again with
+<code>Allow</code> — rather than a <code>404</code>, which would be a lie.</li>
+</ul>
+<p>Name a route to build URLs from it later:</p>
+<pre><code class="language-zuri ignore">server.get('/users/:id', show_user, 'user.show')
+
+server.routes().url_for('user.show', { id: 42 })    # '/users/42'
+</code></pre>
+<h3 id="the-request-object"><a class="header" href="#the-request-object">The Request Object</a></h3>
+<pre><code class="language-zuri ignore">server.post('/items', @(request, response) {
+  request.method          # 'POST'
+  request.path            # decoded and normalised
+  request.target          # exactly as it arrived on the wire
+  request.version         # '1.1' or '2'
+  request.secure          # whether it came over TLS
+
+  request.param('id')                 # a route parameter
+  request.query_param('page', '1')    # a query parameter, with a default
+  request.header('accept')            # a header field
+  request.cookie('session')           # a cookie
+  request.bearer_token()              # the token from an Authorization header
+
+  request.text()          # the body as text
+  request.json_body()     # the body parsed as JSON
+  request.form()          # urlencoded or multipart fields
+  request.file('avatar')  # an uploaded file
+})
+</code></pre>
+<p><code>path</code> is percent-decoded and then normalised, in that order — which
+is the only order that works, since <code>%2e%2e%2f</code> is <code>../</code> written to
+survive a naive check. Route on <code>path</code>; <code>target</code> is the raw form and
+matching on it is how directory traversal gets through.</p>
+<p>An uploaded file is an <code>UploadedFile</code>:</p>
+<pre><code class="language-zuri ignore">var upload = request.file('avatar')
+
+upload.filename       # what the client claimed
+upload.safe_name()    # that, reduced to one path-safe segment
+upload.content_type   # what the client declared
+upload.size()
+upload.save_to('/var/uploads/' + upload.safe_name())
+</code></pre>
+<p><code>filename</code> and <code>content_type</code> are both attacker-controlled and say
+nothing about what the bytes are. <code>safe_name()</code> drops any directory
+component — including a Windows one — and reduces the rest to letters,
+digits, <code>.</code>, <code>-</code> and <code>_</code>.</p>
+<h3 id="forms-and-file-uploads"><a class="header" href="#forms-and-file-uploads">Forms and File Uploads</a></h3>
+<p>A submitted form arrives as a request body, in one of two encodings,
+and both are read through the same methods. Which one a browser sends
+is decided by the <code>enctype</code> on the <code>&lt;form&gt;</code>: the default
+<code>application/x-www-form-urlencoded</code> for a form of plain fields, and
+<code>multipart/form-data</code> for one that carries a file.</p>
+<pre><code class="language-zuri ignore">server.post('/signup', @(request, response) {
+  var email = request.form_field('email', '')
+  var password = request.form_field('password', '')
+
+  if email.is_empty() {
+    response.json({ error: 'email is required' }, 422)
+    return
+  }
+
+  create_account(email, password)
+  response.redirect('/welcome', 303)
+})
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Method</th><th>Returns</th></tr>
+</thead>
+<tbody>
+<tr><td><code>form()</code></td><td>every field as <code>name -&gt; value</code>, keeping the first of a repeated name</td></tr>
+<tr><td><code>form_all()</code></td><td>every field as <code>name -&gt; [value, ...]</code></td></tr>
+<tr><td><code>form_field(name, fallback)</code></td><td>one field’s first value</td></tr>
+<tr><td><code>files()</code></td><td>uploaded files as <code>name -&gt; [UploadedFile, ...]</code></td></tr>
+<tr><td><code>file(name)</code></td><td>the first file uploaded under <code>name</code>, or <code>nil</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The body is parsed on first use and cached, so reading <code>form()</code> in a
+middleware and again in the handler costs one parse. A body that is
+neither encoding gives an empty dictionary rather than raising — use
+<code>request.json_body()</code> for a JSON body and <code>request.text()</code> for
+anything else.</p>
+<p>A field a form can repeat — a set of checkboxes, a multi-select —
+needs <code>form_all()</code>, since <code>form()</code> keeps only the first value:</p>
+<pre><code class="language-zuri ignore">var tags = request.form_all().get('tags', [])
+</code></pre>
+<blockquote>
+<p><strong>Note</strong>
+A redirect after a successful <code>POST</code> should be <code>303 See Other</code>, as
+above. It is what stops a browser re-submitting the form when the
+user reloads the resulting page.</p>
+</blockquote>
+<h4 id="receiving-an-upload"><a class="header" href="#receiving-an-upload">Receiving an upload</a></h4>
+<pre><code class="language-html">&lt;form method="post" action="/avatar" enctype="multipart/form-data"&gt;
+  &lt;input type="text" name="caption"&gt;
+  &lt;input type="file" name="avatar"&gt;
+  &lt;button&gt;Upload&lt;/button&gt;
+&lt;/form&gt;
+</code></pre>
+<pre><code class="language-zuri ignore">import os
+
+server.post('/avatar', @(request, response) {
+  var upload = request.file('avatar')
+
+  if upload == nil {
+    response.json({ error: 'no file was submitted' }, 400)
+    return
+  }
+
+  if upload.size() &gt; 2 * 1024 * 1024 {
+    response.json({ error: 'the image must be under 2 MB' }, 413)
+    return
+  }
+
+  var destination = os.join_paths('./uploads', upload.safe_name())
+  upload.save_to(destination)
+
+  response.json({
+    saved: upload.safe_name(),
+    caption: request.form_field('caption', ''),
+    bytes: upload.size(),
+  })
+})
+</code></pre>
+<p>An <code>UploadedFile</code> carries:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Member</th><th>Is</th></tr>
+</thead>
+<tbody>
+<tr><td><code>filename</code></td><td>the name the client claimed, exactly as sent</td></tr>
+<tr><td><code>safe_name()</code></td><td>that name reduced to one path-safe segment</td></tr>
+<tr><td><code>content_type</code></td><td>the type the client declared, or <code>application/octet-stream</code></td></tr>
+<tr><td><code>content</code></td><td>the bytes</td></tr>
+<tr><td><code>size()</code></td><td>how many of them</td></tr>
+<tr><td><code>name</code></td><td>the form field it arrived under</td></tr>
+<tr><td><code>headers</code></td><td>every header on that part of the body</td></tr>
+<tr><td><code>save_to(path)</code></td><td>writes the content, and returns the byte count</td></tr>
+<tr><td><code>to_text()</code></td><td>the content decoded as UTF-8</td></tr>
+</tbody>
+</table>
+</div>
+<p>An <code>&lt;input type="file" multiple&gt;</code> sends several parts under one name,
+which is what <code>files()</code> returns a list for:</p>
+<pre><code class="language-zuri ignore">for upload in request.files().get('attachments', []) {
+  upload.save_to(os.join_paths('./uploads', upload.safe_name()))
+}
+</code></pre>
+<h4 id="two-things-a-handler-must-not-trust"><a class="header" href="#two-things-a-handler-must-not-trust">Two things a handler must not trust</a></h4>
+<p><strong>The filename.</strong> It is attacker-controlled, and it routinely contains
+a full local path from a Windows client, <code>..</code> segments from a hostile
+one, or a NUL byte meant to truncate a later check. Never join it to a
+path directly:</p>
+<pre><code class="language-zuri ignore">os.join_paths('./uploads', upload.filename)     # no
+os.join_paths('./uploads', upload.safe_name())  # yes
+</code></pre>
+<p><code>safe_name()</code> drops every directory component — both separators — and
+reduces the rest to letters, digits, <code>.</code>, <code>-</code> and <code>_</code>, returning
+<code>'unnamed'</code> when nothing usable is left. Better still, name the file
+yourself and keep the client’s name as a label:</p>
+<pre><code class="language-zuri ignore">var stored = '${uuid.v4()}.jpg'
+upload.save_to(os.join_paths('./uploads', stored))
+record_upload(stored, upload.filename)
+</code></pre>
+<p><strong>The content type.</strong> <code>content_type</code> is whatever the client wrote in
+the part header and says nothing about what the bytes are. A file
+claiming <code>image/png</code> may be anything at all. When the difference
+matters, look at the bytes — <code>mime.detect_from_header()</code> reads a real
+file’s leading bytes, so sniffing an upload means writing it somewhere
+first:</p>
+<pre><code class="language-zuri ignore">import mime
+import os
+
+var staged = os.join_paths(os.temp_dir(), uuid.v4())
+upload.save_to(staged)
+
+var actual = mime.detect_from_header(file(staged, 'rb'))
+
+if actual != 'image/png' and actual != 'image/jpeg' {
+  file(staged).delete()
+  response.json({ error: 'that is not an image' }, 415)
+  return
+}
+
+os.rename(staged, os.join_paths('./uploads', stored_name))
+</code></pre>
+<h4 id="size-limits"><a class="header" href="#size-limits">Size limits</a></h4>
+<p>The body is read into memory, bounded by the server’s
+<code>max_body_size</code> — 10 MiB by default, which is deliberately small:</p>
+<pre><code class="language-zuri ignore">server.max_body_size = 50 * 1024 * 1024   # accept uploads up to 50 MB
+</code></pre>
+<p>A request that <em>announces</em> a body over the limit is refused with <code>413 Content Too Large</code> before a byte of it is read, which is the whole
+point of <code>Content-Length</code>. One that lies about its length is cut off
+at the limit and also refused. Either way the connection then closes,
+since a body that was only partly read leaves nothing safe to parse
+after it.</p>
+<p>A client asking permission first with <code>Expect: 100-continue</code> gets its
+answer before it sends anything — the server checks the announced
+length against the limit and either says <code>100 Continue</code> or refuses
+outright, so a rejected upload costs one round trip rather than a
+whole transfer.</p>
+<p>For an upload too large to want in memory at all, take it as a raw
+body and stream it rather than as a form field. <code>multipart/form-data</code>
+earns its overhead only when there are fields alongside the file.</p>
+<h3 id="request-validation"><a class="header" href="#request-validation">Request Validation</a></h3>
+<p>A request validates itself against a <code>validate</code> schema:</p>
+<pre><code class="language-zuri ignore">import http
+import validate
+
+var create_user = validate.schema({
+  name:  validate.required().string().max_length(100),
+  email: validate.required().string().email(),
+  age:   validate.required().integer().gte(18).lte(120),
+})
+
+server.post('/users', @(request, response) {
+  catch {
+    var data = request.validate(create_user)
+    response.json(create_account(data), 201)
+  } as error {
+    response.json({ errors: create_user.group_errors(error.errors) }, 422)
+  }
+})
+</code></pre>
+<p><code>validate()</code> returns the input it checked, so the happy path is one
+line and the data you go on to use is the data that was validated.
+Failure raises the schema’s own <code>validate.ValidationError</code>, carrying
+an <code>errors</code> list of <code>{ field, message }</code>; <code>group_errors()</code> turns that
+into a dictionary keyed by field, which is the shape most front ends
+want:</p>
+<pre><code class="language-json">{
+  "errors": {
+    "email": ["The email field must be a valid email address."],
+    "age": ["The age field must be greater than or equal to 18."]
+  }
+}
+</code></pre>
+<p>To branch rather than catch, validate the input yourself — there is
+no separate API for it:</p>
+<pre><code class="language-zuri ignore">var result = create_user.check(request.input())
+
+if !result.valid {
+  response.json({ errors: result.errors }, 422)
+  return
+}
+</code></pre>
+<p>The rules themselves — and there are around eighty of them, including
+cross-field ones like <code>confirmed()</code> and <code>required_if()</code> — belong to
+the <code>validate</code> module rather than to this one.</p>
+<h4 id="what-gets-validated"><a class="header" href="#what-gets-validated">What gets validated</a></h4>
+<p><code>request.input()</code> is the dictionary <code>validate()</code> checks. Three sources
+are merged, each overriding the one before it:</p>
+<ol>
+<li>route parameters, from the pattern that matched</li>
+<li>query string parameters</li>
+<li>the body — a JSON object’s keys, or the submitted form fields</li>
+</ol>
+<p>So one schema covers <code>POST /users</code> with a JSON body, <code>GET /users?…</code>
+with a query string, and <code>/users/:id</code> with a route parameter, without
+the handler caring which arrived.</p>
+<p>Take one source on its own by naming it:</p>
+<pre><code class="language-zuri ignore">request.validate(schema, 'body')     # only the body
+request.validate(schema, 'query')    # only the query string
+request.validate(schema, 'params')   # only the route parameters
+</code></pre>
+<p>Two things are deliberately left out of the merge:</p>
+<ul>
+<li><strong>Uploaded files.</strong> Nothing a schema can say about a file is
+expressible as a rule over its bytes; reach them with
+<code>request.file()</code> and check them as <a href="#forms-and-file-uploads">Forms and File
+Uploads</a> describes.</li>
+<li><strong>A JSON body that is not an object.</strong> An array or a bare string has
+no names to merge, so it contributes nothing; read it with
+<code>request.json_body()</code>.</li>
+</ul>
+<p>A body that fails to parse as JSON also contributes nothing rather
+than raising, which leaves the schema’s own <code>required</code> rules to report
+what is missing. That is a better answer to a client than a parser
+message.</p>
+<h4 id="values-from-the-wire-are-strings"><a class="header" href="#values-from-the-wire-are-strings">Values from the wire are strings</a></h4>
+<p>A query string and a urlencoded form carry text and nothing else.
+<code>?age=36</code> is the string <code>'36'</code>, not the number <code>36</code>, and that changes
+which rules hold:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Rule</th><th>On <code>'36'</code></th><th>Because</th></tr>
+</thead>
+<tbody>
+<tr><td><code>integer()</code>, <code>numeric()</code>, <code>gt()</code>, <code>gte()</code>, <code>lt()</code>, <code>lte()</code></td><td>reads it as 36</td><td>these coerce</td></tr>
+<tr><td><code>size()</code>, <code>min()</code>, <code>max()</code>, <code>between()</code></td><td>reads it as 2</td><td>these measure <em>size</em>, which for a string is its character count</td></tr>
+</tbody>
+</table>
+</div>
+<p>That is <code>validate</code>’s documented behaviour, not an accident of this
+module: <code>min(8)</code> on a password means eight characters. It only
+surprises when a schema written against a JSON body is later pointed
+at a query string.</p>
+<p>Write a schema that has to serve both with the value rules:</p>
+<pre><code class="language-zuri ignore">age: validate.required().integer().gte(18).lte(120)   # both
+age: validate.required().integer().between(18, 120)   # JSON bodies only
+</code></pre>
+<p><code>input()</code> does not coerce anything on your behalf. It would have to
+guess, and a postcode of <code>'01234'</code> or a version of <code>'1.0'</code> silently
+becoming a number is worse than the rule you have to pick deliberately.</p>
+<h4 id="repeated-fields"><a class="header" href="#repeated-fields">Repeated fields</a></h4>
+<p>A name may legally repeat in a query string or a form, so those
+sources arrive as <code>name -&gt; [values]</code>. <code>input()</code> flattens a name
+carrying exactly one value to that value, and leaves a name carrying
+several as a list:</p>
+<pre><code>?tag=a           -&gt;  { tag: 'a' }
+?tag=a&amp;tag=b     -&gt;  { tag: ['a', 'b'] }
+</code></pre>
+<p>That is what lets a scalar rule see a scalar. A field that must
+<em>always</em> be a list, however many values arrived, is better read
+through <code>form_all()</code> or <code>request.query</code> directly and validated with
+<code>validate</code>’s <code>.*</code> wildcard.</p>
+<blockquote>
+<p><strong>Note</strong>
+The <code>http</code> module does not import <code>validate</code>. <code>validate()</code> takes any
+object with a <code>check_or_raise()</code> method and calls it, so a server
+that validates nothing never pays to load a schema engine — and a
+schema of your own, or from somewhere else, works just as well.</p>
+</blockquote>
+<h3 id="the-response-object"><a class="header" href="#the-response-object">The Response Object</a></h3>
+<pre><code class="language-zuri ignore">response.text('plain')                    # text/plain
+response.html('&lt;h1&gt;hi&lt;/h1&gt;')              # text/html
+response.json({ ok: true })               # application/json
+response.xml('&lt;doc/&gt;')                    # application/xml
+response.write('more')                    # append, no content type
+
+response.file('/var/www/report.pdf')      # streamed from disk
+response.download('/var/www/report.pdf')  # ...as an attachment
+response.render('pages/home', { user })   # a Wire template
+
+response.redirect('/elsewhere')           # 302 by default
+response.redirect('/elsewhere', 308)      # method-preserving
+
+response.status = 201
+response.header('X-Thing', 'value')
+response.content_type('text/csv')
+response.cache_for(3600)
+response.no_cache()
+</code></pre>
+<p>Every writer sets a sensible <code>Content-Type</code> alongside the body, and
+each returns the response, so they chain.</p>
+<p><code>file()</code> streams from disk rather than reading the file into memory,
+which is what makes serving something larger than you would like to
+hold in memory a one-liner.</p>
+<h3 id="middleware"><a class="header" href="#middleware">Middleware</a></h3>
+<p>A middleware takes <code>(request, response, next)</code> and decides whether the
+rest of the chain runs:</p>
+<pre><code class="language-zuri ignore">server.use(@(request, response, next) {
+  var started = time()
+  next()
+  echo '${request.method} ${request.path} ${response.status} ' +
+    '${(time() - started) * 1000}ms'
+})
+</code></pre>
+<p>Not calling <code>next()</code> is how a middleware short-circuits, which is
+exactly what an authentication or rate-limiting layer wants:</p>
+<pre><code class="language-zuri ignore">server.use(@(request, response, next) {
+  if request.header('x-api-key') != expected {
+    response.json({ error: 'unauthorized' }, 401)
+    return
+  }
+  next()
+})
+</code></pre>
+<p>Middleware run in the order they were added, outermost first, so one
+added first wraps everything added after it.</p>
+<p>Code after <code>next()</code> runs only when the rest of the chain returned. A
+handler that raises never comes back there, and the <code>500</code> the visitor
+is sent is decided later, by the server’s error handling. A middleware
+that reports on the response the client actually receives registers
+with <code>response.on_finish()</code> instead, which runs once the response is
+final, failures included:</p>
+<pre><code class="language-zuri ignore">server.use(@(request, response, next) {
+  var started = time()
+
+  response.on_finish(@{
+    echo '${request.method} ${request.path} ${response.status} ' +
+      '${(time() - started) * 1000}ms'
+  })
+
+  next()
+})
+</code></pre>
+<p>Callbacks run once each, in the order they were registered, and one
+that raises is skipped rather than costing the client its response.
+<code>middleware.logger()</code> is built this way.</p>
+<p>Anything a middleware wants to hand to the handler goes on
+<code>request.context</code>, which is a plain dictionary that exists for exactly
+that:</p>
+<pre><code class="language-zuri ignore">server.use(@(request, response, next) {
+  request.context['started_at'] = time()
+  next()
+})
+</code></pre>
+<p>A middleware that wants to act on the <em>response</em> calls <code>next()</code> first
+and then works on what came back:</p>
+<pre><code class="language-zuri ignore">server.use(@(request, response, next) {
+  next()
+  response.header('X-Served-By', hostname)
+})
+</code></pre>
+<p>The ones most services need are already written — see
+<a href="#built-in-middleware">Built-in Middleware</a>.</p>
+<h3 id="errors"><a class="header" href="#errors">Errors</a></h3>
+<p>A handler that raises becomes a <code>500</code>, and the exception message never
+reaches the client — an exception message routinely carries a file
+path, a query, or a fragment of the data being processed, and none of
+that belongs in a reply to whoever triggered it.</p>
+<pre><code class="language-zuri ignore">server.on_error(@(error, connection) {
+  log.error('${error.message}')
+})
+
+server.error_handler(@(request, response, error) {
+  response.status = 500
+  response.render('errors/500')
+})
+
+server.not_found(@(request, response) {
+  response.status = 404
+  response.render('errors/404')
+})
+</code></pre>
+<p><code>on_error()</code> listeners see everything, including connection-level
+failures that never reached a handler. <code>error_handler()</code> produces the
+response body for a failed request; without one, the server sends a
+bare <code>500</code>.</p>
+<h3 id="static-files"><a class="header" href="#static-files">Static Files</a></h3>
+<pre><code class="language-zuri ignore">server.serve_files('/static', './public', {
+  cache_age: 86400,
+  precompressed: true,
+})
+</code></pre>
+<p>That single call brings with it the things a static file needs to
+actually behave well in front of a browser or a CDN:</p>
+<ul>
+<li><code>ETag</code> and <code>Last-Modified</code>, and <code>304 Not Modified</code> for a conditional
+request that still holds</li>
+<li><code>Range</code> requests, answered with <code>206</code> and a <code>Content-Range</code>, and
+<code>416</code> for a range that falls outside the file</li>
+<li><code>If-Match</code>, <code>If-Unmodified-Since</code>, <code>If-None-Match</code>, <code>If-Modified-Since</code>
+and <code>If-Range</code>, evaluated in the order RFC 9110 lays down</li>
+<li><code>Content-Type</code> from the file extension</li>
+<li><code>index.html</code> for a request that names a directory</li>
+<li>with <code>precompressed</code>, a <code>.br</code> or <code>.gz</code> sibling served in place of the
+original when the client accepts that coding</li>
+</ul>
+<p>Every request path is percent-decoded, normalised, joined to the root,
+and then checked to still be inside the root — all three, because
+doing any two of them is not enough. Dotfiles are not served at all:
+<code>.env</code>, <code>.git</code> and <code>.htpasswd</code> all end up in a web root at some point
+in a project’s life, and none of them should ever go out.</p>
+<p>For a single-page application, <code>fallback</code> serves the shell for any
+path that names no file, which is what makes client-side routes work
+on reload:</p>
+<pre><code class="language-zuri ignore">server.serve_files('/', './dist', { fallback: 'index.html' })
+</code></pre>
+<h3 id="compression"><a class="header" href="#compression">Compression</a></h3>
+<p>Responses are compressed on the way out, and it is on by default. A
+response is compressed when all of the following hold:</p>
+<ul>
+<li><code>server.compression</code> is on (it is),</li>
+<li>the body is at least <code>server.compression_min_size</code> bytes (1024),</li>
+<li>its media type is one that benefits — anything <code>text/</code>, plus JSON,
+JavaScript, XML, SVG, WebAssembly and the <code>+json</code>/<code>+xml</code> types,</li>
+<li>the client’s <code>Accept-Encoding</code> accepts <code>br</code> or <code>gzip</code>,</li>
+<li>nothing already set a <code>Content-Encoding</code>,</li>
+<li>and the compressed body actually came out smaller.</li>
+</ul>
+<p>Brotli is preferred over gzip when the client accepts both. <code>Vary: Accept-Encoding</code> is added either way, so a shared cache in front
+cannot serve a compressed body to a client that asked for none.</p>
+<p>Turning it off, or moving the threshold:</p>
+<pre><code class="language-zuri ignore">server.compression = false          # off entirely
+server.compression_min_size = 4096  # only bodies over 4 KiB
+</code></pre>
+<p>The list is an allowlist rather than a denylist on purpose. A JPEG, an
+MP4 or a zip is already compressed; running it through brotli spends
+CPU to make it slightly larger.</p>
+<blockquote>
+<p><strong>Note</strong>
+Responses built with <code>response.file()</code> — which includes everything
+<code>serve_files()</code> serves — are <strong>not</strong> compressed on the fly. They are
+streamed from disk rather than held in memory, and compressing them
+per request would mean reading them into memory to do it. Compress
+those ahead of time and let the static handler pick the compressed
+file up:</p>
+<pre><code class="language-zuri">server.serve_files('/static', './public', { precompressed: true })
+</code></pre>
+<p>With that on, a request for <code>site.css</code> from a client that accepts
+brotli is answered with <code>site.css.br</code> if it exists, and with
+<code>site.css.gz</code> if that exists and gzip is accepted — at no CPU cost
+per request, and with the correct <code>Content-Encoding</code> and <code>Vary</code>.</p>
+</blockquote>
+<p>On the client side there is nothing to configure: <code>Accept-Encoding: gzip, br, deflate, zstd</code> is sent by default and a compressed response
+body is decoded before you see it.</p>
+<h3 id="streaming-a-response-body"><a class="header" href="#streaming-a-response-body">Streaming a Response Body</a></h3>
+<p>A response body can come from a callback instead of memory:</p>
+<pre><code class="language-zuri ignore">server.get('/export.csv', @(request, response) {
+  response.content_type('text/csv')
+
+  response.stream(@(writer) {
+    writer.write('id,name\n')
+
+    for row in rows {
+      writer.write('${row.id},${row.name}\n')
+      writer.flush()
+    }
+  })
+})
+</code></pre>
+<p>Unless a <code>Content-Length</code> was set beforehand, the body is framed with
+chunked transfer encoding on HTTP/1.1 and as an ordinary DATA stream
+on HTTP/2 — the handler does not have to know which.</p>
+<h3 id="setting-cookies"><a class="header" href="#setting-cookies">Setting Cookies</a></h3>
+<pre><code class="language-zuri ignore">response.set_cookie('theme', 'dark', {
+  max_age: 86400,
+  secure: true,
+  same_site: 'Strict',
+})
+
+response.clear_cookie('theme')
+</code></pre>
+<p><code>http_only</code> defaults to <code>true</code> and <code>same_site</code> to <code>'Lax'</code>, which are
+what a cookie carrying anything sensitive should have; pass them
+explicitly to opt out. A cookie whose name carries the <code>__Secure-</code> or
+<code>__Host-</code> prefix has that prefix’s rules applied for it, rather than
+being sent in a form the browser will silently refuse to store.</p>
+<p>For state that belongs to a visitor rather than to the browser, use a
+session, which keeps the state on the server and puts only an
+identifier in the cookie. <a href="#sessions">Sessions</a> covers it.</p>
+<h3 id="content-negotiation"><a class="header" href="#content-negotiation">Content Negotiation</a></h3>
+<pre><code class="language-zuri ignore">import http.negotiate
+
+var type = negotiate.best_match(
+  request.header('accept'),
+  ['application/json', 'text/html']
+)
+</code></pre>
+<p><code>best_match()</code> picks what the client would most like out of what you
+can produce, honouring quality weights, with your own order deciding
+ties. <code>request.accepts('text/html')</code> and <code>request.wants_json()</code> cover
+the common cases.</p>
+<h2 id="built-in-middleware"><a class="header" href="#built-in-middleware">Built-in Middleware</a></h2>
+<p><code>http.middleware</code> holds the middleware nearly every public service
+ends up wanting. Each function <em>returns</em> a middleware, so it is called
+at the point you register it:</p>
+<pre><code class="language-zuri">import http
+import http.middleware
+
+var server = http.server(3000)
+
+server.use(middleware.request_id())
+server.use(middleware.logger())
+server.use(middleware.security_headers())
+</code></pre>
+<p>They are ordinary middleware with no special standing — read any of
+them as a worked example of writing your own.</p>
+<p>None of them raises when it is built. That matters for the three that
+take a verifier — <a href="#basic_auth"><code>basic_auth()</code></a>,
+<a href="#bearer_auth"><code>bearer_auth()</code></a> and <a href="#jwt_auth"><code>jwt_auth()</code></a> — where
+<strong>no verifier means the middleware is disabled</strong>: it passes every
+request straight through rather than refusing one, and rather than
+failing at registration.</p>
+<pre><code class="language-zuri"># Authentication, off. Everything else in the chain is untouched.
+server.use(middleware.jwt_auth(nil))
+</code></pre>
+<p>That is the right shape for a middleware, and it is deliberately
+useful: blanking a verifier switches its middleware off without
+unpicking the chain around it, which is what you want when bisecting a
+request that is failing somewhere in a stack of them.</p>
+<p>Disabling is opt-in and never a fallback: a verifier that is <em>present</em>
+and refuses a request still refuses it.</p>
+<h3 id="logger"><a class="header" href="#logger"><code>logger()</code></a></h3>
+<p>Writes one line per request, after the response is finished.</p>
+<pre><code class="language-zuri">server.use(middleware.logger())
+</code></pre>
+<pre><code>127.0.0.1 - [Wed, 09 Sep 2026 20:09:17 GMT] "GET /static/big.txt HTTP/1.1" 200 320 3.07ms
+</code></pre>
+<p>That is the Common Log Format with the response time added, which
+every log analyser already understands. The size comes from
+<code>Content-Length</code> when the body is file-backed or streamed, so a static
+file logs its real size rather than zero.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>sink</code></td><td><code>echo</code></td><td>a function taking the finished line</td></tr>
+<tr><td><code>format</code></td><td>the format above</td><td>a function <code>(request, response, milliseconds)</code> returning the line</td></tr>
+<tr><td><code>trust_proxy</code></td><td><code>false</code></td><td>log the forwarded client address rather than the peer</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri">server.use(middleware.logger({
+  sink: @(line) { log_file.puts(line + '\n') },
+  trust_proxy: true,
+}))
+</code></pre>
+<p>Structured logging is a <code>format</code> that returns JSON:</p>
+<pre><code class="language-zuri">server.use(middleware.logger({
+  format: @(request, response, elapsed) {
+    return json.encode({
+      method: request.method,
+      path: request.path,
+      status: response.status,
+      ms: elapsed,
+      id: request.context.get('request_id', nil),
+    })
+  },
+}))
+</code></pre>
+<p>A request that raises is logged too, with the status the client was
+sent once the server had answered the failure: the <code>500</code> of the default
+handling, or whatever the error handler chose.</p>
+<h3 id="request_id"><a class="header" href="#request_id"><code>request_id()</code></a></h3>
+<p>Gives every request an identifier, so one request can be followed
+across a log file and across services.</p>
+<pre><code class="language-zuri">server.use(middleware.request_id())
+</code></pre>
+<p>The identifier lands on <code>request.context['request_id']</code> and in the
+response’s <code>X-Request-Id</code>. One supplied by the client is echoed rather
+than replaced, which is what makes a trace continue across a hop.</p>
+<p>The single optional argument is the header name:</p>
+<pre><code class="language-zuri">server.use(middleware.request_id('X-Correlation-Id'))
+</code></pre>
+<p>An identifier that came from outside is written into your logs, so it
+is capped at 64 characters and stripped of anything that is not
+plainly printable before it is trusted that far.</p>
+<h3 id="security_headers"><a class="header" href="#security_headers"><code>security_headers()</code></a></h3>
+<p>Adds the response headers a browser acts on to harden a page.</p>
+<pre><code class="language-zuri">server.use(middleware.security_headers())
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Header</th></tr>
+</thead>
+<tbody>
+<tr><td><code>content_type_options</code></td><td><code>'nosniff'</code></td><td><code>X-Content-Type-Options</code> — stops the browser second-guessing a declared content type</td></tr>
+<tr><td><code>frame_options</code></td><td><code>'DENY'</code></td><td><code>X-Frame-Options</code> — refuses to be framed, which is what clickjacking needs</td></tr>
+<tr><td><code>referrer_policy</code></td><td><code>'strict-origin-when-cross-origin'</code></td><td><code>Referrer-Policy</code> — keeps paths and queries out of outbound referrers</td></tr>
+<tr><td><code>hsts_max_age</code></td><td><code>31536000</code></td><td><code>Strict-Transport-Security</code></td></tr>
+<tr><td><code>hsts_subdomains</code></td><td><code>false</code></td><td>adds <code>includeSubDomains</code></td></tr>
+<tr><td><code>content_security_policy</code></td><td>not set</td><td><code>Content-Security-Policy</code></td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-zuri">server.use(middleware.security_headers({
+  content_security_policy: "default-src 'self'; img-src 'self' data:",
+  hsts_subdomains: true,
+  frame_options: 'SAMEORIGIN',
+}))
+</code></pre>
+<p>Pass <code>nil</code> for any of them to leave that header off entirely.</p>
+<p><code>Content-Security-Policy</code> has no default because a wrong one breaks
+the page and a permissive one is theatre; it depends on what your
+application actually loads.</p>
+<p><code>Strict-Transport-Security</code> is only sent over HTTPS. Over cleartext it
+is at best ignored, and at worst a way to lock a client out of a host
+that has no certificate.</p>
+<p>Every header is set with <code>set_default</code>, so a handler that set its own
+keeps it.</p>
+<h3 id="cors"><a class="header" href="#cors"><code>cors()</code></a></h3>
+<p>Answers CORS preflights and adds the headers a browser needs before it
+will let script read a response from another origin.</p>
+<pre><code class="language-zuri">server.use(middleware.cors({
+  origins: ['https://app.example.com'],
+  credentials: true,
+}))
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>origins</code></td><td><code>['*']</code></td><td>origins allowed, matched exactly; <code>'*'</code> allows any</td></tr>
+<tr><td><code>methods</code></td><td>the seven usual ones</td><td>what a preflight is told is allowed</td></tr>
+<tr><td><code>headers</code></td><td>reflect what was asked</td><td>request headers script may set</td></tr>
+<tr><td><code>expose</code></td><td>none</td><td>response headers script may read</td></tr>
+<tr><td><code>credentials</code></td><td><code>false</code></td><td>whether cookies and <code>Authorization</code> may be sent</td></tr>
+<tr><td><code>max_age</code></td><td><code>86400</code></td><td>how long a preflight may be cached, in seconds</td></tr>
+</tbody>
+</table>
+</div>
+<p>A request with no <code>Origin</code> is not a cross-origin request and passes
+straight through. An <code>Origin</code> that is not on the list gets no CORS
+headers at all — the browser then refuses to hand the response to
+script, which is the correct outcome; answering with an error instead
+would leak whether the resource exists.</p>
+<blockquote>
+<p><strong>Note</strong>
+A wildcard and <code>credentials</code> cannot be combined — every browser
+rejects that pairing. When <code>credentials</code> is set, the requesting
+origin is echoed back instead, which makes the <code>origins</code> list the
+only thing standing between an attacker’s page and an authenticated
+response. Name the origins explicitly whenever credentials are in
+play.</p>
+</blockquote>
+<p><code>Vary: Origin</code> is added whenever the answer depends on the request’s
+origin, so a shared cache cannot serve one origin’s response to
+another.</p>
+<h3 id="basic_auth"><a class="header" href="#basic_auth"><code>basic_auth()</code></a></h3>
+<p>Requires HTTP Basic authentication.</p>
+<pre><code class="language-zuri">server.use(middleware.basic_auth(@(user, password) {
+  return user == 'admin' and http.util.secure_equals(password, secret)
+}, 'Admin area'))
+</code></pre>
+<p>The first argument is called with the username and password and
+returns whether they are acceptable. The second is the realm named in
+the challenge, and defaults to <code>'Restricted'</code>.</p>
+<p>On success the username is put on <code>request.context['user']</code>. On
+failure the response is <code>401</code> with a <code>WWW-Authenticate</code> header, which
+is what makes a browser show its credentials prompt.</p>
+<p>Passing <code>nil</code> in place of the verifier disables the middleware
+entirely — see <a href="#built-in-middleware">the note above</a>.</p>
+<p>Compare secrets with <code>http.util.secure_equals()</code> rather than <code>==</code>: it
+compares in constant time, so a wrong guess and a nearly-right one
+take the same time and the comparison does not hand over the secret
+one character at a time.</p>
+<p>To guard part of a site rather than all of it, wrap it:</p>
+<pre><code class="language-zuri ignore">var guard = middleware.basic_auth(check_credentials)
+
+server.use(@(request, response, next) {
+  if request.path.starts_with('/admin') {
+    guard(request, response, next)
+    return
+  }
+  next()
+})
+</code></pre>
+<p>Note that the <code>next()</code> a guard calls on success continues the <em>whole</em>
+remaining chain, not just the handler. Two authentication middleware
+registered globally therefore both apply to every request; scope each
+of them by prefix, as above, when they are meant for different parts
+of the site.</p>
+<h3 id="bearer_auth"><a class="header" href="#bearer_auth"><code>bearer_auth()</code></a></h3>
+<p>Requires a bearer token — the usual shape for an API.</p>
+<pre><code class="language-zuri">server.use(middleware.bearer_auth(@(token) {
+  var claims = verify_jwt(token)
+  return claims == nil ? false : claims.subject
+}))
+</code></pre>
+<p>The verifier is called with the token and returns either something
+falsy to refuse it, or a value to attach — that value lands on
+<code>request.context['user']</code>, so returning the subject, the claims, or a
+whole user record all work.</p>
+<p>Failure is <code>401</code> with a <code>WWW-Authenticate: Bearer</code> challenge and a
+JSON body. The realm is the optional second argument and defaults to
+<code>'api'</code>. A <code>nil</code> verifier disables the middleware, as with
+<code>basic_auth()</code>.</p>
+<p><code>middleware.parse_bearer(header)</code> and <code>middleware.parse_basic(header)</code>
+are exported separately for code that needs to read an <code>Authorization</code>
+header without installing a middleware at all, and
+<code>request.bearer_token()</code> reads the token straight off a request.</p>
+<p>For a JSON Web Token specifically, <a href="#jwt_auth"><code>jwt_auth()</code></a> does the
+verification, the claim handling and the RFC 6750 challenges rather
+than leaving them to the verifier you write here.</p>
+<h3 id="jwt_auth"><a class="header" href="#jwt_auth"><code>jwt_auth()</code></a></h3>
+<p>Requires a valid JSON Web Token, verified by the <code>jwt</code> module.</p>
+<pre><code class="language-zuri ignore">import http.middleware
+import jwt
+
+server.use(middleware.jwt_auth(
+  jwt.Verifier(secret, { algorithms: ['HS256'], audience: 'api' })
+))
+</code></pre>
+<p>The first argument is either a <code>jwt.Verifier</code> or any function taking
+the token and returning its claims. The function form is what covers a
+key set resolved by <code>kid</code>, or anything else the <code>jwt</code> module can do
+that a fixed verifier cannot:</p>
+<pre><code class="language-zuri">server.use(middleware.jwt_auth(@(token) {
+  return jwt.verify_with_jwks(token, keys, { audience: 'api' })
+}))
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>realm</code></td><td><code>'api'</code></td><td>the realm named in the challenge</td></tr>
+<tr><td><code>optional</code></td><td><code>false</code></td><td>attach the claims when a valid token is present, but do not refuse a request without one</td></tr>
+<tr><td><code>scopes</code></td><td>none</td><td>a list of scopes every token must carry</td></tr>
+</tbody>
+</table>
+</div>
+<p>On success the claims land on <code>request.context['claims']</code>, and the
+<code>sub</code> claim — the usual place an issuer puts the account a token
+speaks for — on <code>request.context['user']</code>:</p>
+<pre><code class="language-zuri">server.get('/me', @(request, response) {
+  response.json({
+    account: request.context.get('user', nil),
+    issued_at: request.context.get('claims', {}).get('iat', nil),
+  })
+})
+</code></pre>
+<p>Failures follow RFC 6750 §3:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Situation</th><th>Answer</th></tr>
+</thead>
+<tbody>
+<tr><td>no token at all</td><td><code>401</code>, <code>WWW-Authenticate: Bearer realm="api"</code></td></tr>
+<tr><td>the token does not verify</td><td><code>401</code>, with <code>error="invalid_token"</code></td></tr>
+<tr><td>valid, but missing a required scope</td><td><code>403</code>, with <code>error="insufficient_scope"</code> and the scope that was needed</td></tr>
+</tbody>
+</table>
+</div>
+<p>The distinction in that last row is the point of <code>scopes</code>: a token
+that failed to authenticate and a token that authenticated but is not
+allowed to do this are different problems, and answering both with
+<code>401</code> tells a client to go and get a new token when a new token will
+not help.</p>
+<blockquote>
+<p><strong>Note</strong>
+A challenge never says <em>which</em> check a token failed. An expired
+token and a forged one get exactly the same
+<code>error_description</code>, because which one it was is useful to your
+logs and useful to an attacker, and to nobody else. If you need the
+reason, log it from the verifier you passed in.</p>
+</blockquote>
+<p><code>optional</code> is for a route that behaves differently when it knows who
+is asking without requiring it — a public page that shows an edit
+button to its author:</p>
+<pre><code class="language-zuri ignore">server.use(middleware.jwt_auth(verifier, { optional: true }))
+
+server.get('/posts/:id', @(request, response) {
+  var viewer = request.context.get('user', nil)
+  response.json(render_post(request.param('id'), viewer))
+})
+</code></pre>
+<p>A token that is <em>present</em> but invalid is still refused under
+<code>optional</code>. Ignoring a bad token would let a client tamper with one
+and get the anonymous view rather than an error, which hides exactly
+the problem worth surfacing.</p>
+<p>A <code>nil</code> verifier disables the middleware: every request passes
+through unauthenticated, and <code>request.context['claims']</code> is simply
+never set. Nothing here raises when it is built, so registering it
+never needs a <code>catch</code> around it.</p>
+<pre><code class="language-zuri ignore">var verifier = production ? jwt.Verifier(secret, options) : nil
+
+server.use(middleware.jwt_auth(verifier))
+</code></pre>
+<p>Like <code>HttpRequest.validate()</code>, this does not import the <code>jwt</code> module —
+the verifier is built by the caller, which keeps the token format the
+application’s business and means a server that authenticates nothing
+never pays to load it.</p>
+<h3 id="rate_limit"><a class="header" href="#rate_limit"><code>rate_limit()</code></a></h3>
+<p>Limits how many requests one client may make in a window of time.</p>
+<pre><code class="language-zuri">server.use(middleware.rate_limit({ limit: 100, window: 60 }))
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>limit</code></td><td><code>60</code></td><td>requests allowed per window</td></tr>
+<tr><td><code>window</code></td><td><code>60</code></td><td>the window, in seconds</td></tr>
+<tr><td><code>key</code></td><td>the client address</td><td>a function of the request returning the bucket key</td></tr>
+<tr><td><code>trust_proxy</code></td><td><code>false</code></td><td>derive the address from forwarding headers</td></tr>
+</tbody>
+</table>
+</div>
+<p>Every response carries the current state, so a well-behaved client can
+back off before it is refused:</p>
+<pre><code>RateLimit-Limit: 100
+RateLimit-Remaining: 87
+RateLimit-Reset: 41
+</code></pre>
+<p>Over the limit is <code>429 Too Many Requests</code> with a <code>Retry-After</code>.</p>
+<p>Rate-limit per API key rather than per address by supplying a <code>key</code>:</p>
+<pre><code class="language-zuri">server.use(middleware.rate_limit({
+  limit: 1000,
+  window: 3600,
+  key: @(request) {
+    return request.header('x-api-key', nil) or request.client_ip() or 'anonymous'
+  },
+}))
+</code></pre>
+<blockquote>
+<p><strong>Note</strong>
+The counter lives in memory, so it is per worker: running with
+<code>workers: 4</code> makes the effective limit four times <code>limit</code>. That is
+a deliberate trade — a shared counter would need shared state, and
+this is meant to blunt a runaway client rather than to meter
+billing. Divide <code>limit</code> by the worker count if the exact number
+matters, or keep the count somewhere both workers can see.</p>
+</blockquote>
+<h3 id="etag"><a class="header" href="#etag"><code>etag()</code></a></h3>
+<p>Computes a weak <code>ETag</code> over a finished response body and answers <code>304 Not Modified</code> when the client already has that version.</p>
+<pre><code class="language-zuri">server.use(middleware.etag())
+</code></pre>
+<p>The single optional argument is the smallest body worth tagging, in
+bytes; it defaults to <code>128</code>, below which the validator costs more than
+the body it would save.</p>
+<p>A handler that already set its own <code>ETag</code> is left alone — it knows
+something about the resource that hashing the bytes does not — and so
+are file-backed responses, which <code>serve_files()</code> already tags from the
+file’s size and modification time.</p>
+<p>Because it works on the finished body, it pairs with anything: a
+rendered template, a JSON document, a generated report.</p>
+<h3 id="force_https"><a class="header" href="#force_https"><code>force_https()</code></a></h3>
+<p>Redirects every request that arrived over cleartext to the same URL
+over HTTPS.</p>
+<pre><code class="language-zuri">server.use(middleware.force_https())
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>status</code></td><td><code>308</code></td><td>the redirect status; <code>308</code> preserves the method and body</td></tr>
+<tr><td><code>port</code></td><td>the default</td><td>the HTTPS port, when it is not 443</td></tr>
+</tbody>
+</table>
+</div>
+<p>This belongs on the cleartext listener, which usually exists only to
+perform this redirect:</p>
+<pre><code class="language-zuri"># port 80: redirect and nothing else
+var redirector = http.server(80, '0.0.0.0')
+redirector.use(middleware.force_https())
+</code></pre>
+<p>Pair it with <code>security_headers()</code>’s <code>Strict-Transport-Security</code> on the
+TLS listener, so that after the first visit the browser stops making
+the cleartext request at all.</p>
+<h3 id="ordering"><a class="header" href="#ordering">Ordering</a></h3>
+<p>Middleware run outermost first, so the order they are registered in is
+the order they wrap the request. A workable default:</p>
+<pre><code class="language-zuri ignore">server.use(middleware.request_id())        # so everything after can log it
+server.use(middleware.logger())            # so it sees the final status
+server.use(middleware.force_https())       # before any work is done
+server.use(middleware.security_headers())
+server.use(middleware.cors({ origins: allowed }))
+server.use(middleware.rate_limit({ limit: 100 }))
+server.use(middleware.jwt_auth(verifier))   # after the cheap refusals
+server.use(middleware.etag())              # innermost: it needs the finished body
+</code></pre>
+<p>The reasoning behind each position: identifiers before anything that
+might log, logging outside everything so it records what actually
+happened, cheap refusals before expensive ones, and anything that
+inspects the response body innermost, where the body exists.</p>
+<h2 id="sessions"><a class="header" href="#sessions">Sessions</a></h2>
+<p>A session is state that belongs to one visitor, kept on the server and
+found again by a cookie the browser sends back. Only the identifier
+travels, so a visitor can neither read what the session holds nor
+change it, and the cookie is worth nothing to anyone who cannot
+present the exact value that was issued.</p>
+<pre><code class="language-zuri ignore">import http
+
+var server = http.server(3000)
+
+server.use(http.session.session())
+
+server.get('/', @(request, response) {
+  var seen = request.session().get('seen', 0) + 1
+
+  request.session().set('seen', seen)
+  response.text('visit ${seen}')
+})
+
+server.listen()
+</code></pre>
+<p><code>session()</code> is middleware. Register it once, above anything that reads
+a session, and every handler below it reaches its own through
+<code>request.session()</code>.</p>
+<h3 id="nothing-happens-until-something-uses-it"><a class="header" href="#nothing-happens-until-something-uses-it">Nothing Happens Until Something Uses It</a></h3>
+<p>A request that never touches its session costs nothing: no read from
+the store, no write, and no <code>Set-Cookie</code>. The record is created the
+first time something is written to the session, which is what keeps a
+crawler working through a public site from filling the store with
+empty sessions.</p>
+<p>A request that only reads an existing session writes nothing back
+either, beyond moving the idle expiry along at most once every
+<code>touch_interval</code> seconds.</p>
+<h3 id="signing-in"><a class="header" href="#signing-in">Signing In</a></h3>
+<pre><code class="language-zuri ignore">server.post('/login', @(request, response) {
+  var account = authenticate(request.form())
+
+  if account == nil {
+    response.status = 401
+    response.html(render_login('Those details do not match.'))
+
+    return
+  }
+
+  request.session().regenerate()
+  request.session().set('account', account.id)
+
+  response.redirect('/')
+})
+</code></pre>
+<p><code>regenerate()</code> is the line to get right. It gives the session a new
+identifier and destroys the record the old one named, keeping
+everything the session holds.</p>
+<p>Without it, an attacker who can set a cookie in the victim’s browser
+beforehand — through a stray subdomain, an open redirect, a shared
+machine — knows the identifier the victim will be signed in under, and
+can simply use it afterwards. That is session fixation, and a new
+identifier is the whole of the defence. Call it whenever what the
+session means changes: signing in, elevating to administrator, a
+step-up authentication.</p>
+<p>Signing out is <code>destroy()</code>, which removes the record and has the
+response expire the cookie:</p>
+<pre><code class="language-zuri ignore">server.post('/logout', @(request, response) {
+  request.session().destroy()
+  response.redirect('/')
+})
+</code></pre>
+<p><code>clear()</code> is the other one: it empties the session without ending it,
+keeping the identifier and the cookie.</p>
+<h3 id="flash-messages"><a class="header" href="#flash-messages">Flash Messages</a></h3>
+<p>A handler that does the work and redirects cannot render the message
+saying what happened. A flash carries it to the page that can:</p>
+<pre><code class="language-zuri ignore">server.post('/posts', @(request, response) {
+  create_post(request.form())
+
+  request.session().flash('notice', 'Your post is up.')
+  response.redirect('/posts')
+})
+
+server.get('/posts', @(request, response) {
+  response.html(render(posts(), request.session().take_flash('notice')))
+})
+</code></pre>
+<p>A flash is spent by the next request that touches the session at all,
+whether or not that request asks for this one. A page that looked at
+the session and did not read the message does not leave it for the
+page after; a request that never touched its session — a static file,
+an image — leaves it waiting.</p>
+<h3 id="where-sessions-are-kept"><a class="header" href="#where-sessions-are-kept">Where Sessions Are Kept</a></h3>
+<p>Four things can hold a session, and swapping between them changes one
+line.</p>
+<p><strong><code>FileStore</code>, one file per session.</strong> This is the default, because it
+needs no setup and is shared between the workers <code>http.serve()</code>
+starts. Given no directory it uses a private subdirectory of the
+platform’s temporary directory, created <code>0700</code>:</p>
+<pre><code class="language-zuri ignore">server.use(http.session.session())
+</code></pre>
+<p>That directory is cleared on whatever schedule the platform keeps, and
+on most of them at every reboot, so name your own for anything that
+has to outlive the host:</p>
+<pre><code class="language-zuri ignore">server.use(http.session.session({
+  store: http.session.FileStore('/var/lib/app/sessions'),
+}))
+</code></pre>
+<p>A session file is a bearer credential in the same way the cookie is.
+The directory is created <code>0700</code> and each file <code>0600</code>, and a directory
+that every user on the machine can reach is refused rather than used —
+which is why the temporary directory itself is never the default.
+Pass <code>strict_permissions: false</code> to accept one anyway.</p>
+<p><strong><code>SqlStore</code>, one row per session.</strong> It lives in its own import, so a
+program using the default store never loads the <code>sql</code> module:</p>
+<pre><code class="language-zuri ignore">import http.session.sql { SqlStore }
+import sql
+
+var store = SqlStore(sql.pool('postgres://localhost/app'))
+store.migrate()
+
+server.use(http.session.session({ store }))
+</code></pre>
+<p><code>migrate()</code> creates the table and its index if they are not there, and
+is safe to call on every start. It takes a <code>sql.Connection</code> or a
+<code>sql.Pool</code>; a server wants the pool.</p>
+<p><strong><code>MemoryStore</code>, for a test.</strong> Nothing survives a restart, and nothing
+is shared between workers, so a browser whose next request lands on a
+different worker arrives with a session that worker has never heard
+of. It is the right store for a test and the wrong one for traffic.</p>
+<p><strong>Something of your own.</strong> A store is five methods, none of which sees
+an identifier or understands a payload:</p>
+<pre><code class="language-zuri ignore">class RedisStore &lt; http.session.SessionStore {
+  @new(client) {
+    self._client = client
+  }
+
+  read(key) {
+    return self._client.get('session:' + key)
+  }
+
+  write(key, payload, expires_at) {
+    self._client.set_with_ttl('session:' + key, payload, (expires_at - time()).ceil())
+  }
+
+  destroy(key) {
+    self._client.remove('session:' + key)
+  }
+
+  gc(now) {
+    # Redis expires keys itself.
+    return 0
+  }
+}
+</code></pre>
+<p><code>touch()</code> has a working default built on <code>read()</code> and <code>write()</code>;
+override it where the backend can move an expiry on its own.</p>
+<p>The key a store is handed is the SHA-256 of the identifier, not the
+identifier. Someone who reads the directory, the table, or a backup of
+either learns what is in the sessions but cannot resume one, because
+the value the browser presents is the preimage.</p>
+<h3 id="when-a-session-ends"><a class="header" href="#when-a-session-ends">When a Session Ends</a></h3>
+<p>Two clocks, and a session ends at whichever runs out first:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>idle_timeout</code></td><td><code>7200</code></td><td>seconds of inactivity; rolls forward while the visitor is active</td></tr>
+<tr><td><code>lifetime</code></td><td><code>86400</code></td><td>seconds the session may live however active it is</td></tr>
+</tbody>
+</table>
+</div>
+<p>Either may be <code>nil</code> to remove that limit, but not both.</p>
+<p>The absolute lifetime is what asks a tab left open overnight to sign
+in again.</p>
+<p><code>touch_interval</code> is how often a request that only read the session
+bothers to move the idle expiry. It is the difference between a store
+write on every request and a store write once a minute. It defaults to
+sixty seconds, or half the idle timeout where that is shorter, and one
+set by hand has to stay under <code>idle_timeout</code> — otherwise a session in
+constant use still expires, because nothing ever moves it.</p>
+<p>Nothing schedules a sweep of expired sessions, so one rides along with
+ordinary traffic: <code>gc_probability</code> (default <code>0.01</code>) is the chance that
+a write also sweeps. Set it to <code>0</code> where a cron job calls <code>store.gc()</code>
+instead.</p>
+<h3 id="the-cookie"><a class="header" href="#the-cookie">The Cookie</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Default</th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>'zuri_session'</code></td><td></td></tr>
+<tr><td><code>path</code></td><td><code>'/'</code></td><td></td></tr>
+<tr><td><code>domain</code></td><td><code>nil</code></td><td><code>nil</code> scopes the cookie to the exact host, which is the narrower choice</td></tr>
+<tr><td><code>secure</code></td><td><code>nil</code></td><td><code>nil</code> follows the request’s own scheme</td></tr>
+<tr><td><code>http_only</code></td><td><code>true</code></td><td></td></tr>
+<tr><td><code>same_site</code></td><td><code>'Lax'</code></td><td><code>'Strict'</code>, <code>'Lax'</code> or <code>'None'</code></td></tr>
+<tr><td><code>persistent</code></td><td><code>false</code></td><td>whether the cookie outlives the browser</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>secure</code> following the request is what lets development over cleartext
+work while production over TLS gets <code>Secure</code> without being told. A
+deployment behind a proxy that terminates TLS sets <code>secure: true</code>
+itself.</p>
+<p><code>persistent: false</code> sends a cookie that ends with the browser session,
+which is what a sign-in should normally do. <code>persistent: true</code> sends
+<code>Max-Age</code> instead, and moves it forward on every request.</p>
+<h3 id="signing-the-cookie"><a class="header" href="#signing-the-cookie">Signing the Cookie</a></h3>
+<p>An identifier is 32 bytes from the platform’s cryptographic generator,
+which is far beyond guessing. Signing adds nothing against that, and
+everything against volume: with a secret set, a cookie this server did
+not issue is thrown out after one HMAC, rather than after a read from
+disk or a query to the database.</p>
+<pre><code class="language-zuri ignore">import env
+
+server.use(http.session.session({ secret: env.require('SESSION_SECRET') }))
+</code></pre>
+<p>Set it on anything facing the open internet, and give every worker the
+same secret — a cookie issued by one is otherwise refused by the next.
+Turning signing on refuses the cookies issued before it, so it signs
+everyone out once.</p>
+<h3 id="what-a-session-may-hold"><a class="header" href="#what-a-session-may-hold">What a Session May Hold</a></h3>
+<p>Whatever JSON holds: strings, numbers, booleans, <code>nil</code>, lists and
+dictionaries of those. A class instance is not JSON, and storing one
+raises when the session is written.</p>
+<p>Sessions are for identity and small state — who is signed in, which
+steps of a form are done, what to say on the next page. A payload over
+<code>max_size</code> (default 65536 bytes) raises <code>SessionError</code>; the answer to
+that is a row in a database with the session holding its key.</p>
+<h3 id="across-workers"><a class="header" href="#across-workers">Across Workers</a></h3>
+<p><code>http.serve()</code> runs each worker in its own isolate, so the store is
+built inside <code>setup</code> rather than handed in from outside:</p>
+<pre><code class="language-zuri ignore"># app.zu
+import http
+import http.session
+
+def setup(server) {
+  server.use(http.session.session({
+    store: http.session.FileStore('/var/lib/app/sessions'),
+    secret: os.get_env('SESSION_SECRET'),
+  }))
+
+  server.get('/', @(request, response) {
+    response.text(request.session().get('account', 'nobody'))
+  })
+}
+</code></pre>
+<p>A <code>sql</code> connection belongs to the isolate that opened it, so a worker
+using <code>SqlStore</code> opens its own pool in <code>setup</code> too.</p>
+<h3 id="what-sessions-do-not-do"><a class="header" href="#what-sessions-do-not-do">What Sessions Do Not Do</a></h3>
+<p>Two requests writing the same session at the same moment — parallel
+requests from one browser tab, usually — both succeed, and the one
+that finishes last is the one that survives. The file store writes
+through a rename, so a reader never sees half a session, and the SQL
+store writes in one statement; neither takes a lock. Do not use a
+session as a counter that several requests increment at once.</p>
+<h2 id="tls"><a class="header" href="#tls">TLS</a></h2>
+<pre><code class="language-zuri ignore">var server = http.server(443, '0.0.0.0')
+server.load_certs('/etc/certs/site.crt', '/etc/certs/site.key')
+server.listen()
+</code></pre>
+<p>Or from strings, with more control:</p>
+<pre><code class="language-zuri ignore">server.use_tls(cert_chain_pem, private_key_pem, {
+  min_version: '1.2',
+  client_ca: internal_ca_pem,
+  require_client_cert: true,
+})
+</code></pre>
+<p><code>cert_chain</code> must be the server certificate followed by any
+intermediates. Leaving the intermediates out is the single most common
+TLS misconfiguration, and it fails only for the clients that do not
+happen to have them cached — which is to say, it fails in a way that
+looks fine from your own browser.</p>
+<blockquote>
+<p><strong>Note</strong>
+The certificate and key are parsed when the first handshake runs,
+not when they are set, so a malformed or mismatched pair surfaces as
+a failed connection rather than as an error from <code>use_tls()</code>. Make a
+request against the server as part of starting it if you want to
+find out early.</p>
+</blockquote>
+<p>Turning on TLS also advertises <code>h2</code> through ALPN, so a browser gets
+HTTP/2 without anything else being configured.</p>
+<h2 id="http2"><a class="header" href="#http2">HTTP/2</a></h2>
+<p>HTTP/2 needs nothing turned on. <code>HttpServer</code> speaks it when ALPN
+negotiates <code>h2</code> over TLS, and when a cleartext client opens with the
+HTTP/2 connection preface. <code>HttpClient</code> uses it whenever a server
+negotiates <code>h2</code> for an HTTPS connection. Routes, middleware and
+handlers are the same code either way; <code>request.version</code> is <code>'2'</code> when
+it applies.</p>
+<p>What that gets you is one connection carrying every request, HPACK
+header compression, and flow control — rather than the six-connection
+scramble HTTP/1.1 forces a browser into.</p>
+<p>Set <code>server.http2 = false</code> to turn it off, which also stops <code>h2</code> being
+advertised in ALPN.</p>
+<p><code>http.h2</code> exposes the machinery underneath — the frame codec, HPACK
+and its Huffman coding — for anything that needs to speak the protocol
+directly.</p>
+<blockquote>
+<p><strong>Note</strong>
+Streams are multiplexed on the wire but handled in the order they
+complete: one connection is served by one isolate, so a request that
+arrives while another is being handled is read, buffered, and
+answered next rather than in parallel. That is a throughput
+property, not a correctness one, and <code>http.serve()</code> is how you get
+more than one connection served at a time.</p>
+</blockquote>
+<h2 id="websockets"><a class="header" href="#websockets">WebSockets</a></h2>
+<pre><code class="language-zuri">import http.websocket as ws
+
+server.get('/ws', @(request, response) {
+  var socket = ws.accept(request, response, { protocols: ['chat'] })
+
+  while socket.is_open() {
+    var message = socket.receive()
+
+    if message == nil or message.is_close() {
+      break
+    }
+
+    socket.send('you said: ' + message.text())
+  }
+})
+</code></pre>
+<p><code>accept()</code> completes the RFC 6455 handshake and takes the connection
+over; the server writes nothing more on it. Fragmented messages are
+reassembled, ping frames are answered, and a close frame from the peer
+is answered and then handed back so you can see the code and reason.</p>
+<p>The client side is <code>ws.connect()</code>:</p>
+<pre><code class="language-zuri ignore">var socket = ws.connect('wss://example.com/ws')
+
+socket.send('hello')
+echo socket.receive().text()
+socket.close()
+</code></pre>
+<p>Client frames are masked with a key from the platform’s secure random
+source, as the RFC requires — the mask is what stops a hostile page
+from steering a proxy into caching a forged response.</p>
+<h2 id="server-sent-events"><a class="header" href="#server-sent-events">Server-Sent Events</a></h2>
+<p>Where a WebSocket gives you a duplex connection, server-sent events
+give you a long-lived response body and nothing else — which is all a
+live feed of updates needs, and it survives proxies that would refuse
+an upgrade.</p>
+<pre><code class="language-zuri">import http.sse
+
+server.get('/events', @(request, response) {
+  sse.stream(response, @(events) {
+    for update in updates {
+      events.send(update, 'update', update.id)
+    }
+  })
+})
+</code></pre>
+<p>A browser’s <code>EventSource</code> reconnects on its own and sends back the
+last id it saw; <code>sse.last_event_id(request)</code> reads it, which is how a
+stream resumes where it left off instead of replaying from the start.</p>
+<h2 id="reverse-proxying"><a class="header" href="#reverse-proxying">Reverse Proxying</a></h2>
+<pre><code class="language-zuri">var api = http.ReverseProxy('http://127.0.0.1:9000', {
+  strip_prefix: '/api',
+})
+
+server.any('/api/' + '*path', @(request, response) {
+  api.handle(request, response)
+})
+</code></pre>
+<p>Hop-by-hop headers are stripped in both directions — including any
+field the message’s own <code>Connection</code> header names, which is how an
+endpoint declares an extra one. Forwarding a client-supplied
+<code>Transfer-Encoding</code> to an upstream that frames it differently is the
+classic request-smuggling setup, so this is not optional.</p>
+<p><code>X-Forwarded-For</code>, <code>X-Forwarded-Proto</code>, <code>X-Forwarded-Host</code> and RFC
+7239’s <code>Forwarded</code> are added, and the response body is streamed rather
+than buffered.</p>
+<p>Several upstreams get a <code>LoadBalancer</code>, which is round-robin with an
+upstream that fails taken out of rotation for a while rather than
+retried on every request:</p>
+<pre><code class="language-zuri">var pool = http.LoadBalancer([
+  'http://10.0.0.1:9000',
+  'http://10.0.0.2:9000',
+], { recovery_time: 30 })
+</code></pre>
+<h2 id="running-in-production"><a class="header" href="#running-in-production">Running in Production</a></h2>
+<h3 id="using-more-than-one-core"><a class="header" href="#using-more-than-one-core">Using More Than One Core</a></h3>
+<p><code>listen()</code> serves connections on the calling isolate, one at a time.
+<code>http.serve()</code> runs the same pipeline across a pool of isolates: one
+accept loop hands each connection to whichever worker takes it next.</p>
+<pre><code class="language-zuri"># app.zu
+import http
+
+def setup(server) {
+  server.get('/', @(request, response) {
+    response.text('hello')
+  })
+
+  server.serve_files('/static', './public', { cache_age: 86400 })
+}
+</code></pre>
+<pre><code class="language-zuri ignore"># main.zu
+import http
+import .app
+
+http.serve(app.setup, {
+  host: '0.0.0.0',
+  port: 3000,
+  workers: 8,
+})
+</code></pre>
+<p><code>setup</code> is called once inside each worker with that worker’s own
+<code>HttpServer</code>. It can live in the main script or in a module, and it can
+use whatever it imports; a module it reaches for is loaded again inside
+the worker rather than shared with it. Putting it in a module of its own,
+as above, is still the better shape once it registers more than a couple
+of routes.</p>
+<p>Isolates share no memory, so anything a worker needs — a cache, a
+connection pool, a counter — is per worker. That is the trade the
+model makes: no locks and no shared-heap garbage collection pauses, in
+exchange for state that has to be either per worker or in something
+outside the process.</p>
+<p><code>backlog</code> bounds how many accepted connections may queue for a free
+worker. Bounding it is deliberate: an unbounded queue under load means
+accepting connections faster than they can be served and then
+answering all of them late, rather than letting the kernel’s own
+listen backlog apply back-pressure.</p>
+<h3 id="limits"><a class="header" href="#limits">Limits</a></h3>
+<p>Every part of a request whose size a peer controls has a ceiling:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Setting</th><th>Default</th><th>Bounds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>max_line_size</code></td><td>8 KiB</td><td>the request line, and each header line</td></tr>
+<tr><td><code>max_header_size</code></td><td>64 KiB</td><td>the header section</td></tr>
+<tr><td><code>max_header_count</code></td><td>100</td><td>how many header fields</td></tr>
+<tr><td><code>max_body_size</code></td><td>10 MiB</td><td>the request body</td></tr>
+<tr><td><code>header_timeout</code></td><td>10s</td><td>how long the whole head may take to arrive</td></tr>
+<tr><td><code>keep_alive_timeout</code></td><td>5s</td><td>how long an idle connection is held</td></tr>
+<tr><td><code>max_keep_alive_requests</code></td><td>1000</td><td>how many requests one connection may serve</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>header_timeout</code> is the one that is easy to leave out and matters
+most: without it, a client sending one byte every few seconds holds a
+connection open indefinitely while never tripping any single read’s
+timeout. That is what slowloris is.</p>
+<p>Raise <code>max_body_size</code> deliberately for a service that takes uploads,
+rather than discovering it by accident:</p>
+<pre><code class="language-zuri">server.max_body_size = 100 * 1024 * 1024
+</code></pre>
+<p>A request that announces a body over the limit is refused with <code>413</code>
+before a byte of it is read, which is the whole point of the header.</p>
+<h3 id="graceful-shutdown"><a class="header" href="#graceful-shutdown">Graceful Shutdown</a></h3>
+<pre><code class="language-zuri ignore">import os
+
+http.serve(app.setup, {
+  port: 3000,
+  on_ready: @(address, stop) {
+    echo 'listening on ${address}'
+    os.on_signal('INT', @() {
+      stop()
+      return true
+    })
+    os.on_signal('TERM', @() {
+      stop()
+      return true
+    })
+  },
+})
+</code></pre>
+<p><code>stop()</code> closes the listener, which is what breaks the blocking
+accept; <code>serve()</code> then waits for every worker to finish the connection
+it is on before returning. For a single-isolate server, <code>close()</code> does
+the same thing.</p>
+<h3 id="behind-another-proxy"><a class="header" href="#behind-another-proxy">Behind Another Proxy</a></h3>
+<p>If something else really is in front — a CDN, a load balancer you
+control — tell the server, and tell it which addresses to believe:</p>
+<pre><code class="language-zuri">server.trust_proxy = true
+server.trusted_proxies = ['10.0.0.1', '10.0.0.2']
+</code></pre>
+<p><code>request.client_ip(true, server.trusted_proxies)</code> then walks the
+forwarding chain in from the proxy end and returns the rightmost entry
+that is not itself a trusted proxy. Taking the leftmost entry — the
+common shortcut — hands an attacker whatever client address they care
+to claim, which matters the moment an address is used for rate
+limiting, allowlisting or an audit trail.</p>
+<p>Left off, forwarding headers are ignored entirely and the peer is the
+client. That is the right default: those headers are request headers,
+which is to say anyone can write anything in them.</p>
+<h2 id="what-the-module-refuses"><a class="header" href="#what-the-module-refuses">What the Module Refuses</a></h2>
+<p>Some of what this module does is refuse things, and it is worth being
+explicit about which, since each refusal is a request that some other
+implementation would have accepted:</p>
+<ul>
+<li>A header field name with whitespace before its colon. <code>Content-Length : 5</code>
+is read as a length by some parsers and as an unknown field by
+others, and that disagreement is a smuggled request.</li>
+<li>Two <code>Content-Length</code> fields that disagree, for the same reason.</li>
+<li>A <code>Content-Length</code> alongside a <code>Transfer-Encoding</code>.</li>
+<li>A <code>Transfer-Encoding</code> whose last coding is not <code>chunked</code>.</li>
+<li>An obsolete folded header line — RFC 9112 deprecated it, and
+intermediaries unfold it differently.</li>
+<li>An HTTP/1.1 request with no <code>Host</code>, or with two.</li>
+<li>A header value containing CR, LF or NUL, at the point it is set:
+a value that can inject a newline is a response-splitting bug
+wherever it eventually lands.</li>
+<li>An uppercase header field name over HTTP/2, and any of the
+connection-specific fields there.</li>
+<li>A static file path that resolves outside the root, before or after
+percent-decoding, and any dotfile.</li>
+</ul>
+<h2 id="module-reference"><a class="header" href="#module-reference">Module Reference</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>What it holds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>http</code></td><td>the facade: <code>get()</code>, <code>post()</code>, <code>server()</code>, <code>client()</code>, <code>serve()</code></td></tr>
+<tr><td><code>http.status</code></td><td>status codes, reason phrases, and predicates</td></tr>
+<tr><td><code>http.headers</code></td><td><code>Headers</code>, field validation, canonical names</td></tr>
+<tr><td><code>http.cookies</code></td><td><code>Cookie</code>, <code>CookieJar</code>, and both cookie header formats</td></tr>
+<tr><td><code>http.session</code></td><td><code>Session</code>, <code>SessionStore</code>, <code>FileStore</code>, <code>MemoryStore</code></td></tr>
+<tr><td><code>http.session.sql</code></td><td><code>SqlStore</code>, for sessions kept in a database</td></tr>
+<tr><td><code>http.request</code></td><td><code>HttpRequest</code>, query string encoding and decoding</td></tr>
+<tr><td><code>http.response</code></td><td><code>HttpResponse</code></td></tr>
+<tr><td><code>http.router</code></td><td><code>Router</code>, <code>Route</code>, <code>RouteMatch</code></td></tr>
+<tr><td><code>http.middleware</code></td><td>CORS, logging, security headers, auth, rate limiting</td></tr>
+<tr><td><code>http.files</code></td><td><code>StaticFiles</code>, byte ranges, validators</td></tr>
+<tr><td><code>http.multipart</code></td><td><code>MultipartBuilder</code>, <code>UploadedFile</code>, the parser</td></tr>
+<tr><td><code>http.negotiate</code></td><td><code>Accept</code> parsing and matching</td></tr>
+<tr><td><code>http.body</code></td><td>message framing, chunked encoding, content codings</td></tr>
+<tr><td><code>http.h1</code></td><td>the HTTP/1.1 wire codec</td></tr>
+<tr><td><code>http.h2</code></td><td>HTTP/2: frames, HPACK, connections</td></tr>
+<tr><td><code>http.websocket</code></td><td>RFC 6455, client and server</td></tr>
+<tr><td><code>http.sse</code></td><td>server-sent events</td></tr>
+<tr><td><code>http.proxy</code></td><td><code>ReverseProxy</code>, <code>LoadBalancer</code></td></tr>
+<tr><td><code>http.stream</code></td><td>the buffered connection both protocols read and write through</td></tr>
+<tr><td><code>http.util</code></td><td>dates, header parameters, percent coding, path normalisation</td></tr>
+<tr><td><code>http.errors</code></td><td>the error hierarchy</td></tr>
+</tbody>
+</table>
+</div>
+<p>Two other standard library modules meet this one without it depending
+on either: <code>HttpRequest.validate()</code> takes a schema from <code>validate</code>,
+and <code>middleware.jwt_auth()</code> takes a verifier from <code>jwt</code>. Both are
+duck-typed, so neither module is loaded by a server that does not use
+it.</p>
+<p>Every error this module raises descends from <code>HttpError</code>:
+<code>ProtocolError</code> for a malformed message, <code>ConnectionError</code> for a
+connection that failed, <code>TimeoutError</code>, <code>TooLargeError</code>,
+<code>TooManyRedirectsError</code>, <code>StatusError</code>, <code>UnsupportedProtocolError</code> and
+<code>SessionError</code>.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch14-00-wire.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch16-00-imagine.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch14-00-wire.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch16-00-imagine.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

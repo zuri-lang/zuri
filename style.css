@@ -1,0 +1,745 @@
+/* The landing page. Both books bring their own stylesheet; this covers
+   only the page they sit under.
+
+   The palette is the logo's: the butterfly's four wing colours carry
+   the section accents, and its body colour is the ink. Every fill is a
+   single solid colour, with no gradient anywhere, which is what keeps
+   the flat feel while corners and hover lifts still give the page some
+   depth. Structure is hairlines, space and type, so a layout this wide
+   does not read as a pile of floating boxes. */
+
+:root {
+  color-scheme: light dark;
+
+  --gold: #f99320;
+  --red: #fd5625;
+  --teal: #0c9d96;
+  --purple: #744baa;
+
+  --ink: #1e222d;
+  --paper: #ffffff;
+  --paper-2: #f7f6f3;
+  --muted: #55596b;
+  --faint: #8a8e9e;
+  --edge: #e3e1dc;
+  --slab: #171a23;
+  --slab-ink: #e7e4de;
+  --slab-edge: #2b2f3b;
+
+  --wide: 82rem;
+  --gut: clamp(1.25rem, 4vw, 4rem);
+
+  --r-sm: 5px;
+  --r-md: 9px;
+  --r-lg: 14px;
+
+  --lift: transform 140ms ease, background-color 140ms ease,
+    border-color 140ms ease, color 140ms ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #eceae5;
+    --paper: #131620;
+    --paper-2: #171a23;
+    --muted: #a2a6b4;
+    --faint: #767b8b;
+    --edge: #262a36;
+    --slab: #0d0f16;
+    --slab-edge: #232734;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+
+  .btn:hover,
+  .doc:hover,
+  .mod:hover,
+  .link-card:hover {
+    transform: none;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+.band-label,
+.go,
+.cmd {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 3px;
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 10;
+  padding: 0.6rem 1rem;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* --- top bar --------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--paper);
+  border-bottom: 1px solid var(--edge);
+}
+
+.topbar-inner,
+.hero-inner,
+.band-inner,
+.docs-inner,
+.footer-inner {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding-inline: var(--gut);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-height: 4.25rem;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.wordmark img {
+  display: block;
+}
+
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.85rem, 2.5vw, 2rem);
+  font-size: 0.92rem;
+  font-weight: 550;
+}
+
+.topnav a {
+  padding: 0.35rem 0;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.topnav a:hover {
+  border-bottom-color: var(--red);
+}
+
+.topnav .out {
+  color: var(--muted);
+}
+
+/* --- hero ------------------------------------------------------------ */
+
+.hero {
+  border-bottom: 1px solid var(--edge);
+}
+
+.hero-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: clamp(2rem, 6vw, 5rem);
+  padding-block: clamp(3.5rem, 9vw, 7rem);
+}
+
+/* A grid child defaults to min-width:auto, which lets a long unbroken
+   word push the column wider than its track instead of wrapping. */
+.hero-copy {
+  min-width: 0;
+}
+
+.hero h1 {
+  margin: 0;
+  max-width: 16ch;
+  font-size: clamp(2.4rem, 6.2vw, 4.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  font-weight: 800;
+}
+
+.lede {
+  margin: 1.5rem 0 0;
+  max-width: 42ch;
+  color: var(--muted);
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  line-height: 1.5;
+}
+
+.actions {
+  margin-top: 2.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.btn {
+  padding: 0.95rem 1.6rem;
+  border: 1px solid var(--ink);
+  border-radius: var(--r-md);
+  font-size: 0.95rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: var(--lift);
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn.primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn.primary:hover {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.btn:not(.primary):hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.hero-note {
+  margin: 1.75rem 0 0;
+  color: var(--faint);
+  font-size: 0.92rem;
+}
+
+.hero-mark {
+  justify-self: center;
+}
+
+.hero-mark img {
+  width: min(100%, 24rem);
+}
+
+@media (max-width: 60rem) {
+  .hero-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-mark {
+    order: -1;
+    justify-self: start;
+  }
+
+  .hero-mark img {
+    width: min(100%, 11rem);
+  }
+}
+
+/* --- bands ----------------------------------------------------------- */
+
+.band {
+  border-bottom: 1px solid var(--edge);
+}
+
+.band.last {
+  border-bottom: 0;
+}
+
+.band-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  padding-block: clamp(3rem, 6vw, 5rem);
+}
+
+/* The slab breaks the grid, so a band that contains one pads its halves
+   separately rather than once around the lot. */
+.band > .band-inner + .slab,
+.band > .slab + .band-inner {
+  padding-top: 0;
+}
+
+.band > .band-inner:first-child:not(:last-child) {
+  padding-bottom: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.band > .band-inner:last-child:not(:first-child) {
+  padding-top: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.band-label {
+  margin: 0;
+  align-self: start;
+  position: sticky;
+  top: 5.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.band-label .num {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+}
+
+#philosophy .num { color: var(--gold); }
+#tax .num { color: var(--red); }
+#dialect .num { color: var(--teal); }
+#library .num { color: var(--purple); }
+#design .num { color: var(--gold); }
+#docs .num { color: var(--red); }
+#roadmap .num { color: var(--teal); }
+#editors .num { color: var(--purple); }
+#ai .num { color: var(--gold); }
+
+.band-body {
+  min-width: 0;
+}
+
+/* A band that carries no label in the rail: the body takes the whole
+   width instead of sitting in a 16rem column meant for a heading. The
+   closing note under the code sample is the one that does this. */
+.band-inner > .band-body:only-child {
+  grid-column: 1 / -1;
+}
+
+.band-body p {
+  margin: 0 0 1.1rem;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.band-body p:last-child {
+  margin-bottom: 0;
+}
+
+.band-body strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.statement {
+  color: var(--ink) !important;
+  font-size: clamp(1.25rem, 2.4vw, 1.9rem);
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  max-width: 30ch !important;
+}
+
+.wide-intro {
+  max-width: 66ch;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: start;
+}
+
+/* The one sentence on the page that should stop a skimmer. */
+.pull {
+  margin: 0 0 1.1rem;
+  padding-left: 1.25rem;
+  border-left: 3px solid var(--red);
+  color: var(--ink) !important;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  font-weight: 550;
+}
+
+.pull.alt {
+  border-left-color: var(--teal);
+}
+
+.band-body code {
+  color: var(--ink);
+  font-size: 0.88em;
+}
+
+/* --- the code sample ------------------------------------------------- */
+
+.slab {
+  background: var(--slab);
+  color: var(--slab-ink);
+  border-block: 1px solid var(--slab-edge);
+  overflow-x: auto;
+}
+
+.slab pre {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) var(--gut);
+  font-size: clamp(0.8rem, 1.1vw, 0.9rem);
+  line-height: 1.75;
+}
+
+.slab .k { color: #ff9e6b; }
+.slab .s { color: #5fd3c2; }
+.slab .n { color: #f9b44c; }
+.slab .f { color: #a9b8ff; }
+
+/* --- the standard library -------------------------------------------- */
+
+.modules {
+  margin: 0 0 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(21rem, 100%), 1fr));
+  gap: 0.75rem;
+}
+
+.mod {
+  padding: 1rem 1.25rem 1.1rem;
+  background: var(--paper-2);
+  border: 1px solid var(--edge);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-md);
+  transition: var(--lift);
+}
+
+.mod:hover {
+  transform: translateY(-2px);
+}
+
+.mod.a { border-left-color: var(--gold); }
+.mod.b { border-left-color: var(--red); }
+.mod.c { border-left-color: var(--teal); }
+.mod.d { border-left-color: var(--purple); }
+
+.mod dt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.mod dd {
+  margin: 0.45rem 0 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.mod code {
+  font-size: 0.86em;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mod span {
+  color: var(--muted);
+  font-size: 0.86em;
+}
+
+/* --- the two books --------------------------------------------------- */
+
+.docs {
+  background: var(--slab);
+  color: var(--slab-ink);
+  border-bottom: 1px solid var(--edge);
+}
+
+.docs-inner {
+  padding-block: clamp(3.5rem, 7vw, 6rem);
+}
+
+.band-label.light {
+  position: static;
+  color: #8f95a8;
+  margin-bottom: 2rem;
+}
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(24rem, 100%), 1fr));
+  gap: 1.25rem;
+}
+
+.doc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: clamp(1.75rem, 3vw, 2.75rem);
+  background: #1b1f29;
+  border: 1px solid var(--slab-edge);
+  border-radius: var(--r-lg);
+  text-decoration: none;
+  transition: var(--lift);
+}
+
+.doc:hover {
+  transform: translateY(-3px);
+  background: #20252f;
+  border-color: var(--gold);
+}
+
+.doc:nth-child(2):hover {
+  border-color: var(--teal);
+}
+
+.rule {
+  width: 3.5rem;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.rule.gold { background: var(--gold); }
+.rule.teal { background: var(--teal); }
+
+.doc h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 2vw, 1.6rem);
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: #fff;
+}
+
+.doc p {
+  margin: 0;
+  flex: 1;
+  color: #9ba1b2;
+  font-size: 0.97rem;
+  line-height: 1.6;
+}
+
+.go {
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--gold);
+}
+
+.doc:nth-child(2) .go {
+  color: var(--teal);
+}
+
+.go::after {
+  content: " \2192";
+}
+
+.docs-note {
+  margin: 2rem 0 0;
+  color: #8f95a8;
+  font-size: 0.92rem;
+}
+
+.cmd {
+  padding: 0.15em 0.45em;
+  border-radius: var(--r-sm);
+  background: #0d0f16;
+  border: 1px solid var(--slab-edge);
+  color: var(--slab-ink);
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+.docs-note code:not(.cmd) {
+  color: var(--slab-ink);
+}
+
+/* --- roadmap --------------------------------------------------------- */
+
+.sub {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.ticks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ticks li {
+  position: relative;
+  padding-left: 1.9rem;
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 0.85rem;
+  height: 1px;
+  background: var(--faint);
+}
+
+.ticks.done li::before {
+  top: 0.42em;
+  width: 0.85rem;
+  height: 0.85rem;
+  background: var(--teal);
+}
+
+.ticks strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* --- editors --------------------------------------------------------- */
+
+.links {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: 1rem;
+}
+
+.link-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.4rem 1.5rem;
+  background: var(--paper-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  transition: var(--lift);
+}
+
+.link-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--purple);
+}
+
+.link-card strong {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.link-card span {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+#ai .band-body a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--red);
+}
+
+/* --- footer ---------------------------------------------------------- */
+
+footer {
+  border-top: 1px solid var(--edge);
+  background: var(--paper-2);
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding-block: 2.5rem;
+}
+
+.footnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(0.85rem, 2.5vw, 1.75rem);
+  font-size: 0.9rem;
+}
+
+.footnav a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.footnav a:hover {
+  color: var(--ink);
+  border-bottom-color: var(--edge);
+}
+
+/* --- narrow ---------------------------------------------------------- */
+
+@media (max-width: 56rem) {
+  .band-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .band-label {
+    position: static;
+  }
+
+  .band-label .num {
+    display: inline-block;
+    margin: 0 0.6rem 0 0;
+    font-size: 1.1rem;
+    vertical-align: -0.05em;
+  }
+}

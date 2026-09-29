@@ -1,0 +1,764 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Configuration and the Environment - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-f6dd3ce0.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-dacc1047.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs/edit/main/docs/book/src/src/ch19-00-env.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="configuration-and-the-environment"><a class="header" href="#configuration-and-the-environment">Configuration and the Environment</a></h1>
+<p>Every program that talks to anything else needs to be told where it is.
+A database address, an API key, a port to bind, a flag that turns
+verbose logging on for one afternoon. None of that belongs in the
+source: it changes between your laptop and the server, and some of it
+must never reach a repository at all.</p>
+<p>The answer the industry settled on is the process environment.
+Orchestrators set it, CI runners set it, shells set it, and every
+language can read it. What none of them solve is the first machine in
+the chain: yours, where there is no orchestrator and nobody wants to
+prefix every run with eight assignments.</p>
+<p>The <code>env</code> module closes that gap. It reads a <code>.env</code> file into the
+process environment at startup, and it reads values back out already
+converted to the number, boolean or list your program is going to use.
+The file is a development convenience; the environment is the
+interface. A program written against <code>env</code> does not know or care which
+one supplied a value, which is exactly what lets it run unchanged in
+both places.</p>
+<ul>
+<li><a href="#the-first-line">The First Line</a></li>
+<li><a href="#writing-a-env-file">Writing a <code>.env</code> File</a>
+<ul>
+<li><a href="#quoting">Quoting</a></li>
+<li><a href="#comments">Comments</a></li>
+<li><a href="#values-that-span-lines">Values That Span Lines</a></li>
+</ul>
+</li>
+<li><a href="#what-is-already-set-wins">What Is Already Set Wins</a>
+<ul>
+<li><a href="#overriding">Overriding</a></li>
+<li><a href="#empty-means-unconfigured">Empty Means Unconfigured</a></li>
+</ul>
+</li>
+<li><a href="#references-between-values">References Between Values</a>
+<ul>
+<li><a href="#fallbacks-and-demands">Fallbacks and Demands</a></li>
+<li><a href="#literal-dollar-signs">Literal Dollar Signs</a></li>
+</ul>
+</li>
+<li><a href="#reading-values-back">Reading Values Back</a></li>
+<li><a href="#building-a-load">Building a Load</a>
+<ul>
+<li><a href="#layering-files">Layering Files</a></li>
+<li><a href="#text-instead-of-a-file">Text Instead of a File</a></li>
+<li><a href="#demanding-the-file">Demanding the File</a></li>
+<li><a href="#looking-without-loading">Looking Without Loading</a></li>
+</ul>
+</li>
+<li><a href="#writing-a-file-back-out">Writing a File Back Out</a></li>
+<li><a href="#when-it-goes-wrong">When It Goes Wrong</a></li>
+<li><a href="#keeping-secrets-out-of-git">Keeping Secrets Out of Git</a></li>
+<li><a href="#module-reference">Module Reference</a></li>
+</ul>
+<h2 id="the-first-line"><a class="header" href="#the-first-line">The First Line</a></h2>
+<p>One call, as early in the program as you can put it:</p>
+<pre><code class="language-zuri">import env
+
+file('.env.demo', 'w').write('PORT=8080\nGREETING=hello\n')
+
+env.load('.env.demo')
+
+echo env.get('GREETING')
+echo env.int('PORT')
+</code></pre>
+<pre><code class="language-console">hello
+8080
+</code></pre>
+<p><code>env.load()</code> with no argument reads <code>.env</code> in the current working
+directory, which is what almost every program wants. The examples in
+this chapter write their file first and name it, so that you can run
+each one as it stands.</p>
+<p>The file is optional. If it is not there, <code>load()</code> leaves the
+environment exactly as it found it and the program carries on with
+whatever the shell already provided. That is deliberate: the same
+binary runs on a laptop with a <code>.env</code> file and on a server without one.</p>
+<h2 id="writing-a-env-file"><a class="header" href="#writing-a-env-file">Writing a <code>.env</code> File</a></h2>
+<p>One name per line, a <code>=</code>, and a value:</p>
+<pre><code class="language-dosini">HOST=127.0.0.1
+PORT=8080
+DATABASE_URL=postgres://app@localhost/app
+</code></pre>
+<p>A name is a letter or underscore followed by letters, digits and
+underscores, which is the same rule a shell applies. Anything else
+stops the load with a <code>ParseError</code> rather than being silently dropped,
+because a name no shell could ever export is a typo every time.</p>
+<p>A leading <code>export</code> is allowed and ignored, so the same file can be fed
+to <code>source</code> in a terminal when you want the variables in your shell
+too.</p>
+<h3 id="quoting"><a class="header" href="#quoting">Quoting</a></h3>
+<p>An unquoted value is the text up to the end of the line, with the
+whitespace trimmed off both ends. Wrap it in quotes when that is not
+what you want:</p>
+<pre><code class="language-zuri">import env
+
+var values = env.parse(
+  'BARE=  plain text  \n' +
+  'COMMENTED=value # not part of it\n' +
+  'PASSWORD=hunter#2\n' +
+  "RAW='no \\n escape, no expansion'\n" +
+  'COOKED="caf\\u00e9"\n'
+)
+
+for name, value in values {
+  echo '${name} -&gt; [${value}]'
+}
+</code></pre>
+<pre><code class="language-console">BARE -&gt; [plain text]
+COMMENTED -&gt; [value]
+PASSWORD -&gt; [hunter#2]
+RAW -&gt; [no \n escape, no expansion]
+COOKED -&gt; [café]
+</code></pre>
+<p>The three quoting forms differ in exactly one way each:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Written</th><th>Means</th></tr>
+</thead>
+<tbody>
+<tr><td><code>KEY=value</code></td><td>trimmed, ends at a comment or the line</td></tr>
+<tr><td><code>KEY='value'</code></td><td>every character as written, nothing resolved</td></tr>
+<tr><td><code>KEY=`value`</code></td><td>the same, for values containing both other quotes</td></tr>
+<tr><td><code>KEY="value"</code></td><td>backslash escapes resolved, <code>$</code> references expanded</td></tr>
+</tbody>
+</table>
+</div>
+<p>Inside double quotes, <code>\n</code>, <code>\r</code>, <code>\t</code>, <code>\f</code>, <code>\v</code>, <code>\b</code>, <code>\a</code>, <code>\e</code>
+and <code>\0</code> mean what they do in Zuri, and <code>\xHH</code>, <code>\uHHHH</code> and <code>\u{H...}</code>
+name a codepoint. A backslash before anything else keeps both
+characters, so <code>"C:\Users\me"</code> is the path you meant and not a lesson
+in escaping.</p>
+<p>Reach for single quotes whenever a value is a secret. A generated
+password containing <code>$</code> or <code>\</code> goes through untouched, and nothing in
+it can accidentally name another variable.</p>
+<h3 id="comments"><a class="header" href="#comments">Comments</a></h3>
+<p>A <code>#</code> starts a comment, either on its own line or after a value. Inside
+an unquoted value it only does so when it begins the value or follows a
+space, which is why <code>PASSWORD=hunter#2</code> above kept its <code>#</code>. Where that
+rule is too subtle to rely on, quote the value and the question does
+not arise.</p>
+<h3 id="values-that-span-lines"><a class="header" href="#values-that-span-lines">Values That Span Lines</a></h3>
+<p>A quoted value runs until its closing quote, newlines included. This is
+how a private key goes in a file:</p>
+<pre><code class="language-dosini">SIGNING_KEY="-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7...
+-----END PRIVATE KEY-----"
+</code></pre>
+<p>Single quotes work the same way and resolve nothing, which is usually
+the better choice for key material.</p>
+<h2 id="what-is-already-set-wins"><a class="header" href="#what-is-already-set-wins">What Is Already Set Wins</a></h2>
+<p>A name that is already set in the process environment is left alone.
+The file fills in the rest:</p>
+<pre><code class="language-zuri">import env
+import os
+
+os.set_env('DATABASE_URL', 'postgres://production/app', true)
+
+file('.env.demo', 'w').write(
+  'DATABASE_URL=postgres://localhost/app\n' +
+  'CACHE_TTL=300\n'
+)
+
+var result = env.load('.env.demo')
+
+echo os.get_env('DATABASE_URL')
+echo result.applied
+echo result.skipped
+</code></pre>
+<pre><code class="language-console">postgres://production/app
+[CACHE_TTL]
+[DATABASE_URL]
+</code></pre>
+<p>This is the whole point of the default. The file carries what a
+developer needs to run the program at all; production sets the real
+values through the shell, the orchestrator or the CI runner, and the
+file never has to know that it did.</p>
+<p><code>load()</code> returns a <code>Result</code> that accounts for every name and every
+file, so a program never has to guess whether its configuration
+arrived. <code>applied</code> is what the load set, <code>skipped</code> is what was already
+set, <code>values</code> is everything the file defined either way, and <code>files</code>
+and <code>missing</code> say which paths were read and which were not there.</p>
+<h3 id="overriding"><a class="header" href="#overriding">Overriding</a></h3>
+<p>Where the file genuinely should win, say so:</p>
+<pre><code class="language-zuri">import env
+import os
+
+os.set_env('LOG_LEVEL', 'warn', true)
+
+file('.env.demo', 'w').write('LOG_LEVEL=debug\n')
+
+env.loader().path('.env.demo').override().load()
+
+echo os.get_env('LOG_LEVEL')
+</code></pre>
+<pre><code class="language-console">debug
+</code></pre>
+<h3 id="empty-means-unconfigured"><a class="header" href="#empty-means-unconfigured">Empty Means Unconfigured</a></h3>
+<p>Throughout the module, a variable set to the empty string counts as
+unset. <code>FLAG=</code> in a file, an empty shell variable, and a name nobody
+ever set all mean the same thing, because that is the one thing anybody
+means by any of them. A load will fill in an empty name, <code>has()</code> is
+false for it, <code>require()</code> raises on it, and every typed reader returns
+its default.</p>
+<p><code>os.get_env()</code> is the unfiltered view for the rare case that needs to
+tell an empty value apart from an absent one.</p>
+<h2 id="references-between-values"><a class="header" href="#references-between-values">References Between Values</a></h2>
+<p>A value may refer to another value, or to the environment around it,
+with the syntax a shell uses:</p>
+<pre><code class="language-dosini">HOST=localhost
+PUBLIC_URL=http://${HOST}:${PORT:-8080}
+</code></pre>
+<pre><code class="language-zuri">import env
+
+file('.env.demo', 'w').write(
+  'HOST=localhost\n' +
+  'PUBLIC_URL=http://$' + '{HOST}:$' + '{PORT:-8080}\n'
+)
+
+var loaded = env.load('.env.demo')
+
+echo loaded.values.PUBLIC_URL
+</code></pre>
+<pre><code class="language-console">http://localhost:8080
+</code></pre>
+<p>The split string in that example is a Zuri detail, not a <code>.env</code> one: a
+<code>${</code> written inside a Zuri literal is an interpolation, so building
+<code>.env</code> text in source means keeping the <code>$</code> and the <code>{</code> apart. A file
+you type in an editor has no such problem, as the <code>dosini</code> block above
+shows.</p>
+<p>A reference resolves to the value the name will hold <em>once the load has
+finished</em>. That single rule is what makes <code>PORT=${PORT:-8080}</code> read the
+way it looks: whatever the environment already says, and 8080 when it
+says nothing. It holds no matter which line of the file the reference
+sits on, and it changes with <code>override()</code> exactly as precedence does.</p>
+<p>A definition may also reach past itself to the value it is replacing,
+which is how a path gets extended rather than clobbered:</p>
+<pre><code class="language-dosini">PATH=${PATH}:/opt/app/bin
+</code></pre>
+<h3 id="fallbacks-and-demands"><a class="header" href="#fallbacks-and-demands">Fallbacks and Demands</a></h3>
+<p>The three modifiers are POSIX’s, and the leading colon on each widens
+the test from “is it set” to “is it set to something”:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Written</th><th>Means</th></tr>
+</thead>
+<tbody>
+<tr><td><code>${NAME:-fallback}</code></td><td>the value, or <code>fallback</code> when it is unset or empty</td></tr>
+<tr><td><code>${NAME-fallback}</code></td><td>the value, or <code>fallback</code> when it is unset</td></tr>
+<tr><td><code>${NAME:+instead}</code></td><td><code>instead</code> when the value is set and not empty, otherwise nothing</td></tr>
+<tr><td><code>${NAME+instead}</code></td><td><code>instead</code> when the value is set, otherwise nothing</td></tr>
+<tr><td><code>${NAME:?reason}</code></td><td>the value, or a <code>MissingVariable</code> carrying <code>reason</code></td></tr>
+<tr><td><code>${NAME?reason}</code></td><td>the same, counting an empty value as set</td></tr>
+</tbody>
+</table>
+</div>
+<p>The text after a modifier is itself expanded, so a fallback may have a
+fallback:</p>
+<pre><code class="language-dosini">CACHE_DIR=${XDG_CACHE_HOME:-${HOME}/.cache}/app
+</code></pre>
+<p><code>:?</code> is worth knowing. It turns the file itself into the place where a
+deployment’s requirements are written down, and the failure arrives at
+startup with the reason attached:</p>
+<pre><code class="language-dosini">SESSION_SECRET=${SESSION_SECRET:?the deploy must supply a session secret}
+</code></pre>
+<h3 id="literal-dollar-signs"><a class="header" href="#literal-dollar-signs">Literal Dollar Signs</a></h3>
+<p><code>\$</code> is a dollar sign and nothing else. A <code>$</code> that does not name
+anything, as in <code>PRICE=$5.00</code>, stands for itself already. A value in
+single quotes or backticks is never expanded at all, so a secret
+containing <code>${</code> needs no thought:</p>
+<pre><code class="language-dosini">API_KEY='sk_live_${not_a_reference}'
+</code></pre>
+<h2 id="reading-values-back"><a class="header" href="#reading-values-back">Reading Values Back</a></h2>
+<p>An environment variable is always text, and almost nothing in a program
+wants text. The typed readers convert it and refuse anything that is
+not what it claims to be:</p>
+<pre><code class="language-zuri">import env
+
+file('.env.demo', 'w').write(
+  'PORT=8080\n' +
+  'DEBUG=yes\n' +
+  'REQUEST_TIMEOUT=2.5\n' +
+  'CORS_ORIGINS= https://a.example , https://b.example \n' +
+  'SENTRY_DSN=\n'
+)
+
+env.load('.env.demo')
+
+echo env.int('PORT', 3000)
+echo env.bool('DEBUG', false)
+echo env.float('REQUEST_TIMEOUT', 1)
+echo env.list('CORS_ORIGINS', ',', [])
+echo env.get('SENTRY_DSN', 'not configured')
+echo env.has('SENTRY_DSN')
+</code></pre>
+<pre><code class="language-console">8080
+true
+2.5
+[https://a.example, https://b.example]
+not configured
+false
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>get(name, default)</code></td><td>the text, or the default</td></tr>
+<tr><td><code>require(name, reason)</code></td><td>the text, or a <code>MissingVariable</code></td></tr>
+<tr><td><code>has(name)</code></td><td>whether it is configured at all</td></tr>
+<tr><td><code>int(name, default)</code></td><td>a decimal integer, optionally signed</td></tr>
+<tr><td><code>float(name, default)</code></td><td>a number, exponents included</td></tr>
+<tr><td><code>bool(name, default)</code></td><td><code>1</code>, <code>true</code>, <code>yes</code>, <code>y</code>, <code>on</code> and their opposites</td></tr>
+<tr><td><code>list(name, separator, default)</code></td><td>split, trimmed, empty items dropped</td></tr>
+</tbody>
+</table>
+</div>
+<p>A value that is set but not convertible is a <code>ValueError</code> naming the
+variable, not a silent fall back to the default. <code>PORT=eighty</code> is a
+mistake in the configuration, and the moment to hear about it is
+startup rather than the first request that needed a port.</p>
+<p>These read the process environment, not the file. They answer the same
+whether a value came from <code>.env</code> or from the shell, which is what lets
+one program run in both places without a branch anywhere in it.</p>
+<p><code>require()</code> deserves its own line in most programs. A setting the code
+cannot invent a default for should stop the program at the top, with
+its own name in the message:</p>
+<pre><code class="language-zuri ignore">var secret = env.require('SESSION_SECRET', 'set SESSION_SECRET in .env')
+</code></pre>
+<h2 id="building-a-load"><a class="header" href="#building-a-load">Building a Load</a></h2>
+<p><code>env.loader()</code> returns a <code>Loader</code> when the one-line form is not enough.
+Every setting returns the loader, so a whole configuration is one
+expression, and nothing about the loader changes when it runs, so the
+same one can be kept and used again.</p>
+<h3 id="layering-files"><a class="header" href="#layering-files">Layering Files</a></h3>
+<p>Sources are read in the order they are added, and the last one to
+define a name is the one that defines it:</p>
+<pre><code class="language-zuri">import env
+
+file('.env.demo', 'w').write('HOST=localhost\nPORT=8080\n')
+file('.env.local.demo', 'w').write('HOST=127.0.0.1\n')
+
+var result = env.loader()
+  .path('.env.demo')
+  .path('.env.local.demo')
+  .path('.env.missing.demo')
+  .read()
+
+echo result.values
+echo result.files
+echo result.missing
+</code></pre>
+<pre><code class="language-console">{HOST: 127.0.0.1, PORT: 8080}
+[.env.demo, .env.local.demo]
+[.env.missing.demo]
+</code></pre>
+<p>That pairing is the useful one: <code>.env</code> holds what the team shares and
+is worth committing as <code>.env.example</code>, and <code>.env.local</code> holds what one
+machine does differently and is not. A path may begin with <code>~</code>, which
+expands to the home directory.</p>
+<h3 id="text-instead-of-a-file"><a class="header" href="#text-instead-of-a-file">Text Instead of a File</a></h3>
+<p><code>source()</code> adds text rather than a path, so configuration that arrived
+over the network or out of a secret store goes through exactly the same
+parsing, expansion and precedence as a file on disk:</p>
+<pre><code class="language-zuri ignore">env.loader()
+  .path('.env')
+  .source(vault.fetch('app/production'))
+  .load()
+</code></pre>
+<h3 id="demanding-the-file"><a class="header" href="#demanding-the-file">Demanding the File</a></h3>
+<p>A file that is not there is not an error by default, and its path is
+recorded in <code>Result.missing</code>. Where the file is genuinely part of the
+deployment, say so and let it fail loudly:</p>
+<pre><code class="language-zuri ignore">env.loader().path('/etc/app/env').required().load()
+</code></pre>
+<h3 id="looking-without-loading"><a class="header" href="#looking-without-loading">Looking Without Loading</a></h3>
+<p><code>read()</code> does everything <code>load()</code> does except the last step. Nothing is
+written to the process environment, and <code>$</code> references still resolve
+the way they would have, so what comes back is exactly what <code>load()</code>
+would have set. It is how a tool inspects a file, and how a test checks
+one without changing the process it is running in.</p>
+<p><code>expand(false)</code> turns expansion off entirely, for a file of opaque
+secrets where every value should be taken exactly as written.</p>
+<h2 id="writing-a-file-back-out"><a class="header" href="#writing-a-file-back-out">Writing a File Back Out</a></h2>
+<p><code>stringify()</code> is <code>parse()</code> backwards, for the program that generates a
+<code>.env</code> file rather than reading one:</p>
+<pre><code class="language-zuri">import env
+
+print(env.stringify({
+  HOST: '127.0.0.1',
+  PORT: 8080,
+  GREETING: 'hello there',
+  DEBUG: false,
+}))
+</code></pre>
+<pre><code class="language-console">HOST=127.0.0.1
+PORT=8080
+GREETING="hello there"
+DEBUG=false
+</code></pre>
+<p>Values are written bare where that is unambiguous and double-quoted
+where it is not, and a <code>$</code> inside a value is escaped so that loading
+the file back does not expand it. The output round-trips: feeding it to
+<code>parse()</code> returns the same names and the same values.</p>
+<p>Numbers, bigints, booleans and bytes are converted to their text.
+Anything else is a <code>TypeError</code>, because guessing what a list should
+look like in an environment file is how configuration goes wrong
+quietly.</p>
+<h2 id="when-it-goes-wrong"><a class="header" href="#when-it-goes-wrong">When It Goes Wrong</a></h2>
+<p>Every error the module raises is an <code>EnvError</code>, and each subclass
+carries the detail a message alone cannot:</p>
+<pre><code class="language-zuri">import env
+
+catch {
+  env.parse('12FACTOR=yes')
+} as error {
+  echo '${error.type}: ${error.message}'
+  echo 'line ${error.line}, column ${error.column}'
+}
+
+catch {
+  env.loader().path('.env.nowhere').required().load()
+} as error {
+  echo '${error.type}: ${error.message}'
+}
+
+catch {
+  env.require('NOTHING_SET_THIS')
+} as error {
+  echo '${error.type}: ${error.message}'
+}
+</code></pre>
+<pre><code class="language-console">ParseError: expected a variable name
+line 1, column 1
+MissingFile: no environment file at .env.nowhere
+MissingVariable: NOTHING_SET_THIS is not set
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Class</th><th>Raised when</th><th>Carries</th></tr>
+</thead>
+<tbody>
+<tr><td><code>ParseError</code></td><td>a source is not a valid environment file</td><td><code>line</code>, <code>column</code></td></tr>
+<tr><td><code>MissingFile</code></td><td>a required file is not there</td><td><code>path</code></td></tr>
+<tr><td><code>MissingVariable</code></td><td>a demanded variable is not configured</td><td><code>name</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Catching <code>EnvError</code> catches all three, and a <code>ValueError</code> from a typed
+reader is the ordinary one, so it goes wherever the rest of your
+validation failures go.</p>
+<h2 id="keeping-secrets-out-of-git"><a class="header" href="#keeping-secrets-out-of-git">Keeping Secrets Out of Git</a></h2>
+<p>A <code>.env</code> file holds the values that differ between one deployment and
+the next, which is to say it holds the secrets. Three lines of
+housekeeping and the subject never comes up again:</p>
+<pre><code class="language-console">$ echo '.env' &gt;&gt; .gitignore
+$ echo '.env.local' &gt;&gt; .gitignore
+$ cp .env .env.example    # then replace every real value
+</code></pre>
+<p>Commit <code>.env.example</code> with every name in it and no real value. It is
+the only documentation of what the program needs that cannot go stale,
+because the day someone adds a setting without adding it there is the
+day a new checkout stops working.</p>
+<p>Resist the pull towards a <code>.env.production</code> checked in beside a
+<code>.env.staging</code>. Configuration varies per deploy, not per named
+environment, and the moment there are two files somebody edits the
+wrong one. Use one file per machine and let <code>required()</code> and <code>:?</code> say
+out loud what that machine still owes you.</p>
+<h2 id="module-reference"><a class="header" href="#module-reference">Module Reference</a></h2>
+<p>The whole surface:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>load(path)</code></td><td>read a file into the process environment</td></tr>
+<tr><td><code>loader()</code></td><td>a <code>Loader</code>, for a load that needs more</td></tr>
+<tr><td><code>parse(source)</code></td><td>text to names and values, nothing else</td></tr>
+<tr><td><code>stringify(values)</code></td><td>names and values back to text</td></tr>
+<tr><td><code>is_name(name)</code></td><td>whether a name is a legal variable name</td></tr>
+</tbody>
+</table>
+</div>
+<p>Reading values back:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>get</code>, <code>require</code>, <code>has</code></td><td>text, or the absence of it</td></tr>
+<tr><td><code>int</code>, <code>float</code>, <code>bool</code>, <code>list</code></td><td>text converted, or a <code>ValueError</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>The classes:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>Loader</code></td><td><code>path</code>, <code>paths</code>, <code>source</code>, <code>override</code>, <code>expand</code>, <code>required</code>, <code>read</code>, <code>load</code></td></tr>
+<tr><td><code>Result</code></td><td><code>values</code>, <code>applied</code>, <code>skipped</code>, <code>files</code>, <code>missing</code></td></tr>
+<tr><td><code>EnvError</code></td><td><code>ParseError</code>, <code>MissingFile</code>, <code>MissingVariable</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>And the piece underneath, for a program that needs it directly:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th></th><th></th></tr>
+</thead>
+<tbody>
+<tr><td><code>env.expand</code></td><td><code>expand(value, resolve)</code>, the <code>$</code> reference syntax on its own</td></tr>
+</tbody>
+</table>
+</div>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch18-00-mail.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="ch20-00-args.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch18-00-mail.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="ch20-00-args.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

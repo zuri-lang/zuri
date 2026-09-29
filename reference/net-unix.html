@@ -1,0 +1,501 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>net.unix - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="netunix"><a class="header" href="#netunix"><code>net.unix</code></a></h1>
+<pre><code class="language-zuri ignore">import net
+</code></pre>
+<blockquote>
+<p>Everything here is re-exported by <code>net</code>, so <code>import net</code> is enough and
+the names are called as <code>net.*</code>. Importing <code>net.unix</code> on its own works
+too and reaches the same definitions.</p>
+</blockquote>
+<p>Unix domain sockets: the same stream interface as <code>tcp</code>, over a path on
+the filesystem rather than an address on the network.</p>
+<p>A unix socket is how two programs on one machine usually talk when one
+of them is a server. It skips the network stack, so there is no port to
+collide with and nothing to reach it from another host. And because the
+socket is a file, the filesystem decides who may connect: a socket in a
+directory only one user can enter is reachable by only that user, which
+is a stronger answer than binding to loopback and trusting everyone on
+the machine.</p>
+<pre><code class="language-zuri ignore">import net
+
+var client = net.UnixStream()
+client.connect('/var/run/mysqld/mysqld.sock')
+client.write_all('hello')
+
+echo client.read(5)
+client.close()
+</code></pre>
+<p>A server binds a path and accepts on it:</p>
+<pre><code class="language-zuri ignore">import net
+import os
+
+var server = net.UnixStream()
+server.bind('/run/app.sock')
+
+while true {
+  var client = server.accept()
+  client.write_all('hello\n')
+  client.close()
+}
+</code></pre>
+<h2 id="binding-leaves-a-file-behind"><a class="header" href="#binding-leaves-a-file-behind">Binding leaves a file behind</a></h2>
+<p><code>bind()</code> creates the path and refuses if something is already there,
+including a socket left by a process that has since died. Closing the
+socket frees the descriptor but does not remove the file, because by
+then another process may have bound the same path and removing it would
+break them. A server that expects to be restarted deletes a stale path
+itself before binding.</p>
+<h2 id="windows"><a class="header" href="#windows">Windows</a></h2>
+<p>Windows has unix sockets, but they are not reachable from Zuri. Every
+call here raises there rather than the module being absent, so a program
+fails where it tries to connect, saying why, instead of failing at
+import. <code>is_supported()</code> answers the question in advance.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="is_supported"><a class="header" href="#is_supported"><code>is_supported()</code></a></h3>
+<pre><code class="language-zuri ignore">net.is_supported() -&gt; bool
+</code></pre>
+<p>Whether unix domain sockets work on this machine.</p>
+<p>False on Windows and true everywhere else. A program that can fall back
+to TCP tests this rather than catching the error.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="pair"><a class="header" href="#pair"><code>pair()</code></a></h3>
+<pre><code class="language-zuri ignore">net.pair() -&gt; list[UnixStream]
+</code></pre>
+<p>Two sockets already connected to each other, with no path and nothing on
+the filesystem.</p>
+<p>This is the way to hand one end to a child process, or to talk between
+threads over a real socket without choosing a name that something else
+might collide with.</p>
+<p><strong>Returns</strong> <code>list[UnixStream]</code> — The two ends, which are
+interchangeable.</p>
+<p><strong>Raises</strong> <code>Error</code> if the pair cannot be created.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="unixstream"><a class="header" href="#unixstream"><code>UnixStream</code></a></h3>
+<pre><code class="language-zuri ignore">class net.UnixStream
+</code></pre>
+<p>A unix domain socket, connected or listening.</p>
+<p>One class covers both, as <code>TcpStream</code> does: <code>connect()</code> makes it a
+stream and <code>bind()</code> makes it a listener, and the methods that do not
+apply raise rather than doing something surprising.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+</ul>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream(_ptr)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Ptr|nil</code> — _ptr An existing native handle, as <code>accept()</code> and <code>pair()</code>
+produce. A new socket when nil.</li>
+</ul>
+<h4 id="unixstreamnative_ptr"><a class="header" href="#unixstreamnative_ptr"><code>UnixStream.native_ptr()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.native_ptr()
+</code></pre>
+<p>Hands out the underlying native handle, the same way <code>TcpStream</code> does,
+so a sibling module can wrap an already-connected socket without
+belonging to this class.</p>
+<p><strong>Returns</strong> — Ptr</p>
+<h4 id="unixstreamconnect"><a class="header" href="#unixstreamconnect"><code>UnixStream.connect()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.connect(path: string)
+</code></pre>
+<p>Connects to the socket at <code>path</code>.</p>
+<p>There is no timeout: a unix socket connect either succeeds at once or
+fails at once, since there is no network in between. Use
+<code>set_read_timeout()</code> and <code>set_write_timeout()</code> to bound the conversation
+that follows.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Raises</strong> <code>Error</code> if nothing is listening there, if the path does not
+exist, or if this process may not open it.</p>
+<h4 id="unixstreambind"><a class="header" href="#unixstreambind"><code>UnixStream.bind()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.bind(path: string)
+</code></pre>
+<p>Creates the socket at <code>path</code> and starts listening on it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Raises</strong> <code>Error</code> if something already exists at that path, including a
+socket a dead process left behind, or if the directory is not writable.</p>
+<h4 id="unixstreamaccept"><a class="header" href="#unixstreamaccept"><code>UnixStream.accept()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.accept()
+</code></pre>
+<p>Waits for a connection and returns it.</p>
+<p>Blocks until someone connects. In non-blocking mode (see
+<code>set_non_blocking()</code>) it never blocks: it returns <code>nil</code> when nobody is
+waiting, which is an answer rather than a failure.</p>
+<p>The accepted stream can carry its own blocking mode, which is a
+platform’s default rather than this listener’s. Set it explicitly with
+<code>set_non_blocking()</code> on the returned stream if it matters.</p>
+<p><strong>Returns</strong> — ?UnixStream The connected end of the new conversation, or
+<code>nil</code> in non-blocking mode with nobody waiting.</p>
+<p><strong>Raises</strong> <code>Error</code> if this socket is not listening.</p>
+<h4 id="unixstreampeer_address"><a class="header" href="#unixstreampeer_address"><code>UnixStream.peer_address()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.peer_address() -&gt; string|nil
+</code></pre>
+<p>The path the other end is bound to.</p>
+<p><code>nil</code> for a socket that has no path, which is what both ends of a
+<code>pair()</code> are and what a client that never bound one is.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="unixstreamlocal_address"><a class="header" href="#unixstreamlocal_address"><code>UnixStream.local_address()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.local_address() -&gt; string|nil
+</code></pre>
+<p>The path this socket is bound to, or <code>nil</code> where it has none.</p>
+<p><strong>Returns</strong> <code>string|nil</code></p>
+<h4 id="unixstreamshutdown"><a class="header" href="#unixstreamshutdown"><code>UnixStream.shutdown()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.shutdown()
+</code></pre>
+<p>Closes both directions without releasing the handle, so a read at the
+other end returns nothing rather than blocking.</p>
+<p><strong>Raises</strong> <code>Error</code> if this socket is not connected.</p>
+<h4 id="unixstreamset_read_timeout"><a class="header" href="#unixstreamset_read_timeout"><code>UnixStream.set_read_timeout()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.set_read_timeout(timeout: number)
+</code></pre>
+<p>Gives up on a read that takes longer than <code>timeout</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>number</code>) — Milliseconds. Zero means wait forever.</li>
+</ul>
+<h4 id="unixstreamget_read_timeout"><a class="header" href="#unixstreamget_read_timeout"><code>UnixStream.get_read_timeout()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.get_read_timeout() -&gt; number
+</code></pre>
+<p>The read timeout in milliseconds, zero for none.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="unixstreamset_write_timeout"><a class="header" href="#unixstreamset_write_timeout"><code>UnixStream.set_write_timeout()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.set_write_timeout(timeout: number)
+</code></pre>
+<p>Gives up on a write that takes longer than <code>timeout</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>timeout</code> (<code>number</code>) — Milliseconds. Zero means wait forever.</li>
+</ul>
+<h4 id="unixstreamget_write_timeout"><a class="header" href="#unixstreamget_write_timeout"><code>UnixStream.get_write_timeout()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.get_write_timeout() -&gt; number
+</code></pre>
+<p>The write timeout in milliseconds, zero for none.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="unixstreamset_non_blocking"><a class="header" href="#unixstreamset_non_blocking"><code>UnixStream.set_non_blocking()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.set_non_blocking(nonblocking: bool)
+</code></pre>
+<p>Whether reads and writes return at once rather than waiting.</p>
+<p>A non-blocking socket raises where it would have blocked, which is what
+<code>net.poll</code> is for: wait there, then read here.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>nonblocking</code> (<code>bool</code>)</li>
+</ul>
+<h4 id="unixstreamread"><a class="header" href="#unixstreamread"><code>UnixStream.read()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.read(length: number) -&gt; bytes
+</code></pre>
+<p>Reads up to <code>length</code> bytes, returning what arrived.</p>
+<p>A shorter result than asked for is normal and does not mean the
+conversation is over; an empty one does.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="unixstreamread_exact"><a class="header" href="#unixstreamread_exact"><code>UnixStream.read_exact()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.read_exact(length: number) -&gt; bytes
+</code></pre>
+<p>Reads exactly <code>length</code> bytes, waiting for as many as it takes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<p><strong>Raises</strong> <code>Error</code> if the other end closes before that many arrive.</p>
+<h4 id="unixstreamread_all"><a class="header" href="#unixstreamread_all"><code>UnixStream.read_all()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.read_all() -&gt; bytes
+</code></pre>
+<p>Reads until the other end closes.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="unixstreamread_as_string"><a class="header" href="#unixstreamread_as_string"><code>UnixStream.read_as_string()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.read_as_string() -&gt; string
+</code></pre>
+<p>Reads until the other end closes and decodes the result as text.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<p><strong>Raises</strong> <code>Error</code> if what arrived is not valid UTF-8.</p>
+<h4 id="unixstreamwrite"><a class="header" href="#unixstreamwrite"><code>UnixStream.write()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.write(data) -&gt; number
+</code></pre>
+<p>Writes what it can and reports how much that was.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code> — Bytes written, which may be fewer than given.</p>
+<h4 id="unixstreamwrite_all"><a class="header" href="#unixstreamwrite_all"><code>UnixStream.write_all()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.write_all(data)
+</code></pre>
+<p>Writes everything, however many attempts that takes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes|string</code>)</li>
+</ul>
+<h4 id="unixstreamflush"><a class="header" href="#unixstreamflush"><code>UnixStream.flush()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.flush()
+</code></pre>
+<p>Pushes out anything held back.</p>
+<h4 id="unixstreamis_connected"><a class="header" href="#unixstreamis_connected"><code>UnixStream.is_connected()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.is_connected() -&gt; bool
+</code></pre>
+<p>Whether this socket is connected to another.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="unixstreamis_bound"><a class="header" href="#unixstreamis_bound"><code>UnixStream.is_bound()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.is_bound() -&gt; bool
+</code></pre>
+<p>Whether this socket is listening on a path.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="unixstreamclose"><a class="header" href="#unixstreamclose"><code>UnixStream.close()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.close()
+</code></pre>
+<p>Closes the socket. The handle cannot be used afterwards.</p>
+<p>A path this socket was bound to stays on the filesystem, since by now
+another process may have bound it.</p>
+<h4 id="unixstreamto_string"><a class="header" href="#unixstreamto_string"><code>UnixStream.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">net.UnixStream.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="net-udp.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="http.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="net-udp.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="http.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

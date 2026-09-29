@@ -1,0 +1,640 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>http.response - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="httpresponse"><a class="header" href="#httpresponse"><code>http.response</code></a></h1>
+<pre><code class="language-zuri ignore">import http.response
+</code></pre>
+<blockquote>
+<p><code>http</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>http.response.*</code> needs <code>import http.response</code>.</p>
+</blockquote>
+<p><code>HttpResponse</code>: one response, whether it is being built by a handler or
+read back from a server.</p>
+<p>It carries the status, the headers and the body, and the helpers on it
+cover what a handler nearly always wants: JSON, a file, a redirect, or a
+stream written a chunk at a time.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="httpresponse-1"><a class="header" href="#httpresponse-1"><code>HttpResponse</code></a></h3>
+<pre><code class="language-zuri ignore">class http.HttpResponse
+</code></pre>
+<p>An HTTP response, in both directions: the thing a server builds and
+sends, and the thing a client receives and reads.</p>
+<p>On the server side the useful surface is the writers - <code>text()</code>,
+<code>json()</code>, <code>html()</code>, <code>file()</code>, <code>redirect()</code>, <code>render()</code> - each of which
+sets a sensible <code>Content-Type</code> alongside the body, plus <code>set_cookie()</code>
+and the caching helpers.</p>
+<p>On the client side it is <code>as_text()</code>, <code>as_dict()</code>, <code>is_ok()</code> and
+<code>raise_for_status()</code>.</p>
+<p>A body can be bytes held in memory, a file streamed from disk, or a
+callback that produces bytes as it goes. The last two matter for a
+server that has to serve something larger than it would like to hold in
+memory; see <code>file()</code> and <code>stream()</code>.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>to_string()</code>, so <code>echo</code> and interpolation show
+something useful</li>
+<li><strong>serializable</strong> — has a <code>@to_json()</code>, so it can be handed straight to
+<code>json.encode()</code></li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>status</code></td><td><code>number</code></td><td>The status code.</td></tr>
+<tr><td><code>reason</code></td><td><code>?string</code></td><td>The reason phrase.</td></tr>
+<tr><td><code>version</code></td><td><code>string</code></td><td>The protocol version this response was received over, or will be sent with: <code>'1.0'</code>, <code>'1.1'</code>, <code>'2'</code> or <code>'3'</code>.</td></tr>
+<tr><td><code>headers</code></td><td><code>Headers</code></td><td>The response header fields.</td></tr>
+<tr><td><code>body</code></td><td><code>bytes</code></td><td>The body, as bytes.</td></tr>
+<tr><td><code>cookies</code></td><td><code>list</code></td><td>Cookies to be sent with this response.</td></tr>
+<tr><td><code>time_taken</code></td><td><code>number</code></td><td>How long the request that produced this response took, in milliseconds.</td></tr>
+<tr><td><code>redirects</code></td><td><code>number</code></td><td>How many redirects were followed to reach it.</td></tr>
+<tr><td><code>responder</code></td><td><code>?string</code></td><td>The URL that finally answered, which differs from the requested one whenever a redirect was followed.</td></tr>
+<tr><td><code>certificate</code></td><td><code>?PeerCertificate</code></td><td>The peer’s TLS certificate, on a response received over HTTPS.</td></tr>
+<tr><td><code>body_reader</code></td><td><code>?BodyReader</code></td><td>The reader for the body, when the client was asked to stream the response rather than materialise it.</td></tr>
+<tr><td><code>request_method</code></td><td><code>?string</code></td><td>The method of the request this answers.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse(body, status, headers)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>body</code> (<code>?any</code>) — <code>bytes</code> or a <code>string</code> to start the body with</li>
+<li><code>status</code> (<code>?number</code>) — defaults to <code>200</code></li>
+<li><code>?Headers</code> — headers</li>
+</ul>
+<h4 id="httpresponsewrite"><a class="header" href="#httpresponsewrite"><code>HttpResponse.write()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.write(data)
+</code></pre>
+<p>Appends to the response body.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>string|bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsetext"><a class="header" href="#httpresponsetext"><code>HttpResponse.text()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.text(content: string, status: ?number)
+</code></pre>
+<p>Replaces the body with <code>content</code> and sets <code>Content-Type</code> to <code>text/plain; charset=utf-8</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>content</code> (<code>string</code>)</li>
+<li><code>status</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsehtml"><a class="header" href="#httpresponsehtml"><code>HttpResponse.html()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.html(content: string, status: ?number)
+</code></pre>
+<p>Replaces the body with <code>content</code> and sets <code>Content-Type</code> to <code>text/html; charset=utf-8</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>content</code> (<code>string</code>)</li>
+<li><code>status</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsejson"><a class="header" href="#httpresponsejson"><code>HttpResponse.json()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.json(data, status: ?number)
+</code></pre>
+<p>Replaces the body with the JSON encoding of <code>data</code> and sets
+<code>Content-Type</code> to <code>application/json</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>any</code>)</li>
+<li><code>status</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsexml"><a class="header" href="#httpresponsexml"><code>HttpResponse.xml()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.xml(content: string, status: ?number)
+</code></pre>
+<p>Replaces the body with <code>content</code> and sets <code>Content-Type</code> to
+<code>application/xml; charset=utf-8</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>content</code> (<code>string</code>)</li>
+<li><code>status</code> (<code>?number</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsefile"><a class="header" href="#httpresponsefile"><code>HttpResponse.file()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.file(path: string, offset: ?number, length: ?number)
+</code></pre>
+<p>Serves the file at <code>path</code>, streamed from disk rather than read into
+memory, with <code>Content-Type</code> guessed from the extension.</p>
+<p><code>offset</code> and <code>length</code> serve part of the file, which is what a <code>Range</code>
+request needs; the caller is responsible for setting the <code>206</code> status
+and <code>Content-Range</code> header that go with it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>offset</code> (<code>?number</code>) — byte offset to start from; defaults to <code>0</code></li>
+<li><code>length</code> (<code>?number</code>) — how many bytes to send; defaults to the rest of
+the file</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<p><strong>Raises</strong> <code>HttpError</code> if the file does not exist or cannot be read</p>
+<h4 id="httpresponsedownload"><a class="header" href="#httpresponsedownload"><code>HttpResponse.download()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.download(path: string, name: ?string)
+</code></pre>
+<p>Serves the file at <code>path</code> as an attachment, so a browser saves it rather
+than displaying it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>name</code> (<code>?string</code>) — the filename to offer; defaults to the file’s own
+base name</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsestream"><a class="header" href="#httpresponsestream"><code>HttpResponse.stream()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.stream(handler)
+</code></pre>
+<p>Produces the body from a callback instead of holding it in memory.</p>
+<p><code>handler</code> is called with a writer that has <code>write(data)</code> and <code>flush()</code>.
+Anything it writes goes out as it is written, which is what makes
+server-sent events, a progress feed, or a large generated export
+possible without buffering the whole thing first.</p>
+<p>Unless a <code>Content-Length</code> is set beforehand, the body is framed with
+chunked transfer encoding on HTTP/1.1 and as an ordinary DATA stream on
+HTTP/2.</p>
+<pre><code class="language-zuri ignore">server.handle('GET', '/export', @(request, response) {
+  response.content_type('text/csv')
+  response.stream(@(writer) {
+    for row in rows {
+      writer.write(row.join(',') + '\n')
+    }
+  })
+})
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>function(1)</code> — handler</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponserender"><a class="header" href="#httpresponserender"><code>HttpResponse.render()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.render(path: string, variables: ?dict)
+</code></pre>
+<p>Renders a Wire template and appends the result to the body, setting
+<code>Content-Type</code> to HTML if it is not already set.</p>
+<p>Templates are resolved against Wire’s shared instance, whose root
+defaults to a <code>templates</code> directory beside the working directory. Use
+<code>wire.shared().set_root()</code> to point it elsewhere.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>) — the template path, without the <code>.html</code> extension</li>
+<li><code>variables</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseredirect"><a class="header" href="#httpresponseredirect"><code>HttpResponse.redirect()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.redirect(location: string, status: ?number)
+</code></pre>
+<p>Sends the client to <code>location</code>, setting both the <code>Location</code> header and a
+3xx status.</p>
+<p>The default is <code>302 Found</code>, which browsers follow with a GET regardless
+of the original method. Use <code>307</code> or <code>308</code> when the method and body must
+be preserved, and <code>303</code> after a form submission that should not be
+replayed on refresh.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>location</code> (<code>string</code>)</li>
+<li><code>status</code> (<code>?number</code>) — must be a 3xx; defaults to <code>302</code></li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<p><strong>Raises</strong> <code>ValueError</code> if <code>status</code> is not a redirect status</p>
+<h4 id="httpresponsecontent_type"><a class="header" href="#httpresponsecontent_type"><code>HttpResponse.content_type()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.content_type(mimetype: string)
+</code></pre>
+<p>Sets the <code>Content-Type</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>mimetype</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseheader"><a class="header" href="#httpresponseheader"><code>HttpResponse.header()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.header(name: string, value)
+</code></pre>
+<p>Sets a response header.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>string|number|bool</code>)</li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseset_cookie"><a class="header" href="#httpresponseset_cookie"><code>HttpResponse.set_cookie()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.set_cookie(name: string, value: string, attributes: ?dict)
+</code></pre>
+<p>Adds a cookie to the response.</p>
+<p><code>http_only</code> defaults to <code>true</code> and <code>same_site</code> to <code>'Lax'</code>, which are the
+settings a session cookie should have; pass them explicitly to opt out.
+<code>secure</code> defaults to <code>true</code> for any cookie whose name carries the
+<code>__Secure-</code> or <code>__Host-</code> prefix.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>value</code> (<code>string</code>)</li>
+<li><code>attributes</code> (<code>?dict</code>) — <code>domain</code>, <code>path</code>, <code>expires</code>, <code>max_age</code>,
+<code>secure</code>, <code>http_only</code>, <code>same_site</code>, <code>partitioned</code></li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseclear_cookie"><a class="header" href="#httpresponseclear_cookie"><code>HttpResponse.clear_cookie()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.clear_cookie(name: string, attributes: ?dict)
+</code></pre>
+<p>Expires a cookie on the client by re-sending it empty with a past
+expiry.</p>
+<p>The <code>domain</code> and <code>path</code> must match the ones the cookie was set with, or
+the client will keep the original and simply store a second,
+differently-scoped, empty one.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>attributes</code> (<code>?dict</code>) — <code>domain</code> and <code>path</code></li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponsecache_for"><a class="header" href="#httpresponsecache_for"><code>HttpResponse.cache_for()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.cache_for(seconds: number, public_cache: ?bool)
+</code></pre>
+<p>Marks the response as cacheable for <code>seconds</code>, for both private and
+shared caches.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>seconds</code> (<code>number</code>)</li>
+<li><code>public_cache</code> (<code>?bool</code>) — whether shared caches (a CDN, a proxy) may
+store it too; defaults to <code>true</code></li>
+</ul>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseno_cache"><a class="header" href="#httpresponseno_cache"><code>HttpResponse.no_cache()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.no_cache()
+</code></pre>
+<p>Tells every cache, including the browser’s, not to store this response.
+The three headers below are the combination that actually works across
+the caches still in service.</p>
+<p><strong>Returns</strong> — HttpResponse: this same instance, for chaining</p>
+<h4 id="httpresponseas_text"><a class="header" href="#httpresponseas_text"><code>HttpResponse.as_text()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.as_text() -&gt; string
+</code></pre>
+<p>The body decoded as UTF-8 text, or <code>''</code> for an empty body.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="httpresponseas_dict"><a class="header" href="#httpresponseas_dict"><code>HttpResponse.as_dict()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.as_dict() -&gt; any
+</code></pre>
+<p>The body parsed as JSON.</p>
+<p><strong>Returns</strong> <code>any</code></p>
+<p><strong>Raises</strong> <code>HttpError</code> if the body is empty or is not valid JSON</p>
+<h4 id="httpresponseas_bytes"><a class="header" href="#httpresponseas_bytes"><code>HttpResponse.as_bytes()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.as_bytes() -&gt; bytes
+</code></pre>
+<p>The raw body bytes.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="httpresponsemedia_type"><a class="header" href="#httpresponsemedia_type"><code>HttpResponse.media_type()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.media_type() -&gt; ?string
+</code></pre>
+<p>The media type from <code>Content-Type</code>, without its parameters, e.g.
+<code>'application/json'</code> for <code>'application/json; charset=utf-8'</code>.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httpresponsecharset"><a class="header" href="#httpresponsecharset"><code>HttpResponse.charset()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.charset() -&gt; ?string
+</code></pre>
+<p>The charset named by <code>Content-Type</code>, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h4 id="httpresponseis_ok"><a class="header" href="#httpresponseis_ok"><code>HttpResponse.is_ok()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.is_ok() -&gt; bool
+</code></pre>
+<p>Whether the status is a 2xx.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httpresponseis_redirect"><a class="header" href="#httpresponseis_redirect"><code>HttpResponse.is_redirect()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.is_redirect() -&gt; bool
+</code></pre>
+<p>Whether the status is a 3xx.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httpresponseis_error"><a class="header" href="#httpresponseis_error"><code>HttpResponse.is_error()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.is_error() -&gt; bool
+</code></pre>
+<p>Whether the status is a 4xx or 5xx.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httpresponseraise_for_status"><a class="header" href="#httpresponseraise_for_status"><code>HttpResponse.raise_for_status()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.raise_for_status()
+</code></pre>
+<p>Raises <code>StatusError</code> when the status is a 4xx or 5xx, and returns the
+response otherwise, so it can be used inline:</p>
+<pre><code class="language-zuri ignore">var data = http.get(url).raise_for_status().as_dict()
+</code></pre>
+<p>The response stays reachable on the raised error, so the body - where an
+API usually explains what went wrong - is not lost.</p>
+<p><strong>Returns</strong> — HttpResponse</p>
+<p><strong>Raises</strong> <code>StatusError</code></p>
+<h4 id="httpresponsereason_phrase"><a class="header" href="#httpresponsereason_phrase"><code>HttpResponse.reason_phrase()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.reason_phrase() -&gt; string
+</code></pre>
+<p>The reason phrase, either the one received or the canonical one for the
+status code.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="httpresponseis_bodiless"><a class="header" href="#httpresponseis_bodiless"><code>HttpResponse.is_bodiless()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.is_bodiless() -&gt; bool
+</code></pre>
+<p>Whether the response is defined to carry no body: a <code>1xx</code>, <code>204</code> or
+<code>304</code> status, or any response to a HEAD request.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httpresponsesource"><a class="header" href="#httpresponsesource"><code>HttpResponse.source()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.source() -&gt; ?list
+</code></pre>
+<p>The body source, when the body is not held in <code>body</code>: <code>['file', path, offset, length]</code>
+or <code>['stream', handler]</code>. <code>nil</code> for an ordinary in-memory body.</p>
+<p><strong>Returns</strong> <code>?list</code></p>
+<h4 id="httpresponseset_carrier"><a class="header" href="#httpresponseset_carrier"><code>HttpResponse.set_carrier()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.set_carrier(carrier)
+</code></pre>
+<p>Records the connection a streamed response is still being read from. Set
+by <code>HttpClient</code>; hand the response to <code>HttpClient.finish()</code> when you are
+done reading it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>carrier</code> (<code>?list</code>)</li>
+</ul>
+<h4 id="httpresponsecarrier"><a class="header" href="#httpresponsecarrier"><code>HttpResponse.carrier()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.carrier() -&gt; ?list
+</code></pre>
+<p>The connection a streamed response is still being read from, or <code>nil</code>.</p>
+<p><strong>Returns</strong> <code>?list</code></p>
+<h4 id="httpresponseis_committed"><a class="header" href="#httpresponseis_committed"><code>HttpResponse.is_committed()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.is_committed() -&gt; bool
+</code></pre>
+<p>Whether the head has already been written to the wire, after which
+changing a header or the status has no effect.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="httpresponsecommit"><a class="header" href="#httpresponsecommit"><code>HttpResponse.commit()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.commit()
+</code></pre>
+<p>Marks the response as committed. Called by the protocol writer;
+applications have no reason to.</p>
+<h4 id="httpresponseon_finish"><a class="header" href="#httpresponseon_finish"><code>HttpResponse.on_finish()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.on_finish(callback: function)
+</code></pre>
+<p>Registers <code>callback</code> to run once the response is final: after the
+handler, every middleware and any error handling have had their say, so
+<code>status</code>, the headers and the body are what the client receives.</p>
+<p>Middleware that reports on a response, such as an access log, registers
+here rather than reading the response when its <code>next()</code> returns. A
+failure further in never returns there, and the status the client is
+sent for it is only decided afterwards.</p>
+<p>Callbacks run once each, in the order they were registered. One that
+raises is skipped over, so a broken reporter never costs the client its
+response.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>callback</code> (<code>function</code>) — called with no arguments.</li>
+</ul>
+<h4 id="httpresponsefinish"><a class="header" href="#httpresponsefinish"><code>HttpResponse.finish()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.finish()
+</code></pre>
+<p>Runs every callback <code>on_finish()</code> registered, once. Called by the server
+when the response is final; applications have no reason to.</p>
+<h4 id="httpresponsecookie_headers"><a class="header" href="#httpresponsecookie_headers"><code>HttpResponse.cookie_headers()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.cookie_headers() -&gt; list
+</code></pre>
+<p>Every <code>Set-Cookie</code> field value this response will send.</p>
+<p><strong>Returns</strong> <code>list</code></p>
+<h4 id="httpresponseto_string"><a class="header" href="#httpresponseto_string"><code>HttpResponse.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.to_string()
+</code></pre>
+<h4 id="httpresponseto_json"><a class="header" href="#httpresponseto_json"><code>HttpResponse.to_json()</code></a></h4>
+<pre><code class="language-zuri ignore">http.HttpResponse.to_json()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="http-request.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="http-router.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="http-request.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="http-router.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

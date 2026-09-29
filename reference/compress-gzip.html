@@ -1,0 +1,664 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>compress.gzip - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="compressgzip"><a class="header" href="#compressgzip"><code>compress.gzip</code></a></h1>
+<pre><code class="language-zuri ignore">import compress
+</code></pre>
+<blockquote>
+<p><code>compress</code> exposes this as <code>compress.gzip</code>, so <code>import compress</code> is
+enough and the names are called as <code>compress.gzip.*</code>. <code>import compress.gzip</code>
+reaches the same definitions directly.</p>
+</blockquote>
+<p>The is the GZip submodule for the compress module.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="compress"><a class="header" href="#compress"><code>compress()</code></a></h3>
+<pre><code class="language-zuri ignore">compress.gzip.compress(data) -&gt; bytes
+</code></pre>
+<p>Compress data using the default options for GZip.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h3 id="decompress"><a class="header" href="#decompress"><code>decompress()</code></a></h3>
+<pre><code class="language-zuri ignore">compress.gzip.decompress(data) -&gt; bytes
+</code></pre>
+<p>Decompress a GZipped data using default options.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="gzipencoder"><a class="header" href="#gzipencoder"><code>GzipEncoder</code></a></h3>
+<pre><code class="language-zuri ignore">class compress.gzip.GzipEncoder
+</code></pre>
+<p>A streaming GZip encoder.</p>
+<p>Example:</p>
+<pre><code class="language-zuri-repl">%&gt; import compress.gzip
+%&gt; var encoder = gzip.GzipEncoder()
+%&gt; encoder.write('hello world')
+11
+%&gt; encoder.finish()
+(1f 8b 08 00 00 00 00 00 04 03 cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 85 11 4a 0d 0b 00 00 00)
+</code></pre>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder(level)
+</code></pre>
+<p>Creates a new streaming GZip encoder at the given level (0..=9).</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>level</code> (<code>?number</code>) — Default 1</li>
+</ul>
+<h4 id="gzipencoderfinish"><a class="header" href="#gzipencoderfinish"><code>GzipEncoder.finish()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.finish() -&gt; bytes
+</code></pre>
+<p>Flushes remaining data, writes the content checksum, and returns the
+inner byte stream.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<blockquote>
+<p><strong>Note:</strong> Once finish is called, the encoder can no longer be reused.</p>
+</blockquote>
+<h4 id="gzipencoderclose"><a class="header" href="#gzipencoderclose"><code>GzipEncoder.close()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.close() -&gt; bytes
+</code></pre>
+<p>Same as <code>finish()</code> for file API compartibility.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<blockquote>
+<p><strong>Note:</strong> Once finish is called, the encoder can no longer be reused.</p>
+</blockquote>
+<h4 id="gzipencoderreset"><a class="header" href="#gzipencoderreset"><code>GzipEncoder.reset()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.reset() -&gt; bytes
+</code></pre>
+<p>Finishes the current frame and installs byte stream for the next one.</p>
+<p>Returns the previous byte stream containing the completed frame. All
+internal buffers (hash tables, workspace, block scratch) stay allocated
+and are reused for the next frame.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzipencoderwrite"><a class="header" href="#gzipencoderwrite"><code>GzipEncoder.write()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.write(data) -&gt; number
+</code></pre>
+<p>Writes data into this encoder’s byte stream, returning how many bytes
+were written.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzipencoderflush"><a class="header" href="#gzipencoderflush"><code>GzipEncoder.flush()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.flush() -&gt; bytes
+</code></pre>
+<p>Flushes this output stream and returns the remaining compressed data in
+the stream, ensuring that all intermediately buffered contents reach
+their destination.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzipencoderavailable"><a class="header" href="#gzipencoderavailable"><code>GzipEncoder.available()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.available() -&gt; number
+</code></pre>
+<p>Returns the number of compressed bytes currently waiting in the
+encoder’s output buffer.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzipencoderfinished"><a class="header" href="#gzipencoderfinished"><code>GzipEncoder.finished()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.finished() -&gt; bool
+</code></pre>
+<p>Returns whether <code>finish()</code> has completed the stream.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzipencodertotal_in"><a class="header" href="#gzipencodertotal_in"><code>GzipEncoder.total_in()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.total_in() -&gt; number
+</code></pre>
+<p>Number of uncompressed bytes consumed by the encoder.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzipencodertotal_out"><a class="header" href="#gzipencodertotal_out"><code>GzipEncoder.total_out()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipEncoder.total_out() -&gt; number
+</code></pre>
+<p>Number of compressed bytes generated by the encoder.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="gzipdecoder"><a class="header" href="#gzipdecoder"><code>GzipDecoder</code></a></h3>
+<pre><code class="language-zuri ignore">class compress.gzip.GzipDecoder
+</code></pre>
+<p>Streaming gzip decompressor implemention. This decoder reads standard
+gzip blocks and frames produced at any gzip compression level.</p>
+<p>Wraps a byte stream of compressed data and yields decompressed bytes.</p>
+<p>Example:</p>
+<pre><code class="language-zuri-repl">%&gt; import compress.gzip
+%&gt; var data = gzip.compress('hello world')
+%&gt; data
+(1f 8b 08 00 00 00 00 00 00 03 cb 48 cd c9 c9 57 28 cf 2f ca 49 01 00 85 11 4a 0d 0b 00 00 00)
+%&gt;
+%&gt; var decoder = gzip.GzipDecoder(data)
+%&gt; decoder.read_as_string()
+hello world
+</code></pre>
+<p>This decoder is level-independent and supports standard gzip frames
+produced by all gzip compression levels.</p>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder(source)
+</code></pre>
+<p>Creates a Gzip decoder</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>bytes</code>)</li>
+</ul>
+<h4 id="gzipdecoderreset"><a class="header" href="#gzipdecoderreset"><code>GzipDecoder.reset()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.reset(new_source)
+</code></pre>
+<p>Installs a new data source for the next frame, keeping all internal
+buffers allocated.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>new_source</code> (<code>bytes</code>)</li>
+</ul>
+<h4 id="gzipdecoderclose"><a class="header" href="#gzipdecoderclose"><code>GzipDecoder.close()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.close()
+</code></pre>
+<p>Closes the decoder by resetting it into an empty stream.</p>
+<h4 id="gzipdecoderread"><a class="header" href="#gzipdecoderread"><code>GzipDecoder.read()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.read(length) -&gt; bytes
+</code></pre>
+<p>Reads some bytes up to the amount of bytes specified by length from the
+current source. Returns an empty byte stream when there is no more data
+to read.</p>
+<p>This function does not block or wait waiting for data, but reads as much
+data as is available to read when it runs.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzipdecoderread_exact"><a class="header" href="#gzipdecoderread_exact"><code>GzipDecoder.read_exact()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.read_exact(length) -&gt; bytes
+</code></pre>
+<p>Reads the exact number of bytes from the buffer. This method will raise
+an error if it encounters an unexpected EOF (<code>end of file</code>) or there are
+insufficient data to read to complete the required number of bytes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzipdecoderread_all"><a class="header" href="#gzipdecoderread_all"><code>GzipDecoder.read_all()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.read_all() -&gt; bytes
+</code></pre>
+<p>Reads all remaining bytes until EOF is encountered in the source.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzipdecoderread_as_string"><a class="header" href="#gzipdecoderread_as_string"><code>GzipDecoder.read_as_string()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.read_as_string() -&gt; string
+</code></pre>
+<p>Reads all remaining bytes until EOF is encountered in the source and
+returns the data read as a string instead of a byte stream.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="gzipdecoderavailable"><a class="header" href="#gzipdecoderavailable"><code>GzipDecoder.available()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.available() -&gt; number
+</code></pre>
+<p>Returns the number of compressed bytes currently waiting in the
+decoder’s output buffer.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzipdecoderfinished"><a class="header" href="#gzipdecoderfinished"><code>GzipDecoder.finished()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.finished() -&gt; bool
+</code></pre>
+<p>Returns whether <code>finish()</code> has completed the stream.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzipdecodertotal_in"><a class="header" href="#gzipdecodertotal_in"><code>GzipDecoder.total_in()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.total_in() -&gt; number
+</code></pre>
+<p>Number of compressed bytes consumed by the decoder.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzipdecodertotal_out"><a class="header" href="#gzipdecodertotal_out"><code>GzipDecoder.total_out()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzipDecoder.total_out() -&gt; number
+</code></pre>
+<p>Number of uncompressed bytes generated by the decoder.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h3 id="gzfile"><a class="header" href="#gzfile"><code>GzFile</code></a></h3>
+<pre><code class="language-zuri ignore">class compress.gzip.GzFile
+</code></pre>
+<p>The GzFile class implements a GZip based I/O system that allows you use
+treat Gzip streams (bytes) as if they were a file.</p>
+<p>The class implements the essentials of a file except those that ties it
+to the operating system filesystem such as symbolic links, chmod and set
+time.</p>
+<p>See the chapter on files in <em>The Zuri Programming Language</em> for more
+information.</p>
+<h4 id="constructor-2"><a class="header" href="#constructor-2">Constructor</a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile(path: string, mode: ?string, _inner)
+</code></pre>
+<p>Returns a new GzFile object bounded to a physical file at the given path
+and opened in the given mode. See [[file]] for a description of the
+supported file modes.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>mode</code> (<code>?string</code>)</li>
+</ul>
+<p><strong>Returns</strong> — GzFile</p>
+<h4 id="gzfileexists"><a class="header" href="#gzfileexists"><code>GzFile.exists()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.exists() -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> if the underlying file bounded to GzFile actually exists
+or <code>false</code> otherwise.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileclose"><a class="header" href="#gzfileclose"><code>GzFile.close()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.close()
+</code></pre>
+<p>Closes the stream to an opened GzFile. You’ll rarely ever need to call
+this method yourself in most use cases.</p>
+<h4 id="gzfileflush"><a class="header" href="#gzfileflush"><code>GzFile.flush()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.flush() -&gt; bytes
+</code></pre>
+<p>Flushes the remaning data into the GzFile underlying file and returns
+the byte stream returned.</p>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<h4 id="gzfileopen"><a class="header" href="#gzfileopen"><code>GzFile.open()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.open() -&gt; bool
+</code></pre>
+<p>Opens the stream to a GzFile for the operation originally specified on
+the GzFile object during creation.</p>
+<p>You may need to call this method after a call to <code>read()</code> if the length
+isn’t specified or <code>write()</code> if you wish to read or write again as the
+GzFile will already be closed.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileread"><a class="header" href="#gzfileread"><code>GzFile.read()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.read(length: ?number) -&gt; bytes
+</code></pre>
+<p>Reads the content of an opened GzFile up to the specified length and
+returns it as string or bytes if the GzFile was opened in the binary
+mode. If the length is not specified, the GzFile will be read to the
+end.</p>
+<p>This method requires that the GzFile be opened in the read mode (default
+mode) or a mode that supports reading. If you aren’t reading the full
+length of the GzFile, you’ll need to call the close() method to free the
+GzFile for further reading, otherwise, the close() method will be
+automatically called for you.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>number</code>) — Default = -1</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<p><strong>Raises</strong> <code>Error</code></p>
+<h4 id="gzfilegets"><a class="header" href="#gzfilegets"><code>GzFile.gets()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.gets(length: ?number) -&gt; bytes
+</code></pre>
+<p>Same as <code>read()</code>, but doesn’t close the GzFile automatically.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>length</code> (<code>?number</code>) — Default = -1, meaning read to the end.</li>
+</ul>
+<p><strong>Returns</strong> <code>bytes</code></p>
+<p><strong>Raises</strong> <code>Error</code></p>
+<h4 id="gzfilewrite"><a class="header" href="#gzfilewrite"><code>GzFile.write()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.write(data: bytes|string) -&gt; number
+</code></pre>
+<p>Writes a string or bytes to an opened GzFile at the current insertion
+point. When the GzFile is opened with the a mode enabled, write will
+always start from the end of the GzFile.</p>
+<p>If the seek() method has been previously called, write will begin from
+the seeked position, otherwise it will start at the beginning of the
+GzFile.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li>`` (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzfileputs"><a class="header" href="#gzfileputs"><code>GzFile.puts()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.puts(data: bytes|string) -&gt; number
+</code></pre>
+<p>Same as <code>write()</code>, but doesn’t open or close the GzFile automatically.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li>`` (<code>bytes|string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzfilenumber"><a class="header" href="#gzfilenumber"><code>GzFile.number()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.number() -&gt; number
+</code></pre>
+<p>Returns the integer file descriptor number that is used by the
+underlying implementation to request I/O operations from the operating
+system. This can be very useful for low-level interfaces that uses or
+act as GzFile descriptors.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzfileis_tty"><a class="header" href="#gzfileis_tty"><code>GzFile.is_tty()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.is_tty() -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> if the underlying file of GzFile is a TTY device or
+<code>false</code> otherwise.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileis_open"><a class="header" href="#gzfileis_open"><code>GzFile.is_open()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.is_open() -&gt; bool
+</code></pre>
+<p>Returns <code>true</code> if the GzFile is open for reading or writing and <code>false</code>
+otherwise.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileis_closed"><a class="header" href="#gzfileis_closed"><code>GzFile.is_closed()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.is_closed()
+</code></pre>
+<p>Returns <code>true</code> if the GzFile is closed for reading or writing and
+<code>false</code> otherwise.</p>
+<h4 id="gzfilesymlink"><a class="header" href="#gzfilesymlink"><code>GzFile.symlink()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.symlink(path: string) -&gt; bool
+</code></pre>
+<p>See [[file.symlink]]</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfilestats"><a class="header" href="#gzfilestats"><code>GzFile.stats()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.stats() -&gt; dict
+</code></pre>
+<p>Returns the statistics or details of the GzFile.</p>
+<p>See the working with files documentation for more information about the
+<code>stats()</code> method.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="gzfiledelete"><a class="header" href="#gzfiledelete"><code>GzFile.delete()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.delete() -&gt; bool
+</code></pre>
+<p>Deletes the underlying file pointed to by GzFile</p>
+<p>Any further attempt to perform most operations on the GzFile after
+calling <code>delete()</code> will raise an error.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfilerename"><a class="header" href="#gzfilerename"><code>GzFile.rename()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.rename(new_name) -&gt; bool
+</code></pre>
+<p>Renames the underlying file pointed to by GzFile to the new name and
+returns <code>true</code> if it succeeds or <code>false</code> otherwise.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfilecopy"><a class="header" href="#gzfilecopy"><code>GzFile.copy()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.copy()
+</code></pre>
+<p>Returns a new GzFile reading (or writing) the same underlying path
+independently of this one, with its own decoder/encoder state and its
+own position.</p>
+<p><strong>Returns</strong> — [[io.GzFile]]</p>
+<h4 id="gzfilepath"><a class="header" href="#gzfilepath"><code>GzFile.path()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.path() -&gt; string
+</code></pre>
+<p>Returns the physical path of the file pointed to by GzFile.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="gzfileabs_path"><a class="header" href="#gzfileabs_path"><code>GzFile.abs_path()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.abs_path() -&gt; string
+</code></pre>
+<p>Returns the absolute path of the physical file pointed to by GzFile.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="gzfiletruncate"><a class="header" href="#gzfiletruncate"><code>GzFile.truncate()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.truncate(length: ?int) -&gt; bool
+</code></pre>
+<p>Truncates the entire GzFile if length is not given or truncates the
+GzFile such that only length number of bytes is left in it.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfilechmod"><a class="header" href="#gzfilechmod"><code>GzFile.chmod()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.chmod(number: int) -&gt; bool
+</code></pre>
+<p>Updates the permission for the file bounded by GzFile.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileset_times"><a class="header" href="#gzfileset_times"><code>GzFile.set_times()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.set_times(atime: int, mtime: int) -&gt; bool
+</code></pre>
+<p>Sets the last access time and last modified time of the GzFile.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfileseek"><a class="header" href="#gzfileseek"><code>GzFile.seek()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.seek(position: int, seek_type: int) -&gt; bool
+</code></pre>
+<p>Sets the position of a GzFile reader in the <em>decompressed</em> byte stream
+(not the raw, still-compressed bytes on disk, which have no useful
+correspondence to a decompressed offset). The <code>seek_type</code> argument must
+be one of [[io.SEEK_SET]], [[io.SEEK_CUR]] or [[io.SEEK_END]].</p>
+<p>Seeking forward simply discards decompressed bytes until the target
+position, since a streaming decoder has no way to skip ahead without
+producing them. Seeking backward (or SEEK_END, which has to fully decode
+the stream once to learn its length) re-opens the underlying file and
+restarts decompression from the beginning, discarding up to the target
+position: an inherently expensive operation for a compressed stream,
+same as with any other streaming (de)compressor.</p>
+<p>Not supported on a GzFile opened for writing.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="gzfiletell"><a class="header" href="#gzfiletell"><code>GzFile.tell()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.tell() -&gt; number
+</code></pre>
+<p>Returns the current position of the reader in the <em>decompressed</em> byte
+stream (bytes already consumed via <code>read()</code>/<code>gets()</code>/<code>seek()</code>), or of
+the writer in the <em>uncompressed</em> input already fed to <code>write()</code>/<code>puts()</code>
+for a GzFile opened for writing.</p>
+<p><strong>Returns</strong> <code>number</code></p>
+<h4 id="gzfilemode"><a class="header" href="#gzfilemode"><code>GzFile.mode()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.mode() -&gt; string
+</code></pre>
+<p>Returns the mode in which the current GzFile was opened.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<h4 id="gzfilename"><a class="header" href="#gzfilename"><code>GzFile.name()</code></a></h4>
+<pre><code class="language-zuri ignore">compress.gzip.GzFile.name() -&gt; string
+</code></pre>
+<p>Returns the name of the file pointed to by GzFile.</p>
+<p><strong>Returns</strong> <code>string</code></p>
+<hr>
+<p><small>2021, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="compress-deflate.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="compress-lz4.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="compress-deflate.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="compress-lz4.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

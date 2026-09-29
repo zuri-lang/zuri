@@ -1,0 +1,556 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>imagine - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-07776f9c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-9db3f8b4.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri-rs" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="imagine"><a class="header" href="#imagine"><code>imagine</code></a></h1>
+<pre><code class="language-zuri ignore">import imagine
+</code></pre>
+<p>Reading, writing, drawing and transforming raster images.</p>
+<p><code>imagine</code> covers the whole path an image takes through a program:
+decoding it from a file or an upload, resizing and cropping it,
+adjusting its colour, drawing shapes and text onto it, compositing
+several together, and writing the result back out in whatever format
+suits.</p>
+<pre><code class="language-zuri ignore">import imagine { Image, Font, LANCZOS }
+
+Image.open('photo.jpg')
+  .thumbnail(600, 600, LANCZOS)
+  .sharpen(0.6)
+  .save('thumb.webp', { quality: 82 })
+</code></pre>
+<h2 id="the-shape-of-the-api"><a class="header" href="#the-shape-of-the-api">The shape of the API</a></h2>
+<p>Almost everything is a method on [[imagine.Image]], and almost
+everything returns an image, so operations chain. There is one rule
+worth learning up front:</p>
+<ul>
+<li><strong>Operations that change the image’s size return a new image.</strong>
+<code>resize()</code>, <code>crop()</code>, <code>rotate()</code>, <code>flip()</code> and <code>pad()</code> leave the
+original alone.</li>
+<li><strong>Everything else changes the image in place.</strong> Drawing, filters
+and compositing modify the image you called them on and hand it
+back for chaining.</li>
+</ul>
+<p>Call <code>clone()</code> when you want to keep an image before filtering it.</p>
+<h2 id="colours"><a class="header" href="#colours">Colours</a></h2>
+<p>Anywhere a colour is expected you can write a [[imagine.Color]], a
+hexadecimal string, a CSS colour name, a packed <code>0xRRGGBBAA</code> number, or
+a list of channels. These are all the same red:</p>
+<pre><code class="language-zuri ignore">image.fill(Color(255, 0, 0))
+image.fill('#ff0000')
+image.fill('red')
+image.fill(0xFF0000FF)
+image.fill([255, 0, 0])
+</code></pre>
+<p>Alpha runs 0 (transparent) to 255 (opaque), as in CSS and PNG. The
+colour space conversions come from [[colors]], so hue is in degrees and
+saturation and lightness are in percentage points.</p>
+<h2 id="pixels"><a class="header" href="#pixels">Pixels</a></h2>
+<p>An image is 8-bit RGBA with straight (not premultiplied) alpha, laid out
+row by row with no padding, so pixel <code>(x, y)</code> begins at byte <code>(y * width + x) * 4</code>.
+[[imagine.Canvas.pixels]] hands back that buffer live, which is the
+fastest way to write an operation this module does not provide:</p>
+<pre><code class="language-zuri ignore">var buffer = image.pixels()
+var total = buffer.length()
+
+iter var at = 0; at &lt; total; at += 4 {
+  buffer[at] = 255 - buffer[at]
+}
+</code></pre>
+<h2 id="formats"><a class="header" href="#formats">Formats</a></h2>
+<p>Read: PNG, JPEG, GIF, BMP, TIFF, TGA, WebP, QOI, ICO, PNM, WBMP. Write:
+all of those plus AVIF.</p>
+<p>AVIF is write-only, and TGA carries no signature of its own so it can
+only be identified by its file extension or by naming the format
+outright. [[imagine.capabilities]] reports what this build can actually
+do, so a program can check rather than guess.</p>
+<p>Animated GIF and animated WebP are read through [[imagine.Animation]],
+and animated GIF can be written.</p>
+<h2 id="drawing"><a class="header" href="#drawing">Drawing</a></h2>
+<p>Every filled shape becomes a polygon and goes through one anti-aliased
+scanline rasterizer, and every outline becomes the polygon around its
+stroke and goes through the same one. Shapes this module does not name
+can be drawn by handing [[imagine.Canvas.fill_polygon]] the points.</p>
+<pre><code class="language-zuri ignore">import imagine { Image, Color }
+
+Image(300, 200, 'white')
+  .fill_rounded_rect(20, 20, 260, 160, 16, '#4f46e5')
+  .circle(150, 100, 50, 'white', { thickness: 4 })
+  .save('card.png')
+</code></pre>
+<h2 id="text"><a class="header" href="#text">Text</a></h2>
+<p>Text needs a font, loaded from a file with [[imagine.Font.load]] or
+found on the machine with [[imagine.Font.system]]. Glyphs are placed by
+advance width with kerning; complex scripts that need shaping are not
+supported, and the <code>Font</code> documentation says exactly what that rules
+out.</p>
+<h2 id="memory"><a class="header" href="#memory">Memory</a></h2>
+<p>Four bytes per pixel, so a 6000x4000 photograph occupies 96 MB however
+small its file was. For images whose size you do not control,
+[[imagine.probe]] reads the dimensions out of the header without
+decoding anything.</p>
+<pre><code class="language-zuri ignore">var header = imagine.probe(upload)
+
+if header == nil or header.width * header.height &gt; 40000000 {
+  raise Exception('image is missing or too large')
+}
+</code></pre>
+<h2 id="the-imagine-api"><a class="header" href="#the-imagine-api">The <code>imagine</code> API</a></h2>
+<p>Every public name in <code>imagine</code>, wherever it is declared. Each links to
+the page that documents it.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Kind</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="imagine-constants.html#align_center"><code>imagine.ALIGN_CENTER</code></a></td><td>constant</td><td>Lines of a multi-line string are centred against each other.</td></tr>
+<tr><td><a href="imagine-constants.html#align_left"><code>imagine.ALIGN_LEFT</code></a></td><td>constant</td><td>Lines of a multi-line string start at the same left edge.</td></tr>
+<tr><td><a href="imagine-constants.html#align_right"><code>imagine.ALIGN_RIGHT</code></a></td><td>constant</td><td>Lines of a multi-line string end at the same right edge.</td></tr>
+<tr><td><a href="imagine-constants.html#avif"><code>imagine.AVIF</code></a></td><td>constant</td><td>AVIF.</td></tr>
+<tr><td><a href="imagine-animation.html#animation"><code>imagine.Animation</code></a></td><td>class</td><td>A sequence of images with a delay between each, read from or written to an animated format.</td></tr>
+<tr><td><a href="imagine-constants.html#bicubic"><code>imagine.BICUBIC</code></a></td><td>constant</td><td>Bicubic (Catmull-Rom).</td></tr>
+<tr><td><a href="imagine-constants.html#bilinear"><code>imagine.BILINEAR</code></a></td><td>constant</td><td>Bilinear.</td></tr>
+<tr><td><a href="imagine-color.html#black"><code>imagine.BLACK</code></a></td><td>constant</td><td>Opaque black.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_add"><code>imagine.BLEND_ADD</code></a></td><td>constant</td><td>Adds the channels, clamped at white.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_color_burn"><code>imagine.BLEND_COLOR_BURN</code></a></td><td>constant</td><td>Darkens the backdrop toward the source.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_color_dodge"><code>imagine.BLEND_COLOR_DODGE</code></a></td><td>constant</td><td>Brightens the backdrop toward the source.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_darken"><code>imagine.BLEND_DARKEN</code></a></td><td>constant</td><td>Keeps whichever channel is darker.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_difference"><code>imagine.BLEND_DIFFERENCE</code></a></td><td>constant</td><td>The absolute difference between the two colours.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_exclusion"><code>imagine.BLEND_EXCLUSION</code></a></td><td>constant</td><td>Like difference, but lower contrast in the midtones.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_hard_light"><code>imagine.BLEND_HARD_LIGHT</code></a></td><td>constant</td><td>Overlay with the roles of source and backdrop swapped.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_lighten"><code>imagine.BLEND_LIGHTEN</code></a></td><td>constant</td><td>Keeps whichever channel is lighter.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_multiply"><code>imagine.BLEND_MULTIPLY</code></a></td><td>constant</td><td>Multiplies the two colours.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_normal"><code>imagine.BLEND_NORMAL</code></a></td><td>constant</td><td>Ordinary alpha compositing: the source is painted over the destination according to its alpha.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_overlay"><code>imagine.BLEND_OVERLAY</code></a></td><td>constant</td><td>Multiply where the backdrop is dark, screen where it is light.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_screen"><code>imagine.BLEND_SCREEN</code></a></td><td>constant</td><td>The inverse of multiply.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_soft_light"><code>imagine.BLEND_SOFT_LIGHT</code></a></td><td>constant</td><td>A gentler hard light, as if the source were a diffuse spotlight.</td></tr>
+<tr><td><a href="imagine-constants.html#blend_subtract"><code>imagine.BLEND_SUBTRACT</code></a></td><td>constant</td><td>Subtracts the source from the backdrop, clamped at black.</td></tr>
+<tr><td><a href="imagine-color.html#blue"><code>imagine.BLUE</code></a></td><td>constant</td><td>Opaque pure blue.</td></tr>
+<tr><td><a href="imagine-constants.html#bmp"><code>imagine.BMP</code></a></td><td>constant</td><td>BMP.</td></tr>
+<tr><td><a href="imagine-constants.html#bottom"><code>imagine.BOTTOM</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-constants.html#bottom_left"><code>imagine.BOTTOM_LEFT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-constants.html#bottom_right"><code>imagine.BOTTOM_RIGHT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-errors.html#boundserror"><code>imagine.BoundsError</code></a></td><td>class</td><td>Raised when a rectangle, crop or resize falls outside the image, or when a dimension is zero or negative.</td></tr>
+<tr><td><a href="imagine-constants.html#cap_butt"><code>imagine.CAP_BUTT</code></a></td><td>constant</td><td>The stroke stops dead at its endpoint.</td></tr>
+<tr><td><a href="imagine-constants.html#cap_round"><code>imagine.CAP_ROUND</code></a></td><td>constant</td><td>The stroke ends in a half-disc, so it reaches half its width past the endpoint.</td></tr>
+<tr><td><a href="imagine-constants.html#cap_square"><code>imagine.CAP_SQUARE</code></a></td><td>constant</td><td>The stroke ends in a square, so it reaches half its width past the endpoint, the same distance a round cap…</td></tr>
+<tr><td><a href="imagine-constants.html#center"><code>imagine.CENTER</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-color.html#cyan"><code>imagine.CYAN</code></a></td><td>constant</td><td>Opaque cyan.</td></tr>
+<tr><td><a href="imagine-canvas.html#canvas"><code>imagine.Canvas</code></a></td><td>class</td><td>A mutable RGBA pixel surface and everything that draws onto one.</td></tr>
+<tr><td><a href="imagine-color.html#color"><code>imagine.Color</code></a></td><td>class</td><td>An 8-bit RGBA colour.</td></tr>
+<tr><td><a href="imagine-errors.html#decodeerror"><code>imagine.DecodeError</code></a></td><td>class</td><td>Raised when image data cannot be read: the bytes are not an image at all, the format is one this build cannot…</td></tr>
+<tr><td><a href="imagine-constants.html#edge_clamp"><code>imagine.EDGE_CLAMP</code></a></td><td>constant</td><td>Pixels off the edge take the value of the nearest edge pixel.</td></tr>
+<tr><td><a href="imagine-constants.html#edge_transparent"><code>imagine.EDGE_TRANSPARENT</code></a></td><td>constant</td><td>Pixels off the edge are treated as transparent black.</td></tr>
+<tr><td><a href="imagine-constants.html#edge_wrap"><code>imagine.EDGE_WRAP</code></a></td><td>constant</td><td>Pixels off the edge wrap to the opposite side.</td></tr>
+<tr><td><a href="imagine-errors.html#encodeerror"><code>imagine.EncodeError</code></a></td><td>class</td><td>Raised when an image cannot be written in the requested format, either because this build has no encoder for…</td></tr>
+<tr><td><a href="imagine-constants.html#flip_both"><code>imagine.FLIP_BOTH</code></a></td><td>constant</td><td>Mirror both ways at once, which is the same as rotating 180 degrees.</td></tr>
+<tr><td><a href="imagine-constants.html#flip_horizontal"><code>imagine.FLIP_HORIZONTAL</code></a></td><td>constant</td><td>Mirror left to right.</td></tr>
+<tr><td><a href="imagine-constants.html#flip_vertical"><code>imagine.FLIP_VERTICAL</code></a></td><td>constant</td><td>Mirror top to bottom.</td></tr>
+<tr><td><a href="imagine-font.html#font"><code>imagine.Font</code></a></td><td>class</td><td>A typeface at a particular size, ready to draw with.</td></tr>
+<tr><td><a href="imagine-errors.html#fonterror"><code>imagine.FontError</code></a></td><td>class</td><td>Raised when a font cannot be parsed, cannot be found on the system, or does not carry the horizontal metrics…</td></tr>
+<tr><td><a href="imagine-errors.html#formaterror"><code>imagine.FormatError</code></a></td><td>class</td><td>Raised when a format name is not one <code>imagine</code> knows, or when a file extension cannot be mapped to a format.</td></tr>
+<tr><td><a href="imagine-constants.html#gaussian"><code>imagine.GAUSSIAN</code></a></td><td>constant</td><td>Gaussian.</td></tr>
+<tr><td><a href="imagine-constants.html#gif"><code>imagine.GIF</code></a></td><td>constant</td><td>GIF.</td></tr>
+<tr><td><a href="imagine-color.html#gray"><code>imagine.GRAY</code></a></td><td>constant</td><td>Opaque mid grey.</td></tr>
+<tr><td><a href="imagine-color.html#green"><code>imagine.GREEN</code></a></td><td>constant</td><td>Opaque pure green.</td></tr>
+<tr><td><a href="imagine-constants.html#ico"><code>imagine.ICO</code></a></td><td>constant</td><td>Windows ICO.</td></tr>
+<tr><td><a href="imagine-image.html#image"><code>imagine.Image</code></a></td><td>class</td><td>A raster image: a rectangle of 8-bit RGBA pixels, everything that draws onto one, and everything that…</td></tr>
+<tr><td><a href="imagine-errors.html#imageerror"><code>imagine.ImageError</code></a></td><td>class</td><td>Base class for every error the <code>imagine</code> module raises.</td></tr>
+<tr><td><a href="imagine-constants.html#jpeg"><code>imagine.JPEG</code></a></td><td>constant</td><td>JPEG.</td></tr>
+<tr><td><a href="imagine-constants.html#lanczos"><code>imagine.LANCZOS</code></a></td><td>constant</td><td>Lanczos with a 3-lobe window.</td></tr>
+<tr><td><a href="imagine-constants.html#left"><code>imagine.LEFT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-color.html#magenta"><code>imagine.MAGENTA</code></a></td><td>constant</td><td>Opaque magenta.</td></tr>
+<tr><td><a href="imagine-constants.html#nearest"><code>imagine.NEAREST</code></a></td><td>constant</td><td>Nearest-neighbour.</td></tr>
+<tr><td><a href="imagine-constants.html#png"><code>imagine.PNG</code></a></td><td>constant</td><td>PNG.</td></tr>
+<tr><td><a href="imagine-constants.html#pnm"><code>imagine.PNM</code></a></td><td>constant</td><td>Netpbm (PBM, PGM, PPM).</td></tr>
+<tr><td><a href="imagine-constants.html#qoi"><code>imagine.QOI</code></a></td><td>constant</td><td>QOI, the Quite OK Image format.</td></tr>
+<tr><td><a href="imagine-color.html#red"><code>imagine.RED</code></a></td><td>constant</td><td>Opaque pure red.</td></tr>
+<tr><td><a href="imagine-constants.html#right"><code>imagine.RIGHT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-strokefont.html#strokefont"><code>imagine.StrokeFont</code></a></td><td>class</td><td>The built-in font: a sans-serif drawn from centre-line strokes rather than loaded from a file.</td></tr>
+<tr><td><a href="imagine-constants.html#tga"><code>imagine.TGA</code></a></td><td>constant</td><td>Truevision TGA.</td></tr>
+<tr><td><a href="imagine-constants.html#tiff"><code>imagine.TIFF</code></a></td><td>constant</td><td>TIFF.</td></tr>
+<tr><td><a href="imagine-constants.html#top"><code>imagine.TOP</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-constants.html#top_left"><code>imagine.TOP_LEFT</code></a></td><td>constant</td><td>Where a smaller image or a piece of text sits inside a larger box, used by <code>Image.cover()</code>, <code>Image.contain()</code>…</td></tr>
+<tr><td><a href="imagine-constants.html#top_right"><code>imagine.TOP_RIGHT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-color.html#transparent"><code>imagine.TRANSPARENT</code></a></td><td>constant</td><td></td></tr>
+<tr><td><a href="imagine-constants.html#wbmp"><code>imagine.WBMP</code></a></td><td>constant</td><td>Wireless Bitmap.</td></tr>
+<tr><td><a href="imagine-constants.html#webp"><code>imagine.WEBP</code></a></td><td>constant</td><td>WebP.</td></tr>
+<tr><td><a href="imagine-color.html#white"><code>imagine.WHITE</code></a></td><td>constant</td><td>Opaque white.</td></tr>
+<tr><td><a href="imagine-color.html#yellow"><code>imagine.YELLOW</code></a></td><td>constant</td><td>Opaque yellow.</td></tr>
+<tr><td><a href="#capabilities"><code>imagine.capabilities</code></a></td><td>function</td><td>What this build can do, as a dictionary holding <code>decode</code>, <code>encode</code> and <code>animated</code>, each a list of format…</td></tr>
+<tr><td><a href="#create"><code>imagine.create</code></a></td><td>function</td><td>Creates a new image.</td></tr>
+<tr><td><a href="#decode"><code>imagine.decode</code></a></td><td>function</td><td>Decodes image data held in memory.</td></tr>
+<tr><td><a href="#detect"><code>imagine.detect</code></a></td><td>function</td><td>Identifies image data by its contents, returning a format name or <code>nil</code>.</td></tr>
+<tr><td><a href="imagine-filters.html#luma"><code>imagine.filters.LUMA</code></a></td><td>constant</td><td>Rec.</td></tr>
+<tr><td><a href="imagine-filters.html#matrix_luma"><code>imagine.filters.MATRIX_LUMA</code></a></td><td>constant</td><td>The luma weights the colour-matrix filters use, from the SVG and CSS filter specifications.</td></tr>
+<tr><td><a href="imagine-filters.html#box_blur_kernel"><code>imagine.filters.box_blur_kernel</code></a></td><td>function</td><td>A 3x3 box blur kernel; every neighbour counts equally.</td></tr>
+<tr><td><a href="imagine-filters.html#brightness_lut"><code>imagine.filters.brightness_lut</code></a></td><td>function</td><td>A lookup table that adds a fixed amount to every value.</td></tr>
+<tr><td><a href="imagine-filters.html#build_lut"><code>imagine.filters.build_lut</code></a></td><td>function</td><td>Builds a 256-entry lookup table from a function.</td></tr>
+<tr><td><a href="imagine-filters.html#combine_matrices"><code>imagine.filters.combine_matrices</code></a></td><td>function</td><td>Multiplies two colour matrices, giving one matrix with the effect of applying <em>first</em> and then <em>second</em>.</td></tr>
+<tr><td><a href="imagine-filters.html#contrast_lut"><code>imagine.filters.contrast_lut</code></a></td><td>function</td><td>A lookup table that pushes values away from or toward mid-grey.</td></tr>
+<tr><td><a href="imagine-filters.html#duotone_matrix"><code>imagine.filters.duotone_matrix</code></a></td><td>function</td><td>A colour matrix that replaces every pixel’s colour with a blend between two colours chosen by its brightness,…</td></tr>
+<tr><td><a href="imagine-filters.html#edge_kernel"><code>imagine.filters.edge_kernel</code></a></td><td>function</td><td>A 3x3 Laplacian kernel that leaves only the edges.</td></tr>
+<tr><td><a href="imagine-filters.html#emboss_kernel"><code>imagine.filters.emboss_kernel</code></a></td><td>function</td><td>A 3x3 kernel that lifts edges into a grey relief.</td></tr>
+<tr><td><a href="imagine-filters.html#gamma_lut"><code>imagine.filters.gamma_lut</code></a></td><td>function</td><td>A lookup table applying a gamma curve.</td></tr>
+<tr><td><a href="imagine-filters.html#gaussian_kernel"><code>imagine.filters.gaussian_kernel</code></a></td><td>function</td><td>A square Gaussian kernel with the given standard deviation.</td></tr>
+<tr><td><a href="imagine-filters.html#grayscale_matrix"><code>imagine.filters.grayscale_matrix</code></a></td><td>function</td><td>A colour matrix that collapses every colour to its grey of equal perceived brightness.</td></tr>
+<tr><td><a href="imagine-filters.html#hue_rotate_matrix"><code>imagine.filters.hue_rotate_matrix</code></a></td><td>function</td><td>A colour matrix that rotates every hue around the colour wheel by an angle in degrees, leaving brightness and…</td></tr>
+<tr><td><a href="imagine-filters.html#identity_lut"><code>imagine.filters.identity_lut</code></a></td><td>function</td><td>A lookup table that leaves every value alone.</td></tr>
+<tr><td><a href="imagine-filters.html#identity_matrix"><code>imagine.filters.identity_matrix</code></a></td><td>function</td><td>The identity colour matrix: applying it changes nothing.</td></tr>
+<tr><td><a href="imagine-filters.html#invert_lut"><code>imagine.filters.invert_lut</code></a></td><td>function</td><td>A lookup table that inverts every value.</td></tr>
+<tr><td><a href="imagine-filters.html#levels_lut"><code>imagine.filters.levels_lut</code></a></td><td>function</td><td>A lookup table implementing a levels adjustment.</td></tr>
+<tr><td><a href="imagine-filters.html#mean_removal_kernel"><code>imagine.filters.mean_removal_kernel</code></a></td><td>function</td><td>A 3x3 kernel that removes local mean, exaggerating detail.</td></tr>
+<tr><td><a href="imagine-filters.html#posterize_lut"><code>imagine.filters.posterize_lut</code></a></td><td>function</td><td>A lookup table that reduces each channel to a fixed number of evenly spaced steps.</td></tr>
+<tr><td><a href="imagine-filters.html#saturation_matrix"><code>imagine.filters.saturation_matrix</code></a></td><td>function</td><td>A colour matrix that scales saturation.</td></tr>
+<tr><td><a href="imagine-filters.html#scale_lut"><code>imagine.filters.scale_lut</code></a></td><td>function</td><td>A lookup table that scales every value by a factor.</td></tr>
+<tr><td><a href="imagine-filters.html#sepia_matrix"><code>imagine.filters.sepia_matrix</code></a></td><td>function</td><td>A colour matrix approximating the warm brown cast of a sepia photograph.</td></tr>
+<tr><td><a href="imagine-filters.html#sharpen_kernel"><code>imagine.filters.sharpen_kernel</code></a></td><td>function</td><td>A 3x3 sharpening kernel.</td></tr>
+<tr><td><a href="imagine-filters.html#smooth_kernel"><code>imagine.filters.smooth_kernel</code></a></td><td>function</td><td>A 3x3 smoothing kernel weighted toward the centre pixel.</td></tr>
+<tr><td><a href="imagine-filters.html#threshold_lut"><code>imagine.filters.threshold_lut</code></a></td><td>function</td><td>A lookup table that forces every value to black or white.</td></tr>
+<tr><td><a href="imagine-formats.html#animatable"><code>imagine.formats.animatable</code></a></td><td>function</td><td>Every format this build can read as an animation.</td></tr>
+<tr><td><a href="imagine-formats.html#decode_wbmp"><code>imagine.formats.decode_wbmp</code></a></td><td>function</td><td>Decodes a WBMP into straight RGBA pixels.</td></tr>
+<tr><td><a href="imagine-formats.html#detect"><code>imagine.formats.detect</code></a></td><td>function</td><td>Identifies image data by its content rather than its name, or returns <code>nil</code> when the bytes are not a…</td></tr>
+<tr><td><a href="imagine-formats.html#encode_wbmp"><code>imagine.formats.encode_wbmp</code></a></td><td>function</td><td>Encodes straight RGBA pixels as a WBMP.</td></tr>
+<tr><td><a href="imagine-formats.html#extension_for"><code>imagine.formats.extension_for</code></a></td><td>function</td><td>The file extension a format is normally written with, without a leading dot.</td></tr>
+<tr><td><a href="imagine-formats.html#from_extension"><code>imagine.formats.from_extension</code></a></td><td>function</td><td>The format name a file extension implies, or <code>nil</code> when the extension is not one this module knows.</td></tr>
+<tr><td><a href="imagine-formats.html#mime_for"><code>imagine.formats.mime_for</code></a></td><td>function</td><td>The IANA media type for a format, suitable for a <code>Content-Type</code> header.</td></tr>
+<tr><td><a href="imagine-formats.html#normalize"><code>imagine.formats.normalize</code></a></td><td>function</td><td>Normalises a format name, accepting the common aliases.</td></tr>
+<tr><td><a href="imagine-formats.html#probe"><code>imagine.formats.probe</code></a></td><td>function</td><td>Reads an image’s format and dimensions without decoding its pixels.</td></tr>
+<tr><td><a href="imagine-formats.html#readable"><code>imagine.formats.readable</code></a></td><td>function</td><td>Every format this build can read.</td></tr>
+<tr><td><a href="imagine-formats.html#writable"><code>imagine.formats.writable</code></a></td><td>function</td><td>Every format this build can write.</td></tr>
+<tr><td><a href="#open"><code>imagine.open</code></a></td><td>function</td><td>Opens an image file.</td></tr>
+<tr><td><a href="#probe"><code>imagine.probe</code></a></td><td>function</td><td>Reads an image’s format and dimensions from its header, without decoding any pixels.</td></tr>
+<tr><td><a href="imagine-strokefont.html#ascender"><code>imagine.strokefont.ASCENDER</code></a></td><td>constant</td><td>How far the tallest glyphs rise above the baseline.</td></tr>
+<tr><td><a href="imagine-strokefont.html#cap_height"><code>imagine.strokefont.CAP_HEIGHT</code></a></td><td>constant</td><td>The height of a capital letter.</td></tr>
+<tr><td><a href="imagine-strokefont.html#descender"><code>imagine.strokefont.DESCENDER</code></a></td><td>constant</td><td>How far descenders fall below the baseline, as a negative number.</td></tr>
+<tr><td><a href="imagine-strokefont.html#em"><code>imagine.strokefont.EM</code></a></td><td>constant</td><td>The em square’s height in design units.</td></tr>
+<tr><td><a href="imagine-strokefont.html#glyphs"><code>imagine.strokefont.GLYPHS</code></a></td><td>constant</td><td>Every glyph, keyed by character.</td></tr>
+<tr><td><a href="imagine-strokefont.html#notdef"><code>imagine.strokefont.NOTDEF</code></a></td><td>constant</td><td>What an unmapped character draws: an empty box, the same convention a font uses for a glyph it does not have.</td></tr>
+<tr><td><a href="imagine-strokefont.html#weight"><code>imagine.strokefont.WEIGHT</code></a></td><td>constant</td><td>The default stroke width in design units, a little under a tenth of the em, which is the usual weight for a…</td></tr>
+<tr><td><a href="imagine-strokefont.html#x_height"><code>imagine.strokefont.X_HEIGHT</code></a></td><td>constant</td><td>The height of a lowercase letter with no ascender.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="submodules"><a class="header" href="#submodules">Submodules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Reached as</th><th>Summary</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="imagine-animation.html"><code>imagine.animation</code></a></td><td><code>imagine.animation.*</code></td><td><code>Animation</code>: an ordered set of frames with per-frame delays, which is what an animated GIF or WebP decodes to…</td></tr>
+<tr><td><a href="imagine-canvas.html"><code>imagine.canvas</code></a></td><td><code>imagine.canvas.*</code></td><td><code>Canvas</code>: the drawing surface.</td></tr>
+<tr><td><a href="imagine-color.html"><code>imagine.color</code></a></td><td><code>imagine.*</code></td><td><code>Color</code>: one RGBA colour, and the conversions between the ways of naming one.</td></tr>
+<tr><td><a href="imagine-constants.html"><code>imagine.constants</code></a></td><td><code>imagine.*</code></td><td>Every named constant the module takes as an argument: resampling filters, blend modes, line caps, edge…</td></tr>
+<tr><td><a href="imagine-errors.html"><code>imagine.errors</code></a></td><td><code>imagine.*</code></td><td>Every error the module raises, under <code>ImageError</code> as their root.</td></tr>
+<tr><td><a href="imagine-filters.html"><code>imagine.filters</code></a></td><td><code>imagine.filters.*</code></td><td>The maths behind the filters: colour matrices, lookup tables and convolution kernels.</td></tr>
+<tr><td><a href="imagine-font.html"><code>imagine.font</code></a></td><td><code>imagine.font.*</code></td><td><code>Font</code>: a loaded TrueType or OpenType face, ready to measure and draw text with.</td></tr>
+<tr><td><a href="imagine-formats.html"><code>imagine.formats</code></a></td><td><code>imagine.formats.*</code></td><td>What the build can actually read and write, and how to tell one format from another.</td></tr>
+<tr><td><a href="imagine-image.html"><code>imagine.image</code></a></td><td><code>imagine.image.*</code></td><td><code>Image</code>: a raster image as an RGBA pixel buffer, and everything that transforms one.</td></tr>
+<tr><td><a href="imagine-strokefont.html"><code>imagine.strokefont</code></a></td><td><code>imagine.strokefont.*</code></td><td><code>StrokeFont</code>: the font built into the module, defined as stroke geometry rather than glyph outlines.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="open"><a class="header" href="#open"><code>open()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.open(source, options)
+</code></pre>
+<p>Opens an image file.</p>
+<p>A shorthand for [[imagine.Image.open]].</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>source</code> (<code>string|file</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h3 id="decode"><a class="header" href="#decode"><code>decode()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.decode(data, options)
+</code></pre>
+<p>Decodes image data held in memory.</p>
+<p>A shorthand for [[imagine.Image.decode]].</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes</code>)</li>
+<li><code>options</code> (<code>?dict</code>)</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h3 id="create"><a class="header" href="#create"><code>create()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.create(width, height, fill)
+</code></pre>
+<p>Creates a new image.</p>
+<p>A shorthand for the [[imagine.Image]] constructor.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>width</code> (<code>number</code>)</li>
+<li><code>height</code> (<code>number</code>)</li>
+<li><code>?Color|string|number</code> — fill</li>
+</ul>
+<p><strong>Returns</strong> — Image</p>
+<h3 id="probe"><a class="header" href="#probe"><code>probe()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.probe(data) -&gt; ?dict
+</code></pre>
+<p>Reads an image’s format and dimensions from its header, without decoding
+any pixels.</p>
+<p>Returns <code>{format, width, height}</code>, or <code>nil</code> when the data is not a
+recognisable image. Reading a large JPEG’s header costs microseconds
+where decoding it costs tens of milliseconds, which makes this the right
+way to size up an upload before committing to it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?dict</code></p>
+<h3 id="detect"><a class="header" href="#detect"><code>detect()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.detect(data) -&gt; ?string
+</code></pre>
+<p>Identifies image data by its contents, returning a format name or <code>nil</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>data</code> (<code>bytes</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>?string</code></p>
+<h3 id="capabilities"><a class="header" href="#capabilities"><code>capabilities()</code></a></h3>
+<pre><code class="language-zuri ignore">imagine.capabilities() -&gt; dict
+</code></pre>
+<p>What this build can do, as a dictionary holding <code>decode</code>, <code>encode</code> and
+<code>animated</code>, each a list of format names.</p>
+<p>Worth checking rather than assuming: AVIF appears under <code>encode</code> but not
+<code>decode</code>, and which formats are compiled in can differ between builds.</p>
+<p><strong>Returns</strong> <code>dict</code></p>
+<hr>
+<p><small>2021, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="isolate-error.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="imagine-animation.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="isolate-error.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="imagine-animation.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
