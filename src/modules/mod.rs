@@ -82,6 +82,18 @@ pub fn find(name: &str) -> Option<&'static BuiltinModuleDef> {
   REGISTRY.iter().find(|m| m.name == name)
 }
 
+/// The message a socket's I/O error reaches Zuri code with. Windows
+/// reports a read or write that outlived its timeout as `WSAETIMEDOUT`,
+/// which it words as a failed connection attempt, so a timeout is
+/// named as one here whatever the platform called it.
+pub fn socket_error(error: std::io::Error) -> String {
+  if error.kind() == std::io::ErrorKind::TimedOut {
+    return String::from("operation timed out");
+  }
+
+  error.to_string()
+}
+
 /// Allocate a free (non-method) native function Value; the
 /// module-scoped equivalent of `natives.rs`'s `register`, just
 /// handing back the Value instead of also binding it as a VM global.

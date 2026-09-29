@@ -19,7 +19,7 @@ use crate::builtins::enforce::{
 };
 use crate::enforce_arg_count;
 use crate::modules::net_tcp::{TCP_STREAM, TCP_STREAM_UPGRADED, ZuriTcp};
-use crate::modules::{BuiltinModuleDef, native};
+use crate::modules::{BuiltinModuleDef, native, socket_error};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -469,56 +469,56 @@ enum ZuriTlsStream {
 impl ZuriTlsStream {
   fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
     match self {
-      ZuriTlsStream::Client(s) => s.read(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.read(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.read(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.read(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), String> {
     match self {
-      ZuriTlsStream::Client(s) => s.read_exact(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.read_exact(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.read_exact(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.read_exact(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize, String> {
     match self {
-      ZuriTlsStream::Client(s) => s.read_to_end(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.read_to_end(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.read_to_end(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.read_to_end(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn read_to_string(&mut self, buf: &mut String) -> Result<usize, String> {
     match self {
-      ZuriTlsStream::Client(s) => s.read_to_string(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.read_to_string(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.read_to_string(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.read_to_string(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn write(&mut self, buf: &[u8]) -> Result<usize, String> {
     match self {
-      ZuriTlsStream::Client(s) => s.write(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.write(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.write(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.write(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn write_all(&mut self, buf: &[u8]) -> Result<(), String> {
     match self {
-      ZuriTlsStream::Client(s) => s.write_all(buf).map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.write_all(buf).map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.write_all(buf).map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.write_all(buf).map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
 
   fn flush(&mut self) -> Result<(), String> {
     match self {
-      ZuriTlsStream::Client(s) => s.flush().map_err(|e| e.to_string()),
-      ZuriTlsStream::Server(s) => s.flush().map_err(|e| e.to_string()),
+      ZuriTlsStream::Client(s) => s.flush().map_err(socket_error),
+      ZuriTlsStream::Server(s) => s.flush().map_err(socket_error),
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
     }
   }
@@ -527,12 +527,12 @@ impl ZuriTlsStream {
     match self {
       ZuriTlsStream::Client(s) => {
         s.conn.send_close_notify();
-        s.conn.complete_io(&mut s.sock).map_err(|e| e.to_string())?;
+        s.conn.complete_io(&mut s.sock).map_err(socket_error)?;
         Ok(())
       },
       ZuriTlsStream::Server(s) => {
         s.conn.send_close_notify();
-        s.conn.complete_io(&mut s.sock).map_err(|e| e.to_string())?;
+        s.conn.complete_io(&mut s.sock).map_err(socket_error)?;
         Ok(())
       },
       ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),

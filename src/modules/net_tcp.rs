@@ -7,7 +7,7 @@ use crate::builtins::enforce::{
   enforce_method_arg_type_any_of,
 };
 use crate::enforce_arg_count;
-use crate::modules::{BuiltinModuleDef, native, optional_number};
+use crate::modules::{BuiltinModuleDef, native, optional_number, socket_error};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -329,7 +329,7 @@ impl ZuriTcp {
 
   fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
     if let Some(stream) = &mut self.stream {
-      stream.read(buf).map_err(|e| e.to_string())
+      stream.read(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -337,7 +337,7 @@ impl ZuriTcp {
 
   fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize, String> {
     if let Some(stream) = &mut self.stream {
-      stream.read_to_end(buf).map_err(|e| e.to_string())
+      stream.read_to_end(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -345,7 +345,7 @@ impl ZuriTcp {
 
   fn read_to_string(&mut self, buf: &mut String) -> Result<usize, String> {
     if let Some(stream) = &mut self.stream {
-      stream.read_to_string(buf).map_err(|e| e.to_string())
+      stream.read_to_string(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -353,7 +353,7 @@ impl ZuriTcp {
 
   fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), String> {
     if let Some(stream) = &mut self.stream {
-      stream.read_exact(buf).map_err(|e| e.to_string())
+      stream.read_exact(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -361,7 +361,7 @@ impl ZuriTcp {
 
   fn write(&mut self, buf: &[u8]) -> Result<usize, String> {
     if let Some(stream) = &mut self.stream {
-      stream.write(buf).map_err(|e| e.to_string())
+      stream.write(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -369,7 +369,7 @@ impl ZuriTcp {
 
   fn write_all(&mut self, buf: &[u8]) -> Result<(), String> {
     if let Some(stream) = &mut self.stream {
-      stream.write_all(buf).map_err(|e| e.to_string())
+      stream.write_all(buf).map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -377,7 +377,7 @@ impl ZuriTcp {
 
   fn flush(&mut self) -> Result<(), String> {
     if let Some(stream) = &mut self.stream {
-      stream.flush().map_err(|e| e.to_string())
+      stream.flush().map_err(socket_error)
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
@@ -457,7 +457,7 @@ fn tcp_connect(ctx: &mut ZuriContext) -> Result<Value, String> {
     let addr: SocketAddr = address.parse::<SocketAddr>().map_err(|e| e.to_string())?;
     TcpStream::connect_timeout(&addr, Duration::from_millis(timeout as u64))
   }
-  .map_err(|e| e.to_string())?;
+  .map_err(socket_error)?;
 
   tcp.set_stream(stream);
 
