@@ -159,9 +159,7 @@ Already here:
 - [x] A Just-In-Time compiler.
 - [x] A standard library covering the whole stack.
 - [x] Two books, one of them generated from the library itself.
-- [x] **Databases**: SQLite, PostgreSQL and MySQL behind one interface,
-      so that persisting a record never means reaching outside the
-      language.
+- [x] **Databases**: SQLite, PostgreSQL and MySQL behind one interface.
 - [x] **A test runner.**
 - [x] **C and Rust compatible FFI interop.**
 - [x] **Package management**, for the code that is genuinely
@@ -172,8 +170,8 @@ Already here:
 - [x] **Nyssa, a self-hosted repository server** in every installation,
       `zuri serve`, so public and private organizations share Zuri
       packages whichever way they like.
-- [x] **Bundles** that run a program where Zuri is not installed, as a
-      directory, an archive or a single executable.
+- [x] **Bundles** that allows shipping a program to run where Zuri is 
+      not installed, as a directory, an archive or a single executable.
 
 On the way, in the order it matters:
 
