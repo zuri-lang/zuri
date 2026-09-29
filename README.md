@@ -157,10 +157,11 @@ Already here:
 - [x] The language, complete and self-hosting enough to parse, compile
       and reflect on itself.
 - [x] A Just-In-Time compiler.
-- [x] A standard library covering the whole stack bar the data layer.
+- [x] A standard library covering the whole stack.
 - [x] Two books, one of them generated from the library itself.
-- [x] **Database & ORM**, so that persisting a record never means reaching
-      outside the language.
+- [x] **Databases**: SQLite, PostgreSQL and MySQL behind one interface,
+      so that persisting a record never means reaching outside the
+      language.
 - [x] **A test runner.**
 - [x] **C and Rust compatible FFI interop.**
 - [x] **Package management**, for the code that is genuinely
@@ -176,6 +177,8 @@ Already here:
 
 On the way, in the order it matters:
 
+- [ ] **An ORM**, so that persisting a model never means reaching outside
+      the language.
 - [ ] **HTTP/3.** The `http` module speaks HTTP/1.1 and HTTP/2 today.
 
 ## AI Involvement

@@ -223,6 +223,14 @@ server.<span class="f">listen</span>()</code></pre>
               <dt>Images</dt>
               <dd><code>imagine</code> <span>decode, draw, filter, encode</span></dd>
             </div>
+            <div class="mod c">
+              <dt>Databases</dt>
+              <dd><code>sql</code> <span>SQLite, PostgreSQL, MySQL, pooling, transactions</span></dd>
+            </div>
+            <div class="mod d">
+              <dt>Interop</dt>
+              <dd><code>ffi</code> <span>C and Rust libraries, callbacks</span></dd>
+            </div>
           </dl>
 
           <p class="wide-intro">
@@ -279,10 +287,9 @@ server.<span class="f">listen</span>()</code></pre>
             <span class="rule gold"></span>
             <h2>The Zuri Programming Language</h2>
             <p>
-              The main text: twenty chapters from installing it to a
-              full-stack web application, plus appendices covering the
-              keywords, the operators and every method on every
-              built-in type.
+              The main text covers everything from installing to
+              publishing, plus appendices covering the keywords, the
+              operators and every method on every built-in type.
             </p>
             <span class="go">Read the book</span>
           </a>
@@ -319,7 +326,13 @@ server.<span class="f">listen</span>()</code></pre>
             <ul class="ticks done">
               <li>The language, complete and self-hosting enough to parse, compile and reflect on itself</li>
               <li>A Just-In-Time compiler</li>
-              <li>A standard library covering the whole stack bar the data layer</li>
+              <li>A standard library covering the whole stack</li>
+              <li>Databases: SQLite, PostgreSQL and MySQL behind one interface</li>
+              <li>Package management built into the runtime, with a lockfile and one version of every package</li>
+              <li>Nyssa, a self-hosted repository server in every installation</li>
+              <li>Bundles that run a program where Zuri is not installed</li>
+              <li>A test runner</li>
+              <li>C and Rust compatible FFI interop</li>
               <li>Two books, one of them generated from the library itself</li>
             </ul>
           </div>
@@ -327,15 +340,9 @@ server.<span class="f">listen</span>()</code></pre>
           <div>
             <h3 class="sub">On the way, in the order it matters</h3>
             <ul class="ticks">
-              <li><strong>Database &amp; ORM</strong>, so that persisting a record never means reaching outside the
+              <li><strong>An ORM</strong>, so that persisting a model never means reaching outside the
                 language.</li>
-              <li><strong>Nyssa package manager</strong>, for the code that is genuinely third-party. A complete
-                standard library is not an argument against sharing.</li>
-              <li><strong>A self-hosted repository server</strong> bundled with Nyssa, so public and private
-                organizations can share Zuri packages whichever way they like.</li>
-              <li><strong>A test runner.</strong></li>
               <li><strong>HTTP/3.</strong> The <code>http</code> module speaks HTTP/1.1 and HTTP/2 today.</li>
-              <li><strong>C and Rust compatible FFI interop.</strong></li>
             </ul>
           </div>
         </div>
