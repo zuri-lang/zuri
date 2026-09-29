@@ -34,7 +34,7 @@ import date as _date
 
 import .escape
 import .values {
-  Safe, compare, is_empty, is_safe, safe, stringify, strip, truthy,
+  Safe, compare, is_empty, is_safe, safe, stringify, truthy,
   type_name, unwrap,
 }
 
@@ -201,7 +201,7 @@ def capitalize(value) {
  * @returns string
  */
 def trim(value) {
-  return strip(stringify(unwrap(value)))
+  return stringify(unwrap(value)).trim()
 }
 
 /**
@@ -1137,8 +1137,8 @@ def _number(filter: string, value) {
 
   # A number that arrived as text, which is what a form field or a query
   # string always gives, is worth reading rather than refusing.
-  if is_string(subject) and strip(subject).match('/^-?\\d+(\\.\\d+)?$/') != false {
-    return strip(subject).to_number()
+  if is_string(subject) and subject.trim().match('/^-?\\d+(\\.\\d+)?$/') != false {
+    return subject.trim().to_number()
   }
 
   raise TypeError('"${filter}" needs a number, got ${type_name(value)}')

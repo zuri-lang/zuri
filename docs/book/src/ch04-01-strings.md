@@ -724,6 +724,7 @@ echo '[' + '  pad  '.trim() + ']'
 echo '[' + '  pad  '.ltrim() + ']'
 echo '[' + '  pad  '.rtrim() + ']'
 echo 'xxhixx'.trim('x')
+echo '-=hi=-'.trim('-=')
 ```
 
 ```console
@@ -731,10 +732,12 @@ echo 'xxhixx'.trim('x')
 [pad  ]
 [  pad]
 hi
+hi
 ```
 
-All three take an optional argument naming the characters to strip. With
-no argument they strip whitespace.
+With no argument, all three strip whitespace: spaces, tabs, newlines,
+carriage returns, vertical tabs and form feeds. Given a string, they strip
+every character in it, in any order, so `'-=hi=-'.trim('-=')` is `hi`.
 
 ```zuri
 echo 'x'.lpad(5, '.')

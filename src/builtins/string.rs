@@ -442,31 +442,61 @@ fn ord(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(s.chars().nth(0).unwrap() as u32 as f64))
 }
 
-fn trim(ctx: &mut ZuriContext) -> Result<Value, String> {
+/// Which ends of the string a trim works on.
+#[derive(Clone, Copy)]
+enum TrimEnds {
+  Both,
+  Start,
+  End,
+}
+
+/// The whitespace `trim()`, `ltrim()` and `rtrim()` strip when they are
+/// given no characters: space, tab, line feed, vertical tab, form feed
+/// and carriage return.
+fn is_trim_whitespace(c: char) -> bool {
+  matches!(c, ' ' | '\t' | '\n' | '\x0B' | '\x0C' | '\r')
+}
+
+/// Shared by `trim()`, `ltrim()` and `rtrim()`. The optional argument is
+/// a set of characters, any of which is stripped wherever it runs up to
+/// the chosen ends, so `'--a-'.trim('-')` and `'xyax'.trim('xy')` both
+/// leave `a`. An empty set strips nothing.
+fn trim_ends(ctx: &mut ZuriContext, ends: TrimEnds) -> Result<Value, String> {
   enforce_method_arg_range!(ctx, 0, 1);
   enforce_method_arg_type_opt!(ctx, 1, ArgType::String);
 
-  let ch = optional_char(ctx, 1, ' ')?;
-  let trimmed = ctx.args[0].as_str().trim_matches(ch).to_string();
+  let text = ctx.args[0].as_str();
+  let trimmed = match ctx.args.get(1) {
+    None => match ends {
+      TrimEnds::Both => text.trim_matches(is_trim_whitespace),
+      TrimEnds::Start => text.trim_start_matches(is_trim_whitespace),
+      TrimEnds::End => text.trim_end_matches(is_trim_whitespace),
+    },
+    Some(chars) => {
+      let set: Vec<char> = chars.as_str().chars().collect();
+      let strip = |c: char| set.contains(&c);
+      match ends {
+        TrimEnds::Both => text.trim_matches(strip),
+        TrimEnds::Start => text.trim_start_matches(strip),
+        TrimEnds::End => text.trim_end_matches(strip),
+      }
+    },
+  }
+  .to_string();
+
   Ok(ctx.vm.heap_mut().alloc_string(trimmed))
+}
+
+fn trim(ctx: &mut ZuriContext) -> Result<Value, String> {
+  trim_ends(ctx, TrimEnds::Both)
 }
 
 fn ltrim(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_method_arg_range!(ctx, 0, 1);
-  enforce_method_arg_type_opt!(ctx, 1, ArgType::String);
-
-  let ch = optional_char(ctx, 1, ' ')?;
-  let trimmed = ctx.args[0].as_str().trim_start_matches(ch).to_string();
-  Ok(ctx.vm.heap_mut().alloc_string(trimmed))
+  trim_ends(ctx, TrimEnds::Start)
 }
 
 fn rtrim(ctx: &mut ZuriContext) -> Result<Value, String> {
-  enforce_method_arg_range!(ctx, 0, 1);
-  enforce_method_arg_type_opt!(ctx, 1, ArgType::String);
-
-  let ch = optional_char(ctx, 1, ' ')?;
-  let trimmed = ctx.args[0].as_str().trim_end_matches(ch).to_string();
-  Ok(ctx.vm.heap_mut().alloc_string(trimmed))
+  trim_ends(ctx, TrimEnds::End)
 }
 
 /// Joins a string, list, or dict's items using `self` as the

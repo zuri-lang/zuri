@@ -75,7 +75,7 @@ def _uncommitted(root: string) {
     return []
   }
 
-  prefix = prefix.rtrim('\n').rtrim('\r')
+  prefix = prefix.rtrim('\r\n')
 
   var entries = listing.split('\0')
   var changed = []

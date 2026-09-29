@@ -39,31 +39,10 @@ var _INTEGER = '/^[+-]?[0-9]+$/'
 # is entitled to use.
 var _FLOAT = '/^[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$/'
 
-# Whitespace a value may be padded with on its way in.
-var _BLANK = [' ', '\t', '\r', '\n']
-
 # Every spelling of yes and no that turns up in real deployments.
 var _BOOLEANS = {
   '1': true, 'true': true, 'yes': true, 'y': true, 'on': true,
   '0': false, 'false': false, 'no': false, 'n': false, 'off': false,
-}
-
-# `trim()` takes one character at a time, and a value that came in
-# through a shell may be padded with any of four. This strips all of
-# them from both ends in one pass.
-def _trim(text) {
-  var start = 0
-  var end = text.length()
-
-  while start < end and _BLANK.contains(text[start]) {
-    start++
-  }
-
-  while end > start and _BLANK.contains(text[end - 1]) {
-    end--
-  }
-
-  return text[start, end]
 }
 
 # The raw value of `name`, or nil when it is unset or empty.
@@ -219,7 +198,7 @@ def bool(name: string, default_value: ?bool) {
     return default_value
   }
 
-  var word = _trim(value).lower()
+  var word = value.trim().lower()
 
   if !_BOOLEANS.contains(word) {
     raise ValueError('${name} must be true or false, and is ${value}')
@@ -254,7 +233,7 @@ def list(name: string, separator: ?string, default_value: ?list) {
   var items = []
 
   for item in value.split(separator == nil ? ',' : separator) {
-    var trimmed = _trim(item)
+    var trimmed = item.trim()
 
     if trimmed != '' {
       items.append(trimmed)

@@ -1,0 +1,49 @@
+# With no argument, every kind of ASCII whitespace comes off.
+echo '[' + '\t pad \r\n'.trim() + ']'
+echo '[' + '\v\f pad \f\v'.trim() + ']'
+echo '[' + '\n\t pad'.ltrim() + ']'
+echo '[' + 'pad \r\n\t'.rtrim() + ']'
+echo '[' + '\n pad \n'.ltrim().length() + ']'
+echo '[' + '\n pad \n'.rtrim().length() + ']'
+
+# Whitespace inside the string is left alone.
+echo '[' + '  a \t b  '.trim() + ']'
+
+# A no-break space is not ASCII whitespace.
+echo ' pad '.trim().length()
+
+# The argument is a set of characters, stripped in any order.
+echo 'xyaxy'.trim('xy')
+echo 'yxayx'.trim('xy')
+echo '--==example==--'.trim('-=')
+echo '--==example==--'.ltrim('-=')
+echo '--==example==--'.rtrim('-=')
+echo 'line\r\n\r\n'.rtrim('\r\n')
+echo '0012'.ltrim('0')
+echo 'éaé'.trim('é')
+
+# Only the ends are touched.
+echo 'a-b-a'.trim('a')
+
+# A set that matches everything empties the string.
+echo 'abba'.trim('ab').is_empty()
+
+# An empty set strips nothing.
+echo '[' + ' a '.trim('') + ']'
+
+# The receiver is never changed.
+var original = '  kept  '
+original.trim()
+echo '[' + original + ']'
+
+catch {
+  ' a '.trim(nil)
+} as e {
+  echo e.message
+}
+
+catch {
+  ' a '.trim(1)
+} as e {
+  echo e.message
+}

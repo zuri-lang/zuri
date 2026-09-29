@@ -29,7 +29,7 @@ import .errors { TemplateSyntaxError }
 import .escape
 import .expression
 import .normalize
-import .values { is_blank, strip }
+import .values { is_blank }
 
 
 # --------------------------------------------------------------------
@@ -1322,7 +1322,7 @@ class Compiler {
    * @throws TemplateSyntaxError when it is not a plain name.
    */
   name_of(node, directive: string) {
-    var name = strip(_directive(node, directive))
+    var name = _directive(node, directive).trim()
 
     if name.match('/^[A-Za-z_][A-Za-z0-9_\\-]*$/') == false {
       raise TemplateSyntaxError(
@@ -1449,7 +1449,7 @@ def _split(value: string, path: string, line: number, column: number) {
         literal = []
       }
 
-      var source = strip(''.join(characters[at + 2, end]))
+      var source = ''.join(characters[at + 2, end]).trim()
 
       if here == CALL_OPEN {
         # `{! name !}` is the older spelling of `{{ name() }}`, and is

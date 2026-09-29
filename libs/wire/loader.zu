@@ -28,7 +28,6 @@ import os
 
 import .constants { DEFAULT_EXTENSION }
 import .errors { TemplateNotFoundError }
-import .values { strip }
 
 
 /**
@@ -84,7 +83,7 @@ class Loader {
    *    the path resolves outside the root.
    */
   resolve(path: string, from: ?string, line: ?number, column: ?number) {
-    var wanted = strip(path)
+    var wanted = path.trim()
 
     if wanted.is_empty() {
       raise TemplateNotFoundError(

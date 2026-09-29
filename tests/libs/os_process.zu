@@ -27,7 +27,7 @@ def ok(label) {
 # removes a single named character per call, so stripping a line ending
 # portably takes one call for each.
 def line(text) {
-  return text.rtrim('\n').rtrim('\r')
+  return text.rtrim('\r\n')
 }
 
 echo '═══════════════════════════════════════════════════════'

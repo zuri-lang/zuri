@@ -479,7 +479,7 @@ class Entry {
     var found = nil
 
     for line in self.prefix.split('\n') {
-      var text = _strip_spaces(line)
+      var text = line.trim(' \t')
 
       if text.starts_with('#') {
         var body = text[1,]
@@ -944,24 +944,6 @@ def _is_prefix(prefix, path) {
   }
 
   return true
-}
-
-
-# Removes spaces and tabs from both ends. `trim()` takes one character
-# at a time, and trivia is padded with either.
-def _strip_spaces(text) {
-  var start = 0
-  var end = text.length()
-
-  while start < end and (text[start] == ' ' or text[start] == '\t') {
-    start++
-  }
-
-  while end > start and (text[end - 1] == ' ' or text[end - 1] == '\t') {
-    end--
-  }
-
-  return text[start, end]
 }
 
 
@@ -1745,7 +1727,7 @@ def _rebuild_prefix(prefix, text, newline) {
   var kept = []
 
   iter var i = 0; i < lines.length() - 1; i++ {
-    if !_strip_spaces(lines[i]).starts_with('#') {
+    if !lines[i].trim(' \t').starts_with('#') {
       kept.append(lines[i])
     }
   }

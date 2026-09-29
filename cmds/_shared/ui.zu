@@ -268,5 +268,5 @@ def ask_secret(label: string) {
   # The terminal stayed on the prompt's line while nothing was echoed.
   echo ''
 
-  return typed.rtrim('\n').rtrim('\r')
+  return typed.rtrim('\r\n')
 }

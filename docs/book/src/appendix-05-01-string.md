@@ -16,9 +16,9 @@ thing.
 | [`is_upper()`](#is_upper) | `boolean` | Returns `true` if at least one character in the string is cased, all cased characters are upper cased and the string is not empty. |
 | [`is_space()`](#is_space) | `boolean` | Returns `true` if there are only whitespace characters in the string and the string is not empty. |
 | [`ord()`](#ord) | `number` | Returns the Unicode code point of the string, which must be exactly one character long. |
-| [`trim(chr: ?string)`](#trim) | `string` | Returns a copy of the string with the given character (_`chr`_) removed if it appears at the start or end of the string. |
-| [`ltrim(chr: ?string)`](#ltrim) | `string` | Similar to the `trim()` method, except that this method only removes characters at the beginning of the string. |
-| [`rtrim(chr: ?string)`](#rtrim) | `string` | Similar to the `trim()` method, except that this method only removes characters at the end of the string. |
+| [`trim(chars: ?string)`](#trim) | `string` | Returns a copy of the string with characters stripped from both ends. |
+| [`ltrim(chars: ?string)`](#ltrim) | `string` | Returns a copy of the string with characters stripped from its start only. |
+| [`rtrim(chars: ?string)`](#rtrim) | `string` | Returns a copy of the string with characters stripped from its end only. |
 | [`join(string: string)`](#join) | `string` | Returns a string which is a concatenation of the items in the iterable using the _string_ as the separator. |
 | [`split(delimiter: string)`](#split) | `list` | Returns a list of words or characters in a string after separating the content of the string at every point where the _delimiter_ is found. |
 | [`index_of(str: string, start_index: ?number)`](#index_of) | `number` | Returns the index position of the first occurrence of the string _`str`_ in the string _`string`_. |
@@ -278,45 +278,54 @@ StackTrace:
 ## `trim()`
 
 ```zuri,ignore
-trim(chr: ?string) -> string
+trim(chars: ?string) -> string
 ```
 
-Returns a copy of the string with the given character (_`chr`_) removed
-if it appears at the start or end of the string. If _`chr`_ is not
-given, it defaults to a space (`' '`). All matching leading and trailing
-characters are removed until a character that doesn't match is
-encountered. If no match is found, a copy of the original string is
-returned.
+Returns a copy of the string with characters stripped from both ends.
 
-> The square brackets (`[]`) around the _`chr: char`_ in the
-> method definition indicates that the parameter is optional
-> and does not mean you have to type the square brackets.
+With no argument, whitespace is stripped: space, tab (`\t`), line feed
+(`\n`), vertical tab, form feed and carriage return (`\r`). Other
+Unicode spaces, such as a no-break space, are kept.
+
+Given _`chars`_, every character in it is stripped instead, in any order
+and any number of times, until a character not in _`chars`_ is reached
+at each end. _`chars`_ is a set of characters, not a prefix or suffix:
+`'xyax'.trim('xy')` is `'a'`. An empty _`chars`_ strips nothing.
+
+The string itself is never changed. A string with nothing to strip comes
+back as an equal copy.
 
 For example:
 
 ```zuri-repl
 %> '  example  '.trim()
 'example'
+%> '\t example \r\n'.trim()
+'example'
 %> '  example  '.trim('e')
 '  example  '
 %> 'example'.trim('e')
 'xampl'
+%> '--==example==--'.trim('-=')
+'example'
 ```
 
 **Parameters**
 
-- `chr` (`?char`) — The character to trim (Default = ' ').
+- `chars` (`?string`) — The characters to strip (Default = whitespace).
 
 **Returns** `string`
 
 ## `ltrim()`
 
 ```zuri,ignore
-ltrim(chr: ?string) -> string
+ltrim(chars: ?string) -> string
 ```
 
-Similar to the `trim()` method, except that this method only removes
-characters at the beginning of the string.
+Returns a copy of the string with characters stripped from its start
+only. The characters stripped are chosen exactly as they are for
+`trim()`: whitespace when _`chars`_ is not given, or every character of
+_`chars`_ when it is.
 
 For example:
 
@@ -325,22 +334,26 @@ For example:
 'example  '
 %> 'example'.ltrim('e')
 'xample'
+%> '0012'.ltrim('0')
+'12'
 ```
 
 **Parameters**
 
-- `chr` (`?char`) — The character to trim (Default = ' ').
+- `chars` (`?string`) — The characters to strip (Default = whitespace).
 
 **Returns** `string`
 
 ## `rtrim()`
 
 ```zuri,ignore
-rtrim(chr: ?string) -> string
+rtrim(chars: ?string) -> string
 ```
 
-Similar to the `trim()` method, except that this method only removes
-characters at the end of the string.
+Returns a copy of the string with characters stripped from its end only.
+The characters stripped are chosen exactly as they are for `trim()`:
+whitespace when _`chars`_ is not given, or every character of _`chars`_
+when it is.
 
 For example:
 
@@ -349,11 +362,13 @@ For example:
 '  example'
 %> 'example'.rtrim('e')
 'exampl'
+%> 'line\r\n'.rtrim('\r\n')
+'line'
 ```
 
 **Parameters**
 
-- `chr` (`?char`) — The character to trim (Default = ' ').
+- `chars` (`?string`) — The characters to strip (Default = whitespace).
 
 **Returns** `string`
 

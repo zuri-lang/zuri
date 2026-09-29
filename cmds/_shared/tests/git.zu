@@ -34,7 +34,7 @@ def git_in(dir: string, words: list) {
     raise Error('git ${words[0]} failed: ${err}')
   }
 
-  return out.trim().rtrim('\n').rtrim('\r')
+  return out.trim()
 }
 
 # Writes the package at `version` and commits it.

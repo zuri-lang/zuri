@@ -275,7 +275,7 @@ def _read_tags(value: string) {
       continue
     }
 
-    var name = piece[0, equals].trim().trim('\t').trim('\r').trim('\n').trim()
+    var name = piece[0, equals].trim()
     var raw = piece[equals + 1, piece.length()]
 
     if name == '' {

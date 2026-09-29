@@ -125,20 +125,19 @@ var _header_unpack = 'a100:filename/a8:perm/a8:uid/a8:gid/a12:size/a12:mtime/a8:
 #--------------------------------------------------------------------------------
 
 # Strips both the space padding and the NUL padding tar headers use
-# for string fields (filename, link, uname, gname, prefix): .trim()
-# alone only strips spaces, and a raw trailing NUL left in place
-# breaks any later exact-match comparison against the field.
+# for string fields (filename, link, uname, gname, prefix). A raw
+# trailing NUL left in place breaks any later exact-match comparison
+# against the field.
 def _field(v) {
-  return v.trim('\0').trim()
+  return v.trim('\0 ')
 }
 
 def _octdec(v) {
   # Numeric header fields are padded with a mix of NUL bytes and
   # spaces depending on the field (the checksum field in particular
-  # is "NNNNNN\0 " per POSIX), and .trim() alone only strips spaces
-  # off the ends, not embedded NULs. Normalize both away before
-  # parsing, or a real, non-corrupt field silently reads back as 0.
-  v = v.to_string().replace('\0', ' ').trim()
+  # is "NNNNNN\0 " per POSIX). Strip both before parsing, or a real,
+  # non-corrupt field silently reads back as 0.
+  v = v.to_string().trim('\0 ')
   if v == '' {
     return 0
   }

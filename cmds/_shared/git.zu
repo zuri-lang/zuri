@@ -225,7 +225,7 @@ def fetch(name: ?string, address: string, commit: string, checksum: ?string) {
 
     run(['-c', 'advice.detachedHead=false', 'checkout', '--quiet', commit], scratch)
 
-    var full = run(['rev-parse', 'HEAD'], scratch).trim().rtrim('\n').rtrim('\r')
+    var full = run(['rev-parse', 'HEAD'], scratch).trim()
 
     var result = pack_checkout(name, scratch, full, checksum)
 

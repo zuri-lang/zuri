@@ -1,0 +1,22 @@
+[pad]
+[pad]
+[pad]
+[pad]
+[5]
+[5]
+[a 	 b]
+5
+a
+a
+example
+example==--
+--==example
+line
+12
+a
+-b-
+true
+[ a ]
+[  kept  ]
+'trim' expects argument 1 to be a string, got nil
+'trim' expects argument 1 to be a string, got number

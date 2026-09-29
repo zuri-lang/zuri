@@ -233,22 +233,6 @@ def is_empty(value) {
 
 
 /**
- * _text_ with leading and trailing whitespace removed.
- *
- * Zuri's own `trim()` removes one repeated character, a space unless
- * told otherwise, so it leaves a newline or a tab exactly where it was.
- * Templates are full of both, and every question Wire asks about
- * surrounding whitespace means all of it.
- *
- * @param string text
- * @returns string
- */
-def strip(text: string) {
-  return text.replace('/^\\s+|\\s+$/', '')
-}
-
-
-/**
  * Whether _text_ is empty or is nothing but whitespace.
  *
  * @param string text

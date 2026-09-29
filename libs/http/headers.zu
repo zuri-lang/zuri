@@ -651,7 +651,7 @@ class Headers {
     }
 
     var text = is_string(value) ? value : value.to_string()
-    text = text.trim(' ').trim('\t')
+    text = text.trim(' \t')
 
     if !is_valid_value(text) {
       raise ProtocolError(
@@ -731,7 +731,7 @@ def parse(block: string, strict: ?bool) {
       raise ProtocolError('invalid header field name: ${name}')
     }
 
-    var value = line[colon + 1,].trim(' ').trim('\t')
+    var value = line[colon + 1,].trim(' \t')
 
     if strict and _SINGLETON.contains(name.lower()) and headers.contains(name) {
       # Two different Content-Lengths (or Hosts) is not a message with

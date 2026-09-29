@@ -22,6 +22,7 @@ import .errors { JwtError }
  *
  * ```zuri
  * import jwt
+ * import http.middleware
  *
  * var verifier = jwt.Verifier('my-secret', {
  *   algorithms: [jwt.HS256],
@@ -31,7 +32,8 @@ import .errors { JwtError }
  * })
  *
  * # In a request handler:
- * var payload = verifier.verify(req.headers['Authorization'].ltrim('Bearer '))
+ * var token = middleware.parse_bearer(req.headers['Authorization'])
+ * var payload = verifier.verify(token)
  * echo payload['role']
  * ```
  */

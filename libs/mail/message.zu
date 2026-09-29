@@ -252,7 +252,7 @@ class Message {
     var closed_at = nil
 
     for line in _lines_of(body) {
-      var text = body[line.start, line.stop].to_string().rtrim(' ').rtrim('\t')
+      var text = body[line.start, line.stop].to_string().rtrim(' \t')
 
       if text != opener and text != closer {
         continue

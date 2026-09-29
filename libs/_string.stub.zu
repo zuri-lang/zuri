@@ -682,38 +682,50 @@ class string {
 
 
   /**
-   * Returns a copy of the string with the given character
-   * (_`chr`_) removed if it appears at the start or end of the
-   * string. If _`chr`_ is not given, it defaults to a space (`'
-   * '`). All matching leading and trailing characters are
-   * removed until a character that doesn't match is encountered.
-   * If no match is found, a copy of the original string is
-   * returned.
+   * Returns a copy of the string with characters stripped from both
+   * ends.
    *
-   * > The square brackets (`[]`) around the _`chr: char`_ in the
-   * > method definition indicates that the parameter is optional
-   * > and does not mean you have to type the square brackets.
+   * With no argument, whitespace is stripped: space, tab (`\t`),
+   * line feed (`\n`), vertical tab, form feed and carriage return
+   * (`\r`). Other Unicode spaces, such as a no-break space, are
+   * kept.
+   *
+   * Given _`chars`_, every character in it is stripped instead, in
+   * any order and any number of times, until a character not in
+   * _`chars`_ is reached at each end. _`chars`_ is a set of
+   * characters, not a prefix or suffix: `'xyax'.trim('xy')` is
+   * `'a'`. An empty _`chars`_ strips nothing.
+   *
+   * The string itself is never changed. A string with nothing to
+   * strip comes back as an equal copy.
    *
    * For example:
    *
    * ```zuri-repl
    * %> '  example  '.trim()
    * 'example'
+   * %> '\t example \r\n'.trim()
+   * 'example'
    * %> '  example  '.trim('e')
    * '  example  '
    * %> 'example'.trim('e')
    * 'xampl'
+   * %> '--==example==--'.trim('-=')
+   * 'example'
    * ```
    *
-   * @param {?char} chr - The character to trim (Default = ' ').
+   * @param {?string} chars - The characters to strip (Default =
+   *    whitespace).
    * @returns {string}
    */
-  trim(chr: ?string) {}
+  trim(chars: ?string) {}
 
 
   /**
-   * Similar to the `trim()` method, except that this method only
-   * removes characters at the beginning of the string.
+   * Returns a copy of the string with characters stripped from its
+   * start only. The characters stripped are chosen exactly as they
+   * are for `trim()`: whitespace when _`chars`_ is not given, or
+   * every character of _`chars`_ when it is.
    *
    * For example:
    *
@@ -722,17 +734,22 @@ class string {
    * 'example  '
    * %> 'example'.ltrim('e')
    * 'xample'
+   * %> '0012'.ltrim('0')
+   * '12'
    * ```
    *
-   * @param {?char} chr - The character to trim (Default = ' ').
+   * @param {?string} chars - The characters to strip (Default =
+   *    whitespace).
    * @returns {string}
    */
-  ltrim(chr: ?string) {}
+  ltrim(chars: ?string) {}
 
 
   /**
-   * Similar to the `trim()` method, except that this method only
-   * removes characters at the end of the string.
+   * Returns a copy of the string with characters stripped from its
+   * end only. The characters stripped are chosen exactly as they are
+   * for `trim()`: whitespace when _`chars`_ is not given, or every
+   * character of _`chars`_ when it is.
    *
    * For example:
    *
@@ -741,12 +758,15 @@ class string {
    * '  example'
    * %> 'example'.rtrim('e')
    * 'exampl'
+   * %> 'line\r\n'.rtrim('\r\n')
+   * 'line'
    * ```
    *
-   * @param {?char} chr - The character to trim (Default = ' ').
+   * @param {?string} chars - The characters to strip (Default =
+   *    whitespace).
    * @returns {string}
    */
-  rtrim(chr: ?string) {}
+  rtrim(chars: ?string) {}
 
 
   /**

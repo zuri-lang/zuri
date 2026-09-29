@@ -69,32 +69,6 @@ def _is_ident_rest(ch) {
   return _IDENT_REST.index_of(ch) != -1
 }
 
-var _SPACE = ' \t\n\r'
-
-/**
- * Strips whitespace from both ends.
- *
- * `trim()` takes one character and defaults to a space, so a statement
- * that ends in a newline needs this rather than a chain of calls.
- *
- * @param string text
- * @returns string
- */
-def trim_space(text: string) {
-  var start = 0
-  var end = text.length()
-
-  while start < end and _SPACE.index_of(text[start]) != -1 {
-    start++
-  }
-
-  while end > start and _SPACE.index_of(text[end - 1]) != -1 {
-    end--
-  }
-
-  return text[start, end]
-}
-
 /**
  * The placeholder text for the parameter at `position`, counting from
  * one.
@@ -377,7 +351,7 @@ def split_statements(sql: string) {
 
   for token in tokenize(sql) {
     if token.kind == 'separator' {
-      var text = trim_space(''.join(current))
+      var text = ''.join(current).trim()
 
       if !text.is_empty() {
         statements.append(text)
@@ -396,7 +370,7 @@ def split_statements(sql: string) {
     }
   }
 
-  var last = trim_space(''.join(current))
+  var last = ''.join(current).trim()
 
   if !last.is_empty() {
     statements.append(last)

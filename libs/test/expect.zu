@@ -843,7 +843,7 @@ class Expect {
     self._require(is_string(self._value), 'to_be_blank', 'a string')
 
     return self._check(
-      self._value.trim().trim('\t').trim('\n').trim('\r') == '',
+      self._value.trim() == '',
       'to_be_blank',
       'to be blank',
       nil

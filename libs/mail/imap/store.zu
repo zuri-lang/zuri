@@ -1008,7 +1008,7 @@ class MaildirStore < MailStore {
     handle.close()
 
     for line in text.split('\n') {
-      var trimmed = line.trim().trim('\r')
+      var trimmed = line.trim()
 
       if trimmed == '' {
         continue
