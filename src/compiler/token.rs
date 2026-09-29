@@ -339,7 +339,7 @@ macro_rules! assignment_operators {
 #[macro_export]
 macro_rules! factor_operators {
   () => {
-    TokenKind::Multiply | TokenKind::Divide | TokenKind::Floor | TokenKind::Pow | TokenKind::Percent
+    TokenKind::Multiply | TokenKind::Divide | TokenKind::Floor | TokenKind::Percent
   };
 }
 

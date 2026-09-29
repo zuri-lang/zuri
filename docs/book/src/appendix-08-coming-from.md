@@ -8,7 +8,6 @@ This is that list.
 | You expect | Zuri does |
 | --- | --- |
 | `x++` as a statement only | `x++` is postfix only, and in an expression it evaluates to the **new** value. `++x` does not parse. |
-| `**` to be right-associative and high precedence | `**` sits with `*` and `/` and associates left. `2 ** 3 ** 2` is `64`; `2 * 3 ** 2` is `36`; `-2 ** 2` is `4`. |
 | `-1` to be truthy | Every negative number is falsy, alongside `0` and `''`. `var n = maybe or fallback` silently replaces `-1`. |
 | `[]` to be falsy | `[]` and `{}` are truthy. Use `is_empty()`. |
 | `NaN` to be falsy | `NaN` is truthy. Use `is_nan()`. |

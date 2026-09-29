@@ -681,12 +681,12 @@ echo zuri.compile('var a = 2 * 3 ** 2').map(@(i) => i.op)
 ```
 
 ```console
-[LoadConst, MulImm, LoadConst, Pow, SetGlobal, LoadNil, Return]
+[LoadConst, LoadConst, LoadConst, Pow, Mul, SetGlobal, LoadNil, Return]
 ```
 
-The multiply comes **before** the power, which is `**` sitting at the same
-precedence level as `*` and associating left. One line of bytecode settles
-an argument that reading the expression does not.
+The power comes **before** the multiply, which is `**` binding tighter than
+`*`. One line of bytecode settles an argument that reading the expression
+does not.
 
 ### Resolved Operands
 

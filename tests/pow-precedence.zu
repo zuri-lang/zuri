@@ -1,0 +1,53 @@
+# `**` binds tighter than `*`, `/`, `//` and `%`.
+echo 2 * 3 ** 2
+echo 10 / 2 ** 2
+echo 17 // 2 ** 2
+echo 7 % 2 ** 2
+
+# It groups from the right.
+echo 2 ** 3 ** 2
+echo 2n ** 3n ** 2n
+
+# A unary operator before it applies to the whole power.
+echo -2 ** 2
+echo (-2) ** 2
+echo ~1 ** 2
+echo !0 ** 2
+
+# The exponent may carry its own sign.
+echo 2 ** -1
+echo 2 ** -1 ** 2
+echo 4 ** -(1 / 2)
+
+# Postfix, member access, calls and indexing bind tighter still.
+var values = [2, 3]
+echo values[0] ** values[1]
+echo values.length() ** 3
+var n = 2
+echo n++ ** 2
+
+# A power can continue on the next line.
+var carried = 2 **
+  10
+echo carried
+
+var leading = 3
+  ** 2
+echo leading
+
+# Compound assignment raises the whole target.
+var x = 3
+x **= 1 + 1
+echo x
+
+# The same expressions inside a function that runs hot.
+def mixed(a, b, c) {
+  return a * b ** c - -a ** 2
+}
+
+var total = 0
+iter var i = 0; i < 2000; i++ {
+  total += mixed(i % 3, 2, 3)
+}
+echo total
+echo mixed(2, 3, 2)

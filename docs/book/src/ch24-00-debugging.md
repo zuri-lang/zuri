@@ -266,17 +266,17 @@ settles the argument:
 ```zuri
 import zuri
 
-echo zuri.compile('var a = 2 * 3 ** 2').map(@(i) => i.op)
+echo zuri.compile('var a = -2 ** 2').map(@(i) => i.op)
 ```
 
 ```console
-[LoadConst, MulImm, LoadConst, Pow, SetGlobal, LoadNil, Return]
+[LoadConst, LoadConst, Pow, Neg, SetGlobal, LoadNil, Return]
 ```
 
-Read the order: the multiply happens **before** the power. That is `**`
-sitting at the same precedence level as `*` and associating left, so
-`2 * 3 ** 2` is `(2 * 3) ** 2` and not what most people first read. The
-bytecode settles it in one line. [Chapter 21](ch21-00-metaprogramming.md)
+Read the order: the power happens **before** the negation. `**` binds
+tighter than unary minus, so `-2 ** 2` is `-(2 ** 2)`, which is `-4`, and
+not the `4` a reader expecting `(-2) ** 2` would get. The bytecode settles
+it in one line. [Chapter 21](ch21-00-metaprogramming.md)
 covers `zuri.compile()` and `zuri.parse()` properly.
 
 ### Narrow It With `assert`

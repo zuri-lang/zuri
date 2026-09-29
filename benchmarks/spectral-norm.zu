@@ -64,6 +64,6 @@ while i < ARRAY_LENGTH {
   i += 1
 }
 
-echo (vBv / vv ** 0.5).fixed(9)
+echo ((vBv / vv) ** 0.5).fixed(9)
 
 echo '\nTotal time taken: ${time() - start}s'

@@ -198,7 +198,7 @@ Negative indices count back from the end, for both strings and lists.
 ## Precedence
 
 From tightest to loosest. Everything on one row binds equally and
-associates left to right.
+associates left to right, except `**`, which associates right to left.
 
 | Level | Operators |
 | --- | --- |
@@ -206,48 +206,42 @@ associates left to right.
 | 2 | `..` |
 | 3 | `.` `()` `[]` |
 | 4 | `++` `--` |
-| 5 | `!` `-` `~` (unary) |
-| 6 | `*` `/` `//` `%` `**` |
-| 7 | `+` `-` |
-| 8 | `<<` `>>` `>>>` |
-| 9 | `&` |
-| 10 | `^` |
-| 11 | `\|` |
-| 12 | `<` `<=` `>` `>=` `==` `!=` |
-| 13 | `and` |
-| 14 | `or` |
-| 15 | `? :` |
-| 16 | `=` and every compound assignment |
+| 5 | `**` |
+| 6 | `!` `-` `~` (unary) |
+| 7 | `*` `/` `//` `%` |
+| 8 | `+` `-` |
+| 9 | `<<` `>>` `>>>` |
+| 10 | `&` |
+| 11 | `^` |
+| 12 | `\|` |
+| 13 | `<` `<=` `>` `>=` `==` `!=` |
+| 14 | `and` |
+| 15 | `or` |
+| 16 | `? :` |
+| 17 | `=` and every compound assignment |
 
-Two rows of that table will surprise you.
-
-**`**` sits with `*` and `/`, and associates left.** It is not a
-right-associative, higher-precedence operator the way it is in Python:
+**`**` follows the mathematical convention.** It binds tighter than
+multiplication and tighter than a unary operator written before it, and it
+groups from the right:
 
 ```zuri
-echo 2 ** 3 ** 2
 echo 2 * 3 ** 2
-```
-
-```console
-64
-36
-```
-
-`2 ** 3 ** 2` is `(2 ** 3) ** 2`, and `2 * 3 ** 2` is `(2 * 3) ** 2`. When
-you mean otherwise, parenthesise.
-
-**Unary minus binds tighter than `**`:**
-
-```zuri
+echo 2 ** 3 ** 2
 echo -2 ** 2
+echo 2 ** -1
 ```
 
 ```console
-4
+18
+512
+-4
+0.5
 ```
 
-That is `(-2) ** 2`, not `-(2 ** 2)`.
+`2 * 3 ** 2` is `2 * (3 ** 2)`, `2 ** 3 ** 2` is `2 ** (3 ** 2)`, and
+`-2 ** 2` is `-(2 ** 2)`. The exponent itself may carry a sign, so
+`2 ** -1` needs no parentheses. Write `(-2) ** 2` to raise a negative
+number.
 
 **`..` binds very tightly**, to primaries only. `1 + 2..5` parses as
 `1 + (2..5)`. Parenthesise any range whose endpoints are expressions.

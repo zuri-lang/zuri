@@ -841,7 +841,26 @@ impl<'a> Parser<'a> {
       return Expr::Unary(op, Box::new(right), line);
     }
 
-    self.assign_expr()
+    self.power()
+  }
+
+  /// `**` binds tighter than the unary operators to its left and groups
+  /// to the right, as it does in mathematics: `-2 ** 2` is `-(2 ** 2)`
+  /// and `2 ** 3 ** 2` is `2 ** (3 ** 2)`. The exponent is parsed as a
+  /// unary expression, so `2 ** -1` needs no parentheses.
+  fn power(&mut self) -> Expr {
+    let base = self.assign_expr();
+
+    self.skip_newline_before(|k| matches!(k, TokenKind::Pow));
+
+    if match_tok!(self, TokenKind::Pow) {
+      let line = self.previous().line as u32;
+      self.ignore_newlines();
+      let exponent = self.unary();
+      return Expr::Binary(Box::new(base), TokenKind::Pow, Box::new(exponent), line);
+    }
+
+    base
   }
 
   fn factor(&mut self) -> Expr {

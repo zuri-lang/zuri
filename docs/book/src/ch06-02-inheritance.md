@@ -24,7 +24,7 @@ class Circle < Shape {
   }
 
   area() {
-    return 3.141592653589793 * (self.radius ** 2)
+    return 3.141592653589793 * self.radius ** 2
   }
 }
 
@@ -222,7 +222,7 @@ class Circle < Shape {
   }
 
   area() {
-    return 3.141592653589793 * (self.radius ** 2)
+    return 3.141592653589793 * self.radius ** 2
   }
 }
 
@@ -246,12 +246,6 @@ catch {
 circle has area 12.566370614359172
 NotImplementedError: blob must define area()
 ```
-
-Those parentheses around `self.radius ** 2` are load-bearing. `**` sits at
-the same precedence level as `*` and associates left, so
-`3.14 * self.radius ** 2` would be `(3.14 * self.radius) ** 2` — a
-plausible-looking number that is wrong. When `**` shares an expression with
-`*` or `/`, parenthesise.
 
 `describe()` calls `self.area()`, and `self` is the actual instance, so the
 subclass's version runs. That is the whole of dynamic dispatch in Zuri:

@@ -3,7 +3,7 @@
 ## Precedence
 
 Tightest first. Operators on the same row bind equally and associate left
-to right.
+to right, except `**`, which associates right to left.
 
 | Level | Operators | Notes |
 | --- | --- | --- |
@@ -11,24 +11,27 @@ to right.
 | 2 | `..` | binds primaries only |
 | 3 | `.` `()` `[]` | member, call, index and slice |
 | 4 | `++` `--` | postfix only |
-| 5 | `!` `-` `~` | unary |
-| 6 | `*` `/` `//` `%` `**` | `**` sits here, not above |
-| 7 | `+` `-` | |
-| 8 | `<<` `>>` `>>>` | |
-| 9 | `&` | |
-| 10 | `^` | |
-| 11 | `\|` | |
-| 12 | `<` `<=` `>` `>=` `==` `!=` | |
-| 13 | `and` | |
-| 14 | `or` | |
-| 15 | `? :` | |
-| 16 | `=` and every compound assignment | |
+| 5 | `**` | right-associative; the exponent may carry a unary operator |
+| 6 | `!` `-` `~` | unary |
+| 7 | `*` `/` `//` `%` | |
+| 8 | `+` `-` | |
+| 9 | `<<` `>>` `>>>` | |
+| 10 | `&` | |
+| 11 | `^` | |
+| 12 | `\|` | |
+| 13 | `<` `<=` `>` `>=` `==` `!=` | |
+| 14 | `and` | |
+| 15 | `or` | |
+| 16 | `? :` | |
+| 17 | `=` and every compound assignment | |
 
-Three consequences worth remembering:
+Consequences worth remembering:
 
-- `2 ** 3 ** 2` is `64`, not `512`. `**` is left-associative.
-- `2 * 3 ** 2` is `36`, not `18`. `**` does not outrank `*`.
-- `-2 ** 2` is `4`. Unary minus binds tighter than `**`.
+- `2 ** 3 ** 2` is `512`. `**` is right-associative.
+- `2 * 3 ** 2` is `18`. `**` outranks `*`.
+- `-2 ** 2` is `-4`. `**` binds tighter than unary minus; write `(-2) ** 2`
+  to raise a negative number.
+- `2 ** -1` is `0.5`. The exponent may carry its own sign.
 - `1 + 2..5` is `1 + (2..5)`. Parenthesise ranges with computed endpoints.
 
 ## Arithmetic
