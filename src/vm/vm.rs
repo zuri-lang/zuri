@@ -1906,9 +1906,8 @@ impl VM {
       }
     }
 
-    // Bounded to the live window: scanning the whole vector reads stale
-    // `Value`s from returned frames, and `is_instance()` on those
-    // dereferences whatever bits happen to be sitting there.
+    // Bounded to the live window: everything above it was left behind
+    // by calls that have returned.
     for val in self.live_registers() {
       inspect_value(*val);
     }
@@ -4393,6 +4392,46 @@ impl VM {
     frame.base + reach
   }
 
+  /// How far up the register file live data can sit: the top of the
+  /// innermost frame. A callee's window starts just past the register
+  /// its caller called it from, and everything the caller holds above
+  /// that is scratch the callee is free to overwrite, so no frame further
+  /// out keeps anything live higher than this.
+  fn registers_in_reach(&self) -> usize {
+    self
+      .frames
+      .last()
+      .map(Self::frame_top)
+      .unwrap_or(0)
+      .min(self.registers.len())
+  }
+
+  /// Sets every register from `top` up to nil.
+  ///
+  /// No frame keeps anything live in those registers, so they are not roots
+  /// and the collection running now is free to reclaim whatever they
+  /// name. Their bits would outlive it, though, and the next call deep
+  /// enough to reach them would find its unwritten registers naming
+  /// objects the heap has since reused or given back to the allocator.
+  fn clear_dead_registers(&mut self, top: usize) {
+    self.registers[top..].fill(Value::nil());
+  }
+
+  /// Checks that every register is nil, a non-pointer, or an object the
+  /// heap still holds. A collection leaves the register file in that
+  /// state, and anything that walks registers relies on it.
+  #[cfg(debug_assertions)]
+  fn debug_check_registers(&self) {
+    for (slot, v) in self.registers.iter().enumerate() {
+      if v.is_obj() {
+        assert!(
+          self.heap.holds(v.as_obj()),
+          "register {slot} names an object the heap no longer holds"
+        );
+      }
+    }
+  }
+
   pub(crate) fn mark_top_frame_compiled(&mut self) {
     if let Some(frame) = self.frames.last_mut() {
       frame.compiled = true;
@@ -6753,11 +6792,10 @@ impl VM {
   /// The register range the active frame can actually reach.
   ///
   /// The register stack is never shrunk, so everything above this is a
-  /// leftover `Value` from a call that has already returned: bits that no
-  /// longer name a live object, or that were never a pointer at all. The
-  /// major collector bounds its root scan here so it does not pin garbage
-  /// forever, and anything walking registers to gather compile-time facts
-  /// has to bound itself the same way or it will dereference stale bits.
+  /// leftover `Value` from a call that has already returned. It is still
+  /// a valid `Value`, since every collection clears the registers no
+  /// frame can reach, but it describes a call that is over, and facts
+  /// gathered for compiling this one have no business reading it.
   fn live_registers(&self) -> &[Value] {
     let top = self
       .frames
@@ -7101,15 +7139,9 @@ impl VM {
 
     let mut worklist: Vec<*const Obj> = Vec::new();
 
-    // Only the register range within reach of the active frame can hold
-    // live data; see `live_registers`. Compiled code reaches further when
-    // it has calls built in, and those registers are as live as its own.
-    let regs_top = self
-      .frames
-      .last()
-      .map(Self::frame_top)
-      .unwrap_or(0)
-      .min(self.registers.len());
+    // The minor collection above has already cleared every register out
+    // of reach, so the ones in reach are the whole of what can hold data.
+    let regs_top = self.registers_in_reach();
     for v in &self.registers[..regs_top] {
       Self::mark_root(*v, &mut worklist);
     }
@@ -7187,6 +7219,8 @@ impl VM {
 
     let freed = self.heap.sweep();
     self.heap.update_jit_gc_needed();
+    #[cfg(debug_assertions)]
+    self.debug_check_registers();
     if self.log_gc {
       eprintln!(
         "[gc-major] freed {}/{} objects, {} -> {} bytes (next collection at {} bytes)",
@@ -7223,16 +7257,12 @@ impl VM {
 
     let mut worklist: Vec<*const Obj> = Vec::new();
 
-    let regs_top = self
-      .frames
-      .last()
-      .map(Self::frame_top)
-      .unwrap_or(0)
-      .min(self.registers.len());
+    let regs_top = self.registers_in_reach();
 
     for v in &mut self.registers[..regs_top] {
       Self::forward_slot(&mut self.heap, v, &mut worklist);
     }
+    self.clear_dead_registers(regs_top);
     for cell in &mut self.global_slots {
       Self::forward_slot(&mut self.heap, cell.get_mut(), &mut worklist);
     }
@@ -7317,6 +7347,8 @@ impl VM {
     let before_bytes = self.heap.bytes_allocated();
     self.heap.reset_nursery();
     self.heap.update_jit_gc_needed();
+    #[cfg(debug_assertions)]
+    self.debug_check_registers();
     if self.log_gc {
       eprintln!(
         "[gc-minor] promoted/freed across {} -> {} objects, {} -> {} bytes",

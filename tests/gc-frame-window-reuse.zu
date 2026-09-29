@@ -1,14 +1,15 @@
 # A callee's register window routinely reaches past its caller's, so a
 # heap value the callee leaves in one of those high slots stops being a
-# GC root the moment it returns. The collector bounds its register scan
-# to the top frame's window; the slot keeps its bits either way, and the
-# next call at the same base brings them back into view.
+# GC root the moment it returns. A collection clears those slots rather
+# than leave them naming what it reclaims, since the next call at the
+# same base brings them back into view before it has written them, and
+# compiling that call reads every register in its window.
 #
-# Nothing here should be able to observe that: a register the compiler
-# has not defined is never read, and a value still in use must survive
-# whatever collections run underneath it. This walks that shape at
-# several depths, with both minor and major collections running
-# throughout, and checks every result.
+# A value still in use must survive whatever collections run underneath
+# it, and a debug build checks after each one that no register names an
+# object the heap has let go. This walks that shape at several depths,
+# with both minor and major collections running throughout, and checks
+# every result.
 
 def churn(n) {
   var junk = bytes(20000)

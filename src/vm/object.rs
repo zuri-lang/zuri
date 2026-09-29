@@ -3218,6 +3218,20 @@ impl Heap {
     gcbox.generation.get() == Generation::Young
   }
 
+  /// Whether the object behind `ptr` is one this heap still holds: an
+  /// old object no sweep has reclaimed, or a young one allocated since
+  /// the last minor collection. Reads only the box header, so it is safe
+  /// on a box the heap has reclaimed but not on memory it has handed back
+  /// to the allocator.
+  #[cfg(debug_assertions)]
+  pub(crate) fn holds(&self, ptr: *const Obj) -> bool {
+    let gcbox = unsafe { &*Self::gcbox_of(ptr) };
+    match gcbox.generation.get() {
+      Generation::Young => gcbox.chunk_idx == self.young_epoch && !gcbox.marked.get(),
+      Generation::Old => gcbox.live.get(),
+    }
+  }
+
   /// Mark the object behind `ptr` reachable this cycle. Returns true
   /// the FIRST time (caller should walk its children), false on repeat
   /// visits; same contract the old HashSet-based version had.
@@ -3226,9 +3240,7 @@ impl Heap {
     // Already reclaimed, so there is nothing here to keep alive and, more
     // to the point, nothing safe to read: returning true would send the
     // caller off to walk a freed `Obj`'s children and push whatever those
-    // bytes happen to look like onto the mark worklist. See
-    // `forward_or_promote`'s matching guard for how a dead pointer
-    // reaches a collector in the first place.
+    // bytes happen to look like onto the mark worklist.
     //
     // A major collection empties the nursery before it marks anything,
     // so a young box seen here is always one of those dead pointers.
@@ -3727,17 +3739,6 @@ impl Heap {
     // to drop a second time, a straight double free, and the forwarded
     // case would hand back a stale target for `walk_children_mut` to
     // read.
-    //
-    // A register outside the top frame's window is how one gets here.
-    // `collect_minor` bounds its root scan to that window, so when a
-    // callee whose registers reach past its caller's returns, the slots
-    // above the caller's window stop being roots and whatever they name
-    // dies; their BITS stay put, and a later, deeper call brings those
-    // same slots back inside the window with the dead pointer still in
-    // them. Nothing reads such a register (the compiler only ever reads
-    // a register it has defined), so leaving the pointer alone is
-    // exactly right: it is dead, and the collector's job here is simply
-    // not to mistake it for something worth resurrecting.
     if gcbox.chunk_idx != self.young_epoch {
       return ptr;
     }
