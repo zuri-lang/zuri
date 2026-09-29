@@ -730,18 +730,27 @@ impl Value {
     }
   }
 
-  /// Truthiness for control flow: nil and false are falsy, everything
-  /// else (including 0 and "") is truthy.
+  /// Truthiness for control flow. Falsy: nil, false, a zero or NaN
+  /// number, a zero bigint, an empty string and empty bytes. Everything
+  /// else is truthy, negative numbers and empty collections included.
   #[inline]
   pub fn is_falsey(&self) -> bool {
     self.is_nil()
       || (self.is_bool() && !self.as_bool())
-      || (self.is_number() && self.as_number() <= 0.0)
-      // `<= 0` via the sign, so a truthiness test doesn't allocate a
+      || (self.is_number() && Self::number_is_falsey(self.as_number()))
+      // Zero via the sign, so a truthiness test doesn't allocate a
       // throwaway BigInt zero to compare against every time.
-      || (self.is_bigint() && self.as_bigint().sign() != Sign::Plus)
+      || (self.is_bigint() && self.as_bigint().sign() == Sign::NoSign)
       || (self.is_string() && self.as_str().is_empty())
       || (self.is_bytes() && self.bytes_len() == 0)
+  }
+
+  /// Whether a number is falsy: zero of either sign, or NaN. Both tiers
+  /// of the JIT inline the same test as an unordered-or-equal compare
+  /// against zero.
+  #[inline]
+  pub fn number_is_falsey(n: f64) -> bool {
+    n == 0.0 || n.is_nan()
   }
 
   pub fn equals(&self, other: &Value) -> bool {

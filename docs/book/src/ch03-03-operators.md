@@ -97,8 +97,8 @@ fallback
 ```
 
 That is what makes `var name = given or 'anonymous'` work. Remember that
-`0`, `''` and any negative number are falsy, so this idiom is only safe
-when those are not legitimate values.
+`0`, `NaN`, `''` and `false` are falsy, so this idiom is only safe when
+those are not legitimate values.
 
 ## The Conditional Operator
 

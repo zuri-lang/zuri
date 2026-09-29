@@ -583,9 +583,9 @@ enum PredicateOp {
   /// `|x| < inf`; false for both infinities AND for NaN, matching
   /// `f64::is_finite`.
   IsFinite,
-  /// `builtins::number::to_bool`'s own rule: `n >= 0.0` (so NaN is
-  /// false, exactly as Rust's `>=` gives).
-  NonNegative,
+  /// `builtins::number::to_bool`'s own rule: neither zero nor NaN, which
+  /// is exactly an ordered not-equal against `0.0`.
+  Truthy,
 }
 
 impl NumberIntrinsic {
@@ -615,7 +615,7 @@ impl NumberIntrinsic {
       "is_nan" => InlinePredicate(IsNan),
       "is_inf" => InlinePredicate(IsInf),
       "is_finite" => InlinePredicate(IsFinite),
-      "to_bool" => InlinePredicate(NonNegative),
+      "to_bool" => InlinePredicate(Truthy),
 
       "sign" => Sign,
       "int" => Int,
@@ -9186,8 +9186,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     }
 
     // Registers proven to hold a bool, so a `JmpIfFalse` on one is a plain
-    // bit test rather than Zuri's general truthiness (under which a
-    // negative number is falsy; getting that wrong would silently change
+    // bit test rather than Zuri's general truthiness (under which zero
+    // and NaN are falsy; getting that wrong would silently change
     // behaviour).
     let mut is_bool = vec![false; callee.num_registers as usize];
     // Registers holding a number known at compile time, which is what lets
@@ -9710,9 +9710,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
             let inf = self.fb.ins().f64const(f64::INFINITY);
             self.fb.ins().fcmp(FloatCC::LessThan, mag, inf)
           },
-          PredicateOp::NonNegative => {
+          PredicateOp::Truthy => {
             let zero = self.fb.ins().f64const(0.0);
-            self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero)
+            self.fb.ins().fcmp(FloatCC::OrderedNotEqual, f, zero)
           },
         };
         self.bool_value(cond)
@@ -13562,8 +13562,9 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
   /// false, object}, and only the "object" case needs a real
   /// dereference to resolve; nil/bool/number are each decidable from
   /// the bit pattern alone: `nil` and `false` are exact bit-pattern
-  /// matches, and a number is falsey iff it's `<= 0.0` (real IEEE-754
-  /// comparison, not a bit compare, to get `-0.0`/NaN right). This is
+  /// matches, and a number is falsey iff it's zero or NaN (an unordered-
+  /// or-equal compare against `0.0`, not a bit compare, to get `-0.0`
+  /// and every NaN payload right). This is
   /// the single hottest check in the whole VM (every loop condition and
   /// `if` goes through it), so avoiding a real function call for the
   /// overwhelming majority of cases (a loop counter, a comparison
@@ -13579,12 +13580,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     if self.proven_numeric(self.current_ip, cond) {
       let fv = self.load_reg_f64(cond);
       let zero_f = self.fb.ins().f64const(0.0);
-      let le_zero = self.fb.ins().fcmp(
-        cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+      let zero_or_nan = self.fb.ins().fcmp(
+        cranelift_codegen::ir::condcodes::FloatCC::UnorderedOrEqual,
         fv,
         zero_f,
       );
-      return self.fb.ins().uextend(types::I64, le_zero);
+      return self.fb.ins().uextend(types::I64, zero_or_nan);
     }
 
     let v = self.load_reg(cond);
@@ -13601,8 +13602,8 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     self.fb.switch_to_block(obj_block);
     // `Value::is_falsey`'s own definition (value.rs) never treats ANY
-    // object as falsey except an empty Str/Bytes or a non-positive
-    // BigInt; every other heap kind (List, Dict, Instance, Closure,
+    // object as falsey except an empty Str/Bytes or a zero BigInt;
+    // every other heap kind (List, Dict, Instance, Closure,
     // ...) is unconditionally NOT falsey, decidable from the tag byte
     // alone with no payload inspection. So: check the tag first, and
     // only actually call the helper (to inspect the payload) for the
@@ -13648,12 +13649,12 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     let is_num = self.is_number(v);
     let fv = self.to_f64(v);
     let zero_f = self.fb.ins().f64const(0.0);
-    let le_zero = self.fb.ins().fcmp(
-      cranelift_codegen::ir::condcodes::FloatCC::LessThanOrEqual,
+    let zero_or_nan = self.fb.ins().fcmp(
+      cranelift_codegen::ir::condcodes::FloatCC::UnorderedOrEqual,
       fv,
       zero_f,
     );
-    let num_falsey = self.fb.ins().band(is_num, le_zero);
+    let num_falsey = self.fb.ins().band(is_num, zero_or_nan);
     let nil_or_false = self.fb.ins().bor(is_nil, is_false);
     let falsey_bool = self.fb.ins().bor(nil_or_false, num_falsey);
     let falsey_i64 = self.fb.ins().uextend(types::I64, falsey_bool);

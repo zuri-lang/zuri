@@ -305,8 +305,8 @@ AssertError: average() needs at least one number
 ```
 
 Without it, `average([])` would have returned `NaN` and the problem would
-have surfaced somewhere else entirely, in a value that is truthy and looks
-like a number.
+have surfaced somewhere else entirely, in a value that looks like a
+number.
 
 ### Watch the Collector
 
@@ -325,12 +325,9 @@ diagnostic switches alongside what each one measures.
 These are the behaviours that produce a *wrong answer* rather than an
 error, which makes them far more expensive to find.
 
-**Negative numbers are falsy.** `var n = position or 0` turns `-1` into
-`0`, and `if index` is false for `-1` and for `0` alike. Compare
-explicitly.
-
-**`NaN` is truthy.** `var x = a / b or fallback` does not protect you from
-`0 / 0`. Test with `is_nan()`.
+**Zero is falsy.** `var n = count or 10` turns a real `0` into `10`, and
+`if index` is false for the first position and true for `-1`, "not
+found". Compare explicitly.
 
 **`to_number()` returns `0` for text it cannot parse.** `'eighty'`, `''`
 and `'12abc'` all become `0`, and so does `' 7 '` with its spaces. There is

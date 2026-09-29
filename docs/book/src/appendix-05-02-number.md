@@ -7,7 +7,7 @@ thing.
 | Method | Returns | Summary |
 | --- | --- | --- |
 | [`to_string()`](#to_string) | `string` | Returns the string representation of the number. |
-| [`to_bool()`](#to_bool) | `boolean` | Converts the number to a boolean. |
+| [`to_bool()`](#to_bool) | `boolean` | Converts the number to a boolean, by the same rule `if` uses. |
 | [`to_bigint()`](#to_bigint) | `bigint` | Converts the number to a `bigint`, the counterpart to `bigint.to_number()`. |
 | [`abs()`](#abs) | `number` | Returns the absolute value of the number. |
 | [`chr()`](#chr) | `string` | Returns the Unicode character whose code point is equal to the number. |
@@ -71,16 +71,18 @@ Returns the string representation of the number.
 to_bool() -> boolean
 ```
 
-Converts the number to a boolean. A number is considered truthy (`true`)
-when it is greater than or equal to zero, and falsy (`false`) when it is
-negative.
+Converts the number to a boolean, by the same rule `if` uses. Zero
+(either sign) and `NaN` are `false`, and every other number, negative
+ones included, is `true`.
 
 ```zuri-repl
 %> 5.to_bool()
 true
 %> 0.to_bool()
-true
+false
 %> (-5).to_bool()
+true
+%> (0 / 0).to_bool()
 false
 ```
 

@@ -360,11 +360,10 @@ class Expect {
   /**
    * Asserts the value is truthy.
    *
-   * @note Zuri's falsy values are `false`, `nil`, zero, any negative
-   *    number, the empty string and an empty bytes buffer. An empty
-   *    list or dictionary is truthy, and so is `NaN`. The two that
-   *    catch people out are negative numbers and `[]`; use
-   *    `to_be_empty()` for the second.
+   * @note Zuri's falsy values are `false`, `nil`, zero, `NaN`, a zero
+   *    bigint, the empty string and an empty bytes buffer. Every
+   *    negative number is truthy, and so is an empty list or
+   *    dictionary; use `to_be_empty()` for those.
    * @returns Expect
    */
   to_be_truthy() {
@@ -374,8 +373,7 @@ class Expect {
   /**
    * Asserts the value is falsy.
    *
-   * @note see `to_be_truthy()` for the full list of falsy values, and
-   *    for the two that surprise people.
+   * @note see `to_be_truthy()` for the full list of falsy values.
    * @returns Expect
    */
   to_be_falsy() {

@@ -2248,9 +2248,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
         let inf = self.fb.ins().f64const(f64::INFINITY);
         self.fb.ins().fcmp(FloatCC::LessThan, mag, inf)
       },
-      FTest::NonNegative => {
+      FTest::Truthy => {
         let zero = self.fb.ins().f64const(0.0);
-        self.fb.ins().fcmp(FloatCC::GreaterThanOrEqual, f, zero)
+        self.fb.ins().fcmp(FloatCC::OrderedNotEqual, f, zero)
       },
     }
   }
@@ -2705,9 +2705,9 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.block_params(done)[0]
   }
 
-  /// Zuri truthiness: nil, false and numbers at or below zero are
-  /// falsey; so are empty strings, byte strings and zero bigints, which
-  /// take a runtime call to decide.
+  /// Zuri truthiness: nil, false, zero and NaN are falsey; so are empty
+  /// strings, byte strings and zero bigints, which take a runtime call
+  /// to decide.
   fn is_falsey(&mut self, v: IrValue) -> IrValue {
     let is_obj = self.is_obj(v);
     let obj_block = self.fb.create_block();
@@ -2750,8 +2750,8 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let is_num = self.is_number(v);
     let f = self.to_f64(v);
     let zero = self.fb.ins().f64const(0.0);
-    let le = self.fb.ins().fcmp(FloatCC::LessThanOrEqual, f, zero);
-    let num_falsey = self.fb.ins().band(is_num, le);
+    let zero_or_nan = self.fb.ins().fcmp(FloatCC::UnorderedOrEqual, f, zero);
+    let num_falsey = self.fb.ins().band(is_num, zero_or_nan);
     let x = self.fb.ins().bor(is_nil, is_false);
     let r = self.fb.ins().bor(x, num_falsey);
     self.fb.ins().jump(done, &[r.into()]);

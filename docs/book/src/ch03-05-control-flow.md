@@ -84,9 +84,9 @@ no name
 ```
 
 That is convenient and it is also where most bugs in new Zuri code come
-from, because the falsy set includes every negative number. Re-read the
-table in [Data Types](ch03-02-data-types.md) before you write `if count`
-or `if position`.
+from, because a legitimate `0` is falsy. Re-read the table in
+[Data Types](ch03-02-data-types.md) before you write `if count` or
+`if position`.
 
 ## The Conditional Expression
 

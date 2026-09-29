@@ -91,10 +91,11 @@ fn to_number(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(n))
 }
 
-/// Matches `number.to_bool()`: everything from zero up is truthy.
+/// The bigint's truthiness, exactly as `if` would read it: only zero is
+/// falsy.
 fn to_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  Ok(Value::bool(!this(ctx).is_negative()))
+  Ok(Value::bool(!this(ctx).is_zero()))
 }
 
 /// Two's-complement bytes, so the sign survives the round trip. Big-endian by

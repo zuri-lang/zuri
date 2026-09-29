@@ -574,10 +574,8 @@ def rgb_to_cmyk(r: int, g: int, b: int) {
   var k = (1 - r).min(1 - g).min(1 - b), c, m, y
 
   # k == 1 means pure black (no red, green, or blue content at all), so
-  # the c/m/y formulas below all divide by zero; their result is NaN,
-  # not the 0 the `or` pattern elsewhere in this module would normally
-  # catch, since NaN is truthy in Zuri. Pure black has no color content
-  # to speak of, so 0% is the correct C/M/Y reading here regardless.
+  # the c/m/y formulas below would all divide by zero. Pure black has no
+  # color content to speak of, so 0% is the correct C/M/Y reading.
   if k == 1 {
     c = 0
     m = 0
@@ -789,8 +787,7 @@ def hsv_to_hsl(h: number, s: number, v: number) {
 
   # The divisor can be exactly 0 (e.g. s=0, v=1, where lmax works out to
   # 2), which would divide sl's already-zero numerator into NaN rather
-  # than 0, and NaN is truthy in Zuri, so the `or 0` idiom used
-  # elsewhere in this module can't catch it the way it normally would.
+  # than 0.
   var divisor = lmax <= 1 ? lmax : 2 - lmax
   sl = divisor == 0 ? 0 : sl / divisor
   l /= 2

@@ -155,12 +155,13 @@ assert !holds(@{ expect(nil).to_be_defined() }), 'to_be_defined must fail for ni
 ok('to_be_true/false/nil/defined')
 
 assert holds(@{ expect('x').to_be_truthy() }), 'a non-empty string is truthy'
-assert holds(@{ expect(-1).to_be_falsy() }), 'a negative number is falsy in Zuri, and this matcher must say so'
+assert holds(@{ expect(-1).to_be_truthy() }), 'a negative number is truthy'
 assert holds(@{ expect(0).to_be_falsy() }), 'zero is falsy'
+assert holds(@{ expect(0 / 0).to_be_falsy() }), 'NaN is falsy'
 assert holds(@{ expect('').to_be_falsy() }), 'the empty string is falsy'
 assert holds(@{ expect([]).to_be_truthy() }), 'an empty list is truthy: it is an object, and objects are truthy'
 assert holds(@{ expect({}).to_be_truthy() }), 'so is an empty dict'
-ok('to_be_truthy/falsy follow Zuri truthiness, negative numbers and empty lists included')
+ok('to_be_truthy/falsy follow Zuri truthiness, negative numbers, NaN and empty lists included')
 
 # ---------------------------------------------------------------------------
 # Types

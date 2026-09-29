@@ -77,8 +77,7 @@ Hi, Ada!
 ### The `or` Trap in Defaults
 
 Because `or` does the work, a legitimately falsy argument is replaced by
-the default. In Zuri that set includes `0`, `''`, `false`, **and every
-negative number**:
+the default. In Zuri that set includes `0`, `NaN`, `''` and `false`:
 
 ```zuri
 def indent(text, width) {

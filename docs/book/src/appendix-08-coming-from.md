@@ -8,9 +8,7 @@ This is that list.
 | You expect | Zuri does |
 | --- | --- |
 | `x++` as a statement only | `x++` is postfix only, and in an expression it evaluates to the **new** value. `++x` does not parse. |
-| `-1` to be truthy | Every negative number is falsy, alongside `0` and `''`. `var n = maybe or fallback` silently replaces `-1`. |
 | `[]` to be falsy | `[]` and `{}` are truthy. Use `is_empty()`. |
-| `NaN` to be falsy | `NaN` is truthy. Use `is_nan()`. |
 | `finally` | There is none. Code after the `catch` statement runs either way. |
 | `try` | The keyword is `catch`, and it takes the block that might fail: `catch { ... } as e { ... }`. |
 | `new Thing()` | Call the class: `Thing()`. |

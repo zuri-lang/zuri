@@ -8,7 +8,7 @@ thing.
 | --- | --- | --- |
 | [`to_string(radix)`](#to_string) | `string` | Returns the decimal digits of the bigint, with a leading `-` when it is negative and no trailing `n`. |
 | [`to_number()`](#to_number) | `number` | Converts the bigint to a `number`. |
-| [`to_bool()`](#to_bool) | `boolean` | Converts the bigint to a boolean, following the same rule as `number.to_bool()`: zero and up are truthy, negatives are falsy. |
+| [`to_bool()`](#to_bool) | `boolean` | Converts the bigint to a boolean, by the same rule `if` uses. |
 | [`to_bytes(order)`](#to_bytes) | `bytes` | Returns the two's-complement byte representation, which carries the sign and so round-trips back to the same value. |
 | [`bin()`](#bin) | `string` | Returns the base-2 digits, equivalent to `to_string(2)`. |
 | [`hex()`](#hex) | `string` | Returns the base-16 digits in lowercase, equivalent to `to_string(16)`. |
@@ -89,16 +89,16 @@ Converts the bigint to a `number`.
 to_bool() -> boolean
 ```
 
-Converts the bigint to a boolean, following the same rule as
-`number.to_bool()`: zero and up are truthy, negatives are falsy.
+Converts the bigint to a boolean, by the same rule `if` uses. `0n` is
+`false`, and every other bigint, negative ones included, is `true`.
 
 ```zuri-repl
 %> 5n.to_bool()
 true
 %> 0n.to_bool()
-true
-%> (-5n).to_bool()
 false
+%> (-5n).to_bool()
+true
 ```
 
 **Returns** `boolean`

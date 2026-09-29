@@ -247,11 +247,9 @@ assert raises(@() { colors.xyz('x', 0, 0) }), 'xyz() must reject a non-numeric a
 ok('xyz() validates its argument before converting')
 
 # ---------------------------------------------------------------------------
-# rgb_to_hsv / rgb_to_hwb / rgb_to_cmyk / rgb_to_xyz: previously
-# untested reverse conversions, plus the two real NaN bugs this pass
-# found (both from the same root cause: a `x / y or 0` guard against
-# division-by-zero silently fails because NaN is truthy in Zuri, unlike
-# most languages this idiom is borrowed from)
+# rgb_to_hsv / rgb_to_hwb / rgb_to_cmyk / rgb_to_xyz: the reverse
+# conversions, including pure black, where the CMY formulas would divide
+# by zero
 # ---------------------------------------------------------------------------
 assert colors.rgb_to_hsv(255, 0, 0) == [0, 100, 100], 'rgb_to_hsv() of pure red must be full saturation/value at hue 0'
 assert colors.rgb_to_hsv(0, 0, 0) == [0, 0, 0], 'rgb_to_hsv() of black must be zero value'
@@ -285,9 +283,8 @@ assert raises(@() { colors.rgb_to_lab(1.5, 0, 0) }), 'rgb_to_lab() must reject a
 ok('rgb_to_lab() validates its arguments')
 
 # ---------------------------------------------------------------------------
-# hsl_to_hsv / hsv_to_hsl: previously untested, and hsv_to_hsl() carries
-# the same NaN-from-truthy-`or 0` bug as rgb_to_cmyk() above, triggered
-# by any fully-desaturated, fully-bright color (e.g. pure white)
+# hsl_to_hsv / hsv_to_hsl, including a fully-desaturated, fully-bright
+# color (e.g. pure white), where hsv_to_hsl() would divide by zero
 # ---------------------------------------------------------------------------
 assert colors.hsl_to_hsv(0, 0, 0) == [0, 0, 0], 'hsl_to_hsv() of black must be zero value'
 assert colors.hsl_to_hsv(0, 100, 50) == [0, 100, 100], 'hsl_to_hsv() of pure red in HSL must be full saturation/value in HSV'

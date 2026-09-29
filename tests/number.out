@@ -1,6 +1,6 @@
 to_string / to_bool:
 5
-false
+true
 true
 abs:
 5

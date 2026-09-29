@@ -56,16 +56,18 @@ class number {
 
 
   /**
-   * Converts the number to a boolean. A number is considered
-   * truthy (`true`) when it is greater than or equal to zero,
-   * and falsy (`false`) when it is negative.
+   * Converts the number to a boolean, by the same rule `if` uses.
+   * Zero (either sign) and `NaN` are `false`, and every other
+   * number, negative ones included, is `true`.
    *
    * ```zuri-repl
    * %> 5.to_bool()
    * true
    * %> 0.to_bool()
-   * true
+   * false
    * %> (-5).to_bool()
+   * true
+   * %> (0 / 0).to_bool()
    * false
    * ```
    *

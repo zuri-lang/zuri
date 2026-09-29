@@ -152,21 +152,20 @@ it. The falsy values are:
 | `false` | itself |
 | `nil` | absence of a value |
 | `0`, `0.0`, `-0.0` | zero |
-| any negative number | see below |
+| `NaN` | not a number at all |
 | `0n` | the bigint zero |
 | `''` | the empty string |
 | `bytes(0)` | an empty byte buffer |
 
-Everything else is truthy, including `[]`, `{}`, `'0'` and `NaN`.
+Everything else is truthy, including every negative number, `[]`, `{}`
+and `'0'`.
 
-Two of those rows deserve a second look.
+Two consequences deserve a second look.
 
-**Negative numbers are falsy.** `-1` is falsy, and so is `-42`. That makes
-`if list.index_of(x) { ... }` read as "if it was found", because
-`index_of()` returns `-1` when it was not. It also means the idiom
-`var n = maybe or fallback` silently replaces any negative value with the
-fallback. When a negative number is a legitimate result, compare it
-explicitly:
+**A position of `0` is falsy.** `index_of()` returns `-1` when it finds
+nothing, which is truthy, and `0` when it finds the item first, which is
+falsy. So `if list.index_of(x) { ... }` gets both cases backwards. Compare
+the result explicitly:
 
 ```zuri
 var haystack = ['a', 'b', 'c']

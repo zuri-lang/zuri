@@ -277,8 +277,9 @@ true
 true
 ```
 
-`NaN` is **truthy**, which catches people out. `var x = a / b or fallback`
-does not protect you from a `0 / 0`. Test with `is_nan()`.
+`NaN` is **falsy**, like zero, so `var x = a / b or fallback` replaces the
+`NaN` from a `0 / 0` with the fallback. Test with `is_nan()` when you need
+to tell the two apart.
 
 `NaN` is also not equal to itself, as the standard requires, so
 `x == x` is a valid way to spot one.

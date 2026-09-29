@@ -146,19 +146,15 @@ def stringify(value) {
  * boolean operator inside an expression.
  *
  * Wire deliberately does not reuse Zuri's own truthiness here, because
- * two of Zuri's answers are wrong for a template:
+ * one of Zuri's answers is wrong for a template: Zuri treats an empty
+ * list and an empty dictionary as true, so `x-if="items"` would render
+ * a section for a search that found nothing. Wire treats an empty
+ * collection as false.
  *
- * - Zuri treats every number at or below zero as false, so a
- *   temperature of `-5` or a balance of `-1` would disappear from the
- *   page. Wire treats any number other than zero as true, negative
- *   ones included.
- * - Zuri treats an empty list and an empty dictionary as true, so
- *   `x-if="items"` would render a section for a search that found
- *   nothing. Wire treats an empty collection as false.
- *
- * The rest reads as you would expect: `nil` and `false` are false, an
- * empty string is false, `NaN` is false, and anything Wire has no
- * special knowledge of (an instance, a function, a range) is true.
+ * Everything else agrees with Zuri: `nil` and `false` are false, zero
+ * and `NaN` are false while every other number is true, an empty
+ * string is false, and anything Wire has no special knowledge of (an
+ * instance, a function, a range) is true.
  *
  * A variable that was never supplied arrives here as `nil`, which is
  * why an optional section can be written as `x-if="user"` with nothing

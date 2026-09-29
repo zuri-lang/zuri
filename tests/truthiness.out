@@ -1,0 +1,39 @@
+nil: [false, true, no, fallback, nil]
+false: [false, true, no, fallback, false]
+true: [true, false, yes, true, both]
+0: [false, true, no, fallback, 0]
+-0: [false, true, no, fallback, -0]
+0.0: [false, true, no, fallback, 0]
+-0.0: [false, true, no, fallback, -0]
+nan: [false, true, no, fallback, NaN]
+1: [true, false, yes, 1, both]
+-1: [true, false, yes, -1, both]
+0.5: [true, false, yes, 0.5, both]
+-0.5: [true, false, yes, -0.5, both]
+-42: [true, false, yes, -42, both]
+inf: [true, false, yes, inf, both]
+-inf: [true, false, yes, -inf, both]
+0n: [false, true, no, fallback, 0n]
+5n: [true, false, yes, 5n, both]
+-5n: [true, false, yes, -5n, both]
+'': [false, true, no, fallback, ]
+' ': [true, false, yes,  , both]
+'0': [true, false, yes, 0, both]
+bytes(0): [false, true, no, fallback, ()]
+bytes(1): [true, false, yes, (00), both]
+[]: [true, false, yes, [], both]
+{}: [true, false, yes, {}, both]
+
+to_bool:
+false
+false
+false
+true
+true
+true
+false
+true
+true
+
+hot:
+[48000, 32000031960, 240]

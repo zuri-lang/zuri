@@ -1,0 +1,110 @@
+# Truthiness: every condition, `!`, `and`/`or`, the ternary and
+# `to_bool()` agree on which values are falsy, in the interpreter and
+# once the loops below are hot enough to be compiled.
+
+var nan = 0 / 0
+
+var values = [
+  nil, false, true,
+  0, -0, 0.0, -0.0, nan,
+  1, -1, 0.5, -0.5, -42, 1 / 0, -1 / 0,
+  0n, 5n, -5n,
+  '', ' ', '0',
+  bytes(0), bytes(1),
+  [], {},
+]
+
+var labels = [
+  'nil', 'false', 'true',
+  '0', '-0', '0.0', '-0.0', 'nan',
+  '1', '-1', '0.5', '-0.5', '-42', 'inf', '-inf',
+  '0n', '5n', '-5n',
+  "''", "' '", "'0'",
+  'bytes(0)', 'bytes(1)',
+  '[]', '{}',
+]
+
+def reading(v) {
+  var by_if = false
+  if v {
+    by_if = true
+  }
+
+  return [by_if, !v, v ? 'yes' : 'no', v or 'fallback', v and 'both']
+}
+
+for i, v in values {
+  echo '${labels[i]}: ${reading(v)}'
+}
+
+echo ''
+echo 'to_bool:'
+
+for v in [0, -0, nan, 1, -1, -0.5, 0n, 5n, -5n] {
+  echo v.to_bool()
+}
+
+# A mixed list keeps the condition tagged, so the compiled test has to
+# read the tag and then the number.
+def count_truthy(xs) {
+  var n = 0
+
+  iter var i = 0; i < xs.length(); i++ {
+    if xs[i] {
+      n++
+    }
+  }
+
+  return n
+}
+
+# Numbers only, so the condition works on a raw double.
+def count_nonzero(n: number) {
+  var count = 0
+
+  iter var i = -n; i < n; i++ {
+    var x = i / 2
+
+    if x {
+      count++
+    }
+
+    if !(x * nan) {
+      count += 1000000
+    }
+  }
+
+  return count
+}
+
+def count_by_to_bool(xs) {
+  var n = 0
+
+  for x in xs {
+    if x.to_bool() {
+      n++
+    }
+  }
+
+  return n
+}
+
+echo ''
+echo 'hot:'
+
+var mixed = []
+
+iter var i = 0; i < 2000; i++ {
+  mixed.append(values[i % values.length()])
+}
+
+var numbers = [0, -0, nan, 1, -1, 2.5, -2.5, 0n, -3n, 3n]
+var totals = [0, 0, 0]
+
+iter var round = 0; round < 40; round++ {
+  totals[0] += count_truthy(mixed)
+  totals[1] += count_nonzero(400)
+  totals[2] += count_by_to_bool(numbers)
+}
+
+echo totals

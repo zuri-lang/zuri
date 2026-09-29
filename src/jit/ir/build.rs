@@ -2838,7 +2838,7 @@ impl NumberMethod {
       "is_nan" => Test(FTest::IsNan),
       "is_inf" => Test(FTest::IsInf),
       "is_finite" => Test(FTest::IsFinite),
-      "to_bool" => Test(FTest::NonNegative),
+      "to_bool" => Test(FTest::Truthy),
       "sin" => Call("zuri_jit_num_sin", 0),
       "cos" => Call("zuri_jit_num_cos", 0),
       "tan" => Call("zuri_jit_num_tan", 0),

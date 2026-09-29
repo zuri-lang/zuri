@@ -107,10 +107,11 @@ Negative indices count back from the end, for strings, lists and bytes.
 
 ## Truthiness
 
-Falsy: `false`, `nil`, `0`, `0.0`, `-0.0`, **any negative number**, `0n`,
-`''`, and `bytes(0)`.
+Falsy: `false`, `nil`, `0`, `0.0`, `-0.0`, `NaN`, `0n`, `''`, and
+`bytes(0)`.
 
-Truthy: everything else, including `[]`, `{}`, `'0'` and `NaN`.
+Truthy: everything else, including every negative number, `[]`, `{}` and
+`'0'`.
 
 ## Operators Zuri Does Not Have
 

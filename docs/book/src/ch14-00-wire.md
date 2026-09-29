@@ -437,27 +437,23 @@ something to show.
 ### Truthiness
 
 `x-if`, `x-not`, `and`/`or`, `!`/`not`, and `? :` all use Wire's own
-notion of truthy and falsy, which is not quite the same as Zuri's own
-rules and is deliberately friendlier for template authoring:
+notion of truthy and falsy, which differs from Zuri's own rules in one
+place, deliberately, for template authoring:
 
 | Value                     | Wire        |
 | ------------------------- | ----------- |
 | `nil`, `false`            | falsy       |
-| `0`                       | falsy       |
-| any other number, **including negative ones** | truthy |
+| `0`, `NaN`                | falsy       |
+| any other number, including negative ones | truthy |
 | an empty string           | falsy       |
 | a non-empty string        | truthy      |
 | an empty list or dict     | falsy       |
 | a non-empty list or dict  | truthy      |
 | anything else             | truthy      |
 
-The one difference worth calling out explicitly: a negative number is
-truthy in Wire. A temperature of `-5` or an account balance of `-1`
-should still show up in the page; a template engine that treated any
-negative number as "nothing to show" would be a constant source of
-subtle bugs. An empty collection, on the other hand, is falsy — so
-`x-if="results"` correctly hides a section for a search that came back
-with nothing.
+The difference is the empty collection. Zuri treats `[]` and `{}` as
+truthy; Wire treats them as falsy, so `x-if="results"` correctly hides a
+section for a search that came back with nothing.
 
 ### Calling Functions
 

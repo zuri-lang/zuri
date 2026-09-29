@@ -20,4 +20,4 @@ floats live across allocation:
 bitwise ops on a float-tracked register:
 255
 comparisons and truthiness:
-49999
+74999

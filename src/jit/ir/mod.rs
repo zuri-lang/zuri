@@ -227,8 +227,8 @@ pub enum FTest {
   IsNan,
   IsInf,
   IsFinite,
-  /// `to_bool()`: at or above zero, which NaN is not.
-  NonNegative,
+  /// `to_bool()`: neither zero nor NaN.
+  Truthy,
 }
 
 /// What a guard checks. A failed guard deoptimizes through its frame

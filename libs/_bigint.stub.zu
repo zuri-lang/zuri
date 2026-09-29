@@ -125,17 +125,17 @@ class bigint {
 
 
   /**
-   * Converts the bigint to a boolean, following the same rule as
-   * `number.to_bool()`: zero and up are truthy, negatives are
-   * falsy.
+   * Converts the bigint to a boolean, by the same rule `if` uses.
+   * `0n` is `false`, and every other bigint, negative ones
+   * included, is `true`.
    *
    * ```zuri-repl
    * %> 5n.to_bool()
    * true
    * %> 0n.to_bool()
-   * true
-   * %> (-5n).to_bool()
    * false
+   * %> (-5n).to_bool()
+   * true
    * ```
    *
    * @returns {boolean}

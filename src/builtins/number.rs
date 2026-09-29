@@ -72,9 +72,12 @@ pub static NUMBER_METHODS: LazyLock<MethodTable> = LazyLock::new(|| {
   ])
 });
 
+/// The number's truthiness, exactly as `if` would read it.
 fn to_bool(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 0);
-  Ok(Value::bool(ctx.args[0].as_number() >= 0.0))
+  Ok(Value::bool(!Value::number_is_falsey(
+    ctx.args[0].as_number(),
+  )))
 }
 
 /// The counterpart to `bigint.to_number()`. Only an exact integer has a
