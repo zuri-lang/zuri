@@ -86,8 +86,8 @@ you decide what does and does not cross the wire.
 `to_string()` has no `@`. It is a real method every value already carries,
 and a class may override it.
 
-`echo` does **not** call it; it prints `<instance of ClassName>`. String
-interpolation and `+` do go through it.
+Nothing calls it implicitly. `echo`, string interpolation and `+` all
+render an instance as `<instance of ClassName>`.
 
 ## Resolution
 

@@ -363,8 +363,8 @@ echo m.to_string()
 $5
 ```
 
-String interpolation and `+` go through `to_string()`, so those do what you
-expect:
+String interpolation and `+` do not call it either, so call it inside the
+interpolation:
 
 ```zuri
 echo 'cost: ${m.to_string()}'
