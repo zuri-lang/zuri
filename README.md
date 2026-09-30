@@ -12,11 +12,11 @@
 </p>
 
 <p align="center">
-  <a href="https://zuri-lang.github.io/zuri-rs/">Website</a>
+  <a href="https://zuri-lang.github.io/zuri/">Website</a>
   &nbsp;&middot;&nbsp;
-  <a href="https://zuri-lang.github.io/zuri-rs/book">The Book</a>
+  <a href="https://zuri-lang.github.io/zuri/book">The Book</a>
   &nbsp;&middot;&nbsp;
-  <a href="https://zuri-lang.github.io/zuri-rs/reference">Standard Library</a>
+  <a href="https://zuri-lang.github.io/zuri/reference">Standard Library</a>
   &nbsp;&middot;&nbsp;
   <a href="LICENSE">BSD 2-Clause</a>
 </p>
@@ -112,9 +112,9 @@ declines to be vague.
 
 Zuri features true access controls with sealed classes, function 
 parameter type guards, private methods and modules, all enforced by the 
-compiler. The point of each is the same. The things that are hard to see 
+compiler. The point of each is the same. **The things that are hard to see 
 when reading code are the things the language refuses to let you get 
-wrong.
+wrong**.
 
 Zuri features a fast Just-In-Time (JIT) compiler driven underneath by Cranelift 
 &mdash; The same engine that drives `wasmtime`, with cutting edge 
@@ -124,14 +124,14 @@ specialization and optimized to production workloads.
 
 [`docs/`](docs) holds everything written about the language.
 
-- [**The Zuri Programming Language**](https://zuri-lang.github.io/zuri-rs/book) 
+- [**The Zuri Programming Language**](https://zuri-lang.github.io/zuri/book) 
   is the main text: twenty chapters from installing it to a full-stack web
   application, plus appendices covering the keywords, the operators and
   every method on every built-in type.
-- [**The Zuri Standard Library**](https://zuri-lang.github.io/zuri-rs/reference) 
+- [**The Zuri Standard Library**](https://zuri-lang.github.io/zuri/reference) 
   is the reference: every module, every public name, generated from the library's own doc blocks so a page and the code it describes can never disagree.
 
-Read the book on [The Zuri website](https://zuri-lang.github.io/zuri-rs/) as it 
+Read the book on [The Zuri website](https://zuri-lang.github.io/zuri/) as it 
 is, or render either locally if you have `cargo` installed:
 
 ```console

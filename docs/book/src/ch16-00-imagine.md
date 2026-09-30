@@ -953,7 +953,7 @@ Image(300, 70, 'white')
 
 It is not a font file. Every glyph is defined as geometry — centre-line
 strokes rather than filled outlines — in
-[`libs/imagine/strokefont.zu`](https://github.com/zuri-lang/zuri-rs/blob/main/libs/imagine/strokefont.zu), and
+[`libs/imagine/strokefont.zu`](https://github.com/zuri-lang/zuri/blob/main/libs/imagine/strokefont.zu), and
 drawn through the same anti-aliased rasterizer as everything else. So
 it scales cleanly to any size, and its weight is a parameter rather
 than part of the design:

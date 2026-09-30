@@ -7,8 +7,8 @@ minute and installs `cargo` for you.
 ## Building
 
 ```console
-$ git clone https://github.com/zuri-lang/zuri-rs
-$ cd zuri-rs
+$ git clone https://github.com/zuri-lang/zuri
+$ cd zuri
 $ cargo patch-crates
 $ cargo build --release
 ```

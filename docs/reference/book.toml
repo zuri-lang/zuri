@@ -16,7 +16,7 @@ build-dir = "../../target/reference/html"
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "ayu"
-git-repository-url = "https://github.com/zuri-lang/zuri-rs"
+git-repository-url = "https://github.com/zuri-lang/zuri"
 mathjax-support = false
 
 # mdBook's highlight.js has no Zuri in it. This registers the language
