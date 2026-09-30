@@ -236,6 +236,113 @@ pub fn memory() -> Result<(u64, u64), String> {
   Err("memory introspection is not supported on this platform".to_string())
 }
 
+// --- memory limit -----------------------------------------------------
+
+/// The most memory this process may use, in bytes: the machine's
+/// physical memory, or less when the process runs under a limit of its
+/// own, a cgroup on Linux or a job object on Windows. `None` when the
+/// platform reports neither.
+pub fn memory_limit() -> Option<u64> {
+  let total = memory().ok().map(|(total, _)| total);
+  match (total, process_memory_cap()) {
+    (Some(total), Some(cap)) => Some(total.min(cap)),
+    (total, cap) => total.or(cap),
+  }
+}
+
+/// The tightest memory limit among the cgroups this process runs in and
+/// their ancestors. A container sees the host's memory in
+/// `/proc/meminfo`, so its own limit shows up only here. Both cgroup
+/// versions are read: v2's `memory.max` reads `max` when unlimited, and
+/// v1's `memory.limit_in_bytes` holds a value near `i64::MAX`, which the
+/// caller's comparison with physical memory discards.
+#[cfg(target_os = "linux")]
+fn process_memory_cap() -> Option<u64> {
+  use std::path::{Path, PathBuf};
+
+  let cgroups = std::fs::read_to_string("/proc/self/cgroup").ok()?;
+  let mut cap: Option<u64> = None;
+
+  for line in cgroups.lines() {
+    let mut fields = line.splitn(3, ':');
+    let (Some(_), Some(controllers), Some(path)) = (fields.next(), fields.next(), fields.next())
+    else {
+      continue;
+    };
+
+    let (root, file) = if controllers.is_empty() {
+      ("/sys/fs/cgroup", "memory.max")
+    } else if controllers.split(',').any(|c| c == "memory") {
+      ("/sys/fs/cgroup/memory", "memory.limit_in_bytes")
+    } else {
+      continue;
+    };
+
+    // A parent's limit binds its children too, so the walk goes all the
+    // way up to the hierarchy's root.
+    let mut dir: PathBuf = Path::new(root).join(path.trim_start_matches('/'));
+    loop {
+      if let Ok(text) = std::fs::read_to_string(dir.join(file)) {
+        if let Ok(limit) = text.trim().parse::<u64>() {
+          cap = Some(cap.map_or(limit, |c| c.min(limit)));
+        }
+      }
+      if dir == Path::new(root) || !dir.pop() {
+        break;
+      }
+    }
+  }
+
+  cap
+}
+
+/// The memory limit of the job object this process belongs to, per
+/// process or for the whole job, whichever is tighter. Windows containers
+/// and some service managers confine a process this way.
+#[cfg(windows)]
+fn process_memory_cap() -> Option<u64> {
+  use windows_sys::Win32::System::JobObjects::{
+    JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+    QueryInformationJobObject,
+  };
+
+  let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+  // A null handle asks about the job the calling process runs in. A
+  // process outside any job gets a failure or no limit flags, and either
+  // way there is no cap.
+  let ok = unsafe {
+    QueryInformationJobObject(
+      std::ptr::null_mut(),
+      JobObjectExtendedLimitInformation,
+      &mut info as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION as *mut core::ffi::c_void,
+      std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+      std::ptr::null_mut(),
+    )
+  };
+  if ok == 0 {
+    return None;
+  }
+
+  let flags = info.BasicLimitInformation.LimitFlags;
+  let mut cap: Option<u64> = None;
+  if flags & JOB_OBJECT_LIMIT_PROCESS_MEMORY != 0 {
+    cap = Some(info.ProcessMemoryLimit as u64);
+  }
+  if flags & JOB_OBJECT_LIMIT_JOB_MEMORY != 0 {
+    let job = info.JobMemoryLimit as u64;
+    cap = Some(cap.map_or(job, |c| c.min(job)));
+  }
+  cap
+}
+
+/// macOS has no per-process memory limit of this kind, and neither do
+/// the remaining platforms, so physical memory is the whole answer.
+#[cfg(not(any(target_os = "linux", windows)))]
+fn process_memory_cap() -> Option<u64> {
+  None
+}
+
 // --- uptime ---------------------------------------------------------------
 
 /// Seconds since the machine booted.

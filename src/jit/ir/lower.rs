@@ -2567,7 +2567,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().brif(no_room, slow, &[], fast, &[]);
 
     self.fb.switch_to_block(fast);
-    let size = object::SLOT_BYTES as i64 + count as i64 * 8;
+    let size = (object::SLOT_BYTES + object::elements_outside_slot(count as usize)) as i64;
     let next = self.fb.ins().iadd_imm_s(cur, 64);
     self
       .fb

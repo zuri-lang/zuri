@@ -12951,7 +12951,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
     self.fb.append_block_param(done_block, types::I64);
 
     if count <= MAX_INLINE_INSTANCE_FIELDS {
-      let accounted = (object::SLOT_BYTES + count * 8) as i64;
+      let accounted = (object::SLOT_BYTES + object::fields_outside_slot(count)) as i64;
       let arena_cells = if count > object::INLINE_FIELDS {
         count
       } else {
@@ -13007,7 +13007,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
 
     let slow_block = self.fb.create_block();
     let done_block = self.fb.create_block();
-    let size_bytes = object::SLOT_BYTES as i64 + (count as i64) * 8;
+    let size_bytes = (object::SLOT_BYTES + object::elements_outside_slot(count as usize)) as i64;
     // A list goes on the finalization list whatever its size now: it
     // can spill to a buffer of its own later.
     let (cur, _) = self.emit_young_alloc(size_bytes, true, 0, slow_block);

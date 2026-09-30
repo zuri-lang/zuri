@@ -21,7 +21,10 @@ caseless = "0.2"
 toml = "1.1.2"
 pcre2 = "0.2.11"
 smallvec = "1.15.2"
-mimalloc = { version = "0.1.52", default-features = false }
+# no_thp stops mimalloc asking the kernel for transparent huge pages. They
+# round every sparsely used region up to 2 MB, and this leaves the process's
+# THP setting alone, so programs Zuri spawns keep the system's own policy.
+mimalloc = { version = "0.1.52", default-features = false, features = ["no_thp"] }
 minus = { version = "5.7.2", features = ["static_output"] }
 
 # --- JIT -------------------------------------------------------------------
@@ -232,6 +235,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Diagnostics_Debug",
     "Win32_Storage_FileSystem",
+    # QueryInformationJobObject, so the collector sizes its young
+    # generation against a job's memory limit rather than the machine's.
+    "Win32_System_JobObjects",
 ] }
 # Locates MSVC's link.exe, and the environment it needs, for turning a
 # static library into a DLL in `ffi.link()`. The same crate `cc` uses to

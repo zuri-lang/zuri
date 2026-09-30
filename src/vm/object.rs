@@ -2426,8 +2426,9 @@ mod gcbox_layout_tests {
     let obj = list_val.as_obj();
     let gcbox_ptr = Heap::gcbox_of(obj) as *const u64;
 
-    // Word 0 (bytes 0..7): live=1, marked=0, gen=Young(0), remembered=0, chunk_idx=0
-    assert_eq!(unsafe { *gcbox_ptr.add(0) }, 1u64);
+    // Word 0 (bytes 0..7): live=1, marked=0, gen=Young(0), remembered=0,
+    // chunk_idx = the heap's current young epoch
+    assert_eq!(unsafe { *gcbox_ptr.add(0) }, heap.young_header);
     // Word 1 (bytes 8..15): list_next = null
     assert_eq!(unsafe { *gcbox_ptr.add(1) }, 0u64);
     // Word 2 (bytes 16..23): Obj tag = OBJ_TAG_LIST (3)
@@ -2550,7 +2551,6 @@ struct GcChunk {
 /// Owns every heap object for the lifetime of the VM. Values only ever hold
 /// *const Obj pointers into this arena, never real ownership, which is what
 /// lets a Value stay a plain Copy u64.
-#[derive(Default)]
 pub struct Heap {
   /// `None` marks a chunk that's been reclaimed; kept as a hole
   /// rather than removed, so no other chunk's index ever shifts.
@@ -2572,9 +2572,10 @@ pub struct Heap {
   /// thrashing on a fixed budget.
   next_gc: usize,
   /// The most this heap ever lets its young generation grow to before a
-  /// minor collection; `YOUNG_CEILING`, or `ISOLATE_YOUNG_CEILING` for an
-  /// isolate's own heap. Fixed for the heap's whole life, which is what
-  /// lets `jit::codegen` bake it in as an immediate.
+  /// minor collection; `nursery_ceiling`, or at most
+  /// `ISOLATE_YOUNG_CEILING` for an isolate's own heap. Fixed for the
+  /// heap's whole life, which is what lets `jit::codegen` bake it in as
+  /// an immediate.
   young_ceiling: usize,
   /// The size the young generation starts at and never shrinks below:
   /// see `nursery_floor`.
@@ -2587,9 +2588,10 @@ pub struct Heap {
   /// compiled code comparing that count against the fixed ceiling still
   /// owes a collection exactly when the current budget is spent.
   young_offset: usize,
-  /// Consecutive minor collections in which next to nothing survived.
-  /// Enough of them in a row halves the budget.
-  quiet_cycles: u32,
+  /// When the cycle in progress began, at the last minor collection or
+  /// when the heap was made. How long a cycle takes to fill tells
+  /// `resize_young` whether the program still needs its budget.
+  cycle_start: std::time::Instant,
   live_count: usize,
   /// Bytes allocated into the young generation since the last minor
   /// (or major) collection, counted up from `young_offset`; deliberately
@@ -2740,6 +2742,17 @@ pub struct Heap {
   /// collections: a program too short to reach that many has no major
   /// collection to save.
   aging: bool,
+  /// Set until the first minor collection brought on by the young
+  /// budget has run; one that has to promote everything, for a major
+  /// collection or for the JIT, does not count. That one keeps its
+  /// survivors young whatever `aging` says: it comes while the young
+  /// generation is still at its floor, before the budget has learned
+  /// anything about the program, and what the program is building at
+  /// that moment deserves the larger cycles that follow to die in
+  /// rather than a straight trip to the old generation. Its survivors
+  /// are not a judgement on aging either, since they were kept for a
+  /// different reason.
+  first_cycle: bool,
   /// How many survivors the collection in progress is judging: the ones
   /// the previous collection kept young.
   judged_survivors: usize,
@@ -2913,6 +2926,26 @@ impl FieldStoragePool {
 /// the VM does.
 pub(crate) const SLOT_BYTES: usize = std::mem::size_of::<GcBox>();
 
+/// The bytes an instance with `count` fields keeps outside its slot. Up
+/// to `INLINE_FIELDS` fields live inside the slot and cost nothing more.
+pub(crate) const fn fields_outside_slot(count: usize) -> usize {
+  if count > INLINE_FIELDS {
+    count * std::mem::size_of::<Value>()
+  } else {
+    0
+  }
+}
+
+/// The bytes a list of `len` elements keeps outside its slot. Up to
+/// `list::INLINE_CAP` elements live inside the slot and cost nothing more.
+pub(crate) const fn elements_outside_slot(len: usize) -> usize {
+  if len > crate::vm::list::INLINE_CAP {
+    len * std::mem::size_of::<Value>()
+  } else {
+    0
+  }
+}
+
 /// Byte offsets of `Heap::bytes_allocated`/`next_gc`; combined with
 /// `vm::VM_HEAP_OFFSET` in `crate::jit` so compiled code can inline
 /// `needs_major_gc()`'s check directly instead of an FFI call at every
@@ -2966,6 +2999,12 @@ impl Drop for Heap {
   }
 }
 
+impl Default for Heap {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 /// The size the young generation starts at and never shrinks below:
 /// `ZURI_GC_NURSERY_MB` megabytes when that is set to a whole number
 /// above zero, `Heap::YOUNG_FLOOR` otherwise. Read once per process, so
@@ -2978,6 +3017,36 @@ fn nursery_floor() -> usize {
       .and_then(|mb| mb.trim().parse::<usize>().ok())
       .filter(|&mb| mb > 0)
       .map_or(Heap::YOUNG_FLOOR, |mb| mb.saturating_mul(1024 * 1024))
+  })
+}
+
+/// The most the main VM's young generation grows to: one part in
+/// `Heap::YOUNG_CEILING_SHARE` of the memory this process may use, no
+/// more than `Heap::YOUNG_CEILING_MAX`, rounded down to a power of two,
+/// and never below the floor. The memory figure is the machine's, or a
+/// container's or job's limit when that is lower; where the platform
+/// reports none, `Heap::YOUNG_CEILING_UNKNOWN` stands in for it. Worked
+/// out once per process, since compiled code carries the ceiling as a
+/// constant.
+///
+/// Rounding keeps the ceilings machines end up with to a handful of
+/// sizes, so a program collects at the same points on machines whose
+/// memory differs a little, and it lines cycles up with the structures
+/// programs build in powers of two: balanced trees, divide and conquer,
+/// containers that double.
+fn nursery_ceiling() -> usize {
+  static CEILING: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+  *CEILING.get_or_init(|| {
+    let ceiling = crate::modules::os_util::sysinfo::memory_limit().map_or(
+      Heap::YOUNG_CEILING_UNKNOWN,
+      |bytes| {
+        let share = bytes / Heap::YOUNG_CEILING_SHARE;
+        usize::try_from(share).unwrap_or(usize::MAX)
+      },
+    );
+    let ceiling = ceiling.min(Heap::YOUNG_CEILING_MAX).max(1);
+    let rounded = 1usize << (usize::BITS - 1 - ceiling.leading_zeros());
+    rounded.max(nursery_floor())
   })
 }
 
@@ -3002,46 +3071,51 @@ impl Heap {
   /// costs much resident memory. `ZURI_GC_NURSERY_MB` replaces it.
   const YOUNG_FLOOR: usize = 16 * 1024 * 1024;
 
-  /// The most the main VM's young generation grows to. A program that
-  /// builds large structures which outlive one small cycle, only to drop
-  /// them a little later, grows its budget towards this so they can
-  /// still die young instead of being copied into the old generation
-  /// and swept by full collections. `jit::codegen` bakes it into
-  /// compiled code as an immediate, which is sound because it is the
-  /// one young-generation threshold fixed for a heap's whole life.
-  pub(crate) const YOUNG_CEILING: usize = 128 * 1024 * 1024;
+  /// The main VM's young generation grows to at most this fraction of
+  /// the memory the process may use, one part in a hundred. A program
+  /// that builds large structures which outlive one small cycle, only to
+  /// drop them a little later, grows its budget towards the ceiling so
+  /// they can still die young instead of being copied into the old
+  /// generation and swept by full collections. See `nursery_ceiling`.
+  const YOUNG_CEILING_SHARE: u64 = 100;
+  /// However much memory the machine has, the ceiling stops here.
+  const YOUNG_CEILING_MAX: usize = 320 * 1024 * 1024;
+  /// The ceiling on a platform that reports no memory figure at all.
+  const YOUNG_CEILING_UNKNOWN: usize = 128 * 1024 * 1024;
 
-  /// The same ceiling for a heap belonging to an isolate rather than to
-  /// the main VM.
+  /// The most an isolate's young generation grows to, when the main VM's
+  /// ceiling is not already lower.
   ///
-  /// Every isolate carries its own young generation, so the figure above
-  /// is not a ceiling on one program's young generation but on each of
-  /// them: a server running eight workers could reach eight times it
-  /// before anything is collected, and resident memory would follow.
-  /// Isolates are there to run work concurrently, which is the shape of
-  /// program a large young generation buys the least for, so they grow
-  /// to the smaller one.
-  pub(crate) const ISOLATE_YOUNG_CEILING: usize = 32 * 1024 * 1024;
+  /// Every isolate carries its own young generation, so the main VM's
+  /// ceiling is not a ceiling on one program's young generation but on
+  /// each of them: a server running eight workers could reach eight
+  /// times it before anything is collected, and resident memory would
+  /// follow. Isolates are there to run work concurrently, which is the
+  /// shape of program a large young generation buys the least for, so
+  /// they grow to a smaller one.
+  const ISOLATE_YOUNG_CEILING: usize = 32 * 1024 * 1024;
 
-  /// A minor collection in which at least this share of the cycle's
-  /// young bytes survived doubles the budget, up to the ceiling.
-  const YOUNG_GROW_SURVIVAL: f64 = 0.25;
-  /// A minor collection in which less than this share survived counts
-  /// as quiet. `YOUNG_QUIET_CYCLES` quiet ones in a row halve the
-  /// budget, down to the floor, so a program that alternates between
-  /// building structures and churning through garbage does not see its
-  /// budget swing back and forth every cycle.
-  const YOUNG_QUIET_SURVIVAL: f64 = 0.0625;
-  const YOUNG_QUIET_CYCLES: u32 = 8;
+  /// A minor collection that collected at least this share of the
+  /// cycle's young bytes leaves the budget as it is. Collecting less
+  /// grows it by this share over the share collected: twice as large at
+  /// a quarter collected, four times at an eighth, and straight to the
+  /// ceiling when next to nothing died.
+  const YOUNG_HOLD_COLLECTED: f64 = 0.5;
+  /// A cycle that took at least this long to fill its budget belongs to
+  /// a program allocating too slowly to need that much room, so the
+  /// budget halves, down to the floor, and the memory behind it goes
+  /// back. A program that allocates quickly never shrinks, which spares
+  /// it from giving memory back only to fault it in again.
+  const YOUNG_SLOW_FILL: std::time::Duration = std::time::Duration::from_secs(1);
 
   pub fn new() -> Self {
-    Self::with_young_ceiling(Self::YOUNG_CEILING)
+    Self::with_young_ceiling(nursery_ceiling())
   }
 
   /// A heap for an isolate, whose young generation grows to a smaller
   /// ceiling: see `ISOLATE_YOUNG_CEILING`.
   pub fn new_for_isolate() -> Self {
-    Self::with_young_ceiling(Self::ISOLATE_YOUNG_CEILING)
+    Self::with_young_ceiling(nursery_ceiling().min(Self::ISOLATE_YOUNG_CEILING))
   }
 
   /// A floor set above the ceiling raises the ceiling to match, so the
@@ -3059,7 +3133,7 @@ impl Heap {
       young_floor,
       young_budget: young_floor,
       young_offset,
-      quiet_cycles: 0,
+      cycle_start: std::time::Instant::now(),
       live_count: 0,
       young_bytes_allocated: young_offset,
       jit_gc_needed: false,
@@ -3089,6 +3163,7 @@ impl Heap {
       survivor_finalize: Vec::new(),
       promote_all: false,
       aging: false,
+      first_cycle: true,
       judged_survivors: 0,
       survivors_kept: 0,
       cycles_without_aging: 0,
@@ -3107,7 +3182,7 @@ impl Heap {
   /// cannot, every reachable young object ends up old, and nothing it
   /// scans can be left pointing into the young generation.
   pub(crate) fn keeps_survivors(&self) -> bool {
-    self.aging && !self.promote_all
+    (self.aging || self.first_cycle) && !self.promote_all
   }
 
   /// Makes the next minor collection promote every reachable young
@@ -3299,7 +3374,7 @@ impl Heap {
         },
         Obj::Bytes(b) => b.borrow().len(),
         Obj::BigInt(x) => size_of::<BigInt>() + x.bits() as usize,
-        Obj::List(items) => items.borrow().len() * size_of::<Value>(),
+        Obj::List(items) => elements_outside_slot(items.borrow().len()),
         Obj::Dict(storage) => {
           let s = storage.borrow();
           s.entries.len() * (size_of::<(Value, Value)>() + size_of::<usize>() * 2)
@@ -3311,7 +3386,13 @@ impl Heap {
             + f.upvalues.len() * size_of::<Value>()
         },
         Obj::BoundMethod(_) => size_of::<ObjBoundMethod>(),
-        Obj::Closure(c) => c.upvalues.len() * size_of::<Value>(),
+        Obj::Closure(c) => {
+          if c.upvalues.spilled() {
+            c.upvalues.len() * size_of::<Value>()
+          } else {
+            0
+          }
+        },
         Obj::Upvalue(_) => 0,
         Obj::Native(_) => 0,
         Obj::Class(c) => {
@@ -3322,7 +3403,13 @@ impl Heap {
             + c.static_slots.len() * 32
             + c.statics.len() * size_of::<Cell<Value>>()
         },
-        Obj::Instance(i) => i.fields.len() * size_of::<Cell<Value>>(),
+        Obj::Instance(i) => {
+          if i.fields.is_inline() {
+            0
+          } else {
+            i.fields.len() * size_of::<Cell<Value>>()
+          }
+        },
         Obj::Module(m) => {
           let m = m.borrow();
           size_of::<ObjModule>() + m.namespace.slots.len() * (size_of::<Cell<Value>>() + 32)
@@ -3833,7 +3920,7 @@ impl Heap {
     if aged {
       self.survivors_kept += 1;
     }
-    let new_gcbox = if self.promote_all || !self.aging || aged {
+    let new_gcbox = if !self.keeps_survivors() || aged {
       self.promoted_count += 1;
       self.promoted_bytes += bytes;
       self.promote_into_old(moved)
@@ -3949,7 +4036,9 @@ impl Heap {
   /// The survivor space rotates: the survivors this collection copied
   /// become the young generation's starting population, and the chunks
   /// that held the last cycle's survivors, every one of them now either
-  /// promoted or dead, go back to the spare pool.
+  /// promoted or dead, go back to the spare pool, or to the nursery when
+  /// the pool already holds as many as the next collection is likely to
+  /// need.
   ///
   /// Accounting follows the same shape: the old generation's figures
   /// plus what this cycle promoted, the new survivors counted as young
@@ -3988,10 +4077,16 @@ impl Heap {
       // SAFETY: as for eden below: every survivor here was promoted
       // (moved out), dropped above, or owns nothing.
       unsafe { chunk.slots.set_len(0) };
-      if self.survivor_spare.len() < self.retained_nursery_chunks() {
-        self.survivor_spare.push(chunk);
-      }
+      self.survivor_spare.push(chunk);
     }
+    // The next collection's survivors most likely fill about as many
+    // chunks as this one's, so that many spares stay. The rest join the
+    // nursery, which takes chunks of the same size: a young generation
+    // that has stopped keeping survivors, or has just grown, fills them
+    // instead of asking the allocator for fresh ones while these sit
+    // freed but still resident.
+    let keep = self.survivor_next.len().min(self.survivor_spare.len());
+    let released = self.survivor_spare.split_off(keep);
     self.survivor_chunks = std::mem::take(&mut self.survivor_next);
 
     for chunk in self.nursery_chunks.iter_mut() {
@@ -3999,6 +4094,7 @@ impl Heap {
       // above, or owns nothing, so no destructor needs to run.
       unsafe { chunk.slots.set_len(0) };
     }
+    self.nursery_chunks.extend(released);
     self.nursery_chunks.truncate(self.retained_nursery_chunks());
     self.nursery_fill_idx = 0;
     // Both null so the next `alloc`'s `cur == end` check routes
@@ -4018,15 +4114,22 @@ impl Heap {
     self.advance_epoch();
 
     let young_bytes = self.young_bytes();
+    let young_objects = self.live_count - self.old_live_count;
     self.bytes_allocated =
       self.bytes_allocated - young_bytes + self.promoted_bytes + self.survivor_bytes;
     self.old_live_count += self.promoted_count;
     self.live_count = self.old_live_count + self.survivor_count;
+    let now = std::time::Instant::now();
     if !self.promote_all {
-      self.resize_young(young_bytes);
+      self.resize_young(young_objects, now.duration_since(self.cycle_start));
     }
+    self.cycle_start = now;
     self.young_bytes_allocated = self.young_offset + self.survivor_bytes;
     self.decide_aging();
+    if self.first_cycle && !self.promote_all {
+      self.judged_survivors = 0;
+      self.first_cycle = false;
+    }
     self.promoted_bytes = 0;
     self.promoted_count = 0;
     self.survivor_bytes = 0;
@@ -4065,27 +4168,40 @@ impl Heap {
     self.survivors_kept = 0;
   }
 
-  /// Sets the next cycle's young budget from what survived this one,
-  /// which allocated `young_bytes`. A cycle in which a large share
-  /// survived means the program's young objects are outliving the
-  /// budget, so it doubles, up to the ceiling. Only a run of cycles in
-  /// which almost nothing survived halves it again, down to the floor.
-  fn resize_young(&mut self, young_bytes: usize) {
-    if young_bytes == 0 {
+  /// Sets the next cycle's young budget from the one just collected,
+  /// which held `young_objects` and took `fill_time` to fill.
+  ///
+  /// Collecting less than `YOUNG_HOLD_COLLECTED` of the cycle means the
+  /// program's young objects are outliving the budget, and the less was
+  /// collected, the further the budget grows, up to the ceiling. A grown
+  /// budget is rounded up to a power of two, for the same reasons the
+  /// ceiling is rounded (see `nursery_ceiling`).
+  /// Otherwise it holds, unless the cycle filled slowly enough to shrink
+  /// (see `YOUNG_SLOW_FILL`).
+  ///
+  /// What survived is counted in objects rather than bytes, because the
+  /// cost of a survivor is copying its slot. A string or a buffer keeps
+  /// its contents where they are when it is promoted, so a program whose
+  /// survivors are a few large buffers has almost nothing to copy, and a
+  /// byte count would grow its budget for no gain.
+  fn resize_young(&mut self, young_objects: usize, fill_time: std::time::Duration) {
+    if young_objects == 0 {
       return;
     }
-    let survived = (self.promoted_bytes + self.survivor_bytes) as f64 / young_bytes as f64;
-    if survived >= Self::YOUNG_GROW_SURVIVAL {
-      self.young_budget = (self.young_budget * 2).min(self.young_ceiling);
-      self.quiet_cycles = 0;
-    } else if survived < Self::YOUNG_QUIET_SURVIVAL {
-      self.quiet_cycles += 1;
-      if self.quiet_cycles >= Self::YOUNG_QUIET_CYCLES {
-        self.young_budget = (self.young_budget / 2).max(self.young_floor);
-        self.quiet_cycles = 0;
-      }
-    } else {
-      self.quiet_cycles = 0;
+    let survived = (self.promoted_count + self.survivor_count) as f64 / young_objects as f64;
+    let collected = (1.0 - survived).max(0.0);
+    if collected < Self::YOUNG_HOLD_COLLECTED {
+      let grown = if collected > 0.0 {
+        self.young_budget as f64 * (Self::YOUNG_HOLD_COLLECTED / collected)
+      } else {
+        self.young_ceiling as f64
+      };
+      let grown = (grown as usize)
+        .checked_next_power_of_two()
+        .unwrap_or(usize::MAX);
+      self.young_budget = grown.clamp(self.young_budget, self.young_ceiling);
+    } else if fill_time >= Self::YOUNG_SLOW_FILL {
+      self.young_budget = (self.young_budget / 2).max(self.young_floor);
     }
     self.young_offset = self.young_ceiling - self.young_budget;
   }
@@ -4411,7 +4527,7 @@ impl Heap {
 
   pub fn alloc_instance(&mut self, class: Value, field_count: usize) -> Value {
     let fields = self.young_field_storage(field_count);
-    let size = SLOT_BYTES + field_count * size_of::<Cell<Value>>();
+    let size = SLOT_BYTES + fields_outside_slot(field_count);
     self.alloc_sized(Obj::Instance(ObjInstance { class, fields }), size)
   }
 
