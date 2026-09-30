@@ -168,7 +168,7 @@ Both return `self`, so `board.get(id).move_to('done')` reads as one thought.
     return self.to_dict()
   }
 
-  to_string() {
+  @to_string() {
     return 'Task(${self.id}, ${self.column}, ${self.title})'
   }
 }
@@ -183,8 +183,8 @@ Keeping them apart means a change to the display format never changes the
 file format.
 
 `@to_json()` means a `Task` can be passed straight to `response.json()`.
-`to_string()` means `echo` through it during debugging shows something
-useful.
+`@to_string()` means `echo` shows something useful when you look at a
+task while debugging.
 
 ## Rebuilding From Storage
 

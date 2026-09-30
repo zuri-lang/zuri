@@ -356,9 +356,11 @@ implicit: <instance of Point>
 explicit: (3, 4)
 ```
 
-Call the method yourself. This applies to `echo p` too, and to
-`'text ' + p`. The rule is that Zuri never calls a method on your behalf to
-produce text; if you want `to_string()` to run, write it.
+Call the method yourself. This applies to `'text ' + p` too. Interpolation
+and `+` never call a method on your behalf to produce text; if you want
+`to_string()` to run, write it. `echo` is the exception, through
+`@to_string()`, which [Decorated Methods](ch06-03-decorated-methods.md)
+covers.
 
 ### Writing a Literal `${`
 

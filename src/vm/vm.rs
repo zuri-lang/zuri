@@ -5758,7 +5758,7 @@ impl VM {
 
           Instr::Print { src } => {
             let v = self.get_reg(base, src);
-            crate::vm::natives::echo_value(v);
+            tri!(self.echo(v), 'step);
           },
 
           Instr::CheckParamType { reg, check_idx } => {
@@ -7707,6 +7707,98 @@ impl VM {
     }
 
     Ok(Some((lo, hi)))
+  }
+
+  /// `echo v`. A value with no `@to_string()` anywhere in it goes
+  /// straight out; anything else is rendered in full first, so a
+  /// `@to_string()` that raises prints nothing.
+  pub(crate) fn echo(&mut self, v: Value) -> RunResult<()> {
+    if !crate::vm::natives::shows_through_to_string(v) {
+      crate::vm::natives::echo_value(v);
+      return Ok(());
+    }
+    let text = self.render_printable(v)?;
+    crate::vm::natives::echo_text(&text);
+    Ok(())
+  }
+
+  /// The text `echo` and `print()` show for `v`: its `Display` text,
+  /// except that an instance whose class defines `@to_string()` shows
+  /// what that returns, wherever it sits inside lists and dictionaries.
+  pub(crate) fn render_printable(&mut self, v: Value) -> RunResult<String> {
+    let mut out = String::new();
+    let mark = self.pin_values([v]);
+    let written = self.write_printable(&mut out, mark);
+    self.unpin(mark);
+    written.map(|()| out)
+  }
+
+  /// Renders the value pinned at `slot` into `out`.
+  ///
+  /// A `@to_string()` can collect, which moves objects, and can change
+  /// the very list or dictionary being rendered. So nothing is carried
+  /// across a call in a Rust local: the container comes back from its
+  /// pin at every step and its length is checked afresh, and the
+  /// rendering shows it as it stands at that point.
+  fn write_printable(&mut self, out: &mut String, slot: usize) -> RunResult<()> {
+    use std::fmt::Write as _;
+
+    let v = self.pinned(slot);
+    if !crate::vm::natives::shows_through_to_string(v) {
+      let _ = write!(out, "{}", v);
+      return Ok(());
+    }
+
+    if v.is_instance() {
+      let method = v.as_instance().class.as_class().methods["@to_string"];
+      let text = self.call_value(method, &[v])?;
+      if !text.is_string() {
+        let msg = format!(
+          "@to_string() must return a string, got {}",
+          text.type_name()
+        );
+        return Err(self.raise("TypeError", msg));
+      }
+      out.push_str(text.as_str());
+      return Ok(());
+    }
+
+    if v.is_list() {
+      out.push('[');
+      let mut i = 0;
+      while let Some(item) = self.pinned(slot).with_list(|items| items.get(i).copied()) {
+        if i > 0 {
+          out.push_str(", ");
+        }
+        let mark = self.pin_values([item]);
+        let written = self.write_printable(out, mark);
+        self.unpin(mark);
+        written?;
+        i += 1;
+      }
+      out.push(']');
+      return Ok(());
+    }
+
+    out.push('{');
+    let mut i = 0;
+    while let Some((k, item)) = self
+      .pinned(slot)
+      .with_dict(|storage| storage.entries.get(i).copied())
+    {
+      if i > 0 {
+        out.push_str(", ");
+      }
+      let mark = self.pin_values([k, item]);
+      let written = self.write_printable(out, mark);
+      out.push_str(": ");
+      let written = written.and_then(|()| self.write_printable(out, mark + 1));
+      self.unpin(mark);
+      written?;
+      i += 1;
+    }
+    out.push('}');
+    Ok(())
   }
 
   /// Services an operator via a class- or builtin-declared override method

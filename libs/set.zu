@@ -460,6 +460,10 @@ class Set {
     '}>'
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns the current Set as a list of elements.
    *

@@ -1,0 +1,192 @@
+# `echo` and `print()` show an instance through its class's
+# `@to_string()`, wherever it sits inside lists and dictionaries, in the
+# interpreter and in compiled code.
+
+import io
+
+class Point {
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  @to_string() {
+    return '(${self.x}, ${self.y})'
+  }
+}
+
+class Point3 < Point {
+
+  @new(x, y, z) {
+    parent(x, y)
+    self.z = z
+  }
+}
+
+# A plain `to_string()` is not what `echo` uses.
+class Plain {
+
+  to_string() {
+    return 'plain'
+  }
+}
+
+class Both {
+
+  to_string() {
+    return 'value'
+  }
+
+  @to_string() {
+    return '<Both ${self.to_string()}>'
+  }
+}
+
+class Wrong {
+
+  @to_string() {
+    return 42
+  }
+}
+
+class Failing {
+
+  @to_string() {
+    raise ValueError('cannot show this')
+  }
+}
+
+var p = Point(1, 2)
+
+echo p
+echo Point3(1, 2, 3)
+echo Plain()
+echo Both()
+echo 'interpolated: ${p}'
+echo [p, 1, 'a', nil, [Point(3, 4)]]
+echo { p: p, list: [p] }
+echo { [p]: 'key' }
+echo [1, 2, 3]
+echo {}
+
+print(p, ' ', [p], ' ', 'text', '\n')
+
+catch {
+  echo Wrong()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+var printed = io.capture(@() {
+  catch {
+    print('before ', [Failing()], '\n')
+  } as e {
+    echo '${e.type}: ${e.message}'
+  }
+})
+
+echo 'captured: ${printed.trim()}'
+
+# A `@to_string()` that changes the list being shown: the rest of the
+# list is read as it stands after the call.
+var shown = []
+
+class Shrinker {
+
+  @to_string() {
+    shown.pop()
+    return 'shrinker'
+  }
+}
+
+shown = [Shrinker(), 'a', 'b']
+echo shown
+
+# Enough garbage from inside `@to_string()` to force collections while
+# the surrounding list is only half rendered.
+class Noisy {
+
+  @new(n) {
+    self.n = n
+  }
+
+  @to_string() {
+    var junk = []
+
+    iter var i = 0; i < 2000; i++ {
+      junk.append([i, '${i}'])
+    }
+
+    return 'n${self.n}'
+  }
+}
+
+var noisy = []
+
+iter var i = 0; i < 40; i++ {
+  noisy.append(Noisy(i))
+}
+
+var noisy_text = io.capture(@() {
+  echo noisy
+})
+
+echo noisy_text.length()
+echo noisy_text.starts_with('[n0, n1, n2')
+echo noisy_text.trim().ends_with('n38, n39]')
+
+# Hot: the loops below are compiled, and the `echo` runs from compiled
+# code. `Keeper` stores `self` from inside `@to_string()`, so an
+# instance built in the loop has to exist for real by the time it is
+# shown.
+var kept = []
+
+class Keeper {
+
+  @new(n) {
+    self.n = n
+  }
+
+  @to_string() {
+    kept.append(self)
+    return 'keeper ${self.n}'
+  }
+}
+
+def show_every(n: number, every: number) {
+  var total = 0
+
+  iter var i = 0; i < n; i++ {
+    var k = Keeper(i)
+    total += k.n
+
+    if i % every == 0 {
+      echo k
+      echo [Point(i, total)]
+    }
+  }
+
+  return total
+}
+
+def raise_late(n: number) {
+  var caught = 0
+
+  iter var i = 0; i < n; i++ {
+    catch {
+      if i % 10000 == 9999 {
+        echo Failing()
+      }
+    } as e {
+      caught++
+    }
+  }
+
+  return caught
+}
+
+echo show_every(40000, 10000)
+echo kept.length()
+echo kept.map(@(k) => k.n)
+echo raise_late(40000)

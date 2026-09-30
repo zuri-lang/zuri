@@ -128,9 +128,10 @@ string
 
 One line of `typeof()` would have saved the third line's confusion.
 
-### Print an Instance Through `to_string()`
+### Give a Class `@to_string()`
 
-`echo` does not call `to_string()` for you:
+`echo` shows an instance through its class's `@to_string()`, and as
+`<instance of Point>` when the class has none:
 
 ```zuri
 class Point {
@@ -140,7 +141,7 @@ class Point {
     self.y = y
   }
 
-  to_string() {
+  @to_string() {
     return '(${self.x}, ${self.y})'
   }
 }
@@ -148,15 +149,15 @@ class Point {
 var p = Point(1, 2)
 
 echo p
-echo p.to_string()
+echo [p, Point(3, 4)]
 ```
 
 ```console
-<instance of Point>
 (1, 2)
+[(1, 2), (3, 4)]
 ```
 
-Define `to_string()` on any class you expect to look at while debugging.
+Define `@to_string()` on any class you expect to look at while debugging.
 The five minutes it costs are repaid the first time you print a list of
 them.
 

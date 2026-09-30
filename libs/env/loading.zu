@@ -60,6 +60,10 @@ class Result {
     return '<env.Result ${self.values.length()} values, ' +
       '${self.applied.length()} applied, ${self.skipped.length()} skipped>'
   }
+
+  @to_string() {
+    return self.to_string()
+  }
 }
 
 # Answers what a name is worth while values are being expanded.

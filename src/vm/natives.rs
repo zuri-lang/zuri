@@ -375,6 +375,7 @@ pub fn flush_stdout() {
 }
 
 /// Emits `echo`'s value followed by a newline into the shared stdout buffer and flushes.
+/// `VM::echo` sends here only a value with no `@to_string()` in it.
 #[inline]
 pub fn echo_value(v: Value) {
   if capture_depth() > 0 {
@@ -389,13 +390,73 @@ pub fn echo_value(v: Value) {
   });
 }
 
+/// `echo_value` for text already rendered by `VM::render_printable`.
+pub fn echo_text(text: &str) {
+  if capture_depth() > 0 {
+    capture_write(format!("{}\n", text).as_bytes());
+    return;
+  }
+
+  STDOUT_BUFFER.with(|buf_cell| {
+    let mut stdout = buf_cell.borrow_mut();
+    let _ = writeln!(stdout, "{}", text);
+    let _ = stdout.flush();
+  });
+}
+
+/// Whether showing `v` runs Zuri code: it is, or holds somewhere inside
+/// its lists and dictionaries, an instance whose class defines
+/// `@to_string()`. Everything else prints straight from `Display`.
+pub fn shows_through_to_string(v: Value) -> bool {
+  if !v.is_obj() {
+    return false;
+  }
+  if v.is_instance() {
+    return v
+      .as_instance()
+      .class
+      .as_class()
+      .methods
+      .contains_key("@to_string");
+  }
+  if v.is_list() {
+    return v.with_list(|items| items.iter().any(|&item| shows_through_to_string(item)));
+  }
+  if v.is_dict() {
+    return v.with_dict(|storage| {
+      storage
+        .entries
+        .iter()
+        .any(|&(k, item)| shows_through_to_string(k) || shows_through_to_string(item))
+    });
+  }
+  false
+}
+
 /// Unlike `echo` (which always appends a newline and only ever prints
 /// one value), `print()` writes every argument back-to-back with no
 /// separator and no trailing newline; and, critically, writes a
 /// `bytes` object as RAW bytes rather than its `Display` text. That
 /// raw-byte path is what lets a script stream binary output (e.g. a
 /// PBM/PNG image body one scanline at a time).
+///
+/// An instance is shown through its `@to_string()` exactly as `echo`
+/// shows it. Every argument is rendered before anything is written, so
+/// a `@to_string()` that raises leaves no partial output behind.
 fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  if ctx.args.iter().any(|&v| shows_through_to_string(v)) {
+    let rendered = render_print_args(ctx)?;
+    if capture_depth() > 0 {
+      capture_write(&rendered);
+      return Ok(Value::nil());
+    }
+    return STDOUT_BUFFER.with(|buf_cell| {
+      let mut stdout = buf_cell.borrow_mut();
+      stdout.write_all(&rendered).map_err(|e| e.to_string())?;
+      Ok(Value::nil())
+    });
+  }
+
   if capture_depth() > 0 {
     let mut buf: Vec<u8> = Vec::new();
     write_print_args(&mut buf, ctx.args)?;
@@ -408,6 +469,35 @@ fn print_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
     write_print_args(&mut *stdout, ctx.args)?;
     Ok(Value::nil())
   })
+}
+
+/// `print()`'s arguments when at least one of them runs a `@to_string()`.
+/// The arguments are pinned for the whole render, since any one of
+/// those calls can collect and move the others.
+fn render_print_args(ctx: &mut ZuriContext) -> Result<Vec<u8>, String> {
+  let count = ctx.args.len();
+  let mark = ctx.vm.pin_values(ctx.args.iter().copied());
+  let mut out: Vec<u8> = Vec::new();
+
+  for i in 0..count {
+    let v = ctx.vm.pinned(mark + i);
+    if v.is_bytes() {
+      v.with_bytes(|raw| out.extend_from_slice(raw));
+    } else if v.is_string() {
+      out.extend_from_slice(v.as_str().as_bytes());
+    } else {
+      match ctx.vm.render_printable(v) {
+        Ok(text) => out.extend_from_slice(text.as_bytes()),
+        Err(e) => {
+          ctx.vm.unpin(mark);
+          return Err(ctx.vm.rethrow(e));
+        },
+      }
+    }
+  }
+
+  ctx.vm.unpin(mark);
+  Ok(out)
 }
 
 /// `print()`'s formatting rules, factored out so the capture path and

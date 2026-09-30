@@ -100,7 +100,8 @@ This is that list.
   both class members and module members.
 - There is no overloading. One name, one method, and a second
   declaration of either is a compile error.
-- `toString()` is `to_string()`, and `echo` does **not** call it.
+- `toString()` is `to_string()`, and nothing calls it for you. What `echo`
+  shows for an instance comes from `@to_string()`.
 
 ## From C
 
@@ -116,8 +117,9 @@ This is that list.
 
 ## Things That Will Save You an Hour
 
-**`echo` does not call `to_string()`.** An instance prints as
-`<instance of Thing>`. Call the method.
+**Interpolation does not call `to_string()`.** `'${thing}'` is
+`<instance of Thing>`. Call the method. `echo` shows an instance through
+`@to_string()`, a separate method.
 
 **`list.sort()` mutates and returns; `list.reverse()` does neither to the
 original.** That asymmetry is the most common list bug in Zuri code.

@@ -432,11 +432,15 @@ pub unsafe extern "C" fn zuri_jit_is_falsey(_vm_ptr: *mut VM, value_bits: u64) -
   Value::from_bits(value_bits).is_falsey() as u64
 }
 
+/// `echo`. Showing an instance through its `@to_string()` runs Zuri
+/// code, so this can raise and can leave a collection owed.
 pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
-  crate::vm::natives::echo_value(v);
-  OK
+  match vm.echo(v) {
+    Ok(()) => collected(vm),
+    Err(e) => fail(vm, e),
+  }
 }
 
 // ---------------------------------------------------------------------

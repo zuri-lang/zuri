@@ -37,6 +37,10 @@ class TomlError < Error {
   to_string() {
     return '<${self.type}: ${self.message}>'
   }
+
+  @to_string() {
+    return self.to_string()
+  }
 }
 
 

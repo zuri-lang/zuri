@@ -294,6 +294,10 @@ class Value {
     return self.raw
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns the value as a plain Zuri value, with every container
    * below it converted too.
@@ -352,6 +356,10 @@ class Array {
     return out + self.trailing + ']'
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns the array as a plain Zuri list.
    *
@@ -404,6 +412,10 @@ class InlineTable {
     }
 
     return out + self.trailing + '}'
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**
@@ -466,6 +478,10 @@ class Entry {
     return self.prefix + self.key_raw + self.pre_eq + '=' +
         self.value.prefix + self.value.to_string() + self.value.suffix +
         self.newline
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**
@@ -561,6 +577,10 @@ class Table {
     }
 
     return out
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**
@@ -836,6 +856,10 @@ class ArrayOfTables {
     }
 
     return out
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**
@@ -1196,6 +1220,10 @@ class Document {
     }
 
     return out + self.trailing
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**

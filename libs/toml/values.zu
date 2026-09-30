@@ -222,6 +222,10 @@ class LocalDate {
     return _pad(self.year, 4) + '-' + _pad(self.month, 2) + '-' + _pad(self.day, 2)
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns true when `other` is a `LocalDate` naming the same day.
    *
@@ -313,6 +317,10 @@ class LocalTime {
         _pad(self.second, 2) + _fraction(self.nanosecond)
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns true when `other` is a `LocalTime` naming the same
    * instant of the clock, fractional seconds included.
@@ -391,6 +399,10 @@ class LocalDateTime {
         _pad(self.day, 2) + 'T' + _pad(self.hour, 2) + ':' +
         _pad(self.minute, 2) + ':' + _pad(self.second, 2) +
         _fraction(self.nanosecond)
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**
@@ -509,6 +521,10 @@ class DateTime {
         _fraction(self.nanosecond) + _offset_text(self.offset_minutes)
   }
 
+  @to_string() {
+    return self.to_string()
+  }
+
   /**
    * Returns true when `other` is a `DateTime` with the same fields
    * and the same offset.
@@ -621,6 +637,10 @@ class Float {
     }
 
     return text
+  }
+
+  @to_string() {
+    return self.to_string()
   }
 
   /**

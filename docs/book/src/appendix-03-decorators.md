@@ -72,6 +72,17 @@ returns what is stored at that key.
 
 Defining both is what makes `is_iterable()` return `true` for the class.
 
+## Display
+
+| Decorator | Called by | Signature |
+| --- | --- | --- |
+| `@to_string` | `echo`, `print()` | `@to_string()` |
+
+`@to_string()` returns the text shown for the instance, including when it
+sits inside a list or dictionary being shown, as a key or as a value. It
+must return a string; anything else raises a `TypeError`. Without it, an
+instance shows as `<instance of ClassName>`.
+
 ## Serialisation
 
 | Decorator | Called by | Signature |
@@ -86,8 +97,9 @@ you decide what does and does not cross the wire.
 `to_string()` has no `@`. It is a real method every value already carries,
 and a class may override it.
 
-Nothing calls it implicitly. `echo`, string interpolation and `+` all
-render an instance as `<instance of ClassName>`.
+Nothing calls it implicitly. String interpolation and `+` render an
+instance as `<instance of ClassName>`, and `echo` and `print()` use
+`@to_string()`.
 
 ## Resolution
 

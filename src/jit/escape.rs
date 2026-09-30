@@ -53,17 +53,8 @@
 //! "escapes" only ever costs a missed optimization. This trade is
 //! deliberate and non-negotiable for this module.
 //!
-//! (`Print` was considered for the escaping side on the theory that it
-//! might dispatch to a user-overridden `to_string()`; checked against
-//! the actual handler, `jit::runtime::zuri_jit_print`, which just calls
-//! `println!("{}", v)`, i.e. Rust's own `Display for Value`. For
-//! `Obj::Instance` that's a hardcoded `write!(f, "<instance of {}>",
-//! i.class.as_class().name)` (see `value.rs`); reads the class's own
-//! name, never retains or dispatches on the instance itself. No
-//! user-overridable `to_string()` exists in this codebase as of this
-//! writing, so `Print` is verified safe below; if/when that spec
-//! feature is implemented, this is the exact justification that stops
-//! holding and `Print` needs to move to the escaping side.)
+//! `Print` escapes too: `echo` hands an instance to its class's
+//! `@to_string()`, which is free to store `self` anywhere.
 //!
 //! Verified-safe operations (see each match arm below for the specific
 //! code path that justifies it):
@@ -77,7 +68,6 @@
 //!   decided from the tag byte alone: see `codegen::emit_is_falsey`'s
 //!   own docs; never a payload read or user-code dispatch for an
 //!   `Instance`).
-//! - `Print` (see the paragraph above).
 //! - Being the container (never the stored value) of `SetField`/
 //!   `SetFieldInit`/`SetMethod`/`DeclareStatic`/`SetIndex`; writing
 //!   into your own field/slot doesn't hand your identity to anything
@@ -88,7 +78,7 @@
 //!
 //! Everything else that reads a tracked register; including
 //! `GetField`'s `obj` (the `BoundMethod`-wrapping risk above),
-//! `Return`, `SetGlobal`/`AssignGlobal`, `SetUpval`, `Closure`
+//! `Return`, `Print`, `SetGlobal`/`AssignGlobal`, `SetUpval`, `Closure`
 //! capturing it, any `Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`
 //! operand, `Raise`, arithmetic/bitwise/concat/unary ops; is
 //! escaping.
@@ -537,7 +527,9 @@ pub(crate) fn escaping_reads(instr: &Instr) -> Vec<u8> {
     Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } => vec![],
     Instr::Eq { .. } | Instr::Neq { .. } => vec![],
     Instr::EqImm { .. } | Instr::NeqImm { .. } => vec![],
-    Instr::Print { .. } => vec![],
+
+    // `echo` runs the class's `@to_string()` with the instance as `self`.
+    Instr::Print { src } => vec![src],
 
     // Arithmetic/bitwise/concat/unary; all dispatch to user-defined
     // operator overloads for non-numeric operands (see

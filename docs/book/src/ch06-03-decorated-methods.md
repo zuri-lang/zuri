@@ -324,10 +324,48 @@ Without it, encoding an instance has nothing to work from. With it, you
 decide exactly what crosses the wire, which is the right place to leave a
 password behind.
 
+## `@to_string`
+
+`@to_string()` decides what `echo` and `print()` show for an instance:
+
+```zuri
+class Money {
+  @new(cents) {
+    self.cents = cents
+  }
+
+  @to_string() {
+    return '$' + (self.cents / 100)
+  }
+}
+
+var m = Money(500)
+
+echo m
+echo [m, Money(250)]
+echo { total: m }
+```
+
+```console
+$5
+[$5, $2.5]
+{total: $5}
+```
+
+It applies wherever the instance sits in what is being shown, inside lists
+and dictionaries, as a key or as a value. Without it, an instance shows as
+`<instance of Money>`. It must return a string; anything else raises a
+`TypeError`.
+
 ## `to_string()`
 
 `to_string()` has no `@` because it is not a decorator; it is a real method
-every value already has, and a class may override it:
+every value already has, and a class may override it to give its instances
+a plain string form.
+
+Nothing calls it for you. String interpolation and `+` render an instance
+as `<instance of Money>`, so call it inside the interpolation. A class that
+has both usually builds one from the other:
 
 ```zuri
 class Money {
@@ -338,37 +376,25 @@ class Money {
   to_string() {
     return '$' + (self.cents / 100)
   }
+
+  @to_string() {
+    return '<Money ${self.to_string()}>'
+  }
 }
 
-echo Money(500).to_string()
-```
-
-```console
-$5
-```
-
-**`echo` does not call `to_string()`.** `echo` prints a value's built-in
-representation, and for an instance that is `<instance of Money>`. Call the
-method when you want your own text:
-
-```zuri
 var m = Money(500)
 
 echo m
-echo m.to_string()
-```
-
-```console
-<instance of Money>
-$5
-```
-
-String interpolation and `+` do not call it either, so call it inside the
-interpolation:
-
-```zuri
 echo 'cost: ${m.to_string()}'
 ```
 
-Keep `to_string()` cheap and free of side effects. Error messages,
-logging and debugging all reach for it.
+```console
+<Money $5>
+cost: $5
+```
+
+That is the split the standard library follows: `to_string()` is the value
+as text, and `@to_string()` is how the instance looks when you print it.
+
+Keep both cheap and free of side effects. Error messages, logging and
+debugging all reach for them.

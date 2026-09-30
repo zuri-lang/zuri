@@ -205,7 +205,7 @@ def _constant(out: list, member, level: string, owner_module, index) {
 # The badge line a class carries when its doc block claims one of the
 # decorated-method capabilities.
 var CAPABILITIES = {
-  'printable': 'has a `to_string()`, so `echo` and interpolation show something useful',
+  'printable': 'has a `@to_string()`, so `echo` and `print()` show something useful',
   'serializable': 'has a `@to_json()`, so it can be handed straight to `json.encode()`',
   'valueable': 'has a `@to_value()`, so it converts to a plain Zuri value',
   'numeric': 'converts to a number',

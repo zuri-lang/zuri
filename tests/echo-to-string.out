@@ -1,0 +1,29 @@
+(1, 2)
+(1, 2)
+<instance of Plain>
+<Both value>
+interpolated: <instance of Point>
+[(1, 2), 1, a, nil, [(3, 4)]]
+{p: (1, 2), list: [(1, 2)]}
+{[(1, 2)]: key}
+[1, 2, 3]
+{}
+(1, 2) [(1, 2)] text
+TypeError: @to_string() must return a string, got number
+captured: ValueError: cannot show this
+[shrinker, a]
+191
+true
+true
+keeper 0
+[(0, 0)]
+keeper 10000
+[(10000, 50005000)]
+keeper 20000
+[(20000, 200010000)]
+keeper 30000
+[(30000, 450015000)]
+799980000
+4
+[0, 10000, 20000, 30000]
+4
