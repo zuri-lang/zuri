@@ -174,11 +174,11 @@ expect([1, 2]).to_be([1, 2])          # passes
 expect({ a: 1 }).to_be({ a: 1 })      # passes
 ```
 
-It compares two **instances** by identity, though, because that is what
-`==` does:
+It compares two **instances** by identity, though, unless their class
+defines `@eq`, because that is what `==` does:
 
 ```zuri,ignore
-expect(Point(1, 2)).to_be(Point(1, 2))      # fails: two objects
+expect(Point(1, 2)).to_be(Point(1, 2))      # fails without @eq: two objects
 expect(Point(1, 2)).to_equal(Point(1, 2))   # passes: same contents
 ```
 

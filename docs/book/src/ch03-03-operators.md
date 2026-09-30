@@ -44,7 +44,8 @@ echo 7 % -3
 | `<` `<=` `>` `>=` | ordering, numbers only |
 
 `==` compares by value for numbers, strings, lists and dictionaries, and by
-identity for everything else:
+identity for everything else. A class changes that for its instances with
+[`@eq`](ch06-03-decorated-methods.md#equality).
 
 ```zuri
 echo 1 == 1.0

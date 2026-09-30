@@ -70,7 +70,7 @@
 
 use std::cell::Cell;
 
-use crate::vm::chunk::{InvokeCacheCell, JumpKey};
+use crate::vm::chunk::InvokeCacheCell;
 use crate::vm::object::{
   ListStorage, NativeFunction, ObjClosure, ObjFunction, UpvalueDescriptor, UpvalueState,
   write_barrier,
@@ -990,18 +990,35 @@ pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64,
   }
 }
 
-/// `Instr::Eq`/`Instr::Neq`; pure structural `Value::equals`, no
-/// operator-override lookup at all (matches the interpreter exactly;
-/// see `vm.rs`'s own handler, which never calls `try_operator_override`
-/// here either). Only reached when the inline number/number fast path
-/// in `codegen` doesn't apply; i.e. at least one operand is a heap
-/// object, which needs a real dereference `codegen` can't inline (see
-/// this module's docs on stable bit patterns vs. `Obj`'s layout).
+/// What `zuri_jit_values_equal` answers when `==` belongs to the left
+/// operand's `@eq`, which compiled code cannot call from there.
+pub const EQ_OVERRIDDEN: u64 = 2;
+
 /// Zuri's `==` on two values, for the optimizing tier's inline equality
-/// once both turn out to be heap objects. Reads no register and neither
-/// allocates nor raises.
+/// once both turn out to be heap objects: 1 or 0, or `EQ_OVERRIDDEN`
+/// when the left one's class defines `@eq`. Reads no register and
+/// neither allocates nor raises.
 pub unsafe extern "C" fn zuri_jit_values_equal(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
-  Value::from_bits(a).equals(&Value::from_bits(b)) as u64
+  let (a, b) = (Value::from_bits(a), Value::from_bits(b));
+  if crate::vm::vm::eq_overridden(a, b) {
+    return EQ_OVERRIDDEN;
+  }
+  a.equals(&b) as u64
+}
+
+/// `Instr::Eq`/`Instr::Neq` once both operands are heap objects, which
+/// is where a class's `@eq` comes in.
+unsafe fn eq_slow(vm_ptr: *mut VM, base: u64, dst: u64, a: u64, b: u64, negate: bool) -> u64 {
+  let vm = unsafe { vm(vm_ptr) };
+  let va = vm.get_reg(base as usize, a as u8);
+  let vb = vm.get_reg(base as usize, b as u8);
+  match vm.operator_equals(va, vb) {
+    Ok(eq) => {
+      vm.set_reg(base as usize, dst as u8, Value::bool(eq != negate));
+      collected(vm)
+    },
+    Err(e) => fail(vm, e),
+  }
 }
 
 pub unsafe extern "C" fn zuri_jit_eq_slow(
@@ -1011,11 +1028,7 @@ pub unsafe extern "C" fn zuri_jit_eq_slow(
   a: u64,
   b: u64,
 ) -> u64 {
-  let vm = unsafe { vm(vm_ptr) };
-  let va = vm.get_reg(base as usize, a as u8);
-  let vb = vm.get_reg(base as usize, b as u8);
-  vm.set_reg(base as usize, dst as u8, Value::bool(va.equals(&vb)));
-  OK
+  unsafe { eq_slow(vm_ptr, base, dst, a, b, false) }
 }
 
 pub unsafe extern "C" fn zuri_jit_neq_slow(
@@ -1025,11 +1038,7 @@ pub unsafe extern "C" fn zuri_jit_neq_slow(
   a: u64,
   b: u64,
 ) -> u64 {
-  let vm = unsafe { vm(vm_ptr) };
-  let va = vm.get_reg(base as usize, a as u8);
-  let vb = vm.get_reg(base as usize, b as u8);
-  vm.set_reg(base as usize, dst as u8, Value::bool(!va.equals(&vb)));
-  OK
+  unsafe { eq_slow(vm_ptr, base, dst, a, b, true) }
 }
 
 macro_rules! imm_arith_slow {
@@ -2869,27 +2878,13 @@ pub unsafe extern "C" fn zuri_jit_using_jump(
 ) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, subject as u8);
-  let Some(key) = value_to_jump_key_for_jit(v) else {
+  let Some(key) = crate::vm::vm::value_to_jump_key(v) else {
     return USING_NO_MATCH;
   };
   let func = unsafe { &*(func_ptr_bits as *const ObjFunction) };
   match func.chunk.jump_tables[table_idx as usize].get(&key) {
     Some(&target) => target as u64,
     None => USING_NO_MATCH,
-  }
-}
-
-fn value_to_jump_key_for_jit(v: Value) -> Option<JumpKey> {
-  if v.is_nil() {
-    Some(JumpKey::Nil)
-  } else if v.is_bool() {
-    Some(JumpKey::Bool(v.as_bool()))
-  } else if v.is_number() {
-    Some(JumpKey::Number(v.as_number().to_bits()))
-  } else if v.is_string() {
-    Some(JumpKey::Str(v.as_str().to_string()))
-  } else {
-    None
   }
 }
 

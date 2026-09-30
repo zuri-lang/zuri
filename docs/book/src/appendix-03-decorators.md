@@ -50,14 +50,16 @@ is not overridable: an instance is always truthy, so `!instance` is always
 
 | Decorator | Operator | Signature |
 | --- | --- | --- |
+| `@eq` | `a == b`, `a != b` | `@eq(other)` |
 | `@lt` | `a < b` | `@lt(other)` |
 | `@lte` | `a <= b` | `@lte(other)` |
 | `@gt` | `a > b` | `@gt(other)` |
 | `@gte` | `a >= b` | `@gte(other)` |
 
-There is no `@eq`. `==` on instances compares identity and cannot be
-overridden. Write a plain `equals()` method instead; that is the
-convention the standard library follows.
+`!=` is the negation of `@eq`. `@eq` runs only when the right operand is
+an object too, so `x == nil` never calls it, and it must return a bool.
+Lists, dictionaries, `contains()` and `index_of()` compare instances by
+identity whether or not the class defines it.
 
 ## Iteration
 

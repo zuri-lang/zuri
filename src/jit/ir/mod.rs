@@ -391,7 +391,9 @@ pub enum Op {
   EqConst(f64),
   /// Zuri's `==` on two `Tagged` values, as a `Bool`. Lists and dicts
   /// compare by content, so this reads memory a store can change and is
-  /// never merged with or moved past another.
+  /// never merged with or moved past another. It carries a frame state
+  /// and leaves compiled code when the left operand's class defines
+  /// `@eq`, which only the interpreter or a helper call can run.
   TaggedEq,
   /// `**` on two `F64`s.
   FPow,
@@ -611,6 +613,7 @@ impl Op {
     matches!(
       self,
       Op::Guard(_)
+        | Op::TaggedEq
         | Op::ListAppend
         | Op::BytesStore
         | Op::DictSet

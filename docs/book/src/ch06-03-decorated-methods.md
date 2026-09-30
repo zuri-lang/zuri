@@ -118,6 +118,7 @@ always `false`.
 
 | Decorator | Operator |
 | --- | --- |
+| `@eq` | `==` and `!=` |
 | `@lt` | `<` |
 | `@lte` | `<=` |
 | `@gt` | `>` |
@@ -252,10 +253,9 @@ catch {
 @add() expects parameter 'other' (argument 1) to be a Sum, got number
 ```
 
-### There Is No `@eq`
+### Equality
 
-`==` on instances compares identity, and that is not overridable. When you need value equality, write a plain `equals()` method
-and call it:
+`@eq` defines `==` for your class, and `!=` is always its negation:
 
 ```zuri
 class Point {
@@ -264,7 +264,11 @@ class Point {
     self.y = y
   }
 
-  equals(other) {
+  @eq(other) {
+    if !instance_of(other, Point) {
+      return false
+    }
+
     return self.x == other.x and self.y == other.y
   }
 }
@@ -272,16 +276,59 @@ class Point {
 var p = Point(1, 2)
 
 echo p == Point(1, 2)
-echo p.equals(Point(1, 2))
+echo p != Point(1, 2)
+echo p == Point(2, 1)
+echo p == nil
+```
+
+```console
+true
+false
+false
+false
+```
+
+`@eq` runs only when the value on the right is an object too: a string, a
+list, another instance and so on. `p == nil`, `p == 5` and `p == true`
+compare the ordinary way without calling it, so a `nil` check stays a `nil`
+check whatever the class defines. It must return a bool; anything else
+raises a `TypeError`. Without `@eq`, two instances are equal only when they
+are the same object.
+
+`using` matches through `@eq` as well, since it compares the way `==` does.
+
+`@eq` decides `==` and nothing else. Lists and dictionaries compare the
+instances inside them by identity, and so do `contains()`, `index_of()` and
+dictionary keys:
+
+```zuri
+class Point {
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  @eq(other) {
+    if !instance_of(other, Point) {
+      return false
+    }
+
+    return self.x == other.x and self.y == other.y
+  }
+}
+
+var p = Point(1, 2)
+
+echo [p] == [Point(1, 2)]
+echo [p].contains(Point(1, 2))
+echo [p].contains(p)
 ```
 
 ```console
 false
+false
 true
 ```
-
-That is a convention the standard library follows everywhere, so it reads
-as idiomatic rather than as a workaround.
 
 ## Iteration
 

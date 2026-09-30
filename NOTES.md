@@ -7,6 +7,7 @@
 - The class constructor has been replaced by the `@new` decorated method instead of a method with the same name. 
 - Classes are now partially-immutable. Once created, new fields and methods cannot be added at runtime. However, their static properties can continue to be mutated.
 - Class operator override have now been replaced and no longer have their own distinct syntax. Now, they reuse the decorated methods such as `@add`, `@sub`, `@mul`, `@div`, `@lshift` etc.
+- `@eq(other)` defines `==` for a class, and `!=` is its negation. It runs when the left operand is an instance of the class and the right operand is an object too, so `x == nil` never calls it, and it must return a bool. `using` matches through it. Lists, dictionaries, `contains()`, `index_of()` and dictionary keys still compare instances by identity.
 - Imports are now local by default and you'll have to explicity specify that you intend to export them out of the importing module by prefixing the import path with the `@` symbol. E.g. `import @.module`, `import @.module { item }`, or `import @.module { * }` where module, item, and all items become exported by the current module respectively.
 - `Exception` has been renamed to `Error`.
 - The `zlib` module has been dropped in favor of the `compress` module which includes support for `deflate`, `gzip`, and `zlib` format that are currently supported and introduces support for `zstd`.

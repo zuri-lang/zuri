@@ -536,6 +536,10 @@ pub enum JumpKey {
   /// enters this table to begin with.
   Number(u64),
   Str(String),
+  /// A subject that is an instance whose class defines `@eq`. No label
+  /// makes this key; its entry leads to where the statement compares
+  /// the subject against every label with `==`.
+  EqInstance,
 }
 
 /// Marks a filled `Chunk::global_cache` cell, so slot 0 of a

@@ -15459,6 +15459,7 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       | Instr::Le { a, b, .. }
       | Instr::Gt { a, b, .. }
       | Instr::Ge { a, b, .. } => !(self.proven_numeric(ip, a) && self.proven_numeric(ip, b)),
+      Instr::Eq { a, b, .. } | Instr::Neq { a, b, .. } => self.eq_may_reach_override(ip, a, b),
       Instr::Neg { src, .. } | Instr::BitNot { src, .. } => !self.proven_numeric(ip, src),
       Instr::AddImm { a, .. }
       | Instr::SubImm { a, .. }
@@ -15472,6 +15473,21 @@ impl<'a, 'b> FuncCompiler<'a, 'b> {
       },
       _ => false,
     }
+  }
+
+  /// Whether `a == b` at `ip` might run a class's `@eq`, which takes an
+  /// instance on the left and a heap object on the right.
+  fn eq_may_reach_override(&self, ip: usize, a: u8, b: u8) -> bool {
+    let left_ruled_out = self.proven_numeric(ip, a)
+      || self.bool_facts.is_bool(ip, a)
+      || self.proven_list(ip, a)
+      || self.proven_string(ip, a)
+      || self.proven_dict(ip, a)
+      || self.proven_bytes(ip, a);
+    let right_ruled_out = self.proven_numeric(ip, b)
+      || self.bool_facts.is_bool(ip, b)
+      || escape::compares_with_plain(self.proto, &self.preds, ip, b);
+    !(left_ruled_out || right_ruled_out)
   }
 
   fn loop_has_allocations(&self, target_ip: usize, current_ip: usize) -> bool {

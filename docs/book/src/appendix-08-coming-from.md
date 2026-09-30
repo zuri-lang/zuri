@@ -30,8 +30,9 @@ This is that list.
   every field access.
 - The constructor is `@new`, not `__init__`. Dunder methods are `@`-prefixed
   decorated methods: `@add`, `@lt`, `@key`, `@to_json`.
-- There is no `__eq__`. `==` compares identity for instances and cannot be
-  overridden. Write `equals()`.
+- `__eq__` is `@eq`, and `!=` is always its negation. It runs only when
+  the other side is an object too, so `x == nil` never calls it. Without
+  it, instances compare by identity.
 - No list comprehensions. `map()`, `filter()` and `reduce()` are methods on
   the list.
 - `len(x)` is `x.length()`. `str(x)` is `x.to_string()`. `int(x)` is
@@ -100,6 +101,7 @@ This is that list.
   both class members and module members.
 - There is no overloading. One name, one method, and a second
   declaration of either is a compile error.
+- `equals()` is `@eq`, and `==` calls it.
 - `toString()` is `to_string()`, and nothing calls it for you. What `echo`
   shows for an instance comes from `@to_string()`.
 

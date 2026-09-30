@@ -382,7 +382,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
         self.fb.ins().store(flags, v, slots, (*slot as i32) * 8);
         None
       },
-      Op::TaggedEq => Some(self.tagged_eq(av[0], av[1])),
+      Op::TaggedEq => Some(self.tagged_eq(av[0], av[1], inst.state.as_ref().unwrap())),
       Op::FPow => {
         let x = self.from_f64(av[0]);
         let y = self.from_f64(av[1]);
@@ -2761,8 +2761,10 @@ impl<'a, 'b> Lowering<'a, 'b> {
   }
 
   /// Zuri's `==`: numbers by value, two heap objects through the
-  /// runtime's structural comparison, anything else by its bits.
-  fn tagged_eq(&mut self, a: IrValue, b: IrValue) -> IrValue {
+  /// runtime's structural comparison, anything else by its bits. A left
+  /// operand whose class defines `@eq` leaves for the interpreter at
+  /// `state`, to call it there.
+  fn tagged_eq(&mut self, a: IrValue, b: IrValue, state: &FrameState) -> IrValue {
     let na = self.is_number(a);
     let nb = self.is_number(b);
     let both_num = self.fb.ins().band(na, nb);
@@ -2791,6 +2793,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
 
     self.fb.switch_to_block(obj_block);
     let r = self.call_pure("zuri_jit_values_equal", &[self.vm, a, b]);
+    let overridden =
+      self
+        .fb
+        .ins()
+        .icmp_imm_u(IntCC::Equal, r, crate::jit::runtime::EQ_OVERRIDDEN as i64);
+    let leave = self.fb.create_block();
+    let answered = self.fb.create_block();
+    self.fb.ins().brif(overridden, leave, &[], answered, &[]);
+    self.fb.switch_to_block(leave);
+    self.fb.set_cold_block(leave);
+    self.deopt(state, None);
+    self.fb.switch_to_block(answered);
     let r8 = self.fb.ins().ireduce(types::I8, r);
     self.fb.ins().jump(done, &[r8.into()]);
 

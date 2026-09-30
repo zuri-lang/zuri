@@ -2175,6 +2175,7 @@ impl<'a> Compiler<'a> {
   ) {
     struct Group<'a> {
       body: &'a Stmt,
+      labels: Vec<&'a Expr>,
       const_keys: Vec<JumpKey>,
       dynamic_labels: Vec<&'a Expr>,
     }
@@ -2185,11 +2186,13 @@ impl<'a> Compiler<'a> {
       if !same_as_last {
         groups.push(Group {
           body,
+          labels: Vec::new(),
           const_keys: Vec::new(),
           dynamic_labels: Vec::new(),
         });
       }
       let group = groups.last_mut().unwrap();
+      group.labels.push(label);
       match expr_as_jump_key(label) {
         Some(key) => group.const_keys.push(key),
         None => group.dynamic_labels.push(label),
@@ -2239,6 +2242,31 @@ impl<'a> Compiler<'a> {
         jumps.push(jump_site);
       }
       group_dyn_jumps.push(jumps);
+    }
+
+    // An instance whose class defines `@eq` misses every constant label
+    // in the table, though `==` may still say it matches one. The table
+    // sends such a subject here instead, where it meets every label in
+    // order the way `==` would see it.
+    if groups.iter().any(|g| !g.const_keys.is_empty()) {
+      let skip = self.emit_jump();
+      let section = self.cur().chunk.code.len();
+      self.cur_mut().chunk.jump_tables[table_idx as usize].insert(JumpKey::EqInstance, section);
+      for (group, jumps) in groups.iter().zip(group_dyn_jumps.iter_mut()) {
+        for &label in &group.labels {
+          let mark = self.cur().next_reg;
+          let label_reg = self.compile_expression(label);
+          let eq_reg = self.alloc_reg();
+          self.emit(Instr::Eq {
+            dst: eq_reg,
+            a: subj,
+            b: label_reg,
+          });
+          jumps.push(self.emit_jump_if_true(eq_reg));
+          self.free_regs_to(mark);
+        }
+      }
+      self.patch_jump(skip);
     }
 
     // Reached only if the jump table missed AND every dynamic check

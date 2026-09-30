@@ -54,15 +54,15 @@
 //! deliberate and non-negotiable for this module.
 //!
 //! `Print` escapes too: `echo` hands an instance to its class's
-//! `@to_string()`, which is free to store `self` anywhere.
+//! `@to_string()`, which is free to store `self` anywhere. So do `Eq`
+//! and `Neq`, which hand both operands to the left one's `@eq`.
 //!
 //! Verified-safe operations (see each match arm below for the specific
 //! code path that justifies it):
 //! - `Move` (a plain register copy; propagates tracking, never
 //!   escapes).
-//! - `Eq`/`Neq`/`EqImm`/`NeqImm` (`Value::equals` on two `Obj::
-//!   Instance`s is `std::ptr::eq`, unconditionally: see
-//!   `value.rs`'s own `equals`; never a user-code dispatch).
+//! - `EqImm`/`NeqImm` (the literal is a number, and `@eq` only ever
+//!   runs with a heap object on the right).
 //! - `JmpIfFalse`/`JmpIfTrue` (`Value::is_falsey` treats every heap
 //!   kind except `Str`/`Bytes`/`BigInt` as unconditionally not falsey,
 //!   decided from the tag byte alone: see `codegen::emit_is_falsey`'s
@@ -73,15 +73,16 @@
 //!   into your own field/slot doesn't hand your identity to anything
 //!   new.
 //! - Being the container/index-key operand (never the stored value) of
-//!   `GetIndex`/`SetIndex`; Dict key lookup is also `Value::equals`,
-//!   same `ptr::eq` guarantee as above.
+//!   `GetIndex`/`SetIndex`; Dict key lookup is `Value::equals`, which
+//!   compares instances with `std::ptr::eq` and never dispatches to
+//!   user code.
 //!
 //! Everything else that reads a tracked register; including
 //! `GetField`'s `obj` (the `BoundMethod`-wrapping risk above),
-//! `Return`, `Print`, `SetGlobal`/`AssignGlobal`, `SetUpval`, `Closure`
-//! capturing it, any `Call`/`Invoke`/`InvokeSuper`/`CallSuperCtor`
-//! operand, `Raise`, arithmetic/bitwise/concat/unary ops; is
-//! escaping.
+//! `Return`, `Print`, `Eq`/`Neq`, `SetGlobal`/`AssignGlobal`,
+//! `SetUpval`, `Closure` capturing it, any `Call`/`Invoke`/
+//! `InvokeSuper`/`CallSuperCtor` operand, `Raise`, arithmetic/bitwise/
+//! concat/unary ops; is escaping.
 
 use std::collections::BTreeSet;
 
@@ -508,6 +509,25 @@ fn tracked_getfield_is_safe(
   safety.is_field_safe(name_val.as_str())
 }
 
+/// Whether `b`, the right operand of the `Eq`/`Neq` at `ip`, is the
+/// `nil` or bool the instruction just before loaded, with no other way
+/// into the compare. That is how `x == nil` compiles, and `@eq` never
+/// runs against a plain value.
+pub(crate) fn compares_with_plain(
+  proto: &ObjFunction,
+  preds: &[Vec<usize>],
+  ip: usize,
+  b: u8,
+) -> bool {
+  ip > 0
+    && preds[ip].len() == 1
+    && preds[ip][0] == ip - 1
+    && matches!(
+      proto.chunk.code[ip - 1],
+      Instr::LoadNil { dst } | Instr::LoadBool { dst, .. } if dst == b
+    )
+}
+
 /// Every register whose use by `instr`, if it currently aliases the
 /// tracked allocation, proves the allocation escapes: see this
 /// module's own docs for the verified-safe allowlist this is the
@@ -525,11 +545,14 @@ pub(crate) fn escaping_reads(instr: &Instr) -> Vec<u8> {
     // Verified safe: see module docs.
     Instr::Move { .. } => vec![],
     Instr::JmpIfFalse { .. } | Instr::JmpIfTrue { .. } => vec![],
-    Instr::Eq { .. } | Instr::Neq { .. } => vec![],
     Instr::EqImm { .. } | Instr::NeqImm { .. } => vec![],
 
     // `echo` runs the class's `@to_string()` with the instance as `self`.
     Instr::Print { src } => vec![src],
+
+    // `@eq` gets the left operand as `self` and the right as its
+    // argument.
+    Instr::Eq { a, b, .. } | Instr::Neq { a, b, .. } => vec![a, b],
 
     // Arithmetic/bitwise/concat/unary; all dispatch to user-defined
     // operator overloads for non-numeric operands (see
@@ -631,8 +654,8 @@ pub(crate) fn escaping_reads(instr: &Instr) -> Vec<u8> {
     Instr::ImportAll { module, .. } => vec![module],
     Instr::MakePromoted { module, .. } => vec![module],
 
-    // `obj` (container) and `idx` (compared via `Value::equals`, same
-    // `ptr::eq` guarantee as `Eq`/`Neq` above) are safe; `src` escapes.
+    // `obj` (container) and `idx` (compared via `Value::equals`, which
+    // never reaches user code) are safe; `src` escapes.
     Instr::GetIndex { .. } => vec![],
     Instr::SetIndex {
       obj: _,
@@ -837,6 +860,10 @@ pub fn analyze_one_with_facts(
           escaped = true;
         }
       }
+    } else if let Instr::Eq { b, .. } | Instr::Neq { b, .. } = *instr
+      && compares_with_plain(proto, preds, ip, b)
+    {
+      // `x == nil`: no `@eq` runs, so neither operand goes anywhere.
     } else {
       for reg in escaping_reads(instr) {
         if entry[ip].get(reg) {
@@ -1036,6 +1063,10 @@ fn analyze_param_escape(
       if entry[ip].get(0) && !self_getfield_is_safe(proto, name_const, self_class_safety) {
         escaped = true;
       }
+    } else if let Instr::Eq { b, .. } | Instr::Neq { b, .. } = *instr
+      && compares_with_plain(proto, preds, ip, b)
+    {
+      // As in `analyze_one_with_facts`.
     } else {
       for reg in escaping_reads(instr) {
         if entry[ip].get(reg) {

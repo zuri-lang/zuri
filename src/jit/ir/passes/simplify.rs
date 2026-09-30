@@ -194,9 +194,13 @@ fn rewrite_block(f: &mut Func, b: BlockId, exact: &FxHashSet<ValueId>) -> bool {
       _ => None,
     };
     if let Some((op, args)) = rewritten {
+      // None of these can leave compiled code, and the state a
+      // `TaggedEq` carried for its `@eq` exit would only keep values
+      // alive for nothing.
       let slot = &mut f.insts[id.0 as usize];
       slot.op = op;
       slot.args = args;
+      slot.state = None;
       changed = true;
     }
     pos += 1;

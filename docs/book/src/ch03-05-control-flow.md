@@ -404,7 +404,8 @@ matches `'B'` **or** `'C'`. The first branch that matches runs, and then the
 statement is over — there is no fall-through, and no `break` to remember.
 
 Matching uses the same equality as `==`, which means `using` works on
-numbers, strings and booleans, and compares instances by identity.
+numbers, strings and booleans, and compares instances by identity, or
+through `@eq` when their class defines one.
 
 `default` is optional. When nothing matches and there is no `default`,
 nothing happens:

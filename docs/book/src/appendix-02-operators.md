@@ -51,15 +51,15 @@ Consequences worth remembering:
 
 | Operator | Meaning | Decorator |
 | --- | --- | --- |
-| `==` | equal, by value for numbers, strings, lists, dicts; by identity otherwise | none |
-| `!=` | not equal | none |
+| `==` | equal, by value for numbers, strings, lists, dicts; by identity otherwise | `@eq` |
+| `!=` | not equal, the negation of `==` | `@eq` |
 | `<` | less than, numbers only | `@lt` |
 | `<=` | less than or equal | `@lte` |
 | `>` | greater than | `@gt` |
 | `>=` | greater than or equal | `@gte` |
 
-`==` is not overridable. For value equality on your own class, write an
-`equals()` method.
+`@eq` runs only when both operands are objects, so `x == nil` and `x == 5`
+never call it.
 
 ## Logic
 

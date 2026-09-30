@@ -185,13 +185,16 @@ fn resolve_const(ctx: &mut ZuriContext, chunk: &Chunk, idx: u16) -> Value {
   const_value_to_value(ctx, chunk.constants[idx as usize])
 }
 
-fn jump_key_to_value(ctx: &mut ZuriContext, k: &JumpKey) -> Value {
-  match k {
+/// The label a jump-table key stands for; `None` for
+/// `JumpKey::EqInstance`, which no label makes.
+fn jump_key_to_value(ctx: &mut ZuriContext, k: &JumpKey) -> Option<Value> {
+  Some(match k {
     JumpKey::Nil => Value::nil(),
     JumpKey::Bool(b) => Value::bool(*b),
     JumpKey::Number(bits) => Value::number(f64::from_bits(*bits)),
     JumpKey::Str(s) => ctx.heap().alloc_string(s.clone()),
-  }
+    JumpKey::EqInstance => return None,
+  })
 }
 
 /// `chunk.jump_tables[table_idx]`, resolved into a list of `{ label,
@@ -199,10 +202,13 @@ fn jump_key_to_value(ctx: &mut ZuriContext, k: &JumpKey) -> Value {
 /// so a `nil`/`false`/`0` label can't collide with each other the way
 /// they might as literal dict keys); `offset` is the absolute
 /// instruction index `Instr::UsingJump` jumps straight to on a match.
+/// The `@eq` entry is left out; `UsingJump`'s own `eq_offset` carries it.
 fn jump_table_to_value(ctx: &mut ZuriContext, table: &FxHashMap<JumpKey, usize>) -> Value {
   let mut entries = Vec::with_capacity(table.len());
   for (key, offset) in table {
-    let label_v = jump_key_to_value(ctx, key);
+    let Some(label_v) = jump_key_to_value(ctx, key) else {
+      continue;
+    };
     let fields = vec![
       kv(ctx, "label", label_v),
       kv(ctx, "offset", Value::number(*offset as f64)),
@@ -637,11 +643,16 @@ fn instr_to_value(ctx: &mut ZuriContext, instr: &Instr, chunk: &Chunk, line: Opt
       instr_node(ctx, "MakeRange", line, f)
     },
     Instr::UsingJump { subject, table_idx } => {
-      let table = jump_table_to_value(ctx, &chunk.jump_tables[table_idx as usize]);
+      let jumps = &chunk.jump_tables[table_idx as usize];
+      let table = jump_table_to_value(ctx, jumps);
+      let eq_offset = jumps
+        .get(&JumpKey::EqInstance)
+        .map_or(Value::nil(), |&o| Value::number(o as f64));
       let f = vec![
         kv(ctx, "subject", Value::number(subject as f64)),
         kv(ctx, "table_idx", Value::number(table_idx as f64)),
         kv(ctx, "table", table),
+        kv(ctx, "eq_offset", eq_offset),
       ];
       instr_node(ctx, "UsingJump", line, f)
     },

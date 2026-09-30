@@ -1009,7 +1009,8 @@ impl ElemState {
 /// function took as an argument. `VM::try_operator_override` dispatches
 /// on the LEFT operand alone and never fires for a number, so proving
 /// that one operand numeric is exactly what rules the override out;
-/// anything less ends every claim.
+/// anything less ends every claim. `==` and `!=` reach `@eq` only with
+/// heap objects on both sides, so a primitive on either rules it out.
 fn transfer_elem(
   state: &ElemState,
   accepted: &RegSet,
@@ -1078,6 +1079,7 @@ fn transfer_elem(
     | Instr::GtImm { a, .. }
     | Instr::GeImm { a, .. } => !is_prim(a),
     Instr::Neg { src, .. } | Instr::Not { src, .. } | Instr::BitNot { src, .. } => !is_prim(src),
+    Instr::Eq { a, b, .. } | Instr::Neq { a, b, .. } => !is_prim(a) && !is_prim(b),
     _ => false,
   };
   if overload_possible {

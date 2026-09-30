@@ -1,0 +1,321 @@
+# `==` and `!=` hand the comparison to the left operand's `@eq` when its
+# class defines one and the right operand is a heap object too, in the
+# interpreter and in compiled code alike. Everything else compares the
+# way it always has.
+
+var eq_calls = 0
+
+class Point {
+
+  @new(x, y) {
+    self.x = x
+    self.y = y
+  }
+
+  @eq(other) {
+    eq_calls++
+
+    if !instance_of(other, Point) {
+      return false
+    }
+
+    return self.x == other.x and self.y == other.y
+  }
+}
+
+class Point3 < Point {
+
+  @new(x, y, z) {
+    parent(x, y)
+    self.z = z
+  }
+}
+
+class Tagged < Point {
+
+  @eq(other) {
+    return is_string(other) and other == '${self.x},${self.y}'
+  }
+}
+
+class Plain {
+
+  @new(x) {
+    self.x = x
+  }
+}
+
+class Wrong {
+
+  @eq(other) {
+    return 1
+  }
+}
+
+class Failing {
+
+  @eq(other) {
+    raise ValueError('cannot compare this')
+  }
+}
+
+var p = Point(1, 2)
+
+echo p == Point(1, 2)
+echo p != Point(1, 2)
+echo p == Point(2, 1)
+echo p != Point(2, 1)
+echo p == p
+
+# Inherited, and overridden further down.
+echo Point3(1, 2, 3) == Point(1, 2)
+echo Point(1, 2) == Point3(1, 2, 9)
+echo Tagged(1, 2) == '1,2'
+echo Tagged(1, 2) == Point(1, 2)
+
+# The right operand has to be a heap object as well; `@eq` never sees a
+# number, a bool or nil.
+eq_calls = 0
+echo p == nil
+echo p != nil
+echo p == 1
+echo p == true
+echo nil == p
+echo eq_calls
+
+# A string is a heap object, so it does reach `@eq`.
+echo p == 'p'
+echo eq_calls
+
+# Only the left operand decides.
+echo Plain(1) == Point(1, 2)
+echo 'a' == Point(1, 2)
+echo 1 == Point(1, 2)
+
+# Built-in containers compare their elements by identity, as ever.
+echo [p] == [Point(1, 2)]
+echo { a: p } == { a: Point(1, 2) }
+echo [p].contains(Point(1, 2))
+echo [p].index_of(Point(1, 2))
+
+catch {
+  echo Wrong() == Wrong()
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+catch {
+  echo Failing() != 'x'
+} as e {
+  echo '${e.type}: ${e.message}'
+}
+
+# `using` matches the way `==` does, constant labels included, in the
+# order they are written.
+class Color {
+
+  @new(name) {
+    self.name = name
+  }
+
+  @eq(other) {
+    if is_string(other) {
+      return other == self.name
+    }
+
+    return instance_of(other, Color) and other.name == self.name
+  }
+}
+
+def describe(c) {
+  var warm = Color('orange')
+
+  using c {
+    when 'red' return 'red'
+    when warm return 'warm'
+    when 'blue', 'green' return 'cool'
+    when nil return 'nothing'
+    default return 'unknown'
+  }
+}
+
+var colours = [
+  Color('red'), Color('orange'), Color('green'), Color('pink'), 'red', 'green',
+  nil, Plain(1),
+]
+
+var described = []
+
+iter var r = 0; r < 3000; r++ {
+  described = colours.map(@(c) => describe(c))
+}
+
+echo described
+
+# Hot: compared from compiled code, with every kind of pair reaching the
+# same two sites.
+def same(a, b) {
+  return a == b
+}
+
+def differ(a, b) {
+  return a != b
+}
+
+var pairs = [
+  [p, Point(1, 2)], [p, Point(9, 9)], [Point3(1, 2, 3), p], [p, nil], [p, 1],
+  [Plain(1), Plain(1)], ['ab', 'ab'], [[1, 2], [1, 2]], [1, 1], [nil, nil],
+  [Tagged(3, 4), '3,4'],
+]
+
+var results = []
+
+iter var r = 0; r < 3000; r++ {
+  results = []
+
+  iter var i = 0; i < pairs.length(); i++ {
+    results.append(same(pairs[i][0], pairs[i][1]))
+    results.append(differ(pairs[i][0], pairs[i][1]))
+  }
+}
+
+echo results
+
+# A site that only ever saw strings while it warmed up, handed instances
+# afterwards.
+def count_matches(items, target) {
+  var n = 0
+
+  iter var i = 0; i < items.length(); i++ {
+    if items[i] == target {
+      n++
+    }
+  }
+
+  return n
+}
+
+var words = ['a', 'b', 'a', 'c']
+var word_count = 0
+
+iter var r = 0; r < 5000; r++ {
+  word_count = count_matches(words, 'a')
+}
+
+echo word_count
+
+var points = [Point(1, 2), Point(3, 4), Point(1, 2), Plain(1)]
+var point_count = 0
+
+iter var r = 0; r < 5000; r++ {
+  point_count = count_matches(points, Point(1, 2))
+}
+
+echo point_count
+echo count_matches(words, 'c')
+
+# An extension can add `@eq` to a class long after code comparing its
+# instances was compiled.
+class Label {
+
+  @new(text) {
+    self.text = text
+  }
+}
+
+var labels = [Label('x'), Label('y'), Label('x')]
+var label_count = 0
+
+iter var r = 0; r < 5000; r++ {
+  label_count = count_matches(labels, Label('x'))
+}
+
+echo label_count
+
+class LabelEquality > Label {
+
+  static @eq(a, b) {
+    return instance_of(b, Label) and a.text == b.text
+  }
+}
+
+echo count_matches(labels, Label('x'))
+echo Label('y') == Label('y')
+
+# `@eq` receives both operands and may keep either, so an instance built
+# in a hot loop has to exist for real once it is compared.
+var kept = []
+
+class Keeper {
+
+  @new(n) {
+    self.n = n
+  }
+
+  @eq(other) {
+    kept.append(self)
+    kept.append(other)
+    return false
+  }
+}
+
+def keep_every(n: number, every: number) {
+  var total = 0
+
+  iter var i = 0; i < n; i++ {
+    var k = Keeper(i)
+    total += k.n
+
+    if k == nil {
+      total = -1
+    }
+
+    if i % every == 0 and k == Keeper(-i) {
+      total = -1
+    }
+  }
+
+  return total
+}
+
+echo keep_every(40000, 10000)
+echo kept.map(@(k) => k.n)
+
+# Raised from `@eq` in a hot loop, and caught there.
+def raise_late(n: number) {
+  var caught = 0
+  var probe = Failing()
+
+  iter var i = 0; i < n; i++ {
+    catch {
+      if i % 10000 == 9999 and probe == 'x' {
+        caught = -1
+      }
+    } as e {
+      caught++
+    }
+  }
+
+  return caught
+}
+
+echo raise_late(40000)
+
+def wrong_late(n: number) {
+  var probe = Wrong()
+  var message = nil
+
+  iter var i = 0; i < n; i++ {
+    if i == n - 1 {
+      catch {
+        probe != probe
+      } as e {
+        message = e.message
+      }
+    }
+  }
+
+  return message
+}
+
+echo wrong_late(40000)

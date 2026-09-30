@@ -5634,12 +5634,24 @@ impl VM {
           Instr::Eq { dst, a, b } => {
             let va = self.get_reg(base, a);
             let vb = self.get_reg(base, b);
-            self.set_reg(base, dst, Value::bool(va.equals(&vb)));
+            let eq = if eq_overridden(va, vb) {
+              func.chunk.record(ip - 1, kind::INSTANCE);
+              tri!(self.call_eq(va, vb), 'step)
+            } else {
+              va.equals(&vb)
+            };
+            self.set_reg(base, dst, Value::bool(eq));
           },
           Instr::Neq { dst, a, b } => {
             let va = self.get_reg(base, a);
             let vb = self.get_reg(base, b);
-            self.set_reg(base, dst, Value::bool(!va.equals(&vb)));
+            let eq = if eq_overridden(va, vb) {
+              func.chunk.record(ip - 1, kind::INSTANCE);
+              tri!(self.call_eq(va, vb), 'step)
+            } else {
+              va.equals(&vb)
+            };
+            self.set_reg(base, dst, Value::bool(!eq));
           },
           Instr::Lt { dst, a, b } => {
             seen!(func, ip, base, a, b);
@@ -7839,6 +7851,26 @@ impl VM {
     Ok(None)
   }
 
+  /// Zuri's `==`: a class's `@eq` when `eq_overridden` says so, and
+  /// `Value::equals` otherwise.
+  pub(crate) fn operator_equals(&mut self, a: Value, b: Value) -> RunResult<bool> {
+    if eq_overridden(a, b) {
+      return self.call_eq(a, b);
+    }
+    Ok(a.equals(&b))
+  }
+
+  /// Runs `a.@eq(b)`, which has to answer with a bool.
+  pub(crate) fn call_eq(&mut self, a: Value, b: Value) -> RunResult<bool> {
+    let method = a.as_instance().class.as_class().methods["@eq"];
+    let result = self.call_value(method, &[a, b])?;
+    if !result.is_bool() {
+      let msg = format!("@eq() must return a bool, got {}", result.type_name());
+      return Err(self.raise("TypeError", msg));
+    }
+    Ok(result.as_bool())
+  }
+
   /// Everything that happens when an instruction propagates an error,
   /// factored out and marked `#[cold]`/`#[inline(never)]` purely for code
   /// layout: keeps the rarely-taken handling code out of the hot dispatch
@@ -8093,12 +8125,21 @@ pub(crate) fn set_static(class_val: Value, name: &str, value: Value) -> Result<(
   ))
 }
 
+/// Whether `a == b` is a question for `a`'s class: `a` is an instance
+/// whose class defines `@eq`, and `b` is a heap object. A number, a bool
+/// or `nil` on the right compares the ordinary way.
+#[inline]
+pub(crate) fn eq_overridden(a: Value, b: Value) -> bool {
+  a.is_instance() && b.is_obj() && a.as_instance().class.as_class().methods.contains_key("@eq")
+}
+
 /// Converts a runtime `using`-subject Value into the same hashable key
 /// space `Instr::UsingJump`'s jump table was built in at compile time.
-/// `None` for anything that was never eligible to be a constant case label
-/// (list, dict, instance, range, etc.), falling through to the sequential
-/// dynamic-label path.
-fn value_to_jump_key(v: Value) -> Option<JumpKey> {
+/// An instance whose class defines `@eq` gets `JumpKey::EqInstance`.
+/// `None` for anything else that was never eligible to be a constant case
+/// label (list, dict, other instances, range, etc.), falling through to
+/// the sequential dynamic-label path.
+pub(crate) fn value_to_jump_key(v: Value) -> Option<JumpKey> {
   if v.is_nil() {
     Some(JumpKey::Nil)
   } else if v.is_bool() {
@@ -8107,6 +8148,8 @@ fn value_to_jump_key(v: Value) -> Option<JumpKey> {
     Some(JumpKey::Number(v.as_number().to_bits()))
   } else if v.is_string() {
     Some(JumpKey::Str(v.as_str().to_string()))
+  } else if v.is_instance() && v.as_instance().class.as_class().methods.contains_key("@eq") {
+    Some(JumpKey::EqInstance)
   } else {
     None
   }

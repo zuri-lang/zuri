@@ -1099,6 +1099,17 @@ impl<'a> Builder<'a> {
     !feedback.sites_off && feedback.open(ip) && seen & !kind::NUMBER == 0
   }
 
+  /// Whether to compare an `==` or `!=` site inline: no instance whose
+  /// class defines `@eq` has reached it, and it has never deoptimized.
+  /// The inline compare leaves for the interpreter when one turns up,
+  /// after which the site calls its helper, as it does for good once
+  /// speculation is off.
+  fn eq_site(&self, ip: usize) -> bool {
+    let feedback = self.cx.feedback;
+    let seen = feedback.kinds.get(ip).copied().unwrap_or(0);
+    !feedback.sites_off && feedback.open(ip) && seen & kind::INSTANCE == 0
+  }
+
   /// Whether to do an arithmetic site's work on integers: it has only
   /// ever seen whole numbers. The operation is checked to give exactly
   /// the interpreter's double, and a site that stops doing so is blocked
@@ -1405,10 +1416,13 @@ impl<'a> Builder<'a> {
         let r = self.value(Op::FCmp(cmp), vec![x, y], Ty::Bool);
         self.set_cond(dst, r);
       },
-      Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b } => {
+      Instr::Eq { dst, a, b } | Instr::Neq { dst, a, b } if self.eq_site(ip) => {
         let x = self.tagged(a);
         let y = self.tagged(b);
-        let eq = self.value(Op::TaggedEq, vec![x, y], Ty::Bool);
+        let state = self.state(ip);
+        let eq = self
+          .push(Op::TaggedEq, vec![x, y], Some(Ty::Bool), Some(state))
+          .unwrap();
         let r = if matches!(instr, Instr::Eq { .. }) {
           eq
         } else {
