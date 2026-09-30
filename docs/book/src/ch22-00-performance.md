@@ -466,6 +466,7 @@ them.
 | `ZURI_JIT_CALL_K`, `ZURI_JIT_OSR_K` | the warm-up curve constants |
 | `ZURI_JIT_TIERUP_K` | how much profiling work comes before Bayelsa |
 | `ZURI_GC_LOG=1` | garbage collector activity |
+| `ZURI_GC_NURSERY_MB=n` | the young generation's starting and smallest size, in megabytes |
 | `ZURI_OPCODE_PROFILE=1` | interpreter opcode histogram |
 
 `ZURI_JIT=0` is the most useful one. Running a benchmark with and without it

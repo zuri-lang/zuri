@@ -2719,7 +2719,7 @@ impl VM {
       self_class_bits: self.resolve_self_class(proto),
       self_method_protos: self.resolve_self_method_protos(proto),
       deopt_sites: proto.jit.deopt_sites.borrow().clone(),
-      young_budget: self.heap.young_budget(),
+      young_budget: self.heap.young_ceiling(),
       field_speculation_off: proto.jit.field_speculation_off.get(),
       elem_speculation_off: proto.jit.elem_speculation_off.get(),
       globals_snapshot: self.snapshot_globals(proto),
@@ -3027,7 +3027,7 @@ impl VM {
       global_classes,
       global_numbers,
       invoke_callees,
-      young_budget: self.heap.young_budget() as u64,
+      young_budget: self.heap.young_ceiling() as u64,
       entries: None,
     }
   }
