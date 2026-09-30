@@ -1,0 +1,53 @@
+# Every mistake below is reported once, where it is, and nothing after it
+# is reported again because of it.
+
+# A broken header: the body behind it is skipped as a whole.
+def add(a, b = 2) {
+  return a + b
+}
+
+var x = = 3
+
+# A header that lost its `{`: the lines under it still read as its body.
+def twice(n)
+  var doubled = n * 2
+  return doubled
+}
+
+class Point
+  @new(x, y) {
+    self.x = x
+  }
+}
+
+class Line {
+  @new(a, b {
+    self.a = a
+  }
+
+  length() {
+    return (self.a ** 2).sqrt(
+  }
+}
+
+def nested() {
+  if true {
+    var y = )
+    echo y
+  }
+
+  echo 'still inside'
+}
+
+using 3 {
+  when 1 echo 'one'
+  when 2 echo )
+  default echo 'other'
+}
+
+var cells = [1, 2].map(@(n) => {
+  var t = n
+  return t
+})
+
+echo 'end'

@@ -196,6 +196,20 @@ pub struct Parser<'a> {
   // Always empty once fully drained; see `drain_trivia_into_decls`/
   // `drain_trivia_into_stmts`.
   pending_trivia: Vec<Token>,
+  // Set by the first error in a statement and cleared once `synchronize`
+  // has skipped to where the next statement starts. While it is set no
+  // further error is recorded, so one mistake is reported once instead of
+  // again by every rule that trips over the tokens it left behind.
+  panic_mode: bool,
+  // How many `{` the tokens consumed so far leave open. Recovery ends a
+  // failed statement at the depth it started at, which steps over the
+  // whole of a half-parsed body rather than reading its lines as new
+  // statements.
+  brace_depth: isize,
+  // Tokens consumed so far, and the count when the pending error was
+  // recorded. Recovery only trusts a line end it reached after the error.
+  consumed: usize,
+  panic_at: usize,
 }
 
 impl<'a> Display for Parser<'a> {
@@ -242,6 +256,10 @@ impl<'a> Parser<'a> {
       errors: Vec::new(),
       lookahead: std::collections::VecDeque::new(),
       pending_trivia: Vec::new(),
+      panic_mode: false,
+      brace_depth: 0,
+      consumed: 0,
+      panic_at: 0,
     }
   }
 
@@ -259,6 +277,12 @@ impl<'a> Parser<'a> {
   }
 
   fn report_error_at(&mut self, message: String, token: Token) {
+    if self.panic_mode {
+      return;
+    }
+
+    self.panic_mode = true;
+    self.panic_at = self.consumed;
     self.errors.push(ParserError::new(message, token));
   }
 
@@ -343,9 +367,7 @@ impl<'a> Parser<'a> {
       }
 
       if let TokenKind::Error(ref message, ..) = tok.kind {
-        self
-          .errors
-          .push(ParserError::new(message.clone(), tok.clone()));
+        self.report_error_at(message.clone(), tok.clone());
         continue;
       }
 
@@ -380,6 +402,13 @@ impl<'a> Parser<'a> {
       None => self.scan_real_token(),
     };
 
+    self.consumed += 1;
+    match self.previous.kind {
+      TokenKind::Lbrace => self.brace_depth += 1,
+      TokenKind::Rbrace => self.brace_depth -= 1,
+      _ => {},
+    }
+
     &self.previous
   }
 
@@ -393,9 +422,47 @@ impl<'a> Parser<'a> {
   // old cursor-based rewind assumed the former and could desync from a
   // queued token).
   fn rewind(&mut self) {
+    self.consumed -= 1;
+    match self.previous.kind {
+      TokenKind::Lbrace => self.brace_depth -= 1,
+      TokenKind::Rbrace => self.brace_depth += 1,
+      _ => {},
+    }
+
     self.lookahead.push_front(self.current.clone());
     self.current = self.previous.clone();
     self.previous = self.last_previous.clone();
+  }
+
+  /// Skips what is left of a statement that failed to parse, so the next
+  /// one starts clean and the first error is the only one reported for it.
+  ///
+  /// `depth` is the brace depth the statement started at. The skip ends
+  /// at the first line end or `;` after the error that is back at that
+  /// depth, so the braces of a half-parsed body are stepped over as a
+  /// unit. Inside a block (`in_block`), it stops in front of the `}` that
+  /// closes the block instead, leaving that for the block to consume.
+  fn synchronize(&mut self, depth: isize, in_block: bool) {
+    self.panic_mode = false;
+
+    while !self.is_at_end() && self.brace_depth >= depth {
+      if self.brace_depth == depth {
+        if in_block && check_tok!(self, TokenKind::Rbrace) {
+          return;
+        }
+
+        if self.consumed > self.panic_at
+          && matches!(
+            self.previous.kind,
+            TokenKind::Newline | TokenKind::Semicolon
+          )
+        {
+          return;
+        }
+      }
+
+      self.advance();
+    }
   }
 
   fn end_statement(&mut self) {
@@ -1265,8 +1332,25 @@ impl<'a> Parser<'a> {
     // getting silently eaten by `statement`'s own leading `ignore_newlines`.
     self.drain_trivia_into_stmts(&mut vals);
 
-    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
+    // A block entered with an error already pending (the header before it
+    // failed) has no body worth reading; the statement it belongs to
+    // recovers as a whole instead.
+    let depth = self.brace_depth;
+
+    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() && !self.panic_mode {
       vals.push(self.statement());
+
+      if self.panic_mode {
+        self.synchronize(depth, true);
+
+        // Recovery can only end up outside the block when the statement
+        // that failed had already consumed the block's own `}`.
+        if self.brace_depth < depth {
+          self.block_count -= 1;
+          return Stmt::Block(vals);
+        }
+      }
+
       self.drain_trivia_into_stmts(&mut vals);
     }
 
@@ -1278,9 +1362,35 @@ impl<'a> Parser<'a> {
 
   fn match_block(&mut self, message: String) -> Stmt {
     self.ignore_newlines();
-    consume_tok!(self, TokenKind::Lbrace, message.as_str());
+    self.open_body(&message);
 
     self.block()
+  }
+
+  /// Consumes the `{` that opens a body: a function's, a method's, a
+  /// class's, or that of a `catch` or `iter`.
+  ///
+  /// When the header's line ended without one, the lines that follow are
+  /// read as the body anyway. A forgotten brace is by far the likelier
+  /// mistake, and reading the body as top-level code would report its
+  /// lines, and the `}` that closes it, all over again. Anything else on
+  /// the header's own line leaves the error pending as usual.
+  fn open_body(&mut self, message: &str) {
+    if match_tok!(self, TokenKind::Lbrace) {
+      return;
+    }
+
+    // An error already pending means the header itself is broken, and
+    // the statement recovers as a whole.
+    let recoverable =
+      !self.panic_mode && matches!(self.previous.kind, TokenKind::Newline) && !self.is_at_end();
+
+    self.report_error(message.to_string());
+
+    if recoverable {
+      self.panic_mode = false;
+      self.brace_depth += 1;
+    }
   }
 
   fn if_stmt(&mut self) -> Stmt {
@@ -1582,8 +1692,9 @@ impl<'a> Parser<'a> {
     self.ignore_newlines();
 
     let mut state = 0;
+    let depth = self.brace_depth;
 
-    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
+    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() && !self.panic_mode {
       if match_tok!(
         self,
         TokenKind::When | TokenKind::Default | TokenKind::Newline
@@ -1627,6 +1738,14 @@ impl<'a> Parser<'a> {
             self.report_error("Invalid using statement".to_string());
           },
         };
+
+        if self.panic_mode {
+          self.synchronize(depth, true);
+
+          if self.brace_depth < depth {
+            return Stmt::Using(Box::new(expr), case_labels, case_bodies, default_case);
+          }
+        }
       } else {
         self.report_error("Invalid using statement".to_string());
         break;
@@ -2147,14 +2266,12 @@ impl<'a> Parser<'a> {
     };
 
     self.ignore_newlines();
-    consume_tok!(
-      self,
-      TokenKind::Lbrace,
-      "Expected '{' after class declaration."
-    );
+    self.open_body("Expected '{' after class declaration.");
     self.ignore_newlines();
 
-    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() {
+    let depth = self.brace_depth;
+
+    while !check_tok!(self, TokenKind::Rbrace) && !self.is_at_end() && !self.panic_mode {
       self.ignore_newlines();
 
       // The `ignore_newlines` above can itself walk all the way past a
@@ -2198,6 +2315,14 @@ impl<'a> Parser<'a> {
 
         methods.push(self.method_decl(is_static));
         last_member_was_method = Some(true);
+      }
+
+      if self.panic_mode {
+        self.synchronize(depth, true);
+
+        if self.brace_depth < depth {
+          return Decl::Class(name, superclass, properties, methods, is_extension);
+        }
       }
 
       self.ignore_newlines();
@@ -2283,7 +2408,23 @@ impl<'a> Parser<'a> {
     self.drain_trivia_into_decls(&mut result);
 
     while !self.is_at_end() {
+      // Nothing at the top level is closed by a `}`. After an error, one
+      // turning up here ends a body whose `{` that error already covered
+      // (a header missing its brace, say), so it is the same mistake and
+      // is not reported twice.
+      if !self.errors.is_empty() && check_tok!(self, TokenKind::Rbrace) {
+        self.advance();
+        self.ignore_newlines();
+        continue;
+      }
+
+      let depth = self.brace_depth;
       result.push(self.declaration());
+
+      if self.panic_mode {
+        self.synchronize(depth, false);
+      }
+
       self.drain_trivia_into_decls(&mut result);
     }
 

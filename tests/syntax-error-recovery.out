@@ -1,0 +1,53 @@
+SyntaxError: Expected ',' between function arguments.
+  --> @@ROOT/tests/syntax-error-recovery.zu:5:14
+  |
+5 | def add(a, b = 2) {
+  |              ^
+
+SyntaxError: Unexpected token "="
+  --> @@ROOT/tests/syntax-error-recovery.zu:9:9
+  |
+9 | var x = = 3
+  |         ^
+
+SyntaxError: Expected '{' after function declaration
+  --> @@ROOT/tests/syntax-error-recovery.zu:13:3
+   |
+13 |   var doubled = n * 2
+   |   ^
+
+SyntaxError: Expected '{' after class declaration.
+  --> @@ROOT/tests/syntax-error-recovery.zu:18:3
+   |
+18 |   @new(x, y) {
+   |   ^
+
+SyntaxError: Expected ',' between function arguments.
+  --> @@ROOT/tests/syntax-error-recovery.zu:24:13
+   |
+24 |   @new(a, b {
+   |             ^
+
+SyntaxError: Unexpected token "}"
+  --> @@ROOT/tests/syntax-error-recovery.zu:30:3
+   |
+30 |   }
+   |   ^
+
+SyntaxError: Unexpected token ")"
+  --> @@ROOT/tests/syntax-error-recovery.zu:35:13
+   |
+35 |     var y = )
+   |             ^
+
+SyntaxError: Unexpected token ")"
+  --> @@ROOT/tests/syntax-error-recovery.zu:44:15
+   |
+44 |   when 2 echo )
+   |               ^
+
+SyntaxError: Unexpected token "var"
+  --> @@ROOT/tests/syntax-error-recovery.zu:49:3
+   |
+49 |   var t = n
+   |   ^
