@@ -2784,7 +2784,175 @@ const FIELD_ARENA_CHUNK_CELLS: usize = 64 * 1024;
 /// so there's no need for `GcChunk`'s own `free`-list/`live_count`
 /// bookkeeping here at all.
 struct NurseryChunk {
-  slots: Vec<GcBox>,
+  slots: YoungSlots,
+}
+
+impl NurseryChunk {
+  fn new() -> Self {
+    Self {
+      slots: YoungSlots::new(),
+    }
+  }
+}
+
+/// Bytes in one young chunk: 2 MB, the huge page size on x86-64 and on
+/// arm64 with 4 KB pages.
+const YOUNG_CHUNK_BYTES: usize = 2 << 20;
+const YOUNG_CHUNK_SLOTS: usize = YOUNG_CHUNK_BYTES / std::mem::size_of::<GcBox>();
+const _: () = assert!(YOUNG_CHUNK_BYTES % std::mem::size_of::<GcBox>() == 0);
+
+/// The buffer behind a `NurseryChunk`: room for `YOUNG_CHUNK_SLOTS`
+/// boxes, the first `len` of them initialized, the way a `Vec` keeps
+/// its elements. It never grows, so a box's address holds for as long
+/// as the chunk does.
+///
+/// On Linux each buffer is a mapping of its own, aligned to its size
+/// and marked for transparent huge pages. Eden is written front to back
+/// every cycle and survivors are packed in behind each other, so these
+/// pages are always full, and one huge page saves the 512 faults and
+/// 512 TLB entries that ordinary pages would cost. The request is
+/// advisory: with huge pages set to `never`, or disabled for the
+/// process, the buffer gets ordinary pages. Being its own mapping, it
+/// goes straight back to the system when the chunk is dropped, and the
+/// huge page marking never reaches memory the allocator hands out for
+/// anything else. Other systems take the buffer from the global
+/// allocator.
+struct YoungSlots {
+  ptr: std::ptr::NonNull<GcBox>,
+  len: usize,
+}
+
+impl YoungSlots {
+  fn new() -> Self {
+    Self {
+      ptr: Self::map(),
+      len: 0,
+    }
+  }
+
+  fn len(&self) -> usize {
+    self.len
+  }
+
+  fn capacity(&self) -> usize {
+    YOUNG_CHUNK_SLOTS
+  }
+
+  /// The start of the buffer, good for every slot up to `capacity`,
+  /// written or not.
+  fn as_mut_ptr(&mut self) -> *mut GcBox {
+    self.ptr.as_ptr()
+  }
+
+  /// # Safety
+  ///
+  /// `len` is at most `capacity`, and the first `len` slots hold
+  /// initialized boxes.
+  unsafe fn set_len(&mut self, len: usize) {
+    debug_assert!(len <= YOUNG_CHUNK_SLOTS);
+    self.len = len;
+  }
+
+  fn push(&mut self, gcbox: GcBox) {
+    assert!(self.len < YOUNG_CHUNK_SLOTS, "young chunk overflow");
+    // SAFETY: in bounds, checked above, and past every initialized box.
+    unsafe { self.ptr.as_ptr().add(self.len).write(gcbox) };
+    self.len += 1;
+  }
+
+  fn as_slice(&self) -> &[GcBox] {
+    // SAFETY: the first `len` slots are initialized.
+    unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+  }
+
+  fn iter(&self) -> std::slice::Iter<'_, GcBox> {
+    self.as_slice().iter()
+  }
+
+  fn last(&self) -> Option<&GcBox> {
+    self.as_slice().last()
+  }
+
+  fn layout() -> std::alloc::Layout {
+    std::alloc::Layout::array::<GcBox>(YOUNG_CHUNK_SLOTS).unwrap()
+  }
+
+  #[cfg(target_os = "linux")]
+  fn map() -> std::ptr::NonNull<GcBox> {
+    // mmap only promises page alignment, so map twice the size and keep
+    // the aligned chunk inside it.
+    let span = 2 * YOUNG_CHUNK_BYTES;
+    let raw = unsafe {
+      libc::mmap(
+        std::ptr::null_mut(),
+        span,
+        libc::PROT_READ | libc::PROT_WRITE,
+        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+        -1,
+        0,
+      )
+    };
+    if raw == libc::MAP_FAILED {
+      std::alloc::handle_alloc_error(Self::layout());
+    }
+    let start = raw as usize;
+    let aligned = start.next_multiple_of(YOUNG_CHUNK_BYTES);
+    let head = aligned - start;
+    let tail = span - head - YOUNG_CHUNK_BYTES;
+    // SAFETY: both trims lie inside the mapping just made and outside
+    // the chunk kept.
+    unsafe {
+      if head > 0 {
+        libc::munmap(raw, head);
+      }
+      if tail > 0 {
+        libc::munmap((aligned + YOUNG_CHUNK_BYTES) as *mut libc::c_void, tail);
+      }
+      libc::madvise(
+        aligned as *mut libc::c_void,
+        YOUNG_CHUNK_BYTES,
+        libc::MADV_HUGEPAGE,
+      );
+    }
+    std::ptr::NonNull::new(aligned as *mut GcBox).unwrap()
+  }
+
+  /// # Safety
+  ///
+  /// `ptr` came from `map` and nothing uses the buffer afterwards.
+  #[cfg(target_os = "linux")]
+  unsafe fn unmap(ptr: std::ptr::NonNull<GcBox>) {
+    unsafe { libc::munmap(ptr.as_ptr().cast(), YOUNG_CHUNK_BYTES) };
+  }
+
+  #[cfg(not(target_os = "linux"))]
+  fn map() -> std::ptr::NonNull<GcBox> {
+    let layout = Self::layout();
+    let raw = unsafe { std::alloc::alloc(layout) };
+    std::ptr::NonNull::new(raw.cast()).unwrap_or_else(|| std::alloc::handle_alloc_error(layout))
+  }
+
+  /// # Safety
+  ///
+  /// `ptr` came from `map` and nothing uses the buffer afterwards.
+  #[cfg(not(target_os = "linux"))]
+  unsafe fn unmap(ptr: std::ptr::NonNull<GcBox>) {
+    unsafe { std::alloc::dealloc(ptr.as_ptr().cast(), Self::layout()) };
+  }
+}
+
+impl Drop for YoungSlots {
+  fn drop(&mut self) {
+    // SAFETY: the first `len` slots are initialized and owned here, and
+    // the buffer came from `map`.
+    unsafe {
+      std::ptr::drop_in_place(std::ptr::slice_from_raw_parts_mut(
+        self.ptr.as_ptr(),
+        self.len,
+      ));
+      Self::unmap(self.ptr);
+    }
+  }
 }
 
 /// Ceiling on the total bytes `Heap::field_storage_pool` keeps alive,
@@ -3638,9 +3806,7 @@ impl Heap {
       self.nursery_fill_idx += 1;
     }
     if self.nursery_fill_idx >= self.nursery_chunks.len() {
-      self.nursery_chunks.push(NurseryChunk {
-        slots: Vec::with_capacity(CHUNK_SIZE),
-      });
+      self.nursery_chunks.push(NurseryChunk::new());
     }
     // Read AFTER any push above: growing the outer `Vec` relocates the
     // `NurseryChunk` headers, though never any chunk's own buffer.
@@ -3652,7 +3818,7 @@ impl Heap {
     self.nursery_end = unsafe { base.add(cap) };
   }
 
-  /// Writes the active chunk's bump cursor back into its `Vec`'s own
+  /// Writes the active chunk's bump cursor back into the chunk's own
   /// length, making `slots.len()` correct again.
   ///
   /// Must run before ANYTHING iterates `nursery_chunks`; while a
@@ -3948,9 +4114,7 @@ impl Heap {
       .last()
       .is_none_or(|c| c.slots.len() == c.slots.capacity());
     if full {
-      let chunk = self.survivor_spare.pop().unwrap_or_else(|| NurseryChunk {
-        slots: Vec::with_capacity(CHUNK_SIZE),
-      });
+      let chunk = self.survivor_spare.pop().unwrap_or_else(NurseryChunk::new);
       self.survivor_next.push(chunk);
     }
     let chunk = self.survivor_next.last_mut().unwrap();
@@ -4207,13 +4371,13 @@ impl Heap {
   }
 
   /// How many emptied nursery chunks `reset_nursery` keeps for the next
-  /// cycle to bump-allocate into: enough for the current budget, with a
-  /// few to spare for a burst that runs past it before the next
+  /// cycle to bump-allocate into: enough for the current budget, with
+  /// one to spare for a burst that runs past it before the next
   /// safepoint. Keeping them saves a round trip through the allocator
   /// for every chunk of every cycle. Past the budget they are freed, so
   /// a budget that shrinks gives its memory back.
   fn retained_nursery_chunks(&self) -> usize {
-    self.young_budget / (CHUNK_SIZE * std::mem::size_of::<GcBox>()) + 4
+    self.young_budget / YOUNG_CHUNK_BYTES + 1
   }
 
   /// How many field arena chunks to keep between cycles: enough for a
