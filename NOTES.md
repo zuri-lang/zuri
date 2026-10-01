@@ -46,3 +46,5 @@
   - Change repository visibility from Private to Public.
 - [15-09-2026]
   - Changed repository visibility back to Private. Not ready to become public until Nyssa or at least a prototype of it is ready.
+- [29-10-2026]
+  - This project permanently replaces the Zuri C runtime as the default runtime for the Zuri programming language and went public replacing the default runtime at https://github.com/zuri-lang/zuri.
