@@ -5,7 +5,7 @@
 // Nothing here names a `use`, because an included file shares the scope
 // it lands in.
 
-/// Splits a patch's file stem, such as `cranelift-codegen-0.134.4`, into
+/// Splits a patch's file stem, such as `cranelift-codegen-0.136.1`, into
 /// the crate and its version. The version starts after the last hyphen
 /// that a digit follows, which keeps both `foo-2d-1.0.0` and
 /// `foo-1.0.0-rc.1` whole.

@@ -2,7 +2,7 @@
 //! changes made there back into patches.
 //!
 //! Each patch is named for the crate and version it applies to, such as
-//! `cranelift-codegen-0.134.4.patch`. The crate is taken untouched from
+//! `cranelift-codegen-0.136.1.patch`. The crate is taken untouched from
 //! crates.io through Cargo's own registry cache, copied to
 //! `vendor/crates/<name>`, and patched there. The workspace's
 //! `[patch.crates-io]` points at that copy.
@@ -577,8 +577,16 @@ fn git_path(path: &Path) -> String {
 }
 
 fn vendor_dir() -> PathBuf {
-  // The tool lives one directory down from the `vendor` it serves.
-  Path::new(env!("CARGO_MANIFEST_DIR"))
+  // The tool lives one directory down from the `vendor` it serves. Cargo
+  // names that directory again when it runs the tool, and that one wins
+  // over the directory the binary was built from: Cargo hashes a path
+  // package without its location, so checkouts sharing a target directory
+  // share this binary too.
+  let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
+    .map(PathBuf::from)
+    .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+
+  manifest_dir
     .parent()
     .expect("the patch-crates package has no parent directory")
     .to_path_buf()

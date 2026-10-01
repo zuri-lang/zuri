@@ -6,7 +6,7 @@ builds the patched copies the workspace compiles:
 
 ```console
 $ cargo patch-crates
-patched cranelift-codegen 0.134.4
+patched cranelift-codegen 0.136.1
 ```
 
 Run it once before the first build, and again whenever a patch changes.
@@ -34,7 +34,7 @@ change is done, write it back out:
 
 ```console
 $ cargo patch-crates save cranelift-codegen
-saved vendor/patches/cranelift-codegen-0.134.4.patch
+saved vendor/patches/cranelift-codegen-0.136.1.patch
 ```
 
 `cargo patch-crates --check` lists copies that are missing or older than
@@ -43,7 +43,7 @@ their patch, and exits 1 if there are any.
 ## Moving to a new version
 
 ```console
-$ cargo patch-crates upgrade cranelift-codegen 0.135.0
+$ cargo patch-crates upgrade cranelift-codegen 0.137.0
 ```
 
 This starts the copy over from the new version and applies the current

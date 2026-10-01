@@ -29,11 +29,11 @@ minus = { version = "5.7.2", features = ["static_output"] }
 
 # --- JIT -------------------------------------------------------------------
 
-cranelift-jit = "0.134"
-cranelift-codegen = "0.134"
-cranelift-frontend = "0.134"
-cranelift-module = "0.134"
-cranelift-native = "0.134"
+cranelift-jit = "0.136"
+cranelift-codegen = "0.136"
+cranelift-frontend = "0.136"
+cranelift-module = "0.136"
+cranelift-native = "0.136"
 target-lexicon = "0.13"
 
 # --- hash module (src/modules/hash.rs) -------------------------------------

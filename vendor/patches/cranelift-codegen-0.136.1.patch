@@ -1,5 +1,5 @@
 diff --git a/Cargo.toml b/Cargo.toml
-index 3967e88..25a208c 100644
+index dbe986e..88d0f64 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
 @@ -265,6 +265,7 @@ level = "allow"
@@ -9,9 +9,9 @@ index 3967e88..25a208c 100644
 +unused_imports = "allow"
  trivial_numeric_casts = "warn"
  unstable_features = "warn"
- unused-lifetimes = "warn"
+ unused_extern_crates = "warn"
 diff --git a/src/isa/x64/inst/emit.rs b/src/isa/x64/inst/emit.rs
-index 7f6f1ae..52d8762 100644
+index eb7244e..7aeec45 100644
 --- a/src/isa/x64/inst/emit.rs
 +++ b/src/isa/x64/inst/emit.rs
 @@ -164,6 +164,79 @@ pub(crate) fn emit(
@@ -154,7 +154,7 @@ index 426a17a..68d3fbd 100644
      }
  
 diff --git a/src/isa/x64/mod.rs b/src/isa/x64/mod.rs
-index 15eb736..d6ffa09 100644
+index ae2f5da..f22f663 100644
 --- a/src/isa/x64/mod.rs
 +++ b/src/isa/x64/mod.rs
 @@ -27,6 +27,23 @@ mod inst;
@@ -182,7 +182,7 @@ index 15eb736..d6ffa09 100644
  pub use inst::unwind::systemv::create_cie;
  
 diff --git a/src/machinst/buffer.rs b/src/machinst/buffer.rs
-index fba4ee3..ab2795e 100644
+index 6f6e856..78b5f11 100644
 --- a/src/machinst/buffer.rs
 +++ b/src/machinst/buffer.rs
 @@ -538,6 +538,68 @@ impl<I: VCodeInst> MachBuffer<I> {
