@@ -1,0 +1,538 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Editor Support - The Zuri Programming Language</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="An introduction to Zuri, from your first line of code to a full-stack web application.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-36673443.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-c29fed76.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Programming Language</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri/edit/main/docs/book/src/src/ch29-00-editors.md" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
+                            <span class=fa-svg id="git-edit-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M421.7 220.3l-11.3 11.3-22.6 22.6-205 205c-6.6 6.6-14.8 11.5-23.8 14.1L30.8 511c-8.4 2.5-17.5 .2-23.7-6.1S-1.5 489.7 1 481.2L38.7 353.1c2.6-9 7.5-17.2 14.1-23.8l205-205 22.6-22.6 11.3-11.3 33.9 33.9 62.1 62.1 33.9 33.9zM96 353.9l-9.3 9.3c-.9 .9-1.6 2.1-2 3.4l-25.3 86 86-25.3c1.3-.4 2.5-1.1 3.4-2l9.3-9.3H112c-8.8 0-16-7.2-16-16V353.9zM453.3 19.3l39.4 39.4c25 25 25 65.5 0 90.5l-14.5 14.5-22.6 22.6-11.3 11.3-33.9-33.9-62.1-62.1L314.3 67.7l11.3-11.3 22.6-22.6 14.5-14.5c25-25 65.5-25 90.5 0z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="editor-support"><a class="header" href="#editor-support">Editor Support</a></h1>
+<p>Zuri ships a language server. <code>zuri lsp</code> speaks the Language Server
+Protocol, so any editor that speaks it too gets completion, navigation,
+diagnostics as you type, refactoring, formatting and test running for
+Zuri, from the same server that ships with the runtime. The server is
+written in Zuri, on the <code>zuri</code> module’s own parser and compiler, so what
+it reports is what the runtime would do with the same code.</p>
+<p>Visual Studio Code has an extension that sets everything up. Neovim,
+Helix, Sublime Text and Emacs each need a few lines of configuration,
+shown at the end of this chapter.</p>
+<ul>
+<li><a href="#what-the-server-does">What the Server Does</a>
+<ul>
+<li><a href="#writing-code">Writing Code</a></li>
+<li><a href="#finding-your-way">Finding Your Way</a></li>
+<li><a href="#diagnostics">Diagnostics</a></li>
+<li><a href="#changing-code">Changing Code</a></li>
+<li><a href="#running-tests">Running Tests</a></li>
+<li><a href="#highlighting">Highlighting</a></li>
+</ul>
+</li>
+<li><a href="#how-the-server-reads-a-project">How the Server Reads a Project</a></li>
+<li><a href="#settings">Settings</a></li>
+<li><a href="#starting-the-server">Starting the Server</a></li>
+<li><a href="#visual-studio-code">Visual Studio Code</a></li>
+<li><a href="#neovim">Neovim</a></li>
+<li><a href="#helix">Helix</a></li>
+<li><a href="#sublime-text">Sublime Text</a></li>
+<li><a href="#emacs">Emacs</a></li>
+<li><a href="#when-something-goes-wrong">When Something Goes Wrong</a></li>
+</ul>
+<h2 id="what-the-server-does"><a class="header" href="#what-the-server-does">What the Server Does</a></h2>
+<h3 id="writing-code"><a class="header" href="#writing-code">Writing Code</a></h3>
+<p><strong>Completion</strong> offers what can be written at the cursor:</p>
+<ul>
+<li>after a <code>.</code>, the members of the receiver’s type: an instance’s fields and
+methods, inherited ones and the ones extensions add, a class’s statics, a
+module’s exports, a built-in type’s methods, and the keys of a dictionary
+written out where its variable was declared;</li>
+<li>elsewhere, the names in scope, the built-in globals, and the keywords that
+can start what is being written;</li>
+<li>after <code>import</code>, module paths, and between an import’s braces, what the
+module exports;</li>
+<li>at the start of a class member, <code>@new</code> and the operator decorators the
+class does not have yet, as method skeletons;</li>
+<li>after the <code>:</code> of a type hint, the type names;</li>
+<li>inside a doc block, its tags after <code>@</code>, and after <code>@param</code> the names of
+the parameters it documents.</li>
+</ul>
+<p>A name another module exports is offered with the import it needs: a module
+of the standard library or a package as <code>import json</code> and <code>json.encode</code>, and
+a module of the project as <code>import .shapes { Point }</code>.</p>
+<p><strong>Signature help</strong> follows a call while its arguments are written. It marks
+the parameter the cursor is on and shows its documentation, follows a
+constructor to its <code>@new</code>, and stays on a variadic parameter for every
+argument it takes.</p>
+<p><strong>Hover</strong> shows a declaration as a line of Zuri, its documentation laid out
+the way the standard library reference lays it out, the type a variable is
+inferred to hold, the value of a constant, and a module’s overview.</p>
+<p><strong>Inlay hints</strong> name the parameter each literal argument goes to, and, when
+turned on, the type a variable is inferred to hold.</p>
+<h3 id="finding-your-way"><a class="header" href="#finding-your-way">Finding Your Way</a></h3>
+<p>Go to definition follows an imported name back to the module that declares
+it, and a built-in to the stub that documents it. Go to declaration stops at
+the import that brings a name into the file, and go to type definition goes
+to the class of the value a name holds. Go to implementation lists the
+methods of subclasses that override a method, or the subclasses of a class.</p>
+<p>Find references and the highlights of the current name go by what each name
+resolves to, never by its spelling, so a <code>distance</code> method of one class is
+never confused with another class’s.</p>
+<p>The call hierarchy shows what calls a function and what it calls; the type
+hierarchy, the classes above and below a class. Each file has an outline,
+and the workspace symbol search finds a declaration by the letters of its
+name in order, so <code>hrq</code> finds <code>HttpRequest</code>. Each import links to the file
+it loads, and each class, function and method shows how often it is used.</p>
+<h3 id="diagnostics"><a class="header" href="#diagnostics">Diagnostics</a></h3>
+<p>Every error the server reports is either an error the compiler reports or a
+failure the runtime is certain to raise when the code runs:</p>
+<ul>
+<li>a syntax error, with the recovered rest of the file still checked;</li>
+<li>an error from the compiler, such as <code>break</code> outside a loop;</li>
+<li>an import of a module that does not exist, or of a name its module does
+not have;</li>
+<li><code>module.name</code> for a name the module does not have;</li>
+<li>a name nothing declares;</li>
+<li><code>self.name = value</code> outside <code>@new</code>, for a field no class in the chain
+declares;</li>
+<li>a literal argument of the wrong type, or a missing one, for a typed
+parameter, with the runtime’s own message.</li>
+</ul>
+<p>A member that an instance of a fully known class does not have is a
+warning, since an extension the server has not read could add it. Unused
+imports and declarations, and code after a <code>return</code>, <code>raise</code>, <code>break</code> or
+<code>continue</code>, are shown faded. A use of anything documented <code>@deprecated</code> is
+struck through.</p>
+<p>The server never guesses. A value whose type cannot be told, a module whose
+wildcard imports lead somewhere unread, and a class whose superclass cannot
+be found are never diagnosed. Arity is not checked either, because Zuri does
+not enforce it.</p>
+<p>Quick fixes add the import a missing name needs, correct a misspelt name or
+member, remove an unused import, and declare a field set outside <code>@new</code>.</p>
+<h3 id="changing-code"><a class="header" href="#changing-code">Changing Code</a></h3>
+<p><strong>Rename</strong> changes a declaration and every use of it across the workspace.
+A <code>{ name }</code> dictionary entry keeps its key and becomes <code>{ name: renamed }</code>.
+A rename is refused, with the reason, when the new name is a keyword, when
+it is already declared where the declaration or a use of it would see it,
+when it would make private something used from outside, and for what the
+standard library or a package declares. A member used through a receiver
+whose type cannot be told is left alone, and the editor is told where.</p>
+<p><strong>Extract and inline</strong> refactorings are offered only where they keep what
+the program does:</p>
+<ul>
+<li><em>Extract variable</em> moves an expression into a <code>var</code> just before its
+statement, never out of a loop’s condition, the right of <code>and</code> or <code>or</code>, a
+branch of <code>?:</code>, a <code>when</code> label or an <code>else if</code> condition, and never past
+something with a side effect that runs first. Every identical copy in the
+block can share the variable when the expression has no side effect.</li>
+<li><em>Extract function</em> turns whole statements of one block into a function.
+The outer locals they use become its parameters, and what they set and is
+read afterwards comes back: one value directly, several in a dictionary.
+Statements that use <code>self</code> or <code>parent</code> become a private method.</li>
+<li><em>Inline variable</em> replaces each use of a <code>var</code> set once and never again
+with its value.</li>
+<li><em>Inline function</em> replaces a call of a function whose body is a single
+<code>return</code> with that expression, and removes the function once every call is
+inlined.</li>
+</ul>
+<p><strong>Formatting</strong> runs <code>zuri fmt</code> on a file or a selection and sends back only
+the lines that differ. A file with a syntax error is left as it is.</p>
+<p>Renaming or moving a file updates the relative imports that reach it, in
+the files that import it and in the moved file itself.</p>
+<h3 id="running-tests"><a class="header" href="#running-tests">Running Tests</a></h3>
+<p>The server finds the tests every file of the workspace declares with the
+<code>test</code> module: each <code>describe</code> and <code>it</code>, and their <code>_only</code>, <code>_skip</code>, <code>_todo</code>
+and <code>_each</code> forms, whose name is written as a string. A lens above each one
+runs it, and one above the first runs the whole file.</p>
+<p>A test runs as <code>zuri test</code> would run it: <code>zuri run</code> on its file, in a process
+of its own, from the root of the project. Each result reaches the editor as
+it happens, and each failed assertion is shown on the line it failed at
+until the file changes or its tests run again.</p>
+<h3 id="highlighting"><a class="header" href="#highlighting">Highlighting</a></h3>
+<p>Semantic highlighting colours each name by what it resolves to: a class, a
+function, a method, a parameter, a variable, a field, a module or a
+decorator, with whatever the standard library defines marked as such. It
+works with any editor theme that colours semantic tokens.</p>
+<h2 id="how-the-server-reads-a-project"><a class="header" href="#how-the-server-reads-a-project">How the Server Reads a Project</a></h2>
+<p>The server reads every <code>.zu</code> file of the workspace folders the editor opens,
+in the background, on isolates of its own, so it answers while it reads.
+Inside a git work tree it reads what git tracks and what git would track,
+so <code>.gitignore</code> is honoured; anything under <code>.git</code>, <code>.zuri</code> or
+<code>node_modules</code> is left out, and so is whatever <code>zuri.exclude</code> names.</p>
+<p>Imports resolve exactly as the runtime resolves them: a relative import
+against the importing file, then the project’s <code>.zuri/libs</code>, then the
+standard library, then the native modules, then the packages installed for
+the user in <code>ZURI_HOME/libs</code>. The standard library is read from the Zuri
+installation the server belongs to, or from <code>zuri.root</code>, or from
+<code>ZURI_ROOT</code>. A module the workspace imports is read the first time it is
+needed.</p>
+<h2 id="settings"><a class="header" href="#settings">Settings</a></h2>
+<p>The server reads its settings from the <code>zuri</code> section of the editor’s
+configuration, as nested objects or dotted names, and follows changes as
+they are made.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>root</code></td><td><code>''</code></td><td>The installation whose standard library is read; empty uses <code>ZURI_ROOT</code>, or the installation beside <code>zuri</code></td></tr>
+<tr><td><code>exclude</code></td><td><code>[]</code></td><td>Globs, relative to a workspace folder, of files never read</td></tr>
+<tr><td><code>index.workers</code></td><td><code>2</code></td><td>Isolates that read the workspace in the background</td></tr>
+<tr><td><code>diagnostics.enable</code></td><td><code>true</code></td><td>Whether problems are reported at all</td></tr>
+<tr><td><code>diagnostics.scope</code></td><td><code>'openFiles'</code></td><td><code>'openFiles'</code>, or <code>'workspace'</code> for every file of the workspace</td></tr>
+<tr><td><code>diagnostics.delay</code></td><td><code>300</code></td><td>Milliseconds after a change before a file is checked</td></tr>
+<tr><td><code>diagnostics.unusedHints</code></td><td><code>true</code></td><td>Whether unused declarations are shown faded</td></tr>
+<tr><td><code>inlayHints.parameterNames</code></td><td><code>'literals'</code></td><td>Which arguments are named: <code>'none'</code>, <code>'literals'</code> or <code>'all'</code></td></tr>
+<tr><td><code>inlayHints.variableTypes</code></td><td><code>false</code></td><td>Whether inferred variable types are shown</td></tr>
+<tr><td><code>codeLens.references</code></td><td><code>true</code></td><td>Whether declarations show how often they are used</td></tr>
+<tr><td><code>completion.autoImport</code></td><td><code>true</code></td><td>Whether names from modules not imported yet are offered</td></tr>
+<tr><td><code>completion.callParentheses</code></td><td><code>false</code></td><td>Whether completing a function writes its parentheses</td></tr>
+<tr><td><code>testing.codeLens</code></td><td><code>true</code></td><td>Whether suites and tests show lenses that run them</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="starting-the-server"><a class="header" href="#starting-the-server">Starting the Server</a></h2>
+<p>Editors start the server themselves, over its standard input and output:</p>
+<pre><code class="language-sh">zuri lsp [--stdio] [--log &lt;path&gt;] [--log-level &lt;level&gt;]
+</code></pre>
+<p><code>--stdio</code> names the only way the server talks, and is accepted because
+editors pass it. <code>--log</code> appends the server’s log to a file as well as
+sending it to the editor. <code>--log-level</code> sets how much is logged: <code>error</code>,
+<code>warn</code>, <code>info</code> (the default), <code>debug</code>, or <code>trace</code>, which also writes every
+message the editor and the server exchange to the log file.</p>
+<p>The server exits with <code>0</code> when the editor shuts it down in order, and with
+<code>1</code> when the connection ends without that, or when the editor that started
+it has exited.</p>
+<h2 id="visual-studio-code"><a class="header" href="#visual-studio-code">Visual Studio Code</a></h2>
+<p>Install the <strong>Zuri</strong> extension from the marketplace, or from a downloaded
+package:</p>
+<pre><code class="language-sh">code --install-extension zuri-vscode-0.2.0.vsix
+</code></pre>
+<p>The extension starts the server for every workspace with a <code>.zu</code> file. Its
+settings are the server’s, under <code>zuri.</code>, plus two of its own: <code>zuri.path</code>,
+the <code>zuri</code> executable to run, and <code>zuri.trace.server</code>, which records the
+messages between the editor and the server in the <strong>Zuri Language Server</strong>
+output. Tests appear in the Test Explorer, and the commands <strong>Zuri: Restart
+Language Server</strong>, <strong>Zuri: Show Language Server Output</strong> and <strong>Zuri: Check
+Zuri Installation</strong> are in the command palette.</p>
+<h2 id="neovim"><a class="header" href="#neovim">Neovim</a></h2>
+<p>Neovim 0.11 configures language servers itself:</p>
+<pre><code class="language-lua">vim.filetype.add({ extension = { zu = 'zuri' } })
+
+vim.lsp.config('zuri', {
+  cmd = { 'zuri', 'lsp' },
+  filetypes = { 'zuri' },
+  root_markers = { 'project.toml', '.git' },
+  settings = {
+    zuri = {
+      inlayHints = { variableTypes = true },
+    },
+  },
+})
+
+vim.lsp.enable('zuri')
+</code></pre>
+<p>Inlay hints are shown with <code>vim.lsp.inlay_hint.enable()</code>, and a code lens
+runs with <code>vim.lsp.codelens.run()</code>.</p>
+<h2 id="helix"><a class="header" href="#helix">Helix</a></h2>
+<p>Add the language and its server to <code>languages.toml</code>:</p>
+<pre><code class="language-toml">[[language]]
+name = "zuri"
+scope = "source.zuri"
+file-types = ["zu"]
+roots = ["project.toml"]
+comment-token = "#"
+block-comment-tokens = { start = "/*", end = "*/" }
+indent = { tab-width = 2, unit = "  " }
+language-servers = ["zuri-lsp"]
+
+[language-server.zuri-lsp]
+command = "zuri"
+args = ["lsp"]
+
+[language-server.zuri-lsp.config.zuri]
+inlayHints = { parameterNames = "literals" }
+</code></pre>
+<h2 id="sublime-text"><a class="header" href="#sublime-text">Sublime Text</a></h2>
+<p>With the LSP package installed, add a client to its settings:</p>
+<pre><code class="language-json">{
+  "clients": {
+    "zuri": {
+      "enabled": true,
+      "command": ["zuri", "lsp"],
+      "selector": "source.zuri",
+      "settings": {
+        "zuri.diagnostics.scope": "openFiles"
+      }
+    }
+  }
+}
+</code></pre>
+<p>The selector names the syntax Zuri files open with. The Visual Studio Code
+extension’s grammar, <code>zuri.tmLanguage.json</code>, is a TextMate grammar whose
+scope is <code>source.zuri</code>; PackageDev’s Convert command turns it into a
+<code>.tmLanguage</code> file for Sublime Text.</p>
+<h2 id="emacs"><a class="header" href="#emacs">Emacs</a></h2>
+<p>Eglot, built into Emacs 29, needs a mode for Zuri files and the command
+that starts the server:</p>
+<pre><code class="language-elisp">(define-derived-mode zuri-mode prog-mode "Zuri"
+  "A major mode for Zuri source."
+  (setq-local comment-start "# "))
+
+(add-to-list 'auto-mode-alist '("\\.zu\\'" . zuri-mode))
+
+(with-eval-after-load 'eglot
+  (add-to-list 'eglot-server-programs '(zuri-mode "zuri" "lsp")))
+
+(add-hook 'zuri-mode-hook #'eglot-ensure)
+</code></pre>
+<p>Settings go in <code>eglot-workspace-configuration</code>:</p>
+<pre><code class="language-elisp">(setq-default eglot-workspace-configuration
+              '(:zuri (:inlayHints (:variableTypes t))))
+</code></pre>
+<h2 id="when-something-goes-wrong"><a class="header" href="#when-something-goes-wrong">When Something Goes Wrong</a></h2>
+<p>The server sends what it logs at its <code>--log-level</code> and above, <code>info</code> by
+default, to the editor’s log for language servers, and while the editor asks
+for a trace, everything down to <code>debug</code> as well. Starting it with <code>--log</code> and
+<code>--log-level debug</code> writes all of it to a file; <code>--log-level trace</code> adds
+every message exchanged.</p>
+<p>When nothing works at all, the editor cannot start <code>zuri</code>: running
+<code>zuri --version</code> in a terminal shows whether it is on <code>PATH</code>, and an editor
+that takes a path, as <code>zuri.path</code> does in Visual Studio Code, can be given
+the executable directly.</p>
+<p>When the standard library cannot be found, the server says so in its log.
+Setting <code>zuri.root</code>, or <code>ZURI_ROOT</code> for the editor, to the Zuri installation
+fixes it.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="ch28-00-rpc.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="appendix-01-keywords.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="ch28-00-rpc.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="appendix-01-keywords.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
