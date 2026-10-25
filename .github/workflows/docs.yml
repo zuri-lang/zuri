@@ -11,6 +11,12 @@ name: Documentation
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag when called from release workflow'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -28,6 +34,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -43,6 +51,80 @@ jobs:
       # committed, and the workspace does not load without them.
       - name: Patch crates
         run: cargo patch-crates
+
+      # When called from the release workflow, update book chapters and
+      # Cargo manifest to reflect the release version rather than the repo default.
+      - name: Update version for release
+        if: github.event_name == 'workflow_call'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ inputs.tag || github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+
+          python3 - "$version" <<'PY'
+          import sys
+          import re
+
+          version = sys.argv[1]
+          pattern = re.compile(
+              r'(?i)\b(zuri(?:vm)?)\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)'
+          )
+
+          chapters = [
+              "docs/book/src/ch01-01-installation.md",
+              "docs/book/src/ch01-02-hello-world.md",
+              "docs/book/src/ch01-03-the-repl.md",
+          ]
+
+          for path in chapters:
+              with open(path, "r", encoding="utf-8") as f:
+                  content = f.read()
+              updated = pattern.sub(rf'\g<1> {version}', content)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(updated)
+
+          with open("Cargo.toml", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          content = re.sub(
+              r'^(version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          content = re.sub(
+              r'(\[package\.metadata\.zuri\][^\[]*?version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+          )
+          content = re.sub(
+              r'(\[package\.metadata\.zuri\][^\[]*?vm_version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+          )
+
+          with open("Cargo.toml", "w", encoding="utf-8") as f:
+              f.write(content)
+
+          try:
+              with open("Cargo.lock", "r", encoding="utf-8") as f:
+                  lock = f.read()
+              lock = re.sub(
+                  r'(\[\[package\]\]\s+name\s*=\s*"zuri"\s+version\s*=\s*)"[^"]+"',
+                  f'\\g<1>"{version}"',
+                  lock,
+                  count=1,
+              )
+              with open("Cargo.lock", "w", encoding="utf-8") as f:
+                  f.write(lock)
+          except FileNotFoundError:
+              pass
+          PY
 
       # The `zuri` binary has to exist before the docs tool runs: the
       # reference's pages are written by a Zuri program, and the tool

@@ -7,6 +7,7 @@ on:
     inputs:
       tag:
         description: 'Tag to release (must already exist)'
+        type: string
         required: true
 
 permissions:
@@ -56,6 +57,64 @@ jobs:
       # committed, and the workspace does not load without them.
       - name: Patch crates
         run: cargo patch-crates
+
+      # Cargo.toml and Cargo.lock carry the repository default (0.1.0); the
+      # release binary needs its embedded version to match the release tag.
+      - name: Set release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          python="${{ runner.os == 'Windows' && 'python' || 'python3' }}"
+
+          "$python" - "$version" <<'PY'
+          import sys
+          import re
+
+          version = sys.argv[1]
+
+          with open("Cargo.toml", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          content = re.sub(
+              r'^(version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          content = re.sub(
+              r'(\[package\.metadata\.zuri\][^\[]*?version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+          )
+          content = re.sub(
+              r'(\[package\.metadata\.zuri\][^\[]*?vm_version\s*=\s*)"[^"]+"',
+              f'\\g<1>"{version}"',
+              content,
+              count=1,
+          )
+
+          with open("Cargo.toml", "w", encoding="utf-8") as f:
+              f.write(content)
+
+          try:
+              with open("Cargo.lock", "r", encoding="utf-8") as f:
+                  lock = f.read()
+              lock = re.sub(
+                  r'(\[\[package\]\]\s+name\s*=\s*"zuri"\s+version\s*=\s*)"[^"]+"',
+                  f'\\g<1>"{version}"',
+                  lock,
+                  count=1,
+              )
+              with open("Cargo.lock", "w", encoding="utf-8") as f:
+                  f.write(lock)
+          except FileNotFoundError:
+              pass
+          PY
 
       # The production profile is the release build without debug info,
       # which would otherwise make up most of what a user downloads.
@@ -359,3 +418,5 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/docs.yml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
