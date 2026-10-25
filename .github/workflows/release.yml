@@ -288,7 +288,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $version = ($env:ZURI_VERSION_UNDER_TEST).Trim()
+          $expectedVersion = ($env:ZURI_VERSION_UNDER_TEST).Trim()
           $env:ZURI_HOME = Join-Path $env:RUNNER_TEMP 'zuri-home'
           $env:ZURI_RELEASES_URL = 'http://127.0.0.1:8765/releases.json'
 
@@ -306,7 +306,7 @@ jobs:
             }
 
             # Windows PowerShell first, which is what most machines have.
-            powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Version $version
+            powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Version $expectedVersion
 
             if ($LASTEXITCODE -ne 0) {
               throw 'install.ps1 failed under Windows PowerShell'
@@ -316,7 +316,7 @@ jobs:
             # over the top of the first.
             $script = Get-Content -Raw install.ps1
 
-            if ($version.Contains('-')) {
+            if ($expectedVersion.Contains('-')) {
               & ([scriptblock]::Create($script)) -Prerelease
             } else {
               Invoke-Expression $script
@@ -324,7 +324,7 @@ jobs:
 
             $reported = (& zuri --version | Out-String)
 
-            if (-not $reported.Contains("Zuri $version")) {
+            if (-not $reported.Contains("Zuri $expectedVersion")) {
               throw "the installed zuri says '$reported'"
             }
 
