@@ -1,0 +1,577 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>sql.migrate - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-e8bd4015.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-bb4b52a8.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="sqlmigrate"><a class="header" href="#sqlmigrate"><code>sql.migrate</code></a></h1>
+<pre><code class="language-zuri ignore">import sql.migrate
+</code></pre>
+<blockquote>
+<p><code>sql</code> does not re-export this module, so it is reached only by importing
+it directly.</p>
+</blockquote>
+<p>Versioned changes to a database’s schema, applied once each, in order,
+on every engine.</p>
+<p>A migration is a Zuri file in a directory of them. Its name starts with
+a version, a run of digits, and says what it does:</p>
+<pre><code class="language-text">migrations/
+  20261011143000_create_posts.zu
+  20261012091500_add_slug_to_posts.zu
+</code></pre>
+<p>Each exports <code>up(db)</code>, which makes the change, and <code>down(db)</code>, which
+undoes it. <code>db</code> is the <code>Transaction</code> the migration runs in, or the
+<code>Connection</code> itself where it runs outside one: always on MySQL and
+MariaDB, and anywhere for a migration that asks to. Its type is
+<code>Transaction|Connection</code>, and the change is described with <code>db.schema</code>
+and its <code>Blueprint</code>, once, for every engine the program runs against:</p>
+<pre><code class="language-zuri ignore">import sql { Blueprint, Connection, Transaction }
+
+def up(db: Transaction|Connection) {
+  db.schema.create_table('posts', @(table: Blueprint) {
+    table.id()
+    table.string('title', 200)
+    table.timestamps()
+  })
+}
+
+def down(db: Transaction|Connection) {
+  db.schema.drop_table('posts')
+}
+</code></pre>
+<p><code>Migrator</code> applies what a database has not had and rolls back what it
+has, and records each one in a table of its own, <code>zuri_migrations</code> by
+default:</p>
+<pre><code class="language-zuri ignore">import sql
+import sql.migrate { Migrator }
+
+var db = sql.open(env.require('DATABASE_URL'))
+
+Migrator(db, { directory: 'migrations' }).up()
+</code></pre>
+<p><code>zuri migrate</code> does the same from the command line.</p>
+<h2 id="how-a-migration-runs"><a class="header" href="#how-a-migration-runs">How a migration runs</a></h2>
+<p>Each migration runs in a transaction of its own, together with the row
+recording it, so on SQLite and PostgreSQL a migration that fails part
+way leaves nothing behind and is not recorded. MySQL and MariaDB commit
+at every schema change: there a migration runs on its own and is
+recorded once it has finished, and one that fails part way leaves the
+statements before the failure in place.</p>
+<p>On SQLite, foreign key enforcement is switched off while a migration
+runs, so a change that builds a table again cannot take the rows
+referring to it along, and every foreign key is checked before the
+migration commits.</p>
+<p>A migration that has to run outside a transaction, as PostgreSQL’s
+<code>create index concurrently</code> does, says so:</p>
+<pre><code class="language-zuri ignore">var transaction = false
+</code></pre>
+<h2 id="several-processes-at-once"><a class="header" href="#several-processes-at-once">Several processes at once</a></h2>
+<p>Two processes migrating one database at the same moment apply each
+migration once. On PostgreSQL, MySQL and MariaDB a run holds the
+engine’s own lock, and a second run waits for the first to finish. On
+SQLite each migration takes the write lock as it starts, and every
+migration checks the record again once it holds the lock, so one another
+process applied meanwhile is passed over.</p>
+<h2 id="batches"><a class="header" href="#batches">Batches</a></h2>
+<p>Every migration one <code>up()</code> applies shares a batch number, and <code>down()</code>
+with no options rolls back the latest batch whole: what the last run
+applied, however many that was.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="default_table"><a class="header" href="#default_table"><code>DEFAULT_TABLE</code></a></h3>
+<pre><code class="language-zuri ignore">sql.migrate.DEFAULT_TABLE = 'zuri_migrations'
+</code></pre>
+<p>The table a <code>Migrator</code> records migrations in unless told another.</p>
+<h3 id="default_directory"><a class="header" href="#default_directory"><code>DEFAULT_DIRECTORY</code></a></h3>
+<pre><code class="language-zuri ignore">sql.migrate.DEFAULT_DIRECTORY = 'migrations'
+</code></pre>
+<p>The directory a <code>Migrator</code> reads migrations from unless told another,
+relative to the working directory.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="is_name"><a class="header" href="#is_name"><code>is_name()</code></a></h3>
+<pre><code class="language-zuri ignore">sql.migrate.is_name(name: string) -&gt; bool
+</code></pre>
+<p>Whether <code>name</code> can name a migration: one or more letters, digits and
+underscores, such as <code>create_posts</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h3 id="create"><a class="header" href="#create"><code>create()</code></a></h3>
+<pre><code class="language-zuri ignore">sql.migrate.create(directory: string, name: string) -&gt; string
+</code></pre>
+<p>Writes a new, empty migration into <code>directory</code>, and returns its path.</p>
+<p>The version is the moment it was made, in UTC, as <code>YYYYMMDDHHMMSS</code>,
+moved on a second at a time past any version the directory already
+holds. The file is the version, an underscore and <code>name</code>, exactly as
+given.</p>
+<p>A name of the form <code>create_&lt;table&gt;</code> starts the migration creating that
+table, with an <code>id()</code> and <code>timestamps()</code>, and dropping it on the way
+down. Any other name starts it empty. Either way <code>up()</code> and <code>down()</code>
+start typed, <code>db: Transaction|Connection</code>, with the classes imported
+from <code>sql</code>.</p>
+<pre><code class="language-zuri ignore">migrate.create('migrations', 'create_posts')
+# migrations/20261011143000_create_posts.zu
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>directory</code> (<code>string</code>) — Created when it is not there.</li>
+<li><code>name</code> (<code>string</code>) — Letters, digits and underscores.</li>
+</ul>
+<p><strong>Returns</strong> <code>string</code> — The new file’s path.</p>
+<p><strong>Raises</strong> <code>MigrationError</code> if <code>name</code> is empty or has anything but
+letters, digits and underscores in it, and nothing is written.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="migrationerror"><a class="header" href="#migrationerror"><code>MigrationError</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.migrate.MigrationError &lt; SqlError
+</code></pre>
+<p>A migration that cannot be run as asked: a directory or a file that
+breaks the naming rules, a file without <code>up()</code>, a rollback of one
+without <code>down()</code>, or a version two files share.</p>
+<p><code>migration</code> names the migration concerned, where there is one.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>migration</code></td><td></td><td>The migration’s name, or nil.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.MigrationError(message, migration)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>message</code> (<code>string</code>)</li>
+<li><code>migration</code> (<code>string|nil</code>)</li>
+</ul>
+<h3 id="migration"><a class="header" href="#migration"><code>Migration</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.migrate.Migration
+</code></pre>
+<p>One migration file.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-1"><a class="header" href="#fields-1">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>string</code></td><td>The migration’s name: its file name without <code>.zu</code>, such as <code>20261011143000_create_posts</code>.</td></tr>
+<tr><td><code>version</code></td><td><code>string</code></td><td>The digits the name starts with.</td></tr>
+<tr><td><code>path</code></td><td><code>string</code></td><td>The file.</td></tr>
+<tr><td><code>checksum</code></td><td><code>string</code></td><td>The SHA-256 of the file as it is now, in hex.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migration(path, name, version, checksum)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>path</code> (<code>string</code>)</li>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>version</code> (<code>string</code>)</li>
+<li><code>checksum</code> (<code>string</code>)</li>
+</ul>
+<h4 id="migrationmodule"><a class="header" href="#migrationmodule"><code>Migration.module()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migration.module() -&gt; module
+</code></pre>
+<p>The migration’s module, imported the first time it is asked for.</p>
+<p><strong>Returns</strong> <code>module</code></p>
+<p><strong>Raises</strong> <code>MigrationError</code> if it does not export <code>up()</code>.</p>
+<h4 id="migrationhas_down"><a class="header" href="#migrationhas_down"><code>Migration.has_down()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migration.has_down() -&gt; bool
+</code></pre>
+<p>Whether the migration can be rolled back.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="migrationin_transaction"><a class="header" href="#migrationin_transaction"><code>Migration.in_transaction()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migration.in_transaction() -&gt; bool
+</code></pre>
+<p>Whether the migration runs inside a transaction: true unless it sets
+<code>transaction</code> to false.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="migrationto_string"><a class="header" href="#migrationto_string"><code>Migration.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migration.to_string()
+</code></pre>
+<h3 id="migrator"><a class="header" href="#migrator"><code>Migrator</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.migrate.Migrator
+</code></pre>
+<p>Applies a directory of migrations to one database, and rolls them back.</p>
+<pre><code class="language-zuri ignore">var migrator = Migrator(db, { directory: 'migrations' })
+
+for entry in migrator.status() {
+  echo '${entry.state} ${entry.name}'
+}
+
+migrator.up()
+</code></pre>
+<p>The record of what has been applied lives in the database, in the table
+<code>table</code> names, created the first time a <code>Migrator</code> needs it.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-2"><a class="header" href="#fields-2">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>connection</code></td><td><code>Connection</code></td><td>The connection migrated.</td></tr>
+<tr><td><code>directory</code></td><td><code>string</code></td><td>The directory the migrations are read from.</td></tr>
+<tr><td><code>table</code></td><td><code>string</code></td><td>The table migrations are recorded in.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-2"><a class="header" href="#constructor-2">Constructor</a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator(connection, options)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>connection</code> (<code>Connection</code>) — A connection of its own: a run holds it,
+and on PostgreSQL and MySQL a session lock on it, from start to finish.
+A connection taken from a pool is returned to it afterwards by the
+caller, as any other.</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>directory</code>, the directory of migrations,
+<code>migrations</code> by default; and <code>table</code>, the table recording them,
+<code>zuri_migrations</code> by default.</li>
+</ul>
+<h4 id="migratormigrations"><a class="header" href="#migratormigrations"><code>Migrator.migrations()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.migrations() -&gt; list[Migration]
+</code></pre>
+<p>Every migration in the directory, in the order they apply: by version,
+then by name.</p>
+<p>A <code>.zu</code> file whose name starts with <code>_</code> is not a migration, which is
+where code several migrations share goes. Files that are not <code>.zu</code> are
+left alone.</p>
+<p><strong>Returns</strong> <code>list[Migration]</code></p>
+<p><strong>Raises</strong> <code>MigrationError</code> if the directory is not there, a file’s name
+does not start with a version and an underscore, or two files share a
+version.</p>
+<h4 id="migratorapplied"><a class="header" href="#migratorapplied"><code>Migrator.applied()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.applied() -&gt; list[dict]
+</code></pre>
+<p>What the database records as applied, oldest first. Each is <code>{ name, batch, checksum, applied_at }</code>.</p>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="migratorpending"><a class="header" href="#migratorpending"><code>Migrator.pending()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.pending() -&gt; list[Migration]
+</code></pre>
+<p>The migrations the database has not had, in the order they apply.</p>
+<p><strong>Returns</strong> <code>list[Migration]</code></p>
+<h4 id="migratorstatus"><a class="header" href="#migratorstatus"><code>Migrator.status()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.status() -&gt; list[dict]
+</code></pre>
+<p>Every migration, in a file or in the record or both, with what is known
+about it. Each is <code>{ name, state, batch, applied_at }</code>, and <code>state</code> is
+one of:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>State</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>applied</code></td><td>recorded, and the file is as it was when it ran</td></tr>
+<tr><td><code>changed</code></td><td>recorded, and the file has changed since it ran</td></tr>
+<tr><td><code>missing</code></td><td>recorded, and there is no file for it any more</td></tr>
+<tr><td><code>pending</code></td><td>a file the database has not had</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>batch</code> and <code>applied_at</code> are nil for a pending migration.</p>
+<p><strong>Returns</strong> <code>list[dict]</code></p>
+<h4 id="migratorup"><a class="header" href="#migratorup"><code>Migrator.up()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.up(options) -&gt; list[string]
+</code></pre>
+<p>Applies pending migrations, in order, as one batch.</p>
+<pre><code class="language-zuri ignore">migrator.up()                  # everything pending
+migrator.up({ steps: 1 })      # the next one
+migrator.up({ to: '20261012091500_add_slug_to_posts' })
+</code></pre>
+<p>A migration that fails stops the run where it is. Those before it stay
+applied, and it and those after it stay pending.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>dict|nil</code>) — <code>steps</code>, how many to apply at most; or <code>to</code>,
+the name of the last one to apply. Everything pending when neither is
+given.</li>
+</ul>
+<p><strong>Returns</strong> <code>list[string]</code> — The names applied, in order.</p>
+<p><strong>Raises</strong> <code>MigrationError</code> if <code>to</code> names no pending migration, or a
+file cannot be run.</p>
+<h4 id="migratordown"><a class="header" href="#migratordown"><code>Migrator.down()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.down(options) -&gt; list[string]
+</code></pre>
+<p>Rolls applied migrations back, newest first.</p>
+<pre><code class="language-zuri ignore">migrator.down()                # the latest batch
+migrator.down({ steps: 2 })    # the two most recent
+migrator.down({ to: '20261011143000_create_posts' })
+</code></pre>
+<p>Every migration about to be rolled back is checked first: each has to
+have its file, with a <code>down()</code>, or nothing is rolled back at all.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>options</code> (<code>dict|nil</code>) — <code>steps</code>, how many to roll back; or <code>to</code>, the
+name of a migration to leave as the latest applied, rolling back
+everything after it. The latest batch when neither is given.</li>
+</ul>
+<p><strong>Returns</strong> <code>list[string]</code> — The names rolled back, in the order they
+were.</p>
+<p><strong>Raises</strong> <code>MigrationError</code> if <code>to</code> names no applied migration, or one
+to be rolled back has no file or no <code>down()</code>.</p>
+<h4 id="migratorreset"><a class="header" href="#migratorreset"><code>Migrator.reset()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.reset() -&gt; list[string]
+</code></pre>
+<p>Rolls back every applied migration, newest first.</p>
+<p><strong>Returns</strong> <code>list[string]</code> — The names rolled back.</p>
+<p><strong>Raises</strong> <code>MigrationError</code> if one has no file or no <code>down()</code>; nothing
+is rolled back then.</p>
+<h4 id="migratorto_string"><a class="header" href="#migratorto_string"><code>Migrator.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.migrate.Migrator.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="sql-ieee.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="sql-model.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="sql-ieee.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="sql-model.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>

@@ -1,0 +1,664 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>sql.model.definition - The Zuri Standard Library</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Every module Zuri ships with, generated from the library&#x27;s own doc blocks.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "ayu";
+            window.path_to_searchindex_js = "searchindex-e8bd4015.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-bb4b52a8.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Zuri Standard Library</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/zuri-lang/zuri" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="sqlmodeldefinition"><a class="header" href="#sqlmodeldefinition"><code>sql.model.definition</code></a></h1>
+<pre><code class="language-zuri ignore">import sql.model.definition
+</code></pre>
+<blockquote>
+<p><code>sql</code> lifts part of this module out to its own top level; each name
+below is shown with the path that reaches it. Anything still spelled
+<code>sql.model.definition.*</code> needs <code>import sql.model.definition</code>.</p>
+</blockquote>
+<p>What a model is: its table, its columns, how its values are cast and
+checked, what it is associated with, and which of its hooks it has.</p>
+<p>A model’s class says most of it. Every field it declares that does not
+start with <code>_</code> is a column of the same name, read and written as the
+field. The rest it says in a static <code>define()</code>, which is handed a
+<code>Definition</code> to describe itself on:</p>
+<pre><code class="language-zuri ignore">class Post &lt; Model {
+  var id
+  var title
+  var author_id
+  var author
+
+  static define(model: Definition) {
+    model.belongs_to('author', Author)
+    model.validate('title', validate.required().string().max_length(200))
+  }
+}
+</code></pre>
+<p><code>define()</code> runs once, the first time the model is used, not when its
+class is declared, so it can name a model declared after it in the same
+file. What it describes is checked against the class then, and a
+definition that cannot work, an association with no field to hold it, a
+cast on a field that is not a column, raises <code>ModelError</code> at that first
+use rather than somewhere further on.</p>
+<h2 id="constants"><a class="header" href="#constants">Constants</a></h2>
+<h3 id="belongs_to"><a class="header" href="#belongs_to"><code>BELONGS_TO</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.BELONGS_TO = 'belongs_to'
+</code></pre>
+<p>A record holding the key of another, which it belongs to.</p>
+<h3 id="has_one"><a class="header" href="#has_one"><code>HAS_ONE</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.HAS_ONE = 'has_one'
+</code></pre>
+<p>A record that another holds the key of, one of at most.</p>
+<h3 id="has_many"><a class="header" href="#has_many"><code>HAS_MANY</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.HAS_MANY = 'has_many'
+</code></pre>
+<p>A record that others hold the key of, any number of them.</p>
+<h3 id="belongs_to_many"><a class="header" href="#belongs_to_many"><code>BELONGS_TO_MANY</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.BELONGS_TO_MANY = 'belongs_to_many'
+</code></pre>
+<p>Records joined to others through a table holding both keys.</p>
+<h3 id="hooks"><a class="header" href="#hooks"><code>HOOKS</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.HOOKS = [...]
+</code></pre>
+<p>The methods a model overrides to run code around its own life. Each is
+called with the connection or transaction the record is being saved or
+deleted through, except <code>after_load()</code>, called as a record is built from
+a row.</p>
+<h2 id="functions"><a class="header" href="#functions">Functions</a></h2>
+<h3 id="definition_of"><a class="header" href="#definition_of"><code>definition_of()</code></a></h3>
+<pre><code class="language-zuri ignore">sql.model.definition_of(model) -&gt; Definition
+</code></pre>
+<p>The definition of <code>model</code>, made the first time it is asked for and kept
+from then on.</p>
+<p>Making it builds one record of the class, with no arguments, to be sure
+it is a model, then runs its <code>define()</code> when it has one.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>model</code> (<code>class</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<p><strong>Raises</strong> <code>ModelError</code> if <code>model</code> is not a class extending <code>Model</code>, or
+its definition cannot work.</p>
+<h2 id="classes"><a class="header" href="#classes">Classes</a></h2>
+<h3 id="association"><a class="header" href="#association"><code>Association</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.model.Association
+</code></pre>
+<p>One association of a model.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields"><a class="header" href="#fields">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>name</code></td><td><code>string</code></td><td>The association’s name, which is also the field its records are loaded into.</td></tr>
+<tr><td><code>kind</code></td><td><code>string</code></td><td>One of <code>BELONGS_TO</code>, <code>HAS_ONE</code>, <code>HAS_MANY</code> and <code>BELONGS_TO_MANY</code>.</td></tr>
+<tr><td><code>model</code></td><td><code>class</code></td><td>The model on the other side.</td></tr>
+<tr><td><code>foreign_key</code></td><td><code>string</code></td><td>The column holding the other side’s key.</td></tr>
+<tr><td><code>key</code></td><td><code>string|nil</code></td><td>The column the foreign key holds the value of.</td></tr>
+<tr><td><code>through</code></td><td><code>string|nil</code></td><td>For <code>BELONGS_TO_MANY</code>, the join table.</td></tr>
+<tr><td><code>other_key</code></td><td><code>string|nil</code></td><td>For <code>BELONGS_TO_MANY</code>, the join table’s column for the other model.</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor"><a class="header" href="#constructor">Constructor</a></h4>
+<pre><code class="language-zuri ignore">sql.model.Association(name, kind, model)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>kind</code> (<code>string</code>)</li>
+<li><code>model</code> (<code>class</code>)</li>
+</ul>
+<h4 id="associationis_many"><a class="header" href="#associationis_many"><code>Association.is_many()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Association.is_many() -&gt; bool
+</code></pre>
+<p>Whether the association holds a list of records rather than one.</p>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="associationto_string"><a class="header" href="#associationto_string"><code>Association.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Association.to_string()
+</code></pre>
+<h3 id="definition"><a class="header" href="#definition"><code>Definition</code></a></h3>
+<pre><code class="language-zuri ignore">class sql.model.Definition
+</code></pre>
+<p>A model’s description: what <code>define()</code> is handed to write it on, and
+what everything else reads once it is finished.</p>
+<p>The methods a model calls in <code>define()</code> each return the definition, so
+they can be chained, and each is checked against the class when the
+definition is finished.</p>
+<ul>
+<li><strong>printable</strong> — has a <code>@to_string()</code>, so <code>echo</code> and <code>print()</code> show
+something useful</li>
+</ul>
+<h4 id="fields-1"><a class="header" href="#fields-1">Fields</a></h4>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>model</code></td><td><code>class</code></td><td>The model’s class.</td></tr>
+<tr><td><code>name</code></td><td><code>string</code></td><td>The model’s class name.</td></tr>
+<tr><td><code>table_name</code></td><td><code>string</code></td><td>The table.</td></tr>
+<tr><td><code>primary</code></td><td></td><td>The primary key’s column.</td></tr>
+<tr><td><code>columns</code></td><td><code>list[string]</code></td><td>The columns, in the order the class declares their fields.</td></tr>
+<tr><td><code>created_column</code></td><td></td><td>The column stamped when a record is created, or nil.</td></tr>
+<tr><td><code>updated_column</code></td><td></td><td>The column stamped whenever a record is saved with a change, or nil.</td></tr>
+<tr><td><code>casts</code></td><td><code>dict</code></td><td>The cast of each column that has one.</td></tr>
+<tr><td><code>validators</code></td><td><code>dict</code></td><td>The <code>validate.Validator</code> of each column that has one.</td></tr>
+<tr><td><code>uniques</code></td><td><code>list[dict]</code></td><td>The checks for values no other row may share, each <code>{ columns, message }</code>.</td></tr>
+<tr><td><code>fillable_columns</code></td><td><code>list[string]</code></td><td>The columns <code>fill()</code> assigns.</td></tr>
+<tr><td><code>hidden_columns</code></td><td><code>list[string]</code></td><td>The columns left out of <code>to_dict()</code> and <code>@to_json()</code>.</td></tr>
+<tr><td><code>transient_fields</code></td><td><code>list[string]</code></td><td>The fields that are not columns.</td></tr>
+<tr><td><code>scopes</code></td><td><code>dict</code></td><td>The scopes, by name.</td></tr>
+<tr><td><code>associations</code></td><td><code>dict</code></td><td>The associations, by name.</td></tr>
+<tr><td><code>hooks</code></td><td><code>dict</code></td><td>Which hooks the model overrides, by name.</td></tr>
+<tr><td><code>schema</code></td><td></td><td>The validators as one <code>validate.Schema</code>, or nil when there are none.</td></tr>
+<tr><td><code>transactional</code></td><td></td><td>Whether saving and deleting run in a transaction of their own: when the model has hooks or unique checks,…</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="constructor-1"><a class="header" href="#constructor-1">Constructor</a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition(model, name)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>model</code> (<code>class</code>)</li>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<h4 id="definitiontable"><a class="header" href="#definitiontable"><code>Definition.table()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.table(name: string) -&gt; Definition
+</code></pre>
+<p>Names the model’s table, in place of the plural of its class name.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionprimary_key"><a class="header" href="#definitionprimary_key"><code>Definition.primary_key()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.primary_key(column: string) -&gt; Definition
+</code></pre>
+<p>Names the primary key’s column, in place of <code>id</code>.</p>
+<p>A model’s key is one column. A table keyed by several, such as a join
+table, is reached through <code>belongs_to_many()</code> or with SQL.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>column</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitiontimestamps"><a class="header" href="#definitiontimestamps"><code>Definition.timestamps()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.timestamps(created, updated) -&gt; Definition
+</code></pre>
+<p>Has the model stamp a column with the time a record is created, and
+another with the time it is saved with a change. Both are set as
+<code>date.Date</code>s in UTC.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>created</code> (<code>string|nil</code>) — <code>created_at</code> when nil.</li>
+<li><code>updated</code> (<code>string|nil</code>) — <code>updated_at</code> when nil.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitioncast"><a class="header" href="#definitioncast"><code>Definition.cast()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.cast(column: string, kind: string) -&gt; Definition
+</code></pre>
+<p>Casts a column’s value as it is read, so the field holds the same type
+on every engine. See the <code>casts</code> module for each cast.</p>
+<pre><code class="language-zuri ignore">model.cast('published', 'bool')
+model.cast('settings', 'json')
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>column</code> (<code>string</code>)</li>
+<li><code>kind</code> (<code>string</code>) — One of <code>bool</code>, <code>integer</code>, <code>number</code>, <code>decimal</code>,
+<code>string</code>, <code>json</code> and <code>date</code>.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<p><strong>Raises</strong> <code>ModelError</code> for any other kind.</p>
+<h4 id="definitionvalidate"><a class="header" href="#definitionvalidate"><code>Definition.validate()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.validate(column: string, rules) -&gt; Definition
+</code></pre>
+<p>Checks a column’s value with a <code>validate</code> chain before a record is
+saved.</p>
+<pre><code class="language-zuri ignore">model.validate('email', validate.required().string().email())
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>column</code> (<code>string</code>)</li>
+<li><code>rules</code> (<code>validate.Validator</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<p><strong>Raises</strong> <code>ModelError</code> if the column already has rules.</p>
+<h4 id="definitionunique"><a class="header" href="#definitionunique"><code>Definition.unique()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.unique(columns, message) -&gt; Definition
+</code></pre>
+<p>Checks before a record is saved that no other row holds the same values
+in <code>columns</code>. A record with nil in any of them is not checked, as a
+unique index lets any number of nulls through.</p>
+<p>This reports a taken value as a validation failure, with the rest. Only
+a unique index in the database makes two records saved at the same
+moment unable to take the same value; keep one there too.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>columns</code> (<code>string|list[string]</code>)</li>
+<li><code>message</code> (<code>string|nil</code>) — What a person reads, <code>The &lt;column&gt; field has already been taken.</code>
+when nil.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionfillable"><a class="header" href="#definitionfillable"><code>Definition.fillable()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.fillable(columns: list) -&gt; Definition
+</code></pre>
+<p>The columns <code>fill()</code> and building a record from a dictionary assign.
+Every column but the primary key and the timestamps when this is not
+called.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>columns</code> (<code>list[string]</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionhidden"><a class="header" href="#definitionhidden"><code>Definition.hidden()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.hidden(columns: list) -&gt; Definition
+</code></pre>
+<p>Columns left out of <code>to_dict()</code> and <code>@to_json()</code>, such as a password’s
+hash, so a record handed to a response does not carry them.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>columns</code> (<code>list[string]</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitiontransient"><a class="header" href="#definitiontransient"><code>Definition.transient()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.transient(fields: list) -&gt; Definition
+</code></pre>
+<p>Fields of the class that are not columns: values a record works with
+that the table does not hold.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>fields</code> (<code>list[string]</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionscope"><a class="header" href="#definitionscope"><code>Definition.scope()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.scope(name: string, body: function) -&gt; Definition
+</code></pre>
+<p>A reusable piece of a query, applied with <code>Query.scope()</code>.</p>
+<pre><code class="language-zuri ignore">model.scope('published', @(query, _) =&gt; query.where({ published: true }))
+model.scope('by', @(query, author) =&gt; query.where({ author_id: author.id }))
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>body</code> (<code>function</code>) — Called with the query and the argument given to
+<code>scope()</code>, and returns the query to use.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionbelongs_to"><a class="header" href="#definitionbelongs_to"><code>Definition.belongs_to()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.belongs_to(name: string, model, options) -&gt; Definition
+</code></pre>
+<p>This model holds the key of another, which it belongs to: a post belongs
+to its author.</p>
+<pre><code class="language-zuri ignore">model.belongs_to('author', Author)
+</code></pre>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>) — The association, and the field it loads into.</li>
+<li><code>model</code> (<code>class</code>)</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>foreign_key</code>, this model’s column holding
+the key, <code>&lt;name&gt;_id</code> when not given; and <code>owner_key</code>, the column of the
+other model it holds, that model’s primary key when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionhas_one"><a class="header" href="#definitionhas_one"><code>Definition.has_one()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.has_one(name: string, model, options) -&gt; Definition
+</code></pre>
+<p>Another model holds this one’s key, and there is at most one of it: a
+user has one profile.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>model</code> (<code>class</code>)</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>foreign_key</code>, the other model’s column
+holding this one’s key, this class’s name in snake case and <code>_id</code> when
+not given; and <code>local_key</code>, this model’s column it holds, the primary
+key when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionhas_many"><a class="header" href="#definitionhas_many"><code>Definition.has_many()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.has_many(name: string, model, options) -&gt; Definition
+</code></pre>
+<p>Other models hold this one’s key, any number of them: an author has many
+posts.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>model</code> (<code>class</code>)</li>
+<li><code>options</code> (<code>dict|nil</code>) — As <code>has_one()</code> takes.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionbelongs_to_many"><a class="header" href="#definitionbelongs_to_many"><code>Definition.belongs_to_many()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.belongs_to_many(name: string, model, options) -&gt; Definition
+</code></pre>
+<p>Records of this model and another are joined through a table holding
+both keys: a post belongs to many tags, and a tag to many posts.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+<li><code>model</code> (<code>class</code>)</li>
+<li><code>options</code> (<code>dict|nil</code>) — <code>through</code>, the join table, the two class
+names in snake case, in alphabetical order, joined by an underscore when
+not given, as <code>post_tag</code>; <code>foreign_key</code>, its column holding this model’s
+key, and <code>other_key</code>, its column holding the other’s, each the class
+name in snake case and <code>_id</code> when not given.</li>
+</ul>
+<p><strong>Returns</strong> <code>Definition</code></p>
+<h4 id="definitionassociation"><a class="header" href="#definitionassociation"><code>Definition.association()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.association(name: string) -&gt; Association
+</code></pre>
+<p>The association called <code>name</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>Association</code></p>
+<p><strong>Raises</strong> <code>ModelError</code> if there is none.</p>
+<h4 id="definitionhas_hook"><a class="header" href="#definitionhas_hook"><code>Definition.has_hook()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.has_hook(name: string) -&gt; bool
+</code></pre>
+<p>Whether the model overrides hook <code>name</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>name</code> (<code>string</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>bool</code></p>
+<h4 id="definitionfinish"><a class="header" href="#definitionfinish"><code>Definition.finish()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.finish(info: dict, base: string)
+</code></pre>
+<p>Checks what <code>define()</code> described against the class, and works out the
+rest. Called once, by <code>definition_of()</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>info</code> (<code>dict</code>) — <code>zuri.reflect.class_info()</code> of the model.</li>
+<li><code>base</code> (<code>string</code>) — The name of the class models extend.</li>
+</ul>
+<p><strong>Raises</strong> <code>ModelError</code> for a definition that cannot work.</p>
+<h4 id="definitionbuild"><a class="header" href="#definitionbuild"><code>Definition.build()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.build(row: dict) -&gt; Model
+</code></pre>
+<p>Builds a record from a row, as it would be after being loaded.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>row</code> (<code>dict</code>) — Column to value.</li>
+</ul>
+<p><strong>Returns</strong> <code>Model</code></p>
+<h4 id="definitionload"><a class="header" href="#definitionload"><code>Definition.load()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.load(record, row: dict)
+</code></pre>
+<p>Gives <code>record</code> the values of <code>row</code>, cast, and marks it as holding what
+the database holds.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>record</code> (<code>Model</code>)</li>
+<li><code>row</code> (<code>dict</code>)</li>
+</ul>
+<h4 id="definitionsaved"><a class="header" href="#definitionsaved"><code>Definition.saved()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.saved(record)
+</code></pre>
+<p>Marks <code>record</code> as holding what the database holds.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>record</code> (<code>Model</code>)</li>
+</ul>
+<h4 id="definitionvalues_of"><a class="header" href="#definitionvalues_of"><code>Definition.values_of()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.values_of(record) -&gt; dict
+</code></pre>
+<p>The value of each column of <code>record</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>record</code> (<code>Model</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="definitionsnapshot"><a class="header" href="#definitionsnapshot"><code>Definition.snapshot()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.snapshot(record) -&gt; dict
+</code></pre>
+<p>The values of <code>record</code>, copied deep enough that changing a list or
+dictionary in place still shows as a change against it.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>record</code> (<code>Model</code>)</li>
+</ul>
+<p><strong>Returns</strong> <code>dict</code></p>
+<h4 id="definitionto_string"><a class="header" href="#definitionto_string"><code>Definition.to_string()</code></a></h4>
+<pre><code class="language-zuri ignore">sql.model.Definition.to_string()
+</code></pre>
+<hr>
+<p><small>2026, Richard Ore and Zuri contributors</small></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="sql-model-casts.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="sql-model-errors.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="sql-model-casts.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="sql-model-errors.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="theme/zuri-highlight-d0aa6678.js"></script>
+        <script src="theme/zuri-site-link-ab10e18d.js"></script>
+
+
+
+    </div>
+    </body>
+</html>
