@@ -288,7 +288,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $version = $env:ZURI_VERSION_UNDER_TEST
+          $version = ($env:ZURI_VERSION_UNDER_TEST).Trim()
           $env:ZURI_HOME = Join-Path $env:RUNNER_TEMP 'zuri-home'
           $env:ZURI_RELEASES_URL = 'http://127.0.0.1:8765/releases.json'
 
