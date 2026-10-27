@@ -55,7 +55,7 @@ jobs:
       # When called from the release workflow, update book chapters and
       # Cargo manifest to reflect the release version rather than the repo default.
       - name: Update version for release
-        if: github.event_name == 'workflow_call'
+        if: inputs.tag != ''
         shell: bash
         run: |
           set -euo pipefail
