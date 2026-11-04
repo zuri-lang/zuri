@@ -27,7 +27,7 @@ def raises(fn) {
   return raised
 }
 
-var view = wire.wire()
+var view = wire()
 
 def out(source, variables) {
   return view.render_string('<i>' + source + '</i>', variables, nil)[3, -4]

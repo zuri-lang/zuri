@@ -68,7 +68,7 @@ def default_directory() {
  * ```zuri,ignore
  * import http.session
  *
- * server.use(session.session({
+ * server.use(session({
  *   store: session.FileStore('/var/lib/app/sessions'),
  * }))
  * ```

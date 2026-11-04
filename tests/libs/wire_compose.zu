@@ -35,7 +35,7 @@ def raises(fn) {
 
 var root = os.create_temp_dir('wire_test')
 echo '=== COMPOSE ROOT: ${root} ==='
-var view = wire.wire({ root })
+var view = wire({ root })
 
 def write(path, source) {
   var full = os.join_paths(root, path)
@@ -64,7 +64,7 @@ assert view.render('hello', { name: 'Ada' }) == '<p>Hello Ada</p>',
 assert view.root() == os.abs_path(root), 'root() reports where it is looking'
 ok('rendering from a file')
 
-var dotted = wire.wire({ root, extension: '.wire' })
+var dotted = wire({ root, extension: '.wire' })
 write('other.wire', '<p>wire</p>')
 assert dotted.render('other') == '<p>wire</p>',
   'set_extension changes what is tried'
@@ -445,7 +445,7 @@ ok('registration checks its arguments')
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-var built = wire.wire({
+var built = wire({
   root,
   extension: '.html',
   compact: true,
@@ -460,12 +460,12 @@ assert built.render_string(
   '<div><!-- c --><p>x</p></div>',
   'every option can be given to the constructor at once'
 assert raises(@() {
-  wire.wire({ extension: 'html' })
+  wire({ extension: 'html' })
 }),
   'an extension without a leading dot is refused'
 ok('configuring a Wire in one place')
 
-var made = wire.wire({ root: os.join_paths(root, 'fresh') })
+var made = wire({ root: os.join_paths(root, 'fresh') })
 assert made.create_root(), 'create_root reports that it made the directory'
 assert !made.create_root(), 'and reports that it did not have to a second time'
 ok('create_root')

@@ -131,7 +131,7 @@
  * ```zuri
  * import http.session
  *
- * server.use(http.session.session())
+ * server.use(http.session())
  *
  * server.get('/', @(request, response) {
  *   var seen = request.session().get('seen', 0)

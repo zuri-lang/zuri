@@ -379,7 +379,7 @@ So does a class reached through a module:
 ```zuri
 import set
 
-echo instance_of(set.set([1, 2]), set.Set)
+echo instance_of(set([1, 2]), set.Set)
 ```
 
 ```console

@@ -20,7 +20,7 @@
  * ```zuri
  * import wire
  *
- * var tpl = wire.wire()
+ * var tpl = wire()
  *
  * # Escaped, because that is the default.
  * echo tpl.render_string('{{ note }}', { note: '<b>hi</b>' })

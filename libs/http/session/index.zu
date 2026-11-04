@@ -20,7 +20,7 @@
  *
  * var server = http.server(3000)
  *
- * server.use(session.session())
+ * server.use(session())
  *
  * server.post('/login', @(request, response) {
  *   var account = authenticate(request.form())
@@ -65,7 +65,7 @@
  * memory is not.
  *
  * ```zuri,ignore
- * server.use(session.session({
+ * server.use(session({
  *   store: session.FileStore('/var/lib/app/sessions'),
  * }))
  * ```
@@ -81,7 +81,7 @@
  * var store = SqlStore(sql.pool('postgres://localhost/app'))
  * store.migrate()
  *
- * server.use(session.session({ store }))
+ * server.use(session({ store }))
  * ```
  *
  * Anything else - Redis, a key-value service, a table of your own
@@ -125,7 +125,7 @@
  * ```zuri,ignore
  * import env
  *
- * server.use(session.session({ secret: env.require('SESSION_SECRET') }))
+ * server.use(session({ secret: env.require('SESSION_SECRET') }))
  * ```
  *
  * Every worker must be given the same secret, or a cookie issued by
@@ -851,7 +851,7 @@ class Session {
  * Register it once, above anything that reads a session:
  *
  * ```zuri,ignore
- * server.use(session.session({ secret: env.require('SESSION_SECRET') }))
+ * server.use(session({ secret: env.require('SESSION_SECRET') }))
  * ```
  *
  * The session lands on `request.context['session']`, which

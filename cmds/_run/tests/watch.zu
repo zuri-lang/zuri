@@ -44,7 +44,7 @@ var PROGRAM = '\n'.join([
   'import .lib.greet',
   'import wire',
   '',
-  'var view = wire.wire({ root: os.join_paths(here, "views") })',
+  'var view = wire({ root: os.join_paths(here, "views") })',
   'var page = view.render("page").trim()',
   'var line = [greet.message(), page, os.pid().to_string(), " ".join(os.args[2,])]',
   '',

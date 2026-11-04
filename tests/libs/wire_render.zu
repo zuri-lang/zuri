@@ -27,7 +27,7 @@ def raises(fn) {
   return raised
 }
 
-var view = wire.wire()
+var view = wire()
 
 def render(source, variables) {
   return view.render_string(source, variables, nil)
@@ -75,7 +75,7 @@ assert render('<!-- {{ secret }} --><p>x</p>', { secret: 'shh' }) == '<p>x</p>',
 assert render('<!--\n  several\n  lines\n--><p>x</p>', nil) == '<p>x</p>',
   'a comment spanning lines goes too'
 
-var keeps = wire.wire({ comments: true })
+var keeps = wire({ comments: true })
 assert keeps.render_string('<!-- note --><p>x</p>', nil, nil)
   == '<!-- note --><p>x</p>',
   'set_comments(true) keeps them'
@@ -334,7 +334,7 @@ assert render('<a ping="{{ v }}">x</a>', { v: 'javascript:x /ok' }) ==
   '<a ping="about:blank /ok">x</a>', 'ping checks every token'
 ok('the URL list attributes')
 
-var permissive = wire.wire({ url_schemes: ['https', 'app'] })
+var permissive = wire({ url_schemes: ['https', 'app'] })
 assert permissive.render_string(
   '<a href="{{ v }}">x</a>', { v: 'app://open' }, nil,
 ) ==
@@ -372,7 +372,7 @@ ok('script and style escaping')
 # ---------------------------------------------------------------------------
 # Compact output
 # ---------------------------------------------------------------------------
-var tight = wire.wire({ compact: true })
+var tight = wire({ compact: true })
 assert tight.render_string('<div>\n  <p>a</p>\n  <p>b</p>\n</div>', nil, nil) ==
   '<div><p>a</p><p>b</p></div>', 'compact drops whitespace-only text'
 assert tight.render_string('<p>keep  this</p>', nil, nil)

@@ -1664,9 +1664,9 @@ def _is_carrier(element) {
  * HTML comments, default `false`).
  *
  * ```zuri
- * import wire
+ * import wire.compile
  *
- * var template = wire.compile.compile(
+ * var template = compile(
  *   '<p x-if="user">Hello {{ user.name }}</p>', 'greeting.html', nil, nil
  * )
  * ```

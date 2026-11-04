@@ -38,7 +38,7 @@
  * ```zuri
  * import wire
  *
- * var view = wire.wire()
+ * var view = wire()
  * view.set_root('./views')
  *
  * echo view.render('pages/home', { user })
@@ -307,7 +307,7 @@
  * ```zuri
  * import wire
  *
- * var view = wire.wire()
+ * var view = wire()
  *
  * # A filter: the value comes first, then whatever the template passed.
  * view.register_filter('excerpt', @(value, words) {
@@ -411,7 +411,7 @@ import @.render as _render
  * ```zuri
  * import wire
  *
- * var view = wire.wire()
+ * var view = wire()
  * view.set_root('./views')
  * view.register_global('site_name', 'Example')
  *
@@ -1041,7 +1041,7 @@ class Wire {
  * ```zuri
  * import wire
  *
- * var view = wire.wire({
+ * var view = wire({
  *   root: './views',
  *   auto_reload: false,
  * })

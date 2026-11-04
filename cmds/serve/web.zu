@@ -32,7 +32,7 @@ var PER_PAGE = 20
 
 var _ROOT = os.dir_name(__file__)
 
-var _view = wire.wire()
+var _view = wire()
 
 # The stylesheet is cached for a day, so its address carries a digest
 # of what is in it, and a changed file is fetched afresh straight away.

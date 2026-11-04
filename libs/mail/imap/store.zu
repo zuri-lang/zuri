@@ -486,7 +486,7 @@ class MemoryStore < MailStore {
       box.uidnext,
       is_bytes(raw) ? raw : '${raw}'.to_bytes(),
       flags == nil ? [] : flags,
-      received == nil ? date.date() : received,
+      received == nil ? date() : received,
     )
 
     box.uidnext = box.uidnext + 1
@@ -932,7 +932,7 @@ class MaildirStore < MailStore {
       uid,
       data,
       flags == nil ? [] : flags,
-      received == nil ? date.date() : received,
+      received == nil ? date() : received,
     )
   }
 
@@ -1088,6 +1088,6 @@ def _received_of(key: string) {
   catch {
     return date.from_time(seconds.to_number())
   } as error {
-    return date.date()
+    return date()
   }
 }

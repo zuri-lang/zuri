@@ -143,7 +143,7 @@ a `Wire` instance, point it at a directory, and render by path:
 ```zuri,ignore
 import wire
 
-var view = wire.wire()
+var view = wire()
 view.set_root('./views')
 
 echo view.render('pages/home', { user, posts })
@@ -1254,7 +1254,7 @@ argument; anything the template passes after it follows:
 
 ```zuri,ignore
 view.register_filter('excerpt', @(value, words) {
-  var count = words ?? 25
+  var count = words == nil ? 25 : words
   return ' '.join(value.split('/\\s+/').take(count)) + '…'
 })
 ```
@@ -1264,7 +1264,7 @@ view.register_filter('excerpt', @(value, words) {
 ```
 
 An argument the template leaves out arrives as `nil`, which is why
-`words ?? 25` above supplies a sensible default rather than the
+`words == nil ? 25 : words` above supplies a sensible default rather than the
 filter insisting the template spell it out every time.
 
 A filter returning a plain value has that value escaped like any
@@ -1329,7 +1329,7 @@ Every setting can be passed to the `Wire` constructor at once, or set
 individually with its own method afterward:
 
 ```zuri
-var view = wire.wire({
+var view = wire({
   root: './views',
   extension: '.html',
   compact: true,

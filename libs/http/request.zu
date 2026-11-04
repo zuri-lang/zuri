@@ -292,7 +292,7 @@ class HttpRequest {
   /**
    * This request's session.
    *
-   * The session is put here by `http.session.session()`, so a server
+   * The session is put here by `http.session()`, so a server
    * that never registered that middleware has none, and asking for
    * one says so rather than handing back `nil` for a handler to
    * misread as an empty session.
@@ -309,7 +309,7 @@ class HttpRequest {
 
     if current == nil {
       raise SessionError(
-        'this request has no session; register http.session.session() as ' +
+        'this request has no session; register http.session() as ' +
           'middleware on the server',
       )
     }

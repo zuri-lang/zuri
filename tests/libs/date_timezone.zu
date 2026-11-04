@@ -8,6 +8,7 @@
  */
 
 import date
+import os
 
 var _passed = 0
 
@@ -148,6 +149,41 @@ assert raises(@() {
   date.from_timezone('Neverland/Nowhere', 2024, 1, 1, 0, 0, 0)
 }), 'from_timezone() must raise for an unrecognized zone'
 ok('from_timezone() validates its zone argument')
+
+# ---------------------------------------------------------------------------
+# Date.to_timezone(): the answer must not depend on the host's own zone.
+# Lagos never observes DST, New York is the zone being converted to, and
+# Tokyo is well east of UTC.
+# ---------------------------------------------------------------------------
+var host_zone = os.get_env('TZ')
+
+for host in ['Africa/Lagos', 'America/New_York', 'Asia/Tokyo'] {
+  os.set_env('TZ', host, true)
+
+  var before_change = date.from_timezone('UTC', 2024, 3, 10, 6, 59, 0)
+    .to_timezone('America/New_York')
+  var after_change = date.from_timezone('UTC', 2024, 3, 10, 7, 0, 0)
+    .to_timezone('America/New_York')
+
+  assert before_change.hour == 1 and before_change.zone == 'EST',
+    'on a ${host} host, one minute before the change must still be 1:59 EST'
+  assert after_change.hour == 3 and after_change.zone == 'EDT',
+    'on a ${host} host, the instant of the change must be 3:00 EDT'
+
+  var from_dst = date.from_timezone('America/New_York', 2024, 7, 1, 0, 0, 0)
+    .to_timezone('UTC')
+
+  assert from_dst.hour == 4 and from_dst.zone == 'UTC',
+    'on a ${host} host, a date in daylight time must convert without raising'
+}
+
+if host_zone == nil {
+  os.unset_env('TZ')
+} else {
+  os.set_env('TZ', host_zone, true)
+}
+
+ok('Date.to_timezone() gives the same answer on any host')
 
 # ===========================================================================
 # Final summary

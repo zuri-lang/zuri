@@ -832,8 +832,9 @@ matches(reg: string) -> dictionary
 ```
 
 Returns a dictionary containing every match of the given regular
-expression _reg_ in the source string. If no match is found, an empty
-[dictionary](ch04-04-dictionaries.md) is returned.
+expression _reg_ in the source string. If no match is found, each key of
+the [dictionary](ch04-04-dictionaries.md) holds an empty list, so `{0: []}` for a
+pattern with no groups.
 
 If the _offset_ argument is specified, it becomes the offset in the
 _string_ at which to start matching.

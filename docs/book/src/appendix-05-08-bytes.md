@@ -10,7 +10,7 @@ thing.
 | [`is_empty()`](#is_empty) | `boolean` | Returns `true` if the byte stream holds no bytes at all, and `false` otherwise. |
 | [`append(n: int)`](#append) | `bytes` | Adds an item to the top of a byte stream. |
 | [`clone()`](#clone) | `bytes` | Returns a deep clone of the byte stream. |
-| [`extend(n: bytes)`](#extend) | `bytes` | Extends the byte stream with the bytes from the given byte stream. |
+| [`extend(n: bytes\|string)`](#extend) | `bytes` | Extends the byte stream with the bytes from the given byte stream. |
 | [`index_of(byte: int, start_index: ?number)`](#index_of) | `number` | Returns the index of the first occurrence of the given byte in the byte stream. |
 | [`last_index_of(byte: int, end_index: ?number)`](#last_index_of) | `number` | Returns the index of the last occurrence of the given byte in the byte stream, searching from the end, or `-1` when the byte is not there. |
 | [`pop()`](#pop) | `number` | Removes the last item in a byte stream and returns it. |
@@ -112,7 +112,7 @@ For example,
 ## `extend()`
 
 ```zuri,ignore
-extend(n: bytes) -> bytes
+extend(n: bytes|string) -> bytes
 ```
 
 Extends the byte stream with the bytes from the given byte stream.
@@ -134,7 +134,7 @@ For example,
 
 **Parameters**
 
-- `n` (`bytes`) — The byte stream to extend with.
+- `n` (`bytes|string`) — The byte stream or string to extend with.
 
 **Returns** `bytes`
 

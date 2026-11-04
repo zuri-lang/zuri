@@ -1150,7 +1150,8 @@ class string {
   /**
    * Returns a dictionary containing every match of the given
    * regular expression _reg_ in the source string. If no match
-   * is found, an empty [dictionary](./dictionaries) is returned.
+   * is found, each key of the [dictionary](./dictionaries) holds
+   * an empty list, so `{0: []}` for a pattern with no groups.
    *
    * If the _offset_ argument is specified, it becomes the offset
    * in the _string_ at which to start matching.

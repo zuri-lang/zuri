@@ -529,11 +529,11 @@ echo compress.lz4.compress(raw).length()
 ```
 
 The formats are `deflate`, `zlib`, `gzip`, `zstd`, `lz4`, `bzip2` and
-`brotli`. `zlib` is re-exported at the top level, so `compress.compress()`
+`brotli`. `zlib` is re-exported at the top level, so `compress()`
 and `compress.decompress()` are the zlib pair:
 
 ```zuri
-echo compress.decompress(compress.compress(raw)).to_string() == raw.to_string()
+echo compress.decompress(compress(raw)).to_string() == raw.to_string()
 ```
 
 ```console
@@ -597,7 +597,7 @@ get raw `bytes` instead of a hex string.
 The algorithms are md2, md4, md5, sha1, sha224, sha256, sha384, sha512, the
 sha3 family, shake128/256, blake2b512, blake2s256, ripemd160, whirlpool and
 gost, each with an `hmac_` counterpart, plus `pbkdf2()` for key derivation.
-`hash.hash(algorithm, data)` selects by name at runtime.
+`hash(algorithm, data)` selects by name at runtime.
 
 For password storage, use `bcrypt` rather than any of these. A fast hash is
 the wrong tool for a password, and [Chapter 13](ch13-00-stdlib-tour.md)

@@ -100,7 +100,7 @@ def escape_value(value, context) {
 
   # Escaping a value that is already marked safe has to see through the
   # marker, or asking for it would be a no-op exactly when it matters.
-  return safe(escape.escape(unwrap(value), wanted, nil))
+  return safe(escape(unwrap(value), wanted, nil))
 }
 
 # --------------------------------------------------------------------

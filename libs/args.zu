@@ -242,25 +242,6 @@ def _strip_ansi(text) {
   return result
 }
 
-# Strips spaces, tabs and carriage returns from both ends. `trim()`
-# removes one named character at a time, which is not enough for a line
-# that came out of a file somebody else wrote.
-def _strip_blanks(text) {
-  var start = 0
-  var end = text.length()
-  var blank = [' ', '\t', '\r', '\n']
-
-  while start < end and blank.contains(text[start]) {
-    start++
-  }
-
-  while end > start and blank.contains(text[end - 1]) {
-    end--
-  }
-
-  return text[start, end]
-}
-
 def _visual_len(text) {
   return _strip_ansi(text).length()
 }
@@ -1430,10 +1411,9 @@ class Parser < _Optionable {
         handle.close()
 
         for line in content.split('\n') {
-          # One argument per line, and `trim()` only takes the single
-          # character it is given, so a file written on Windows would
-          # otherwise leave a carriage return glued to every value.
-          var trimmed = _strip_blanks(line)
+          # One argument per line. `trim()` takes the carriage return a file
+          # written on Windows leaves on the end of each one.
+          var trimmed = line.trim()
           if trimmed != '' {
             result.append(trimmed)
           }

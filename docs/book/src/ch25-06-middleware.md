@@ -28,7 +28,7 @@ import .storage { Board, NotFoundError }
 def build(port, data_dir) {
   var board = Board(data_dir)
 
-  var view = wire.wire({
+  var view = wire({
     root: config.TEMPLATE_DIR,
     auto_reload: true,
   })

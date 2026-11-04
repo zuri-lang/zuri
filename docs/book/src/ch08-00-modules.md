@@ -63,6 +63,66 @@ echo pi
 3.141592653589793
 ```
 
+### Calling a Module
+
+A module with a function of its own name can be called. `set` declares a
+function called `set`, so the module and the function answer to the same
+call:
+
+```zuri
+import set
+
+echo set([1, 2, 2]).length()
+echo set.set([1, 2, 2]).length()
+```
+
+```console
+2
+2
+```
+
+Prefer the short form. `wire()`, `date()`, `log()`, `hash()`, `enum()` and
+`compress()` work the same way, and so does a module of your own: a
+`greet.zu` holding `def greet(name)` is called as `greet('Ada')` once it is
+imported. A class of the module's own name is called the same way.
+
+The call goes by the name the module is bound to, so renaming a module loses
+it, and the function stays reachable as a member:
+
+```zuri
+import set as collection
+
+catch {
+  collection([1])
+} as e {
+  echo e.message
+}
+
+echo collection.set([1, 2]).length()
+```
+
+```console
+module 'collection' is not callable
+2
+```
+
+The name still holds a module rather than a function. `typeof()` says so, and
+a method that wants a function needs the member itself:
+
+```zuri
+import hash
+
+echo typeof(hash)
+echo ['md5', 'sha1'].map(@(name) => hash(name, 'zuri').length())
+```
+
+```console
+module
+[32, 40]
+```
+
+Calling a module that has no such function is a `TypeError`.
+
 ## Relative Imports
 
 A path starting with `.` or `..` is resolved against the directory of the
@@ -429,8 +489,8 @@ def greet(name, language) {
 ```zuri,ignore
 import .greet
 
-echo greet.greet('Ada', 'en')
-echo greet.greet('Ada', 'fr')
+echo greet('Ada', 'en')
+echo greet('Ada', 'fr')
 echo greet.english.hello('Grace')
 ```
 

@@ -19,7 +19,7 @@ echo empty.is_empty()
 true
 ```
 
-Lists carry 39 methods, and they fall into six groups: reading, searching,
+Lists carry 40 methods, and they fall into six groups: reading, searching,
 adding and removing, ordering, transforming, and walking. This section
 takes them in that order. The one distinction to keep in mind throughout
 is whether a method **mutates** the list you called it on or returns a new
@@ -428,16 +428,16 @@ Look closely at those two. **`sort()` mutates and returns the list.
 `reverse()` returns a new list and leaves the original alone.** That
 asymmetry is the single most common source of list bugs in Zuri code.
 
-`sort()` takes no comparator. To sort by a computed key, decorate, sort,
-and undecorate:
+To sort by anything else, pass a comparator. It is given two items and
+returns a negative number to put the first one first, a positive number to
+put the second one first, and zero to leave them as they are:
 
 ```zuri
 var people = [{ name: 'Ada', age: 36 }, { name: 'Bob', age: 24 }]
 
 var by_age = people
-  .map(@(p) => [p.age, p.name])
-  .sort()
-  .map(@(pair) => pair[1])
+  .sort(@(a, b) => a.age - b.age)
+  .map(@(p) => p.name)
 
 echo by_age
 ```
@@ -445,6 +445,10 @@ echo by_age
 ```console
 [Bob, Ada]
 ```
+
+Strings cannot be ordered with the `-` operator, so a comparator over text uses
+`compare()`, which returns exactly what a comparator needs:
+`people.sort(@(a, b) => a.name.compare(b.name))`.
 
 ## Transforming
 

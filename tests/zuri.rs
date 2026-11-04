@@ -1940,6 +1940,11 @@ mod command_suites {
   fn migrate() {
     suite("migrate");
   }
+
+  #[test]
+  fn test() {
+    suite("test");
+  }
 }
 
 /// `zuri lsp` reached the way an editor reaches it: through the command

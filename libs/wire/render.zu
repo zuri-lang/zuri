@@ -381,7 +381,7 @@ class Renderer {
       }
 
       self.pieces.append(
-        escape.escape(
+        escape(
           segment.value.evaluate(self), node.context,
           self.environment.url_schemes,
         ),
@@ -521,7 +521,7 @@ class Renderer {
       )]
     }
 
-    return [name, escape.escape(value, context, self.environment.url_schemes)]
+    return [name, escape(value, context, self.environment.url_schemes)]
   }
 
   /**
@@ -568,7 +568,7 @@ class Renderer {
         continue
       }
 
-      var value = escape.escape(
+      var value = escape(
         segment.value.evaluate(self), attribute.context,
         self.environment.url_schemes,
       )
@@ -599,7 +599,7 @@ class Renderer {
     }
 
     self.pieces.append(
-      escape.escape(
+      escape(
         value, escape.text_context(node.tag), self.environment.url_schemes,
       ),
     )

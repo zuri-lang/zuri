@@ -277,6 +277,30 @@ type_check(
 )
 ok('format/pattern rules (email/url/ip*/uuid/json/date/after*/before*) all validate correctly')
 
+# A date is compared as an instant, so its offset counts: 12:00 at +01:00
+# is 11:00 UTC, which comes before 11:30 UTC even though it reads later.
+var noon_plus_one = '2024-01-01T12:00:00+01:00'
+var half_past_eleven = '2024-01-01T11:30:00Z'
+var same_instant = '2024-01-01T11:00:00Z'
+
+type_check(
+  validate.after(noon_plus_one), half_past_eleven, same_instant,
+  'after() across offsets',
+)
+type_check(
+  validate.after_or_equal(noon_plus_one), same_instant,
+  '2024-01-01T10:59:59Z', 'after_or_equal() across offsets',
+)
+type_check(
+  validate.before(half_past_eleven), noon_plus_one, half_past_eleven,
+  'before() across offsets',
+)
+type_check(
+  validate.before_or_equal(same_instant), noon_plus_one,
+  half_past_eleven, 'before_or_equal() across offsets',
+)
+ok('after*/before* compare instants, whatever offset each date carries')
+
 var tz_schema = validate.schema({
   zone: validate.required_if('always', true).timezone(),
 })

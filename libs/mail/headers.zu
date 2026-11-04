@@ -486,7 +486,7 @@ class Headers {
    * @returns Headers itself.
    */
   set_date(name: string, moment) {
-    var stamp = moment == nil ? date.date() : moment
+    var stamp = moment == nil ? date() : moment
 
     return self.set(name, stamp.format('r'))
   }

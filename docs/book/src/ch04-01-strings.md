@@ -786,8 +786,7 @@ Hello, World
 ```
 
 Every occurrence is replaced. The pattern may be a regular expression, and
-the replacement can refer back to capture groups with `$1`, `$2` or
-`${1}`:
+the replacement can refer back to capture groups with `$1`, `$2` and so on:
 
 ```zuri
 echo 'John Smith'.replace('/(\w+) (\w+)/', '$2, $1')

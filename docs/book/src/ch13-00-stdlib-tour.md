@@ -249,7 +249,7 @@ escape sequence for it.
 ```zuri
 import date
 
-var d = date.date(2026, 9, 11, 8, 30, 0)
+var d = date(2026, 9, 11, 8, 30, 0)
 
 echo d.format('Y-m-d H:i:s')
 echo d.format('l, jS F Y')
@@ -395,7 +395,7 @@ do it: `to_number()`, `to_string()`, `to_bigint()`, `to_list()`,
 ```zuri
 import set
 
-var s = set.set([1, 2, 2, 3])
+var s = set([1, 2, 2, 3])
 echo s.length()
 ```
 
@@ -411,7 +411,7 @@ preserved.
 ```zuri
 import enum
 
-var Color = enum.enum(['RED', 'GREEN'])
+var Color = enum(['RED', 'GREEN'])
 echo Color.RED
 ```
 

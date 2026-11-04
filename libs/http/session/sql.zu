@@ -18,7 +18,7 @@
  * var store = SqlStore(sql.pool('postgres://localhost/app'))
  * store.migrate()
  *
- * server.use(session.session({ store }))
+ * server.use(session({ store }))
  * ```
  *
  * @copyright 2026, Richard Ore and Zuri contributors

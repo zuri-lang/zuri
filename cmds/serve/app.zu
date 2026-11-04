@@ -73,7 +73,7 @@ def setup(server) {
     next()
   })
 
-  server.use(session.session({
+  server.use(session({
     store,
     name: 'nyssa_session',
     secret: settings.session_secret,

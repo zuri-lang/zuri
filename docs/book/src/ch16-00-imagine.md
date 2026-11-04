@@ -300,11 +300,11 @@ import imagine { Image }
 var header = imagine.probe(upload)
 
 if header == nil {
-  raise Exception('that is not an image')
+  raise Error('that is not an image')
 }
 
 if header.width * header.height > 40000000 {
-  raise Exception('image is too large')
+  raise Error('image is too large')
 }
 
 var photo = imagine.decode(upload)
@@ -1252,7 +1252,7 @@ page.fill(accent.darken(40))       # a placeholder while the photo loads
 
 ```zuri,ignore
 if rendered.difference(expected) > 0.01 {
-  raise Exception('the rendering changed')
+  raise Error('the rendering changed')
 }
 ```
 
@@ -1531,7 +1531,7 @@ import imagine.formats
 var server = http.server(8000)
 var font = Font.load('assets/Inter.ttf', 20)
 
-server.get('/badge/{label}', @(request, response) {
+server.get('/badge/:label', @(request, response) {
   var image = Image(220, 60, '#1e293b')
 
   image.fill_rounded_rect(0, 0, 220, 60, 8, '#334155')

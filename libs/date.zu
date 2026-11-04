@@ -1173,7 +1173,7 @@ class Date {
       raise TypeError('string expected, ${typeof(name)} given')
     }
 
-    var offset = _date.tz_offset(name, self.unix_time())
+    var offset = _date.tz_offset(name, self.to_time())
     var shifted = self.to_offset(offset.gmt_offset, offset.abbreviation)
     shifted.is_dst = offset.is_dst
     return shifted

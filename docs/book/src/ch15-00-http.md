@@ -1854,7 +1854,7 @@ import http
 
 var server = http.server(3000)
 
-server.use(http.session.session())
+server.use(http.session())
 
 server.get('/', @(request, response) {
   var seen = request.session().get('seen', 0) + 1
@@ -1962,7 +1962,7 @@ starts. Given no directory it uses a private subdirectory of the
 platform's temporary directory, created `0700`:
 
 ```zuri,ignore
-server.use(http.session.session())
+server.use(http.session())
 ```
 
 That directory is cleared on whatever schedule the platform keeps, and
@@ -1970,7 +1970,7 @@ on most of them at every reboot, so name your own for anything that
 has to outlive the host:
 
 ```zuri,ignore
-server.use(http.session.session({
+server.use(http.session({
   store: http.session.FileStore('/var/lib/app/sessions'),
 }))
 ```
@@ -1991,7 +1991,7 @@ import sql
 var store = SqlStore(sql.pool('postgres://localhost/app'))
 store.migrate()
 
-server.use(http.session.session({ store }))
+server.use(http.session({ store }))
 ```
 
 `migrate()` creates the table and its index if they are not there, and
@@ -2097,7 +2097,7 @@ disk or a query to the database.
 ```zuri,ignore
 import env
 
-server.use(http.session.session({ secret: env.require('SESSION_SECRET') }))
+server.use(http.session({ secret: env.require('SESSION_SECRET') }))
 ```
 
 Set it on anything facing the open internet, and give every worker the
@@ -2127,7 +2127,7 @@ import http
 import http.session
 
 def setup(server) {
-  server.use(http.session.session({
+  server.use(http.session({
     store: http.session.FileStore('/var/lib/app/sessions'),
     secret: os.get_env('SESSION_SECRET'),
   }))
