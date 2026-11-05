@@ -1,0 +1,26 @@
+# A panic in a callback C made stays a panic: the isolate ends with an
+# `IsolateError`, and no Zuri code runs on after it on the same VM.
+# @fixture: ffi
+
+import isolate
+import .ffi_panic_isolate
+
+def assert_contained(task, name) {
+  var t = isolate.spawn(task)
+
+  var caught = nil
+  catch {
+    t.join()
+  } as e {
+    caught = e
+  }
+
+  assert instance_of(caught, isolate.IsolateError),
+    '${name}: a panic must surface as an IsolateError'
+  assert caught.message.contains('debug_panic'),
+    '${name}: the IsolateError must carry the panic message'
+  echo '${name} passed'
+}
+
+assert_contained(ffi_panic_isolate.panic_in_callback, 'callback')
+assert_contained(ffi_panic_isolate.panic_in_compiled_callback, 'compiled callback')

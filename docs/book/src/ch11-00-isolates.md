@@ -1074,7 +1074,7 @@ Three error types come out of this module, and they mean different things:
 
 | Error | Raised when |
 | --- | --- |
-| `IsolateError` | a worker raised, or an operation is invalid — sending on a closed channel |
+| `IsolateError` | a worker raised or panicked, or an operation is invalid — sending on a closed channel |
 | `IsolateTimeoutError` | a timeout passed before the operation completed |
 | `IsolateCancelledError` | a blocking call was interrupted by `cancel()` |
 

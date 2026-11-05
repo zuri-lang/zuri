@@ -74,7 +74,7 @@
 //!   `runtime` helper as a linkable symbol, and drives one function's
 //!   compilation from a `&ObjFunction` to a `CompiledFunction`.
 //! - `codegen`; the actual bytecode -> Cranelift IR translator.
-//! - `runtime`; the small, fixed set of `extern "C" fn`s compiled
+//! - `runtime`; the small, fixed set of `extern "C-unwind" fn`s compiled
 //!   code calls out to for anything that isn't worth (or safe to)
 //!   inline directly as machine code.
 
@@ -85,6 +85,7 @@ pub mod escape;
 pub mod ir;
 pub mod runtime;
 pub mod typeflow;
+pub mod unwind;
 pub mod warmup;
 
 use std::sync::OnceLock;
@@ -228,7 +229,7 @@ pub fn log_facts_enabled() -> bool {
 ///   nil when this call returns; a non-nil pending error means
 ///   the return value is meaningless and the caller must propagate the
 ///   error instead. See `runtime`'s module docs.
-pub type EntryFn = unsafe extern "C" fn(
+pub type EntryFn = unsafe extern "C-unwind" fn(
   vm: *mut crate::vm::vm::VM,
   base: u64,
   closure: u64,

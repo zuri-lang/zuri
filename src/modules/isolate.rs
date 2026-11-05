@@ -174,13 +174,13 @@ fn optional_timeout(ctx: &ZuriContext, idx: usize) -> Result<Option<Duration>, S
     return Ok(None);
   }
   let secs = v.as_number();
-  if !secs.is_finite() || secs < 0.0 {
-    return Err(format!(
+  match Duration::try_from_secs_f64(secs) {
+    Ok(timeout) => Ok(Some(timeout)),
+    Err(_) => Err(format!(
       "{}() expects a non-negative timeout, got {}",
       ctx.name, secs
-    ));
+    )),
   }
-  Ok(Some(Duration::from_secs_f64(secs)))
 }
 
 // ---------------------------------------------------------------------

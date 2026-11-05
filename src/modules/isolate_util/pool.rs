@@ -561,7 +561,7 @@ pub fn wait_any_isolates(
     return WaitAnyOutcome::Ready(i);
   }
   let _guard = WakeListenerGuard::new();
-  let deadline = timeout.map(|d| Instant::now() + d);
+  let deadline = timeout.and_then(|d| Instant::now().checked_add(d));
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
   loop {
@@ -639,7 +639,7 @@ pub fn select_channels(states: &[Arc<ChannelState>], timeout: Option<Duration>) 
     }
   }
   let _guard = WakeListenerGuard::new();
-  let deadline = timeout.map(|d| Instant::now() + d);
+  let deadline = timeout.and_then(|d| Instant::now().checked_add(d));
   let (m, cv) = wake_gate();
   let mut guard = lock(m);
   loop {
@@ -1107,7 +1107,7 @@ pub fn shutdown(timeout: Option<Duration>) -> bool {
     let _queue = lock(&p.queue);
     p.shutting_down.store(true, Ordering::Release);
   }
-  let deadline = timeout.map(|d| Instant::now() + d);
+  let deadline = timeout.and_then(|d| Instant::now().checked_add(d));
   let mut guard = lock(&p.idle_lock);
   loop {
     if p.in_flight.load(Ordering::Acquire) == 0 {

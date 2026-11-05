@@ -24,6 +24,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use libsqlite3_sys as ffi;
 
 use super::{ConnState, cstr_to_string, value};
+use crate::modules::foreign_panic;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 
@@ -182,7 +183,16 @@ fn trap(registration: &Registration, vm: &mut VM, error: Value) {
 /// callback should run.
 fn poisoned(registration: &Registration) -> bool {
   // SAFETY: as in `trap`.
-  unsafe { &*registration.state }.poisoned()
+  unsafe { &*registration.state }.poisoned() || foreign_panic::parked()
+}
+
+/// What a callback hands SQLite: its own result, or `fallback` with the
+/// panic that ended it kept for `foreign_panic::resume`.
+fn settle<T>(outcome: std::thread::Result<T>, fallback: T) -> T {
+  outcome.unwrap_or_else(|payload| {
+    foreign_panic::park(payload);
+    fallback
+  })
 }
 
 /// Calls a registered Zuri callable with `args`, parking anything it
@@ -269,7 +279,10 @@ pub unsafe extern "C" fn scalar(
   match outcome {
     Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
-    Err(_) => value::set_error(context, CALLBACK_PANICKED),
+    Err(payload) => {
+      foreign_panic::park(payload);
+      value::set_error(context, CALLBACK_PANICKED);
+    },
   }
 }
 
@@ -361,7 +374,10 @@ pub unsafe extern "C" fn aggregate_step(
   match outcome {
     Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
-    Err(_) => value::set_error(context, CALLBACK_PANICKED),
+    Err(payload) => {
+      foreign_panic::park(payload);
+      value::set_error(context, CALLBACK_PANICKED);
+    },
   }
 }
 
@@ -422,7 +438,10 @@ pub unsafe extern "C" fn aggregate_final(context: *mut ffi::sqlite3_context) {
   match outcome {
     Ok(true) => {},
     Ok(false) => value::set_error(context, CALLBACK_FAILED),
-    Err(_) => value::set_error(context, CALLBACK_PANICKED),
+    Err(payload) => {
+      foreign_panic::park(payload);
+      value::set_error(context, CALLBACK_PANICKED);
+    },
   }
 }
 
@@ -478,7 +497,7 @@ pub unsafe extern "C" fn collation(
     }
   }));
 
-  outcome.unwrap_or(0)
+  settle(outcome, 0)
 }
 
 /// Reads one side of a collation comparison. SQLite passes the length
@@ -501,7 +520,7 @@ pub unsafe extern "C" fn update_hook(
   table: *const c_char,
   rowid: i64,
 ) {
-  let _ = catch_unwind(AssertUnwindSafe(|| {
+  let outcome = catch_unwind(AssertUnwindSafe(|| {
     let Some(registration) = (unsafe { registration(data) }) else {
       return;
     };
@@ -533,6 +552,8 @@ pub unsafe extern "C" fn update_hook(
       invoke(registration, registration.slot, args);
     }
   }));
+
+  settle(outcome, ());
 }
 
 /// `sqlite3_commit_hook`. A callback returning `false` vetoes the
@@ -562,12 +583,12 @@ pub unsafe extern "C" fn commit_hook(data: *mut c_void) -> c_int {
     }
   }));
 
-  outcome.unwrap_or(1)
+  settle(outcome, 1)
 }
 
 /// `sqlite3_rollback_hook`.
 pub unsafe extern "C" fn rollback_hook(data: *mut c_void) {
-  let _ = catch_unwind(AssertUnwindSafe(|| {
+  let outcome = catch_unwind(AssertUnwindSafe(|| {
     let Some(registration) = (unsafe { registration(data) }) else {
       return;
     };
@@ -578,6 +599,8 @@ pub unsafe extern "C" fn rollback_hook(data: *mut c_void) {
 
     invoke(registration, registration.slot, Vec::new());
   }));
+
+  settle(outcome, ());
 }
 
 /// `sqlite3_set_authorizer`, consulted as a statement is prepared.
@@ -632,7 +655,7 @@ pub unsafe extern "C" fn authorizer(
     }
   }));
 
-  outcome.unwrap_or(ffi::SQLITE_DENY)
+  settle(outcome, ffi::SQLITE_DENY)
 }
 
 /// `sqlite3_progress_handler`, called every so many virtual machine
@@ -660,5 +683,5 @@ pub unsafe extern "C" fn progress(data: *mut c_void) -> c_int {
     }
   }));
 
-  outcome.unwrap_or(1)
+  settle(outcome, 1)
 }

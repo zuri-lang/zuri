@@ -1657,13 +1657,17 @@ fn serve(ctx: &mut ZuriContext) -> Result<Value, String> {
     None
   } else {
     let n = arg(ctx, 0);
-    if !n.is_number() || n.as_number() < 0.0 {
+    let timeout = n
+      .is_number()
+      .then(|| std::time::Duration::try_from_secs_f64(n.as_number() / 1000.0).ok())
+      .flatten();
+    let Some(timeout) = timeout else {
       return Err(util::raise(
         ctx.vm,
         Fail::type_error("serve() expects a timeout in milliseconds, or nil"),
       ));
-    }
-    Some(std::time::Duration::from_secs_f64(n.as_number() / 1000.0))
+    };
+    Some(timeout)
   };
 
   let inbox = callback::inbox(ctx.vm);

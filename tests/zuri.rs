@@ -540,6 +540,19 @@ include!(concat!(
   "/tests/generated/zu_conformance_generated.rs"
 ));
 
+/// A panic on the main thread ends the process with Rust's own exit
+/// code and message, from compiled code as from the interpreter, rather
+/// than aborting because it could not unwind.
+#[test]
+fn panic_exits_like_any_other() {
+  let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/panic/compiled.zu");
+  let (status, output) = run_zuri(fixture);
+
+  assert_eq!(status.code(), Some(101), "\n--- output ---\n{output}\n");
+  assert!(output.contains("debug_panic() was called"), "{output}");
+  assert!(!output.contains("unreachable"), "{output}");
+}
+
 /// The launch rules the executable implements: `zuri run` for scripts
 /// and packages, a bare first word for a command. Each case builds the
 /// tree it needs under Cargo's own test temp directory, so nothing

@@ -16,7 +16,7 @@ use cranelift_module::{FuncId, Linkage, Module, ModuleReloc};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::jit::runtime;
-use crate::jit::{CompileFacts, EntryFn, codegen, typeflow};
+use crate::jit::{CompileFacts, EntryFn, codegen, typeflow, unwind};
 use crate::vm::object::ObjFunction;
 
 /// Everything `JitEngine::build_ir` extracts from a `&ObjFunction`;
@@ -104,9 +104,19 @@ impl JitEngine {
       cranelift_codegen::isa::x64::set_place_jumps(true);
     }
 
-    let isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
+    let mut isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
     });
+    // Signing puts a rule for `RA_SIGN_STATE` in every unwind entry, and
+    // macOS's unwinder gives up on it, so a panic could not leave compiled
+    // code. See `jit::unwind`.
+    #[cfg(target_arch = "aarch64")]
+    {
+      isa_builder.set("sign_return_address", "false").unwrap();
+      isa_builder
+        .set("sign_return_address_with_bkey", "false")
+        .unwrap();
+    }
     let isa = isa_builder
       .finish(settings::Flags::new(flag_builder))
       .expect("zuri: failed to build a target ISA for the JIT");
@@ -249,7 +259,7 @@ impl JitEngine {
     constants_right(&mut pending.ctx.func);
     let mut ctrl_plane = cranelift_codegen::control::ControlPlane::default();
     let compile_result = pending.ctx.compile(&*self.isa, &mut ctrl_plane);
-    let (bytes, alignment, relocs) = match compile_result {
+    let (mut bytes, alignment, relocs, unwind_info) = match compile_result {
       Ok(_) => {
         let compiled_code = pending
           .ctx
@@ -263,7 +273,10 @@ impl JitEngine {
           .iter()
           .map(|r| ModuleReloc::from_mach_reloc(r, &pending.ctx.func, pending.func_id))
           .collect();
-        (bytes, alignment, relocs)
+        // Only a frame that makes calls can be in the way of a panic, and
+        // one without an entry leaves it as fatal as it would be anyway.
+        let unwind_info = compiled_code.create_unwind_info(&*self.isa).ok().flatten();
+        (bytes, alignment, relocs, unwind_info)
       },
       Err(e) => {
         // In a debug build the verifier runs, and a rejection means this
@@ -278,7 +291,14 @@ impl JitEngine {
         return Err(format!("backend compile failed: {:?}", e.inner));
       },
     };
+    let unwind_entry =
+      unwind_info.and_then(|info| unwind::Entry::new(&*self.isa, info, &mut bytes));
     let entry = self.install_compiled(pending.func_id, alignment, &bytes, &relocs)?;
+    if let Some(unwind_entry) = unwind_entry {
+      // SAFETY: `entry` is where `bytes` was just installed, and machine
+      // code is never unloaded. Nothing can be running it yet.
+      unsafe { unwind_entry.register(entry as *const u8) };
+    }
     Ok((entry, std::mem::take(&mut pending.osr_ids)))
   }
 
@@ -402,7 +422,7 @@ impl JitEngine {
     // exactly the signature `EntryFn` describes (I64, I64, I64, I32 ->
     // I64, matching `build_ir`'s `sig`), for the host's native calling
     // convention (via `cranelift_native::builder()` in `JitEngine::new`) --
-    // the same convention `extern "C"` uses on every platform this
+    // the same convention `extern "C-unwind"` uses on every platform this
     // targets.
     let entry: EntryFn = unsafe { std::mem::transmute::<*const u8, EntryFn>(code_ptr) };
     Ok(entry)

@@ -1,0 +1,21 @@
+# Panics on the main thread from compiled code. `panic_exits_like_any_other`
+# in `tests/zuri.rs` checks how the process ends.
+
+import _isolate
+import os
+
+def noop() {}
+
+def call_it(f) {
+  return f()
+}
+
+iter var round = 0; round < 5; round++ {
+  iter var i = 0; i < 20000; i++ {
+    call_it(noop)
+  }
+  os.sleep(0.02)
+}
+
+call_it(_isolate.debug_panic)
+echo 'unreachable'

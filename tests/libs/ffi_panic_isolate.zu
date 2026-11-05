@@ -1,0 +1,48 @@
+/**
+ * Helper module for `tests/libs/ffi_panic.zu`, whose isolates run these.
+ */
+
+import _isolate
+import ffi
+import os
+
+def fixture() {
+  var header = file(os.join_paths(
+    os.dir_name(__file__), 'ffi_fixture', 'fixture.h',
+  )).read()
+  var lib = ffi.open('ffifixture', { paths: [os.get_env('ZURI_FFI_FIXTURES')] })
+  return ffi.declare(header).bind(lib)
+}
+
+def call_it(f) {
+  return f()
+}
+
+def noop() {}
+
+def panic_in_callback() {
+  var fx = fixture()
+  catch {
+    fx.fx_apply(@(x) { _isolate.debug_panic() }, 9)
+  } as error {
+    return 'a panic reached the program as an error'
+  }
+  return 'unreachable'
+}
+
+def panic_in_compiled_callback() {
+  iter var round = 0; round < 5; round++ {
+    iter var i = 0; i < 20000; i++ {
+      call_it(noop)
+    }
+    os.sleep(0.02)
+  }
+
+  var fx = fixture()
+  catch {
+    fx.fx_apply(@(x) { call_it(_isolate.debug_panic) }, 9)
+  } as error {
+    return 'a panic reached the program as an error'
+  }
+  return 'unreachable'
+}

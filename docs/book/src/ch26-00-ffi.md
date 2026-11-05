@@ -1557,8 +1557,8 @@ and functions; `Option` of a type without a niche; a function without
 A Rust function declared `extern "C"` aborts the process if it panics,
 which is Rust's own rule for that ABI, and a panic never reaches Zuri.
 `extern "C-unwind"` functions are called the same way; a panic unwinding
-out of one likewise ends the process, because nothing can unwind safely
-through a Zuri frame.
+out of one likewise ends the process, because the call that reached it is
+C, and a panic cannot unwind through C.
 
 ## Platform Differences
 
@@ -1631,8 +1631,9 @@ the program says how, with `own()`.
 with it.
 
 **It does not unwind through foreign frames.** Errors are trapped and
-raised again once C has returned; a panic crossing the boundary ends the
-process, as it does in Rust.
+raised again once C has returned. A panic in a callback waits the same way,
+then carries on and ends its isolate. A panic that starts in foreign code
+ends the process, as it does in Rust.
 
 ## Module Reference
 

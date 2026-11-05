@@ -5,8 +5,94 @@
  */
 
 import _isolate
+import os
+import sql
 
 def trigger_panic() {
   _isolate.debug_panic()
+  return 'unreachable'
+}
+
+def noop() {}
+
+def call_it(f) {
+  return f()
+}
+
+def descend(depth, f) {
+  if depth == 0 {
+    return f()
+  }
+  return descend(depth - 1, f) + 1
+}
+
+# Long enough for compiled code to be in place before `warm` returns,
+# whatever the background compiler is doing.
+def warm(f, arg) {
+  iter var round = 0; round < 5; round++ {
+    iter var i = 0; i < 20000; i++ {
+      f(arg)
+    }
+    os.sleep(0.02)
+  }
+}
+
+def panic_in_compiled_call() {
+  warm(call_it, noop)
+  call_it(_isolate.debug_panic)
+  return 'unreachable'
+}
+
+def zero() {
+  return 0
+}
+
+def zero_at_depth(depth) {
+  return descend(depth, zero)
+}
+
+def panic_under_compiled_frames() {
+  warm(zero_at_depth, 20)
+  descend(20, _isolate.debug_panic)
+  return 'unreachable'
+}
+
+def panic_past_compiled_catch() {
+  warm(call_it, noop)
+  catch {
+    call_it(_isolate.debug_panic)
+  } as error {
+    return 'a catch took a panic'
+  }
+  return 'unreachable'
+}
+
+def panic_in_sqlite_callback() {
+  var db = sql.open(':memory:')
+  db.native().create_function('boom', 0, @() {
+    _isolate.debug_panic()
+  }, nil)
+
+  catch {
+    db.query('select boom()', nil)
+  } as error {
+    return 'a panic reached the program as an error'
+  }
+  return 'unreachable'
+}
+
+def panic_in_compiled_sqlite_callback() {
+  warm(call_it, noop)
+
+  var db = sql.open(':memory:')
+  db.native().create_function('boom', 0, @() {
+    call_it(_isolate.debug_panic)
+  }, nil)
+
+  catch {
+    db.query('select boom()', nil)
+  } as error {
+    return 'a panic reached the program as an error'
+  }
   return 'unreachable'
 }

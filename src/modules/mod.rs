@@ -16,6 +16,7 @@ mod crypto;
 mod date;
 mod ffi;
 pub(crate) mod ffi_util;
+mod foreign_panic;
 pub(crate) mod hash;
 mod http;
 mod imagine;

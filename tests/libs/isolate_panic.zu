@@ -1,0 +1,39 @@
+# A panic ends the isolate it happened in and nothing else, whether it
+# happened in the interpreter, in compiled code or under a C library
+# that called back into Zuri.
+
+import isolate
+import .isolate_isolate
+import .isolate_panic_isolate
+
+def assert_contained(task, name) {
+  # Stays busy across the panic, so a process that went down with it
+  # cannot pass.
+  var bystander = isolate.spawn(isolate_isolate.square, 9)
+  var t = isolate.spawn(task)
+
+  var caught = nil
+  catch {
+    t.join()
+  } as e {
+    caught = e
+  }
+
+  assert caught != nil, '${name}: a panic must surface on join()'
+  assert instance_of(caught, isolate.IsolateError),
+    '${name}: a panic must surface as an IsolateError'
+  assert caught.message.contains('debug_panic'),
+    '${name}: the IsolateError must carry the panic message'
+
+  assert bystander.join() == 81, '${name}: other isolates must be unaffected'
+  var after = isolate.spawn(isolate_isolate.square, 4)
+  assert after.join() == 16, '${name}: the pool must keep working'
+  echo '${name} passed'
+}
+
+assert_contained(isolate_panic_isolate.trigger_panic, 'interpreter')
+assert_contained(isolate_panic_isolate.panic_in_compiled_call, 'compiled call')
+assert_contained(isolate_panic_isolate.panic_under_compiled_frames, 'compiled frames')
+assert_contained(isolate_panic_isolate.panic_past_compiled_catch, 'compiled catch')
+assert_contained(isolate_panic_isolate.panic_in_sqlite_callback, 'sqlite callback')
+assert_contained(isolate_panic_isolate.panic_in_compiled_sqlite_callback, 'compiled sqlite callback')

@@ -1,0 +1,26 @@
+# A duration too large to represent is an error or a very long wait,
+# depending on who is asking, and never a crash.
+
+import isolate
+import os
+import .isolate_isolate
+
+def raises(f) {
+  catch {
+    f()
+  } as e {
+    return true
+  }
+  return false
+}
+
+assert raises(@() => os.sleep(1e300)), 'sleep() rejects what it cannot represent'
+assert raises(@() => os.sleep(1e308 * 10)), 'sleep() rejects infinity'
+
+var t = isolate.spawn(isolate_isolate.square, 3)
+assert raises(@() => t.join(1e300)), 'join() rejects what it cannot represent'
+
+# Representable, but past anything a clock can reach.
+assert t.join(1e15) == 9, 'a very long timeout is only a very long wait'
+assert t.join(1e18) == 9, 'a timeout past the end of the clock is too'
+echo 'timeout_range passed'

@@ -271,7 +271,10 @@ fn sleep_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_arg_type!(ctx, 0, ArgType::Number);
   let secs = ctx.args[0].as_number();
   if secs > 0.0 {
-    std::thread::sleep(Duration::from_secs_f64(secs));
+    let Ok(duration) = Duration::try_from_secs_f64(secs) else {
+      return Err(format!("{}() cannot wait that long", ctx.name));
+    };
+    std::thread::sleep(duration);
   }
   Ok(Value::nil())
 }
@@ -1081,7 +1084,12 @@ fn watcher_next(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let timeout = match ctx.args[1] {
     v if v.is_nil() => None,
-    v if v.is_number() => Some(Duration::from_secs_f64(v.as_number().max(0.0) / 1000.0)),
+    v if v.is_number() => {
+      let Ok(timeout) = Duration::try_from_secs_f64(v.as_number().max(0.0) / 1000.0) else {
+        return Err("'next' cannot wait that long".to_string());
+      };
+      Some(timeout)
+    },
     v => {
       return Err(format!(
         "'next' expects its timeout to be a number of milliseconds, got {}",

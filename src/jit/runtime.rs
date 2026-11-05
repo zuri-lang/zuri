@@ -1,4 +1,4 @@
-//! The fixed set of `extern "C"` functions compiled code calls into.
+//! The fixed set of `extern "C-unwind"` functions compiled code calls into.
 //!
 //! # Why these exist at all
 //!
@@ -32,6 +32,16 @@
 //! the concrete mechanism behind "errors cause a bailout" for
 //! compiled code: there's no unwinder in the generated machine code at
 //! all, just this one flag checked after every fallible call.
+//!
+//! # Panics
+//!
+//! A panic is not an error and does not use that protocol. It unwinds
+//! through compiled frames, which is why these helpers are
+//! `extern "C-unwind"` and why `jit::unwind` describes every compiled
+//! function to the unwinder. Nothing in compiled code runs on the way
+//! past, so `VM::jit_call_depth` and the frame stack are left as they
+//! were: whatever catches a panic must discard the VM, as
+//! `pool::isolate_loop` does.
 //!
 //! # The register-pointer-staleness protocol
 //!
@@ -142,7 +152,11 @@ fn collected(vm: &mut VM) -> u64 {
 ///
 /// Allocating cannot start a collection, so nothing moves between the
 /// caller's register flush and the store of the result.
-pub unsafe extern "C" fn zuri_jit_materialize_list(vm_ptr: *mut VM, slot: u64, count: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_materialize_list(
+  vm_ptr: *mut VM,
+  slot: u64,
+  count: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let items = unsafe { std::slice::from_raw_parts(slot as *const Value, count as usize) };
   vm.heap.alloc_list(items.to_vec()).to_bits()
@@ -151,7 +165,7 @@ pub unsafe extern "C" fn zuri_jit_materialize_list(vm_ptr: *mut VM, slot: u64, c
 /// `zuri_jit_materialize_list` for a scalar-replaced instance of the
 /// class `class_bits`, whose `count` fields sit in the stack slot at
 /// `slot` in field-slot order.
-pub unsafe extern "C" fn zuri_jit_materialize_instance(
+pub unsafe extern "C-unwind" fn zuri_jit_materialize_instance(
   vm_ptr: *mut VM,
   class_bits: u64,
   slot: u64,
@@ -171,7 +185,11 @@ pub unsafe extern "C" fn zuri_jit_materialize_instance(
 
 /// `Instr::PushCatch`; `var_reg` is `u64::MAX` when the `catch` names no
 /// variable.
-pub unsafe extern "C" fn zuri_jit_push_catch(vm_ptr: *mut VM, var_reg: u64, resume_ip: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_push_catch(
+  vm_ptr: *mut VM,
+  var_reg: u64,
+  resume_ip: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let var_reg = (var_reg != u64::MAX).then_some(var_reg as u8);
   vm.push_catch(var_reg, resume_ip as usize);
@@ -179,26 +197,26 @@ pub unsafe extern "C" fn zuri_jit_push_catch(vm_ptr: *mut VM, var_reg: u64, resu
 }
 
 /// `Instr::PopCatch`.
-pub unsafe extern "C" fn zuri_jit_pop_catch(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_pop_catch(vm_ptr: *mut VM) -> u64 {
   unsafe { vm(vm_ptr) }.pop_catch();
   OK
 }
 
 /// Gives the pending error to a `catch` handler of the compiled frame at
 /// `base`, when it has one: see `VM::catch_in_compiled_frame`.
-pub unsafe extern "C" fn zuri_jit_catch(vm_ptr: *mut VM, base: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_catch(vm_ptr: *mut VM, base: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   u64::from(vm.catch_in_compiled_frame(base as usize))
 }
 
 /// Drops the `catch` handlers of the compiled frame at `base` as it
 /// returns.
-pub unsafe extern "C" fn zuri_jit_drop_catches(vm_ptr: *mut VM, base: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_drop_catches(vm_ptr: *mut VM, base: u64) -> u64 {
   unsafe { vm(vm_ptr) }.drop_catches(base as usize);
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
     eprintln!(
@@ -221,7 +239,7 @@ pub unsafe extern "C" fn zuri_jit_deopt(vm_ptr: *mut VM, ip: u64) -> u64 {
 /// # Safety
 ///
 /// `chain` points at `len` `DeoptFrame`s that live as long as the code.
-pub unsafe extern "C" fn zuri_jit_deopt_inlined(
+pub unsafe extern "C-unwind" fn zuri_jit_deopt_inlined(
   vm_ptr: *mut VM,
   chain: u64,
   len: u64,
@@ -251,7 +269,7 @@ pub unsafe extern "C" fn zuri_jit_deopt_inlined(
 /// # Safety
 ///
 /// Reads nothing through its pointer.
-pub unsafe extern "C" fn zuri_jit_wrap_i64(_vm_ptr: *mut VM, bits: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_wrap_i64(_vm_ptr: *mut VM, bits: u64) -> u64 {
   crate::vm::value::num_to_wrapped_i64(f64::from_bits(bits)) as u64
 }
 
@@ -261,7 +279,7 @@ pub unsafe extern "C" fn zuri_jit_wrap_i64(_vm_ptr: *mut VM, bits: u64) -> u64 {
 /// # Safety
 ///
 /// `vm_ptr` is the running VM.
-pub unsafe extern "C" fn zuri_jit_deopt_tier2(vm_ptr: *mut VM, ip: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_deopt_tier2(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.pending_deopt_tier2.set(true);
   unsafe { zuri_jit_deopt(vm_ptr, ip) }
@@ -277,7 +295,7 @@ pub unsafe extern "C" fn zuri_jit_deopt_tier2(vm_ptr: *mut VM, ip: u64) -> u64 {
 /// # Safety
 ///
 /// `vm_ptr` is the running VM, and `proto` the function running.
-pub unsafe extern "C" fn zuri_jit_tier_up(vm_ptr: *mut VM, proto: u64, header: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_tier_up(vm_ptr: *mut VM, proto: u64, header: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let proto = unsafe { &*(proto as *const crate::vm::object::ObjFunction) };
   let header = (header != u64::MAX).then_some(header as usize);
@@ -292,7 +310,7 @@ pub unsafe extern "C" fn zuri_jit_tier_up(vm_ptr: *mut VM, proto: u64, header: u
 /// # Safety
 ///
 /// `vm_ptr` is the running VM.
-pub unsafe extern "C" fn zuri_jit_tier_exit(vm_ptr: *mut VM, ip: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_tier_exit(vm_ptr: *mut VM, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if crate::jit::log_enabled() {
     eprintln!(
@@ -312,7 +330,7 @@ pub unsafe extern "C" fn zuri_jit_tier_exit(vm_ptr: *mut VM, ip: u64) -> u64 {
 /// # Safety
 ///
 /// `vm_ptr` is the running VM.
-pub unsafe extern "C" fn zuri_jit_int_miss(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_int_miss(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.pending_deopt_int_miss.set(true);
   OK
@@ -325,7 +343,7 @@ pub unsafe extern "C" fn zuri_jit_int_miss(vm_ptr: *mut VM) -> u64 {
 /// # Safety
 ///
 /// `vm_ptr` is the running VM.
-pub unsafe extern "C" fn zuri_jit_unreached(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_unreached(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.pending_deopt_unreached.set(true);
   OK
@@ -339,7 +357,7 @@ pub unsafe extern "C" fn zuri_jit_unreached(vm_ptr: *mut VM) -> u64 {
 /// # Safety
 ///
 /// `proto` is a live `ObjFunction`.
-pub unsafe extern "C" fn zuri_jit_blame(vm_ptr: *mut VM, proto: u64, ip: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_blame(vm_ptr: *mut VM, proto: u64, ip: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.pending_deopt_blame.set((proto as usize, ip as usize));
   OK
@@ -351,7 +369,7 @@ pub unsafe extern "C" fn zuri_jit_blame(vm_ptr: *mut VM, proto: u64, ip: u64) ->
 /// # Safety
 ///
 /// Called only from compiled code, with the VM it was entered with.
-pub unsafe extern "C" fn zuri_jit_ensure_registers(vm_ptr: *mut VM, needed: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_ensure_registers(vm_ptr: *mut VM, needed: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.ensure_registers(needed as usize);
   OK
@@ -377,7 +395,7 @@ pub unsafe extern "C" fn zuri_jit_ensure_registers(vm_ptr: *mut VM, needed: u64)
 /// status at all. A collection raises nothing, but a signal callback
 /// is ordinary Zuri code and can raise or push frames, so the caller
 /// has to check the result rather than treating it as infallible.
-pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   if vm.heap.needs_major_gc() {
     vm.collect_garbage();
@@ -428,13 +446,13 @@ pub unsafe extern "C" fn zuri_jit_safepoint(vm_ptr: *mut VM) -> u64 {
 /// only in a machine register, and the `if arg` that follows then read
 /// the pre-`trim` value, saw an empty string, skipped both appends and
 /// returned `''` for a perfectly ordinary path.
-pub unsafe extern "C" fn zuri_jit_is_falsey(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_is_falsey(_vm_ptr: *mut VM, value_bits: u64) -> u64 {
   Value::from_bits(value_bits).is_falsey() as u64
 }
 
 /// `echo`. Showing an instance through its `@to_string()` runs Zuri
 /// code, so this can raise and can leave a collection owed.
-pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
   match vm.echo(v) {
@@ -456,7 +474,13 @@ pub unsafe extern "C" fn zuri_jit_print(vm_ptr: *mut VM, base: u64, src: u64) ->
 
 macro_rules! binary_slow {
   ($name:ident, $method:ident, $op_name:literal, $deco:literal, $op:expr, $big_op:expr) => {
-    pub unsafe extern "C" fn $name(vm_ptr: *mut VM, base: u64, dst: u64, a: u64, b: u64) -> u64 {
+    pub unsafe extern "C-unwind" fn $name(
+      vm_ptr: *mut VM,
+      base: u64,
+      dst: u64,
+      a: u64,
+      b: u64,
+    ) -> u64 {
       let vm = unsafe { vm(vm_ptr) };
       let r = vm.$method(
         base as usize,
@@ -580,7 +604,13 @@ binary_slow!(
 
 macro_rules! compare_slow {
   ($name:ident, $op_name:literal, $deco:literal, $op:expr, $big_op:expr) => {
-    pub unsafe extern "C" fn $name(vm_ptr: *mut VM, base: u64, dst: u64, a: u64, b: u64) -> u64 {
+    pub unsafe extern "C-unwind" fn $name(
+      vm_ptr: *mut VM,
+      base: u64,
+      dst: u64,
+      a: u64,
+      b: u64,
+    ) -> u64 {
       let vm = unsafe { vm(vm_ptr) };
       let r = vm.compare(
         base as usize,
@@ -633,7 +663,7 @@ compare_slow!(
 /// bigint, `@add` override); reuses `binary_add` verbatim, unlike the
 /// other arithmetic ops this can't be expressed through the generic
 /// `binary_numeric` helper since string/list handling isn't numeric.
-pub unsafe extern "C" fn zuri_jit_add_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_add_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -654,7 +684,7 @@ pub unsafe extern "C" fn zuri_jit_add_slow(
 
 /// `Instr::Mul`'s full fallback (string/list repeat, bigint, `@mul`
 /// override).
-pub unsafe extern "C" fn zuri_jit_mul_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_mul_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -668,7 +698,7 @@ pub unsafe extern "C" fn zuri_jit_mul_slow(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_str_add(
+pub unsafe extern "C-unwind" fn zuri_jit_str_add(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -689,7 +719,7 @@ pub unsafe extern "C" fn zuri_jit_str_add(
   collected(vm)
 }
 
-pub unsafe extern "C" fn zuri_jit_concat(
+pub unsafe extern "C-unwind" fn zuri_jit_concat(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -717,7 +747,7 @@ pub unsafe extern "C" fn zuri_jit_concat(
 ///
 /// The receiver is guaranteed a dict by the tag check its caller
 /// emits, so a missing key is the only case left to handle.
-pub unsafe extern "C" fn zuri_jit_dict_get(
+pub unsafe extern "C-unwind" fn zuri_jit_dict_get(
   _vm_ptr: *mut VM,
   recv_bits: u64,
   key_bits: u64,
@@ -738,7 +768,7 @@ pub unsafe extern "C" fn zuri_jit_dict_get(
 /// yields nil the way that one does. Growing the table allocates on
 /// Rust's heap but never runs the collector and never re-enters the
 /// VM, so like `zuri_jit_dict_get` this needs no register flush.
-pub unsafe extern "C" fn zuri_jit_dict_set(
+pub unsafe extern "C-unwind" fn zuri_jit_dict_set(
   _vm_ptr: *mut VM,
   recv_bits: u64,
   key_bits: u64,
@@ -759,7 +789,7 @@ pub unsafe extern "C" fn zuri_jit_dict_set(
 /// `PropertyError` `VM::index_get` does rather than yielding nil. That
 /// is also why it takes register indices and a status code instead of
 /// plain values: it has to be able to fail.
-pub unsafe extern "C" fn zuri_jit_dict_index_get(
+pub unsafe extern "C-unwind" fn zuri_jit_dict_index_get(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -786,13 +816,13 @@ pub unsafe extern "C" fn zuri_jit_dict_index_get(
 /// Entry count of a dict, as a raw integer rather than a Value, so
 /// the caller can shape it into either a length or an emptiness test
 /// without a second call. Reads one field; cannot allocate or collect.
-pub unsafe extern "C" fn zuri_jit_dict_len(_vm_ptr: *mut VM, recv_bits: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_dict_len(_vm_ptr: *mut VM, recv_bits: u64) -> u64 {
   Value::from_bits(recv_bits).dict_len() as u64
 }
 
 /// `d.contains(key)` on a dict receiver; the hash index answers it, so
 /// there is nothing to walk and nothing to allocate.
-pub unsafe extern "C" fn zuri_jit_dict_contains(
+pub unsafe extern "C-unwind" fn zuri_jit_dict_contains(
   _vm_ptr: *mut VM,
   recv_bits: u64,
   key_bits: u64,
@@ -807,7 +837,7 @@ pub unsafe extern "C" fn zuri_jit_dict_contains(
 /// optimizing tier checks this once before a loop that reads the list,
 /// instead of checking each element it reads. Reads only; cannot
 /// allocate or collect.
-pub unsafe extern "C" fn zuri_jit_list_elems_are(
+pub unsafe extern "C-unwind" fn zuri_jit_list_elems_are(
   _vm_ptr: *mut VM,
   list_ptr: u64,
   whole: u64,
@@ -852,7 +882,7 @@ pub unsafe extern "C" fn zuri_jit_list_elems_are(
 /// Walks each list in full, which is the point: a prefix would only
 /// restate the hint `VM::sample_param_elem_types` already gave. Reads
 /// only; cannot allocate or collect.
-pub unsafe extern "C" fn zuri_jit_list_elems_ok(
+pub unsafe extern "C-unwind" fn zuri_jit_list_elems_ok(
   vm_ptr: *mut VM,
   base: u64,
   int_mask: u64,
@@ -937,7 +967,7 @@ pub unsafe extern "C" fn zuri_jit_list_elems_ok(
   1
 }
 
-pub unsafe extern "C" fn zuri_jit_bitnot_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_bitnot_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -964,7 +994,12 @@ pub unsafe extern "C" fn zuri_jit_bitnot_slow(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_neg_slow(vm_ptr: *mut VM, base: u64, dst: u64, src: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_neg_slow(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  src: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
   if v.is_number() {
@@ -998,7 +1033,7 @@ pub const EQ_OVERRIDDEN: u64 = 2;
 /// once both turn out to be heap objects: 1 or 0, or `EQ_OVERRIDDEN`
 /// when the left one's class defines `@eq`. Reads no register and
 /// neither allocates nor raises.
-pub unsafe extern "C" fn zuri_jit_values_equal(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_values_equal(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
   let (a, b) = (Value::from_bits(a), Value::from_bits(b));
   if crate::vm::vm::eq_overridden(a, b) {
     return EQ_OVERRIDDEN;
@@ -1021,7 +1056,7 @@ unsafe fn eq_slow(vm_ptr: *mut VM, base: u64, dst: u64, a: u64, b: u64, negate: 
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_eq_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_eq_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1031,7 +1066,7 @@ pub unsafe extern "C" fn zuri_jit_eq_slow(
   unsafe { eq_slow(vm_ptr, base, dst, a, b, false) }
 }
 
-pub unsafe extern "C" fn zuri_jit_neq_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_neq_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1043,7 +1078,7 @@ pub unsafe extern "C" fn zuri_jit_neq_slow(
 
 macro_rules! imm_arith_slow {
   ($name:ident, $op_name:literal, $deco:literal, $op:expr) => {
-    pub unsafe extern "C" fn $name(
+    pub unsafe extern "C-unwind" fn $name(
       vm_ptr: *mut VM,
       base: u64,
       dst: u64,
@@ -1068,7 +1103,7 @@ imm_arith_slow!(zuri_jit_subimm_slow, "-", "@sub", |x: f64, y: f64| x - y);
 /// (`"score: " + 5`-style string concatenation), so this goes through
 /// `binary_add_values` (the same general add `binary_add` itself calls)
 /// rather than the numeric-only `binary_numeric_imm`.
-pub unsafe extern "C" fn zuri_jit_addimm_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_addimm_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1091,7 +1126,7 @@ pub unsafe extern "C" fn zuri_jit_addimm_slow(
 /// always numeric) in addition to `@mul` override, mirroring
 /// `binary_mult`'s own string/list arms exactly since
 /// `binary_numeric_imm` alone doesn't cover them.
-pub unsafe extern "C" fn zuri_jit_mulimm_slow(
+pub unsafe extern "C-unwind" fn zuri_jit_mulimm_slow(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1139,7 +1174,7 @@ pub unsafe extern "C" fn zuri_jit_mulimm_slow(
 
 macro_rules! imm_compare_slow {
   ($name:ident, $op_name:literal, $deco:literal, $op:expr) => {
-    pub unsafe extern "C" fn $name(
+    pub unsafe extern "C-unwind" fn $name(
       vm_ptr: *mut VM,
       base: u64,
       dst: u64,
@@ -1207,7 +1242,7 @@ imm_compare_slow!(zuri_jit_geimm_slow, ">=", "@gte", |x: f64, y: f64| x >= y);
 /// `zuri_jit_call_finish`), so by the time this returns non-zero,
 /// generated code can go straight to a `call_indirect` with no further
 /// setup at all.
-pub unsafe extern "C" fn zuri_jit_call_prepare(
+pub unsafe extern "C-unwind" fn zuri_jit_call_prepare(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -1256,7 +1291,7 @@ pub unsafe extern "C" fn zuri_jit_call_prepare(
 // `prepare_args` it's given; the parameter order here must match
 // that calling convention exactly, or the wrong register-sized slot
 // ends up interpreted as a pointer.
-pub unsafe extern "C" fn zuri_jit_invoke_prepare(
+pub unsafe extern "C-unwind" fn zuri_jit_invoke_prepare(
   vm_ptr: *mut VM,
   base: u64,
   obj: u64,
@@ -1350,7 +1385,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_prepare(
 /// `zuri_jit_new_finish` and not `zuri_jit_call_finish`. See
 /// `VM::prepare_compiled_construction` for which constructor shapes
 /// this accepts and why.
-pub unsafe extern "C" fn zuri_jit_new_prepare(
+pub unsafe extern "C-unwind" fn zuri_jit_new_prepare(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -1388,7 +1423,7 @@ pub unsafe extern "C" fn zuri_jit_new_prepare(
 ///
 /// Pairs with `zuri_jit_new_finish`, not `zuri_jit_call_finish`; the
 /// call still evaluates to the instance.
-pub unsafe extern "C" fn zuri_jit_construct_prepare(
+pub unsafe extern "C-unwind" fn zuri_jit_construct_prepare(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -1439,7 +1474,7 @@ pub unsafe extern "C" fn zuri_jit_construct_prepare(
 /// generated code has already verified the window fits, via the same
 /// `emit_call_checks` its matching `emit_frame_construction` call
 /// uses). Returns the new instance's `Value` bits.
-pub unsafe extern "C" fn zuri_jit_alloc_and_pin_instance(
+pub unsafe extern "C-unwind" fn zuri_jit_alloc_and_pin_instance(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -1450,7 +1485,7 @@ pub unsafe extern "C" fn zuri_jit_alloc_and_pin_instance(
     .to_bits()
 }
 
-pub unsafe extern "C" fn zuri_jit_alloc_instance_fast(
+pub unsafe extern "C-unwind" fn zuri_jit_alloc_instance_fast(
   vm_ptr: *mut VM,
   class_bits: u64,
   field_count: u64,
@@ -1466,7 +1501,7 @@ pub unsafe extern "C" fn zuri_jit_alloc_instance_fast(
 /// as `Value` bits, when that module's slot table is `table`; 0 for
 /// anything else. What compiled code checks before building a class an
 /// `Invoke` on a module was seen to construct.
-pub unsafe extern "C" fn zuri_jit_module_member(
+pub unsafe extern "C-unwind" fn zuri_jit_module_member(
   _vm_ptr: *mut VM,
   receiver_bits: u64,
   table: u64,
@@ -1501,7 +1536,7 @@ pub unsafe extern "C" fn zuri_jit_module_member(
 /// step has to happen exactly here (after any collection the callee's
 /// own execution could have triggered, before the instance is ever
 /// treated as a plain untracked Rust value again).
-pub unsafe extern "C" fn zuri_jit_take_constructed_instance(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_take_constructed_instance(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.take_constructed_instance().to_bits()
 }
@@ -1509,7 +1544,7 @@ pub unsafe extern "C" fn zuri_jit_take_constructed_instance(vm_ptr: *mut VM) -> 
 /// `zuri_jit_new_prepare`'s other half; `zuri_jit_call_finish` with
 /// the constructor's own return value discarded in favour of the
 /// instance, which is why it takes no `ret_bits` at all.
-pub unsafe extern "C" fn zuri_jit_new_finish(
+pub unsafe extern "C-unwind" fn zuri_jit_new_finish(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1568,7 +1603,7 @@ pub unsafe extern "C" fn zuri_jit_new_finish(
 /// (native call-stack depth exhausted; generated code falls back to
 /// the fully general slow helper on this result, exactly like
 /// `emit_fast_call`'s own miss path).
-pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
+pub unsafe extern "C-unwind" fn zuri_jit_direct_call_prepare(
   vm_ptr: *mut VM,
   callee_bits: u64,
   new_base: u64,
@@ -1598,7 +1633,7 @@ pub unsafe extern "C" fn zuri_jit_direct_call_prepare(
 /// it (see this module's top-level docs), and the frame is left in
 /// place, matching `VM::invoke_compiled`'s own error-path semantics
 /// precisely (compiled code never pops its own frame on error).
-pub unsafe extern "C" fn zuri_jit_call_finish(
+pub unsafe extern "C-unwind" fn zuri_jit_call_finish(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -1645,7 +1680,7 @@ pub unsafe extern "C" fn zuri_jit_call_finish(
 /// resumes the SAME already-pushed frame through the interpreter's own
 /// `Instr::Return` handling, which pops it itself by the time this
 /// returns. See `VM::resolve_possible_deopt`'s own docs.
-pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: u64) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   match vm.resolve_possible_deopt() {
     Some(Ok(v)) => {
@@ -1655,9 +1690,8 @@ pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: 
     Some(Err(e)) => fail(vm, e),
     // Unreachable by construction; generated code only ever calls
     // this after observing a deopt actually pending. Treated as a
-    // no-op success rather than a panic: unwinding a Rust panic across
-    // this `extern "C"` boundary would be unsound, and this is the
-    // strictly safer failure mode if the invariant were ever violated.
+    // no-op success rather than a panic, the safer failure mode if the
+    // invariant were ever violated.
     None => OK,
   }
 }
@@ -1669,7 +1703,7 @@ pub unsafe extern "C" fn zuri_jit_finish_deopt(vm_ptr: *mut VM, base: u64, dst: 
 // these wrappers just unpack the instruction's register operands.
 // ---------------------------------------------------------------------
 
-pub unsafe extern "C" fn zuri_jit_call(
+pub unsafe extern "C-unwind" fn zuri_jit_call(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -1723,7 +1757,7 @@ fn cached_builtin_lookup(
 /// runtime class (or builtin-method table, or a field holding a
 /// callable), mirroring `vm.rs`'s handler exactly. `method_name_bits`
 /// is the method name's baked `Value` (always a string constant).
-pub unsafe extern "C" fn zuri_jit_invoke(
+pub unsafe extern "C-unwind" fn zuri_jit_invoke(
   vm_ptr: *mut VM,
   base: u64,
   obj: u64,
@@ -1884,7 +1918,7 @@ fn invoke_builtin_method(
 /// See `codegen::FuncCompiler::emit_string_invoke`'s own docs for why
 /// paying for `zuri_jit_invoke_prepare` first (as every OTHER `Instr::
 /// Invoke` site does) is pure waste on a proven-string receiver.
-pub unsafe extern "C" fn zuri_jit_invoke_string(
+pub unsafe extern "C-unwind" fn zuri_jit_invoke_string(
   vm_ptr: *mut VM,
   base: u64,
   obj: u64,
@@ -1926,7 +1960,7 @@ fn invoke_native_args(vm: &VM, base: usize, obj: u8, num_args: u8, receiver: Val
   args
 }
 
-pub unsafe extern "C" fn zuri_jit_invoke_super(
+pub unsafe extern "C-unwind" fn zuri_jit_invoke_super(
   vm_ptr: *mut VM,
   base: u64,
   superclass: u64,
@@ -1995,7 +2029,7 @@ pub unsafe extern "C" fn zuri_jit_invoke_super(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_call_super_ctor(
+pub unsafe extern "C-unwind" fn zuri_jit_call_super_ctor(
   vm_ptr: *mut VM,
   base: u64,
   superclass: u64,
@@ -2041,7 +2075,7 @@ pub unsafe extern "C" fn zuri_jit_call_super_ctor(
 // changes once compiled).
 // ---------------------------------------------------------------------
 
-pub unsafe extern "C" fn zuri_jit_get_global(
+pub unsafe extern "C-unwind" fn zuri_jit_get_global(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2088,7 +2122,7 @@ pub unsafe extern "C" fn zuri_jit_get_global(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_set_global(
+pub unsafe extern "C-unwind" fn zuri_jit_set_global(
   vm_ptr: *mut VM,
   base: u64,
   src: u64,
@@ -2120,7 +2154,7 @@ pub unsafe extern "C" fn zuri_jit_set_global(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_assign_global(
+pub unsafe extern "C-unwind" fn zuri_jit_assign_global(
   vm_ptr: *mut VM,
   base: u64,
   src: u64,
@@ -2168,7 +2202,7 @@ pub unsafe extern "C" fn zuri_jit_assign_global(
 /// resolves against the closure currently executing, read from the live
 /// frame rather than taken as an argument: see `VM::current_closure_val`
 /// for why a copy of the entry parameter is not safe to use here.
-pub unsafe extern "C" fn zuri_jit_make_closure(
+pub unsafe extern "C-unwind" fn zuri_jit_make_closure(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2214,12 +2248,17 @@ pub unsafe extern "C" fn zuri_jit_make_closure(
 /// code either side of this call. Never fails, touches no VM register,
 /// so `emit_upvalue_fast_path` calls this via `call_helper_raw`, not
 /// `call_checked`.
-pub unsafe extern "C" fn zuri_jit_closure_upvalues_ptr(vm_ptr: *mut VM) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_closure_upvalues_ptr(vm_ptr: *mut VM) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.current_closure_val().as_closure().upvalues.as_ptr() as u64
 }
 
-pub unsafe extern "C" fn zuri_jit_get_upval(vm_ptr: *mut VM, base: u64, dst: u64, idx: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_get_upval(
+  vm_ptr: *mut VM,
+  base: u64,
+  dst: u64,
+  idx: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let closure_val = vm.current_closure_val();
   let current_closure = closure_val.as_closure();
@@ -2236,7 +2275,12 @@ pub unsafe extern "C" fn zuri_jit_get_upval(vm_ptr: *mut VM, base: u64, dst: u64
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_set_upval(vm_ptr: *mut VM, base: u64, src: u64, idx: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_set_upval(
+  vm_ptr: *mut VM,
+  base: u64,
+  src: u64,
+  idx: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   let v = vm.get_reg(base as usize, src as u8);
   let closure_val = vm.current_closure_val();
@@ -2257,7 +2301,11 @@ pub unsafe extern "C" fn zuri_jit_set_upval(vm_ptr: *mut VM, base: u64, src: u64
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_close_upvalues(vm_ptr: *mut VM, base: u64, from: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_close_upvalues(
+  vm_ptr: *mut VM,
+  base: u64,
+  from: u64,
+) -> u64 {
   let vm = unsafe { vm(vm_ptr) };
   vm.close_upvalues_from(base as usize + from as usize);
   OK
@@ -2267,7 +2315,7 @@ pub unsafe extern "C" fn zuri_jit_close_upvalues(vm_ptr: *mut VM, base: u64, fro
 // Collections
 // ---------------------------------------------------------------------
 
-pub unsafe extern "C" fn zuri_jit_make_list(
+pub unsafe extern "C-unwind" fn zuri_jit_make_list(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2286,7 +2334,7 @@ pub unsafe extern "C" fn zuri_jit_make_list(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_make_dict(
+pub unsafe extern "C-unwind" fn zuri_jit_make_dict(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2310,7 +2358,7 @@ pub unsafe extern "C" fn zuri_jit_make_dict(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_make_range(
+pub unsafe extern "C-unwind" fn zuri_jit_make_range(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2344,7 +2392,7 @@ pub unsafe extern "C" fn zuri_jit_make_range(
 /// for the full mechanism, and `jit::codegen::FuncCompiler::
 /// emit_scalar_make_list` for the one call site (always the very last
 /// step there, after every element slot has already been populated).
-pub unsafe extern "C" fn zuri_jit_push_scalar_root(
+pub unsafe extern "C-unwind" fn zuri_jit_push_scalar_root(
   vm_ptr: *mut VM,
   data_ptr: u64,
   count: u64,
@@ -2362,7 +2410,7 @@ pub unsafe extern "C" fn zuri_jit_push_scalar_root(
 /// `VM::index_get`: `VM::coerce_index` is the one piece of that logic
 /// that operates on a bare `len: usize` instead of a real container,
 /// exactly what's needed here.
-pub unsafe extern "C" fn zuri_jit_scalar_get_index(
+pub unsafe extern "C-unwind" fn zuri_jit_scalar_get_index(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2389,7 +2437,7 @@ pub unsafe extern "C" fn zuri_jit_scalar_get_index(
 /// `Instr::SetIndex`'s slow-path fallback for a scalar-replaced list;
 /// the write-side counterpart of `zuri_jit_scalar_get_index`, see its
 /// own docs.
-pub unsafe extern "C" fn zuri_jit_scalar_set_index(
+pub unsafe extern "C-unwind" fn zuri_jit_scalar_set_index(
   vm_ptr: *mut VM,
   base: u64,
   data_ptr: u64,
@@ -2412,7 +2460,7 @@ pub unsafe extern "C" fn zuri_jit_scalar_set_index(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_get_index(
+pub unsafe extern "C-unwind" fn zuri_jit_get_index(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2432,7 +2480,7 @@ pub unsafe extern "C" fn zuri_jit_get_index(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_set_index(
+pub unsafe extern "C-unwind" fn zuri_jit_set_index(
   vm_ptr: *mut VM,
   base: u64,
   obj: u64,
@@ -2450,7 +2498,7 @@ pub unsafe extern "C" fn zuri_jit_set_index(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_get_slice(
+pub unsafe extern "C-unwind" fn zuri_jit_get_slice(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2484,7 +2532,7 @@ pub unsafe extern "C" fn zuri_jit_get_slice(
 /// below (see its own doc comment); stamped onto the new `ObjClass` so
 /// a class declared via the JIT fast path gets the same home a class
 /// declared through the interpreter would.
-pub unsafe extern "C" fn zuri_jit_make_class(
+pub unsafe extern "C-unwind" fn zuri_jit_make_class(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2560,7 +2608,7 @@ pub unsafe extern "C" fn zuri_jit_make_class(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_declare_field(
+pub unsafe extern "C-unwind" fn zuri_jit_declare_field(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2578,7 +2626,7 @@ pub unsafe extern "C" fn zuri_jit_declare_field(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_set_field_init(
+pub unsafe extern "C-unwind" fn zuri_jit_set_field_init(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2597,7 +2645,7 @@ pub unsafe extern "C" fn zuri_jit_set_field_init(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_set_field_default(
+pub unsafe extern "C-unwind" fn zuri_jit_set_field_default(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2617,7 +2665,7 @@ pub unsafe extern "C" fn zuri_jit_set_field_default(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_set_method(
+pub unsafe extern "C-unwind" fn zuri_jit_set_method(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2633,7 +2681,7 @@ pub unsafe extern "C" fn zuri_jit_set_method(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_declare_static(
+pub unsafe extern "C-unwind" fn zuri_jit_declare_static(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2658,7 +2706,7 @@ pub unsafe extern "C" fn zuri_jit_declare_static(
 /// for `globals_module`, to check "class already declared in this
 /// scope" exactly like the interpreter does): see this module's docs
 /// on baked function pointers.
-pub unsafe extern "C" fn zuri_jit_finalize_class(
+pub unsafe extern "C-unwind" fn zuri_jit_finalize_class(
   vm_ptr: *mut VM,
   base: u64,
   class: u64,
@@ -2689,7 +2737,7 @@ pub unsafe extern "C" fn zuri_jit_finalize_class(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_get_field(
+pub unsafe extern "C-unwind" fn zuri_jit_get_field(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2802,7 +2850,7 @@ pub unsafe extern "C" fn zuri_jit_get_field(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_set_field(
+pub unsafe extern "C-unwind" fn zuri_jit_set_field(
   vm_ptr: *mut VM,
   base: u64,
   obj: u64,
@@ -2886,7 +2934,7 @@ pub unsafe extern "C" fn zuri_jit_set_field(
 /// possibly-failing global lookup), and `Iterable` (needs a method-
 /// table probe). Shares `VM::param_type_matches` with the interpreter,
 /// so the two can never disagree on what a given type name accepts.
-pub unsafe extern "C" fn zuri_jit_check_param_type(
+pub unsafe extern "C-unwind" fn zuri_jit_check_param_type(
   vm_ptr: *mut VM,
   base: u64,
   reg: u64,
@@ -2934,7 +2982,7 @@ pub unsafe extern "C" fn zuri_jit_check_param_type(
 /// `u64::MAX` is unambiguous.
 pub const USING_NO_MATCH: u64 = u64::MAX;
 
-pub unsafe extern "C" fn zuri_jit_using_jump(
+pub unsafe extern "C-unwind" fn zuri_jit_using_jump(
   vm_ptr: *mut VM,
   base: u64,
   subject: u64,
@@ -2957,7 +3005,7 @@ pub unsafe extern "C" fn zuri_jit_using_jump(
 // Modules
 // ---------------------------------------------------------------------
 
-pub unsafe extern "C" fn zuri_jit_import(
+pub unsafe extern "C-unwind" fn zuri_jit_import(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -2977,7 +3025,7 @@ pub unsafe extern "C" fn zuri_jit_import(
   }
 }
 
-pub unsafe extern "C" fn zuri_jit_import_all(
+pub unsafe extern "C-unwind" fn zuri_jit_import_all(
   vm_ptr: *mut VM,
   base: u64,
   module_reg: u64,
@@ -3025,7 +3073,7 @@ pub unsafe extern "C" fn zuri_jit_import_all(
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_make_promoted(
+pub unsafe extern "C-unwind" fn zuri_jit_make_promoted(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -3084,7 +3132,7 @@ pub unsafe extern "C" fn zuri_jit_make_promoted(
 
 macro_rules! num_intrinsic {
   ($name:ident, $f:ident) => {
-    pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, bits: u64) -> u64 {
+    pub unsafe extern "C-unwind" fn $name(_vm_ptr: *mut VM, bits: u64) -> u64 {
       Value::number(f64::from_bits(bits).$f()).to_bits()
     }
   };
@@ -3092,7 +3140,7 @@ macro_rules! num_intrinsic {
 
 macro_rules! num_intrinsic2 {
   ($name:ident, $f:ident) => {
-    pub unsafe extern "C" fn $name(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+    pub unsafe extern "C-unwind" fn $name(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
       Value::number(f64::from_bits(a).$f(f64::from_bits(b))).to_bits()
     }
   };
@@ -3133,7 +3181,7 @@ num_intrinsic!(zuri_jit_num_round, round);
 ///
 /// Same `f64` operations `VM::binary_numeric` is handed for these, so
 /// compiled and interpreted results are bit-identical by construction.
-pub unsafe extern "C" fn zuri_jit_num_fmod(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_num_fmod(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
   Value::number(crate::vm::value::num_rem(
     f64::from_bits(a),
     f64::from_bits(b),
@@ -3141,7 +3189,7 @@ pub unsafe extern "C" fn zuri_jit_num_fmod(_vm_ptr: *mut VM, a: u64, b: u64) -> 
   .to_bits()
 }
 
-pub unsafe extern "C" fn zuri_jit_num_powf(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_num_powf(_vm_ptr: *mut VM, a: u64, b: u64) -> u64 {
   Value::number(f64::from_bits(a).powf(f64::from_bits(b))).to_bits()
 }
 
@@ -3159,7 +3207,7 @@ num_intrinsic2!(zuri_jit_num_atan2, atan2);
 /// What remains is genuinely per-call: gathering the arguments out of
 /// the register window and `VM::call_native`'s own arity check and
 /// invocation.
-pub unsafe extern "C" fn zuri_jit_call_native(
+pub unsafe extern "C-unwind" fn zuri_jit_call_native(
   vm_ptr: *mut VM,
   base: u64,
   func_reg: u64,
@@ -3212,7 +3260,7 @@ pub unsafe extern "C" fn zuri_jit_call_native(
 /// # Safety
 ///
 /// `str_ptr` is a live string object's pointer.
-pub unsafe extern "C" fn zuri_jit_str_ascii(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_str_ascii(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
   Value::obj(str_ptr as *const crate::vm::object::Obj).str_is_ascii() as u64
 }
 
@@ -3222,7 +3270,7 @@ pub unsafe extern "C" fn zuri_jit_str_ascii(_vm_ptr: *mut VM, str_ptr: u64) -> u
 /// # Safety
 ///
 /// `str_ptr` is a live string object's pointer.
-pub unsafe extern "C" fn zuri_jit_str_length(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_str_length(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
   match unsafe { &*(str_ptr as *const crate::vm::object::Obj) } {
     crate::vm::object::Obj::Str(s) => s.char_len() as u64,
     _ => 0,
@@ -3236,7 +3284,7 @@ pub unsafe extern "C" fn zuri_jit_str_length(_vm_ptr: *mut VM, str_ptr: u64) -> 
 /// # Safety
 ///
 /// `str_ptr` is a live string object's pointer.
-pub unsafe extern "C" fn zuri_jit_str_ord(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_str_ord(_vm_ptr: *mut VM, str_ptr: u64) -> u64 {
   let s = Value::obj(str_ptr as *const crate::vm::object::Obj);
   let mut chars = s.as_str().chars();
   match (chars.next(), chars.next()) {
@@ -3252,7 +3300,11 @@ pub unsafe extern "C" fn zuri_jit_str_ord(_vm_ptr: *mut VM, str_ptr: u64) -> u64
 /// # Safety
 ///
 /// `list_ptr` is a live list object's pointer.
-pub unsafe extern "C" fn zuri_jit_list_push(_vm_ptr: *mut VM, list_ptr: u64, item: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_list_push(
+  _vm_ptr: *mut VM,
+  list_ptr: u64,
+  item: u64,
+) -> u64 {
   let obj = list_ptr as *const crate::vm::object::Obj;
   if let crate::vm::object::Obj::List(items) = unsafe { &*obj } {
     items.borrow_mut().push(Value::from_bits(item));
@@ -3268,7 +3320,11 @@ pub unsafe extern "C" fn zuri_jit_list_push(_vm_ptr: *mut VM, list_ptr: u64, ite
 /// # Safety
 ///
 /// `bytes_ptr` is a live byte stream object's pointer.
-pub unsafe extern "C" fn zuri_jit_bytes_push(_vm_ptr: *mut VM, bytes_ptr: u64, byte: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_bytes_push(
+  _vm_ptr: *mut VM,
+  bytes_ptr: u64,
+  byte: u64,
+) -> u64 {
   let obj = bytes_ptr as *const crate::vm::object::Obj;
   if let crate::vm::object::Obj::Bytes(data) = unsafe { &*obj } {
     data.borrow_mut().push(byte as u8);
@@ -3276,7 +3332,7 @@ pub unsafe extern "C" fn zuri_jit_bytes_push(_vm_ptr: *mut VM, bytes_ptr: u64, b
   OK
 }
 
-pub unsafe extern "C" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) -> u64 {
+pub unsafe extern "C-unwind" fn zuri_jit_write_barrier(_vm_ptr: *mut VM, obj_ptr: u64) -> u64 {
   crate::vm::object::write_barrier(obj_ptr as *const crate::vm::object::Obj);
   OK
 }
@@ -3301,14 +3357,14 @@ pub struct HelperSpec {
   pub arity: usize,
 }
 
-type Fn1 = unsafe extern "C" fn(*mut VM) -> u64;
-type Fn2 = unsafe extern "C" fn(*mut VM, u64) -> u64;
-type Fn3 = unsafe extern "C" fn(*mut VM, u64, u64) -> u64;
-type Fn4 = unsafe extern "C" fn(*mut VM, u64, u64, u64) -> u64;
-type Fn5 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64) -> u64;
-type Fn6 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
-type Fn7 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
-type Fn9 = unsafe extern "C" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
+type Fn1 = unsafe extern "C-unwind" fn(*mut VM) -> u64;
+type Fn2 = unsafe extern "C-unwind" fn(*mut VM, u64) -> u64;
+type Fn3 = unsafe extern "C-unwind" fn(*mut VM, u64, u64) -> u64;
+type Fn4 = unsafe extern "C-unwind" fn(*mut VM, u64, u64, u64) -> u64;
+type Fn5 = unsafe extern "C-unwind" fn(*mut VM, u64, u64, u64, u64) -> u64;
+type Fn6 = unsafe extern "C-unwind" fn(*mut VM, u64, u64, u64, u64, u64) -> u64;
+type Fn7 = unsafe extern "C-unwind" fn(*mut VM, u64, u64, u64, u64, u64, u64) -> u64;
+type Fn9 = unsafe extern "C-unwind" fn(*mut VM, u64, u64, u64, u64, u64, u64, u64, u64) -> u64;
 
 /// Reinterprets an already-coerced, concrete function-pointer value
 /// (one of the `FnN` aliases above; not a bare function item, which
@@ -3320,7 +3376,7 @@ fn as_ptr<F: Copy>(f: F) -> *const u8 {
   debug_assert_eq!(std::mem::size_of::<F>(), std::mem::size_of::<*const u8>());
   // SAFETY: `F` is always one of the `FnN` aliases above at every call
   // site (see the `spec*!` macros below), each a plain, pointer-sized
-  // `unsafe extern "C" fn`.
+  // `unsafe extern "C-unwind" fn`.
   unsafe { std::mem::transmute_copy::<F, *const u8>(&f) }
 }
 
@@ -3552,7 +3608,7 @@ pub fn helper_table() -> Vec<HelperSpec> {
 /// to be in that stack memory. The real instance is still sitting in
 /// `VM::registers`, having been built by the interpreter before the
 /// loop went hot, so the fix is to copy its fields across on entry.
-pub unsafe extern "C" fn zuri_jit_init_osr_scalar_instance(
+pub unsafe extern "C-unwind" fn zuri_jit_init_osr_scalar_instance(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,
@@ -3572,7 +3628,7 @@ pub unsafe extern "C" fn zuri_jit_init_osr_scalar_instance(
   0
 }
 
-pub unsafe extern "C" fn zuri_jit_init_osr_scalar_list(
+pub unsafe extern "C-unwind" fn zuri_jit_init_osr_scalar_list(
   vm_ptr: *mut VM,
   base: u64,
   dst: u64,

@@ -217,6 +217,7 @@ httparse = "1.10.1"
 # no direct getppid syscall), and Threading for OpenProcess/
 # TerminateProcess behind os.kill()/Process.kill().
 [target.'cfg(not(windows))'.dependencies]
+gimli = { version = "0.33", default-features = false, features = ["std", "write"] }
 libffi-sys = { version = "4.2.2", features = ["complex"] }
 
 [target.'cfg(windows)'.dependencies]

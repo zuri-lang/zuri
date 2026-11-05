@@ -21,7 +21,7 @@ use crate::modules::sqlite_util::{
   self as util, BACKUP, BACKUP_CLOSED, BLOB, BLOB_CLOSED, CONNECTION, CONNECTION_CLOSED, STATEMENT,
   STATEMENT_CLOSED, SqliteBackup, SqliteBlob, SqliteConn, SqliteStmt, callback, value,
 };
-use crate::modules::{BuiltinModuleDef, native, optional_bool, optional_number};
+use crate::modules::{BuiltinModuleDef, foreign_panic, native, optional_bool, optional_number};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -249,6 +249,8 @@ fn conn_state(ctx: &ZuriContext) -> *mut util::ConnState {
 /// rooted when it was trapped, and `rethrow` hands it to `call_native`
 /// to re-raise untouched.
 fn take_trapped(vm: &mut VM, state: *mut util::ConnState) -> Option<String> {
+  foreign_panic::resume();
+
   if state.is_null() {
     return None;
   }

@@ -402,13 +402,13 @@ impl Process {
   /// bounded poll loop is the standard dependency-free way to bolt
   /// one on.
   pub fn wait(&mut self, timeout_ms: Option<u64>) -> Result<Option<i32>, String> {
-    let Some(ms) = timeout_ms else {
+    let deadline = timeout_ms.and_then(|ms| Instant::now().checked_add(Duration::from_millis(ms)));
+    let Some(deadline) = deadline else {
       let status = self.child.wait().map_err(|e| e.to_string())?;
       self.exited = true;
       return Ok(Some(exit_code_of(status)));
     };
 
-    let deadline = Instant::now() + Duration::from_millis(ms);
     loop {
       if let Some(code) = self.try_wait()? {
         return Ok(Some(code));

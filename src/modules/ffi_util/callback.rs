@@ -37,6 +37,7 @@ use super::call::Cif;
 use super::convert::{self, Dest};
 use super::types::{Kind, Signature};
 use super::{Fail, state};
+use crate::modules::foreign_panic;
 use crate::modules::os_util::signal;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
@@ -267,6 +268,7 @@ pub fn service_at_safepoint(vm: &mut VM) -> Result<(), Value> {
 
 /// The error a callback trapped during the call that just finished.
 pub fn take_trapped(vm: &mut VM) -> Option<Value> {
+  foreign_panic::resume();
   let slot = vm.ffi.as_mut()?.trapped.take()?;
   let error = vm.native_root(slot);
   vm.release_native_root(slot);
@@ -511,13 +513,14 @@ unsafe extern "C" fn trampoline(
 
   let outcome = catch_unwind(AssertUnwindSafe(|| unsafe { dispatch(core, ret, args) }));
 
-  if outcome.is_err() {
+  if let Err(payload) = outcome {
+    foreign_panic::park(payload);
     unsafe { core.write_error_value(ret) };
   }
 }
 
 unsafe fn dispatch(core: &CallbackCore, ret: *mut c_void, args: *mut *mut c_void) {
-  if core.is_released() || RELEASING.with(|slot| slot.get()) {
+  if core.is_released() || RELEASING.with(|slot| slot.get()) || foreign_panic::parked() {
     unsafe { core.write_error_value(ret) };
     return;
   }

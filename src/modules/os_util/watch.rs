@@ -302,7 +302,7 @@ impl Watcher {
   pub fn next(&mut self, timeout: Option<Duration>) -> Result<Outcome, String> {
     self.backend()?;
 
-    let deadline = timeout.map(|t| Instant::now() + t);
+    let deadline = timeout.and_then(|t| Instant::now().checked_add(t));
     let isolate = pool::in_isolate_context();
 
     loop {

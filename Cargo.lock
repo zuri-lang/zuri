@@ -4599,6 +4599,7 @@ dependencies = [
  "ed25519-dalek",
  "find-msvc-tools",
  "fontdue",
+ "gimli",
  "gost94",
  "hkdf",
  "httparse",
