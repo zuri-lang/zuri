@@ -1,6 +1,6 @@
 use mimalloc::MiMalloc;
 use minus::{self, Pager};
-use std::io::{self, ErrorKind};
+use std::io::{self, ErrorKind, IsTerminal};
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
@@ -15,7 +15,7 @@ use zuri::compiler::{compiler::Compiler, lexer::Lexer, parser::Parser};
 use zuri::vm::vm::VM;
 use zuri::vm::{chunk::Chunk, object::Heap};
 
-use crate::shared::repl::Repl;
+use crate::shared::repl::{Repl, run_piped};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -58,6 +58,13 @@ fn print_credits() -> Result<(), String> {
   if let Some(libs_root) = install_root_libs() {
     if let Some(license_file) = libs_root.parent().map(|p| p.join("LICENSE")) {
       if let Ok(content) = fs::read_to_string(license_file) {
+        // A pager waits for a key, and a piped session may have nobody
+        // there to press one.
+        if !io::stdin().is_terminal() {
+          print!("{content}");
+          return Ok(());
+        }
+
         let pager = Pager::new();
 
         #[allow(deprecated)]
@@ -81,40 +88,49 @@ fn run_repl(vm: &mut VM) {
   vm.set_root_path("@.repl.root".to_string());
   vm.init_entry_globals("@.repl");
 
-  let mut repl = Repl::new(
-    KEYWORD_TOKENS
-      .iter()
-      .map(|f| f.to_string().to_lowercase())
-      .collect::<Vec<_>>(),
-  );
+  let session = if io::stdin().is_terminal() {
+    let mut repl = Repl::new(
+      KEYWORD_TOKENS
+        .iter()
+        .map(|f| f.to_string().to_lowercase())
+        .collect::<Vec<_>>(),
+    );
 
-  print_version(", REPL/Interactive mode = ON");
-  println!("Type \".exit\" to quit, \".help\" for help or \".credits\" for more information");
+    print_version(", REPL/Interactive mode = ON");
+    println!("Type \".exit\" to quit, \".help\" for help or \".credits\" for more information");
 
-  // let stdin = io::stdin();
-  // let mut input = String::new();
+    repl.run(vm, run_entry)
+  } else {
+    run_piped(vm, run_entry)
+  };
 
-  repl.run(vm, |vm, buffer| {
-    if !buffer.is_empty() {
-      if buffer.eq(".exit") {
-        return Err(());
-      } else if buffer.eq(".help") {
-        print_repl_help();
-        return Ok(());
-      } else if buffer.eq(".credits") {
-        if let Err(message) = print_credits() {
-          eprintln!("{}", message);
-        }
-        return Ok(());
+  if let Err(e) = session {
+    eprintln!("Could not read input: {e}");
+    process::exit(1);
+  }
+}
+
+/// Acts on one entry of a session. `Err` asks for the session to end.
+fn run_entry(vm: &mut VM, buffer: String) -> Result<(), ()> {
+  if !buffer.is_empty() {
+    if buffer.eq(".exit") {
+      return Err(());
+    } else if buffer.eq(".help") {
+      print_repl_help();
+      return Ok(());
+    } else if buffer.eq(".credits") {
+      if let Err(message) = print_credits() {
+        eprintln!("{}", message);
       }
-
-      if let Err(e) = evaluate_line(&buffer, vm) {
-        eprintln!("{}", e);
-      }
+      return Ok(());
     }
 
-    Ok(())
-  });
+    if let Err(e) = evaluate_line(&buffer, vm) {
+      eprintln!("{}", e);
+    }
+  }
+
+  Ok(())
 }
 
 fn evaluate_line(line: &str, vm: &mut VM) -> Result<(), String> {

@@ -559,8 +559,10 @@ fn panic_exits_like_any_other() {
 /// here depends on the shape of the checkout it runs in.
 mod launch {
   use std::fs;
+  use std::io::Write;
   use std::path::{Path, PathBuf};
-  use std::process::{Command, Output};
+  use std::process::{Child, Command, Output, Stdio};
+  use std::time::{Duration, Instant};
 
   /// A fresh directory for one case, named after it so a failure says
   /// where to look.
@@ -1227,6 +1229,158 @@ mod launch {
     // `run` is the only way to reach a file; a bare path is a command
     // name that happens to contain a dot.
     assert_aborted(&zuri(&dir, &["main.zu"]), "main.zu", "Unknown command");
+  }
+
+  /// How long a session gets to end on its own, far beyond what any of
+  /// these need, so one that misses the end of its input fails here
+  /// and does not hang the suite.
+  const SESSION_LIMIT: Duration = Duration::from_secs(30);
+
+  fn session_command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_zuri"));
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    command
+  }
+
+  fn finish_session(mut child: Child) -> Output {
+    let started = Instant::now();
+
+    while child.try_wait().expect("failed to poll zuri").is_none() {
+      if started.elapsed() > SESSION_LIMIT {
+        let _ = child.kill();
+        let _ = child.wait();
+        panic!("the session outlived its input");
+      }
+
+      std::thread::sleep(Duration::from_millis(10));
+    }
+
+    child
+      .wait_with_output()
+      .expect("failed to collect the session's output")
+  }
+
+  /// Runs the REPL with `input` as all of its standard input.
+  fn session(input: &str) -> Output {
+    let mut child = session_command()
+      .stdin(Stdio::piped())
+      .spawn()
+      .expect("failed to run zuri");
+
+    child
+      .stdin
+      .take()
+      .expect("no stdin")
+      .write_all(input.as_bytes())
+      .expect("failed to write the session's input");
+
+    finish_session(child)
+  }
+
+  fn stdout_of(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n")
+  }
+
+  #[test]
+  fn a_session_ends_when_stdin_has_nothing_to_give() {
+    let child = session_command()
+      .stdin(Stdio::null())
+      .spawn()
+      .expect("failed to run zuri");
+    let output = finish_session(child);
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert_eq!(combined(&output), "");
+  }
+
+  #[test]
+  fn a_piped_session_prints_only_its_results() {
+    let output = session("1 + 2\nvar n = 4\nn * 2\n");
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert_eq!(combined(&output), "3\n8\n");
+  }
+
+  #[test]
+  fn a_piped_session_keeps_what_each_line_declares() {
+    let output = session("def double(n) {\n  return n * 2\n}\n\ndouble(21)\n");
+
+    assert_eq!(combined(&output), "42\n");
+  }
+
+  #[test]
+  fn a_piped_session_runs_a_last_line_with_no_newline() {
+    assert_eq!(combined(&session("1 + 2\n3 + 4")), "3\n7\n");
+  }
+
+  #[test]
+  fn a_piped_session_reads_windows_line_endings() {
+    assert_eq!(combined(&session("1 + 2\r\n.exit\r\n3 + 4\r\n")), "3\n");
+  }
+
+  #[test]
+  fn exit_ends_a_piped_session_early() {
+    let output = session("1 + 2\n.exit\n3 + 4\n");
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert_eq!(combined(&output), "3\n");
+  }
+
+  #[test]
+  fn a_failing_line_does_not_end_a_piped_session() {
+    let output = session("missing_name\n1 + 2\n");
+    let errors = String::from_utf8_lossy(&output.stderr);
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert!(errors.contains("missing_name"), "{errors}");
+    assert_eq!(stdout_of(&output), "3\n");
+  }
+
+  #[test]
+  fn a_statement_left_open_reports_why_at_the_end_of_input() {
+    let output = session("1 + 2\ndef broken() {\n");
+    let errors = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!errors.is_empty(), "{}", combined(&output));
+    assert_eq!(stdout_of(&output), "3\n");
+  }
+
+  #[test]
+  fn a_statement_can_read_the_lines_that_follow_it() {
+    let output = session("import io\nvar line = io.readline()\nnot code\nline.upper()\n");
+
+    assert_eq!(combined(&output), "NOT CODE\n");
+  }
+
+  #[test]
+  fn a_piped_session_prints_the_credits_and_carries_on() {
+    let output = session(".credits\n1 + 2\n");
+    let text = combined(&output);
+
+    assert!(text.contains("BSD 2-Clause License"), "{text}");
+    assert!(text.ends_with("\n3\n"), "{text}");
+  }
+
+  #[test]
+  fn input_that_cannot_be_read_ends_the_session_with_a_failure() {
+    let mut child = session_command()
+      .stdin(Stdio::piped())
+      .spawn()
+      .expect("failed to run zuri");
+
+    child
+      .stdin
+      .take()
+      .expect("no stdin")
+      .write_all(b"1 + 2\n\xff\xfe\n3 + 4\n")
+      .expect("failed to write the session's input");
+
+    let output = finish_session(child);
+
+    assert_eq!(output.status.code(), Some(1), "{}", combined(&output));
+    assert_eq!(stdout_of(&output), "3\n");
+    assert!(!output.stderr.is_empty(), "{}", combined(&output));
   }
 }
 

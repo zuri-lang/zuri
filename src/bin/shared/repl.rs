@@ -1,15 +1,22 @@
-use std::{borrow::Cow, env, path::Path};
+use std::{borrow::Cow, env, io, path::Path};
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
   ColumnarMenu, DefaultCompleter, DefaultHinter, DefaultValidator, Emacs, FileBackedHistory,
   KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
-  PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal,
-  default_emacs_keybindings,
+  PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal, ValidationResult,
+  Validator, default_emacs_keybindings,
 };
 use zuri::vm::vm::VM;
 
 use crate::shared::highlighter::ZuriHighlighter;
+
+/// How many reads in a row may fail before a session gives up. A read
+/// fails when the terminal takes over two seconds to answer reedline's
+/// cursor query, which a stalled connection can do and then recover
+/// from, so this rides out about a minute of that. A terminal that is
+/// gone fails at once, so it reaches the limit at once too.
+const MAX_READ_FAILURES: u32 = 30;
 
 pub struct ReplPrompt;
 
@@ -106,16 +113,20 @@ impl Repl {
     Self { editor, prompt }
   }
 
-  pub fn run<F>(&mut self, vm: &mut VM, callback: F)
+  /// Runs until `callback` ends the session, or fails once the terminal
+  /// has stopped being readable.
+  pub fn run<F>(&mut self, vm: &mut VM, callback: F) -> io::Result<()>
   where
     F: Fn(&mut VM, String) -> Result<(), ()>,
   {
+    let mut failures = 0;
+
     loop {
       let sig = self.editor.read_line(&self.prompt);
       match sig {
         Ok(Signal::Success(buffer)) => {
           if let Err(_) = callback(vm, buffer) {
-            break;
+            return Ok(());
           }
         },
         Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
@@ -125,10 +136,54 @@ impl Repl {
             println!("Type '.exit' to exit the REPL session");
           }
         },
+        Err(e) => {
+          failures += 1;
+
+          if failures == MAX_READ_FAILURES {
+            return Err(e);
+          }
+
+          continue;
+        },
         _ => {
           // println!("Event: {:?}", x);
         },
       };
+
+      failures = 0;
+    }
+  }
+}
+
+/// Runs a session from standard input when that is not a terminal, so
+/// there is nothing for `Repl` to edit on. Statements are split where
+/// `Repl` splits them, and the session ends with the input or when
+/// `callback` ends it. A statement still open at the end of the input
+/// runs as it stands, so its error is reported and not lost.
+pub fn run_piped<F>(vm: &mut VM, callback: F) -> io::Result<()>
+where
+  F: Fn(&mut VM, String) -> Result<(), ()>,
+{
+  let stdin = io::stdin();
+  let mut buffer = String::new();
+
+  loop {
+    let at_end = stdin.read_line(&mut buffer)? == 0;
+
+    if !at_end
+      && matches!(
+        DefaultValidator.validate(&buffer),
+        ValidationResult::Incomplete
+      )
+    {
+      continue;
+    }
+
+    let statement = buffer.trim_end_matches(['\r', '\n']).to_string();
+    buffer.clear();
+
+    if callback(vm, statement).is_err() || at_end {
+      return Ok(());
     }
   }
 }

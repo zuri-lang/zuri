@@ -83,7 +83,8 @@ an error, so you can retype a function until it is right.
 
 ## Getting Out
 
-**Type `.exit`.** That is the only thing that ends the session.
+**Type `.exit`.** At a terminal, that is the only thing that ends the
+session.
 
 **Ctrl+C and Ctrl+D do not exit.** Both print an interrupt line and hand
 the prompt back:
@@ -96,6 +97,24 @@ Type '.exit' to exit the REPL session
 
 Ctrl+C is how you abandon a half-typed line: the line is discarded and you
 start again on a fresh prompt.
+
+## Piped Input
+
+When standard input is not a terminal, `zuri` reads the session from it
+instead. There is no banner and no prompt, only what the session prints,
+and it ends when the input does:
+
+```console
+$ printf '1 + 2\nvar n = 4\nn * 2\n' | zuri
+3
+8
+```
+
+Everything else is as if you had typed it: expressions print, declarations
+stay defined, a statement can run over several lines, and `.exit` ends the
+session early. A line that fails reports its error and the session carries
+on, so the exit status is still `0`. Use `zuri run` for a program that
+should stop at its first error.
 
 ## Syntax Highlighting
 
@@ -126,7 +145,7 @@ codes in it.
 **`.help`** reminds you that Tab offers completions.
 
 **`.credits`** opens the project's licence in a pager. Press `q` to come
-back.
+back. A piped session prints it instead.
 
 Both are completed by Tab, along with every keyword in the language.
 
