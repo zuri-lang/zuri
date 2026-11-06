@@ -20,6 +20,7 @@ import ..headers { Headers }
 import ..request { HttpRequest }
 import ..response { HttpResponse }
 import ..status
+import ..stream { BytesFeed, FileFeed }
 import ..util
 import .frames
 import .hpack
@@ -130,6 +131,10 @@ class Http2Stream {
   # frames are still arriving.
   var fragment
 
+  # What is left of the response body while it waits for a flow control
+  # window, when a readiness loop is driving the connection.
+  var feed
+
   @new(id, send_window) {
     self.id = id
     self.fields = []
@@ -156,6 +161,12 @@ class Http2Stream {
  * answered next rather than in parallel. That is a throughput
  * property, not a correctness one - the framing, flow control and
  * header state are all maintained exactly as the protocol requires.
+ *
+ * A readiness loop drives it differently. `drive()` turns that on, and
+ * from then on `on_readable()` acts on the frames that have arrived and
+ * returns rather than waiting for more, so one session does not hold
+ * the thread its neighbours are served on. A response that outruns its
+ * flow control window is parked and sent as the window opens.
  */
 class Http2Connection {
 
@@ -187,6 +198,8 @@ class Http2Connection {
   var _settings_acked = false
   var _pending_headers = nil
   var _ready = []
+  var _driven = false
+  var _feeding = []
 
   /**
    * @param Connection connection: the transport, already connected
@@ -200,6 +213,7 @@ class Http2Connection {
     self._decoder = hpack.Decoder()
     self._streams = {}
     self._ready = []
+    self._feeding = []
     self._send_window = 65535
     self._consumed = 0
     self._next_stream_id = is_server ? 2 : 1
@@ -282,43 +296,117 @@ class Http2Connection {
    * @param HttpServer server
    */
   serve(server) {
-    while true {
-      var frame
+    while self._take_frame(server) {
+    }
+  }
 
-      catch {
-        frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
-      } as error
+  /**
+   * Hands this session over to a readiness loop. See the class
+   * description.
+   */
+  drive() {
+    self._driven = true
+  }
 
-      if error {
-        # A peer that simply stops talking has closed the connection,
-        # which is the ordinary end of one.
-        if instance_of(error, ConnectionError)
-          or instance_of(error, TimeoutError) {
-          return
-        }
-
-        self._go_away(frames.PROTOCOL_ERROR, error.message)
-        return
-      }
-
-      if self._going_away {
-        return
-      }
-
-      var stream = self._process(frame, server)
-      frame.payload.dispose()
-
-      if stream != nil {
-        self._ready.append(stream)
-      }
-
-      # A request may also have completed while a body write was
-      # blocked waiting on a window; those queue up here rather than
-      # being dropped on the floor.
-      while self._ready.length() > 0 {
-        self._answer(server, self._ready.shift())
+  /**
+   * Acts on every whole frame that has arrived, without waiting for
+   * more, and sends what the flow control windows now allow.
+   *
+   * @param HttpServer server
+   * @returns bool: whether the session has anything left to do
+   */
+  on_readable(server) {
+    while frames.frame_ready(self._conn, _MAX_FRAME_SIZE) {
+      if !self._take_frame(server) {
+        break
       }
     }
+
+    self.resume()
+
+    return !self._going_away or self._feeding.length() > 0
+  }
+
+  /**
+   * Sends what the flow control windows and the connection's output
+   * allow of the bodies that are waiting.
+   */
+  resume() {
+    if self._feeding.length() == 0 {
+      return
+    }
+
+    var waiting = []
+
+    for stream in self._feeding {
+      if !self._streams.contains(stream.id) {
+        # The peer reset it while it was waiting.
+        stream.feed.close()
+        stream.feed = nil
+      } else if !self._push_feed(stream) {
+        waiting.append(stream)
+      }
+    }
+
+    self._feeding = waiting
+  }
+
+  /**
+   * Whether a waiting body could go further if the connection's output
+   * had room, which is what tells a readiness loop to call `resume()`
+   * again once it has sent what is queued.
+   *
+   * @returns bool
+   */
+  can_resume() {
+    for stream in self._feeding {
+      if self._writable(stream) > 0 {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  # Reads and acts on one frame. Returns false once the session is over.
+  _take_frame(server) {
+    var frame
+
+    catch {
+      frame = frames.read_frame(self._conn, _MAX_FRAME_SIZE)
+    } as error
+
+    if error {
+      # A peer that simply stops talking has closed the connection,
+      # which is the ordinary end of one.
+      if instance_of(error, ConnectionError)
+        or instance_of(error, TimeoutError) {
+        return false
+      }
+
+      self._go_away(frames.PROTOCOL_ERROR, error.message)
+      return false
+    }
+
+    if self._going_away {
+      return false
+    }
+
+    var stream = self._process(frame, server)
+    frame.payload.dispose()
+
+    if stream != nil {
+      self._ready.append(stream)
+    }
+
+    # A request may also have completed while a body write was
+    # blocked waiting on a window; those queue up here rather than
+    # being dropped on the floor.
+    while self._ready.length() > 0 {
+      self._answer(server, self._ready.shift())
+    }
+
+    return true
   }
 
   # Handles one frame. Returns the stream that just became a complete
@@ -719,7 +807,9 @@ class Http2Connection {
       self._write_response(stream, request, response)
     } as write_error
 
-    self._streams.remove(stream.id)
+    if stream.feed == nil {
+      self._streams.remove(stream.id)
+    }
 
     if write_error {
       raise write_error
@@ -826,9 +916,7 @@ class Http2Connection {
     request.authority = authority
     request.body = stream.data
 
-    if self._conn.peer_address != nil {
-      request.remote_address = self._conn.peer_address.to_string()
-    }
+    request.remote_address = self._conn.peer_text()
 
     var cookie_header = fields.get('cookie', nil)
     if cookie_header != nil {
@@ -887,10 +975,13 @@ class Http2Connection {
     }
 
     if source == nil {
-      self.send_data(stream, response.body, true)
+      self._send_body(stream, response.body)
     } else if source[0] == 'file' {
       self._send_file(stream, source[1], source[2], source[3])
     } else {
+      # A streamed body is written as the handler produces it, so it
+      # cannot be left for a readiness loop to send later.
+      var was_deferred = self._conn.block_output()
       var writer = Http2Writer(self, stream)
 
       catch {
@@ -903,9 +994,80 @@ class Http2Connection {
       }
 
       writer.finish()
+
+      if was_deferred {
+        self._conn.defer_output()
+      }
     }
 
     self._conn.flush()
+  }
+
+  _send_body(stream, body) {
+    if self._driven and body.length() > self._writable(stream) {
+      self._park(stream, BytesFeed(body))
+      return
+    }
+
+    self.send_data(stream, body, true)
+  }
+
+  # Leaves a body to go out as the windows open, rather than waiting
+  # for them here.
+  _park(stream, feed) {
+    stream.feed = feed
+    self._feeding.append(stream)
+  }
+
+  # Sends what it can of a parked body. Returns whether all of it went.
+  _push_feed(stream) {
+    var feed = stream.feed
+
+    while !self._conn.output_is_heavy() {
+      var available = self._writable(stream)
+
+      if available <= 0 {
+        return false
+      }
+
+      var piece = feed.next(available)
+
+      if piece == nil {
+        frames.write_frame(
+          self._conn, frames.DATA, frames.FLAG_END_STREAM, stream.id, nil,
+        )
+        self._finish_feed(stream)
+        return true
+      }
+
+      var size = piece.length()
+      var last = feed.is_done()
+
+      frames.write_frame(
+        self._conn,
+        frames.DATA,
+        last ? frames.FLAG_END_STREAM : 0,
+        stream.id,
+        piece,
+      )
+      piece.dispose()
+
+      stream.send_window -= size
+      self._send_window -= size
+
+      if last {
+        self._finish_feed(stream)
+        return true
+      }
+    }
+
+    return false
+  }
+
+  _finish_feed(stream) {
+    stream.feed.close()
+    stream.feed = nil
+    self._streams.remove(stream.id)
   }
 
   _write_headers(stream_id, block, end_stream) {
@@ -1039,6 +1201,11 @@ class Http2Connection {
   }
 
   _send_file(stream, path, offset, length) {
+    if self._driven {
+      self._park(stream, FileFeed(path, offset, length))
+      return
+    }
+
     var handle = file(path, 'rb')
 
     # A file has to actually be open before it can be seeked; reads

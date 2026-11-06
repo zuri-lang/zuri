@@ -371,5 +371,130 @@ origin.close()
 listener.close()
 
 # ===========================================================================
+# Taking connections, reading and writing without waiting
+# ===========================================================================
+
+var ready_listener = net.TcpStream()
+ready_listener.bind('127.0.0.1:0')
+
+var ready_address = ready_listener.local_address().to_string()
+var ready_acceptor = net.Acceptor(ready_listener)
+
+assert ready_acceptor.take() == nil, 'take() does not wait for a connection'
+
+var ready_client = net.TcpStream()
+ready_client.connect(ready_address)
+
+var ready_watch = net.Poller()
+ready_watch.add(ready_listener, 1, net.READABLE)
+ready_watch.wait(5000)
+
+var ready_side = ready_acceptor.take()
+
+assert ready_side != nil, 'and hands over one that is waiting'
+ok('Acceptor.take() never waits')
+
+ready_side.set_non_blocking(true)
+assert ready_side.try_read(16) == nil, 'nothing arrived is nil, not an error'
+
+var ready_reads = net.Poller()
+ready_reads.add(ready_side, 2, net.READABLE)
+
+ready_client.write_all('hello')
+ready_reads.wait(5000)
+
+assert ready_side.try_read(16).to_string() == 'hello',
+  'what arrived is returned'
+ok('try_read() reports nothing arrived as nil')
+
+assert ready_side.try_write('abcdef', 2) == 4, 'offset skips what already went'
+ready_client.set_read_timeout(5000)
+assert ready_client.read(16).to_string() == 'cdef', 'and the rest arrives'
+
+var filler = bytes(1048576)
+var taken = 1
+
+while taken > 0 {
+  taken = ready_side.try_write(filler)
+}
+
+assert ready_side.try_write(filler) == 0, 'a full socket takes nothing'
+ok('try_write() reports a full socket as 0')
+
+ready_client.close()
+assert ready_reads.wait(5000).length() == 1, 'a close makes the socket readable'
+
+var at_end = false
+
+catch {
+  while !at_end {
+    var tail = ready_side.try_read(65536)
+    at_end = tail != nil and tail.length() == 0
+  }
+} as reset
+
+assert at_end or reset != nil, 'try_read() reaches the end of a closed stream'
+ready_side.close()
+ok('try_read() sees the end of the stream')
+
+var driven_done = isolate.channel(1)
+var driven_task = isolate.spawn(
+  net_poll_helper.tls_hurried_client, ready_address, driven_done,
+)
+
+ready_watch.wait(5000)
+
+var driven_tcp = ready_acceptor.take()
+var driven_config = tls.TlsConfig()
+driven_config.set_cert_chain(server_cert, server_key)
+
+var driven = tls.TlsStream.begin_accept(driven_tcp, driven_config)
+driven.set_non_blocking(true)
+
+var driven_poller = net.Poller()
+driven_poller.add(driven, 7, net.READABLE)
+
+var step = driven.advance_handshake()
+
+while step != 0 {
+  driven_poller.modify(7, step)
+  driven_poller.wait(5000)
+  step = driven.advance_handshake()
+}
+
+ok('a handshake can be driven by readiness')
+
+driven_poller.modify(7, net.READABLE)
+
+var arrived_text = bytes(0)
+var read_started = time()
+
+while arrived_text.length() < 10 and time() - read_started < 5 {
+  driven_poller.wait(1000)
+
+  var part = driven.try_read(64)
+
+  if part != nil {
+    arrived_text.extend(part)
+  }
+}
+
+assert arrived_text.to_string() == 'early bird',
+  'what it sent arrives decrypted'
+assert driven.try_read(64) == nil, 'and then there is nothing to read'
+assert driven.try_write('ok') == 2, 'the session takes what it can'
+assert driven.try_flush(), 'and it reaches the socket'
+ok('a TLS stream reads and writes without waiting')
+
+driven.close_now()
+driven_done.send('done')
+
+catch {
+  driven_task.join(5000)
+}
+
+ready_listener.close()
+
+# ===========================================================================
 echo ''
 echo '  All ${_passed} checks passed.'

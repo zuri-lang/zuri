@@ -4,6 +4,7 @@
  */
 
 import http
+import net
 import os
 
 /**
@@ -22,6 +23,25 @@ def hold_connection(ready, address, idle_seconds) {
 
   catch {
     client.close()
+  }
+}
+
+/**
+ * Sends half a request head and then sits there, which a worker has to
+ * wait out without waiting on it.
+ */
+def hold_half_a_request(ready, address, idle_seconds) {
+  var socket = net.TcpStream()
+
+  catch {
+    socket.connect(address)
+    socket.write_all('GET /ping HT')
+    ready.send('holding')
+    os.sleep(idle_seconds)
+  }
+
+  catch {
+    socket.close()
   }
 }
 

@@ -1,0 +1,124 @@
+/**
+ * Servers for `tests/libs/http_listen.zu`, module-bound so an isolate
+ * can run them.
+ */
+
+import http
+import http.websocket
+
+var BIG_SIZE = 8388608
+
+# The throwaway self-signed pair the `net.tls` suite uses.
+var CERT = '-----BEGIN CERTIFICATE-----
+MIIBxjCCAWugAwIBAgIUKY6KD8+UhDTVfnuwbeg/aqGZjEUwCgYIKoZIzj0EAwIw
+HDEaMBgGA1UEAwwRWnVyaSBUZXN0IFJvb3QgQ0EwHhcNMjYwODI4MDE1MjE1WhcN
+MzYwODI1MDE1MjE1WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQktM0xvAHGLQrfkjDG9GgqlkQ7Jp/M3J5nouQxtkO2DRbN
+8wTgShvkOwPLtTn4QsZzNvNcfYd5yVw3QEbWUygko4GSMIGPMAwGA1UdEwEB/wQC
+MAAwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMBMBoGA1UdEQQT
+MBGCCWxvY2FsaG9zdIcEfwAAATAdBgNVHQ4EFgQUYWdSTBIeJ8/+kYIfmzI1jQtz
+t3owHwYDVR0jBBgwFoAUN3Y9x0t+nPvtrH8VBF783RE4PfcwCgYIKoZIzj0EAwID
+SQAwRgIhAKyTEhmIrP+F4HYULeh1NlzYB+Fn8xgSY3OHQEemXM0eAiEA+zIv/TKY
+ygqPPVtOmV8uMme4Jp3vxdZJhkGY4OPTTUQ=
+-----END CERTIFICATE-----
+'
+
+var KEY = '-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIKCvr/d71GiDa9QHie6zXXMk+h/PJ6j2mc2dr31IL/xIoAoGCCqGSM49
+AwEHoUQDQgAEJLTNMbwBxi0K35IwxvRoKpZEOyafzNyeZ6LkMbZDtg0WzfME4Eob
+5DsDy7U5+ELGczbzXH2HeclcN0BG1lMoJA==
+-----END EC PRIVATE KEY-----
+'
+
+/**
+ * Runs one server on `listen()` until a request to `/quit`.
+ *
+ * @param Channel port_channel: told the bound address
+ * @param dict settings: `HttpServer` fields to set, plus `file` (a path
+ *    to serve at `/file`) and `cert` and `key` for TLS
+ */
+def serve(port_channel, settings) {
+  var server = http.HttpServer(0, '127.0.0.1')
+  var big = 'x' * BIG_SIZE
+  var connects = [0]
+  var disconnects = [0]
+  var errors = []
+
+  server.compression = false
+
+  for name, value in settings {
+    if hasprop(server, name) {
+      setprop(server, name, value)
+    }
+  }
+
+  if settings.get('cert', nil) != nil {
+    server.use_tls(settings.cert, settings.key)
+  }
+
+  server.on_connect(@(connection) {
+    connects[0] += 1
+  })
+
+  server.on_disconnect(@(connection) {
+    disconnects[0] += 1
+  })
+
+  server.on_error(@(error, connection) {
+    errors.append(error.message)
+  })
+
+  server.get('/ping', @(request, response) {
+    response.text('pong')
+  })
+
+  server.get('/say/:word', @(request, response) {
+    response.text(request.param('word'))
+  })
+
+  server.get('/big', @(request, response) {
+    response.text(big)
+  })
+
+  server.get('/file', @(request, response) {
+    response.file(settings.file)
+  })
+
+  server.get('/stream', @(request, response) {
+    response.stream(@(writer) {
+      writer.write('one ')
+      writer.flush()
+      writer.write('two')
+    })
+  })
+
+  server.post('/echo', @(request, response) {
+    response.write(request.body)
+  })
+
+  server.get('/socket', @(request, response) {
+    var socket = websocket.accept(request, response)
+
+    socket.send('hello ' + socket.receive().text())
+    socket.close()
+  })
+
+  server.get('/events', @(request, response) {
+    response.json({
+      connects: connects[0],
+      disconnects: disconnects[0],
+      errors,
+    })
+  })
+
+  server.get('/quit', @(request, response) {
+    response.text('bye')
+    server.close()
+  })
+
+  server.bind()
+  port_channel.send(server.address().to_string())
+  server.listen()
+
+  return disconnects[0]
+}

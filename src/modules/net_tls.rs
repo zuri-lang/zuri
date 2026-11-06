@@ -1,7 +1,7 @@
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
@@ -18,7 +18,7 @@ use crate::builtins::enforce::{
   ArgType, enforce_method_arg_count, enforce_method_arg_type, enforce_method_arg_type_any_of,
 };
 use crate::enforce_arg_count;
-use crate::modules::net_tcp::{TCP_STREAM, TCP_STREAM_UPGRADED, ZuriTcp};
+use crate::modules::net_tcp::{TCP_STREAM, TCP_STREAM_UPGRADED, ZuriTcp, is_not_ready};
 use crate::modules::{BuiltinModuleDef, native, read_partial, socket_error};
 use crate::vm::object::ZuriContext;
 use crate::vm::value::Value;
@@ -77,7 +77,23 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       "tls_wrap_server",
       native(vm, "wrap_server", 2, false, tls_wrap_server),
     ),
+    (
+      "tls_begin_server",
+      native(vm, "begin_server", 2, false, tls_begin_server),
+    ),
+    (
+      "tls_set_non_blocking",
+      native(vm, "set_non_blocking", 2, false, tls_set_non_blocking),
+    ),
+    (
+      "tls_advance_handshake",
+      native(vm, "advance_handshake", 1, false, tls_advance_handshake),
+    ),
     ("tls_read", native(vm, "read", 2, false, tls_read)),
+    (
+      "tls_try_read",
+      native(vm, "try_read", 2, false, tls_try_read),
+    ),
     (
       "tls_read_exact",
       native(vm, "read_exact", 2, false, tls_read_exact),
@@ -92,6 +108,14 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     ("tls_write", native(vm, "write", 2, true, tls_write)),
     (
+      "tls_try_write",
+      native(vm, "try_write", 3, false, tls_try_write),
+    ),
+    (
+      "tls_try_flush",
+      native(vm, "try_flush", 1, false, tls_try_flush),
+    ),
+    (
       "tls_write_all",
       native(vm, "write_all", 2, true, tls_write_all),
     ),
@@ -101,6 +125,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "shutdown", 1, false, tls_shutdown),
     ),
     ("tls_close", native(vm, "close", 1, false, tls_close)),
+    (
+      "tls_close_now",
+      native(vm, "close_now", 1, false, tls_close_now),
+    ),
     (
       "tls_alpn_protocol",
       native(vm, "alpn_protocol", 1, false, tls_alpn_protocol),
@@ -510,6 +538,61 @@ impl ZuriTlsStream {
     }
   }
 
+  fn set_nonblocking(&self, nonblocking: bool) -> Result<(), String> {
+    match self {
+      ZuriTlsStream::Client(s) => s.sock.set_nonblocking(nonblocking),
+      ZuriTlsStream::Server(s) => s.sock.set_nonblocking(nonblocking),
+      ZuriTlsStream::Closed => return Err("tls: stream is closed".to_string()),
+    }
+    .map_err(socket_error)
+  }
+
+  fn try_read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, String> {
+    match self {
+      ZuriTlsStream::Client(s) => read_ready(&mut s.conn, &s.sock, buf),
+      ZuriTlsStream::Server(s) => read_ready(&mut s.conn, &s.sock, buf),
+      ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
+    }
+  }
+
+  fn try_write(&mut self, data: &[u8]) -> Result<usize, String> {
+    match self {
+      ZuriTlsStream::Client(s) => write_ready(&mut s.conn, &s.sock, data),
+      ZuriTlsStream::Server(s) => write_ready(&mut s.conn, &s.sock, data),
+      ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
+    }
+  }
+
+  fn try_flush(&mut self) -> Result<bool, String> {
+    match self {
+      ZuriTlsStream::Client(s) => send_pending(&mut s.conn, &s.sock),
+      ZuriTlsStream::Server(s) => send_pending(&mut s.conn, &s.sock),
+      ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
+    }
+  }
+
+  fn advance_handshake(&mut self) -> Result<u8, String> {
+    match self {
+      ZuriTlsStream::Client(s) => handshake_step(&mut s.conn, &s.sock),
+      ZuriTlsStream::Server(s) => handshake_step(&mut s.conn, &s.sock),
+      ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
+    }
+  }
+
+  fn shutdown_now(&mut self) -> Result<bool, String> {
+    match self {
+      ZuriTlsStream::Client(s) => {
+        s.conn.send_close_notify();
+        send_pending(&mut s.conn, &s.sock)
+      },
+      ZuriTlsStream::Server(s) => {
+        s.conn.send_close_notify();
+        send_pending(&mut s.conn, &s.sock)
+      },
+      ZuriTlsStream::Closed => Err("tls: stream is closed".to_string()),
+    }
+  }
+
   fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), String> {
     match self {
       ZuriTlsStream::Client(s) => s.read_exact(buf).map_err(socket_error),
@@ -774,19 +857,161 @@ fn take_tcp_stream(ctx: &mut ZuriContext, idx: usize) -> Result<TcpStream, Strin
 /// real reason. A read/write *after* the handshake has none of this
 /// problem - each call is independent at the TCP-byte level - so those
 /// keep the normal "caller retries the same call" contract.
-fn drive_handshake<C, T, S>(conn: &mut C, sock: &mut T) -> Result<(), String>
+///
+/// A read that hits the socket's own timeout reports `WouldBlock` as
+/// well, so the socket's read timeout is what bounds the whole
+/// handshake. Without it, a peer that connects and says nothing would
+/// hold this loop forever.
+fn drive_handshake<C, S>(conn: &mut C, sock: &mut TcpStream) -> Result<(), String>
 where
   C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
-  T: Read + Write,
   S: rustls::SideData,
 {
+  let deadline = sock
+    .read_timeout()
+    .ok()
+    .flatten()
+    .map(|limit| Instant::now() + limit);
+
   loop {
     match conn.complete_io(sock) {
       Ok(_) => return Ok(()),
-      Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+      Err(e) if e.kind() == ErrorKind::WouldBlock => {
+        if deadline.is_some_and(|at| Instant::now() >= at) {
+          return Err("tls: the handshake timed out".to_string());
+        }
+
         std::thread::sleep(std::time::Duration::from_millis(1));
       },
       Err(e) => return Err(e.to_string()),
+    }
+  }
+}
+
+/// Interest bits a handshake step asks for, the same values
+/// `net.READABLE` and `net.WRITABLE` carry.
+const WANTS_READ: u8 = 1;
+const WANTS_WRITE: u8 = 2;
+
+/// Sends whatever encrypted data the session holds, as far as a
+/// non-blocking socket takes it now. Returns whether all of it went.
+fn send_pending<C, S>(conn: &mut C, mut sock: &TcpStream) -> Result<bool, String>
+where
+  C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
+  S: rustls::SideData,
+{
+  while conn.wants_write() {
+    match conn.write_tls(&mut sock) {
+      Ok(_) => {},
+      Err(e) if is_not_ready(&e) => return Ok(false),
+      Err(e) => return Err(socket_error(e)),
+    }
+  }
+
+  Ok(true)
+}
+
+/// Decrypts what has arrived, leaving the alert a bad record produced
+/// on its way to the peer before reporting the failure.
+fn process_received<C, S>(conn: &mut C, sock: &TcpStream) -> Result<(), String>
+where
+  C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
+  S: rustls::SideData,
+{
+  if let Err(error) = conn.process_new_packets() {
+    let _ = send_pending(conn, sock);
+    return Err(error.to_string());
+  }
+
+  Ok(())
+}
+
+/// Reads application data from a non-blocking socket. `None` means
+/// nothing is ready yet, which includes the first part of a record
+/// whose remainder has not arrived: rustls holds on to it, and the
+/// socket reports readable again once more comes. `Some(0)` is the end
+/// of the stream.
+fn read_ready<C, S>(
+  conn: &mut C,
+  mut sock: &TcpStream,
+  buffer: &mut [u8],
+) -> Result<Option<usize>, String>
+where
+  C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
+  S: rustls::SideData,
+{
+  loop {
+    match conn.reader().read(buffer) {
+      Ok(count) => return Ok(Some(count)),
+      Err(e) if e.kind() == ErrorKind::WouldBlock => {},
+      Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(Some(0)),
+      Err(e) => return Err(socket_error(e)),
+    }
+
+    match conn.read_tls(&mut sock) {
+      Ok(0) => {
+        process_received(conn, sock)?;
+
+        return match conn.reader().read(buffer) {
+          Ok(count) => Ok(Some(count)),
+          Err(_) => Ok(Some(0)),
+        };
+      },
+      Ok(_) => {
+        process_received(conn, sock)?;
+        send_pending(conn, sock)?;
+      },
+      Err(e) if is_not_ready(&e) => return Ok(None),
+      Err(e) => return Err(socket_error(e)),
+    }
+  }
+}
+
+/// Hands `data` to the session and on to a non-blocking socket, and
+/// returns how much of it the session took. What it took may still be
+/// sitting encrypted in the session: `send_pending` reports that.
+fn write_ready<C, S>(conn: &mut C, sock: &TcpStream, data: &[u8]) -> Result<usize, String>
+where
+  C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
+  S: rustls::SideData,
+{
+  let mut taken = 0;
+
+  while send_pending(conn, sock)? && taken < data.len() {
+    let accepted = conn.writer().write(&data[taken..]).map_err(socket_error)?;
+
+    if accepted == 0 {
+      break;
+    }
+
+    taken += accepted;
+  }
+
+  Ok(taken)
+}
+
+/// Takes a handshake on a non-blocking socket as far as it can go.
+/// Returns `0` once it has finished, and otherwise what the caller
+/// should wait for before asking again.
+fn handshake_step<C, S>(conn: &mut C, mut sock: &TcpStream) -> Result<u8, String>
+where
+  C: std::ops::DerefMut + std::ops::Deref<Target = rustls::ConnectionCommon<S>>,
+  S: rustls::SideData,
+{
+  loop {
+    if !send_pending(conn, sock)? {
+      return Ok(WANTS_WRITE);
+    }
+
+    if !conn.is_handshaking() {
+      return Ok(0);
+    }
+
+    match conn.read_tls(&mut sock) {
+      Ok(0) => return Err("tls: the peer closed the connection during the handshake".to_string()),
+      Ok(_) => process_received(conn, sock)?,
+      Err(e) if is_not_ready(&e) => return Ok(WANTS_READ),
+      Err(e) => return Err(socket_error(e)),
     }
   }
 }
@@ -838,6 +1063,41 @@ fn tls_wrap_server(ctx: &mut ZuriContext) -> Result<Value, String> {
   )
 }
 
+fn tls_begin_server(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
+  enforce_method_arg_type!(ctx, 1, ArgType::PtrOf(TLS_CONFIG));
+
+  let config = with_config_at(ctx, 1, |config| config.build_server_config())?;
+  let tcp_stream = take_tcp_stream(ctx, 0)?;
+
+  let conn = ServerConnection::new(config).map_err(|e| e.to_string())?;
+
+  Ok(ctx.heap().alloc_ptr(
+    TLS_STREAM,
+    ZuriTlsStream::Server(StreamOwned::new(conn, tcp_stream)),
+  ))
+}
+
+fn tls_set_non_blocking(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+  enforce_method_arg_type!(ctx, 1, ArgType::Bool);
+
+  let nonblocking = ctx.args[1].as_bool();
+  with_stream(ctx, |s| s.set_nonblocking(nonblocking))?;
+
+  Ok(Value::nil())
+}
+
+fn tls_advance_handshake(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+
+  let step = with_stream(ctx, |s| s.advance_handshake())?;
+  Ok(Value::number(step as f64))
+}
+
 // ---------------------------------------------------------------------------
 // TlsStream I/O natives
 // ---------------------------------------------------------------------------
@@ -860,6 +1120,28 @@ fn tls_read(ctx: &mut ZuriContext) -> Result<Value, String> {
 
   let length = ctx.args[1].as_number() as usize;
   let data = read_partial(length, |buffer| with_stream(ctx, |s| s.read(buffer)))?;
+  Ok(ctx.heap().alloc_bytes(data))
+}
+
+fn tls_try_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let length = ctx.args[1].as_number() as usize;
+  let mut ready = true;
+
+  let data = read_partial(length, |buffer| {
+    with_stream(ctx, |s| s.try_read(buffer)).map(|count| {
+      ready = count.is_some();
+      count.unwrap_or(0)
+    })
+  })?;
+
+  if !ready {
+    return Ok(Value::nil());
+  }
+
   Ok(ctx.heap().alloc_bytes(data))
 }
 
@@ -906,6 +1188,32 @@ fn tls_write(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(Value::number(written as f64))
 }
 
+fn tls_try_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 2);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+
+  let val = ctx.args[1];
+  let offset = ctx.args[2].as_number() as usize;
+
+  let taken = if val.is_string() {
+    let data = val.as_str().as_bytes();
+    with_stream(ctx, |s| s.try_write(&data[offset.min(data.len())..]))?
+  } else {
+    val.with_bytes(|data| with_stream(ctx, |s| s.try_write(&data[offset.min(data.len())..])))?
+  };
+
+  Ok(Value::number(taken as f64))
+}
+
+fn tls_try_flush(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+
+  Ok(Value::bool(with_stream(ctx, |s| s.try_flush())?))
+}
+
 fn tls_write_all(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
@@ -945,6 +1253,22 @@ fn tls_close(ctx: &mut ZuriContext) -> Result<Value, String> {
     // Best-effort close_notify; a peer that's already gone shouldn't stop
     // us from tearing the connection down on our side.
     let _ = stream.shutdown();
+    *stream = ZuriTlsStream::Closed;
+  }
+  ptr.type_name = TLS_STREAM_CLOSED;
+
+  Ok(Value::nil())
+}
+
+fn tls_close_now(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 0);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TLS_STREAM));
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  if let Some(stream) = ptr.downcast_mut::<ZuriTlsStream>() {
+    // A peer that has stopped reading must not hold up the caller, so
+    // close_notify goes out only if the socket has room for it now.
+    let _ = stream.shutdown_now();
     *stream = ZuriTlsStream::Closed;
   }
   ptr.type_name = TLS_STREAM_CLOSED;

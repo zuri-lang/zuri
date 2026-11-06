@@ -26,6 +26,24 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "parse_request_head", 5, false, parse_request_head_fn),
     ),
     (
+      "is_valid_field_name",
+      native(vm, "is_valid_field_name", 1, false, is_valid_field_name_fn),
+    ),
+    (
+      "is_valid_field_value",
+      native(
+        vm,
+        "is_valid_field_value",
+        1,
+        false,
+        is_valid_field_value_fn,
+      ),
+    ),
+    (
+      "append_head",
+      native(vm, "append_head", 6, false, append_head_fn),
+    ),
+    (
       "huffman_decode",
       native(vm, "huffman_decode", 3, false, huffman_decode_fn),
     ),
@@ -404,6 +422,98 @@ fn parse_request_head_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
       max_header_count,
     )
   }
+}
+
+/// A `tchar` of RFC 9110 §5.6.2, which is what a field name is made of.
+fn is_token_byte(byte: u8) -> bool {
+  byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
+fn is_valid_field_name_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+
+  let name = ctx.args[0].as_str().as_bytes();
+
+  Ok(Value::bool(
+    !name.is_empty() && name.iter().all(|&byte| is_token_byte(byte)),
+  ))
+}
+
+fn is_valid_field_value_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 1);
+  enforce_arg_type!(ctx, 0, ArgType::String);
+
+  let value = ctx.args[0].as_str().as_bytes();
+
+  Ok(Value::bool(
+    !value.iter().any(|byte| matches!(byte, b'\r' | b'\n' | 0)),
+  ))
+}
+
+fn append_field(out: &mut Vec<u8>, name: &str, value: Value) {
+  out.extend_from_slice(name.as_bytes());
+  out.extend_from_slice(b": ");
+
+  if value.is_string() {
+    out.extend_from_slice(value.as_str().as_bytes());
+  } else {
+    out.extend_from_slice(format!("{value}").as_bytes());
+  }
+
+  out.extend_from_slice(b"\r\n");
+}
+
+/// Appends a whole response head to a buffer: the status line, the
+/// fields of a `Headers`, one `Set-Cookie` per cookie, and the blank
+/// line that ends it.
+fn append_head_fn(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_arg_count!(ctx, 6);
+  enforce_arg_type!(ctx, 0, ArgType::Bytes);
+  enforce_arg_type!(ctx, 1, ArgType::String);
+  enforce_arg_type!(ctx, 2, ArgType::Number);
+  enforce_arg_type!(ctx, 3, ArgType::String);
+  enforce_arg_type!(ctx, 4, ArgType::Dict);
+  enforce_arg_type!(ctx, 5, ArgType::List);
+
+  let version = ctx.args[1].as_str();
+  let status = ctx.args[2].as_number() as u32;
+  let reason = ctx.args[3].as_str();
+  let fields = ctx.args[4];
+  let cookies = ctx.args[5];
+
+  ctx.args[0].with_bytes_mut(|out| {
+    out.extend_from_slice(b"HTTP/");
+    out.extend_from_slice(version.as_bytes());
+    out.extend_from_slice(format!(" {status} ").as_bytes());
+    out.extend_from_slice(reason.as_bytes());
+    out.extend_from_slice(b"\r\n");
+
+    // Each field is stored as `[name as spelled, [values]]`.
+    fields.with_dict(|storage| {
+      for (_, entry) in &storage.entries {
+        entry.with_list(|field| {
+          let name = field[0].as_str();
+
+          field[1].with_list(|values| {
+            for value in values {
+              append_field(out, name, *value);
+            }
+          });
+        });
+      }
+    });
+
+    cookies.with_list(|items| {
+      for cookie in items {
+        append_field(out, "Set-Cookie", *cookie);
+      }
+    });
+
+    out.extend_from_slice(b"\r\n");
+  });
+
+  Ok(Value::nil())
 }
 
 // ---------------------------------------------------------------------------

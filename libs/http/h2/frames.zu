@@ -194,6 +194,32 @@ def read_u24(data, offset: number) {
 }
 
 /**
+ * Whether a whole frame is already buffered on a connection, so that
+ * `read_frame()` will not touch the socket.
+ *
+ * A frame over `max_frame_size` counts as ready from its header alone.
+ * `read_frame()` refuses it there, and waiting for the rest would hold
+ * the buffer open to a peer that declared more than it may send.
+ *
+ * @param Connection connection
+ * @param number max_frame_size
+ * @returns bool
+ */
+def frame_ready(connection, max_frame_size: number) {
+  var available = connection.buffered()
+
+  if available < 9 {
+    return false
+  }
+
+  var length = (connection.byte_at(0) << 16)
+    | (connection.byte_at(1) << 8)
+    | connection.byte_at(2)
+
+  return length > max_frame_size or available >= 9 + length
+}
+
+/**
  * Reads one frame off a connection.
  *
  * Padding is stripped here, so a caller never has to think about it,

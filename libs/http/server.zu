@@ -16,6 +16,7 @@
 import .body
 import .errors { ConnectionError, HttpError, TimeoutError, TooLargeError }
 import .h1
+import .loop { ConnectionLoop }
 import .negotiate
 import .request { HttpRequest }
 import .response { HttpResponse }
@@ -28,6 +29,19 @@ import .util
 
 import net
 import net.tls
+
+# How long `listen()` waits for something to do before looking again,
+# in milliseconds. Anything that arrives ends the wait at once, so this
+# only decides how soon a stopped server and a trapped signal are
+# noticed.
+var _LISTEN_INTERVAL = 100
+
+# What the start of an HTTP/2 connection preface looks like. `PRI` is
+# not a method any HTTP/1.1 client sends, so this is unambiguous.
+var _PREFACE_START = 'PRI '.to_bytes()
+
+# The size of the whole connection preface, in bytes.
+var _PREFACE_SIZE = 24
 
 # Media types worth compressing on the way out. Anything already
 # compressed - an image, a video, an archive - only gets bigger and
@@ -126,6 +140,14 @@ class HttpServer {
    * @type number
    */
   var keep_alive_timeout = 5000
+
+  /**
+   * The most connections `listen()` holds open at once. Past this,
+   * connections wait in the operating system's listen queue until one
+   * closes. `http.serve()` has its own limit for each worker.
+   * @type number
+   */
+  var max_open_connections = 1024
 
   /**
    * The most requests one connection may serve before it is closed.
@@ -674,45 +696,28 @@ class HttpServer {
    * Binds the socket and serves connections until `close()` is
    * called.
    *
-   * Connections are served one at a time on the calling thread. For a
+   * Every connection is served on the calling thread, interleaved, so
+   * a client that goes quiet holds up nobody else. A handler still
+   * runs to completion before the next request is looked at. For a
    * server that uses more than one core, see `http.serve()`, which
    * runs this same request pipeline across a pool of isolates.
    *
    * @throws HttpError if the socket cannot be bound
    */
-  _accept_next_safe() {
-    catch {
-      return self._acceptor.next()
-    } as accept_error {
-      return accept_error
-    }
-  }
-
   listen() {
     self.bind()
 
+    var loop = ConnectionLoop(self, self.max_open_connections)
+
+    loop.watch(self._acceptor)
+
+    # Each round is also what gives a stopped server and a trapped
+    # signal their turn.
     while self._listening {
-      var client = self._accept_next_safe()
-
-      if instance_of(client, Error) {
-        # A listener closed under it is what a stopped server looks
-        # like from here, and is not an error worth reporting.
-        if !self._listening {
-          break
-        }
-
-        self._report(client, nil)
-        continue
-      }
-
-      # Nothing arrived within the interval. Round again, which is
-      # what gives a stopped server and a trapped signal their turn.
-      if client == nil {
-        continue
-      }
-
-      self.serve_connection(client)
+      loop.turn(_LISTEN_INTERVAL)
     }
+
+    loop.finish()
   }
 
   /**
@@ -791,7 +796,9 @@ class HttpServer {
   /**
    * Stops the server and closes the listening socket. The accept loop
    * reads the stopped flag on its next round and ends, within one
-   * `net.Acceptor` interval of this call.
+   * `net.Acceptor` interval of this call. `listen()` then closes every
+   * connection it still holds, after giving what they have queued a
+   * chance to go out.
    */
   close() {
     self._listening = false
@@ -810,7 +817,9 @@ class HttpServer {
    * This is the whole per-connection pipeline - TLS handshake,
    * keep-alive loop, parsing, dispatch, response - and is public so
    * that a caller running its own accept loop (or handing sockets to
-   * worker isolates) can reuse it exactly as `listen()` does.
+   * worker isolates) can reuse it. Its reads wait for the peer, so that
+   * caller is serving one connection at a time. `listen()` is not: see
+   * `http.loop`.
    *
    * @param TcpStream client
    */
@@ -876,24 +885,63 @@ class HttpServer {
       return nil
     }
 
+    self.announce_connection(connection)
+
+    return connection
+  }
+
+  /**
+   * Turns an accepted socket into a `Connection` the way
+   * `accept_connection()` does, except that a TLS handshake is only
+   * started, and nobody is told yet. This is for a readiness loop,
+   * which cannot wait on a peer here: it takes the handshake forward
+   * with `Connection.advance_handshake()` and calls
+   * `announce_connection()` when that finishes.
+   *
+   * @param TcpStream client
+   * @returns ?Connection: `nil` when the connection could not be set
+   *    up, in which case the failure has been reported to `on_error()`
+   *    listeners
+   */
+  begin_connection(client) {
+    catch {
+      return stream.accept_pending(client, {
+        tls_config: self._tls_config,
+        read_timeout: self.read_timeout,
+        write_timeout: self.write_timeout,
+      })
+    } as error {
+      catch {
+        client.close()
+      }
+      self._report(error, nil)
+
+      return nil
+    }
+  }
+
+  /**
+   * Notifies `on_connect()` listeners of a connection that is ready to
+   * use.
+   *
+   * @param Connection connection
+   */
+  announce_connection(connection) {
     for listener in self._connect_listeners {
       catch {
         listener(connection)
       }
     }
-
-    return connection
   }
 
   /**
    * Reads and answers exactly one request, and reports whether the
    * connection may be used again.
    *
-   * This is the unit an event loop works in. `_serve_requests()` calls
-   * it in a loop for one connection at a time, which is what
-   * `listen()` does; a polled worker calls it once per connection that
-   * has actually become readable, which is what lets one thread hold
-   * many connections at once.
+   * This is what a caller running its own accept loop works in, one
+   * connection at a time. Its reads wait for the peer, so a loop
+   * serving many connections on one thread does not use it: see
+   * `http.loop`.
    *
    * @param Connection connection
    * @param ?number served: how many requests this connection has
@@ -925,20 +973,9 @@ class HttpServer {
       connection.set_read_timeout(self.keep_alive_timeout)
     }
 
-    var request = self._read_request_head(connection)
-
-    if instance_of(request, Error) {
-      # An idle keep-alive connection timing out, or a peer closing
-      # between requests, is the normal end of a connection.
-      if instance_of(request, TimeoutError) or
-        instance_of(request, ConnectionError) {
-        return false
-      }
-
-      self._send_early_error(connection, request)
-
-      return false
-    }
+    var request = self._accepted_head(
+      connection, self._read_request_head(connection),
+    )
 
     if request == nil {
       return false
@@ -949,9 +986,106 @@ class HttpServer {
       connection.set_read_timeout(self.read_timeout)
     }
 
+    return self.answer(connection, request, already)
+  }
+
+  # Sorts out what reading a head produced: the request, or nil when
+  # there is none to answer, with a bad one already dealt with.
+  _accepted_head(connection, request) {
+    if instance_of(request, Error) {
+      # An idle keep-alive connection timing out, or a peer closing
+      # between requests, is the normal end of a connection.
+      if instance_of(request, TimeoutError) or
+        instance_of(request, ConnectionError) {
+        return nil
+      }
+
+      self._send_early_error(connection, request)
+
+      return nil
+    }
+
+    return request
+  }
+
+  _request_from_head_safe(connection, head) {
+    catch {
+      return h1.request_from_head(connection, head)
+    } as error {
+      return error
+    }
+  }
+
+  /**
+   * Builds the request a parsed head describes, answering a bad one on
+   * the spot.
+   *
+   * @param Connection connection
+   * @param list head: what `Connection.try_request_head()` returned
+   * @returns ?HttpRequest: `nil` when there is no request to answer and
+   *    the connection should close
+   */
+  request_from_head(connection, head) {
+    return self._accepted_head(
+      connection, self._request_from_head_safe(connection, head),
+    )
+  }
+
+  /**
+   * Whether `answer()` can run without waiting on the peer, which it
+   * can once the body has arrived or there is no point waiting for it.
+   * A request that expects `100 Continue` is told to go ahead here,
+   * since it will not send its body until it is.
+   *
+   * @param Connection connection
+   * @param HttpRequest request
+   * @returns bool
+   */
+  body_arrived(connection, request) {
+    var reader = request.body_reader
+
+    if reader == nil or reader.mode == 'empty' {
+      return true
+    }
+
+    # Refused from the head alone, without a byte of the body.
+    if reader.mode == 'length' and reader.length > self.max_body_size {
+      return true
+    }
+
+    if request.expects_continue() {
+      var expectation = request.headers.get('expect', '')
+
+      if expectation.trim().lower() != '100-continue' {
+        return true
+      }
+
+      if !request.context.get('continued', false) {
+        request.context['continued'] = true
+
+        if !self._send_continue_safe(connection) {
+          return true
+        }
+      }
+    }
+
+    return reader.is_buffered(self.max_body_size)
+  }
+
+  /**
+   * Answers a request whose head has been read, and reports whether
+   * the connection may be used again.
+   *
+   * @param Connection connection
+   * @param HttpRequest request
+   * @param number served: how many requests this connection has
+   *    already answered
+   * @returns bool: whether to keep the connection open
+   */
+  answer(connection, request, served) {
     var is_final = self.max_keep_alive_requests != nil
       and self.max_keep_alive_requests > 0
-      and already + 1 >= self.max_keep_alive_requests
+      and served + 1 >= self.max_keep_alive_requests
 
     if !self._serve_one(connection, request, is_final) {
       return false
@@ -975,6 +1109,63 @@ class HttpServer {
     session.max_body_size = self.max_body_size
     session.start_server(nil)
     session.serve(self)
+  }
+
+  /**
+   * The session for a connection that speaks HTTP/2, for a caller that
+   * drives it rather than handing it to `serve_http2()`. Its first job
+   * is `start_server()`, which reads the whole connection preface.
+   *
+   * @param Connection connection
+   * @returns Http2Connection
+   */
+  open_http2(connection) {
+    var session = h2.Http2Connection(connection, true)
+    session.max_body_size = self.max_body_size
+
+    return session
+  }
+
+  /**
+   * How many bytes `start_server()` reads.
+   *
+   * @returns number
+   */
+  http2_preface_size() {
+    return _PREFACE_SIZE
+  }
+
+  /**
+   * Works out from what is already buffered whether a connection is
+   * going to speak HTTP/2, without reading anything.
+   *
+   * @param Connection connection
+   * @returns ?bool: `nil` until enough has arrived to tell
+   */
+  sniff_http2(connection) {
+    if !self.http2 {
+      return false
+    }
+
+    if connection.secure {
+      return connection.alpn == 'h2'
+    }
+
+    var size = _PREFACE_START.length()
+    var available = connection.buffered()
+    var compare = available < size ? available : size
+
+    iter var i = 0; i < compare; i++ {
+      if connection.byte_at(i) != _PREFACE_START[i] {
+        return false
+      }
+    }
+
+    if available >= size {
+      return true
+    }
+
+    return connection.peer_finished() ? false : nil
   }
 
   /**
@@ -1164,6 +1355,10 @@ class HttpServer {
       return true
     }
 
+    if reader.mode == 'empty' and !request.headers.contains('expect') {
+      return true
+    }
+
     var declared = request.content_length()
 
     if declared > self.max_body_size {
@@ -1185,7 +1380,8 @@ class HttpServer {
         return false
       }
 
-      if !self._send_continue_safe(connection) {
+      if !request.context.get('continued', false)
+        and !self._send_continue_safe(connection) {
         return false
       }
     }

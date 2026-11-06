@@ -36,6 +36,9 @@ var _COMPACT_THRESHOLD = 32768
 # syscall per header line, and on TLS a record per header line.
 var _WRITE_HIGH_WATER = 65536
 
+# How much of a file is moved per read while a socket has room for it.
+var _FEED_CHUNK = 262144
+
 # The messages the platform produces when a read or write hits its
 # configured timeout. Errors cross the native boundary as plain
 # strings, so this is the only way to tell "nothing arrived in time"
@@ -68,6 +71,128 @@ def is_timeout_error(message) {
   }
 
   return false
+}
+
+/**
+ * Part of a file, handed over a piece at a time so a response can go
+ * out as the socket makes room for it instead of all at once.
+ */
+class FileFeed {
+
+  var _handle
+  var _remaining = 0
+
+  /**
+   * @param string path
+   * @param number offset
+   * @param number length
+   */
+  @new(path, offset, length) {
+    self._handle = file(path, 'rb')
+
+    # A file has to actually be open before it can be seeked; reads
+    # open it lazily, but a seek before the first read does not.
+    self._handle.open()
+
+    if offset > 0 {
+      self._handle.seek(offset, 0)
+    }
+
+    self._remaining = length
+  }
+
+  /**
+   * The next piece, of at most `limit` bytes.
+   *
+   * @param number limit
+   * @returns ?bytes: `nil` once there is nothing more
+   */
+  next(limit) {
+    if self._remaining <= 0 {
+      return nil
+    }
+
+    var want = limit < self._remaining ? limit : self._remaining
+    var chunk = self._handle.read(want)
+
+    if chunk == nil or chunk.length() == 0 {
+      self._remaining = 0
+      return nil
+    }
+
+    self._remaining -= chunk.length()
+
+    return chunk
+  }
+
+  /**
+   * Whether the last piece has been handed over.
+   *
+   * @returns bool
+   */
+  is_done() {
+    return self._remaining <= 0
+  }
+
+  /**
+   * Releases the file.
+   */
+  close() {
+    self._handle.close()
+  }
+}
+
+/**
+ * A body already in memory, with the same shape as `FileFeed`.
+ */
+class BytesFeed {
+
+  var _data
+  var _at = 0
+
+  /**
+   * @param bytes data
+   */
+  @new(data) {
+    self._data = data
+    self._at = 0
+  }
+
+  /**
+   * The next piece, of at most `limit` bytes.
+   *
+   * @param number limit
+   * @returns ?bytes: `nil` once there is nothing more
+   */
+  next(limit) {
+    var total = self._data.length()
+
+    if self._at >= total {
+      return nil
+    }
+
+    var end = self._at + limit < total ? self._at + limit : total
+    var piece = self._data[self._at, end]
+
+    self._at = end
+
+    return piece
+  }
+
+  /**
+   * Whether the last piece has been handed over.
+   *
+   * @returns bool
+   */
+  is_done() {
+    return self._at >= self._data.length()
+  }
+
+  /**
+   * Here for parity with `FileFeed`. There is nothing to release.
+   */
+  close() {
+  }
 }
 
 /**
@@ -118,7 +243,11 @@ class Connection {
   var _transport
   var _buf
   var _pos = 0
+  var _peer_text
   var _out
+  var _out_at = 0
+  var _deferred = false
+  var _feed
   var _closed = false
   var _eof = false
 
@@ -140,6 +269,8 @@ class Connection {
     self._transport = transport
     self._buf = bytes(0)
     self._out = bytes(0)
+    self._out_at = 0
+    self._deferred = false
     self._pos = 0
     self._closed = false
     self._eof = false
@@ -150,6 +281,20 @@ class Connection {
     self.local_address = local
     self.secure = instance_of(transport, tls.TlsStream)
     self.alpn = self.secure ? transport.alpn_protocol() : nil
+  }
+
+  /**
+   * The peer's address as text, worked out once rather than for every
+   * request on the connection.
+   *
+   * @returns ?string
+   */
+  peer_text() {
+    if self._peer_text == nil and self.peer_address != nil {
+      self._peer_text = self.peer_address.to_string()
+    }
+
+    return self._peer_text
   }
 
   /**
@@ -214,16 +359,10 @@ class Connection {
     return self._closed
   }
 
-  # Pulls one chunk from the transport into the read buffer. Returns
-  # the number of bytes added; 0 means the peer closed its write half.
-  _fill() {
-    if self._eof {
-      return 0
-    }
-
-    # Drop what has already been consumed before growing the buffer,
-    # so a connection serving thousands of keep-alive requests doesn't
-    # accumulate every byte it ever read.
+  # Drops what has already been consumed before the buffer grows, so a
+  # connection serving thousands of keep-alive requests doesn't
+  # accumulate every byte it ever read.
+  _compact() {
     if self._pos == self._buf.length() {
       self._buf.dispose()
       self._pos = 0
@@ -233,9 +372,11 @@ class Connection {
       self._buf = rest
       self._pos = 0
     }
+  }
 
-    var chunk = self._read_transport_chunk()
-
+  # Adds one chunk from the transport to the read buffer. Returns the
+  # number of bytes added; 0 means the peer closed its write half.
+  _take_chunk(chunk) {
     if chunk.length() == 0 {
       self._eof = true
       return 0
@@ -248,6 +389,103 @@ class Connection {
     self._total_read += count
 
     return count
+  }
+
+  # Pulls one chunk from the transport into the read buffer. Returns
+  # the number of bytes added; 0 means the peer closed its write half.
+  _fill() {
+    if self._eof {
+      return 0
+    }
+
+    self._compact()
+
+    return self._take_chunk(self._read_transport_chunk())
+  }
+
+  /**
+   * Pulls in what has arrived, without waiting for more. This is what
+   * a readiness loop calls instead of any of the reads below, none of
+   * which it can afford, since each of them waits.
+   *
+   * A connection that fails counts as one that closed: there is
+   * nothing more to read either way, and what was already read can
+   * still be answered.
+   *
+   * @returns ?number: the bytes added, `0` when the peer has closed
+   *    its write half, or `nil` when nothing has arrived
+   */
+  fill_ready() {
+    if self._eof {
+      return 0
+    }
+
+    self._compact()
+
+    var chunk = self._read_ready_chunk()
+
+    if chunk == nil {
+      return nil
+    }
+
+    return self._take_chunk(chunk)
+  }
+
+  _read_ready_chunk() {
+    catch {
+      return self._transport.try_read(_READ_CHUNK)
+    } as error {
+      return bytes(0)
+    }
+  }
+
+  /**
+   * Whether the peer has closed its write half, whatever is still
+   * buffered.
+   *
+   * @returns bool
+   */
+  peer_finished() {
+    return self._eof
+  }
+
+  /**
+   * The unread byte at `offset`, without consuming anything.
+   *
+   * @param number offset
+   * @returns number
+   */
+  byte_at(offset) {
+    return self._buf[self._pos + offset]
+  }
+
+  /**
+   * Where `value` next appears among the unread bytes, counted from
+   * the first of them, without consuming anything.
+   *
+   * @param number value
+   * @param number offset: where to start looking
+   * @returns number: `-1` when it is not there
+   */
+  find_byte(value, offset) {
+    var at = self._buf.index_of(value, self._pos + offset)
+    return at < 0 ? -1 : at - self._pos
+  }
+
+  /**
+   * The unread bytes between two offsets as a string, without
+   * consuming anything.
+   *
+   * @param number from
+   * @param number to
+   * @returns string
+   */
+  text_between(from, to) {
+    var part = self._buf[self._pos + from, self._pos + to]
+    var text = part.to_string()
+    part.dispose()
+
+    return text
   }
 
   /**
@@ -320,6 +558,31 @@ class Connection {
   }
 
   /**
+   * Parses a request head out of what is already buffered, without
+   * reading anything. The head stays in the buffer until `advance()`
+   * is given its size.
+   *
+   * @param number max_line
+   * @param number max_header_size
+   * @param number max_header_count
+   * @returns ?list: `nil` while the head is incomplete, otherwise what
+   *    `read_request_head()` returns
+   */
+  try_request_head(max_line, max_header_size, max_header_count) {
+    if self._buf.length() <= self._pos {
+      return nil
+    }
+
+    return _http.parse_request_head(
+      self._buf,
+      self._pos,
+      max_line,
+      max_header_size,
+      max_header_count,
+    )
+  }
+
+  /**
    * Reads and parses an HTTP/1.x request head using native Rust parsing.
    *
    * @param number max_line
@@ -332,15 +595,7 @@ class Connection {
   read_request_head(
     max_line, max_header_size, max_header_count, header_timeout,
   ) {
-    if self._pos == self._buf.length() {
-      self._buf.dispose()
-      self._pos = 0
-    } else if self._pos >= _COMPACT_THRESHOLD {
-      var rest = self._buf[self._pos,]
-      self._buf.dispose()
-      self._buf = rest
-      self._pos = 0
-    }
+    self._compact()
 
     var deadline
     var started = false
@@ -510,6 +765,171 @@ class Connection {
   }
 
   /**
+   * Hands this connection over to a readiness loop. Its socket goes
+   * into non-blocking mode, so nothing on it can stall the loop. From
+   * here on `write()` only queues and `flush()` does nothing: the loop
+   * sends what is queued with `flush_ready()`, after whatever produced
+   * it has finished, which is also what turns a batch of responses
+   * into one write.
+   */
+  defer_output() {
+    self._deferred = true
+    self._transport.set_non_blocking(true)
+  }
+
+  /**
+   * Takes the connection back from a readiness loop for anything that
+   * has to read and write as it goes, such as a streamed body or an
+   * upgraded connection. Its socket goes back to blocking mode, and
+   * what is already queued goes out first.
+   *
+   * @returns bool: whether output was deferred, so a caller can hand
+   *    it back with `defer_output()` when it is done
+   * @throws TimeoutError, ConnectionError
+   */
+  block_output() {
+    var was_deferred = self._deferred
+
+    if was_deferred {
+      self._deferred = false
+      self._transport.set_non_blocking(false)
+      self.flush()
+    }
+
+    return was_deferred
+  }
+
+  /**
+   * Whether output is deferred to a readiness loop.
+   *
+   * @returns bool
+   */
+  is_deferred() {
+    return self._deferred
+  }
+
+  /**
+   * Queues part of a file for sending behind what is already queued,
+   * to be read only as the socket makes room for it.
+   *
+   * @param string path
+   * @param number offset
+   * @param number length
+   */
+  queue_file(path, offset, length) {
+    self._feed = FileFeed(path, offset, length)
+  }
+
+  /**
+   * Whether enough is queued that a producer should stop until the
+   * socket has taken it.
+   *
+   * @returns bool
+   */
+  output_is_heavy() {
+    return self._feed != nil
+      or self._out.length() - self._out_at >= _WRITE_HIGH_WATER
+  }
+
+  /**
+   * Sends as much of what is queued as the socket takes right now,
+   * without waiting.
+   *
+   * @returns bool: whether anything is still waiting for room
+   * @throws ConnectionError
+   */
+  flush_ready() {
+    while true {
+      var queued = self._out.length()
+
+      if self._out_at < queued {
+        self._out_at += self._send_ready()
+
+        if self._out_at < queued {
+          return true
+        }
+
+        self._out.dispose()
+        self._out_at = 0
+      }
+
+      if self._feed == nil {
+        break
+      }
+
+      var piece = self._feed.next(_FEED_CHUNK)
+
+      if piece == nil {
+        self._feed.close()
+        self._feed = nil
+        break
+      }
+
+      self._out.extend(piece)
+      piece.dispose()
+    }
+
+    return self.secure and !self._flush_session()
+  }
+
+  _send_ready() {
+    catch {
+      return self._transport.try_write(self._out, self._out_at)
+    } as error {
+      raise ConnectionError(error.message)
+    }
+  }
+
+  _flush_session() {
+    catch {
+      return self._transport.try_flush()
+    } as error {
+      raise ConnectionError(error.message)
+    }
+  }
+
+  /**
+   * Forgets everything queued. For a peer that has stopped reading,
+   * where what is left has nowhere to go.
+   */
+  drop_output() {
+    self._out.dispose()
+    self._out_at = 0
+
+    if self._feed != nil {
+      self._feed.close()
+      self._feed = nil
+    }
+  }
+
+  /**
+   * Takes a server-side TLS handshake started by `accept_pending()` as
+   * far as it can go without waiting, and notes what it negotiated
+   * once it finishes.
+   *
+   * @returns number: `0` once finished, otherwise `net.READABLE` or
+   *    `net.WRITABLE`, what to wait for before calling this again
+   * @throws ConnectionError if the handshake fails
+   */
+  advance_handshake() {
+    var step = self._step_handshake()
+
+    if step == 0 {
+      self.alpn = self._transport.alpn_protocol()
+    }
+
+    return step
+  }
+
+  _step_handshake() {
+    catch {
+      return self._transport.advance_handshake()
+    } as error {
+      raise ConnectionError('TLS handshake failed: ${error.message}')
+    }
+  }
+
+  /**
    * Queues `data` for sending. Nothing reaches the socket until the
    * buffer fills or `flush()` is called.
    *
@@ -517,6 +937,24 @@ class Connection {
    */
   write(data: string|bytes) {
     self._out.extend(data)
+
+    if self._out.length() >= _WRITE_HIGH_WATER {
+      self.flush()
+    }
+  }
+
+  /**
+   * Queues a whole response head, the same way `write()` queues
+   * anything else.
+   *
+   * @param string version
+   * @param number status
+   * @param string reason
+   * @param Headers headers
+   * @param list cookies: the value of each `Set-Cookie` field
+   */
+  write_head(version, status, reason, headers, cookies) {
+    headers.append_head_to(self._out, version, status, reason, cookies)
 
     if self._out.length() >= _WRITE_HIGH_WATER {
       self.flush()
@@ -542,12 +980,15 @@ class Connection {
 
   _flush_transport_output() {
     catch {
-      self._transport.write_all(self._out)
+      self._transport.write_all(
+        self._out_at > 0 ? self._out[self._out_at,] : self._out,
+      )
       if self.secure {
         self._transport.flush()
       }
     } as error {
       self._out.dispose()
+      self._out_at = 0
 
       if is_timeout_error(error.message) {
         raise TimeoutError('write timed out')
@@ -557,12 +998,13 @@ class Connection {
   }
 
   flush() {
-    if self._out.length() == 0 {
+    if self._deferred or self._out.length() == 0 {
       return
     }
 
     self._flush_transport_output()
     self._out.dispose()
+    self._out_at = 0
   }
 
   /**
@@ -620,6 +1062,9 @@ class Connection {
    * call more than once. A failure while flushing is swallowed - the
    * connection is going away regardless, and the caller has usually
    * already handled whatever went wrong.
+   *
+   * With output deferred to a readiness loop nothing here waits: what
+   * the socket does not take now is dropped.
    */
   close() {
     if self._closed {
@@ -628,16 +1073,24 @@ class Connection {
     self._closed = true
 
     catch {
-      self.flush()
+      if self._deferred {
+        self.flush_ready()
+      } else {
+        self.flush()
+      }
     }
 
     catch {
-      self._transport.close()
+      if self._deferred and self.secure {
+        self._transport.close_now()
+      } else {
+        self._transport.close()
+      }
     }
 
+    self.drop_output()
     self._buf.dispose()
     self._buf = bytes(0)
-    self._out.dispose()
     self._out = bytes(0)
     self._pos = 0
   }
@@ -886,6 +1339,17 @@ def _set_nodelay_safe(client) {
   }
 }
 
+def _tls_begin_safe(client, config) {
+  catch {
+    return tls.TlsStream.begin_accept(client, config)
+  } as error {
+    catch {
+      client.close()
+    }
+    raise ConnectionError('TLS handshake failed: ${error.message}')
+  }
+}
+
 def _tls_accept_safe(client, config) {
   catch {
     return tls.TlsStream.accept(client, config)
@@ -928,4 +1392,36 @@ def accept(client, options: ?dict) {
 
   var stream = _tls_accept_safe(client, config)
   return Connection(stream, peer, local, read_timeout)
+}
+
+/**
+ * Turns a freshly accepted `TcpStream` into a `Connection` the way
+ * `accept()` does, except that a TLS handshake is only started. Nothing
+ * here waits on the peer: `Connection.advance_handshake()` takes the
+ * handshake forward as the socket becomes ready.
+ *
+ * @param TcpStream client: the stream `TcpStream.accept()` returned
+ * @param ?dict options: as `accept()` takes them
+ * @returns Connection
+ * @throws ConnectionError if the handshake cannot be started
+ */
+def accept_pending(client, options: ?dict) {
+  var settings = options == nil ? {} : options
+
+  var peer = _get_peer(client)
+  var local = _get_local(client)
+
+  _set_nodelay_safe(client)
+
+  var read_timeout = settings.get('read_timeout', 30000)
+  var write_timeout = settings.get('write_timeout', 30000)
+  client.set_read_timeout(read_timeout)
+  client.set_write_timeout(write_timeout)
+
+  var config = settings.get('tls_config', nil)
+  if config == nil {
+    return Connection(client, peer, local, read_timeout)
+  }
+
+  return Connection(_tls_begin_safe(client, config), peer, local, read_timeout)
 }

@@ -4,7 +4,8 @@
  * One worker, several connections at once.
  *
  * Three clients park an idle keep-alive connection on a single worker
- * and then sit there doing nothing. A fourth turns up afterwards.
+ * and then sit there doing nothing, and one more stops halfway through
+ * a request. Another turns up afterwards.
  *
  * Before the worker loop polled its connections it served them one at
  * a time to completion, so a worker blocked reading from an idle peer
@@ -39,19 +40,21 @@ http.serve(http_concurrency_app.routes, {
   host: '127.0.0.1',
   port: 0,
   workers: 1,
-  # The holders, plus the one latecomer. The acceptor stops after
-  # that, which is what ends the run.
-  max_connections: holders + 1,
+  # The holders, the half request, and the one latecomer. The acceptor
+  # stops after that, which is what ends the run.
+  max_connections: holders + 2,
   on_ready: @(address, stop) {
     var at = address.to_string()
-    var ready = isolate.channel(holders)
+    var ready = isolate.channel(holders + 1)
 
     iter var i = 0; i < holders; i++ {
       isolate.spawn(http_concurrency_client.hold_connection, ready, at, 3)
     }
 
+    isolate.spawn(http_concurrency_client.hold_half_a_request, ready, at, 3)
+
     isolate.spawn(
-      http_concurrency_client.time_a_latecomer, ready, results, at, holders,
+      http_concurrency_client.time_a_latecomer, ready, results, at, holders + 1,
     )
   },
 })

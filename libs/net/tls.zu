@@ -390,6 +390,52 @@ class TlsStream {
   }
 
   /**
+   * Starts a server-side TLS handshake over `tcp_stream` without
+   * running it, for code that waits on a `Poller` rather than on the
+   * socket. Put the stream into non-blocking mode with
+   * `set_non_blocking()`, and `advance_handshake()` then takes it
+   * forward.
+   *
+   * @param TcpStream tcp_stream: An already-accepted stream;
+   *    consumed by this call
+   * @param TlsConfig config: Must have a certificate chain set
+   *    via `TlsConfig.set_cert_chain()`
+   * @returns TlsStream
+   * @throws Error if `config` has no certificate chain
+   */
+  static begin_accept(tcp_stream, config) {
+    return TlsStream(_net_tls.tls_begin_server(
+      tcp_stream.native_ptr(), config.native_ptr(),
+    ))
+  }
+
+  /**
+   * Sets the socket underneath into or out of non-blocking mode. The
+   * `try_` methods and `advance_handshake()` are for a stream in
+   * non-blocking mode. The others wait, and need it out of that mode.
+   *
+   * @param bool nonblocking
+   * @throws Error if the stream is closed
+   */
+  set_non_blocking(nonblocking) {
+    _net_tls.tls_set_non_blocking(self._ptr, nonblocking)
+  }
+
+  /**
+   * Takes a handshake as far as it can go without waiting, on a stream
+   * in non-blocking mode.
+   *
+   * @returns number `0` once the handshake has finished, otherwise
+   *    `net.READABLE` or `net.WRITABLE`: what to wait for before
+   *    calling this again
+   * @throws Error if the handshake fails, or the peer closes the
+   *    connection during it
+   */
+  advance_handshake() {
+    return _net_tls.tls_advance_handshake(self._ptr)
+  }
+
+  /**
    * Reads up to `length` bytes of decrypted application data.
    * Same blocking/timeout/EOF semantics as `TcpStream.read()`.
    *
@@ -399,6 +445,55 @@ class TlsStream {
    */
   read(length) {
     return _net_tls.tls_read(self._ptr, length)
+  }
+
+  /**
+   * Reads whatever decrypted data is available, on a stream in
+   * non-blocking mode. Half of a record is not available: it stays in
+   * the session until the rest arrives.
+   *
+   * @param number length: The maximum number of bytes to read
+   * @returns ?bytes up to `length` bytes, empty at EOF, or `nil` when
+   *    nothing is available yet
+   * @throws Error on an underlying I/O or TLS record error
+   */
+  try_read(length) {
+    return _net_tls.tls_try_read(self._ptr, length)
+  }
+
+  /**
+   * Encrypts as much of `data` as the session takes right now and
+   * sends what the socket takes, on a stream in non-blocking mode.
+   * Data the session took may still be waiting for the socket:
+   * `try_flush()` reports that and sends it.
+   *
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
+   * @param ?number offset: Where in `data` to start. Defaults to `0`.
+   * @returns number the number of bytes taken
+   * @throws Error on an underlying I/O or TLS error
+   */
+  try_write(data, offset: ?number) {
+    return _net_tls.tls_try_write(self._ptr, data, offset == nil ? 0 : offset)
+  }
+
+  /**
+   * Sends what the session holds encrypted, as far as the socket
+   * takes it now, on a stream in non-blocking mode.
+   *
+   * @returns bool whether all of it went
+   * @throws Error on an underlying I/O error
+   */
+  try_flush() {
+    return _net_tls.tls_try_flush(self._ptr)
+  }
+
+  /**
+   * Closes a stream in non-blocking mode. `close_notify` goes out only
+   * if the socket has room for it, so a peer that has stopped reading
+   * cannot hold the caller up.
+   */
+  close_now() {
+    _net_tls.tls_close_now(self._ptr)
   }
 
   /**

@@ -487,14 +487,30 @@ class Acceptor {
    *    listener having been closed.
    */
   next() {
-    var client = self._listener.accept()
+    var client = self.take()
 
     if client == nil {
       self._poller.wait(self._interval)
-      return nil
     }
 
-    client.set_non_blocking(false)
+    return client
+  }
+
+  /**
+   * The next connection if one is already waiting, or `nil`, without
+   * waiting at all. This is for a caller that watches the listener
+   * on a `Poller` of its own.
+   *
+   * @returns ?TcpStream|?UnixStream
+   * @throws Error on an underlying accept failure, including the
+   *    listener having been closed.
+   */
+  take() {
+    var client = self._listener.accept()
+
+    if client != nil {
+      client.set_non_blocking(false)
+    }
 
     return client
   }

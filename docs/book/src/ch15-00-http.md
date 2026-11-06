@@ -2210,7 +2210,7 @@ directly.
 > arrives while another is being handled is read, buffered, and
 > answered next rather than in parallel. That is a throughput
 > property, not a correctness one, and `http.serve()` is how you get
-> more than one connection served at a time.
+> more than one request handled at a time.
 
 ## WebSockets
 
@@ -2311,7 +2311,13 @@ var pool = http.LoadBalancer([
 
 ### Using More Than One Core
 
-`listen()` serves connections on the calling isolate, one at a time.
+`listen()` serves every connection on the calling isolate. It watches
+them all and does for each only what can be done without waiting, so a
+client that goes quiet, sends half a request or stops reading holds up
+nobody else. A handler does run to completion, though, so a slow one
+delays every other connection, and a streamed body or a WebSocket
+holds the isolate until it finishes.
+
 `http.serve()` runs the same pipeline across a pool of isolates: one
 accept loop hands each connection to whichever worker takes it next.
 
@@ -2372,6 +2378,7 @@ Every part of a request whose size a peer controls has a ceiling:
 | `header_timeout` | 10s | how long the whole head may take to arrive |
 | `keep_alive_timeout` | 5s | how long an idle connection is held |
 | `max_keep_alive_requests` | 0 (unlimited) | how many requests one connection may serve |
+| `max_open_connections` | 1024 | how many connections `listen()` holds at once |
 
 `header_timeout` is the one that is easy to leave out and matters
 most: without it, a client sending one byte every few seconds holds a
@@ -2409,10 +2416,11 @@ http.serve(app.setup, {
 })
 ```
 
-`stop()` closes the listener, which is what breaks the blocking
-accept; `serve()` then waits for every worker to finish the connection
-it is on before returning. For a single-isolate server, `close()` does
-the same thing.
+`stop()` closes the listener, which ends the accept loop; `serve()` then
+waits for every worker to finish the connections it holds before
+returning. For a single-isolate server, `close()` ends the accept loop
+too, and `listen()` closes what it still holds, after giving what each
+connection has queued a chance to go out.
 
 ### Behind Another Proxy
 
@@ -2477,6 +2485,7 @@ implementation would have accepted:
 | `http.negotiate` | `Accept` parsing and matching |
 | `http.body` | message framing, chunked encoding, content codings |
 | `http.h1` | the HTTP/1.1 wire codec |
+| `http.loop` | `ConnectionLoop`, many connections on one thread |
 | `http.h2` | HTTP/2: frames, HPACK, connections |
 | `http.websocket` | RFC 6455, client and server |
 | `http.sse` | server-sent events |

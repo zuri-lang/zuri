@@ -1,0 +1,669 @@
+/**
+ * test_http_listen.zu
+ *
+ * `HttpServer.listen()` serving many connections on one thread.
+ *
+ * The first half holds the server's attention with a client that has
+ * stopped halfway through something, and checks that a second client
+ * is still answered straight away. The rest covers what the loop has
+ * to get right to do that: requests arriving in pieces, requests
+ * arriving several at a time, output the socket has no room for,
+ * deadlines, the connection limit, shutdown, TLS and HTTP/2.
+ */
+
+import http
+import http.h2
+import http.stream
+import http.websocket
+import isolate
+import json
+import net
+import net.tls
+import os
+import .http_listen_app
+
+# Far under any timeout a stalled client could be holding things up
+# for, and far over how long an answer takes.
+var PROMPT = 1500
+
+var _passed = 0
+
+def ok(label) {
+  _passed++
+  echo '  [PASS] ' + label
+}
+
+/**
+ * One end of a raw connection, keeping what a read brought in past the
+ * response being asked for.
+ */
+class Peer {
+
+  var socket
+  var held = bytes(0)
+
+  @new(socket) {
+    self.socket = socket
+    self.held = bytes(0)
+  }
+
+  static dial(address) {
+    var socket = net.TcpStream()
+    socket.connect(address)
+    socket.set_read_timeout(5000)
+    return Peer(socket)
+  }
+
+  static dial_tls(address) {
+    var socket = net.TcpStream()
+    socket.connect(address)
+    socket.set_read_timeout(5000)
+
+    var config = tls.TlsConfig()
+    config.set_insecure(true)
+
+    return Peer(tls.TlsStream.connect(socket, config, 'localhost'))
+  }
+
+  send(text) {
+    self.socket.write_all(text)
+  }
+
+  # Brings in more. Returns false once the peer has closed.
+  more() {
+    var chunk = self.socket.read(65536)
+
+    if chunk.length() == 0 {
+      return false
+    }
+
+    self.held.extend(chunk)
+    return true
+  }
+
+  # Reads one response, returned as `[status, body]`.
+  response() {
+    while true {
+      var size = self.held.length()
+      var start = self.held[0, size < 4096 ? size : 4096].to_string()
+      var end = start.index_of('\r\n\r\n')
+
+      if end > -1 {
+        var status = start[9, 12].to_number()
+
+        if status == 100 {
+          self.held = self.held[end + 4,]
+          return [status, bytes(0)]
+        }
+
+        var length = 0
+
+        for line in start[0, end].split('\r\n') {
+          if line.lower().starts_with('content-length:') {
+            length = line.split(':')[1].trim().to_number()
+          }
+        }
+
+        while self.held.length() < end + 4 + length {
+          if !self.more() {
+            raise Error('the connection closed inside a body')
+          }
+        }
+
+        var body = self.held[end + 4, end + 4 + length]
+        self.held = self.held[end + 4 + length,]
+
+        return [status, body]
+      }
+
+      if !self.more() {
+        raise Error('the connection closed before a response')
+      }
+    }
+  }
+
+  # Waits for the peer to close, returning how long that took in
+  # milliseconds.
+  wait_for_close() {
+    var started = time()
+
+    while self.more() {
+    }
+
+    return (time() - started) * 1000
+  }
+
+  close() {
+    catch {
+      self.socket.close()
+    }
+  }
+}
+
+def request_for(path) {
+  return 'GET ${path} HTTP/1.1\r\nHost: x\r\n\r\n'
+}
+
+def start(settings) {
+  var channel = isolate.channel(1)
+  var task = isolate.spawn(http_listen_app.serve, channel, settings)
+  return [task, channel.recv(10000)]
+}
+
+def stop(server) {
+  var peer = Peer.dial(server[1])
+  peer.send(request_for('/quit'))
+  peer.response()
+  peer.close()
+  return server[0].join(10000)
+}
+
+# A request from a newcomer, which has to be answered at once.
+def assert_prompt(address, what) {
+  var peer = Peer.dial(address)
+  var started = time()
+
+  peer.send(request_for('/ping'))
+
+  var reply = peer.response()
+  var waited = (time() - started) * 1000
+
+  peer.close()
+
+  assert reply[0] == 200, '${what}: the newcomer is answered'
+  assert waited < PROMPT, '${what}: at once, not after ${waited // 1}ms'
+}
+
+isolate.configure(8)
+
+echo '═══════════════════════════════════════════════════════'
+echo '  http listen - many connections on one thread'
+echo '═══════════════════════════════════════════════════════'
+
+var path = os.join_paths(os.temp_dir(), 'zuri_http_listen_${os.pid()}.bin')
+var FILE_SIZE = 4194304
+var content = bytes(0)
+
+iter var i = 0; i < 64; i++ {
+  content.extend(('${i % 10}' * 65536).to_bytes())
+}
+
+var sample = file(path, 'wb')
+sample.write(content)
+sample.close()
+
+var server = start({ file: path, max_body_size: 1048576 })
+var address = server[1]
+
+# ===========================================================================
+# Nobody stalls anybody else
+# ===========================================================================
+
+var quiet = Peer.dial(address)
+os.sleep(0.1)
+assert_prompt(address, 'a silent connection')
+quiet.close()
+ok('a connection that says nothing holds up nobody')
+
+var idle = Peer.dial(address)
+idle.send(request_for('/ping'))
+assert idle.response()[0] == 200, 'the first request is answered'
+assert_prompt(address, 'an idle keep-alive connection')
+idle.send(request_for('/ping'))
+assert idle.response()[0] == 200, 'and that connection still works afterwards'
+idle.close()
+ok('an idle keep-alive connection holds up nobody')
+
+var partial = Peer.dial(address)
+partial.send('GET /ping HT')
+os.sleep(0.1)
+assert_prompt(address, 'half a head')
+partial.send('TP/1.1\r\nHost: x\r\n\r\n')
+assert partial.response()[0] == 200, 'and the head is answered once it is whole'
+partial.close()
+ok('half a request head holds up nobody')
+
+var body = Peer.dial(address)
+body.send('POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n01234')
+os.sleep(0.1)
+assert_prompt(address, 'half a body')
+body.send('56789')
+assert body.response()[1].to_string() == '0123456789',
+  'and the body is whole when it reaches the handler'
+body.close()
+ok('half a request body holds up nobody')
+
+var reader = Peer.dial(address)
+reader.send(request_for('/big'))
+os.sleep(0.2)
+assert_prompt(address, 'a client not reading its response')
+var big = reader.response()
+assert big[1].length() == http_listen_app.BIG_SIZE,
+  'and the whole response arrives once it reads again'
+reader.send(request_for('/ping'))
+assert reader.response()[1].to_string() == 'pong',
+  'and the connection still works afterwards'
+reader.close()
+ok('a client that stops reading holds up nobody')
+
+var file_reader = Peer.dial(address)
+file_reader.send(request_for('/file'))
+os.sleep(0.2)
+assert_prompt(address, 'a client not reading a file')
+var served_file = file_reader.response()
+assert served_file[1].length() == FILE_SIZE, 'the whole file arrives'
+assert served_file[1][0] == 48 and served_file[1][FILE_SIZE - 1] == 51,
+  'with its bytes in order'
+file_reader.close()
+ok('a client that stops reading a file holds up nobody')
+
+# ===========================================================================
+# Messages in pieces, and several at a time
+# ===========================================================================
+
+var slow = Peer.dial(address)
+
+for character in 'POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabc'.split('') {
+  slow.send(character)
+}
+
+assert slow.response()[1].to_string() == 'abc',
+  'a byte at a time is reassembled'
+slow.close()
+ok('a request arriving a byte at a time is answered')
+
+var pipeline = Peer.dial(address)
+pipeline.send(
+  request_for('/say/one') + request_for('/say/two') + request_for('/say/three'),
+)
+assert pipeline.response()[1].to_string() == 'one',
+  'pipelined responses keep order'
+assert pipeline.response()[1].to_string() == 'two', 'all of them'
+assert pipeline.response()[1].to_string() == 'three', 'to the last'
+pipeline.close()
+ok('pipelined requests are answered in order')
+
+var behind = Peer.dial(address)
+behind.send(request_for('/big') + request_for('/say/after'))
+assert behind.response()[1].length() == http_listen_app.BIG_SIZE,
+  'a large response comes out whole'
+assert behind.response()[1].to_string() == 'after',
+  'with the request pipelined behind it after it'
+behind.close()
+ok('a request pipelined behind a large response waits its turn')
+
+var behind_file = Peer.dial(address)
+behind_file.send(request_for('/file') + request_for('/say/after'))
+assert behind_file.response()[1].length() == FILE_SIZE, 'a file comes out whole'
+assert behind_file.response()[1].to_string() == 'after',
+  'with the request pipelined behind it after it'
+behind_file.close()
+ok('a request pipelined behind a file waits its turn')
+
+var chunked = Peer.dial(address)
+chunked.send('POST /echo HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel')
+os.sleep(0.05)
+assert_prompt(address, 'half a chunk')
+chunked.send('lo\r\n')
+chunked.send('1')
+chunked.send('\r\n!\r\n0\r\n')
+chunked.send('\r\n')
+assert chunked.response()[1].to_string() == 'hello!',
+  'a chunked body split anywhere is reassembled'
+chunked.close()
+ok('a chunked body arriving in pieces is answered')
+
+var trailers = Peer.dial(address)
+trailers.send(
+  'POST /echo HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n' +
+    '3\r\nabc\r\n0\r\nX-Sum: 1\r\n',
+)
+os.sleep(0.05)
+trailers.send('\r\n' + request_for('/say/next'))
+assert trailers.response()[1].to_string() == 'abc', 'the body comes back'
+assert trailers.response()[1].to_string() == 'next',
+  'and trailers do not leak into the next request'
+trailers.close()
+ok('a chunked body with trailers keeps the connection in step')
+
+var malformed = Peer.dial(address)
+malformed.send(
+  'POST /echo HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n',
+)
+assert malformed.response()[0] == 400, 'a malformed chunk is refused'
+malformed.close()
+ok('a malformed chunk is refused rather than waited on')
+
+var expecting = Peer.dial(address)
+expecting.send(
+  'POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\nExpect: 100-continue\r\n\r\n',
+)
+assert expecting.response()[0] == 100, 'the client is told to go ahead'
+expecting.send('hello')
+assert expecting.response()[1].to_string() == 'hello',
+  'and its body is answered'
+expecting.close()
+ok('100-continue is sent while the body is awaited')
+
+var refused = Peer.dial(address)
+refused.send('POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 99999999\r\n\r\n')
+assert refused.response()[0] == 413, 'too large a body is refused from its head'
+refused.close()
+ok('a body over the limit is refused without waiting for it')
+
+var refused_chunks = Peer.dial(address)
+refused_chunks.send(
+  'POST /echo HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n' +
+    'FFFFFF\r\n',
+)
+assert refused_chunks.response()[0] == 413,
+  'a chunk over the limit is refused from its size'
+refused_chunks.close()
+ok('a chunk over the limit is refused without waiting for it')
+
+var half = Peer.dial(address)
+half.send(request_for('/say/closing'))
+half.socket.shutdown(net.Shutdown.WRITE)
+assert half.response()[1].to_string() == 'closing',
+  'a request is answered though the client closed its write half'
+assert half.wait_for_close() < PROMPT, 'and then the connection closes'
+half.close()
+ok('a request followed by a half-close is answered')
+
+var cut_head = Peer.dial(address)
+cut_head.send('GET /ping HT')
+cut_head.socket.shutdown(net.Shutdown.WRITE)
+assert cut_head.response()[0] == 400, 'an unfinished head is refused at EOF'
+cut_head.close()
+ok('a head cut short by a close is refused')
+
+var cut_body = Peer.dial(address)
+cut_body.send('POST /echo HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n123')
+cut_body.socket.shutdown(net.Shutdown.WRITE)
+assert cut_body.response()[0] == 400, 'an unfinished body is refused at EOF'
+cut_body.close()
+ok('a body cut short by a close is refused')
+
+var streamed = Peer.dial(address)
+streamed.send('GET /stream HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n')
+while streamed.more() {
+}
+assert streamed.held.to_string().contains('one '), 'a streamed body goes out'
+assert streamed.held.to_string().contains('two'), 'all of it'
+streamed.close()
+ok('a streamed body is written as it is produced')
+
+var upgraded = websocket.connect('ws://${address}/socket')
+upgraded.send('there')
+assert upgraded.receive().text() == 'hello there',
+  'a WebSocket works after the upgrade'
+upgraded.close()
+assert_prompt(address, 'a finished WebSocket')
+ok('a connection upgraded to a WebSocket is handed over')
+
+# ===========================================================================
+# HTTP/2
+# ===========================================================================
+
+def http2_client(port) {
+  var connection = stream.connect('127.0.0.1', port, {})
+  var session = h2.Http2Connection(connection, false)
+  session.start_client()
+  return session
+}
+
+def http2_get(session, target) {
+  var request = http.HttpRequest('GET', target, http.Headers())
+  request.authority = 'x'
+  return [session.send_request(request, nil), request]
+}
+
+var port = address.split(':')[1].to_number()
+
+var preface = Peer.dial(address)
+preface.send('PRI * HTTP/2.0\r\n\r\nSM')
+os.sleep(0.1)
+assert_prompt(address, 'half a preface')
+preface.close()
+ok('half an HTTP/2 preface holds up nobody')
+
+var first = http2_client(port)
+var second = http2_client(port)
+var asked_first = http2_get(first, '/say/first')
+var asked_second = http2_get(second, '/say/second')
+assert first.await_response(asked_first[0], asked_first[1]).as_text()
+  == 'first',
+  'one session is answered'
+assert second.await_response(asked_second[0], asked_second[1]).as_text()
+  == 'second',
+  'while another is open beside it'
+assert_prompt(address, 'an idle HTTP/2 session')
+ok('HTTP/2 sessions are interleaved with each other and with HTTP/1.1')
+
+var parked = http2_get(first, '/big')
+os.sleep(0.2)
+assert_prompt(address, 'a body waiting on a flow control window')
+assert first.await_response(parked[0], parked[1]).body.length() ==
+  http_listen_app.BIG_SIZE, 'and the body arrives as the window opens'
+ok('a body waiting on its window holds up nobody')
+
+var parked_file = http2_get(second, '/file')
+assert second.await_response(parked_file[0], parked_file[1]).body.length() ==
+  FILE_SIZE, 'a file goes out through the window too'
+ok('a file is sent as the window opens')
+
+var streamed_h2 = http2_get(second, '/stream')
+assert second.await_response(streamed_h2[0], streamed_h2[1]).as_text()
+  == 'one two',
+  'a streamed body works over HTTP/2'
+ok('a streamed body is written as it is produced over HTTP/2')
+
+first.close(nil)
+second.close(nil)
+
+var wrong = Peer.dial(address)
+wrong.send('PRI * HTTP/2.0\r\n\r\nXX\r\n\r\n')
+assert wrong.wait_for_close() < PROMPT, 'a wrong preface closes the connection'
+wrong.close()
+
+var events = Peer.dial(address)
+events.send(request_for('/events'))
+var seen = json.decode(events.response()[1].to_string())
+events.close()
+assert seen.errors.length() > 0, 'and is reported to on_error()'
+assert seen.connects >= seen.disconnects + 1, 'listeners hear about connections'
+ok('a wrong HTTP/2 preface is reported and closed')
+
+var open_at_close = Peer.dial(address)
+open_at_close.send(request_for('/ping'))
+open_at_close.response()
+var disconnected = stop(server)
+assert open_at_close.wait_for_close() < PROMPT,
+  'close() closes the connections still open'
+open_at_close.close()
+assert disconnected > 0, 'and tells on_disconnect() listeners'
+ok('close() ends listen() and closes what is still open')
+
+file(path).delete()
+
+# ===========================================================================
+# Deadlines
+# ===========================================================================
+
+var timed = start({
+  read_timeout: 400,
+  keep_alive_timeout: 200,
+  write_timeout: 400,
+  header_timeout: 1,
+})
+var timed_address = timed[1]
+
+var silent = Peer.dial(timed_address)
+var silent_wait = silent.wait_for_close()
+assert silent_wait > 250 and silent_wait < 1200,
+  'a silent connection gets read_timeout, took ${silent_wait // 1}ms'
+silent.close()
+ok('a connection that never speaks is closed at read_timeout')
+
+var kept = Peer.dial(timed_address)
+kept.send(request_for('/ping'))
+kept.response()
+var kept_wait = kept.wait_for_close()
+assert kept_wait > 100 and kept_wait < 900,
+  'an idle connection gets keep_alive_timeout, took ${kept_wait // 1}ms'
+kept.close()
+ok('an idle keep-alive connection is closed at keep_alive_timeout')
+
+var trickle = Peer.dial(timed_address)
+var trickle_started = time()
+
+catch {
+  while time() - trickle_started < 4 {
+    trickle.send('x')
+    os.sleep(0.1)
+  }
+}
+
+var trickle_wait = (time() - trickle_started) * 1000
+assert trickle_wait > 700 and trickle_wait < 3000,
+  'a head arriving a byte at a time gets header_timeout, took ${trickle_wait // 1}ms'
+trickle.close()
+ok('a head that trickles in is closed at header_timeout')
+
+var unread = Peer.dial(timed_address)
+unread.send(request_for('/big'))
+var unread_started = time()
+os.sleep(1)
+assert_prompt(timed_address, 'a client that never reads')
+
+catch {
+  while unread.more() {
+    unread.held = bytes(0)
+  }
+}
+
+assert time() - unread_started < 4, 'a client that never reads is cut off'
+unread.close()
+ok('a client that never reads is closed at write_timeout')
+
+stop(timed)
+
+# ===========================================================================
+# The connection limit
+# ===========================================================================
+
+var limited = start({ max_open_connections: 2 })
+var limited_address = limited[1]
+
+var held_one = Peer.dial(limited_address)
+var held_two = Peer.dial(limited_address)
+held_one.send(request_for('/ping'))
+held_one.response()
+held_two.send(request_for('/ping'))
+held_two.response()
+
+var queued = Peer.dial(limited_address)
+queued.socket.set_read_timeout(300)
+queued.send(request_for('/ping'))
+
+catch {
+  queued.more()
+} as turn_error
+
+assert turn_error != nil, 'a connection past the limit waits its turn'
+
+held_one.close()
+queued.socket.set_read_timeout(5000)
+assert queued.response()[0] == 200, 'and is served once a connection closes'
+queued.close()
+held_two.close()
+ok('connections past max_open_connections wait for a free one')
+
+stop(limited)
+
+# ===========================================================================
+# TLS
+# ===========================================================================
+
+var secure_server = start({
+  cert: http_listen_app.CERT,
+  key: http_listen_app.KEY,
+})
+var secure_address = secure_server[1]
+
+def assert_prompt_secure(address, what) {
+  var started = time()
+  var peer = Peer.dial_tls(address)
+
+  peer.send(request_for('/ping'))
+
+  var reply = peer.response()
+  var waited = (time() - started) * 1000
+
+  peer.close()
+
+  assert reply[0] == 200, '${what}: the newcomer is answered'
+  assert waited < PROMPT, '${what}: at once, not after ${waited // 1}ms'
+}
+
+var no_hello = Peer.dial(secure_address)
+os.sleep(0.1)
+assert_prompt_secure(secure_address, 'a client that never starts its handshake')
+no_hello.close()
+ok('a TLS client that never says hello holds up nobody')
+
+var torn_hello = Peer.dial(secure_address)
+torn_hello.send(bytes([22, 3, 1, 0, 200, 1]))
+os.sleep(0.1)
+assert_prompt_secure(secure_address, 'half a TLS record in a handshake')
+torn_hello.close()
+ok('half a handshake record holds up nobody')
+
+var secure_idle = Peer.dial_tls(secure_address)
+secure_idle.send(request_for('/ping'))
+assert secure_idle.response()[0] == 200, 'requests work over TLS'
+assert_prompt_secure(secure_address, 'an idle TLS connection')
+secure_idle.close()
+ok('an idle TLS connection holds up nobody')
+
+var secure_reader = Peer.dial_tls(secure_address)
+secure_reader.send(request_for('/big'))
+os.sleep(0.2)
+assert_prompt_secure(secure_address, 'a TLS client not reading its response')
+assert secure_reader.response()[1].length() == http_listen_app.BIG_SIZE,
+  'and the whole response arrives once it reads again'
+secure_reader.close()
+ok('a TLS client that stops reading holds up nobody')
+
+var secure_config = tls.TlsConfig()
+secure_config.set_insecure(true)
+secure_config.set_alpn(['h2'])
+
+var secure_port = secure_address.split(':')[1].to_number()
+var secure_connection = stream.connect('127.0.0.1', secure_port, {
+  secure: true,
+  tls_config: secure_config,
+  server_name: 'localhost',
+})
+assert secure_connection.alpn == 'h2', 'ALPN settles on HTTP/2'
+var secure_session = h2.Http2Connection(secure_connection, false)
+secure_session.start_client()
+var secure_asked = http2_get(secure_session, '/say/secure')
+assert secure_session
+  .await_response(secure_asked[0], secure_asked[1])
+  .as_text() ==
+  'secure',
+  'and the session is served'
+secure_session.close(nil)
+ok('HTTP/2 chosen through ALPN is served')
+
+var secure_quit = Peer.dial_tls(secure_address)
+secure_quit.send(request_for('/quit'))
+secure_quit.response()
+secure_quit.close()
+secure_server[0].join(10000)
+
+echo ''
+echo '═══════════════════════════════════════════════════════'
+echo '  All ${_passed} checks passed.'
+echo '═══════════════════════════════════════════════════════'

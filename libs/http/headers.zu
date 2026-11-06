@@ -16,34 +16,7 @@
 
 import .errors { ProtocolError }
 
-# RFC 9110 §5.1: a field name is a token, and a token is made only of
-# these characters. Anything else in a name means the message is
-# malformed, not that the name is unusual.
-#
-# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-#         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-var _TOKEN_TABLE = []
-
-def _init_token_chars() {
-  iter var i = 0; i < 256; i++ {
-    _TOKEN_TABLE.append(false)
-  }
-  var specials = "!#$%&'*+-.^_`|~"
-  iter var i = 0; i < specials.length(); i++ {
-    _TOKEN_TABLE[specials[i].ord()] = true
-  }
-  iter var c = 48; c <= 57; c++ { # 0-9
-    _TOKEN_TABLE[c] = true
-  }
-  iter var c = 65; c <= 90; c++ { # A-Z
-    _TOKEN_TABLE[c] = true
-  }
-  iter var c = 97; c <= 122; c++ { # a-z
-    _TOKEN_TABLE[c] = true
-  }
-}
-
-_init_token_chars()
+import _http
 
 # Field names whose canonical spelling is not what simple
 # capitalize-each-dash-part would produce. Everything else canonicalizes
@@ -102,20 +75,7 @@ var _SINGLETON = [
  * @returns bool
  */
 def is_valid_name(name) {
-  if !is_string(name) or name.is_empty() {
-    return false
-  }
-
-  var raw = name.to_bytes()
-  var len = raw.length()
-  iter var i = 0; i < len; i++ {
-    var b = raw.get(i)
-    if b >= 256 or !_TOKEN_TABLE[b] {
-      return false
-    }
-  }
-
-  return true
+  return is_string(name) and _http.is_valid_field_name(name)
 }
 
 /**
@@ -134,20 +94,7 @@ def is_valid_name(name) {
  * @returns bool
  */
 def is_valid_value(value) {
-  if !is_string(value) {
-    return false
-  }
-
-  var raw = value.to_bytes()
-  var len = raw.length()
-  iter var i = 0; i < len; i++ {
-    var c = raw.get(i)
-    if c == 13 or c == 10 or c == 0 {
-      return false
-    }
-  }
-
-  return true
+  return is_string(value) and _http.is_valid_field_value(value)
 }
 
 /**
@@ -667,6 +614,21 @@ class Headers {
         target.write('${name}: ${value}\r\n')
       }
     }
+  }
+
+  /**
+   * Appends a response head built around these fields to `buffer`: the
+   * status line, the fields, one `Set-Cookie` per cookie and the blank
+   * line that ends it.
+   *
+   * @param bytes buffer
+   * @param string version
+   * @param number status
+   * @param string reason
+   * @param list cookies: the value of each `Set-Cookie` field
+   */
+  append_head_to(buffer, version, status, reason, cookies) {
+    _http.append_head(buffer, version, status, reason, self._fields, cookies)
   }
 
   /**

@@ -477,6 +477,21 @@ class TcpStream {
   }
 
   /**
+   * Reads whatever has already arrived, for a stream in non-blocking
+   * mode (see `set_non_blocking()`) watched on a `Poller`. It is
+   * `read()` with "nothing yet" as a result rather than an error, which
+   * is the usual outcome in that mode and not a failure.
+   *
+   * @param number length: The maximum number of bytes to read
+   * @returns ?bytes up to `length` bytes, empty at EOF, or `nil` when
+   *    nothing has arrived yet
+   * @throws Error on an underlying I/O error
+   */
+  try_read(length) {
+    return _net_tcp.tcp_try_read(self._ptr, length)
+  }
+
+  /**
    * Reads exactly `length` bytes from the stream, blocking
    * (subject to the read timeout) until that many bytes have
    * arrived.
@@ -538,6 +553,23 @@ class TcpStream {
    */
   write(data) {
     return _net_tcp.tcp_write(self._ptr, data)
+  }
+
+  /**
+   * Writes as much of `data` as the socket takes right now, for a
+   * stream in non-blocking mode, and returns how much that was. It is
+   * `write()` with "no room" as a result rather than an error.
+   *
+   * @param {bytes|string} data: The bytes (or UTF-8 text) to write
+   * @param ?number offset: Where in `data` to start. Defaults to `0`,
+   *    which lets a caller resume a partial write without copying
+   *    what remains.
+   * @returns number the number of bytes taken, `0` when the socket has
+   *    no room
+   * @throws Error on an underlying I/O error
+   */
+  try_write(data, offset: ?number) {
+    return _net_tcp.tcp_try_write(self._ptr, data, offset == nil ? 0 : offset)
   }
 
   /**

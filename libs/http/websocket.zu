@@ -674,6 +674,10 @@ def accept(request, response, options: ?dict) {
     head += 'Sec-WebSocket-Protocol: ${chosen}\r\n'
   }
 
+  # From here the socket is the application's, reading and writing as
+  # it goes, so a readiness loop can no longer send on its behalf.
+  connection.block_output()
+
   connection.write(head + '\r\n')
   connection.flush()
 

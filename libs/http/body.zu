@@ -32,6 +32,10 @@ var _MAX_CHUNK_SIZE = 1073741824 # 1 GiB
 # streaming rather than materialising.
 var _STREAM_CHUNK = 65536
 
+# The longest chunk size line or trailer field worth waiting for, the
+# longer of the limits `BodyReader` reads them with.
+var _MAX_CHUNK_LINE = 8192
+
 /**
  * Parses a `Content-Length` field value.
  *
@@ -166,6 +170,13 @@ class BodyReader {
   var _finished = false
   var _chunk_remaining = 0
 
+  # How far `is_buffered()` has walked a chunked body, so that a body
+  # arriving in many reads is walked once rather than once per read.
+  var _scanned = 0
+  var _scanned_size = 0
+  var _in_trailers = false
+  var _over_limit = false
+
   /**
    * @param Connection connection
    * @param string mode
@@ -189,6 +200,89 @@ class BodyReader {
    */
   is_finished() {
     return self._finished
+  }
+
+  /**
+   * Whether the whole body already sits in the connection's buffer,
+   * so that reading it will not touch the socket.
+   *
+   * A body that cannot be read to a good end counts as arrived as
+   * well: a malformed chunk, or more than `limit`. Waiting for more of
+   * it would get nowhere, and the read is what reports the problem.
+   *
+   * @param number limit: the largest body worth waiting for, in bytes
+   * @returns bool
+   */
+  is_buffered(limit) {
+    using self.mode {
+      when 'length' {
+        return self._conn.buffered() >= self._remaining
+      }
+      when 'chunked' {
+        return self._chunks_buffered(limit)
+      }
+    }
+
+    return true
+  }
+
+  _parse_chunk_size_safe(line) {
+    catch {
+      return parse_chunk_size(line)
+    } as error {
+      return -1
+    }
+  }
+
+  _chunks_buffered(limit) {
+    var connection = self._conn
+
+    while true {
+      var lf = connection.find_byte(10, self._scanned)
+
+      if lf < 0 {
+        return connection.buffered() - self._scanned > _MAX_CHUNK_LINE
+      }
+
+      var line = connection.text_between(self._scanned, lf).rtrim('\r')
+
+      if self._in_trailers {
+        self._scanned = lf + 1
+
+        if line.is_empty() {
+          return true
+        }
+
+        continue
+      }
+
+      var size = self._parse_chunk_size_safe(line)
+
+      if size < 0 {
+        return true
+      }
+
+      if size == 0 {
+        self._in_trailers = true
+        self._scanned = lf + 1
+        continue
+      }
+
+      if self._scanned_size + size > limit {
+        self._over_limit = true
+        return true
+      }
+
+      # The chunk's data, and the CRLF that follows it.
+      var next = lf + 1 + size + 2
+
+      if connection.buffered() < next {
+        return false
+      }
+
+      self._scanned = next
+      self._scanned_size += size
+    }
   }
 
   /**
@@ -308,6 +402,11 @@ class BodyReader {
       raise TooLargeError('body of ${self.length} bytes exceeds the ${limit} byte limit')
     }
 
+    # So can a chunked body seen to be over the limit from its sizes.
+    if self._over_limit {
+      raise TooLargeError('body exceeds the ${limit} byte limit')
+    }
+
     var result = bytes(0)
 
     while true {
@@ -402,6 +501,13 @@ def reader_for(connection, headers, is_request: bool, bodiless: ?bool) {
     return BodyReader(connection, 'empty', 0)
   }
 
+  # Most requests have no body, and every one of those can share this.
+  if is_request
+    and !headers.contains('transfer-encoding')
+    and !headers.contains('content-length') {
+    return _NO_BODY
+  }
+
   var has_chunked = false
   var encodings = headers.tokens('transfer-encoding')
 
@@ -447,6 +553,10 @@ def reader_for(connection, headers, is_request: bool, bodiless: ?bool) {
 
   return BodyReader(connection, 'eof', -1)
 }
+
+# What a request without a body reads. An empty reader has nothing to
+# hold on to and nothing left to change, so one serves them all.
+var _NO_BODY = BodyReader(nil, 'empty', 0)
 
 /**
  * Wraps `data` as a single HTTP/1.1 chunk: the size in hexadecimal, a

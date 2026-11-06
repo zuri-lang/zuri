@@ -1,0 +1,605 @@
+/**
+ * @module loop
+ *
+ * One thread serving many connections at once.
+ *
+ * A thread that commits to one connection cannot look at another until
+ * that connection lets go of it, and a client is under no obligation to
+ * be quick: it can sit on an idle keep-alive connection, send half a
+ * request and stop, or stop reading what it asked for. `ConnectionLoop`
+ * keeps every connection on a poller instead, and does for each only
+ * what can be done without waiting.
+ *
+ * Reading works by buffering. Each readable event takes what has
+ * arrived, and the request pipeline only runs once a whole request is
+ * in the buffer, so the pipeline's own reads never reach the socket.
+ * Writing works by queueing. Everything a connection produces waits in
+ * its output until the pipeline has finished, and goes out as the
+ * socket makes room, which also turns a batch of responses into one
+ * write.
+ *
+ * Timeouts live here too, as a deadline on each connection, because
+ * the socket's own timeouts only bound a call that waits.
+ *
+ * Two things still hold the thread, and both are the application's
+ * choice: a handler runs to completion, and a streamed body or an
+ * upgraded connection writes as it goes, bounded by `write_timeout`.
+ *
+ * @copyright 2026, Richard Ore and Zuri contributors
+ */
+
+#!-- part of the http module
+
+import net
+import os
+
+# How often deadlines are checked, in seconds. A timeout can run over
+# by this much.
+var _REAP_INTERVAL = 0.1
+
+# How long to leave the listener alone after an accept fails, in
+# seconds. The usual cause is running out of descriptors, and a socket
+# with a connection waiting stays readable, so without this the loop
+# would spin on the failure.
+var _ACCEPT_BACKOFF = 0.1
+
+# How long each round waits while the last connections drain, in
+# milliseconds.
+var _FINISH_INTERVAL = 10
+
+# How long to wait for the last connections to drain, in seconds, when
+# the server has no `write_timeout`.
+var _FINISH_LIMIT = 1
+
+# Everything the loop remembers about one connection.
+class _Held {
+
+  var connection
+  var token
+
+  # How many requests this connection has been answered.
+  var served = 0
+
+  # When to give up on it, in seconds, or nil to never give up.
+  var deadline
+
+  var handshaking = false
+
+  # Whether the protocol has been decided yet.
+  var sniffed = false
+
+  # The session, on a connection that turned out to speak HTTP/2.
+  var session
+  var session_started = false
+
+  # A request whose body is still arriving.
+  var request
+
+  # When the first byte of the head still arriving came in.
+  var head_started
+
+  # Whether the poller is waiting for room to write rather than for
+  # something to read.
+  var writing = false
+
+  # Whether work stopped only because output had to go out first.
+  var paused = false
+
+  # Whether to close once the output has gone.
+  var closing = false
+
+  @new(connection, token) {
+    self.connection = connection
+    self.token = token
+  }
+}
+
+/**
+ * The connections one thread serves, and the poller that says which of
+ * them can be served right now.
+ *
+ * `HttpServer.listen()` runs one of these over its listener, and every
+ * worker of `http.serve()` runs one over the sockets handed to it.
+ */
+class ConnectionLoop {
+
+  var _server
+  var _poller
+  var _live = {}
+  var _next_token = 1
+  var _limit
+  var _acceptor
+  var _accepting = false
+  var _accept_after = 0
+  var _next_reap = 0
+  var _read_wait
+  var _idle_wait
+  var _write_wait
+  var _header_wait
+
+  /**
+   * @param HttpServer server: what answers the requests
+   * @param number limit: the most connections to hold at once
+   */
+  @new(server, limit: number) {
+    self._server = server
+    self._poller = net.Poller()
+    self._live = {}
+    self._limit = limit
+    self._read_wait = _seconds(server.read_timeout)
+    self._idle_wait = _seconds(server.keep_alive_timeout)
+    self._write_wait = _seconds(server.write_timeout)
+    self._header_wait = server.header_timeout
+  }
+
+  /**
+   * Accepts from `acceptor` whenever its listener has a connection
+   * waiting and this loop has room for it.
+   *
+   * @param Acceptor acceptor
+   */
+  watch(acceptor) {
+    self._acceptor = acceptor
+    self._poller.add(acceptor.listener(), 0, net.READABLE)
+    self._accepting = true
+  }
+
+  /**
+   * Takes on a connection that has already been accepted. Which
+   * protocol it speaks is decided later, once it has said something.
+   *
+   * @param TcpStream client
+   */
+  take(client) {
+    var connection = self._server.begin_connection(client)
+
+    if connection == nil {
+      return
+    }
+
+    var held = _Held(connection, self._next_token)
+
+    self._next_token++
+    self._live[held.token] = held
+
+    connection.defer_output()
+    held.deadline = _after(time(), self._read_wait)
+
+    self._poller.add(connection.transport(), held.token, net.READABLE)
+
+    if connection.secure {
+      held.handshaking = true
+      self._step_safe(held, net.READABLE, time())
+    } else {
+      self._server.announce_connection(connection)
+    }
+  }
+
+  /**
+   * How many connections are held.
+   *
+   * @returns number
+   */
+  length() {
+    return self._live.length()
+  }
+
+  /**
+   * Whether no connections are held.
+   *
+   * @returns bool
+   */
+  is_empty() {
+    return self._live.is_empty()
+  }
+
+  /**
+   * Whether another connection may be taken on.
+   *
+   * @returns bool
+   */
+  has_room() {
+    return self._live.length() < self._limit
+  }
+
+  /**
+   * Waits up to `timeout` for something to do and does it.
+   *
+   * @param number timeout: milliseconds
+   */
+  turn(timeout) {
+    # A poller with nothing on it answers at once, which would turn a
+    # listener paused after a failed accept into a spin.
+    if self._poller.is_empty() {
+      os.sleep(timeout / 1000)
+    }
+
+    var events = self._poller.wait(timeout)
+    var now = time()
+    var live = self._live
+
+    for event in events {
+      var token = event[0]
+
+      if token == 0 {
+        self._accept_waiting(now)
+      } else {
+        var held = live.get(token, nil)
+
+        if held != nil {
+          self._step_safe(held, event[1], now)
+        }
+      }
+    }
+
+    if now >= self._next_reap {
+      self._next_reap = now + _REAP_INTERVAL
+      self._reap(now)
+      self._resume_accepting(now)
+    }
+  }
+
+  /**
+   * Stops accepting and closes every connection, giving output already
+   * queued a bounded chance to reach its peer.
+   */
+  finish() {
+    self._stop_accepting()
+    self._acceptor = nil
+
+    var now = time()
+    var limit = now
+      + (self._write_wait == nil ? _FINISH_LIMIT : self._write_wait)
+
+    for held in self._live.values() {
+      held.closing = true
+      self._settle_safe(held, now)
+    }
+
+    while !self._live.is_empty() and time() < limit {
+      self.turn(_FINISH_INTERVAL)
+    }
+
+    for held in self._live.values() {
+      held.connection.drop_output()
+      self._close(held)
+    }
+  }
+
+  _accept_safe() {
+    catch {
+      return self._acceptor.take()
+    } as error {
+      return error
+    }
+  }
+
+  _accept_waiting(now) {
+    while self.has_room() {
+      var client = self._accept_safe()
+
+      if client == nil {
+        return
+      }
+
+      if instance_of(client, Error) {
+        # A listener closed under it is what a stopped server looks
+        # like from here, and is not an error worth reporting.
+        if self._server.is_listening() {
+          self._server.report_error(client, nil)
+        }
+
+        self._stop_accepting()
+        self._accept_after = now + _ACCEPT_BACKOFF
+
+        return
+      }
+
+      self.take(client)
+    }
+
+    self._stop_accepting()
+  }
+
+  _stop_accepting() {
+    if self._accepting {
+      self._accepting = false
+      self._poller.remove(0)
+    }
+  }
+
+  _resume_accepting(now) {
+    if self._acceptor != nil
+      and !self._accepting
+      and now >= self._accept_after
+      and self.has_room()
+      and self._server.is_listening() {
+      self._accepting = true
+      self._poller.add(self._acceptor.listener(), 0, net.READABLE)
+    }
+  }
+
+  _step_safe(held, flags, now) {
+    catch {
+      self._step(held, flags, now)
+    } as error {
+      self._fail(held, error)
+    }
+  }
+
+  _settle_safe(held, now) {
+    catch {
+      self._settle(held, now)
+    } as error {
+      self._fail(held, error)
+    }
+  }
+
+  _fail(held, error) {
+    self._server.report_error(error, held.handshaking ? nil : held.connection)
+    held.connection.drop_output()
+    self._close(held)
+  }
+
+  # Does what one event allows, and whatever that makes possible.
+  _step(held, flags, now) {
+    if flags & net.ERROR != 0 {
+      held.connection.drop_output()
+      self._close(held)
+      return
+    }
+
+    if held.handshaking {
+      self._handshake(held, now)
+      return
+    }
+
+    if !held.writing {
+      if held.connection.fill_ready() == nil {
+        return
+      }
+
+      self._advance(held, now)
+    }
+
+    if !self._settle(held, now) {
+      return
+    }
+
+    while held.paused {
+      self._advance(held, now)
+
+      if !self._settle(held, now) {
+        return
+      }
+    }
+
+    self._set_deadline(held, now)
+  }
+
+  _handshake(held, now) {
+    var step = held.connection.advance_handshake()
+
+    if step != 0 {
+      self._poller.modify(held.token, step)
+      return
+    }
+
+    held.handshaking = false
+    self._poller.modify(held.token, net.READABLE)
+    self._server.announce_connection(held.connection)
+    held.deadline = _after(now, self._read_wait)
+  }
+
+  # Sends what the socket takes, and closes a connection that is done.
+  # Returns whether the connection can take on more work now.
+  _settle(held, now) {
+    if held.connection.flush_ready() {
+      if !held.writing {
+        held.writing = true
+        self._poller.modify(held.token, net.WRITABLE)
+      }
+
+      held.deadline = _after(now, self._write_wait)
+
+      return false
+    }
+
+    if held.writing {
+      held.writing = false
+      self._poller.modify(held.token, net.READABLE)
+    }
+
+    if held.closing {
+      self._close(held)
+      return false
+    }
+
+    return true
+  }
+
+  # Serves whatever the buffer holds a whole message of.
+  _advance(held, now) {
+    held.paused = false
+
+    if !held.sniffed {
+      var http2 = self._server.sniff_http2(held.connection)
+
+      if http2 == nil {
+        return
+      }
+
+      held.sniffed = true
+
+      if http2 {
+        held.session = self._server.open_http2(held.connection)
+        held.session.drive()
+      }
+    }
+
+    if held.session == nil {
+      self._advance_http1(held, now)
+    } else {
+      self._advance_http2(held)
+    }
+  }
+
+  _advance_http1(held, now) {
+    var connection = held.connection
+    var server = self._server
+
+    while true {
+      var request = held.request
+
+      if request == nil {
+        var head = connection.try_request_head(
+          server.max_line_size, server.max_header_size, server.max_header_count,
+        )
+
+        if head == nil {
+          if connection.peer_finished() {
+            # Nothing more is coming. A head left unfinished is still
+            # the pipeline's to answer, and with the peer gone its
+            # reads cannot wait.
+            if connection.buffered() > 0 {
+              server.serve_next(connection, held.served)
+            }
+
+            held.closing = true
+          } else if held.head_started == nil and connection.buffered() > 0 {
+            held.head_started = now
+          }
+
+          return
+        }
+
+        held.head_started = nil
+        request = server.request_from_head(connection, head)
+
+        if request == nil {
+          held.closing = true
+          return
+        }
+      }
+
+      # With the peer gone the rest of the body is never coming, and
+      # the pipeline is what says so.
+      if !server.body_arrived(connection, request)
+        and !connection.peer_finished() {
+        held.request = request
+        return
+      }
+
+      held.request = nil
+
+      if !server.answer(connection, request, held.served) {
+        held.closing = true
+        return
+      }
+
+      held.served++
+
+      if connection.buffered() == 0 {
+        return
+      }
+
+      if connection.output_is_heavy() {
+        held.paused = true
+        return
+      }
+    }
+  }
+
+  _advance_http2(held) {
+    var connection = held.connection
+    var session = held.session
+
+    if !held.session_started {
+      if connection.buffered() < self._server.http2_preface_size() {
+        if connection.peer_finished() {
+          held.closing = true
+        }
+
+        return
+      }
+
+      held.session_started = true
+      session.start_server(nil)
+    }
+
+    if !session.on_readable(self._server) or connection.peer_finished() {
+      held.closing = true
+      return
+    }
+
+    held.paused = session.can_resume()
+  }
+
+  # Sets how long this connection may now go without progress, from
+  # what it is waiting for.
+  _set_deadline(held, now) {
+    if held.session != nil or held.request != nil {
+      held.deadline = _after(now, self._read_wait)
+      return
+    }
+
+    var wait = held.served > 0 ? self._idle_wait : self._read_wait
+
+    held.deadline = _after(now, wait)
+
+    # Each read of a head gets the usual wait, and the head as a whole
+    # gets `header_timeout`. Without that second limit, a client
+    # sending a byte every few seconds would hold a connection open
+    # indefinitely while never exceeding either. That is what
+    # slowloris is.
+    if held.head_started != nil and self._header_wait != nil {
+      var limit = held.head_started + self._header_wait
+
+      if held.deadline == nil or limit < held.deadline {
+        held.deadline = limit
+      }
+    }
+  }
+
+  # The poller reports nothing for a peer that has simply gone quiet,
+  # so this is the only thing that notices.
+  _reap(now) {
+    var expired = []
+
+    for _, held in self._live {
+      if held.deadline != nil and now > held.deadline {
+        expired.append(held)
+      }
+    }
+
+    for held in expired {
+      held.connection.drop_output()
+      self._close(held)
+    }
+  }
+
+  _close(held) {
+    if self._live.get(held.token, nil) == nil {
+      return
+    }
+
+    self._poller.remove(held.token)
+    self._live.remove(held.token)
+
+    # A handshake that never finished was never announced, so there is
+    # nobody to tell it has gone.
+    if held.handshaking {
+      held.connection.close()
+    } else {
+      self._server.finish_connection(held.connection)
+    }
+  }
+}
+
+def _seconds(milliseconds) {
+  return milliseconds == nil or milliseconds <= 0 ? nil : milliseconds / 1000
+}
+
+def _after(now, wait) {
+  return wait == nil ? nil : now + wait
+}

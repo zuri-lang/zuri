@@ -73,6 +73,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
     ),
     ("tcp_read", native(vm, "read", 2, false, tcp_read)),
     (
+      "tcp_try_read",
+      native(vm, "try_read", 2, false, tcp_try_read),
+    ),
+    (
       "tcp_read_exact",
       native(vm, "read_exact", 2, true, tcp_read_exact),
     ),
@@ -85,6 +89,10 @@ fn build(vm: &mut VM) -> Vec<(&'static str, Value)> {
       native(vm, "read_as_string", 1, false, tcp_read_as_string),
     ),
     ("tcp_write", native(vm, "write", 2, false, tcp_write)),
+    (
+      "tcp_try_write",
+      native(vm, "try_write", 3, false, tcp_try_write),
+    ),
     (
       "tcp_write_all",
       native(vm, "write_all", 2, false, tcp_write_all),
@@ -153,6 +161,13 @@ pub(crate) const TCP_STREAM_UPGRADED: &str = "zuri::net::TcpStream::__upgraded__
 pub(crate) struct ZuriTcp {
   pub stream: Option<TcpStream>,
   pub listener: Option<TcpListener>,
+}
+
+/// Whether an operation on a non-blocking socket failed only because
+/// the socket is not ready. A signal arriving during the call counts,
+/// since the socket is still there to be tried again.
+pub(crate) fn is_not_ready(error: &Error) -> bool {
+  matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted)
 }
 
 static INVALID_STREAM_ERR: &str = "Invalid stream state";
@@ -324,6 +339,23 @@ impl ZuriTcp {
     } else {
       Err(INVALID_STREAM_ERR.to_string())
     }
+  }
+
+  fn connected(&self) -> std::io::Result<&TcpStream> {
+    self
+      .stream
+      .as_ref()
+      .ok_or_else(|| Error::other(INVALID_STREAM_ERR))
+  }
+
+  fn try_read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut stream = self.connected()?;
+    stream.read(buf)
+  }
+
+  fn try_write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+    let mut stream = self.connected()?;
+    stream.write(data)
   }
 
   fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Result<usize, String> {
@@ -671,6 +703,23 @@ fn tcp_read(ctx: &mut ZuriContext) -> Result<Value, String> {
   Ok(ctx.heap().alloc_bytes(data))
 }
 
+fn tcp_try_read(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 1);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
+  enforce_method_arg_type!(ctx, 1, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let tcp = ptr.downcast_mut::<ZuriTcp>().unwrap();
+
+  let length = ctx.args[1].as_number() as usize;
+
+  match read_partial(length, |buffer| tcp.try_read(buffer)) {
+    Ok(data) => Ok(ctx.heap().alloc_bytes(data)),
+    Err(error) if is_not_ready(&error) => Ok(Value::nil()),
+    Err(error) => Err(socket_error(error)),
+  }
+}
+
 fn tcp_read_exact(ctx: &mut ZuriContext) -> Result<Value, String> {
   enforce_method_arg_count!(ctx, 1);
   enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
@@ -729,6 +778,32 @@ fn tcp_write(ctx: &mut ZuriContext) -> Result<Value, String> {
   };
 
   Ok(Value::number(written as f64))
+}
+
+fn tcp_try_write(ctx: &mut ZuriContext) -> Result<Value, String> {
+  enforce_method_arg_count!(ctx, 2);
+  enforce_method_arg_type!(ctx, 0, ArgType::PtrOf(TCP_STREAM));
+  enforce_method_arg_type_any_of!(ctx, 1, [ArgType::Bytes, ArgType::String]);
+  enforce_method_arg_type!(ctx, 2, ArgType::Number);
+
+  let mut ptr = ctx.args[0].as_ptr_cell().borrow_mut();
+  let tcp = ptr.downcast_mut::<ZuriTcp>().unwrap();
+
+  let val = ctx.args[1];
+  let offset = ctx.args[2].as_number() as usize;
+
+  let outcome = if val.is_string() {
+    let data = val.as_str().as_bytes();
+    tcp.try_write(&data[offset.min(data.len())..])
+  } else {
+    val.with_bytes(|data| tcp.try_write(&data[offset.min(data.len())..]))
+  };
+
+  match outcome {
+    Ok(count) => Ok(Value::number(count as f64)),
+    Err(error) if is_not_ready(&error) => Ok(Value::number(0.0)),
+    Err(error) => Err(socket_error(error)),
+  }
 }
 
 fn tcp_write_all(ctx: &mut ZuriContext) -> Result<Value, String> {

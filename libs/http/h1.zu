@@ -113,6 +113,22 @@ def read_request(connection, options: ?dict) {
     return nil
   }
 
+  return request_from_head(connection, parsed)
+}
+
+/**
+ * Builds the request a parsed head describes, and moves the connection
+ * past that head. The body is left where it is, as `read_request()`
+ * leaves it.
+ *
+ * @param Connection connection
+ * @param list parsed: what `Connection.read_request_head()` or
+ *    `Connection.try_request_head()` returned
+ * @returns HttpRequest
+ * @throws ProtocolError on a malformed message
+ * @throws TooLargeError if a limit is exceeded
+ */
+def request_from_head(connection, parsed) {
   if parsed[0] == 'error' {
     var msg = parsed[1]
     if msg.contains('limit') {
@@ -141,9 +157,7 @@ def read_request(connection, options: ?dict) {
   request.secure = connection.secure
   request.scheme = connection.secure ? 'https' : 'http'
 
-  if connection.peer_address != nil {
-    request.remote_address = connection.peer_address.to_string()
-  }
+  request.remote_address = connection.peer_text()
 
   if authority != nil {
     request.authority = authority
@@ -281,6 +295,14 @@ def write_response(connection, request, response, options: ?dict) {
   var bodiless = status.is_bodiless(response.status) or method == 'HEAD'
   var source = response.source()
 
+  # A streamed body is written as the handler produces it, so it cannot
+  # be left for a readiness loop to send later.
+  var was_deferred = false
+
+  if !bodiless and source != nil and source[0] == 'stream' {
+    was_deferred = connection.block_output()
+  }
+
   # RFC 9110 §6.6.1 makes Date mandatory for an origin server that has
   # a clock, and caches need it to compute freshness at all.
   response.headers.set_default('Date', util.format_date())
@@ -352,15 +374,13 @@ def write_response(connection, request, response, options: ?dict) {
     response.headers.set_default('Keep-Alive', 'timeout=5')
   }
 
-  var wire_version = version == '1.0' ? '1.0' : '1.1'
-  connection.write('HTTP/${wire_version} ${response.status} ${response.reason_phrase()}\r\n')
-  response.headers.write_to(connection)
-
-  for cookie in response.cookie_headers() {
-    connection.write('Set-Cookie: ${cookie}\r\n')
-  }
-
-  connection.write('\r\n')
+  connection.write_head(
+    version == '1.0' ? '1.0' : '1.1',
+    response.status,
+    response.reason_phrase(),
+    response.headers,
+    response.cookie_headers(),
+  )
   response.commit()
 
   if bodiless {
@@ -383,6 +403,11 @@ def write_response(connection, request, response, options: ?dict) {
   }
 
   _write_stream_body(connection, source, streaming)
+
+  if was_deferred {
+    connection.defer_output()
+  }
+
   return keep_alive
 }
 
@@ -413,6 +438,11 @@ def _write_stream_body(connection, source, streaming) {
 var _FILE_CHUNK = 262144
 
 def _write_file(connection, path, offset, length) {
+  if connection.is_deferred() {
+    connection.queue_file(path, offset, length)
+    return
+  }
+
   var handle = file(path, 'rb')
 
   # A file has to actually be open before it can be seeked; reads

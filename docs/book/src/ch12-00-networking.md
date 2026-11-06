@@ -120,6 +120,14 @@ comes back.
 `set_nodelay(true)` disables Nagle's algorithm, which is what you want for
 a request/response protocol where latency matters more than packet count.
 
+`set_non_blocking(true)` makes a read or write that cannot go ahead fail
+rather than wait. For a socket in that mode watched with a `net.Poller`,
+`try_read(length)` and `try_write(data)` report that as a result instead of
+an error: `try_read()` returns `nil` when nothing has arrived, and
+`try_write()` returns how much the socket took, which is `0` when it has no
+room. `TlsStream` has both, along with `try_flush()` for what it has
+encrypted but not yet sent.
+
 ## UDP
 
 ```zuri
