@@ -79,9 +79,11 @@ describe('resolve', @{
   })
 
   it('says so rather than choosing between two files of one name', @{
+    var sep = os.path_separator
+
     expect(@{
       resolve('twin', FIXTURE)
-    }).to_raise_with_message('deep/twin.zu, other/twin.zu')
+    }).to_raise_with_message('deep${sep}twin.zu, other${sep}twin.zu')
   })
 
   it('refuses a name that matches nothing', @{

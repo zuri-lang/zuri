@@ -104,6 +104,7 @@ impl JitEngine {
       cranelift_codegen::isa::x64::set_place_jumps(true);
     }
 
+    #[cfg_attr(not(target_arch = "aarch64"), allow(unused_mut))]
     let mut isa_builder = cranelift_native::builder().unwrap_or_else(|msg| {
       panic!("zuri: host machine is not supported by the JIT backend: {msg}")
     });
