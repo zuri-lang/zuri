@@ -90,3 +90,5 @@
 - In the REPL, `os.at_exit()` handlers now run when the session ends, not after the entry that registered them, and `os.set_exit_code()` sets the status the session ends with.
 - A REPL whose terminal goes away now ends with status 1 instead of spinning at full CPU, which it did when SIGHUP was ignored.
 - `\${` in a string is now a literal `${`, with no interpolation and no backslash. It used to keep the backslash. `\$` anywhere else still keeps its backslash, so a regular expression's escaped dollar is unchanged, and `\\${x}` is now a backslash followed by the value of `x`, where it used to be the text `\${x}`.
+- `os.Watcher` on macOS no longer loses changes made while another path is being added or removed, so `zuri run --watch` no longer misses a change made while the program is starting up.
+- On macOS the first `os.Watcher` a process creates raises its soft limit on open files as far as the hard limit and the kernel allow, since FSEvents watches only about one directory for every twelve open files the process may hold. Processes started afterwards inherit the raised limit.

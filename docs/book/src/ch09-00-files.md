@@ -483,7 +483,10 @@ project root.
 An `os.Watcher` is told when files change, by the operating system, as
 they change. It does not look at the files over and over. It asks the
 platform's own mechanism to report them: inotify on Linux, FSEvents on
-macOS, `ReadDirectoryChangesW` on Windows, kqueue on the BSDs.
+macOS, `ReadDirectoryChangesW` on Windows, kqueue on the BSDs. FSEvents
+watches only about one directory for every twelve files a process may
+have open, so on macOS the first watcher raises the process's soft limit
+on open files as far as the hard limit allows.
 
 ```zuri
 import os

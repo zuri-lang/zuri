@@ -133,6 +133,9 @@ pub struct Watcher {
 
 impl Watcher {
   pub fn new() -> Result<Watcher, String> {
+    #[cfg(target_os = "macos")]
+    raise_file_limit();
+
     let (sender, receiver) = mpsc::channel();
 
     let events = sender.clone();
@@ -564,6 +567,44 @@ impl Drop for Watcher {
   }
 }
 
+/// Raises the soft limit on open files as far as the hard limit and the
+/// kernel allow, once per process. FSEvents refuses a stream that would
+/// watch more directories than about a twelfth of that limit, and macOS
+/// starts every process at 256, which leaves room for only 21.
+#[cfg(target_os = "macos")]
+fn raise_file_limit() {
+  static ONCE: std::sync::Once = std::sync::Once::new();
+
+  ONCE.call_once(|| unsafe {
+    let mut limit = std::mem::zeroed::<libc::rlimit>();
+
+    if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+      return;
+    }
+
+    let mut most: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let found = libc::sysctlbyname(
+      c"kern.maxfilesperproc".as_ptr(),
+      (&mut most as *mut libc::c_int).cast(),
+      &mut size,
+      std::ptr::null_mut(),
+      0,
+    );
+
+    if found != 0 || most <= 0 {
+      return;
+    }
+
+    let wanted = limit.rlim_max.min(most as libc::rlim_t);
+
+    if wanted > limit.rlim_cur {
+      limit.rlim_cur = wanted;
+      libc::setrlimit(libc::RLIMIT_NOFILE, &limit);
+    }
+  });
+}
+
 /// Whether an event of `kind` is one nobody is told about: reading a
 /// file, or opening one, changes nothing.
 fn ignored(kind: &EventKind) -> bool {
@@ -642,6 +683,12 @@ fn describe(error: &notify::Error, path: Option<&str>) -> String {
     notify::ErrorKind::PathNotFound => {
       format!("could not watch{target}: No such file or directory")
     },
+    #[cfg(target_os = "macos")]
+    notify::ErrorKind::MaxFilesWatch => format!(
+      "could not watch{target}: the system's limit on watched directories was reached \
+       (raise the hard limit on open files, `ulimit -H -n`)"
+    ),
+    #[cfg(not(target_os = "macos"))]
     notify::ErrorKind::MaxFilesWatch => format!(
       "could not watch{target}: the system's limit on watched directories was reached \
        (on Linux, raise fs.inotify.max_user_watches)"

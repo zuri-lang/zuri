@@ -199,8 +199,11 @@ libffi-sys = "4.2.2"
 # The filesystem events each platform delivers natively: inotify on Linux,
 # FSEvents on macOS, ReadDirectoryChangesW on Windows and kqueue on the
 # BSDs. Only its recommended, event-driven watcher is used; the polling one
-# it also carries is never constructed.
-notify = "8.2"
+# it also carries is never constructed. Pinned to a release candidate
+# because 8.x loses the changes made while its macOS stream is replaced,
+# which it does each time a watch is added or removed. Move to 9.0 when it
+# is released.
+notify = "=9.0.0-rc.7"
 httparse = "1.10.1"
 
 # --- io::TTY.getsize (src/modules/io.rs) -----------------------------------

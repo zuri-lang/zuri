@@ -77,6 +77,15 @@
  * filesystems look names up without regard to case, a path matches
  * however its case was spelled when it was added.
  *
+ * ### Limits
+ *
+ * Each platform caps how many directories one process can watch, and
+ * `add()` raises once the cap is reached. On macOS the cap is about a
+ * twelfth of the process's limit on open files, so the first watcher a
+ * process creates raises the soft limit as far as the hard limit and
+ * the kernel allow. Processes it starts afterwards inherit the raised
+ * limit.
+ *
  * ### Signals
  *
  * A signal with a callback registered through `os.on_signal()` cuts a

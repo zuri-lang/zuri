@@ -287,6 +287,51 @@ assert raises(@() => file_watcher.add(single)),
 ok('close() is final, and closing twice is harmless')
 
 # ---------------------------------------------------------------------------
+# Changing what is watched while changes arrive
+# ---------------------------------------------------------------------------
+var busy = scratch()
+var others = scratch()
+var busy_watcher = os.Watcher().add(busy, false)
+var unreported = {}
+
+# Each file is written just before the watcher takes on, or lets go of,
+# another directory, so every change lands while what is watched is
+# changing.
+iter var i = 0; i < 50; i++ {
+  var path = os.join_paths(busy, 'f${i}.txt')
+
+  write(path, 'x')
+  unreported[path] = true
+
+  var other = os.join_paths(others, 'd${i}')
+
+  os.create_dir(other)
+  busy_watcher.add(other, false)
+
+  if i % 3 == 2 {
+    busy_watcher.remove(os.join_paths(others, 'd${i - 1}'))
+  }
+}
+
+var busy_deadline = time() + PATIENCE / 1000
+
+while !unreported.is_empty() and time() < busy_deadline {
+  var event = busy_watcher.next(QUIET)
+
+  if event != nil and event.path != nil and unreported.contains(event.path) {
+    unreported.remove(event.path)
+  }
+}
+
+assert unreported.is_empty(),
+  '${unreported.length()} of 50 files written while other paths were added and removed were never reported'
+ok('changes are reported while other paths are added and removed')
+
+busy_watcher.close()
+os.remove_dir(busy, true)
+os.remove_dir(others, true)
+
+# ---------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------
 var errors = os.Watcher()
