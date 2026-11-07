@@ -1554,11 +1554,14 @@ other type without a stable layout; trait objects; tuples; generic types
 and functions; `Option` of a type without a niche; a function without
 `#[no_mangle]` or `#[export_name]`; and the `extern "Rust"` ABI.
 
-A Rust function declared `extern "C"` aborts the process if it panics,
-which is Rust's own rule for that ABI, and a panic never reaches Zuri.
-`extern "C-unwind"` functions are called the same way; a panic unwinding
-out of one likewise ends the process, because the call that reached it is
-C, and a panic cannot unwind through C.
+A panic in a Rust library will end the process if it escapes the function
+called from Zuri. A library that catches its panics at its own boundary,
+or keeps them on threads of its own, returns normally. One that lets a
+panic escape ends the process, even from an isolate. An `extern "C"`
+function aborts at once. An `extern "C-unwind"` function unwinds into
+Zuri, which cannot catch a panic from another copy of Rust's runtime and
+aborts. A Rust library built with `panic = "abort"` ends the process at
+any panic. This is the one panic that does not stay inside its isolate.
 
 ## Platform Differences
 
@@ -1632,8 +1635,8 @@ with it.
 
 **It does not unwind through foreign frames.** Errors are trapped and
 raised again once C has returned. A panic in a callback waits the same way,
-then carries on and ends its isolate. A panic that starts in foreign code
-ends the process, as it does in Rust.
+then carries on and ends its isolate. A panic that escapes a Rust library
+ends the process, as [Rust in Depth](#rust-in-depth) describes.
 
 ## Module Reference
 

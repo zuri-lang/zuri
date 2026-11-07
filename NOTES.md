@@ -67,15 +67,6 @@
 - A loop's on-stack replacement threshold now comes from the loop's own length rather than the function's, so a short loop in a long function, such as setup code walking a small table, no longer compiles the function after a handful of turns. A field read or write the interpreter has seen reached with something other than an instance, such as a dictionary, is never compiled to a class check, so `column.name` on a dictionary stays on its inline cache instead of leaving compiled code because some class declares a `name` field.
 - A class's literal field defaults (`var x = 0`, `var name = 'none'`, `var on = true`, and a bare `var x`) are now part of the class rather than code that runs for every instance. An instance starts out with them, and only a default that has to be computed, such as `var rows = []` or a call, and every declaration after it in the same class, still runs as a field initializer. Defaults and initializers apply in declaration order down the line of classes exactly as before, so an initializer never sees a field set earlier than it was declared. Constructing an instance of a class with no computed defaults skips the initializer call altogether, in the interpreter and in both JIT tiers, including a class read out of a module, as in `date.Date(...)`.
 - `is_int()`, `is_string()` and the other type predicates are compiled inline by both JIT tiers, as is a slice of a list or byte stream, which now copies the range in one go. `bytes.to_string()` reads valid UTF-8 straight through and decodes with replacement characters only when the bytes are not valid.
-
-# CHANGELOGS
-
-- [12-09-2026]
-  - Change repository visibility from Private to Public.
-- [15-09-2026]
-  - Changed repository visibility back to Private. Not ready to become public until Nyssa or at least a prototype of it is ready.
-- [29-10-2026]
-  - This project permanently replaces the Zuri C runtime as the default runtime for the Zuri programming language and went public replacing the default runtime at https://github.com/zuri-lang/zuri.
 - `Date.to_timezone()` no longer depends on the machine it runs on. It looked up the offset from the host's own timezone, so it picked the wrong one near a DST change and raised on hosts in a zone without DST, such as `Africa/Lagos`.
 - `validate`'s `after`, `after_or_equal`, `before` and `before_or_equal` rules now compare instants. They ignored each date's offset, so `2024-01-01T12:00:00+01:00` counted as after `2024-01-01T11:30:00Z`.
 - A panic in the runtime now ends only the isolate it happened in, whether it happened in the interpreter or under compiled code. `join()` raises `IsolateError` and every other isolate keeps running. On the main thread it exits with code 101 and the panic message. It used to abort the whole process once the code was compiled, because compiled frames could not be unwound. A panic in a callback that C made, through `sql` or `ffi`, also stays a panic now, so no Zuri code runs on after it on the same VM.
@@ -92,3 +83,16 @@
 - `\${` in a string is now a literal `${`, with no interpolation and no backslash. It used to keep the backslash. `\$` anywhere else still keeps its backslash, so a regular expression's escaped dollar is unchanged, and `\\${x}` is now a backslash followed by the value of `x`, where it used to be the text `\${x}`.
 - `os.Watcher` on macOS no longer loses changes made while another path is being added or removed, so `zuri run --watch` no longer misses a change made while the program is starting up.
 - On macOS the first `os.Watcher` a process creates raises its soft limit on open files as far as the hard limit and the kernel allow, since FSEvents watches only about one directory for every twelve open files the process may hold. Processes started afterwards inherit the raised limit.
+- The `notify` crate behind `os.Watcher` is pinned to `9.0.0-rc.7` and should move to 9.0 once it is released. No 8.x release, up to 8.2.1, fixes the lost macOS changes, so do not change it before then.
+
+<!-- Notes should stay above the changelog. The changelog documents changes to the core status of te project itself i.e. project history and not code. -->
+
+# CHANGELOGS
+
+- [12-09-2026]
+  - Change repository visibility from Private to Public.
+- [15-09-2026]
+  - Changed repository visibility back to Private. Not ready to become public until Nyssa or at least a prototype of it is ready.
+- [29-10-2026]
+  - This project permanently replaces the Zuri C runtime as the default runtime for the Zuri programming language and went public replacing the default runtime at https://github.com/zuri-lang/zuri.
+

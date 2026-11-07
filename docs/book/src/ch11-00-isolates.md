@@ -1074,7 +1074,7 @@ Three error types come out of this module, and they mean different things:
 
 | Error | Raised when |
 | --- | --- |
-| `IsolateError` | a worker raised or panicked, or an operation is invalid — sending on a closed channel |
+| `IsolateError` | a worker raised or panicked, or an operation is invalid — sending on a closed channel. A panic that escapes a Rust library called through `ffi` ends the process instead; see [Rust in Depth](ch26-00-ffi.md#rust-in-depth) |
 | `IsolateTimeoutError` | a timeout passed before the operation completed |
 | `IsolateCancelledError` | a blocking call was interrupted by `cancel()` |
 
