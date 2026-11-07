@@ -4595,6 +4595,13 @@ impl Heap {
       let gcbox = unsafe { *entries.add(i) } as *mut GcBox;
       unsafe {
         if !(*gcbox).marked.get() {
+          // A list whose elements are still inline owns nothing outside
+          // its slot, so there is nothing to release.
+          if let Obj::List(items) = &(*gcbox).obj
+            && !(*items.as_ptr()).owns_buffer()
+          {
+            continue;
+          }
           // Never forwarded, so `obj` still owns its payload; this is
           // its one and only move.
           let obj = std::ptr::read(&(*gcbox).obj);

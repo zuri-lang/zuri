@@ -84,6 +84,7 @@
 - `os.Watcher` on macOS no longer loses changes made while another path is being added or removed, so `zuri run --watch` no longer misses a change made while the program is starting up.
 - On macOS the first `os.Watcher` a process creates raises its soft limit on open files as far as the hard limit and the kernel allow, since FSEvents watches only about one directory for every twelve open files the process may hold. Processes started afterwards inherit the raised limit.
 - The `notify` crate behind `os.Watcher` is pinned to `9.0.0-rc.7` and should move to 9.0 once it is released. No 8.x release, up to 8.2.1, fixes the lost macOS changes, so do not change it before then.
+- Compiled code runs faster, by about a tenth over the benchmarks. A recursive function that constructs no instances is compiled with one copy of itself built in, so each call it still makes covers two levels. A constructor that also sets fields to `nil`, as `self.hash = nil` does, builds its instances inline like one that only copies its parameters. Loops are laid out so going round takes no branch on the way in, a field read reuses the address of the instance's field storage, calls with more than four arguments go straight to compiled code, and dead young lists whose elements were inline cost the collector nothing. `ZURI_JIT_LOG_ASM=1` now also prints the address each function runs at.
 
 <!-- Notes should stay above the changelog. The changelog documents changes to the core status of te project itself i.e. project history and not code. -->
 

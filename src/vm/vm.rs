@@ -84,15 +84,17 @@ struct CalleeGathering<'v> {
 
 impl CalleeGathering<'_> {
   /// Whether `callee` is worth gathering feedback for, to build it into
-  /// its caller: small, a plain function, not already on the way down
-  /// and within the budget. The IR builder has the final say.
+  /// its caller: small, a plain function, on the way down no more than
+  /// once already (a recursive function is built into itself once) and
+  /// within the budget. The IR builder has the final say.
   fn admits(&self, callee: &ObjFunction) -> bool {
     let len = callee.chunk.code.len();
+    let at = callee as *const ObjFunction as usize;
     !callee.variadic
       && callee.upvalues.is_empty()
       && len <= crate::jit::ir::build::MAX_INLINE_OPS
       && len <= self.budget
-      && !self.path.contains(&(callee as *const ObjFunction as usize))
+      && self.path.iter().filter(|&&p| p == at).count() < 2
   }
 
   /// Runs `f` for `callee`'s own calls, one level further down.
@@ -2539,8 +2541,10 @@ impl VM {
   /// nothing but copy each parameter into a field. Accepts only the exact
   /// shape `@new(x, y, z) { self.x = x; self.y = y; self.z = z }` compiles
   /// to; a run of `SetField` from parameter registers, then `LoadNil` +
-  /// `Return`. Anything else (computed value, branch, call, double write)
-  /// returns `None`, since a syntactic match is the only way to be certain.
+  /// `Return`. A `self.f = nil` among them is accepted for a field with no
+  /// literal default, since a new instance holds nil there already.
+  /// Anything else (computed value, branch, call, double write) returns
+  /// `None`, since a syntactic match is the only way to be certain.
   fn simple_ctor_param_slots(ctor: &ObjFunction, class: &ObjClass) -> Option<Vec<u16>> {
     let code = &ctor.chunk.code;
     if ctor.variadic || code.len() < 2 {
@@ -2551,6 +2555,15 @@ impl VM {
     let params = (ctor.arity as usize).checked_sub(1)?;
     // slots[i] is where parameter i is stored.
     let mut slots: Vec<Option<u16>> = vec![None; params];
+    // Fields set to nil, which a new instance already holds there.
+    let mut nil_slots: Vec<u16> = Vec::new();
+    let slot_of = |name_const: u16| -> Option<u16> {
+      let name = ctor.chunk.constants.get(name_const as usize)?;
+      if !name.is_string() {
+        return None;
+      }
+      class.field_slots.get(name.as_str()).copied()
+    };
 
     let mut ip = 0;
     while ip < code.len() {
@@ -2563,30 +2576,49 @@ impl VM {
           if src == 0 || (src as usize) > params {
             return None;
           }
-          let name = ctor.chunk.constants.get(name_const as usize)?;
-          if !name.is_string() {
-            return None;
-          }
-          let slot = *class.field_slots.get(name.as_str())?;
+          let slot = slot_of(name_const)?;
           let param = src as usize - 1;
           // One store per parameter, no field written twice; either
           // would make the slot assignment ambiguous.
-          if slots[param].is_some() || slots.iter().any(|s| *s == Some(slot)) {
+          if slots[param].is_some()
+            || slots.iter().any(|s| *s == Some(slot))
+            || nil_slots.contains(&slot)
+          {
             return None;
           }
           slots[param] = Some(slot);
           ip += 1;
         },
-        Instr::LoadNil { dst } => {
-          // Must be the trailing `LoadNil` + `Return` pair and nothing
-          // more.
-          if ip + 2 != code.len() {
-            return None;
-          }
+        Instr::LoadNil { dst } if ip + 2 == code.len() => {
+          // The trailing `LoadNil` + `Return` pair and nothing more.
           return match code[ip + 1] {
             Instr::Return { src } if src == dst => slots.into_iter().collect::<Option<Vec<u16>>>(),
             _ => None,
           };
+        },
+        Instr::LoadNil { dst } => {
+          // `self.f = nil` through a scratch register, for a field no
+          // default fills, so it is nil from the start.
+          let Some(&Instr::SetField {
+            obj: 0,
+            name_const,
+            src,
+          }) = code.get(ip + 1)
+          else {
+            return None;
+          };
+          if src != dst || (dst as usize) <= params {
+            return None;
+          }
+          let slot = slot_of(name_const)?;
+          if class.defaults.iter().any(|&(s, _)| s == slot)
+            || slots.iter().any(|s| *s == Some(slot))
+            || nil_slots.contains(&slot)
+          {
+            return None;
+          }
+          nil_slots.push(slot);
+          ip += 2;
         },
         _ => return None,
       }
