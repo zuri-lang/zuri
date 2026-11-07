@@ -56,9 +56,11 @@ unclosed brace and keep going:
 42
 ```
 
-The same applies to an unclosed bracket, an unclosed parenthesis, or a
-string that has not been closed. The REPL decides when you are finished;
-you never have to signal it.
+The same applies to an unclosed bracket, an unclosed parenthesis, a string
+that has not been closed, or a block comment. The REPL reads what you typed
+the way the compiler does, so a bracket inside a string or a quote inside
+a comment does not count. It decides when you are finished; you never have
+to signal it.
 
 ## Everything Stays Defined
 
@@ -97,6 +99,10 @@ Type '.exit' to exit the REPL session
 
 Ctrl+C is how you abandon a half-typed line: the line is discarded and you
 start again on a fresh prompt.
+
+To the rest of the language the session is one program, so handlers
+registered with `os.at_exit()` run when it ends, and `os.set_exit_code()`
+sets the status it ends with.
 
 ## Piped Input
 

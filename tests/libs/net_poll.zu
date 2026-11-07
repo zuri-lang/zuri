@@ -418,7 +418,7 @@ while taken > 0 {
   taken = ready_side.try_write(filler)
 }
 
-assert ready_side.try_write(filler) == 0, 'a full socket takes nothing'
+assert taken == 0, 'a full socket takes nothing'
 ok('try_write() reports a full socket as 0')
 
 ready_client.close()

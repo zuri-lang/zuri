@@ -241,8 +241,8 @@ line
 ```
 
 The escape sequences are `\0`, `\a`, `\b`, `\f`, `\n`, `\r`, `\t`, `\v`,
-`\\`, `\'`, `\"`, plus `\xNN` for a byte, `\uNNNN` for a code point and
-`\UNNNNNNNN` for one outside the basic plane:
+`\\`, `\'`, `\"`, `\${` for a literal `${`, plus `\xNN` for a byte, `\uNNNN`
+for a code point and `\UNNNNNNNN` for one outside the basic plane:
 
 ```zuri
 echo "tab:\there"
@@ -272,10 +272,10 @@ echo 'Hi ${name}, ${1 + 2} and ${name.upper()}'
 Hi Zuri, 3 and ZURI
 ```
 
-To produce a literal `${`, build it by concatenation:
+To produce a literal `${`, put a backslash before it:
 
 ```zuri
-echo 'B: $' + '{x}'
+echo 'B: \${x}'
 ```
 
 ```console

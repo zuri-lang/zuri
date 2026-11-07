@@ -30,3 +30,7 @@
 # correct form so it starts working the day it does.
 *.zu linguist-language=Zuri linguist-detectable=true
 
+
+# A patch holds the exact bytes of the crate it applies to, and some crates
+# use CRLF. Normalising one would leave it unable to apply.
+vendor/patches/*.patch -text

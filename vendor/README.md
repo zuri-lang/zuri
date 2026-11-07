@@ -80,3 +80,17 @@ The patch changes `src/isa/x64/mod.rs`, `src/isa/x64/inst/emit.rs`,
 allows `unused_imports` in the manifest: as a path dependency the crate's
 own warnings are no longer capped, and upstream builds with two such
 imports.
+
+## crossterm
+
+The terminal library under reedline and minus, with one change to its
+Unix event source. Reading the terminal now returns an error on end of
+file, or on any failure but `WouldBlock` and `Interrupted`. Upstream
+keeps reading in a loop, so a program that outlives its terminal, with
+SIGHUP ignored for instance, spins at full CPU and its caller never
+learns why. The error is what lets the REPL end the session.
+
+The patch changes `src/event/source/unix/mio.rs`, which has CRLF line
+endings, as patches may: `.gitattributes` keeps them out of
+normalisation. It also allows `unused_parens` in the manifest, for the
+same reason as the imports above.

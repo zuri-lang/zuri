@@ -1,0 +1,20 @@
+# `\${` is a literal `${`. `\$` anywhere else is an unknown escape and keeps
+# its backslash, and `\\` before `${` is a backslash then an interpolation.
+
+var x = 7
+
+echo 'single: \${x}'
+echo "double: \${x}"
+echo 'after a value: ${x} \${x}'
+echo 'nested: ${ '\${x}' }'
+echo 'escaped backslash: \\${x}'
+echo 'escaped backslash and dollar: \\\${x}'
+echo 'two backslashes: \\\\${x}'
+echo 'dollar before a value: $${x}'
+echo 'escaped dollar before a value: \$${x}'
+echo 'dollar alone: \$x'
+echo 'dollar last: \$'
+echo 'brace alone: \{x}'
+echo '\${x}'.length()
+echo 'price: $100'.match('/(?<=\$)\d+/')
+echo 'a$b'.replace('/\$/', '-')

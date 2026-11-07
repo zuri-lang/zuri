@@ -98,6 +98,7 @@ A backslash starts an escape. The full set is:
 | `\\` | a single backslash |
 | `\'` | a single quote |
 | `\"` | a double quote |
+| `\${` | `${` itself, with no interpolation |
 | `\xNN` | the byte with hexadecimal value `NN` |
 | `\uNNNN` | the code point `U+NNNN` |
 | `\UNNNNNNNN` | the code point `U+NNNNNNNN` |
@@ -364,27 +365,34 @@ covers.
 
 ### Writing a Literal `${`
 
-A backslash does not escape an interpolation. `\${x}` is an unknown escape,
-so the backslash survives and the interpolation still does not happen —
-which is rarely what anyone wants:
+A backslash before `${` stops the interpolation, and the backslash itself is
+dropped:
 
 ```zuri
-echo 'literal attempt: \${x}'
+var x = 7
+echo 'literal: \${x}'
+echo 'value: ${x}'
 ```
 
 ```console
-literal attempt: \${x}
+literal: ${x}
+value: 7
 ```
 
-To produce the two characters `${` followed by text, split the string so
-the `$` and the `{` are never adjacent inside one literal:
+The escape is a backslash and a dollar sign followed by `{`. `\\` is an
+escape of its own, so `\\${x}` is a backslash followed by the value.
+Anywhere else `\$` is an unknown escape and keeps its backslash, which is
+what lets a regular expression match a literal dollar sign:
 
 ```zuri
-echo 'shell syntax: $' + '{HOME}'
+var x = 7
+echo '\\${x}'
+echo 'price: $100'.match('/(?<=\$)\d+/')
 ```
 
 ```console
-shell syntax: ${HOME}
+\7
+{0: 100}
 ```
 
 A lone `$` is not special, so only the exact sequence `${` needs this

@@ -185,6 +185,38 @@ if host_zone == nil {
 
 ok('Date.to_timezone() gives the same answer on any host')
 
+# ---------------------------------------------------------------------------
+# mktime(): one second before the epoch is -1, the same value libc fails
+# with, so the two have to be told apart. Windows has no libc `mktime` here
+# and reads every date as UTC.
+# ---------------------------------------------------------------------------
+os.set_env('TZ', 'UTC', true)
+
+assert date.mktime(1969, 12, 31, 23, 59, 59, nil) == -1,
+  'one second before the epoch must be -1 and not a failure'
+assert date.from_timezone('UTC', 1969, 12, 31, 23, 59, 59).unix_time() == -1,
+  'unix_time() must accept one second before the epoch'
+assert date.mktime(1969, 12, 31, 23, 59, 58, nil) == -2,
+  'two seconds before the epoch must be -2'
+
+if os.platform != 'windows' {
+  os.set_env('TZ', 'Asia/Tokyo', true)
+
+  assert date.mktime(1970, 1, 1, 8, 59, 59, nil) == -1,
+    'the instant before the epoch must be -1 in any host zone'
+  assert raises(@() {
+    date.mktime(2147483647 + 1900, 13, 1, 0, 0, 0, nil)
+  }), 'a date libc cannot represent must still raise'
+}
+
+if host_zone == nil {
+  os.unset_env('TZ')
+} else {
+  os.set_env('TZ', host_zone, true)
+}
+
+ok('mktime() tells one second before the epoch from a failure')
+
 # ===========================================================================
 # Final summary
 # ===========================================================================

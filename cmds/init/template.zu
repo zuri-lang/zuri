@@ -13,11 +13,6 @@ import toml
 
 import .plan { clean }
 
-# `${` cannot be written inside a Zuri string: it always opens an
-# interpolation, and a backslash does not stop it. The source these
-# templates emit interpolates for itself, so it spells the opener out.
-var _OPEN = '$' + '{'
-
 # One line of prose, safe to drop into a doc block: no newlines to
 # break it up, and no `*/` to close the block early.
 def _one_line(text) {
@@ -118,7 +113,7 @@ def app_index(manifest) {
     '',
   ]
 
-  var greeting = "  return 'Hello, " + _OPEN + 'name or "world"}!\'\n'
+  var greeting = '  return \'Hello, \${name or "world"}!\'\n'
 
   return '\n'.join(head) + greeting + '\n'.join(tail)
 }

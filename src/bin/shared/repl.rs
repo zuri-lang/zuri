@@ -2,14 +2,14 @@ use std::{borrow::Cow, env, io, path::Path};
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
-  ColumnarMenu, DefaultCompleter, DefaultHinter, DefaultValidator, Emacs, FileBackedHistory,
-  KeyCode, KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch,
-  PromptHistorySearchStatus, Reedline, ReedlineEvent, ReedlineMenu, Signal, ValidationResult,
-  Validator, default_emacs_keybindings,
+  ColumnarMenu, DefaultCompleter, DefaultHinter, Emacs, FileBackedHistory, KeyCode, KeyModifiers,
+  MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, PromptHistorySearchStatus, Reedline,
+  ReedlineEvent, ReedlineMenu, Signal, ValidationResult, Validator, default_emacs_keybindings,
 };
 use zuri::vm::vm::VM;
 
 use crate::shared::highlighter::ZuriHighlighter;
+use crate::shared::validator::ZuriValidator;
 
 /// How many reads in a row may fail before a session gives up. A read
 /// fails when the terminal takes over two seconds to answer reedline's
@@ -102,7 +102,7 @@ impl Repl {
       .with_completer(Box::new(DefaultCompleter::new(completed_words)))
       .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
       .with_edit_mode(Box::new(Emacs::new(keybindings)))
-      .with_validator(Box::new(DefaultValidator))
+      .with_validator(Box::new(ZuriValidator))
       .with_history(history)
       .with_hinter(Box::new(
         DefaultHinter::default().with_style(Style::new().italic().fg(Color::LightGray)),
@@ -172,7 +172,7 @@ where
 
     if !at_end
       && matches!(
-        DefaultValidator.validate(&buffer),
+        ZuriValidator.validate(&buffer),
         ValidationResult::Incomplete
       )
     {

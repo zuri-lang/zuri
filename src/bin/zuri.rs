@@ -1,6 +1,6 @@
 use mimalloc::MiMalloc;
 use minus::{self, Pager};
-use std::io::{self, ErrorKind, IsTerminal};
+use std::io::{self, ErrorKind, IsTerminal, Write};
 use std::path::Path;
 use std::rc::Rc;
 use std::{env, fs, process};
@@ -104,10 +104,15 @@ fn run_repl(vm: &mut VM) {
     run_piped(vm, run_entry)
   };
 
+  vm.end_session();
+
   if let Err(e) = session {
-    eprintln!("Could not read input: {e}");
+    // Not `eprintln!`, which panics if this is the terminal that went away.
+    let _ = writeln!(io::stderr(), "Could not read input: {e}");
     process::exit(1);
   }
+
+  process::exit(vm.take_exit_code().unwrap_or(0));
 }
 
 /// Acts on one entry of a session. `Err` asks for the session to end.

@@ -1,0 +1,32 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 9735437..321e19e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -238,3 +238,6 @@ features = [
+     "winerror",
+ ]
+ optional = true
++
++[lints.rust]
++unused_parens = "allow"
+diff --git a/src/event/source/unix/mio.rs b/src/event/source/unix/mio.rs
+index 1c6f943..c702909 100644
+--- a/src/event/source/unix/mio.rs
++++ b/src/event/source/unix/mio.rs
+@@ -94,6 +94,8 @@ impl EventSource for UnixInternalEventSource {
+                     TTY_TOKEN => {
+                         loop {
+                             match self.tty_fd.read(&mut self.tty_buffer) {
++                                // End of file on a terminal means it has gone away.
++                                Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
+                                 Ok(read_count) => {
+                                     if read_count > 0 {
+                                         self.parser.advance(
+@@ -111,6 +113,7 @@ impl EventSource for UnixInternalEventSource {
+                                     else if e.kind() == io::ErrorKind::Interrupted {
+                                         continue;
+                                     }
++                                    return Err(e);
+                                 }
+                             };
+ 

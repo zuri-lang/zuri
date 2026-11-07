@@ -130,6 +130,8 @@ def set_exit_code(code: number) {
  *    that code; the handlers that have not run yet do not run.
  * @note a handler does not run when the process is killed by a signal
  *    nothing handled, since nothing gets to run at that point.
+ * @note in the REPL the program is the session, so a handler runs when
+ *    the session ends and not after the line that registered it.
  * @param function callback
  */
 def at_exit(callback: function) {

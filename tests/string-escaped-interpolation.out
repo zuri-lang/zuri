@@ -1,0 +1,15 @@
+single: ${x}
+double: ${x}
+after a value: 7 ${x}
+nested: ${x}
+escaped backslash: \7
+escaped backslash and dollar: \${x}
+two backslashes: \\7
+dollar before a value: $7
+escaped dollar before a value: \$7
+dollar alone: \$x
+dollar last: \$
+brace alone: \{x}
+4
+{0: 100}
+a-b

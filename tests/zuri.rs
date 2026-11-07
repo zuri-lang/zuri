@@ -1382,6 +1382,216 @@ mod launch {
     assert_eq!(stdout_of(&output), "3\n");
     assert!(!output.stderr.is_empty(), "{}", combined(&output));
   }
+
+  #[test]
+  fn a_bracket_in_a_string_leaves_the_entry_complete() {
+    assert_eq!(combined(&session("'('\n.exit\n1 + 2\n")), "(\n");
+  }
+
+  #[test]
+  fn a_quote_in_a_comment_leaves_the_entry_complete() {
+    let output = session("# it said \"hi\n1 + 2\n.exit\n3 + 4\n");
+
+    assert_eq!(combined(&output), "3\n");
+  }
+
+  #[test]
+  fn a_bracket_in_a_comment_leaves_the_entry_complete() {
+    assert_eq!(combined(&session("# (\n1 + 2\n.exit\n3 + 4\n")), "3\n");
+  }
+
+  #[test]
+  fn a_string_left_open_runs_on_to_the_next_line() {
+    for input in [
+      "'one\ntwo'.upper()\n.exit\n",
+      "\"one\ntwo\".upper()\n.exit\n",
+    ] {
+      assert_eq!(combined(&session(input)), "ONE\nTWO\n");
+    }
+  }
+
+  #[test]
+  fn an_interpolation_left_open_runs_on_to_the_next_line() {
+    let output = session("var n = 2\n'${n +\n1} items'\n.exit\n");
+
+    assert_eq!(combined(&output), "3 items\n");
+  }
+
+  #[test]
+  fn a_block_comment_left_open_runs_on_to_the_next_line() {
+    let output = session("/* one\n( two */\n1 + 2\n.exit\n3 + 4\n");
+
+    assert_eq!(combined(&output), "3\n");
+  }
+
+  #[test]
+  fn brackets_that_can_never_balance_are_reported_at_once() {
+    for line in [")", "(]", "'${ {\"a\": 1}[\"a\"] }'"] {
+      let output = session(&format!("{line}\n1 + 2\n.exit\n3 + 4\n"));
+
+      assert_eq!(stdout_of(&output), "3\n", "{line}");
+      assert!(!output.stderr.is_empty(), "{line}");
+    }
+  }
+
+  #[test]
+  fn source_cut_off_after_a_marker_is_a_syntax_error() {
+    let dir = case("cut_off");
+
+    for (name, source) in [
+      ("dollar.zu", "'cost $"),
+      ("backslash.zu", "'path \\"),
+      ("comment.zu", "/* note *"),
+    ] {
+      write(&dir.join(name), source);
+
+      let output = zuri(&dir, &["run", name]);
+
+      assert_eq!(output.status.code(), Some(1), "{}", combined(&output));
+      assert!(combined(&output).contains("SyntaxError"), "{name}");
+
+      let output = session(source);
+
+      assert!(output.status.success(), "{}", combined(&output));
+      assert!(combined(&output).contains("SyntaxError"), "{name}");
+    }
+  }
+
+  const NOTE_THE_END: &str = "import os\nos.at_exit(@{ echo 'handler' })\n";
+
+  #[test]
+  fn an_exit_handler_waits_for_the_input_to_end() {
+    let output = session(&format!("{NOTE_THE_END}1 + 2\n"));
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert_eq!(combined(&output), "3\nhandler\n");
+  }
+
+  #[test]
+  fn an_exit_handler_runs_on_dot_exit() {
+    let output = session(&format!("{NOTE_THE_END}1 + 2\n.exit\n3 + 4\n"));
+
+    assert_eq!(combined(&output), "3\nhandler\n");
+  }
+
+  #[test]
+  fn an_exit_handler_runs_once_on_os_exit() {
+    let output = session(&format!("{NOTE_THE_END}os.exit(4)\n1 + 2\n"));
+
+    assert_eq!(output.status.code(), Some(4), "{}", combined(&output));
+    assert_eq!(combined(&output), "handler\n");
+  }
+
+  #[test]
+  fn an_exit_handler_outlives_a_failing_line() {
+    let output = session(&format!("{NOTE_THE_END}missing_name\n1 + 2\n"));
+
+    assert!(output.status.success(), "{}", combined(&output));
+    assert_eq!(stdout_of(&output), "3\nhandler\n");
+  }
+
+  #[test]
+  fn an_exit_handler_sets_the_status_of_the_session() {
+    let output = session("import os\nos.at_exit(@{ os.set_exit_code(3) })\n1 + 2\n");
+
+    assert_eq!(output.status.code(), Some(3), "{}", combined(&output));
+    assert_eq!(combined(&output), "3\n");
+  }
+
+  #[test]
+  fn an_exit_handler_runs_when_input_cannot_be_read() {
+    let mut child = session_command()
+      .stdin(Stdio::piped())
+      .spawn()
+      .expect("failed to run zuri");
+
+    let mut input = NOTE_THE_END.as_bytes().to_vec();
+    input.extend_from_slice(b"\xff\xfe\n");
+
+    child
+      .stdin
+      .take()
+      .expect("no stdin")
+      .write_all(&input)
+      .expect("failed to write the session's input");
+
+    let output = finish_session(child);
+
+    assert_eq!(output.status.code(), Some(1), "{}", combined(&output));
+    assert_eq!(stdout_of(&output), "handler\n");
+  }
+
+  /// A pseudo-terminal, as the end a terminal holds and the end a program
+  /// is given. Neither passes to a child by accident, since a stray copy
+  /// of the first would keep the terminal alive after it closes.
+  #[cfg(unix)]
+  fn open_terminal() -> (fs::File, fs::File) {
+    use std::os::fd::FromRawFd;
+
+    let (mut host, mut device) = (0, 0);
+    let mut size = libc::winsize {
+      ws_row: 24,
+      ws_col: 80,
+      ws_xpixel: 0,
+      ws_ypixel: 0,
+    };
+
+    let status = unsafe {
+      libc::openpty(
+        &mut host,
+        &mut device,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        &mut size,
+      )
+    };
+
+    assert_eq!(status, 0, "failed to open a terminal");
+
+    unsafe {
+      libc::fcntl(host, libc::F_SETFD, libc::FD_CLOEXEC);
+      libc::fcntl(device, libc::F_SETFD, libc::FD_CLOEXEC);
+
+      (fs::File::from_raw_fd(host), fs::File::from_raw_fd(device))
+    }
+  }
+
+  #[cfg(unix)]
+  #[test]
+  fn a_session_ends_when_its_terminal_goes_away() {
+    use std::io::Read;
+
+    let (mut host, device) = open_terminal();
+    let child = Command::new(env!("CARGO_BIN_EXE_zuri"))
+      .stdin(device.try_clone().expect("failed to share the terminal"))
+      .stdout(device.try_clone().expect("failed to share the terminal"))
+      .stderr(device)
+      .spawn()
+      .expect("failed to run zuri");
+
+    // Answers as a terminal would until the prompt is up, then closes.
+    std::thread::spawn(move || {
+      let mut chunk = [0u8; 4096];
+
+      while let Ok(n @ 1..) = host.read(&mut chunk) {
+        let text = String::from_utf8_lossy(&chunk[..n]);
+
+        for _ in text.matches("\x1b[6n") {
+          host
+            .write_all(b"\x1b[1;1R")
+            .expect("failed to answer a cursor query");
+        }
+
+        if text.contains("%> ") {
+          break;
+        }
+      }
+    });
+
+    let output = finish_session(child);
+
+    assert_eq!(output.status.code(), Some(1));
+  }
 }
 
 /// The `test` command end to end: the tree it finds, the one file a

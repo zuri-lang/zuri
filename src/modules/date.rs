@@ -334,8 +334,13 @@ fn mktime_impl(
     Some(false) => 0,
   };
 
+  // `mktime` returns -1 for a failure and for one second before the
+  // epoch alike. Only a success sets `tm_wday`, so a value it could never
+  // hold tells the two apart.
+  tm.tm_wday = -1;
+
   let t = unsafe { libc::mktime(&mut tm) };
-  if t == -1 {
+  if t == -1 && tm.tm_wday == -1 {
     return Err("mktime(): the given date/time cannot be represented".to_string());
   }
   Ok(Value::number(t as f64))

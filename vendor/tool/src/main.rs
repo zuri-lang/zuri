@@ -129,8 +129,12 @@ fn save(vendor: &Path, name: &str) -> Result<()> {
     .strip_prefix(&crates)
     .map_err(|_| "pristine copy outside vendor/crates")?;
 
+  // Inside a repository, git reads both sides through its attributes, and
+  // `text=auto` would turn a crate's CRLF lines to LF in the diff. Stopping
+  // the search at `vendor` keeps the bytes the patch has to match.
   let output = Command::new("git")
     .current_dir(&crates)
+    .env("GIT_CEILING_DIRECTORIES", git_path(vendor))
     .args([
       "diff",
       "--no-index",

@@ -4,6 +4,12 @@ use std::str::FromStr;
 
 use crate::compiler::token::{Token, TokenKind};
 
+/// The error for a string still open at the end of the source.
+pub const UNTERMINATED_STRING: &str = "unterminated string";
+
+/// The error for a block comment still open at the end of the source.
+pub const UNBALANCED_COMMENT: &str = "unbalanced block comment";
+
 fn is_digit(c: char) -> bool {
   c.is_ascii_digit()
 }
@@ -100,7 +106,7 @@ impl Lexer {
   }
 
   fn next(&mut self) -> char {
-    if self.current + 1 > self.total_count {
+    if self.current + 1 >= self.total_count {
       '\0'
     } else {
       self.source[self.current + 1]
@@ -168,7 +174,7 @@ impl Lexer {
 
     while nesting > 0 {
       if self.is_at_end() {
-        return self.make_error("unbalanced block comment".to_string());
+        return self.make_error(UNBALANCED_COMMENT.to_string());
       }
 
       if self.peek() == '/' && self.next() == '*' {
@@ -228,7 +234,7 @@ impl Lexer {
 
   fn string(&mut self, c: char) -> Token {
     while self.peek() != c && !self.is_at_end() {
-      if self.peek() == '$' && self.next() == '{' && self.previous() != '\\' {
+      if self.peek() == '$' && self.next() == '{' {
         self.interpolating.push(c);
         self.current += 1;
 
@@ -243,14 +249,16 @@ impl Lexer {
         return result;
       }
 
-      if self.peek() == '\\' && (self.next() == c || self.next() == '\\') {
+      // An escape is passed over whole, so the character after its
+      // backslash never ends the string or opens an interpolation.
+      if self.peek() == '\\' && (self.next() == c || self.next() == '\\' || self.next() == '$') {
         self.advance();
       }
       self.advance();
     }
 
     if self.is_at_end() {
-      return self.make_error("unterminated string".to_string());
+      return self.make_error(UNTERMINATED_STRING.to_string());
     }
 
     self.match_char(c.clone());
@@ -486,6 +494,15 @@ impl Lexer {
             final_str.push(next);
           },
           '\\' => final_str.push('\\'),
+          '$' => {
+            // `\${` is a literal `${`. Anywhere else `\$` is an unknown
+            // escape and keeps its backslash, as an escaped dollar in a
+            // regular expression needs.
+            if i + 2 >= end || self.source[i + 2] != '{' {
+              final_str.push('\\');
+            }
+            final_str.push(next);
+          },
           _ => {
             final_str.push(c);
             final_str.push(next);
@@ -699,6 +716,11 @@ impl Lexer {
         }
       },
     }
+  }
+
+  /// Whether the source read so far stopped inside a `${...}`.
+  pub fn is_interpolating(&self) -> bool {
+    !self.interpolating.is_empty()
   }
 
   pub fn start_lexing_type(&mut self) {

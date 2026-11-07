@@ -1601,12 +1601,22 @@ impl VM {
     // Handlers first, since they are ordinary Zuri code and may print.
     // Then any capture the script opened and never closed, which holds
     // real output and would otherwise be the one failure mode with no
-    // visible symptom at all.
-    self.run_exit_handlers();
+    // visible symptom at all. An entry at the REPL is not the end of the
+    // program, so its handlers wait for `end_session`.
+    if !self.is_repl {
+      self.run_exit_handlers();
+    }
     super::natives::capture_unwind_all();
     super::natives::flush_stdout();
     res?;
     Ok(())
+  }
+
+  /// Ends a REPL session the way the end of `run` ends a program.
+  pub fn end_session(&mut self) {
+    self.run_exit_handlers();
+    super::natives::capture_unwind_all();
+    super::natives::flush_stdout();
   }
 
   /// Invoke any callable Value (closure or native) with already-evaluated

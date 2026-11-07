@@ -75,7 +75,7 @@
  * | `\'` | Single Quotation Mark |
  * | `\"` | Double Quotation Mark |
  * | `\0` | String terminator |
- * | `\$` | Escape for interpolated strings |
+ * | `\${` | A literal `${`, with no interpolation |
  * | `\xhh` | Hexadecimal number |
  * | `\uhhhh` | Unicode code point below 10000 hexadecimal |
  * | `\Uhhhhhhhhh` | Unicode code point where h is a hexadecimal digit |
@@ -83,7 +83,7 @@
  * > 1. _`h`_ stands for hexadecimal digit.
  * > 2. `\0` used anywhere in a string will cause the rest of the
  * >    string to be ignored and useless.
- * > 3. `\$` _See the [`Interpolated
+ * > 3. `\${` _See the [`Interpolated
  * >    Strings`](#string-interpolation) section below._
  * > 4. `\u` takes 4 hexadecimal digits _h_ after it.
  * > 5. `\U` takes 8 hexadecimal digits _h_ after it.
