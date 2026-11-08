@@ -1682,10 +1682,7 @@ impl VM {
     // everything the frame reaches.
     let new_base = self.frames.last().map(Self::frame_top).unwrap_or(0);
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
 
     for i in 0..required as usize {
       self.registers[new_base + i] = args.get(i).copied().unwrap_or(Value::nil());
@@ -4718,10 +4715,15 @@ impl VM {
     }
   }
 
-  /// Grows the register file to at least `needed` registers.
+  /// Grows the register file to at least `needed` registers, and to
+  /// twice its length at least, the way its buffer grows. A call checks
+  /// the length before pushing its frame and takes the slow path when it
+  /// falls short, so a recursion deeper than any before it then falls
+  /// short at only a few of its levels rather than at every one.
   pub(crate) fn ensure_registers(&mut self, needed: usize) {
     if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
+      let len = needed.max(self.registers.len() * 2);
+      self.registers.resize(len, Value::nil());
       self.sync_regs_ptr_cache();
     }
   }
@@ -4872,10 +4874,7 @@ impl VM {
       proto.arity
     };
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     for i in num_args..required {
       self.registers[new_base + i as usize] = Value::nil();
     }
@@ -5144,10 +5143,7 @@ impl VM {
     // where the call site itself wrote.
     let new_base = base + func_reg as usize + 1;
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     for i in (0..num_args as usize).rev() {
       self.registers[new_base + i + 1] = self.registers[new_base + i];
     }
@@ -5203,10 +5199,7 @@ impl VM {
     // root it needs to be.
     let new_base = base + func_reg as usize;
     let needed = new_base + proto.num_registers as usize;
-    if self.registers.len() < needed {
-      self.registers.resize(needed, Value::nil());
-      self.sync_regs_ptr_cache();
-    }
+    self.ensure_registers(needed);
     self.registers[new_base] = instance;
 
     self.setup_closure_call(ctor, proto, new_base, num_args + 1, dst);
