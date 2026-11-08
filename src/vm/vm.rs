@@ -2750,10 +2750,9 @@ impl VM {
     proto_value: Value,
     optimize: Option<Vec<usize>>,
   ) {
-    let direct = crate::jit::tier2_direct();
     let asked = optimize.is_some();
-    let entries = optimize.filter(|_| !direct);
-    let optimize = asked || direct;
+    let entries = optimize;
+    let optimize = asked || crate::jit::tier2_direct();
     let (speculative_params, speculative_regs, speculative_lists, speculative_ints) =
       if self.no_jit_specialization {
         (None, None, None, None)

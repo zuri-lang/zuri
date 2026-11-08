@@ -48,11 +48,8 @@ const HEAP_FINALIZE_CUR_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_CUR_OFFSET) as i32;
 const HEAP_FINALIZE_END_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_FINALIZE_END_OFFSET) as i32;
-const HEAP_LIVE_COUNT_OFFSET: i32 = (vm::VM_HEAP_OFFSET + object::HEAP_LIVE_COUNT_OFFSET) as i32;
 const HEAP_YOUNG_BYTES_ALLOCATED_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_BYTES_ALLOCATED_OFFSET) as i32;
-const HEAP_BYTES_ALLOCATED_OFFSET: i32 =
-  (vm::VM_HEAP_OFFSET + object::HEAP_BYTES_ALLOCATED_OFFSET) as i32;
 const HEAP_YOUNG_HEADER_OFFSET: i32 =
   (vm::VM_HEAP_OFFSET + object::HEAP_YOUNG_HEADER_OFFSET) as i32;
 const HEAP_FIELD_ARENA_CUR_OFFSET: i32 =
@@ -218,6 +215,7 @@ pub fn lower(
     positions: FxHashMap::default(),
     small: super::passes::ints::small_integers(ir),
     leaves_loop: loop_leaving_branches(ir),
+    at: (BlockId(0), 0),
   };
   l.run()?;
   Ok(ir.osr_ids.clone())
@@ -258,6 +256,9 @@ struct Lowering<'a, 'b> {
   /// Blocks in a loop whose branch goes on round the loop when it holds
   /// and leaves the loop otherwise.
   leaves_loop: rustc_hash::FxHashSet<BlockId>,
+  /// The block being lowered and the index of its instruction being
+  /// lowered, or its length while the terminator is.
+  at: (BlockId, usize),
 }
 
 /// The blocks whose branch takes its first target to stay in the
@@ -338,6 +339,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let mut i = 0;
     while i < insts.len() {
       let id = insts[i];
+      self.at = (b, i);
       if matches!(self.ir.inst(id).op, Op::Safepoint | Op::NewList { .. }) {
         // The reloads that follow a safepoint only have to read memory
         // when it actually collected.
@@ -358,6 +360,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       self.lower_inst(id)?;
       i += 1;
     }
+    self.at = (b, insts.len());
     self.lower_term(b);
     Ok(())
   }
@@ -1521,14 +1524,23 @@ impl<'a, 'b> Lowering<'a, 'b> {
       vm::JIT_MAX_CALL_DEPTH as i64,
     );
     self.continue_if(depth_ok, miss);
-    let registers = self.fb.ins().load(
-      types::I8,
-      flags,
-      proto,
-      object::obj_function_num_registers_offset() as i32,
-    );
-    let registers = self.fb.ins().uextend(types::I64, registers);
-    let needed = self.fb.ins().iadd(new_base, registers);
+    let needed = match callee {
+      DirectCallee::Known { function, .. } => {
+        // SAFETY: as for the shape `lower_generic` checked.
+        let f = unsafe { &*(function as *const ObjFunction) };
+        self.fb.ins().iadd_imm_s(new_base, f.num_registers as i64)
+      },
+      _ => {
+        let registers = self.fb.ins().load(
+          types::I8,
+          flags,
+          proto,
+          object::obj_function_num_registers_offset() as i32,
+        );
+        let registers = self.fb.ins().uextend(types::I64, registers);
+        self.fb.ins().iadd(new_base, registers)
+      },
+    };
     let regs_len = self
       .fb
       .ins()
@@ -1670,28 +1682,18 @@ impl<'a, 'b> Lowering<'a, 'b> {
     self.fb.ins().jump(done, &[one.into()]);
 
     // Popped as the frame's own return would pop it, retiring any scalar
-    // roots it registered.
+    // roots it registered. A callee that returns leaves its own frame on
+    // top, marked with the scalar root count read for the push, so the
+    // counts read then are the ones to put back.
     self.fb.switch_to_block(returned);
-    let frames_len = self
-      .fb
-      .ins()
-      .load(types::I64, flags, self.vm, FRAMES_LEN_OFFSET);
-    let top = self.fb.ins().iadd_imm_s(frames_len, -1);
-    let frames = self
-      .fb
-      .ins()
-      .load(types::I64, flags, self.vm, FRAMES_PTR_OFFSET);
-    let at = self.fb.ins().imul_imm_s(top, CALL_FRAME_SIZE);
-    let at = self.fb.ins().iadd(frames, at);
-    let mark = self
-      .fb
-      .ins()
-      .load(types::I64, flags, at, CALL_FRAME_SCALAR_ROOTS_MARK_OFFSET);
     self
       .fb
       .ins()
-      .store(flags, mark, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
-    self.fb.ins().store(flags, top, self.vm, FRAMES_LEN_OFFSET);
+      .store(flags, roots, self.vm, JIT_SCALAR_ROOTS_LEN_OFFSET);
+    self
+      .fb
+      .ins()
+      .store(flags, frames_len, self.vm, FRAMES_LEN_OFFSET);
     self.store_reg(offset + dst, ret);
     let ok = self.u64c(0);
     self.fb.ins().jump(done, &[ok.into()]);
@@ -2234,9 +2236,41 @@ impl<'a, 'b> Lowering<'a, 'b> {
   /// Writes every value in `state` into its register, boxed.
   fn flush(&mut self, state: &FrameState) {
     for &(r, v) in &state.regs {
+      if self.in_register_file(r, v) {
+        continue;
+      }
       let x = self.tagged_of(v);
       self.store_reg(r, x);
     }
+  }
+
+  /// Whether register `r` already holds `v`: `v` was read back from it
+  /// after a runtime call earlier in the block being lowered, and nothing
+  /// since can have written the register file. A guard between them
+  /// leaves by writing the same values out.
+  fn in_register_file(&self, r: u8, v: ValueId) -> bool {
+    let Some(def) = self.ir.def_inst_id(v) else {
+      return false;
+    };
+    if !matches!(self.ir.inst(def).op, Op::Reload { reg } if reg == r) {
+      return false;
+    }
+    let (b, upto) = self.at;
+    let insts = &self.ir.block(b).insts;
+    let Some(pos) = insts[..upto].iter().position(|&i| i == def) else {
+      return false;
+    };
+    let mut first = pos;
+    while first > 0 && matches!(self.ir.inst(insts[first - 1]).op, Op::Reload { .. }) {
+      first -= 1;
+    }
+    if first == 0 || !matches!(self.ir.inst(insts[first - 1]).op, Op::Generic { .. }) {
+      return false;
+    }
+    insts[pos + 1..upto].iter().all(|&i| {
+      let op = &self.ir.inst(i).op;
+      matches!(op, Op::Guard(_)) || (!op.has_effect() && !op.may_collect())
+    })
   }
 
   /// Tells the VM where compiled code is, for stack traces. Inside a
@@ -2933,39 +2967,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
       .fb
       .ins()
       .store(flags, fnext, vm, HEAP_FINALIZE_CUR_OFFSET);
-    for (offset, delta) in [
-      (HEAP_LIVE_COUNT_OFFSET, 1),
-      (HEAP_BYTES_ALLOCATED_OFFSET, size),
-    ] {
-      let old = self.fb.ins().load(types::I64, flags, vm, offset);
-      let new = self.fb.ins().iadd_imm_s(old, delta);
-      self.fb.ins().store(flags, new, vm, offset);
-    }
-    let young = self
-      .fb
-      .ins()
-      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    let young = self.fb.ins().iadd_imm_s(young, size);
-    self
-      .fb
-      .ins()
-      .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-    // Owe a collection once the young budget is spent; the next
-    // safepoint pays it.
-    let budget = self.u64c(self.ir.young_budget);
-    let owed = self
-      .fb
-      .ins()
-      .icmp(IntCC::UnsignedGreaterThan, young, budget);
-    let flag = self
-      .fb
-      .ins()
-      .load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-    let flag = self.fb.ins().bor(flag, owed);
-    self
-      .fb
-      .ins()
-      .store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    self.count_young(size);
     let header = self
       .fb
       .ins()
@@ -3138,39 +3140,7 @@ impl<'a, 'b> Lowering<'a, 'b> {
           .ins()
           .store(flags, anext, vm, HEAP_FIELD_ARENA_CUR_OFFSET);
       }
-      for (offset, delta) in [
-        (HEAP_LIVE_COUNT_OFFSET, 1),
-        (HEAP_BYTES_ALLOCATED_OFFSET, size),
-      ] {
-        let old = self.fb.ins().load(types::I64, flags, vm, offset);
-        let new = self.fb.ins().iadd_imm_s(old, delta);
-        self.fb.ins().store(flags, new, vm, offset);
-      }
-      let young = self
-        .fb
-        .ins()
-        .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-      let young = self.fb.ins().iadd_imm_s(young, size);
-      self
-        .fb
-        .ins()
-        .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
-      // Owe a collection once the young budget is spent; the next
-      // safepoint pays it.
-      let budget = self.u64c(self.ir.young_budget);
-      let owed = self
-        .fb
-        .ins()
-        .icmp(IntCC::UnsignedGreaterThan, young, budget);
-      let flag = self
-        .fb
-        .ins()
-        .load(types::I8, flags, vm, HEAP_JIT_GC_NEEDED_OFFSET);
-      let flag = self.fb.ins().bor(flag, owed);
-      self
-        .fb
-        .ins()
-        .store(flags, flag, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+      self.count_young(size);
       let header = self
         .fb
         .ins()
@@ -3833,6 +3803,39 @@ impl<'a, 'b> Lowering<'a, 'b> {
     let zero = self.fb.ins().iconst(types::I64, 0);
     let is_inline = self.fb.ins().icmp(IntCC::Equal, heap, zero);
     self.fb.ins().select(is_inline, inline, heap)
+  }
+
+  /// Counts `size` bytes against the young budget, owing a collection
+  /// once it is spent; the next safepoint pays it.
+  fn count_young(&mut self, size: i64) {
+    let flags = MemFlagsData::trusted();
+    let vm = self.vm;
+    let young = self
+      .fb
+      .ins()
+      .load(types::I64, flags, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let young = self.fb.ins().iadd_imm_s(young, size);
+    self
+      .fb
+      .ins()
+      .store(flags, young, vm, HEAP_YOUNG_BYTES_ALLOCATED_OFFSET);
+    let budget = self.u64c(self.ir.young_budget);
+    let owed = self
+      .fb
+      .ins()
+      .icmp(IntCC::UnsignedGreaterThan, young, budget);
+    let owe = self.fb.create_block();
+    let on = self.fb.create_block();
+    self.fb.ins().brif(owed, owe, &[], on, &[]);
+    self.fb.switch_to_block(owe);
+    self.fb.set_cold_block(owe);
+    let yes = self.fb.ins().iconst(types::I8, 1);
+    self
+      .fb
+      .ins()
+      .store(flags, yes, vm, HEAP_JIT_GC_NEEDED_OFFSET);
+    self.fb.ins().jump(on, &[]);
+    self.fb.switch_to_block(on);
   }
 
   /// The write barrier after storing `val` into `container`: an old

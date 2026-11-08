@@ -107,7 +107,8 @@ pub struct Feedback {
   pub young_budget: u64,
   /// The loop headers that get a way in from a frame already running;
   /// `None` gives every loop one. Each entry costs a copy of the loops
-  /// around it, so the baseline tier asks only for the loop it is in.
+  /// around it, so a compile a running loop asks for builds only the
+  /// ways in that frames are waiting at.
   pub entries: Option<Vec<usize>>,
 }
 
