@@ -152,10 +152,12 @@ def main() {
   parser.description = 'Formats all Zuri files in the given path, or the current directory.'
   parser.epilog = 'If no path is given, all Zuri files in the current directory are formatted.'
   parser.add_index(
-    'path', 'A .zu file, or a directory to format, subdirectories included',
+    'path',
+    'A .zu file, or a directory to format, subdirectories included',
   )
   parser.add_option(
-    'dry-run', 'Show what would change without writing anything',
+    'dry-run',
+    'Show what would change without writing anything',
     { short_name: 'n' },
   )
 

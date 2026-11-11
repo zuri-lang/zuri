@@ -24,9 +24,8 @@ describe('difference', @{
   })
 
   it('reads the dictionary shorthand as the entry it stands for', @{
-    expect(compare(
-      'var d = {\n  name: name,\n}', 'var d = { name }',
-    )).to_be_nil()
+    expect(compare('var d = {\n  name: name,\n}', 'var d = { name }'))
+        .to_be_nil()
   })
 
   it('reads a braced single statement as that statement in a body', @{

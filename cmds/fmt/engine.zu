@@ -5,8 +5,9 @@
  * returns the same program laid out in the project's style: two spaces
  * to a level, one statement to a line, explicit blocks, spacing the way
  * a reader expects it, and lines too long for the width broken where
- * the expression holds together least. The line breaks the author
- * already made are kept.
+ * the expression holds together least, following the Dart formatter's
+ * rules. Where the source broke a line inside an expression makes no
+ * difference.
  *
  * It works from the program's parse tree, so it knows what every piece
  * of code is rather than guessing from the characters around it, and
@@ -34,8 +35,7 @@ import .verify
  * means a fault in the formatter rather than in the source, and either
  * way the source should be left as it was.
  */
-class FormatError < Error {
-}
+class FormatError < Error {}
 
 # Parses `source`, raising a `FormatError` that says `problem` and where
 # when it has a syntax error.
@@ -76,13 +76,16 @@ def format(source: string) {
   }
 
   var formatted = _parse(
-    result, 'formatting would have produced code that no longer parses',
+    result,
+    'formatting would have produced code that no longer parses',
   )
 
   var difference = verify.difference(nodes, formatted)
 
   if difference == 'code' {
-    raise FormatError('formatting would have changed the code, not just its layout')
+    raise FormatError(
+      'formatting would have changed the code, not just its layout',
+    )
   }
 
   if difference == 'comments' {
