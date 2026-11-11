@@ -270,6 +270,7 @@ class HttpServer {
   var _reply_listeners = []
   var _error_listeners = []
   var _static_mounts = []
+  var _halt
 
   /**
    * @param ?number port: defaults to `8000`
@@ -797,6 +798,10 @@ class HttpServer {
    * `net.Acceptor` interval of this call. `listen()` then closes every
    * connection it still holds, after giving what they have queued a
    * chance to go out.
+   *
+   * On the server `http.serve()` hands a worker, this stops the whole
+   * server, every worker and the accept loop, the same as the `stop`
+   * function `on_ready` is given.
    */
   close() {
     self._listening = false
@@ -806,6 +811,21 @@ class HttpServer {
         self.socket.close()
       }
     }
+
+    if self._halt != nil {
+      self._halt.close()
+    }
+  }
+
+  /**
+   * Makes this server one worker of a server that stops when `halt`
+   * closes, so that `close()` closes `halt` and stops the whole server.
+   *
+   * @internal Called by `http.serve()`.
+   * @param isolate.Channel halt
+   */
+  stop_with(halt) {
+    self._halt = halt
   }
 
   /**

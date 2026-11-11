@@ -918,6 +918,51 @@ catch {
 }
 ok('a pool of worker isolates serves requests across connections')
 
+var closing = start(http_server_app.closing_pool_server)
+
+# Silent, so only the server closing it ends it before its timeouts.
+var bystander = net.TcpStream()
+bystander.connect(closing[1])
+bystander.set_read_timeout(5000)
+
+var closing_client = http.HttpClient()
+var closing_answer = closing_client.get('http://${closing[1]}/close')
+closing_client.close()
+
+assert closing_answer.as_dict().closing,
+    'the request that closes the server is answered'
+
+var closing_ended = false
+
+catch {
+  closing[0].join(5)
+  closing_ended = true
+}
+
+var bystander_closed = false
+
+catch {
+  bystander_closed = bystander.read(16).length() == 0
+}
+
+bystander.close()
+
+if !closing_ended {
+  # The server's last connection under `max_connections`, which ends it
+  # once its connections close, so the failure below is reported rather
+  # than left waiting on a server that never stops.
+  var last = net.TcpStream()
+
+  catch {
+    last.connect(closing[1])
+    last.close()
+  }
+}
+
+assert closing_ended, 'close() on a worker\'s server ends http.serve()'
+assert bystander_closed, 'and closes the connections every worker still holds'
+ok('close() inside http.serve() stops the whole server')
+
 # Every worker holds a pool thread for as long as the server runs, so
 # asking for more workers than the pool can ever provide used to queue
 # them behind tasks that never finish - a silent deadlock. The pool is

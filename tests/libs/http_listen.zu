@@ -123,9 +123,14 @@ class Peer {
   }
 
   # Waits for the peer to close, returning how long that took in
-  # milliseconds.
-  wait_for_close() {
-    var started = time()
+  # milliseconds, counted from `started` when it is given. A deadline
+  # check passes the time from before whatever started the server's
+  # clock, so a stall on this side before the wait cannot make the
+  # server look early.
+  wait_for_close(started) {
+    if started == nil {
+      started = time()
+    }
 
     while self.more() {}
 
@@ -503,17 +508,19 @@ var timed = start({
 })
 var timed_address = timed[1]
 
+var silent_started = time()
 var silent = Peer.dial(timed_address)
-var silent_wait = silent.wait_for_close()
+var silent_wait = silent.wait_for_close(silent_started)
 assert silent_wait > 250 and silent_wait < 1200,
     'a silent connection gets read_timeout, took ${silent_wait // 1}ms'
 silent.close()
 ok('a connection that never speaks is closed at read_timeout')
 
 var kept = Peer.dial(timed_address)
+var kept_started = time()
 kept.send(request_for('/ping'))
 kept.response()
-var kept_wait = kept.wait_for_close()
+var kept_wait = kept.wait_for_close(kept_started)
 assert kept_wait > 100 and kept_wait < 900,
     'an idle connection gets keep_alive_timeout, took ${kept_wait // 1}ms'
 kept.close()

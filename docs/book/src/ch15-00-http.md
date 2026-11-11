@@ -2460,11 +2460,22 @@ http.serve(app.setup, {
 })
 ```
 
-`stop()` closes the listener, which ends the accept loop; `serve()` then
-waits for every worker to finish the connections it holds before
-returning. For a single-isolate server, `close()` ends the accept loop
-too, and `listen()` closes what it still holds, after giving what each
-connection has queued a chance to go out.
+`stop()` closes the listener, which ends the accept loop, and every
+worker closes the connections it holds, after giving what each has
+queued a chance to go out; `serve()` then returns. A handler can do the
+same by calling `close()` on the server its worker was given:
+
+```zuri,ignore
+http.serve(@(server) {
+  server.post('/shutdown', @(request, response) {
+    response.text('stopping')
+    server.close()
+  })
+}, { port: 3000 })
+```
+
+For a single-isolate server, `close()` ends the accept loop too, and
+`listen()` closes what it still holds in the same way.
 
 ### Behind Another Proxy
 

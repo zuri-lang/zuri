@@ -356,7 +356,10 @@ def tls_server(
  *
  * The calling isolate binds the socket and accepts connections,
  * handing each one to a worker. It does not return until the server
- * is stopped.
+ * is stopped, by the `stop` function `on_ready` is given or by
+ * `close()` on the server a worker was given. Either one stops every
+ * worker, and each closes the connections it holds after giving what
+ * they have queued a chance to go out.
  *
  * @param function(1) setup: receives the worker's `HttpServer`
  * @param ?dict options: `port` (default `8000`), `host` (default
